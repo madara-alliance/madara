@@ -12,7 +12,7 @@ use e2e_tests::starknet_client::StarknetClient;
 use e2e_tests::utils::{get_mongo_db_client, read_state_update_from_file, vec_u8_to_hex_string};
 use e2e_tests::{MongoDbServer, Orchestrator};
 use mongodb::bson::doc;
-use orchestrator::core::client::database::constant::{BATCHES_COLLECTION, JOBS_COLLECTION};
+use orchestrator::core::client::database::constant::{AGGREGATOR_BATCHES_COLLECTION, JOBS_COLLECTION};
 use orchestrator::core::client::queue::sqs::InnerSQS;
 use orchestrator::core::client::SQS;
 use orchestrator::types::batch::AggregatorBatch;
@@ -34,7 +34,7 @@ use orchestrator_utils::env_utils::{get_env_var_optional_or_panic, get_env_var_o
 use rstest::rstest;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use starknet::core::types::{Felt, MaybePendingStateUpdate};
+use starknet::core::types::{Felt, MaybePreConfirmedStateUpdate};
 use uuid::Uuid;
 
 /// Expected DB state struct
@@ -354,7 +354,8 @@ async fn get_batch_by_index(
     index: u64,
 ) -> color_eyre::Result<Option<AggregatorBatch>> {
     let mongo_db_client = get_mongo_db_client(mongo_db_server).await;
-    let collection = mongo_db_client.database("orchestrator").collection::<AggregatorBatch>(BATCHES_COLLECTION);
+    let collection =
+        mongo_db_client.database("orchestrator").collection::<AggregatorBatch>(AGGREGATOR_BATCHES_COLLECTION);
     let filter = doc! { "index": index as i64 };
     let batch = collection.find_one(filter, None).await?;
     match batch {
@@ -366,7 +367,8 @@ async fn get_batch_by_index(
 /// Update Batch state to Completed in DB
 async fn update_batch_state(mongo_db_server: &MongoDbServer, index: u64) -> color_eyre::Result<()> {
     let mongo_db_client = get_mongo_db_client(mongo_db_server).await;
-    let collection = mongo_db_client.database("orchestrator").collection::<AggregatorBatch>(BATCHES_COLLECTION);
+    let collection =
+        mongo_db_client.database("orchestrator").collection::<AggregatorBatch>(AGGREGATOR_BATCHES_COLLECTION);
     let filter = doc! { "index": index as i64 };
     let update = doc! { "$set": { "is_batch_ready": true, "status": "Closed" } };
     collection.update_one(filter, update, None).await?;
@@ -514,7 +516,7 @@ pub async fn mock_starknet_get_state_update(starknet_client: &mut StarknetClient
     let state_update = read_state_update_from_file(&format!("artifacts/get_state_update_{}.json", l2_block_number))
         .expect("issue while reading");
 
-    let state_update = MaybePendingStateUpdate::Update(state_update);
+    let state_update = MaybePreConfirmedStateUpdate::Update(state_update);
     let state_update = serde_json::to_value(state_update).unwrap();
     let response = json!({ "id": 640641,"jsonrpc":"2.0","result": state_update });
 
