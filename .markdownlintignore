@@ -1,3 +1,9 @@
 **/lib/**/*.md
 node_modules/**/*.md
 **/target/**/*.md
+docs/**/*.md
+deps/**/*.md
+**/cache/**/*.md
+~/cache/**/*.md
+/Users/itsparser/cache/**/*.md
+madara/~/cache/**/*.md
