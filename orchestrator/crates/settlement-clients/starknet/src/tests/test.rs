@@ -47,7 +47,7 @@ async fn wait_for_tx(account: &LocalWalletSignerMiddleware, transaction_hash: Fe
             match receipt {
                 Ok(TransactionStatus::Received) => Err(eyre!("Transaction not yet received")),
                 Ok(TransactionStatus::Candidate) => Ok(false),
-                Ok(TransactionStatus::PreConfirmed) => Ok(false), // TODO(mohit): change this once we have confirmation about using preconfirmed status
+                Ok(TransactionStatus::PreConfirmed(_)) => Ok(false), // TODO(mohit): change this once we have confirmation about using preconfirmed status
                 Ok(TransactionStatus::AcceptedOnL2(status)) => match status {
                     ExecutionResult::Succeeded => Ok(true),
                     ExecutionResult::Reverted { .. } => Ok(false),
