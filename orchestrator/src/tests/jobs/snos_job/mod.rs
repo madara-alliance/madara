@@ -121,7 +121,7 @@ async fn test_process_job() -> color_eyre::Result<()> {
 
     // assert that we can build back the Pie & the Snos output
     let _ = CairoPie::from_bytes(&cairo_pie_data)?;
-    let _ = serde_json::from_slice(&snos_output_data)?;
+    let _: serde_json::Value = serde_json::from_slice(&snos_output_data)?;
 
     Ok(())
 }
