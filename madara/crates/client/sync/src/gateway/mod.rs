@@ -54,23 +54,24 @@ impl ForwardSyncConfig {
 }
 
 pub type GatewaySync = SyncController<GatewayForwardSync>;
-pub fn forward_sync(
+pub async fn forward_sync(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     client: Arc<GatewayProvider>,
     controller_config: SyncControllerConfig,
     config: ForwardSyncConfig,
-) -> GatewaySync {
+) -> anyhow::Result<GatewaySync> {
     let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
     let get_pending_block = gateway_preconfirmed_block_sync(client.clone(), importer.clone(), backend.clone());
-    SyncController::new(
+    let forward_sync = GatewayForwardSync::new(backend.clone(), importer, client, config).await?;
+    Ok(SyncController::new(
         backend.clone(),
-        GatewayForwardSync::new(backend, importer, client, config),
+        forward_sync,
         probe,
         controller_config,
         Some(get_pending_block),
-    )
+    ))
 }
 
 pub struct GatewayForwardSync {
@@ -84,13 +85,46 @@ pub struct GatewayForwardSync {
 }
 
 impl GatewayForwardSync {
-    pub fn new(
+    pub async fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
-    ) -> Self {
-        let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
+    ) -> anyhow::Result<Self> {
+        // Check for reorg BEFORE initializing pipelines
+        let mut starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
+        
+        tracing::info!("🚀 GatewayForwardSync::new - latest_confirmed_block_n: {:?}, starting_block_n: {}", 
+                      backend.latest_confirmed_block_n(), starting_block_n);
+        
+        // If we have local blocks, check if we need to reorg before starting
+        if let Some(latest_block) = backend.latest_confirmed_block_n() {
+            tracing::info!("📊 Found local blocks, latest: {}", latest_block);
+            if latest_block > 0 {
+                tracing::info!("🔍 Checking for chain divergence before sync starts (latest local block: {})", latest_block);
+                
+                // Check our latest block against the gateway
+                if let Some(common_ancestor) = detect_reorg(
+                    latest_block,
+                    &backend,
+                    &client,
+                ).await? {
+                    tracing::warn!("⚠️ REORG DETECTED at initialization - common ancestor: {}", common_ancestor);
+                    tracing::warn!("🔄 Rolling back from block {} to block {}", latest_block, common_ancestor);
+                    
+                    // Perform rollback
+                    backend.rollback_to_block(common_ancestor)?;
+                    
+                    // Update starting block after rollback
+                    starting_block_n = common_ancestor + 1;
+                    
+                    tracing::info!("✅ Rollback complete. Sync will start from block {}", starting_block_n);
+                } else {
+                    tracing::info!("✅ No chain divergence detected. Continuing from block {}", starting_block_n);
+                }
+            }
+        }
+        
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
@@ -116,7 +150,7 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
         );
-        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, client, importer, config }
+        Ok(Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, client, importer, config })
     }
 
     fn reinit_pipelines_from_current_position(&mut self) {
@@ -183,16 +217,19 @@ impl ForwardPipeline for GatewayForwardSync {
         tracing::debug!("Run pipeline to height={target_height:?}");
 
         let mut done = false;
+        
+        // Reorg detection now happens in the constructor, before pipelines are initialized
+        // This ensures we don't start syncing with the wrong chain
+        
         while !done {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
             {
                 let next_input_block_n = self.blocks_pipeline.next_input_block_n();
                 
-                // Check for reorg before scheduling each block
-                // Only check if we have blocks in the database (i.e., we're past genesis)
+                // Check for reorg before scheduling each block during sync
+                // Only check blocks we haven't synced yet but are within our stored range
                 if let Some(latest_block) = self.backend.latest_confirmed_block_n() {
-                    // Only check blocks that are within our stored range
-                    if next_input_block_n <= latest_block + 1 {
+                    if next_input_block_n <= latest_block {
                         if let Some(common_ancestor) = detect_reorg(
                             next_input_block_n,
                             &self.backend,

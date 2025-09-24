@@ -15,24 +15,44 @@ pub async fn detect_reorg(
     backend: &Arc<MadaraBackend>,
     client: &Arc<GatewayProvider>,
 ) -> anyhow::Result<Option<u64>> {
+    tracing::info!("🔎 detect_reorg called with block_n: {}, latest_local: {:?}", 
+                  block_n, backend.latest_confirmed_block_n());
+    
     if block_n == 0 {
         return Ok(None);
     }
     
+    // Determine which block to actually check
+    let block_to_check = {
+        let latest_local = backend.latest_confirmed_block_n();
+        if let Some(latest) = latest_local {
+            if block_n > latest {
+                tracing::debug!("Block #{} beyond local chain (latest: {}), checking latest block for reorg", block_n, latest);
+                latest
+            } else {
+                block_n
+            }
+        } else {
+            // No local blocks yet
+            tracing::info!("❌ No local blocks found, skipping reorg check");
+            return Ok(None);
+        }
+    };
+    
     let gateway_block = client
-        .get_block(BlockId::Number(block_n))
+        .get_block(BlockId::Number(block_to_check))
         .await
         .context("Failed to fetch block from gateway")?;
 
     // Get local block to compare
-    let local_block_view = backend.block_view_on_confirmed(block_n);
+    let local_block_view = backend.block_view_on_confirmed(block_to_check);
     
     if let Some(local_view) = local_block_view {
         let local_info = local_view.get_block_info()?;
         let local_hash = local_info.block_hash;
         tracing::debug!(
             "Checking block #{}: local_hash={:#x}, gateway_hash={:#x}",
-            block_n,
+            block_to_check,
             local_hash,
             gateway_block.block_hash
         );
@@ -40,28 +60,28 @@ pub async fn detect_reorg(
         if local_hash != gateway_block.block_hash {
             tracing::warn!(
                 "⚠️ REORG DETECTED at block {}: local {:#x} != gateway {:#x}",
-                block_n,
+                block_to_check,
                 local_hash,
                 gateway_block.block_hash
             );
 
             let common_ancestor = find_common_ancestor(
-                block_n,
+                block_to_check,
                 backend,
                 client,
             ).await?;
 
             return Ok(Some(common_ancestor));
         } else {
-            tracing::debug!("Block #{} hashes match - no reorg", block_n);
+            tracing::debug!("Block #{} hashes match - no reorg", block_to_check);
         }
     } else {
-        tracing::debug!("Block #{} not found locally - skipping reorg check", block_n);
+        tracing::debug!("Block #{} not found locally - no reorg check possible", block_to_check);
     }
 
     // Check parent hash as well
-    if block_n > 0 {
-        let parent_n = block_n - 1;
+    if block_to_check > 0 {
+        let parent_n = block_to_check - 1;
         let local_parent_view = backend.block_view_on_confirmed(parent_n);
 
         if let Some(local_parent) = local_parent_view {
@@ -76,7 +96,7 @@ pub async fn detect_reorg(
 
                 tracing::warn!(
                     "⚠️ Parent hash mismatch at block {}: expected {} != actual {}",
-                    block_n,
+                    block_to_check,
                     local_parent_hash,
                     gateway_block.parent_block_hash
                 );

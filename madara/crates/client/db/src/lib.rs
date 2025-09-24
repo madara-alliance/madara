@@ -40,6 +40,8 @@ use crate::preconfirmed::PreconfirmedBlock;
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::rocksdb::RocksDBConfig;
 use crate::rocksdb::RocksDBStorage;
+use crate::rocksdb::trie::BasicId;
+use crate::rocksdb::update_global_trie::bonsai_identifier;
 use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
@@ -239,11 +241,17 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         }
 
         // Init chain_tip and set starting block
-        let chain_tip = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
+        let storage_tip = if let Some(starting_block) = self.starting_block {
+            tracing::info!("🔧 Using unsafe_starting_block: {}", starting_block);
             StorageChainTip::Confirmed(starting_block)
         } else {
-            self.db.get_chain_tip()?
-        });
+            let tip = self.db.get_chain_tip()?;
+            tracing::info!("📖 Loaded chain tip from database: {:?}", tip);
+            tip
+        };
+        let chain_tip = ChainTip::from_storage(storage_tip);
+        tracing::info!("🏁 Backend initialized with chain_tip: {:?}, latest_confirmed: {:?}", 
+                      chain_tip, chain_tip.latest_confirmed_block_n());
         self.starting_block = chain_tip.latest_confirmed_block_n();
         // On startup, remove all blocks past the chain tip, in case we have partial blocks in db.
         self.db.remove_all_blocks_starting_from(
@@ -338,10 +346,56 @@ impl MadaraBackend<RocksDBStorage> {
             return Ok(());
         }
 
+        let current_block = current_block.unwrap();
+        
         // Use the revert_to function from RocksDBStorage
         let state_diffs = self.db.revert_to(target_block_n)?;
         
         tracing::info!("📊 Reverted {} blocks, updating chain tip", state_diffs.len());
+        
+        // CRITICAL: Revert the Bonsai tries to maintain state consistency
+        // This is the key fix for the trie log issue
+        tracing::info!("🔄 Reverting bonsai tries from block #{} to block #{}", current_block, target_block_n);
+        
+        let target_block_id = BasicId::new(target_block_n);
+        let revert_from_id = BasicId::new(current_block);
+        
+        // Revert contract trie
+        self.db.contract_trie()
+            .revert_to(target_block_id, revert_from_id)
+            .map_err(|e| anyhow::anyhow!("Failed to revert contract trie: {}", e))?;
+        tracing::debug!("✓ Contract trie reverted from block #{} to block #{}", current_block, target_block_n);
+        
+        // Revert contract storage trie
+        self.db.contract_storage_trie()
+            .revert_to(target_block_id, revert_from_id)
+            .map_err(|e| anyhow::anyhow!("Failed to revert contract storage trie: {}", e))?;
+        tracing::debug!("✓ Contract storage trie reverted from block #{} to block #{}", current_block, target_block_n);
+        
+        // Revert class trie
+        self.db.class_trie()
+            .revert_to(target_block_id, revert_from_id)
+            .map_err(|e| anyhow::anyhow!("Failed to revert class trie: {}", e))?;
+        tracing::debug!("✓ Class trie reverted from block #{} to block #{}", current_block, target_block_n);
+        
+        // CRITICAL: Commit all tries after reverting to ensure consistency
+        self.db.contract_trie().commit(target_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {}", e))?;
+        self.db.contract_storage_trie().commit(target_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {}", e))?;
+        self.db.class_trie().commit(target_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {}", e))?;
+        
+        tracing::debug!("✓ All tries committed at block #{}", target_block_n);
+        
+        // Get and log the state roots after revert for verification
+        let contract_root = self.db.contract_trie().root_hash(bonsai_identifier::CONTRACT)
+            .map_err(|e| anyhow::anyhow!("Failed to get contract root after rollback: {}", e))?;
+        let class_root = self.db.class_trie().root_hash(bonsai_identifier::CLASS)
+            .map_err(|e| anyhow::anyhow!("Failed to get class root after rollback: {}", e))?;
+        
+        tracing::info!("📊 After rollback to block #{}: contract_root={:#x}, class_root={:#x}",
+            target_block_n, contract_root, class_root);
         
         // Update the chain tip to the target block
         let new_chain_tip = if target_block_n == 0 {
@@ -350,12 +404,10 @@ impl MadaraBackend<RocksDBStorage> {
             StorageChainTip::Confirmed(target_block_n)
         };
         
-        self.db.replace_chain_tip(&new_chain_tip)?;
-        
         // Update the internal chain tip watcher
-        self.chain_tip.send_replace(ChainTip::from_storage(new_chain_tip));
+        self.chain_tip.send_replace(ChainTip::from_storage(new_chain_tip.clone()));
         
-        // Clear any pending/preconfirmed blocks
+        // Update the stored chain tip
         self.db.replace_chain_tip(&new_chain_tip)?;
         
         // Flush to ensure consistency
