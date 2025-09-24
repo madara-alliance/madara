@@ -1,5 +1,6 @@
 use alloy::primitives::hex::FromHexError;
 use orchestrator_prover_client_interface::ProverClientError;
+use reqwest::StatusCode;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AtlanticError {
@@ -16,7 +17,7 @@ pub enum AtlanticError {
     SubmitL2QueryFailure(#[source] reqwest::Error),
 
     #[error("Atlantic service returned an error {0}")]
-    AtlanticService(String),
+    AtlanticService(StatusCode, String),
 
     #[error("Failed to read file: {0}")]
     FileError(#[from] std::io::Error),

@@ -20,6 +20,7 @@ use std::path::Path;
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::multipart::{Form, Part};
+use reqwest::StatusCode;
 use reqwest::{Certificate, Client, ClientBuilder, Identity, Method, Response, Result};
 use serde::Serialize;
 use url::{ParseError, Url};
@@ -321,6 +322,23 @@ impl<'a> RequestBuilder<'a> {
     pub async fn send(self) -> Result<Response> {
         self.client.send_request(self).await
     }
+}
+
+/// Extract error text from HTTP response with context
+///
+/// # Arguments
+/// * `response` - The HTTP response to extract error text from
+/// * `operation` - The operation name for context in error messages
+///
+/// # Returns
+/// * `String` - The error text from the response or a fallback message
+pub async fn extract_http_error_text(response: Response, operation: &str) -> (String, StatusCode) {
+    let status = response.status();
+    let text = response
+        .text()
+        .await
+        .unwrap_or_else(|_| format!("Atlantic request failing while during {} operation", operation));
+    (text, status)
 }
 
 #[cfg(test)]
