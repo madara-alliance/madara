@@ -8,7 +8,6 @@ use crate::services::helpers::NodeRpcMethods;
 use crate::services::server::{Server, ServerConfig};
 pub use config::*;
 use reqwest::Url;
-use tokio::time::Duration;
 
 pub struct PathfinderService {
     server: Server,
@@ -84,16 +83,7 @@ impl PathfinderService {
     }
 
     pub async fn wait_for_block_synced(&self, block_number: u64) -> Result<(), PathfinderError> {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        println!("⏳ Waiting for Pathfinder block {} to be synced", block_number);
-
-        while self.get_latest_block_number().await.map_err(PathfinderError::RpcError)? < 0 {
-            println!("⏳ Checking Pathfinder block status...");
-            tokio::time::sleep(Duration::from_millis(1000)).await;
-        }
-        println!("🔔 Pathfinder block {} is synced", block_number);
-
-        Ok(())
+        self.wait_for_block(block_number).await.map_err(PathfinderError::RpcError)
     }
 }
 

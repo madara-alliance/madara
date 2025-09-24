@@ -57,7 +57,6 @@ pub const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
 // Ethereum Transaction Finality
 const MAX_TX_FINALISATION_ATTEMPTS: usize = 30;
 const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
-const TX_WAIT_SLEEP_DELAY_SECS: u64 = 60;
 
 // Ethereum Gas Price Estimation
 const GAS_PRICE_MULTIPLIER_START: f64 = 1.2;
@@ -85,6 +84,8 @@ pub struct EthereumSettlementValidatedArgs {
 
     pub starknet_operator_address: Address,
 
+    pub txn_wait_sleep_delay_secs: u64,
+
     pub max_gas_price_mul_factor: f64,
 }
 
@@ -95,6 +96,7 @@ pub struct EthereumSettlementClient {
     wallet_address: Address,
     provider: Arc<RootProvider<Http<Client>>>,
     impersonate_account: Option<Address>,
+    txn_wait_sleep_delay_secs: u64,
     max_gas_price_mul_factor: f64,
 }
 
@@ -125,6 +127,7 @@ impl EthereumSettlementClient {
             wallet,
             wallet_address,
             impersonate_account: None,
+            txn_wait_sleep_delay_secs: settlement_cfg.txn_wait_sleep_delay_secs,
             max_gas_price_mul_factor: settlement_cfg.max_gas_price_mul_factor,
         }
     }
@@ -153,6 +156,7 @@ impl EthereumSettlementClient {
             wallet_address,
             impersonate_account,
             max_gas_price_mul_factor: 2f64,
+            txn_wait_sleep_delay_secs: 10,
         }
     }
 
@@ -375,7 +379,8 @@ impl SettlementClient for EthereumSettlementClient {
                     }
                 }
             }
-            sleep(Duration::from_secs(TX_WAIT_SLEEP_DELAY_SECS)).await;
+            // Defaults to 60 seconds
+            sleep(Duration::from_secs(self.txn_wait_sleep_delay_secs)).await;
         }
         Ok(None)
     }
