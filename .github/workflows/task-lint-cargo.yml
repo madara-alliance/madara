@@ -24,26 +24,6 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
-      - name: Python Cairo setup
-        uses: ./.github/actions/setup-python-cairo
-        with:
-          python-version: ${{ env.BUILD_PYTHON_VERSION }}
-
-      - name: Verify Python virtual environment
-        run: |
-          echo "=== Virtual Environment Status ==="
-          echo "VIRTUAL_ENV: $VIRTUAL_ENV"
-          echo "PATH: $PATH"
-          echo "Python executable: $(which python)"
-          echo "Python version: $(python --version)"
-          echo "Cairo-compile: $(which cairo-compile 2>/dev/null || echo 'NOT FOUND')"
-          if command -v cairo-compile >/dev/null 2>&1; then
-            echo "Cairo-compile version: $(cairo-compile --version)"
-          fi
-          echo "Pip packages:"
-          pip list | grep -E "(cairo|sympy)" || echo "No cairo/sympy packages found"
-          echo "=================================="
-
       - name: Scarb setup
         uses: ./.github/actions/setup-scarb
         with:
@@ -55,43 +35,17 @@ jobs:
       - name: Cargo fmt
         run: cargo fmt -- --check
 
-      - name: Debug virtual environment
-        run: |
-          echo "=== Debugging Virtual Environment ==="
-          echo "Current working directory: $(pwd)"
-          echo "VIRTUAL_ENV variable: $VIRTUAL_ENV"
-          echo "Checking if VIRTUAL_ENV directory exists..."
-          ls -la "$VIRTUAL_ENV" 2>/dev/null || echo "VIRTUAL_ENV directory does not exist"
-          echo "Checking for sequencer_venv in current directory..."
-          ls -la sequencer_venv 2>/dev/null || echo "sequencer_venv directory does not exist in current dir"
-          echo "Looking for any venv directories..."
-          find . -name "*venv*" -type d 2>/dev/null || echo "No venv directories found"
-          echo "Checking if cairo-compile exists anywhere..."
-          find /home/runner -name "cairo-compile" 2>/dev/null || echo "cairo-compile not found anywhere"
-          echo "=================================="
+      - name: Python Cairo setup (before clippy)
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
       - name: Cargo Clippy
-        env:
-          # Explicitly ensure the virtual environment PATH is set
-          PATH: ${{ env.VIRTUAL_ENV }}/bin:${{ env.PATH }}
         run: |
-          # Debug environment
-          echo "=== Debug Environment ==="
-          echo "VIRTUAL_ENV: $VIRTUAL_ENV"
-          echo "PATH: $PATH"
-          echo "=========================="
-
           # Verify cairo-compile is available
           echo "Verifying cairo-compile availability..."
-          which cairo-compile || echo "cairo-compile not found in PATH"
-          if command -v cairo-compile >/dev/null 2>&1; then
-            cairo-compile --version
-          else
-            echo "cairo-compile command not available"
-            echo "Contents of VIRTUAL_ENV/bin:"
-            ls -la "$VIRTUAL_ENV/bin/" | grep cairo || echo "No cairo files found"
-          fi
-
+          which cairo-compile
+          cairo-compile --version
           echo "Running cargo clippy..."
           cargo clippy --workspace --no-deps -- -D warnings
           cargo clippy --workspace --tests --no-deps -- -D warnings
