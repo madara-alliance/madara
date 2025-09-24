@@ -8,7 +8,7 @@ on:
   workflow_call:
 
 jobs:
-  e2e-full:
+  test-end-to-end:
     runs-on: blacksmith-16vcpu-ubuntu-2204
 
     steps:
@@ -23,7 +23,7 @@ jobs:
         with:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
-      - name: Log in to the Container registry
+      - name: Docker log in to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
