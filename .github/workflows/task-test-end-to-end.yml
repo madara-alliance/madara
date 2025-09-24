@@ -23,7 +23,7 @@ jobs:
         with:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
-      - name: Log in to the Container registry
+      - name: Docker log in to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ${{ inputs.registry }}
