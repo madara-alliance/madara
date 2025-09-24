@@ -41,6 +41,11 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: ${{ inputs.binary-name }}-${{ runner.os }}-rust-1.86${{ inputs.cache-key-suffix }}
 
+      - name: Python Cairo setup (for apollo_starknet_os_program dependencies)
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
       # Build the specified binary
       - name: Cargo build ${{ inputs.binary-name }}
         run: |

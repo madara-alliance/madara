@@ -41,6 +41,9 @@ jobs:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
       - name: Cargo Clippy
+        env:
+          # Suppress deprecation warnings to reduce noise in CI output
+          RUSTFLAGS: "-A deprecated"
         run: |
           # Verify cairo-compile is available
           echo "Verifying cairo-compile availability..."
