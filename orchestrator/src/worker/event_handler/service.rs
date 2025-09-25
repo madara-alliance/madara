@@ -87,7 +87,7 @@ impl JobHandlerService {
         let job_handler = factory::get_job_handler(&job_type).await;
         let job_item = job_handler.create_job(internal_id.clone(), metadata).await?;
         config.database().create_job(job_item.clone()).await?;
-        info!("Job item inside the create job function: {:?}", job_item);
+        debug!("Job item inside the create job function: {:?}", job_item);
 
         // Record metrics for job creation
         MetricsRecorder::record_job_created(&job_item);
