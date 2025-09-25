@@ -9,7 +9,7 @@ use futures::future::try_join_all;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, info_span, warn};
+use tracing::{error, info, info_span, warn, Instrument};
 
 #[derive(Clone)]
 pub struct WorkerController {
@@ -149,24 +149,25 @@ impl WorkerController {
     /// * `EventSystemError` - If there is an error during the operation
     async fn create_span(&self, q: &QueueType) -> EventSystemResult<()> {
         let span = info_span!("worker", q = ?q);
-        let _guard = span.enter();
-        info!("Starting worker for queue type {:?}", q);
+        
+        async move {
+            info!("Starting worker for queue type {:?}", q);
 
-        // If worker creation fails, this is a critical initialization error
-        let handler = match self.create_event_handler(q).await {
-            Ok(handler) => handler,
-            Err(e) => {
-                error!("🚨 Critical: Failed to create handler for queue type {:?}: {:?}", q, e);
-                error!("This is a worker initialization error that requires system shutdown");
-                return Err(e);
-            }
-        };
+            // If worker creation fails, this is a critical initialization error
+            let handler = match self.create_event_handler(q).await {
+                Ok(handler) => handler,
+                Err(e) => {
+                    error!("🚨 Critical: Failed to create handler for queue type {:?}: {:?}", q, e);
+                    error!("This is a worker initialization error that requires system shutdown");
+                    return Err(e);
+                }
+            };
 
-        // Run the worker - job processing errors within the worker are handled internally
-        // Only infrastructure/initialization errors should propagate out
-        match handler.run().await {
-            Ok(_) => {
-                // Worker completed unexpectedly - this should not happen in normal operation
+            // Run the worker - job processing errors within the worker are handled internally
+            // Only infrastructure/initialization errors should propagate out
+            match handler.run().await {
+                Ok(_) => {
+                    // Worker completed unexpectedly - this should not happen in normal operation
                 // since workers run infinite loops. This indicates a problem.
                 warn!("Worker for queue type {:?} completed unexpectedly (this is normal during shutdown)", q);
                 Ok(())
@@ -177,6 +178,9 @@ impl WorkerController {
                 Err(e)
             }
         }
+        }
+        .instrument(span)
+        .await
     }
 
     /// shutdown - Trigger a graceful shutdown
