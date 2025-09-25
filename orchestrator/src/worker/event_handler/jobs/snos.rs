@@ -29,7 +29,6 @@ pub struct SnosJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for SnosJobHandler {
-    #[tracing::instrument(fields(category = "snos"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         info!(log_type = "starting", "SNOS job creation started.");
         let job_item = JobItem::create(internal_id.clone(), JobType::SnosRun, JobStatus::Created, metadata);
@@ -37,7 +36,6 @@ impl JobHandlerTrait for SnosJobHandler {
         Ok(job_item)
     }
 
-    #[tracing::instrument(skip_all, fields(category = "snos", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
         info!(log_type = "starting", "SNOS job processing started.");
@@ -131,7 +129,6 @@ impl JobHandlerTrait for SnosJobHandler {
         Ok(block_number.to_string())
     }
 
-    #[tracing::instrument(skip_all, fields(category = "snos", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn verify_job(&self, _config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         info!(log_type = "starting", "SNOS job verification started.");
         // No need for verification as of now. If we later on decide to outsource SNOS run

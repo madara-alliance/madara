@@ -23,11 +23,10 @@ pub struct AggregatorJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for AggregatorJobHandler {
-    #[tracing::instrument(fields(category = "aggregator"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(log_type = "starting", "Aggregator job creation started.");
+        info!(log_type = "starting", block_no = %internal_id,"Aggregator job creation started.");
         let job_item = JobItem::create(internal_id.clone(), JobType::Aggregator, JobStatus::Created, metadata);
-        info!(log_type = "completed", "Aggregator job creation completed.");
+        info!(log_type = "completed", block_no = %internal_id, "Aggregator job creation completed.");
         Ok(job_item)
     }
 
@@ -38,7 +37,6 @@ impl JobHandlerTrait for AggregatorJobHandler {
     /// So all the Aggregator jobs have the above conditions satisfied.
     /// Now, we follow the following logic:
     /// 1. Call close batch for the bucket
-    #[tracing::instrument(skip_all, fields(category = "aggregator", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         info!(log_type = "starting", "Aggregator job processing started.");
 
@@ -71,7 +69,6 @@ impl JobHandlerTrait for AggregatorJobHandler {
         Ok(external_id)
     }
 
-    #[tracing::instrument(skip_all, fields(category = "aggregator", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         info!(log_type = "starting", "Aggregator job verification started.");
 

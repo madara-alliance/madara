@@ -27,153 +27,6 @@ use tracing::{debug, error, info, trace, warn};
 
 pub struct DAJobHandler;
 
-#[async_trait]
-impl JobHandlerTrait for DAJobHandler {
-    #[tracing::instrument(fields(category = "da"), skip(self, metadata), ret, err)]
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(log_type = "starting", category = "da", function_type = "create_job",  block_no = %internal_id, "DA job creation started.");
-
-        let job_item = JobItem::create(internal_id.clone(), JobType::DataSubmission, JobStatus::Created, metadata);
-
-        info!(log_type = "completed", category = "da", function_type = "create_job", block_no = %internal_id, "DA job creation completed.");
-        Ok(job_item)
-    }
-
-    #[tracing::instrument(skip_all, fields(category = "da", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
-    async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        info!(log_type = "starting", "DA job processing started.");
-
-        // Get DA-specific metadata
-        let mut da_metadata: DaMetadata = job.metadata.specific.clone().try_into()?;
-        let block_no = job.internal_id.parse::<u64>()?;
-
-        let state_update = config
-            .madara_client()
-            .get_state_update(BlockId::Number(block_no))
-            .await
-            .map_err(|e| JobError::ProviderError(e.to_string()))?;
-
-        let state_update = match state_update {
-            MaybePendingStateUpdate::PendingUpdate(_) => {
-                warn!(block_no = block_no, "Block is still pending");
-                Err(DaError::BlockPending { block_no: block_no.to_string(), job_id: job.id })?
-            }
-            MaybePendingStateUpdate::Update(state_update) => state_update,
-        };
-        debug!("Retrieved state update");
-
-        // constructing the data from the rpc
-        let blob_data = Self::state_update_to_blob_data(block_no, state_update, config.clone()).await?;
-        // transforming the data so that we can apply FFT on this.
-        let blob_data_biguint = Self::convert_to_biguint(blob_data.clone());
-        trace!("Converted blob data to BigUint");
-
-        let transformed_data = Self::fft_transformation(blob_data_biguint)
-            .wrap_err("Failed to apply FFT transformation")
-            .map_err(|e| {
-                error!(error = ?e, "Failed to apply FFT transformation");
-                JobError::Other(OtherError(e))
-            })?;
-        trace!("Applied FFT transformation");
-
-        // Get blob data path from metadata
-        let blob_data_path = da_metadata.blob_data_path.as_ref().ok_or_else(|| {
-            error!("Blob data path not found in metadata");
-            JobError::Other(OtherError(eyre!("Blob data path not found in metadata")))
-        })?;
-
-        // Store the transformed data
-        Self::store_blob_data(transformed_data.clone(), blob_data_path, config.clone()).await?;
-        debug!("Stored blob data");
-
-        let max_bytes_per_blob = config.da_client().max_bytes_per_blob().await;
-        let max_blob_per_txn = config.da_client().max_blob_per_txn().await;
-        trace!(
-            max_bytes_per_blob = max_bytes_per_blob,
-            max_blob_per_txn = max_blob_per_txn,
-            "Retrieved DA client configuration"
-        );
-
-        let blob_array = Self::data_to_blobs(max_bytes_per_blob, transformed_data)?;
-        let current_blob_length: u64 = blob_array
-            .len()
-            .try_into()
-            .wrap_err("Unable to convert the blob length into u64 format.".to_string())
-            .map_err(|e| {
-                error!(error = ?e, "Failed to convert blob length to u64");
-                JobError::Other(OtherError(e))
-            })?;
-        debug!(blob_count = current_blob_length, "Converted data to blobs");
-
-        // Check blob limit
-        if current_blob_length > max_blob_per_txn {
-            error!(
-                job_id = ?job.id,
-                current_blob_length = current_blob_length,
-                max_blob_per_txn = max_blob_per_txn,
-                "Exceeded maximum number of blobs per transaction"
-            );
-            Err(DaError::MaxBlobsLimitExceeded {
-                max_blob_per_txn,
-                current_blob_length,
-                block_no: block_no.to_string(),
-                job_id: job.id,
-            })?
-        }
-
-        // Publish to DA layer with timing
-        let settlement_start = Instant::now();
-
-        let external_id = config.da_client().publish_state_diff(blob_array, &[0; 32]).await.map_err(|e| {
-            error!(error = ?e, "Failed to publish state diff to DA layer");
-            JobError::Other(OtherError(e))
-        })?;
-
-        // Record settlement time
-        let settlement_duration = settlement_start.elapsed().as_secs_f64();
-        MetricsRecorder::record_settlement_time(&job.job_type, settlement_duration);
-
-        da_metadata.tx_hash = Some(external_id.clone());
-        job.metadata.specific = JobSpecificMetadata::Da(da_metadata);
-
-        info!(
-            log_type = "completed",
-            external_id = ?external_id,
-            "Successfully published state diff to DA layer."
-        );
-        Ok(external_id)
-    }
-
-    #[tracing::instrument(skip_all, fields(category = "da", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
-    async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        info!(log_type = "starting", "DA job verification started.");
-        let verification_status = config
-            .da_client()
-            .verify_inclusion(job.external_id.unwrap_string().map_err(|e| {
-                error!(error = ?e, "Failed to unwrap external ID");
-                JobError::Other(OtherError(e))
-            })?)
-            .await
-            .map_err(|e| {
-                error!(job_id = ?job.id, error = ?e, "Job verification failed");
-                JobError::Other(OtherError(e))
-            })?
-            .into();
-
-        info!(log_type = "completed", "DA job verification completed.");
-        Ok(verification_status)
-    }
-    fn max_process_attempts(&self) -> u64 {
-        1
-    }
-    fn max_verification_attempts(&self) -> u64 {
-        3
-    }
-    fn verification_polling_delay_seconds(&self) -> u64 {
-        60
-    }
-}
-
 impl DAJobHandler {
     fn refactor_state_update(state_update: &mut StateDiff) {
         let existing_storage: HashSet<_> = state_update.storage_diffs.iter().map(|item| item.address).collect();
@@ -343,6 +196,149 @@ impl DAJobHandler {
         }
 
         Ok(())
+    }
+}
+
+#[async_trait]
+impl JobHandlerTrait for DAJobHandler {
+    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+        info!(log_type = "starting", category = "da", function_type = "create_job",  block_no = %internal_id, "DA job creation started.");
+
+        let job_item = JobItem::create(internal_id.clone(), JobType::DataSubmission, JobStatus::Created, metadata);
+
+        info!(log_type = "completed", category = "da", function_type = "create_job", block_no = %internal_id, "DA job creation completed.");
+        Ok(job_item)
+    }
+
+    async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
+        info!(log_type = "starting", "DA job processing started.");
+
+        // Get DA-specific metadata
+        let mut da_metadata: DaMetadata = job.metadata.specific.clone().try_into()?;
+        let block_no = job.internal_id.parse::<u64>()?;
+
+        let state_update = config
+            .madara_client()
+            .get_state_update(BlockId::Number(block_no))
+            .await
+            .map_err(|e| JobError::ProviderError(e.to_string()))?;
+
+        let state_update = match state_update {
+            MaybePendingStateUpdate::PendingUpdate(_) => {
+                warn!(block_no = block_no, "Block is still pending");
+                Err(DaError::BlockPending { block_no: block_no.to_string(), job_id: job.id })?
+            }
+            MaybePendingStateUpdate::Update(state_update) => state_update,
+        };
+        debug!("Retrieved state update");
+
+        // constructing the data from the rpc
+        let blob_data = Self::state_update_to_blob_data(block_no, state_update, config.clone()).await?;
+        // transforming the data so that we can apply FFT on this.
+        let blob_data_biguint = Self::convert_to_biguint(blob_data.clone());
+        trace!("Converted blob data to BigUint");
+
+        let transformed_data = Self::fft_transformation(blob_data_biguint)
+            .wrap_err("Failed to apply FFT transformation")
+            .map_err(|e| {
+                error!(error = ?e, "Failed to apply FFT transformation");
+                JobError::Other(OtherError(e))
+            })?;
+        trace!("Applied FFT transformation");
+
+        // Get blob data path from metadata
+        let blob_data_path = da_metadata.blob_data_path.as_ref().ok_or_else(|| {
+            error!("Blob data path not found in metadata");
+            JobError::Other(OtherError(eyre!("Blob data path not found in metadata")))
+        })?;
+
+        // Store the transformed data
+        Self::store_blob_data(transformed_data.clone(), blob_data_path, config.clone()).await?;
+        debug!("Stored blob data");
+
+        let max_bytes_per_blob = config.da_client().max_bytes_per_blob().await;
+        let max_blob_per_txn = config.da_client().max_blob_per_txn().await;
+        trace!(
+            max_bytes_per_blob = max_bytes_per_blob,
+            max_blob_per_txn = max_blob_per_txn,
+            "Retrieved DA client configuration"
+        );
+
+        let blob_array = Self::data_to_blobs(max_bytes_per_blob, transformed_data)?;
+        let current_blob_length: u64 = blob_array
+            .len()
+            .try_into()
+            .wrap_err("Unable to convert the blob length into u64 format.".to_string())
+            .map_err(|e| {
+                error!(error = ?e, "Failed to convert blob length to u64");
+                JobError::Other(OtherError(e))
+            })?;
+        debug!(blob_count = current_blob_length, "Converted data to blobs");
+
+        // Check blob limit
+        if current_blob_length > max_blob_per_txn {
+            error!(
+                job_id = ?job.id,
+                current_blob_length = current_blob_length,
+                max_blob_per_txn = max_blob_per_txn,
+                "Exceeded maximum number of blobs per transaction"
+            );
+            Err(DaError::MaxBlobsLimitExceeded {
+                max_blob_per_txn,
+                current_blob_length,
+                block_no: block_no.to_string(),
+                job_id: job.id,
+            })?
+        }
+
+        let settlement_start = Instant::now();
+
+        let external_id = config.da_client().publish_state_diff(blob_array, &[0; 32]).await.map_err(|e| {
+            error!(error = ?e, "Failed to publish state diff to DA layer");
+            JobError::Other(OtherError(e))
+        })?;
+
+        // Record settlement time
+        let settlement_duration = settlement_start.elapsed().as_secs_f64();
+        MetricsRecorder::record_settlement_time(&job.job_type, settlement_duration);
+
+        da_metadata.tx_hash = Some(external_id.clone());
+        job.metadata.specific = JobSpecificMetadata::Da(da_metadata);
+
+        info!(
+            log_type = "completed",
+            external_id = ?external_id,
+            "Successfully published state diff to DA layer."
+        );
+        Ok(external_id)
+    }
+
+    async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+        info!(log_type = "starting", "DA job verification started.");
+        let verification_status = config
+            .da_client()
+            .verify_inclusion(job.external_id.unwrap_string().map_err(|e| {
+                error!(error = ?e, "Failed to unwrap external ID");
+                JobError::Other(OtherError(e))
+            })?)
+            .await
+            .map_err(|e| {
+                error!(job_id = ?job.id, error = ?e, "Job verification failed");
+                JobError::Other(OtherError(e))
+            })?
+            .into();
+
+        info!(log_type = "completed", "DA job verification completed.");
+        Ok(verification_status)
+    }
+    fn max_process_attempts(&self) -> u64 {
+        1
+    }
+    fn max_verification_attempts(&self) -> u64 {
+        3
+    }
+    fn verification_polling_delay_seconds(&self) -> u64 {
+        60
     }
 }
 

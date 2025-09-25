@@ -18,7 +18,6 @@ pub struct RegisterProofJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for RegisterProofJobHandler {
-    #[tracing::instrument(fields(category = "proof_registry"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         info!(log_type = "starting", "Proof Registry job creation started.");
         let job_item = JobItem::create(internal_id.clone(), JobType::ProofRegistration, JobStatus::Created, metadata);
@@ -26,7 +25,6 @@ impl JobHandlerTrait for RegisterProofJobHandler {
         Ok(job_item)
     }
 
-    #[tracing::instrument(skip_all, fields(category = "proof_registry", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
             error!(error = %e, "Failed to convert metadata to ProvingMetadata");
@@ -77,7 +75,6 @@ impl JobHandlerTrait for RegisterProofJobHandler {
         Ok(external_id)
     }
 
-    #[tracing::instrument(skip_all, fields(category = "proof_registry", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let internal_id = job.internal_id.clone();
         info!(log_type = "starting", "Proof registration job verification started.");

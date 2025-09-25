@@ -21,7 +21,6 @@ pub struct ProvingJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for ProvingJobHandler {
-    #[tracing::instrument(fields(category = "proving"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         info!(log_type = "starting", "Proving job creation started.");
         let job_item = JobItem::create(internal_id.clone(), JobType::ProofCreation, JobStatus::Created, metadata);
@@ -29,7 +28,6 @@ impl JobHandlerTrait for ProvingJobHandler {
         Ok(job_item)
     }
 
-    #[tracing::instrument(skip_all, fields(category = "proving", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         info!("Proving job processing started");
 
@@ -63,7 +61,6 @@ impl JobHandlerTrait for ProvingJobHandler {
 
         debug!("Submitting task to prover client");
 
-        // Track proof generation time
         let proof_start = Instant::now();
 
         let external_id = config
@@ -86,7 +83,6 @@ impl JobHandlerTrait for ProvingJobHandler {
         Ok(external_id)
     }
 
-    #[tracing::instrument(skip_all, fields(category = "proving", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         info!(log_type = "starting", "Proving job verification started.");
 
