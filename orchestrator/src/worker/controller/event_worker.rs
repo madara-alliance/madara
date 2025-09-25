@@ -76,7 +76,7 @@ impl EventWorker {
                     job_type = %self.get_job_type_from_queue(),
                     correlation_id = %correlation_id,
                     trace_id = %correlation_id,
-                    span_type = "root",
+                    span_type = "Job",
                     external_id = tracing::field::Empty,
                     batch_id = tracing::field::Empty,
                     bucket_id = tracing::field::Empty,
@@ -92,7 +92,7 @@ impl EventWorker {
                     queue = %self.queue_type,
                     correlation_id = %correlation_id,
                     trace_id = %correlation_id,
-                    span_type = "root"
+                    span_type = "Worker"
                 )
             }
         }

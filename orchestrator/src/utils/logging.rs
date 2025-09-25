@@ -1,12 +1,114 @@
 use chrono::Utc;
 use serde_json::{Map, Value};
-use tracing::{Event, Level, Subscriber};
+use std::collections::HashMap;
+use tracing::{Event, Level, Subscriber, field::{Visit, Field}};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::{format::Writer, FormatEvent, FormatFields};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::{fmt, EnvFilter, Registry};
+use tracing_subscriber::{fmt, EnvFilter, Registry, Layer};
+use tracing_subscriber::layer::Context;
+
+const FIELDS_TO_SKIP: &[&str] = &[
+    "subject_id",
+    "correlation_id",
+    "trace_id",
+    "span_type"
+];
+
+#[derive(Debug, Clone)]
+pub struct CustomSpanFields {
+    pub filtered_display: String,
+    pub raw_fields: HashMap<String, String>,
+}
+
+impl CustomSpanFields {
+    fn new() -> Self {
+        Self {
+            filtered_display: String::new(),
+            raw_fields: HashMap::new(),
+        }
+    }
+
+    fn add_field(&mut self, name: &str, value: String) {
+        self.raw_fields.insert(name.to_string(), value.clone());
+
+        if !FIELDS_TO_SKIP.contains(&name) {
+            if !self.filtered_display.is_empty() {
+                self.filtered_display.push_str(", ");
+            }
+            self.filtered_display.push_str(&format!("{}={}", name, value));
+        }
+    }
+}
+
+struct SpanFieldCollector {
+    fields: CustomSpanFields,
+}
+
+impl SpanFieldCollector {
+    fn new() -> Self {
+        Self {
+            fields: CustomSpanFields::new(),
+        }
+    }
+}
+
+impl Visit for SpanFieldCollector {
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        let formatted_value = format!("{:?}", value).trim_matches('"').to_string();
+        self.fields.add_field(field.name(), formatted_value);
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.fields.add_field(field.name(), value.to_string());
+    }
+
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.fields.add_field(field.name(), value.to_string());
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.fields.add_field(field.name(), value.to_string());
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.fields.add_field(field.name(), value.to_string());
+    }
+}
+
+pub struct FieldCollectorLayer;
+
+impl<S> Layer<S> for FieldCollectorLayer
+where
+    S: Subscriber + for<'lookup> LookupSpan<'lookup>,
+{
+    fn on_new_span(&self, attrs: &tracing::span::Attributes<'_>, id: &tracing::span::Id, ctx: Context<'_, S>) {
+        let span = ctx.span(id).expect("Span not found, this is a bug");
+
+        let mut collector = SpanFieldCollector::new();
+        attrs.record(&mut collector);
+
+        // Store the collected fields in the span's extensions
+        span.extensions_mut().insert(collector.fields);
+    }
+
+    fn on_record(&self, id: &tracing::span::Id, values: &tracing::span::Record<'_>, ctx: Context<'_, S>) {
+        let span = ctx.span(id).expect("Span not found, this is a bug");
+
+        // Get existing fields or create new
+        let existing_fields = span.extensions().get::<CustomSpanFields>().cloned()
+            // .map(|f| f.clone())
+            .unwrap_or_else(CustomSpanFields::new);
+
+        let mut collector = SpanFieldCollector::new();
+        collector.fields = existing_fields;
+        values.record(&mut collector);
+
+        span.extensions_mut().insert(collector.fields);
+    }
+}
 
 // Pretty formatter is formatted for console readability
 pub struct PrettyFormatter;
@@ -40,18 +142,19 @@ where
 
         write!(
             writer,
-            "{}[{}:{}]{}",
+            "{}[{}:{}]{} ",
             function_color,
             meta.module_path().unwrap_or("NaN"),
             meta.line().unwrap_or(0),
             reset
         )?;
 
-        // Add queue_type from span if available
+        // Add filtered span fields if available
         if let Some(span) = ctx.lookup_current() {
-            if let Some(fields) = span.extensions().get::<fmt::FormattedFields<N>>() {
-                // Apply color to the entire field string
-                write!(writer, "{}[{}]{} ", fixed_field_color, fields, reset)?;
+            if let Some(custom_fields) = span.extensions().get::<CustomSpanFields>() {
+                if !custom_fields.filtered_display.is_empty() {
+                    write!(writer, "{}[{}]{} ", fixed_field_color, custom_fields.filtered_display, reset)?;
+                }
             }
         }
 
@@ -206,21 +309,9 @@ where
             let span_name = span.metadata().name().to_string();
             all_fields.insert("span_name".to_string(), Value::String(span_name));
 
-            // Extract and parse span fields
-            if let Some(fields) = span.extensions().get::<fmt::FormattedFields<N>>() {
-                let raw = fields.to_string();
-
-                // Parse k=v, comma-separated; tolerate quoted values
-                for part in raw.split(',') {
-                    let kv = part.trim();
-                    if let Some((k, v)) = kv.split_once('=') {
-                        let key = k.trim();
-                        let val = v.trim().trim_matches('"').to_string();
-
-                        // Add all span fields directly to the fields object
-                        // This includes job_id, queue, span_type, trace_id, trigger_id, job_type, worker, etc.
-                        all_fields.insert(key.to_string(), Value::String(val));
-                    }
+            if let Some(custom_fields) = span.extensions().get::<CustomSpanFields>() {
+                for (key, value) in &custom_fields.raw_fields {
+                    all_fields.insert(key.clone(), Value::String(value.clone()));
                 }
             }
         }
@@ -265,7 +356,12 @@ pub fn init_logging() {
             .with_line_number(true)
             .event_format(JsonEventFormatter);
 
-        let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
+        let field_collector_layer = FieldCollectorLayer;
+        let subscriber = Registry::default()
+            .with(env_filter)
+            .with(field_collector_layer)
+            .with(fmt_layer)
+            .with(ErrorLayer::default());
         tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
     } else {
         // Pretty format for console readability
@@ -276,7 +372,12 @@ pub fn init_logging() {
             .with_line_number(true)
             .event_format(PrettyFormatter);
 
-        let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
+        let field_collector_layer = FieldCollectorLayer;
+        let subscriber = Registry::default()
+            .with(env_filter)
+            .with(field_collector_layer)
+            .with(fmt_layer)
+            .with(ErrorLayer::default());
         tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
     }
 }
