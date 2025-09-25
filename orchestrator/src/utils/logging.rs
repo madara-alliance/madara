@@ -38,8 +38,14 @@ where
         write!(writer, "{}{}{} ", ts_color, now, reset)?;
         write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
 
-        write!(writer, "{}[{}:{}]{}", function_color, meta.module_path().unwrap_or("NaN"), meta.line().unwrap_or(0), reset)?;
-
+        write!(
+            writer,
+            "{}[{}:{}]{}",
+            function_color,
+            meta.module_path().unwrap_or("NaN"),
+            meta.line().unwrap_or(0),
+            reset
+        )?;
 
         // Add queue_type from span if available
         if let Some(span) = ctx.lookup_current() {
@@ -48,7 +54,6 @@ where
                 write!(writer, "{}[{}]{} ", fixed_field_color, fields, reset)?;
             }
         }
-
 
         let mut visitor = FieldExtractor::default();
         event.record(&mut visitor);
