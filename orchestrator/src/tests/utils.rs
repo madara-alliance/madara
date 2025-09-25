@@ -91,6 +91,9 @@ pub fn build_batch(
     AggregatorBatch {
         id: Uuid::new_v4(),
         index,
+        num_snos_batches: 5,
+        start_snos_batch: 10,
+        end_snos_batch: 15,
         num_blocks: end_block - start_block + 1,
         start_block,
         end_block,
