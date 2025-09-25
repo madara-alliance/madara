@@ -42,20 +42,19 @@ impl JobTrigger for SnosJobTrigger {
     /// - Respects concurrency limits defined in service configuration
     /// - Processes blocks in order while filling available slots efficiently
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
+        tracing::trace!(
+            log_type = "starting",
+            category = "ProofRegistrationWorker",
+            "ProofRegistrationWorker started."
+        );
+
         // Self-healing: recover any orphaned SNOS jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::SnosRun).await {
             tracing::error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
         }
-        // TODO: this is not ideal, ideally we should fetch every snos_batch whose job is not created!!
-        let successful_snos_batches = config
-            .database()
-            .get_snos_batches_by_status(
-                SnosBatchStatus::Closed,
-                Some(config.params.service_config.max_concurrent_created_snos_jobs as i64),
-            )
-            .await?;
 
-        for snos_batch in successful_snos_batches {
+        // Get all snos batches that are closed but don't have a SnosRun job created yet
+        for snos_batch in config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed).await? {
             // Create DA metadata
             let snos_metadata = create_job_metadata(
                 snos_batch.start_block,
@@ -72,11 +71,7 @@ impl JobTrigger for SnosJobTrigger {
                 .await
             {
                 Ok(_) => {
-
-                    tracing::info!(
-                    batch_id = %snos_batch.snos_batch_id,
-                    "Successfully created new snos job"
-                );
+                    tracing::info!(batch_id = %snos_batch.snos_batch_id,"Successfully created new snos job");
                     config.database().update_or_create_snos_batch(&snos_batch, &SnosBatchUpdates {end_block: None, status: Some(SnosBatchStatus::SnosJobCreated)}).await?;
                 },
                 Err(e) => {
