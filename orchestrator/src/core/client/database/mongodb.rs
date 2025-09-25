@@ -197,12 +197,12 @@ impl MongoDbClient {
         let cursor = collection.aggregate(pipeline, None).await?;
         let vec_items: Vec<T> = cursor
             .map_err(|e| {
-                error!(error = %e, category = "db_call", "Error retrieving document");
+                error!(error = %e, "Error retrieving document");
                 DatabaseError::FailedToSerializeDocument(format!("Failed to retrieve document: {}", e))
             })
             .and_then(|doc| {
                 futures::future::ready(bson::from_document::<T>(doc).map_err(|e| {
-                    error!(error = %e, category = "db_call", "Deserialization error");
+                    error!(error = %e, "Deserialization error");
                     DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize document: {}", e))
                 }))
             })
@@ -239,12 +239,12 @@ impl MongoDbClient {
         let cursor = collection.aggregate(pipeline, options).await?;
         let vec_items: Vec<R> = cursor
             .map_err(|e| {
-                error!(error = %e, category = "db_call", "Error executing pipeline");
+                error!(error = %e, "Error executing pipeline");
                 DatabaseError::FailedToSerializeDocument(format!("Failed to execute pipeline: {}", e))
             })
             .and_then(|doc| {
                 futures::future::ready(bson::from_document::<R>(doc).map_err(|e| {
-                    error!(error = %e, category = "db_call", "Deserialization error");
+                    error!(error = %e, "Deserialization error");
                     DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
                 }))
             })
@@ -503,7 +503,7 @@ impl DatabaseClient for MongoDbClient {
 
         let result = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
 
-        debug!(job_count = result.len(), category = "db_call", "Retrieved jobs without successor");
+        debug!(job_count = result.len(), "Retrieved jobs without successor");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_without_successor")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
@@ -872,7 +872,7 @@ impl DatabaseClient for MongoDbClient {
             }
             None => {
                 // Not found
-                error!(index = %index, category = "db_call", "Failed to update batch");
+                error!(index = %index, "Failed to update batch");
                 Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", index)))
             }
         }
@@ -891,7 +891,7 @@ impl DatabaseClient for MongoDbClient {
                 Ok(batch)
             }
             Err(err) => {
-                error!(batch_id = %batch.id, category = "db_call", "Failed to insert batch");
+                error!(batch_id = %batch.id, "Failed to insert batch");
                 Err(DatabaseError::InsertFailed(format!(
                     "Failed to insert batch {} with id {}: {}",
                     batch.index, batch.id, err
@@ -910,7 +910,7 @@ impl DatabaseClient for MongoDbClient {
 
         let batch = self.get_batch_collection().find_one(filter, None).await?;
 
-        debug!(category = "db_call", "Retrieved batch by block number");
+        debug!("Retrieved batch by block number");
         let attributes = [KeyValue::new("db_operation_name", "get_batch_for_block")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
@@ -933,7 +933,7 @@ impl DatabaseClient for MongoDbClient {
 
         let batches = self.get_batch_collection().find(filter, find_options).await?.try_collect().await?;
 
-        debug!(category = "db_call", "Retrieved batches by statuses");
+        debug!("Retrieved batches by statuses");
         let attributes = [KeyValue::new("db_operation_name", "get_all_batches_by_status")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
@@ -969,7 +969,6 @@ impl DatabaseClient for MongoDbClient {
             gte = gte,
             lte = lte,
             job_count = jobs.len(),
-            category = "db_call",
             "Fetched jobs between internal IDs"
         );
 
