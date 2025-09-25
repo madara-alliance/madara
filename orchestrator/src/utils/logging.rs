@@ -29,7 +29,6 @@ where
             Level::WARN => "\x1b[33m",
             Level::ERROR => "\x1b[31m",
         };
-        let file_color = "\x1b[90m"; // Bright Black
         let msg_color = "\x1b[97m"; // Bright White
         let fixed_field_color = "\x1b[92m"; // Bright Green
         let reset = "\x1b[0m";
@@ -39,18 +38,8 @@ where
         write!(writer, "{}{}{} ", ts_color, now, reset)?;
         write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
 
-        if let (Some(file), Some(line)) = (meta.file(), meta.line()) {
-            let file_name = file.split('/').next_back().unwrap_or(file);
-            let module_path = meta.module_path().unwrap_or("");
-            let last_module = module_path.split("::").last().unwrap_or(module_path);
+        write!(writer, "{}[{}:{}]{}", function_color, meta.module_path().unwrap_or("NaN"), meta.line().unwrap_or(0), reset)?;
 
-            let display_name =
-                if file_name == "mod.rs" { format!("{}/{}", last_module, file_name) } else { file_name.to_string() };
-
-            write!(writer, "{}{:<20}:{:<4} {}", file_color, display_name, line, reset)?;
-        }
-
-        write!(writer, "{}[{}]{} ", function_color, meta.name(), reset)?;
 
         // Add queue_type from span if available
         if let Some(span) = ctx.lookup_current() {
@@ -59,6 +48,7 @@ where
                 write!(writer, "{}[{}]{} ", fixed_field_color, fields, reset)?;
             }
         }
+
 
         let mut visitor = FieldExtractor::default();
         event.record(&mut visitor);

@@ -122,6 +122,7 @@ services:
       - LOCALSTACK_HOST=localstack
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./data/localstack:/var/lib/localstack"
     networks:
       - monitoring
       - orchestrator
