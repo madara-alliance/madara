@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CairoJobStatus {
     #[default]
     Unknown,
@@ -13,9 +14,11 @@ pub enum CairoJobStatus {
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum InvalidReason {
     #[default]
     Unknown,
+    InvalidCairoPieFileFormat,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]

@@ -106,7 +106,7 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
 fn get_task_status_expectation(cairo_job_status: &CairoJobStatus) -> TaskStatus {
     match cairo_job_status {
         CairoJobStatus::Failed => TaskStatus::Failed("Sharp task failed".to_string()),
-        CairoJobStatus::Invalid => TaskStatus::Failed("Task is invalid: INVALID_CAIRO_PIE_FILE_FORMAT".to_string()),
+        CairoJobStatus::Invalid => TaskStatus::Failed("Task is invalid: InvalidCairoPieFileFormat".to_string()),
         CairoJobStatus::Unknown => TaskStatus::Failed("".to_string()),
         CairoJobStatus::InProgress | CairoJobStatus::NotCreated | CairoJobStatus::Processed => TaskStatus::Processing,
         CairoJobStatus::Onchain => TaskStatus::Failed(format!("Fact {} is not valid or not registered", TEST_FACT)),
