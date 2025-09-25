@@ -151,8 +151,6 @@ impl WorkerController {
         let span = info_span!("worker", q = ?q);
 
         async move {
-            info!("Starting worker for queue type {:?}", q);
-
             // If worker creation fails, this is a critical initialization error
             let handler = match self.create_event_handler(q).await {
                 Ok(handler) => handler,
