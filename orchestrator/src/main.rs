@@ -30,36 +30,32 @@ async fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Run { run_command } => {
-            match run_orchestrator(run_command).await {
-                Ok(_) => {
-                    info!("Orchestrator service started successfully");
-                }
-                Err(e) => {
-                    error!(
-                        error = %e,
-                        error_chain = ?e,
-                        "Failed to start orchestrator service"
-                    );
-                    panic!("Failed to start orchestrator service: {}", e);
-                }
+        Commands::Run { run_command } => match run_orchestrator(run_command).await {
+            Ok(_) => {
+                info!("Orchestrator service started successfully");
             }
-        }
-        Commands::Setup { setup_command } => {
-            match setup_orchestrator(setup_command).await {
-                Ok(_) => {
-                    info!("Orchestrator setup completed successfully");
-                }
-                Err(e) => {
-                    error!(
-                        error = %e,
-                        error_chain = ?e,
-                        "Failed to setup orchestrator"
-                    );
-                    panic!("Failed to setup orchestrator: {}", e);
-                }
+            Err(e) => {
+                error!(
+                    error = %e,
+                    error_chain = ?e,
+                    "Failed to start orchestrator service"
+                );
+                panic!("Failed to start orchestrator service: {}", e);
             }
-        }
+        },
+        Commands::Setup { setup_command } => match setup_orchestrator(setup_command).await {
+            Ok(_) => {
+                info!("Orchestrator setup completed successfully");
+            }
+            Err(e) => {
+                error!(
+                    error = %e,
+                    error_chain = ?e,
+                    "Failed to setup orchestrator"
+                );
+                panic!("Failed to setup orchestrator: {}", e);
+            }
+        },
     }
 }
 
