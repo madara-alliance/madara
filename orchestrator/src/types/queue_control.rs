@@ -39,6 +39,8 @@ pub struct QueueConfig {
     pub supported_layers: Vec<Layer>,
 }
 
+// TODO: this should be dynamically created based on the run command params.
+// So that we can skip parsing envs here again
 pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     map.insert(
