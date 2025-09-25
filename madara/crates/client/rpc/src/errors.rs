@@ -1,8 +1,8 @@
 use crate::utils::display_internal_server_error;
-use mc_db::view::block_id::BlockResolutionError;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransactionError};
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use mp_gateway::user_transaction::UserTransactionConversionError;
+use mp_transactions::ToBlockifierError;
 use serde::Serialize;
 use serde_json::json;
 use starknet_api::StarknetApiError;
@@ -306,16 +306,6 @@ impl From<anyhow::Error> for StarknetRpcApiError {
     }
 }
 
-impl From<BlockResolutionError> for StarknetRpcApiError {
-    fn from(err: BlockResolutionError) -> Self {
-        match err {
-            BlockResolutionError::NoBlocks => Self::NoBlocks,
-            BlockResolutionError::BlockHashNotFound | BlockResolutionError::BlockNumberNotFound => Self::BlockNotFound,
-            BlockResolutionError::Internal(err) => err.into(),
-        }
-    }
-}
-
 impl From<StarknetApiError> for StarknetRpcApiError {
     fn from(err: StarknetApiError) -> Self {
         StarknetRpcApiError::ErrUnexpectedError { error: err.to_string().into() }
@@ -382,10 +372,15 @@ impl From<RejectedTransactionError> for StarknetRpcApiError {
     }
 }
 
+impl From<ToBlockifierError> for StarknetRpcApiError {
+    fn from(value: ToBlockifierError) -> Self {
+        SubmitTransactionError::from(value).into()
+    }
+}
+
 impl From<SubmitTransactionError> for StarknetRpcApiError {
     fn from(value: SubmitTransactionError) -> Self {
         use SubmitTransactionError as E;
-
         match value {
             E::Unsupported => StarknetRpcApiError::UnimplementedMethod,
             E::Rejected(error) => error.into(),

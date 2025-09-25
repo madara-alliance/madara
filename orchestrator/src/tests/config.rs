@@ -298,7 +298,8 @@ impl TestConfigBuilder {
         let config = Arc::new(Config::new(
             Layer::L2,
             params.orchestrator_params,
-            starknet_client,
+            starknet_client.clone(),
+            starknet_client, // Using the same client for admin operations in tests
             database,
             storage,
             lock,
@@ -605,6 +606,15 @@ pub(crate) fn get_env_params() -> EnvParams {
         batching_worker_lock_duration: get_env_var_or_panic("MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS")
             .parse::<u64>()
             .unwrap(),
+        max_blocks_per_snos_batch: get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH", "10")
+            .parse::<u64>()
+            .unwrap(),
+        max_snos_batches_per_aggregator_batch: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH",
+            "50",
+        )
+        .parse::<u64>()
+        .unwrap(),
     };
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
@@ -646,6 +656,11 @@ pub(crate) fn get_env_params() -> EnvParams {
     let orchestrator_params = ConfigParam {
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
+        madara_admin_rpc_url: Url::parse(&get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL",
+            &get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"), // Use same URL as fallback for tests
+        ))
+        .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL"),
         madara_version: StarknetVersion::from_str(&get_env_var_or_default(
             "MADARA_ORCHESTRATOR_MADARA_VERSION",
             "0.13.4",
@@ -660,6 +675,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         store_audit_artifacts: get_env_var_or_default("MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", "false")
             .parse::<bool>()
             .unwrap_or(false),
+        bouncer_weights_limit: Default::default(), // Use default bouncer weights for tests
     };
 
     let instrumentation_params = OTELConfig {

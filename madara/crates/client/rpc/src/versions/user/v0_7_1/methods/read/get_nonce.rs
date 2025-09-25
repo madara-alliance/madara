@@ -1,6 +1,6 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
-use mp_block::BlockId;
+use mp_rpc::v0_7_1::BlockId;
 use starknet_types_core::felt::Felt;
 
 /// Get the nonce associated with the given address in the given block.
@@ -20,7 +20,7 @@ use starknet_types_core::felt::Felt;
 /// `BLOCK_NOT_FOUND` or `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
 /// specific issue.
 pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
-    let view = starknet.backend.view_on(&block_id)?;
+    let view = starknet.resolve_view_on(block_id)?;
 
     if !view.is_contract_deployed(&contract_address)? {
         return Err(StarknetRpcApiError::contract_not_found());
@@ -33,7 +33,7 @@ pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt)
 mod tests {
     use super::*;
     use crate::test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates};
-    use mp_block::BlockTag;
+    use mp_rpc::v0_7_1::BlockTag;
     use rstest::rstest;
 
     #[rstest]

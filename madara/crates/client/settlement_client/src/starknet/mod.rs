@@ -10,7 +10,9 @@ use futures::stream::BoxStream;
 use futures::{StreamExt, TryStreamExt};
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
-use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall, MaybePendingBlockWithTxHashes};
+use starknet_core::types::{
+    BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall, MaybePreConfirmedBlockWithTxHashes,
+};
 use starknet_core::utils::get_selector_from_name;
 use starknet_crypto::poseidon_hash_many;
 use starknet_providers::jsonrpc::HttpTransport;
@@ -289,7 +291,7 @@ impl SettlementLayerProvider for StarknetClient {
                     )?,
                     calldata: vec![Felt::from_bytes_be_slice(msg_hash)],
                 },
-                BlockId::Tag(BlockTag::Pending),
+                BlockId::Tag(BlockTag::Latest),
             )
             .await
             .map_err(|e| -> SettlementClientError {
@@ -352,8 +354,8 @@ impl SettlementLayerProvider for StarknetClient {
         )?;
 
         match block {
-            MaybePendingBlockWithTxHashes::Block(b) => Ok(b.timestamp),
-            MaybePendingBlockWithTxHashes::PendingBlock(b) => Ok(b.timestamp),
+            MaybePreConfirmedBlockWithTxHashes::Block(b) => Ok(b.timestamp),
+            MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(b) => Ok(b.timestamp),
         }
     }
 
@@ -450,7 +452,7 @@ impl StarknetClient {
                     )?,
                     calldata: vec![],
                 },
-                BlockId::Tag(BlockTag::Pending),
+                BlockId::Tag(BlockTag::Latest),
             )
             .await
             .map_err(|e| -> SettlementClientError {
@@ -478,7 +480,6 @@ pub mod starknet_client_tests {
     use rstest::*;
     use starknet_accounts::ConnectedAccount;
     use starknet_core::types::BlockId;
-    use starknet_core::types::MaybePendingBlockWithTxHashes::{Block, PendingBlock};
     use starknet_providers::jsonrpc::HttpTransport;
     use starknet_providers::ProviderError::StarknetError;
     use starknet_providers::{JsonRpcClient, Provider};
@@ -668,10 +669,11 @@ pub mod starknet_client_tests {
     ) -> anyhow::Result<()> {
         for try_count in 0..=max_retries {
             match provider.get_block_with_tx_hashes(BlockId::Number(block_number)).await {
-                Ok(Block(_)) => {
+                Ok(MaybePreConfirmedBlockWithTxHashes::Block(_)) => {
                     return Ok(());
                 }
-                Ok(PendingBlock(_)) | Err(StarknetError(starknet_core::types::StarknetError::BlockNotFound)) => {
+                Ok(MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_))
+                | Err(StarknetError(starknet_core::types::StarknetError::BlockNotFound)) => {
                     if try_count == max_retries {
                         return Err(anyhow::anyhow!("Max retries reached while polling for block {}", block_number));
                     }

@@ -10,11 +10,9 @@ use crate::utils::constants::{
     BRAAVOS_BASE_ACCOUNT_SIERRA_PATH,
 };
 use crate::utils::{save_to_json, wait_for_transaction, JsonValueType};
-use crate::ConfigFile;
 
 pub struct BraavosSetup<'a> {
     account: RpcAccount<'a>,
-    arg_config: &'a ConfigFile,
     clients: &'a Clients,
     udc_address: Felt,
 }
@@ -25,25 +23,31 @@ pub struct BraavosSetupOutput {
 }
 
 impl<'a> BraavosSetup<'a> {
-    pub fn new(account: RpcAccount<'a>, arg_config: &'a ConfigFile, clients: &'a Clients, udc_address: Felt) -> Self {
-        Self { account, arg_config, clients, udc_address }
+    pub fn new(account: RpcAccount<'a>, clients: &'a Clients, udc_address: Felt) -> Self {
+        Self { account, clients, udc_address }
     }
 
     pub async fn setup(&self) -> BraavosSetupOutput {
-        let braavos_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
-            String::from(BRAAVOS_ACCOUNT_SIERRA_PATH),
-            String::from(BRAAVOS_ACCOUNT_CASM_PATH),
-            self.account.clone(),
-        ))
+        let braavos_class_hash = declare_contract(
+            self.clients,
+            DeclarationInput::DeclarationInputs(
+                String::from(BRAAVOS_ACCOUNT_SIERRA_PATH),
+                String::from(BRAAVOS_ACCOUNT_CASM_PATH),
+                self.account.clone(),
+            ),
+        )
         .await;
         log::info!("📣 Braavos Account class hash declared.");
         save_to_json("braavos_class_hash", &JsonValueType::StringType(braavos_class_hash.to_string())).unwrap();
 
-        let braavos_base_account_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
-            String::from(BRAAVOS_BASE_ACCOUNT_SIERRA_PATH),
-            String::from(BRAAVOS_BASE_ACCOUNT_CASM_PATH),
-            self.account.clone(),
-        ))
+        let braavos_base_account_class_hash = declare_contract(
+            self.clients,
+            DeclarationInput::DeclarationInputs(
+                String::from(BRAAVOS_BASE_ACCOUNT_SIERRA_PATH),
+                String::from(BRAAVOS_BASE_ACCOUNT_CASM_PATH),
+                self.account.clone(),
+            ),
+        )
         .await;
         log::info!("📣 Braavos Base Account class hash declared.");
         save_to_json(
@@ -52,11 +56,10 @@ impl<'a> BraavosSetup<'a> {
         )
         .unwrap();
 
-        let braavos_aggregator_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
-            String::from(BRAAVOS_AGGREGATOR_PATH),
-            self.arg_config.rollup_declare_v0_seq_url.clone(),
-            self.clients.provider_l2(),
-        ))
+        let braavos_aggregator_class_hash = declare_contract(
+            self.clients,
+            DeclarationInput::LegacyDeclarationInputs(String::from(BRAAVOS_AGGREGATOR_PATH)),
+        )
         .await;
         log::info!("📣 Braavos Aggregator class hash declared.");
         save_to_json(

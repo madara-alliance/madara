@@ -8,8 +8,8 @@ use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
     MadaraBackend,
 };
-use mc_gateway_client::GatewayProvider;
-use mp_block::{BlockHeaderWithSignatures, BlockId, FullBlock, Header};
+use mc_gateway_client::{BlockId, GatewayProvider};
+use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use mp_state_update::StateDiff;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
@@ -61,6 +61,12 @@ impl PipelineSteps for GatewaySyncSteps {
                     .await
                     .with_context(|| format!("Getting state update with block_n={block_n}"))?;
 
+                let bouncer_weights = self
+                    .client
+                    .get_block_bouncer_weights(block_n)
+                    .await
+                    .with_context(|| format!("Getting bouncer weights with block_n={block_n}"))?;
+
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
 
                 let keep_pre_v0_13_2_hashes = self.keep_pre_v0_13_2_hashes;
@@ -108,6 +114,7 @@ impl PipelineSteps for GatewaySyncSteps {
                         importer.verify_header(block_n, &signed_header)?;
 
                         importer.save_header(block_n, signed_header)?;
+                        importer.save_bouncer_weights(block_n, bouncer_weights)?;
                         importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
                         importer.save_transactions(block_n, gateway_block.transactions)?;
                         importer.save_events(block_n, gateway_block.events)?;

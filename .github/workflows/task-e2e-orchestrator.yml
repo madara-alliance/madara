@@ -77,6 +77,11 @@ jobs:
       - name: Build artifacts
         run: yes | make artifacts
 
+      - name: Python Cairo setup (before orchestrator build)
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
       - name: Build Orchestrator for tests
         run: cargo build --release -p orchestrator --features testing
 

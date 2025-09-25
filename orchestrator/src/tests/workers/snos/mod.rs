@@ -147,8 +147,14 @@ async fn test_snos_worker(
     // Mock latest SNOS job
     let latest_snos_job = latest_snos_completed.map(|block_num| {
         let mut job_item = get_job_item_mock_by_id(block_num.to_string(), Uuid::new_v4());
-        job_item.metadata.specific =
-            JobSpecificMetadata::Snos(SnosMetadata { block_number: block_num, ..Default::default() });
+        job_item.metadata.specific = JobSpecificMetadata::Snos(SnosMetadata {
+            snos_batch_index: 1,
+            start_block: block_num,
+            end_block: block_num,
+            num_blocks: 1,
+            full_output: true,
+            ..Default::default()
+        });
         job_item.status = JobStatus::Completed;
         job_item
     });
@@ -286,6 +292,118 @@ async fn test_snos_worker(
         "✅ Test completed for scenario: latest_snos={:?}, pending_blocks={:?}, expected_jobs={:?}",
         latest_snos_completed, pending_blocks, expected_jobs_to_create
     );
+
+    Ok(())
+}
+
+/// Test for creating a SNOS job using the SNOS job trigger with a pre-existing SNOS batch.
+/// This test simulates the workflow where a SNOS batch is created and then
+/// the SNOS job trigger's run_worker method creates a corresponding SNOS job.
+#[rstest]
+#[tokio::test]
+async fn test_create_snos_job_for_existing_batch() -> Result<(), Box<dyn Error>> {
+    dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
+    let _min_block_limit = get_env_var_or_panic("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS").parse::<u64>()?;
+
+    // Setup mock server and clients
+    let server = MockServer::start();
+    let da_client = MockDaClient::new();
+    let mut db = MockDatabaseClient::new();
+    let mut queue = MockQueueClient::new();
+    let mut job_handler = MockJobHandlerTrait::new();
+
+    // Mock sequencer response - set to a high block number
+    let sequencer_response = json!({
+        "id": 1,
+        "jsonrpc": "2.0",
+        "result": 1000
+    });
+    server.mock(|when, then| {
+        when.path("/").body_includes("starknet_blockNumber");
+        then.status(200).body(serde_json::to_vec(&sequencer_response).unwrap());
+    });
+
+    // Mock orphaned jobs check
+    db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
+
+    // Mock latest SNOS job - no completed SNOS jobs yet
+    db.expect_get_latest_job_by_type_and_status()
+        .with(eq(JobType::SnosRun), eq(JobStatus::Completed))
+        .returning(|_, _| Ok(None));
+
+    // Mock latest StateTransition job - no completed state transitions yet
+    db.expect_get_latest_job_by_type_and_status()
+        .with(eq(JobType::StateTransition), eq(JobStatus::Completed))
+        .returning(|_, _| Ok(None));
+
+    // Mock get_job_by_internal_id_and_type to always return None (no existing jobs)
+    db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
+
+    // Mock pending jobs - no pending jobs
+    db.expect_get_jobs_by_types_and_statuses()
+        .with(eq(vec![JobType::SnosRun]), eq(vec![JobStatus::PendingRetry, JobStatus::Created]), eq(Some(3_i64)))
+        .returning(|_, _, _| Ok(Vec::new()));
+
+    // Mock missing block number queries - return batch index 1 (our test batch)
+    db.expect_get_missing_block_numbers_by_type_and_caps()
+        .withf(|job_type, _lower, _upper, _| *job_type == JobType::SnosRun)
+        .returning(|_, _, _, _| Ok(vec![1])); // Return batch index 1
+
+    // Mock get_snos_batches_by_indices to return our test batch
+    let test_batch = crate::types::batch::SnosBatch::new(1, 100, 200);
+    let test_batch_clone = test_batch.clone();
+    db.expect_get_snos_batches_by_indices().with(eq(vec![1])).returning(move |_| Ok(vec![test_batch_clone.clone()]));
+
+    // Mock job creation for our test batch
+    let uuid = Uuid::new_v4();
+    let job_item = get_job_item_mock_by_id("1".to_string(), uuid);
+    let job_item_clone = job_item.clone();
+
+    job_handler
+        .expect_create_job()
+        .with(eq("1".to_string()), mockall::predicate::always())
+        .returning(move |_, _| Ok(job_item_clone.clone()));
+
+    db.expect_create_job().withf(move |item| item.internal_id == "1").returning(move |_| Ok(job_item.clone()));
+
+    // Mock batch status update
+    db.expect_update_snos_batch_status_by_index()
+        .with(eq(1), eq(crate::types::batch::SnosBatchStatus::SnosJobCreated))
+        .returning(move |_, _| Ok(test_batch.clone()));
+
+    // Setup job handler context
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context();
+    ctx.expect().with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+
+    // Mock queue operations
+    queue
+        .expect_send_message()
+        .times(1)
+        .returning(|_, _, _| Ok(()))
+        .withf(|queue, _, _| *queue == QueueType::SnosJobProcessing);
+
+    // Setup provider
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(&format!("http://localhost:{}", server.port())).expect("Failed to parse URL"),
+    ));
+
+    // Build test configuration
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(provider.into())
+        .configure_database(db.into())
+        .configure_queue_client(queue.into())
+        .configure_da_client(da_client.into())
+        .build()
+        .await;
+
+    // Run the SNOS worker
+    let result = crate::worker::event_handler::triggers::snos::SnosJobTrigger.run_worker(services.config).await;
+
+    // Verify the worker succeeded
+    assert!(result.is_ok(), "SNOS job trigger run_worker should succeed");
+
+    println!("✅ Test completed: SNOS job created for existing batch successfully");
 
     Ok(())
 }

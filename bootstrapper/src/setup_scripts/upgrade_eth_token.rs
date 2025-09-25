@@ -1,8 +1,7 @@
 use starknet::accounts::{Account, ConnectedAccount};
-use starknet_providers::jsonrpc::HttpTransport;
-use starknet_providers::JsonRpcClient;
 use starknet_types_core::felt::Felt;
 
+use crate::contract_clients::config::Clients;
 use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAccount};
 use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, wait_at_least_block, AccountActions};
 use crate::utils::constants::{
@@ -33,24 +32,26 @@ use crate::utils::wait_for_transaction;
 /// * `account` - The RPC account used to perform the transactions
 /// * `rpc_provider_l2` - JSON-RPC client for L2 network communication
 /// * `l2_eth_token_address` - The address of the existing ETH token contract on L2
-pub async fn upgrade_eth_token_to_cairo_1(
-    account: &RpcAccount<'_>,
-    rpc_provider_l2: &JsonRpcClient<HttpTransport>,
-    l2_eth_token_address: Felt,
-) {
-    let eth_eic_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
-        String::from(EIC_ETH_TOKEN_SIERRA_PATH),
-        String::from(EIC_ETH_TOKEN_CASM_PATH),
-        account.clone(),
-    ))
+pub async fn upgrade_eth_token_to_cairo_1(account: &RpcAccount<'_>, clients: &Clients, l2_eth_token_address: Felt) {
+    let eth_eic_class_hash = declare_contract(
+        clients,
+        DeclarationInput::DeclarationInputs(
+            String::from(EIC_ETH_TOKEN_SIERRA_PATH),
+            String::from(EIC_ETH_TOKEN_CASM_PATH),
+            account.clone(),
+        ),
+    )
     .await;
     log::debug!("ETH EIC declared ✅. Class hash : {:?}", eth_eic_class_hash);
 
-    let new_eth_token_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
-        String::from(NEW_ETH_TOKEN_SIERRA_PATH),
-        String::from(NEW_ETH_TOKEN_CASM_PATH),
-        account.clone(),
-    ))
+    let new_eth_token_class_hash = declare_contract(
+        clients,
+        DeclarationInput::DeclarationInputs(
+            String::from(NEW_ETH_TOKEN_SIERRA_PATH),
+            String::from(NEW_ETH_TOKEN_CASM_PATH),
+            account.clone(),
+        ),
+    )
     .await;
     log::debug!("New ETH token declared ✅. Class hash : {:?}", new_eth_token_class_hash);
 
@@ -64,7 +65,7 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .send()
         .await
         .expect("Error deploying the contract : eth_eic_deploy_tx");
-    wait_for_transaction(rpc_provider_l2, eth_eic_deploy_tx.transaction_hash, "deploy_eth_token_on_l2 : deploy")
+    wait_for_transaction(clients.provider_l2(), eth_eic_deploy_tx.transaction_hash, "deploy_eth_token_on_l2 : deploy")
         .await
         .unwrap();
     let eth_eic_contract_address =
@@ -95,9 +96,13 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .send()
         .await
         .expect("Error deploying the contract : new_token_eth_deploy_tx");
-    wait_for_transaction(rpc_provider_l2, new_token_eth_deploy_tx.transaction_hash, "deploy_eth_token_on_l2 : deploy")
-        .await
-        .unwrap();
+    wait_for_transaction(
+        clients.provider_l2(),
+        new_token_eth_deploy_tx.transaction_hash,
+        "deploy_eth_token_on_l2 : deploy",
+    )
+    .await
+    .unwrap();
     let new_eth_token_contract_address =
         get_contract_address_from_deploy_tx(account.provider(), &new_token_eth_deploy_tx).await.unwrap();
     log::debug!("✅ new eth contract address : {:?}", new_eth_token_contract_address);
@@ -112,14 +117,18 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .send()
         .await
         .expect("Error calling eth token proxy");
-    wait_for_transaction(rpc_provider_l2, eth_token_add_implementation_new_txn.transaction_hash, "Interact ETH token")
-        .await
-        .unwrap();
+    wait_for_transaction(
+        clients.provider_l2(),
+        eth_token_add_implementation_new_txn.transaction_hash,
+        "Interact ETH token",
+    )
+    .await
+    .unwrap();
 
     // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
     // where cairo 0 classes cannot be declared
     // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
-    wait_at_least_block(rpc_provider_l2, Some(1)).await;
+    wait_at_least_block(clients.provider_l2(), Some(1)).await;
 
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : add implementation : eth proxy ✅, Txn hash : {:?}",
@@ -136,14 +145,14 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .send()
         .await
         .expect("Error calling eth token proxy");
-    wait_for_transaction(rpc_provider_l2, eth_token_upgrade_to_new_txn.transaction_hash, "Interact ETH token")
+    wait_for_transaction(clients.provider_l2(), eth_token_upgrade_to_new_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
 
     // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
     // where cairo 0 classes cannot be declared
     // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
-    wait_at_least_block(rpc_provider_l2, Some(1)).await;
+    wait_at_least_block(clients.provider_l2(), Some(1)).await;
 
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : upgrade to : eth proxy ✅, Txn hash : {:?}",
@@ -156,7 +165,7 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .await
         .expect("Error calling eth token proxy");
     wait_for_transaction(
-        rpc_provider_l2,
+        clients.provider_l2(),
         eth_token_register_governance_admin_txn.transaction_hash,
         "Interact ETH token",
     )
@@ -173,7 +182,7 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .await
         .expect("Error calling eth token proxy");
     wait_for_transaction(
-        rpc_provider_l2,
+        clients.provider_l2(),
         eth_token_register_upgrade_governor_txn.transaction_hash,
         "Interact ETH token",
     )
@@ -194,14 +203,18 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .send()
         .await
         .expect("Error calling eth token proxy");
-    wait_for_transaction(rpc_provider_l2, new_eth_token_add_implementation_txn.transaction_hash, "Interact ETH token")
-        .await
-        .unwrap();
+    wait_for_transaction(
+        clients.provider_l2(),
+        new_eth_token_add_implementation_txn.transaction_hash,
+        "Interact ETH token",
+    )
+    .await
+    .unwrap();
 
     // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
     // where cairo 0 classes cannot be declared
     // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
-    wait_at_least_block(rpc_provider_l2, Some(1)).await;
+    wait_at_least_block(clients.provider_l2(), Some(1)).await;
 
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : add_new_implementation : eth proxy ✅, Txn hash : {:?}",
@@ -218,14 +231,14 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .send()
         .await
         .expect("Error calling eth token proxy");
-    wait_for_transaction(rpc_provider_l2, new_eth_token_replace_to_txn.transaction_hash, "Interact ETH token")
+    wait_for_transaction(clients.provider_l2(), new_eth_token_replace_to_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
 
     // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
     // where cairo 0 classes cannot be declared
     // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
-    wait_at_least_block(rpc_provider_l2, Some(1)).await;
+    wait_at_least_block(clients.provider_l2(), Some(1)).await;
 
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : replace_to : eth proxy ✅, Txn hash : {:?}",

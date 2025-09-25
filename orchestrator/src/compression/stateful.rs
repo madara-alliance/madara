@@ -12,6 +12,7 @@ use starknet_core::types::{BlockId, StarknetError};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::warn;
 
 // https://community.starknet.io/t/starknet-v0-13-4-pre-release-notes/115257
 const STATEFUL_SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
@@ -38,6 +39,7 @@ pub async fn compress(
     last_block_before_state_update: u64,
     provider: &Arc<JsonRpcClient<HttpTransport>>,
 ) -> Result<StateUpdate> {
+    tracing::info!("entering the compression function");
     let mut state_update = state_update.clone();
 
     let mapping =
@@ -64,7 +66,7 @@ pub async fn compress(
 
     // Sort the compressed StateUpdate
     sort_state_diff(&mut state_update);
-
+    tracing::info!("exiting the compression function");
     Ok(state_update)
 }
 
@@ -85,6 +87,7 @@ impl CompressedKeyValues {
         last_block_before_state_update: u64,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<Self> {
+        tracing::info!("entering the from_state_update_and_provider");
         let mut mappings: HashMap<Felt, Felt> = HashMap::new();
         let mut keys: HashSet<Felt> = HashSet::new();
 
@@ -138,18 +141,17 @@ impl CompressedKeyValues {
             .for_each(|(key, value)| {
                 mappings.insert(*key, *value);
             });
-
+        tracing::info!("exiting the from_state_update_and_provider");
         Ok(Self(mappings))
     }
 
     /// Creates a hashmap from the storage mappings at the special address
     fn get_compressed_key_values_from_state_update(state_update: &StateUpdate) -> Result<HashMap<Felt, Felt>> {
         // Find the special address storage entries
+        let mut mappings: HashMap<Felt, Felt> = HashMap::new();
         if let Some(special_contract) =
             state_update.state_diff.storage_diffs.iter().find(|diff| diff.address == STATEFUL_SPECIAL_ADDRESS)
         {
-            let mut mappings: HashMap<Felt, Felt> = HashMap::new();
-
             // Add each key-value pair to our mapping, ignoring the global counter-slot
             special_contract
                 .storage_entries
@@ -158,11 +160,10 @@ impl CompressedKeyValues {
                 .for_each(|entry| {
                     mappings.insert(entry.key, entry.value);
                 });
-
-            Ok(mappings)
         } else {
-            Err(eyre::eyre!("Special address not found in state update"))
+            warn!("didn't get any key for the alias address of 0x2");
         }
+        Ok(mappings)
     }
 
     /// Returns the mapping for a key after fetching it from the provider
@@ -208,6 +209,7 @@ fn process_storage_diffs(
     storage_diffs: Vec<ContractStorageDiffItem>,
     mapping: &CompressedKeyValues,
 ) -> Result<Vec<ContractStorageDiffItem>> {
+    tracing::info!("entering the process_storage_diffs");
     let mut new_storage_diffs: Vec<ContractStorageDiffItem> = Vec::new();
     for diff in storage_diffs {
         if CompressedKeyValues::skip_address_compression(diff.address) {
@@ -224,6 +226,7 @@ fn process_storage_diffs(
 
         new_storage_diffs.push(ContractStorageDiffItem { address: mapped_address, storage_entries: mapped_entries });
     }
+    tracing::info!("entering the process_storage_diffs");
     Ok(new_storage_diffs)
 }
 

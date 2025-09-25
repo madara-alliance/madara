@@ -1,4 +1,5 @@
 use crate::{prelude::*, rocksdb::RocksDBStorage};
+use blockifier::bouncer::BouncerWeights;
 use mp_block::{MadaraBlockInfo, TransactionWithReceipt};
 use mp_state_update::StateDiff;
 
@@ -69,6 +70,10 @@ impl<D: MadaraStorageRead> MadaraConfirmedBlockView<D> {
 
     pub fn get_state_diff(&self) -> Result<StateDiff> {
         self.backend.db.get_block_state_diff(self.block_number)?.context("Block state diff should be found")
+    }
+
+    pub fn get_bouncer_weights(&self) -> Result<BouncerWeights> {
+        self.backend.db.get_block_bouncer_weights(self.block_number)?.context("Block bouncer weights should be found")
     }
 
     pub fn get_executed_transaction(&self, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {

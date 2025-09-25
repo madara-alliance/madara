@@ -1,6 +1,6 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
-use mp_block::BlockId;
+use mp_rpc::v0_7_1::BlockId;
 use starknet_types_core::felt::Felt;
 
 /// Get the value of the storage at the given address and key.
@@ -36,7 +36,7 @@ pub fn get_storage_at(
     key: Felt,
     block_id: BlockId,
 ) -> StarknetRpcResult<Felt> {
-    let view = starknet.backend.view_on(&block_id)?;
+    let view = starknet.resolve_view_on(block_id)?;
 
     // Felt::ONE is a special contract address that is a mapping of the block number to the block hash.
     // no contract is deployed at this address, so we skip the contract check.
@@ -51,7 +51,7 @@ pub fn get_storage_at(
 mod tests {
     use super::*;
     use crate::test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates};
-    use mp_block::BlockTag;
+    use mp_rpc::v0_7_1::BlockTag;
     use rstest::rstest;
 
     #[rstest]

@@ -1,13 +1,33 @@
-use std::sync::Arc;
-
 use mp_convert::hex_serde::U64AsHex;
-use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
+use mp_transactions::{DataAvailabilityMode, ResourceBounds};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
 type Signature = Arc<Vec<Felt>>;
 type Calldata = Arc<Vec<Felt>>;
+
+// This struct is needed because we can't have a `skip_serializing_if` in our database objects.
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct ResourceBoundsMapping {
+    pub l1_gas: ResourceBounds,
+    pub l2_gas: ResourceBounds,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l1_data_gas: Option<ResourceBounds>,
+}
+
+impl From<mp_transactions::ResourceBoundsMapping> for ResourceBoundsMapping {
+    fn from(value: mp_transactions::ResourceBoundsMapping) -> Self {
+        Self { l1_gas: value.l1_gas, l2_gas: value.l2_gas, l1_data_gas: value.l1_data_gas }
+    }
+}
+impl From<ResourceBoundsMapping> for mp_transactions::ResourceBoundsMapping {
+    fn from(value: ResourceBoundsMapping) -> Self {
+        Self { l1_gas: value.l1_gas, l2_gas: value.l2_gas, l1_data_gas: value.l1_data_gas }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -261,7 +281,7 @@ impl InvokeTransactionV3 {
             nonce: transaction.nonce,
             nonce_data_availability_mode: transaction.nonce_data_availability_mode,
             fee_data_availability_mode: transaction.fee_data_availability_mode,
-            resource_bounds: transaction.resource_bounds,
+            resource_bounds: transaction.resource_bounds.into(),
             tip: transaction.tip,
             paymaster_data: transaction.paymaster_data,
             sender_address: transaction.sender_address,
@@ -280,7 +300,7 @@ impl From<InvokeTransactionV3> for mp_transactions::InvokeTransactionV3 {
             calldata: tx.calldata,
             signature: tx.signature,
             nonce: tx.nonce,
-            resource_bounds: tx.resource_bounds,
+            resource_bounds: tx.resource_bounds.into(),
             tip: tx.tip,
             paymaster_data: tx.paymaster_data,
             account_deployment_data: tx.account_deployment_data,
@@ -526,7 +546,7 @@ impl DeclareTransactionV3 {
             nonce: transaction.nonce,
             nonce_data_availability_mode: transaction.nonce_data_availability_mode,
             fee_data_availability_mode: transaction.fee_data_availability_mode,
-            resource_bounds: transaction.resource_bounds,
+            resource_bounds: transaction.resource_bounds.into(),
             tip: transaction.tip,
             paymaster_data: transaction.paymaster_data,
             sender_address: transaction.sender_address,
@@ -546,7 +566,7 @@ impl From<DeclareTransactionV3> for mp_transactions::DeclareTransactionV3 {
             signature: tx.signature,
             nonce: tx.nonce,
             class_hash: tx.class_hash,
-            resource_bounds: tx.resource_bounds,
+            resource_bounds: tx.resource_bounds.into(),
             tip: tx.tip,
             paymaster_data: tx.paymaster_data,
             account_deployment_data: tx.account_deployment_data,
@@ -706,7 +726,7 @@ impl DeployAccountTransactionV3 {
             nonce: transaction.nonce,
             nonce_data_availability_mode: transaction.nonce_data_availability_mode,
             fee_data_availability_mode: transaction.fee_data_availability_mode,
-            resource_bounds: transaction.resource_bounds,
+            resource_bounds: transaction.resource_bounds.into(),
             tip: transaction.tip,
             paymaster_data: transaction.paymaster_data,
             sender_address,
@@ -728,7 +748,7 @@ impl From<DeployAccountTransactionV3> for mp_transactions::DeployAccountTransact
             contract_address_salt: tx.contract_address_salt,
             constructor_calldata: tx.constructor_calldata,
             class_hash: tx.class_hash,
-            resource_bounds: tx.resource_bounds,
+            resource_bounds: tx.resource_bounds.into(),
             tip: tx.tip,
             paymaster_data: tx.paymaster_data,
             nonce_data_availability_mode: tx.nonce_data_availability_mode,

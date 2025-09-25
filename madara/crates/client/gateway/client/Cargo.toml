@@ -29,6 +29,7 @@ mp-rpc.workspace = true
 mp-transactions.workspace = true
 
 # Starknet
+blockifier.workspace = true
 starknet-core.workspace = true
 starknet-types-core.workspace = true
 

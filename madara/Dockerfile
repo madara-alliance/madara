@@ -1,4 +1,4 @@
-# Step 0: setup tooling (rust)
+ # Step 0: setup tooling (rust)
 FROM rust:1.86 AS base-rust
 WORKDIR /app
 

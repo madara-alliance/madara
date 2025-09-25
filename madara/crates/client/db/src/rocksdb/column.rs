@@ -20,6 +20,7 @@ pub const ALL_COLUMNS: &[Column] = &[
     super::blocks::BLOCK_INFO_COLUMN,
     super::blocks::BLOCK_STATE_DIFF_COLUMN,
     super::blocks::BLOCK_TRANSACTIONS_COLUMN,
+    super::blocks::BLOCK_BOUNCER_WEIGHT_COLUMN,
     super::state::CONTRACT_STORAGE_COLUMN,
     super::state::CONTRACT_NONCE_COLUMN,
     super::state::CONTRACT_CLASS_HASH_COLUMN,
