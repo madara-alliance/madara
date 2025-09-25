@@ -7,7 +7,6 @@ use mp_rpc::v0_7_1::{
 
 #[async_trait]
 impl StarknetWriteRpcApiV0_7_1Server for Starknet {
-
     /// Submit a new declare transaction to be added to the chain
     ///
     /// # Arguments
