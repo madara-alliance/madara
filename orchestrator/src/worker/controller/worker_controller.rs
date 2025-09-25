@@ -149,7 +149,7 @@ impl WorkerController {
     /// * `EventSystemError` - If there is an error during the operation
     async fn create_span(&self, q: &QueueType) -> EventSystemResult<()> {
         let span = info_span!("worker", q = ?q);
-        
+
         async move {
             info!("Starting worker for queue type {:?}", q);
 
@@ -168,16 +168,16 @@ impl WorkerController {
             match handler.run().await {
                 Ok(_) => {
                     // Worker completed unexpectedly - this should not happen in normal operation
-                // since workers run infinite loops. This indicates a problem.
-                warn!("Worker for queue type {:?} completed unexpectedly (this is normal during shutdown)", q);
-                Ok(())
+                    // since workers run infinite loops. This indicates a problem.
+                    warn!("Worker for queue type {:?} completed unexpectedly (this is normal during shutdown)", q);
+                    Ok(())
+                }
+                Err(e) => {
+                    error!("🚨 Critical: Worker for queue type {:?} failed with infrastructure error: {:?}", q, e);
+                    error!("This indicates a serious system problem that requires shutdown");
+                    Err(e)
+                }
             }
-            Err(e) => {
-                error!("🚨 Critical: Worker for queue type {:?} failed with infrastructure error: {:?}", q, e);
-                error!("This indicates a serious system problem that requires shutdown");
-                Err(e)
-            }
-        }
         }
         .instrument(span)
         .await

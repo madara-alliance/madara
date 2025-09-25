@@ -161,7 +161,7 @@ impl EventWorker {
     /// * Returns an EventSystemError if the message cannot be handled
     async fn handle_worker_trigger(&self, worker_message: &WorkerTriggerMessage) -> EventSystemResult<()> {
         let span = info_span!("worker_trigger", q = %self.queue_type, id = %worker_message.worker);
-        
+
         async move {
             let worker_handler =
                 JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone());
@@ -186,7 +186,7 @@ impl EventWorker {
     /// * Returns an EventSystemError if the message cannot be handled
     async fn handle_job_failure(&self, queue_message: &JobQueueMessage) -> EventSystemResult<()> {
         let span = info_span!("job_handle_failure", q = %self.queue_type, id = %queue_message.id);
-        
+
         async move {
             JobHandlerService::handle_job_failure(queue_message.id, self.config.clone())
                 .await
@@ -210,7 +210,7 @@ impl EventWorker {
     async fn handle_job_queue(&self, queue_message: &JobQueueMessage, job_state: JobState) -> EventSystemResult<()> {
         info!("Received message: {:?}, state: {:?}", queue_message, job_state);
         let span = info_span!("job_queue", q = %self.queue_type, id = %queue_message.id);
-        
+
         async move {
             match job_state {
                 JobState::Processing => {
