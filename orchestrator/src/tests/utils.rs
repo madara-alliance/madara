@@ -1,4 +1,4 @@
-use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, BatchType};
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use chrono::{SubsecRound, Utc};
 use rstest::fixture;
 use uuid::Uuid;
@@ -101,7 +101,6 @@ pub fn build_batch(
         updated_at: Utc::now().round_subsecs(0),
         bucket_id: String::from("ABCD1234"),
         status: AggregatorBatchStatus::Open,
-        batch_type: BatchType::AggregatorBatch,
     }
 }
 

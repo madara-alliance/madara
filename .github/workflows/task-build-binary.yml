@@ -1,0 +1,94 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Binary (Reusable)
+
+# Reusable workflow for building Rust binaries (Bootstrapper, Orchestrator, etc.)
+on:
+  workflow_call:
+    inputs:
+      binary-name:
+        description: "Name of the binary to build (e.g., bootstrapper, orchestrator)"
+        required: true
+        type: string
+      cache-key-suffix:
+        description: "Additional suffix for the cache key (optional)"
+        required: false
+        type: string
+        default: ""
+      is-standalone:
+        description: "Whether the binary is a standalone project (not part of workspace)"
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      binary-hash:
+        description: "Hash of the built binary"
+        value: ${{ jobs.build-binary.outputs.binary-hash }}
+
+jobs:
+  build-binary:
+    runs-on: blacksmith-16vcpu-ubuntu-2204
+    outputs:
+      binary-hash: ${{ steps.generate-binary-hash.outputs.binary-hash }}
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: ${{ inputs.binary-name }}-${{ runner.os }}-rust-1.86${{ inputs.cache-key-suffix }}
+
+      - name: Python Cairo setup (for apollo_starknet_os_program dependencies)
+        if: inputs.is-standalone == false
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
+      # Build the specified binary
+      - name: Cargo build ${{ inputs.binary-name }} (workspace)
+        if: inputs.is-standalone == false
+        run: |
+          export GIT_COMMIT_HASH=$GITHUB_SHA
+          cargo build --release --bin ${{ inputs.binary-name }}
+
+      # Build standalone binary
+      - name: Cargo build ${{ inputs.binary-name }} (standalone)
+        if: inputs.is-standalone == true
+        run: |
+          export GIT_COMMIT_HASH=$GITHUB_SHA
+          cd ${{ inputs.binary-name }}
+          cargo build --release
+
+      # Copy standalone binary to expected location
+      - name: Copy standalone binary
+        if: inputs.is-standalone == true
+        run: |
+          mkdir -p target/release
+          cp ${{ inputs.binary-name }}/target/release/${{ inputs.binary-name }} target/release/
+
+      # Generate hash for the binary
+      - name: Generate binary hash
+        id: generate-binary-hash
+        run: |
+          # Use commit SHA with component name for deterministic hashing across workflows
+          COMMIT_HASH=${{ github.sha }}
+
+          # Create hash using component name + commit hash (same pattern as Madara)
+          BINARY_HASH=$(echo "${{ inputs.binary-name }}-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+          echo "binary-hash=$BINARY_HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the ${{ inputs.binary-name }} is: $BINARY_HASH (commit: $COMMIT_HASH)"
+
+      # Upload binary as artifact
+      - name: Upload ${{ inputs.binary-name }} binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.binary-name }}-binary-${{ steps.generate-binary-hash.outputs.binary-hash }}
+          path: target/release/${{ inputs.binary-name }}

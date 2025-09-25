@@ -67,8 +67,8 @@ jobs:
     uses: ./.github/workflows/task-do-nothing-test-orchestrator.yml
 
   # Run e2e tests (Orchestrator)
-  e2e-orchestrator:
-    uses: ./.github/workflows/task-do-nothing-e2e-orchestrator.yml
+  # e2e-orchestrator:
+  #   uses: ./.github/workflows/task-do-nothing-e2e-orchestrator.yml
 
   # Run coverage tests (Bootstrapper)
   test-bootstrapper:
@@ -81,3 +81,7 @@ jobs:
   # Run CLI tests
   test-cli:
     uses: ./.github/workflows/task-do-nothing-test-cli.yml
+
+  # End-to-end tests
+  test-end-to-end:
+    uses: ./.github/workflows/task-test-end-to-end.yml

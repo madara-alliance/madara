@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use opentelemetry::global;
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 
-pub static ORCHESTRATOR_METRICS: Lazy<OrchestratorMetrics> = Lazy::new(|| OrchestratorMetrics::register());
+pub static ORCHESTRATOR_METRICS: Lazy<OrchestratorMetrics> = Lazy::new(OrchestratorMetrics::register);
 
 pub struct OrchestratorMetrics {
     pub block_gauge: Gauge<f64>,

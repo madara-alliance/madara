@@ -566,7 +566,7 @@ impl BatchingTrigger {
                 .map_err(|e| JobError::ProviderError(e.to_string()))?;
             current_builtins.checked_add(bouncer_weights);
         }
-        Ok(!config.params.bouncer_weights_limit.checked_sub(current_builtins).is_some())
+        Ok(config.params.bouncer_weights_limit.checked_sub(current_builtins).is_none())
     }
 
     /// Get the block builtin weights from Madara admin RPC

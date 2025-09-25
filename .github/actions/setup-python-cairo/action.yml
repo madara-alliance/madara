@@ -48,28 +48,28 @@ runs:
         # Create virtual environment
         python3 -m venv sequencer_venv
         source sequencer_venv/bin/activate
-        
+
         # Now look for the requirements.txt file in the cargo checkouts
         REQUIREMENTS_FILE=""
-        
+
         # Look for requirements.txt in sequencer checkout directories
         if [ -d "$HOME/.cargo/git/checkouts" ]; then
           echo "Searching for sequencer requirements.txt in cargo checkouts..."
           REQUIREMENTS_FILE=$(find "$HOME/.cargo/git/checkouts" -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | grep -i sequencer | head -1)
         fi
-        
+
         # Alternative search - look more broadly in cargo git checkouts
         if [ -z "$REQUIREMENTS_FILE" ]; then
           echo "Broad search in cargo git checkouts..."
           REQUIREMENTS_FILE=$(find "$HOME/.cargo/git/checkouts" -name "requirements.txt" 2>/dev/null | head -1)
         fi
-        
+
         # Last resort - check if running inside GitHub Actions and look in runner's cargo directory
         if [ -z "$REQUIREMENTS_FILE" ] && [ -n "$GITHUB_WORKSPACE" ]; then
           echo "Searching in GitHub runner cargo directory..."
           REQUIREMENTS_FILE=$(find /home/runner/.cargo -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | head -1)
         fi
-        
+
         if [ -n "$REQUIREMENTS_FILE" ] && [ -f "$REQUIREMENTS_FILE" ]; then
           echo "✓ Found requirements.txt at: $REQUIREMENTS_FILE"
           echo "Contents of requirements.txt:"
@@ -89,7 +89,7 @@ runs:
           echo ""
           exit 1
         fi
-        
+
         # Verify cairo-compile is available
         if command -v cairo-compile >/dev/null 2>&1; then
           echo "✓ cairo-compile is available at: $(which cairo-compile)"
@@ -100,7 +100,7 @@ runs:
           pip list
           exit 1
         fi
-        
+
         echo "✓ Python virtual environment setup complete with sequencer requirements"
 
     - name: Activate virtual environment for subsequent steps
@@ -108,19 +108,19 @@ runs:
       run: |
         # Get the absolute path to the virtual environment
         VENV_PATH="$(pwd)/sequencer_venv"
-        
+
         # Add virtual environment to PATH for subsequent steps
         echo "$VENV_PATH/bin" >> $GITHUB_PATH
-        
+
         # Set environment variables that indicate we're in a virtual environment
         echo "VIRTUAL_ENV=$VENV_PATH" >> $GITHUB_ENV
         echo "PATH=$VENV_PATH/bin:$PATH" >> $GITHUB_ENV
-        
+
         # Also set Python-specific environment variables
         echo "PYTHONPATH=$VENV_PATH/lib/python${{ inputs.python-version }}/site-packages" >> $GITHUB_ENV
-        
+
         # Verify the setup
         echo "✓ Virtual environment activated for subsequent workflow steps"
         echo "VENV_PATH: $VENV_PATH"
         echo "Python executable will be: $VENV_PATH/bin/python"
-        echo "Cairo-compile will be: $VENV_PATH/bin/cairo-compile" 
+        echo "Cairo-compile will be: $VENV_PATH/bin/cairo-compile"

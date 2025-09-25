@@ -1,3 +1,5 @@
+#![allow(deprecated)] // TODO: remove this when we use new_with_udc instead of new in the deploy contract
+
 pub mod errors;
 
 use std::sync::Arc;

@@ -24,26 +24,6 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
-      - name: Python Cairo setup
-        uses: ./.github/actions/setup-python-cairo
-        with:
-          python-version: ${{ env.BUILD_PYTHON_VERSION }}
-
-      - name: Verify Python virtual environment
-        run: |
-          echo "=== Virtual Environment Status ==="
-          echo "VIRTUAL_ENV: $VIRTUAL_ENV"
-          echo "PATH: $PATH"
-          echo "Python executable: $(which python)"
-          echo "Python version: $(python --version)"
-          echo "Cairo-compile: $(which cairo-compile 2>/dev/null || echo 'NOT FOUND')"
-          if command -v cairo-compile >/dev/null 2>&1; then
-            echo "Cairo-compile version: $(cairo-compile --version)"
-          fi
-          echo "Pip packages:"
-          pip list | grep -E "(cairo|sympy)" || echo "No cairo/sympy packages found"
-          echo "=================================="
-
       - name: Scarb setup
         uses: ./.github/actions/setup-scarb
         with:
@@ -55,7 +35,13 @@ jobs:
       - name: Cargo fmt
         run: cargo fmt -- --check
 
+      - name: Python Cairo setup (before clippy)
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
       - name: Cargo Clippy
         run: |
+          echo "Running cargo clippy..."
           cargo clippy --workspace --no-deps -- -D warnings
           cargo clippy --workspace --tests --no-deps -- -D warnings

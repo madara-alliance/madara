@@ -1,3 +1,18 @@
+// TODO(mohit): Remove this once large error variants are refactored.
+// This allow is here to silence `clippy::result_large_err`, which warns when a
+// function returns a `Result<T, E>` where `E` is an enum with large data variants.
+// Clippy suggests using `Box<Error>` or reducing enum size to avoid bloated
+// stack frames. We currently keep the large enums (JobError, QueueError, StorageError)
+// unboxed for clarity and easier pattern matching.
+// Remove this once we:
+//   1. Refactor error enums to smaller variants, OR
+//   2. Box the large variants (e.g. `Box<SomeStruct>`), OR
+//   3. Switch to an error-handling strategy like `anyhow::Error`.
+//
+// In short: delete this `#![allow(clippy::result_large_err)]` after
+// error types are slimmed down or boxed.
+#![allow(clippy::result_large_err)]
+
 use clap::Parser as _;
 use dotenvy::dotenv;
 use orchestrator::cli::{Cli, Commands, RunCmd, SetupCmd};

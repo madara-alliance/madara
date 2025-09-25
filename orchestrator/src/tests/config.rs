@@ -298,7 +298,8 @@ impl TestConfigBuilder {
         let config = Arc::new(Config::new(
             Layer::L2,
             params.orchestrator_params,
-            starknet_client,
+            starknet_client.clone(),
+            starknet_client, // Using the same client for admin operations in tests
             database,
             storage,
             lock,
@@ -588,6 +589,7 @@ pub(crate) fn get_env_params() -> EnvParams {
             "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
         ))
         .expect("Invalid Starknet operator address"),
+        txn_wait_sleep_delay_secs: 60u64,
     });
 
     let snos_config = SNOSParams {
@@ -654,6 +656,11 @@ pub(crate) fn get_env_params() -> EnvParams {
     let orchestrator_params = ConfigParam {
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
+        madara_admin_rpc_url: Url::parse(&get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL",
+            &get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"), // Use same URL as fallback for tests
+        ))
+        .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL"),
         madara_version: StarknetVersion::from_str(&get_env_var_or_default(
             "MADARA_ORCHESTRATOR_MADARA_VERSION",
             "0.13.4",
@@ -668,6 +675,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         store_audit_artifacts: get_env_var_or_default("MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", "false")
             .parse::<bool>()
             .unwrap_or(false),
+        bouncer_weights_limit: Default::default(), // Use default bouncer weights for tests
     };
 
     let instrumentation_params = OTELConfig {

@@ -1,7 +1,10 @@
 [package]
 name = "bootstrapper"
 version = "0.1.0"
-edition.workspace = true
+edition = "2021"
+
+# Make this package explicitly standalone (not part of the parent workspace)
+[workspace]
 
 [dependencies]
 anyhow = "1.0.80"
@@ -70,4 +73,4 @@ subxt-lightclient = { version = "0.35.3", optional = true, default-features = fa
 tempfile = "3.10.1"
 
 [build-dependencies]
-build-version.workspace = true
+build-version = { path = "../build-artifacts" }
