@@ -653,8 +653,11 @@ impl BatchingTrigger {
     }
 
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
-        if batch.end_block - batch.start_block + 1 >= config.params.batching_config.max_blocks_per_snos_batch {
-            return Ok(true);
+        info!("checking if we need to close the snos batch");
+        if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
+            if batch.num_blocks >= max_blocks_per_snos_batch {
+                return Ok(true);
+            }
         }
         let current_builtins = BouncerWeights::empty();
         for block_number in batch.start_block..=batch.end_block {
