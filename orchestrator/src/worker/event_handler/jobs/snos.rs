@@ -129,7 +129,7 @@ impl JobHandlerTrait for SnosJobHandler {
         Ok(block_number.to_string())
     }
 
-    async fn verify_job(&self, _config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+    async fn verify_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         info!(log_type = "starting", "SNOS job verification started.");
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job

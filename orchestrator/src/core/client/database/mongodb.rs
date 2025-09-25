@@ -511,52 +511,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
-    async fn get_latest_job_by_type_and_status(
-        &self,
-        job_type: JobType,
-        job_status: JobStatus,
-    ) -> Result<Option<JobItem>, DatabaseError> {
-        let start = Instant::now();
-
-        // Convert job_type to Bson
-        let job_type_bson = bson::to_bson(&job_type)?;
-        let status_bson = bson::to_bson(&job_status)?;
-
-        // Construct the aggregation pipeline
-        let pipeline = vec![
-            // Stage 1: Match by type plus status
-            doc! {
-                "$match": {
-                    "job_type": job_type_bson,
-                    "status": status_bson,
-                }
-            },
-            // Stage 2: Sort by block_number descending
-            doc! {
-                "$sort": {
-                    "metadata.specific.block_number": -1
-                }
-            },
-            // Stage 3: Take only the top document
-            doc! { "$limit": 1 },
-        ];
-
-        debug!("Fetching latest job by type and status");
-
-        let collection: Collection<JobItem> = self.get_job_collection();
-
-        // Execute the pipeline and convert Vec<JobItem> to Option<JobItem>
-        let results = self.execute_pipeline::<JobItem, JobItem>(collection, pipeline, None).await?;
-
-        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
-
-        let result = vec_to_single_result(results, "get_latest_job_by_type_and_status")?;
-
-        let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-        Ok(result)
-    }
-
     async fn get_jobs_after_internal_id_by_job_type(
         &self,
         job_type: JobType,
@@ -742,6 +696,52 @@ impl DatabaseClient for MongoDbClient {
         Ok(block_numbers)
     }
 
+    async fn get_latest_job_by_type_and_status(
+        &self,
+        job_type: JobType,
+        job_status: JobStatus,
+    ) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+
+        // Convert job_type to Bson
+        let job_type_bson = bson::to_bson(&job_type)?;
+        let status_bson = bson::to_bson(&job_status)?;
+
+        // Construct the aggregation pipeline
+        let pipeline = vec![
+            // Stage 1: Match by type + status
+            doc! {
+                "$match": {
+                    "job_type": job_type_bson,
+                    "status": status_bson,
+                }
+            },
+            // Stage 2: Sort by block_number descending
+            doc! {
+                "$sort": {
+                    "metadata.specific.block_number": -1
+                }
+            },
+            // Stage 3: Take only the top document
+            doc! { "$limit": 1 },
+        ];
+
+        debug!("Fetching latest job by type and status");
+
+        let collection: Collection<JobItem> = self.get_job_collection();
+
+        // Execute pipeline and convert Vec<JobItem> to Option<JobItem>
+        let results = self.execute_pipeline::<JobItem, JobItem>(collection, pipeline, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
+
+        let result = vec_to_single_result(results, "get_latest_job_by_type_and_status")?;
+
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(result)
+    }
+
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError> {
         let start = Instant::now();
         let pipeline = vec![
@@ -812,32 +812,6 @@ impl DatabaseClient for MongoDbClient {
         self.update_batch(filter, update, options, start, index).await
     }
 
-    async fn update_batch(
-        &self,
-        filter: Document,
-        update: Document,
-        options: FindOneAndUpdateOptions,
-        start: Instant,
-        index: u64,
-    ) -> Result<Batch, DatabaseError> {
-        // Find a batch and update it
-        let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
-        match result {
-            Some(updated_batch) => {
-                // Update done
-                let attributes = [KeyValue::new("db_operation_name", "update_batch")];
-                let duration = start.elapsed();
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-                Ok(updated_batch)
-            }
-            None => {
-                // Not found
-                error!(index = %index, category = "db_call", "Failed to update batch");
-                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", index)))
-            }
-        }
-    }
-
     async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
@@ -876,6 +850,32 @@ impl DatabaseClient for MongoDbClient {
         };
 
         self.update_batch(filter, update, options, start, batch.index).await
+    }
+
+    async fn update_batch(
+        &self,
+        filter: Document,
+        update: Document,
+        options: FindOneAndUpdateOptions,
+        start: Instant,
+        index: u64,
+    ) -> Result<Batch, DatabaseError> {
+        // Find a batch and update it
+        let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
+        match result {
+            Some(updated_batch) => {
+                // Update done
+                let attributes = [KeyValue::new("db_operation_name", "update_batch")];
+                let duration = start.elapsed();
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                Ok(updated_batch)
+            }
+            None => {
+                // Not found
+                error!(index = %index, category = "db_call", "Failed to update batch");
+                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", index)))
+            }
+        }
     }
 
     async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError> {
