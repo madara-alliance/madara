@@ -1,21 +1,19 @@
 use chrono::Utc;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
-use tracing::{Event, Level, Subscriber, field::{Visit, Field}};
+use tracing::{
+    field::{Field, Visit},
+    Event, Level, Subscriber,
+};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::{format::Writer, FormatEvent, FormatFields};
+use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::{fmt, EnvFilter, Registry, Layer};
-use tracing_subscriber::layer::Context;
+use tracing_subscriber::{fmt, EnvFilter, Layer, Registry};
 
-const FIELDS_TO_SKIP: &[&str] = &[
-    "subject_id",
-    "correlation_id",
-    "trace_id",
-    "span_type"
-];
+const FIELDS_TO_SKIP: &[&str] = &["subject_id", "correlation_id", "trace_id", "span_type"];
 
 #[derive(Debug, Clone)]
 pub struct CustomSpanFields {
@@ -25,10 +23,7 @@ pub struct CustomSpanFields {
 
 impl CustomSpanFields {
     fn new() -> Self {
-        Self {
-            filtered_display: String::new(),
-            raw_fields: HashMap::new(),
-        }
+        Self { filtered_display: String::new(), raw_fields: HashMap::new() }
     }
 
     fn add_field(&mut self, name: &str, value: String) {
@@ -49,9 +44,7 @@ struct SpanFieldCollector {
 
 impl SpanFieldCollector {
     fn new() -> Self {
-        Self {
-            fields: CustomSpanFields::new(),
-        }
+        Self { fields: CustomSpanFields::new() }
     }
 }
 
