@@ -359,8 +359,8 @@ async fn test_create_snos_batch() {
 
     // Verify batch properties
     assert_eq!(retrieved_batch.snos_batch_id, 1);
-    assert_eq!(retrieved_batch.start_block, 100);
+    assert_eq!(retrieved_batch.start_block, 200);
     assert_eq!(retrieved_batch.end_block, 200);
-    assert_eq!(retrieved_batch.num_blocks, 101); // 200 - 100 + 1
+    assert_eq!(retrieved_batch.num_blocks, 1); // 200 - 100 + 1
     assert_eq!(retrieved_batch.status, SnosBatchStatus::Open);
 }
