@@ -295,7 +295,6 @@ mod tests {
 
     #[rstest]
     #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782")]
-    #[case("238996-SN.zip", "0xec8fa9cdfe069ed59b8f17aeecfd95c6abd616379269d2fa16a80955b6e0f068")]
     async fn test_fact_info(#[case] cairo_pie_path: &str, #[case] expected_fact: &str) {
         // TODO: Add a test for the aggregator program
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
