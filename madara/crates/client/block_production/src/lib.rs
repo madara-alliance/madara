@@ -491,7 +491,7 @@ pub(crate) mod tests {
 
             Arc::new(ChainConfig {
                 block_time,
-                bouncer_config: BouncerConfig { block_max_capacity: bouncer_weights },
+                bouncer_config: BouncerConfig { block_max_capacity: bouncer_weights, builtin_weights: Default::default() },
                 ..ChainConfig::madara_devnet()
             })
         } else {
