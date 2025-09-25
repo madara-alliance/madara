@@ -17,7 +17,6 @@ use blockifier::bouncer::BouncerWeights;
 use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
-use futures::FutureExt;
 use orchestrator_prover_client_interface::Task;
 use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::jsonrpc::HttpTransport;
@@ -189,17 +188,15 @@ impl BatchingTrigger {
 
                 if aggregator_batch.is_batch_ready {
                     // Both batches are full. Create new batches
-                    (
-                        self.start_new_batches(
+                    let (new_snos_batch, new_aggregator_batch) = self
+                        .start_new_batches(
                             &config,
                             aggregator_batch.index + 1,
                             snos_batch.snos_batch_id + 1,
                             start_block_number,
                         )
-                        .await?
-                        .flatten(),
-                        None,
-                    )
+                        .await?;
+                    (new_aggregator_batch, new_snos_batch, None)
                 } else {
                     // Previous batch is not full, continue with the previous batch
                     let state_update_bytes = storage.get_data(&aggregator_batch.squashed_state_updates_path).await?;
@@ -217,7 +214,9 @@ impl BatchingTrigger {
                     }
                     None => {
                         // No batch in DB. Start a new batch
-                        (self.start_new_batches(&config, 1, 1, start_block_number).await?.flatten(), None)
+                        let (new_snos_batch, new_aggregator_batch) =
+                            self.start_new_batches(&config, 1, 1, start_block_number).await?;
+                        (new_aggregator_batch, new_snos_batch, None)
                     }
                 }
             }
@@ -420,6 +419,7 @@ impl BatchingTrigger {
         Ok(SnosBatch::new(snos_batch_id, aggregator_batch_index, start_block))
     }
 
+    /// Creates and returns new SNOS and Aggregator batches
     async fn start_new_batches(
         &self,
         config: &Arc<Config>,
@@ -427,10 +427,9 @@ impl BatchingTrigger {
         snos_index: u64,
         start_block: u64,
     ) -> Result<(SnosBatch, AggregatorBatch), JobError> {
-        try_join!(
-            self.start_snos_batch(snos_index, aggregator_index, start_block),
-            self.start_aggregator_batch(config, aggregator_index, snos_index, start_block),
-        )
+        let snos_batch = self.start_snos_batch(snos_index, aggregator_index, start_block)?;
+        let aggregator_batch = self.start_aggregator_batch(config, aggregator_index, snos_index, start_block).await?;
+        Ok((snos_batch, aggregator_batch))
     }
 
     /// Updates the aggregator batch status in the database
