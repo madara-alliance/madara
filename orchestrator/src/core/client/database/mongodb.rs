@@ -888,6 +888,9 @@ impl DatabaseClient for MongoDbClient {
         self.update_aggregator_batch(filter, update, options, start, index).await
     }
 
+    /// Updates or create a new aggregator batch
+    ///
+    /// NOTE: In both cases it'll combine the info in both batch and update arguments
     async fn update_or_create_aggregator_batch(
         &self,
         batch: &AggregatorBatch,
@@ -899,15 +902,16 @@ impl DatabaseClient for MongoDbClient {
         };
         let options = FindOneAndUpdateOptions::builder().upsert(true).return_document(ReturnDocument::After).build();
 
-        let updates = batch.to_document()?;
-
-        // remove null values from the updates
+        // Document to store non null values
         let mut non_null_updates = Document::new();
-        updates.iter().for_each(|(k, v)| {
+
+        // remove null values from the batch
+        batch.to_document()?.iter().for_each(|(k, v)| {
             if v != &Bson::Null {
                 non_null_updates.insert(k, v);
             }
         });
+        // remove null values from the update
         update.to_document()?.iter_mut().for_each(|(k, v)| {
             if v != &Bson::Null {
                 non_null_updates.insert(k, v);

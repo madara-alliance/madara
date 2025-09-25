@@ -44,9 +44,11 @@ pub enum AggregatorBatchStatus {
 /// Used in database update operations to specify which fields should be modified.
 #[derive(Serialize, Debug, Clone)]
 pub struct AggregatorBatchUpdates {
+    /// Updated end SNOS batch number
+    pub end_snos_batch: Option<u64>,
     /// Updated end block number
     pub end_block: Option<u64>,
-    /// Updated batch ready status
+    /// Updated batch-ready status
     pub is_batch_ready: Option<bool>,
     /// Updated batch status
     pub status: Option<AggregatorBatchStatus>,
@@ -89,6 +91,15 @@ pub struct AggregatorBatch {
     /// Sequential index of the aggregator batch (unique, auto-incrementing)
     /// Used for ordering and referencing batches
     pub index: u64,
+
+    /// Number of SNOS batches in the batch
+    pub num_snos_batches: u64,
+
+    /// Start SNOS batch number (inclusive)
+    pub start_snos_batch: u64,
+
+    /// End SNOS batch number (inclusive)
+    pub end_snos_batch: u64,
 
     /// Number of blocks covered by this aggregator batch
     /// This spans across all SNOS batches contained within this aggregator batch
@@ -146,6 +157,7 @@ impl AggregatorBatch {
     /// A new `AggregatorBatch` instance with status `Open` and single block
     pub fn new(
         index: u64,
+        start_snos_batch: u64,
         start_block: u64,
         squashed_state_updates_path: String,
         blob_path: String,
@@ -155,6 +167,9 @@ impl AggregatorBatch {
             id: Uuid::new_v4(),
             index,
             num_blocks: 1,
+            start_snos_batch,
+            end_snos_batch: start_snos_batch,
+            num_snos_batches: 1,
             start_block,
             end_block: start_block,
             is_batch_ready: false,
