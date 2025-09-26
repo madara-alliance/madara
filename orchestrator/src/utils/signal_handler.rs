@@ -147,7 +147,7 @@ impl SignalHandler {
             Ok(Ok(())) => {
                 info!("✅ Graceful shutdown completed successfully");
                 if remaining_time > tokio::time::Duration::from_secs(0) {
-                    info!("Waiting remaining {:?} to ensure full timeout duration", remaining_time);
+                    info!("Waiting remaining {:?} to ensure graceful shutdown", remaining_time);
                     tokio::time::sleep(remaining_time).await;
                 }
                 Ok(())
