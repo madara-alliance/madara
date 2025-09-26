@@ -335,7 +335,7 @@ impl<'a> RequestBuilder<'a> {
 pub async fn extract_http_error_text(response: Response, operation: &str) -> (String, StatusCode) {
     let status = response.status();
     let text = response.text().await.unwrap_or_else(|_| {
-        format!("Atlantic request fails during {} operation - no error response provided", operation)
+        format!("Atlantic request failed for {} operation - no error response provided", operation)
     });
     (text, status)
 }
