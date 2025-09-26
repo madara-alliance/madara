@@ -655,9 +655,9 @@ impl BatchingTrigger {
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
         info!("checking if we need to close the snos batch");
         if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
-            if batch.num_blocks >= max_blocks_per_snos_batch {
-                return Ok(true);
-            }
+            // If the MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env is set, we use that value
+            // Mostly, it'll be used for testing purposes
+            return Ok(batch.num_blocks >= max_blocks_per_snos_batch);
         }
         let current_builtins = BouncerWeights::empty();
         for block_number in batch.start_block..=batch.end_block {
