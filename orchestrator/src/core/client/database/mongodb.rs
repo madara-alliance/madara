@@ -927,6 +927,10 @@ impl DatabaseClient for MongoDbClient {
         if let Some(end_block) = update.end_block {
             non_null_updates.insert("num_blocks", Bson::Int64(end_block as i64 - batch.start_block as i64 + 1));
         }
+        if let Some(end_snos_batch) = update.end_snos_batch {
+            non_null_updates
+                .insert("num_snos_batches", Bson::Int64(end_snos_batch as i64 - batch.start_snos_batch as i64 + 1));
+        }
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
         let update = doc! {
