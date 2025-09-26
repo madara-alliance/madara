@@ -1,0 +1,13 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Test E2E
+on:
+  workflow_call:
+
+jobs:
+  test-end-to-end:
+    runs-on: blacksmith-16vcpu-ubuntu-2204
+
+    steps:
+      - name: Stub
+        run: exit 0
