@@ -39,18 +39,35 @@ jobs:
       - name: Calculate expected binary hashes
         id: calculate-hashes
         run: |
-          PR_NUMBER=${{ github.event.pull_request.number || 'main' }}
+          # Get commit message and extract PR number
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          echo "Commit message: $COMMIT_MSG"
 
-          # Calculate the same hashes as build workflows (component-PR_NUMBER pattern)
-          MADARA_HASH=$(echo "madara-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
-          ORCHESTRATOR_HASH=$(echo "orchestrator-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
-          BOOTSTRAPPER_HASH=$(echo "bootstrapper-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
-          CAIRO_HASH=$(echo "cairo-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
+          PR_NUMBER=$(echo "$COMMIT_MSG" | grep -oE '#[0-9]+' | grep -oE '[0-9]+' | head -1)
+
+          if [ -n "$PR_NUMBER" ]; then
+            IDENTIFIER="pr-${PR_NUMBER}"
+            echo "Using PR number: $PR_NUMBER"
+          else
+            # Fallback for direct pushes or if no PR number found
+            IDENTIFIER="main"
+            echo "Using fallback identifier: main"
+          fi
+
+          echo "Final identifier: $IDENTIFIER"
+
+          # Calculate the same hashes as build workflows (component-IDENTIFIER pattern)
+          MADARA_HASH=$(echo "madara-${IDENTIFIER}" | sha256sum | awk '{ print $1 }')
+          ORCHESTRATOR_HASH=$(echo "orchestrator-${IDENTIFIER}" | sha256sum | awk '{ print $1 }')
+          BOOTSTRAPPER_HASH=$(echo "bootstrapper-${IDENTIFIER}" | sha256sum | awk '{ print $1 }')
+          CAIRO_HASH=$(echo "cairo-${IDENTIFIER}" | sha256sum | awk '{ print $1 }')
 
           echo "madara-hash=$MADARA_HASH" >> $GITHUB_OUTPUT
           echo "orchestrator-hash=$ORCHESTRATOR_HASH" >> $GITHUB_OUTPUT
           echo "bootstrapper-hash=$BOOTSTRAPPER_HASH" >> $GITHUB_OUTPUT
           echo "cairo-hash=$CAIRO_HASH" >> $GITHUB_OUTPUT
+
+          echo "Generated hashes using identifier: $IDENTIFIER"
 
       - name: Download Madara binary
         uses: actions/download-artifact@v4
