@@ -298,12 +298,15 @@ async fn database_test_update_batch(
     // Verify the updates
     assert_eq!(updated_batch.id, batch.id);
     assert_eq!(updated_batch.index, batch.index);
-    assert_eq!(updated_batch.num_snos_batches, updates.end_snos_batch.unwrap() - batch.num_snos_batches + 1);
-    assert_eq!(updated_batch.num_snos_batches, batch.num_snos_batches);
+    // verify the snos batch updates
+    assert_eq!(updated_batch.num_snos_batches, updates.end_snos_batch.unwrap() - batch.start_snos_batch + 1);
+    assert_eq!(updated_batch.start_snos_batch, batch.start_snos_batch);
     assert_eq!(updated_batch.end_snos_batch, updates.end_snos_batch.unwrap());
+    // verify the block updates
     assert_eq!(updated_batch.num_blocks, updates.end_block.unwrap() - batch.start_block + 1);
     assert_eq!(updated_batch.start_block, batch.start_block);
     assert_eq!(updated_batch.end_block, updates.end_block.unwrap());
+    // verify other updates
     assert!(updated_batch.is_batch_ready);
     assert_eq!(updated_batch.status, AggregatorBatchStatus::Closed);
     assert_eq!(updated_batch.bucket_id, batch.bucket_id);
