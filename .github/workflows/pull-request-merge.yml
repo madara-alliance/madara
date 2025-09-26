@@ -42,17 +42,9 @@ jobs:
       id-token: write
     secrets: inherit
 
+  # Deprecating bootstrapper V1
   build-nightly-and-publish-bootstrapper:
-    uses: ./.github/workflows/task-build-nightly-and-publish.yml
-    with:
-      image-name: bootstrapper
-      image-file: ./bootstrapper/Dockerfile
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   # ========================================================================= #
   #                                MERGE QUEUE                                #

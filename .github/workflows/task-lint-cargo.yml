@@ -35,7 +35,13 @@ jobs:
       - name: Cargo fmt
         run: cargo fmt -- --check
 
+      - name: Python Cairo setup (before clippy)
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
       - name: Cargo Clippy
         run: |
+          echo "Running cargo clippy..."
           cargo clippy --workspace --no-deps -- -D warnings
           cargo clippy --workspace --tests --no-deps -- -D warnings

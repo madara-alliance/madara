@@ -1,15 +1,18 @@
+pub mod appchain_client;
 pub mod config;
 pub mod conversion;
+pub mod interfaces;
 #[cfg(test)]
 pub mod tests;
+pub mod utils;
 
 use std::sync::Arc;
 
-use appchain_core_contract_client::clients::StarknetCoreContractClient;
-use appchain_core_contract_client::interfaces::core_contract::CoreContract;
+use appchain_client::StarknetCoreContractClient;
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Context};
 use color_eyre::Result;
+use interfaces::core_contract::CoreContract;
 use lazy_static::lazy_static;
 use mockall::automock;
 use mockall::predicate::*;
@@ -23,8 +26,7 @@ use starknet::signers::{LocalWallet, SigningKey};
 use tokio::time::{sleep, Duration};
 
 use crate::conversion::{slice_slice_u8_to_vec_field, u64_from_felt};
-
-pub type LocalWalletSignerMiddleware = Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>>;
+use crate::utils::LocalWalletSignerMiddleware;
 
 pub struct StarknetSettlementClient {
     pub account: LocalWalletSignerMiddleware,
@@ -71,7 +73,7 @@ impl StarknetSettlementClient {
             SingleOwnerAccount::new(provider.clone(), signer, signer_address, chain_id, ExecutionEncoding::New);
 
         // Set block ID to Pending like in the reference implementation
-        account.set_block_id(BlockId::Tag(BlockTag::Pending));
+        account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
         let account = Arc::new(account);
 
         let starknet_core_contract_client = StarknetCoreContractClient::new(core_contract_address, account.clone());
@@ -174,7 +176,7 @@ impl SettlementClient for StarknetSettlementClient {
                 )))
             }
             TransactionExecutionStatus::Succeeded => {
-                if tx_receipt.block.is_pending() {
+                if tx_receipt.block.is_pre_confirmed() {
                     tracing::info!(
                         log_type = "pending",
                         category = "verify_tx",
@@ -217,7 +219,7 @@ impl SettlementClient for StarknetSettlementClient {
         let tx_hash = Felt::from_hex(tx_hash)?;
         loop {
             let tx_receipt = self.account.provider().get_transaction_receipt(tx_hash).await?;
-            if tx_receipt.block.is_pending() {
+            if tx_receipt.block.is_pre_confirmed() {
                 retries += 1;
                 if retries > MAX_RETRIES_VERIFY_TX_FINALITY {
                     return Err(eyre!("Max retries exceeeded while waiting for tx {tx_hash} finality."));
@@ -229,7 +231,8 @@ impl SettlementClient for StarknetSettlementClient {
         }
 
         let tx_receipt = self.account.provider().get_transaction_receipt(tx_hash).await?;
-        Ok(tx_receipt.block.block_number())
+        // TODO: remove the option now maybe?
+        Ok(Some(tx_receipt.block.block_number()))
     }
 
     /// Returns the last block settled from the core contract.

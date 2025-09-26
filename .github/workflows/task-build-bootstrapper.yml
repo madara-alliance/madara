@@ -15,4 +15,5 @@ jobs:
     uses: ./.github/workflows/task-build-binary.yml
     with:
       binary-name: bootstrapper
+      is-standalone: true
     secrets: inherit

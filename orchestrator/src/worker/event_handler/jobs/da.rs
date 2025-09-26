@@ -16,7 +16,7 @@ use num_bigint::BigUint;
 use num_traits::{Num, Zero};
 use starknet::providers::Provider;
 use starknet_core::types::{
-    BlockId, ContractStorageDiffItem, DeclaredClassItem, Felt, MaybePendingStateUpdate, StateDiff, StateUpdate,
+    BlockId, ContractStorageDiffItem, DeclaredClassItem, Felt, MaybePreConfirmedStateUpdate, StateDiff, StateUpdate,
 };
 use std::collections::{HashMap, HashSet};
 use std::ops::{Add, Mul, Rem};
@@ -232,11 +232,11 @@ impl JobHandlerTrait for DAJobHandler {
             .map_err(|e| JobError::ProviderError(e.to_string()))?;
 
         let state_update = match state_update {
-            MaybePendingStateUpdate::PendingUpdate(_) => {
+            MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
                 tracing::warn!(job_id = ?job.id, block_no = block_no, "Block is still pending");
                 Err(DaError::BlockPending { block_no: block_no.to_string(), job_id: job.id })?
             }
-            MaybePendingStateUpdate::Update(state_update) => state_update,
+            MaybePreConfirmedStateUpdate::Update(state_update) => state_update,
         };
         tracing::debug!(job_id = ?job.id, "Retrieved state update");
 

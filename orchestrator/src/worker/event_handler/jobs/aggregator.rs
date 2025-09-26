@@ -2,7 +2,7 @@ use crate::core::config::Config;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::batch::BatchStatus;
+use crate::types::batch::AggregatorBatchStatus;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -78,7 +78,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
         config
             .database()
-            .update_batch_status_by_index(metadata.batch_num, BatchStatus::PendingAggregatorVerification)
+            .update_aggregator_batch_status_by_index(
+                metadata.batch_num,
+                AggregatorBatchStatus::PendingAggregatorVerification,
+            )
             .await?;
 
         Ok(external_id)
@@ -193,7 +196,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 // Update the batch status to ReadyForStateUpdate
                 config
                     .database()
-                    .update_batch_status_by_index(metadata.batch_num, BatchStatus::ReadyForStateUpdate)
+                    .update_aggregator_batch_status_by_index(
+                        metadata.batch_num,
+                        AggregatorBatchStatus::ReadyForStateUpdate,
+                    )
                     .await?;
 
                 tracing::info!(
@@ -211,7 +217,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
             TaskStatus::Failed(err) => {
                 config
                     .database()
-                    .update_batch_status_by_index(metadata.batch_num, BatchStatus::VerificationFailed)
+                    .update_aggregator_batch_status_by_index(
+                        metadata.batch_num,
+                        AggregatorBatchStatus::VerificationFailed,
+                    )
                     .await?;
                 tracing::info!(
                     log_type = "failed",

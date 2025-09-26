@@ -104,22 +104,21 @@ jobs:
       - name: Run tests with coverage
         continue-on-error: false
         run: |
-          export COVERAGE_BIN=$(realpath target/release/bootstrapper)
           rm -f target/bootstrapper-* lcov.info
 
-          # run tests for bootstrapper crate
+          # run tests for bootstrapper crate (standalone project)
+          cd bootstrapper
           RUST_LOG=info cargo llvm-cov nextest \
                   --release \
                   --lcov \
                   --output-path lcov.info \
-                  --package "bootstrapper" \
                   --no-fail-fast
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
         with:
           parallel-finished: true
-          files: lcov.info
+          files: bootstrapper/lcov.info
           debug: true
 
       - name: Kill Anvil

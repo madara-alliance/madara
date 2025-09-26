@@ -46,7 +46,8 @@ async fn wait_for_tx(account: &LocalWalletSignerMiddleware, transaction_hash: Fe
 
             match receipt {
                 Ok(TransactionStatus::Received) => Err(eyre!("Transaction not yet received")),
-                Ok(TransactionStatus::Rejected) => Ok(false),
+                Ok(TransactionStatus::Candidate) => Ok(false),
+                Ok(TransactionStatus::PreConfirmed(_)) => Ok(false), // TODO(mohit): change this once we have confirmation about using preconfirmed status
                 Ok(TransactionStatus::AcceptedOnL2(status)) => match status {
                     ExecutionResult::Succeeded => Ok(true),
                     ExecutionResult::Reverted { .. } => Ok(false),
@@ -99,7 +100,7 @@ async fn setup(#[future] spin_up_madara: MadaraCmd) -> (LocalWalletSignerMiddlew
 
     // `SingleOwnerAccount` defaults to checking nonce and estimating fees against the latest
     // block. Optionally change the target block to pending with the following line:
-    account.set_block_id(BlockId::Tag(BlockTag::Pending));
+    account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
     (Arc::new(account), madara_process)
 }
 
@@ -149,6 +150,11 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     let is_success = wait_for_tx(&account, declare_tx_hash, Duration::from_secs(2)).await;
     assert!(is_success, "Declare transaction failed");
 
+    // TODO(mohit): Remove #[allow(deprecated)] once we migrate away from the legacy UDC.
+    // ContractFactory::new is deprecated in favor of ContractFactory::new_with_udc.
+    // We keep this here temporarily to avoid breaking existing test setup until the
+    // tests are updated to use the new UDC flow.
+    #[allow(deprecated)]
     let contract_factory = ContractFactory::new(flattened_class.class_hash(), account.clone());
     let deploy_v1 = contract_factory.deploy_v3(vec![], felt!("1122"), false);
     let deployed_address = deploy_v1.deployed_address();
@@ -188,7 +194,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
                 entry_point_selector: selector!("get_is_updated"),
                 calldata: vec![Felt::from_bytes_be_slice(&onchain_data_hash)],
             },
-            BlockId::Tag(BlockTag::Pending),
+            BlockId::Tag(BlockTag::PreConfirmed),
         )
         .await
         .expect("failed to call the contract");
