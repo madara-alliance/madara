@@ -133,14 +133,16 @@ where
         write!(writer, "{}{}{} ", ts_color, now, reset)?;
         write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
 
-        write!(
-            writer,
-            "{}[{}:{}]{} ",
-            function_color,
-            meta.module_path().unwrap_or("NaN"),
-            meta.line().unwrap_or(0),
-            reset
-        )?;
+        // Use actual file path if available, otherwise convert module path
+        let file_path = if let Some(file) = meta.file() {
+            file.to_string()
+        } else if let Some(module_path) = meta.module_path() {
+            format!("src/{}.rs", module_path.replace("::", "/"))
+        } else {
+            "NaN".to_string()
+        };
+
+        write!(writer, "{}[{}:{}]{} ", function_color, file_path, meta.line().unwrap_or(0), reset)?;
 
         // Add filtered span fields if available
         if let Some(span) = ctx.lookup_current() {
