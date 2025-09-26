@@ -44,15 +44,15 @@ jobs:
       # Build the specified binary
       - name: Cargo build ${{ inputs.binary-name }}
         run: |
-          export GIT_COMMIT_HASH=$GITHUB_SHA
+          export GIT_COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
           cargo build --release --bin ${{ inputs.binary-name }}
 
       # Generate hash for the binary
       - name: Generate binary hash
         id: generate-binary-hash
         run: |
-          # Use commit SHA with component name for deterministic hashing across workflows
-          COMMIT_HASH=${{ github.sha }}
+          # Use the actual PR commit, not the merge commit
+          COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
 
           # Create hash using component name + commit hash (same pattern as Madara)
           BINARY_HASH=$(echo "${{ inputs.binary-name }}-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')

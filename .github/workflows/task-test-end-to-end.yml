@@ -39,7 +39,7 @@ jobs:
       - name: Calculate expected binary hashes
         id: calculate-hashes
         run: |
-          COMMIT_HASH=${{ github.sha }}
+          COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
 
           # Calculate the same hashes as build workflows (component-commithash pattern)
           MADARA_HASH=$(echo "madara-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
