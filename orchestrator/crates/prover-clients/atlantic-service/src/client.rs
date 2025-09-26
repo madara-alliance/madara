@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use cairo_vm::types::layout_name::LayoutName;
+use orchestrator_utils::http_client::extract_http_error_text;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::Method;
@@ -114,7 +115,8 @@ impl AtlanticClient {
             let response_text = response.bytes().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text.to_vec())
         } else {
-            Err(AtlanticError::AtlanticService(response.status()))
+            let (error_text, status) = extract_http_error_text(response, "get artifacts").await;
+            Err(AtlanticError::AtlanticService(status, error_text))
         }
     }
 
@@ -132,7 +134,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::GetBucketStatusFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "get bucket").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -171,7 +176,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::CreateBucketFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "create bucket").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -199,7 +207,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::CloseBucketFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "close bucket").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -250,7 +261,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "add job").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -269,7 +283,10 @@ impl AtlanticClient {
         if response.status().is_success() {
             response.json().await.map_err(AtlanticError::GetJobStatusFailure)
         } else {
-            Err(AtlanticError::AtlanticService(response.status()))
+            {
+                let (error_text, status) = extract_http_error_text(response, "get job status").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -291,7 +308,10 @@ impl AtlanticClient {
             let response_text = response.text().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text)
         } else {
-            Err(AtlanticError::AtlanticService(response.status()))
+            {
+                let (error_text, status) = extract_http_error_text(response, "get proof by task id").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -324,7 +344,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "submit L2 query").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
