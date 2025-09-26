@@ -457,7 +457,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .context("There is no current preconfirmed block")?
             .get_full_block_with_classes()?;
 
-        block.state_diff = state_diff.unwrap();
+        if let Some(state_diff) = state_diff {
+            block.state_diff = state_diff;
+        }
 
         // Write the block & apply to global trie
 
