@@ -3,7 +3,7 @@ use crate::core::client::queue::MockQueueClient;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::types::batch::{SnosBatch, SnosBatchStatus};
-use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::jobs::types::JobType;
 use crate::types::queue::QueueType;
 use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
@@ -142,10 +142,6 @@ async fn test_create_snos_job_for_existing_batch(
 
     // Doesn't matter what we return here
     db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, 1, 1)));
-
-    // Mock get_snos_batches_by_indices to return our test batch
-    let test_batch = SnosBatch::new(1, 100, 200);
-    let test_batch_clone = test_batch.clone();
 
     // Mock job creation for our test batch
     for snos_batch_num in completed_snos_batches {
