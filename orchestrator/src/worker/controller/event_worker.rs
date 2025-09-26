@@ -14,7 +14,8 @@ use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, info_span, warn};
+use tracing::{debug, error, info, info_span, warn, Instrument, Span};
+use uuid::Uuid;
 
 pub enum MessageType {
     Message(Delivery),
@@ -43,7 +44,8 @@ impl EventWorker {
         config: Arc<Config>,
         cancellation_token: CancellationToken,
     ) -> EventSystemResult<Self> {
-        info!("Kicking in the Worker to Queue {:?}", queue_type);
+        info!("Initializing Event Worker for Queue {:?}", queue_type);
+
         let queue_config = QUEUES.get(&queue_type).ok_or(ConsumptionError::QueueNotFound(queue_type.to_string()))?;
         let queue_control = queue_config.queue_control.clone();
         Ok(Self { queue_type, config, queue_control, cancellation_token })
@@ -61,6 +63,55 @@ impl EventWorker {
         self.cancellation_token.is_cancelled()
     }
 
+    /// Create a single span for the entire job processing
+    fn create_job_span(&self, parsed_message: &ParsedMessage) -> Span {
+        let correlation_id = Uuid::new_v4();
+        match parsed_message {
+            ParsedMessage::JobQueue(msg) => {
+                tracing::info_span!(
+                    "job_processing",
+                    job_id = %msg.id,
+                    subject_id = %msg.id,
+                    queue = %self.queue_type,
+                    job_type = %self.get_job_type_from_queue(),
+                    correlation_id = %correlation_id,
+                    trace_id = %correlation_id,
+                    span_type = "Job",
+                    external_id = tracing::field::Empty,
+                    batch_id = tracing::field::Empty,
+                    bucket_id = tracing::field::Empty,
+                    block_start = tracing::field::Empty,
+                    block_end = tracing::field::Empty,
+                    aggregator_query_id = tracing::field::Empty
+                )
+            }
+            ParsedMessage::WorkerTrigger(msg) => {
+                tracing::info_span!(
+                    "worker_trigger",
+                    worker = ?msg.worker,
+                    queue = %self.queue_type,
+                    correlation_id = %correlation_id,
+                    trace_id = %correlation_id,
+                    span_type = "Worker"
+                )
+            }
+        }
+    }
+
+    fn get_job_type_from_queue(&self) -> &str {
+        match self.queue_type {
+            QueueType::SnosJobProcessing | QueueType::SnosJobVerification => "SnosRun",
+            QueueType::ProvingJobProcessing | QueueType::ProvingJobVerification => "ProofCreation",
+            QueueType::ProofRegistrationJobProcessing | QueueType::ProofRegistrationJobVerification => {
+                "ProofRegistration"
+            }
+            QueueType::DataSubmissionJobProcessing | QueueType::DataSubmissionJobVerification => "DataSubmission",
+            QueueType::UpdateStateJobProcessing | QueueType::UpdateStateJobVerification => "StateTransition",
+            QueueType::AggregatorJobProcessing | QueueType::AggregatorJobVerification => "Aggregator",
+            _ => "Unknown",
+        }
+    }
+
     async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
         Ok(self.config.clone().queue().get_consumer(self.queue_type.clone()).await.expect("error"))
     }
@@ -71,7 +122,7 @@ impl EventWorker {
     pub async fn get_message(&self) -> EventSystemResult<Delivery> {
         let mut consumer = self.consumer().await?;
         loop {
-            debug!("Long polling for message from queue {:?}", self.queue_type);
+            debug!("Polling for message from queue {:?}", self.queue_type);
             match consumer.receive().await {
                 Ok(delivery) => return Ok(delivery),
                 Err(QueueError::NoData) => {
@@ -110,14 +161,18 @@ impl EventWorker {
     /// * Returns an EventSystemError if the message cannot be handled
     async fn handle_worker_trigger(&self, worker_message: &WorkerTriggerMessage) -> EventSystemResult<()> {
         let span = info_span!("worker_trigger", q = %self.queue_type, id = %worker_message.worker);
-        let _guard = span.enter();
-        let worker_handler =
-            JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone());
-        worker_handler
-            .run_worker_if_enabled(self.config.clone())
-            .await
-            .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
-        Ok(())
+
+        async move {
+            let worker_handler =
+                JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone());
+            worker_handler
+                .run_worker_if_enabled(self.config.clone())
+                .await
+                .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+            Ok(())
+        }
+        .instrument(span)
+        .await
     }
 
     /// handle_job_failure - Handle the message received from the queue for JobHandleFailure type
@@ -131,11 +186,15 @@ impl EventWorker {
     /// * Returns an EventSystemError if the message cannot be handled
     async fn handle_job_failure(&self, queue_message: &JobQueueMessage) -> EventSystemResult<()> {
         let span = info_span!("job_handle_failure", q = %self.queue_type, id = %queue_message.id);
-        let _guard = span.enter();
-        JobHandlerService::handle_job_failure(queue_message.id, self.config.clone())
-            .await
-            .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
-        Ok(())
+
+        async move {
+            JobHandlerService::handle_job_failure(queue_message.id, self.config.clone())
+                .await
+                .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+            Ok(())
+        }
+        .instrument(span)
+        .await
     }
 
     /// handle_job_queue - Handle the message received from the queue for JobQueue type
@@ -151,20 +210,24 @@ impl EventWorker {
     async fn handle_job_queue(&self, queue_message: &JobQueueMessage, job_state: JobState) -> EventSystemResult<()> {
         info!("Received message: {:?}, state: {:?}", queue_message, job_state);
         let span = info_span!("job_queue", q = %self.queue_type, id = %queue_message.id);
-        let _guard = span.enter();
-        match job_state {
-            JobState::Processing => {
-                JobHandlerService::process_job(queue_message.id, self.config.clone())
-                    .await
-                    .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+
+        async move {
+            match job_state {
+                JobState::Processing => {
+                    JobHandlerService::process_job(queue_message.id, self.config.clone())
+                        .await
+                        .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                }
+                JobState::Verification => {
+                    JobHandlerService::verify_job(queue_message.id, self.config.clone())
+                        .await
+                        .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                }
             }
-            JobState::Verification => {
-                JobHandlerService::verify_job(queue_message.id, self.config.clone())
-                    .await
-                    .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
-            }
+            Ok(())
         }
-        Ok(())
+        .instrument(span)
+        .await
     }
 
     /// handle_message - Handle the message received from the queue
@@ -272,26 +335,31 @@ impl EventWorker {
     /// * It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
     /// * It returns an EventSystemError if the message cannot be processed
     async fn process_message(&self, message: Delivery, parsed_message: ParsedMessage) -> EventSystemResult<()> {
-        let result = self.handle_message(&parsed_message).await;
-        match self.post_processing(result, message, &parsed_message).await {
-            Ok(_) => {
-                info!("Message processed successfully");
-                Ok(())
-            }
-            Err(e) => {
-                match parsed_message {
-                    ParsedMessage::WorkerTrigger(msg) => {
-                        error!("Failed to handle worker trigger {msg:?}. Error: {e:?}");
-                    }
-                    ParsedMessage::JobQueue(msg) => {
-                        error!("Failed to handle job {msg:?}. Error: {e:?}");
-                    }
+        let span = self.create_job_span(&parsed_message);
+        async move {
+            let result = self.handle_message(&parsed_message).await;
+            match self.post_processing(result, message, &parsed_message).await {
+                Ok(_) => {
+                    info!("Message processed successfully");
+                    Ok(())
                 }
-                // Error already logged above, no additional action needed
-                error!("Failed to process message: {:?}", e);
-                Err(e)
+                Err(e) => {
+                    match parsed_message {
+                        ParsedMessage::WorkerTrigger(msg) => {
+                            error!("Failed to handle worker trigger {msg:?}. Error: {e:?}");
+                        }
+                        ParsedMessage::JobQueue(msg) => {
+                            error!("Failed to handle job {msg:?}. Error: {e:?}");
+                        }
+                    }
+                    // Error already logged above, no additional action needed
+                    error!("Failed to process message: {:?}", e);
+                    Err(e)
+                }
             }
         }
+        .instrument(span)
+        .await
     }
 
     /// run - Run the event worker, by closely monitoring the queue and processing messages

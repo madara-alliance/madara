@@ -1,4 +1,5 @@
 pub mod error;
+pub mod middleware;
 pub mod route;
 pub mod types;
 

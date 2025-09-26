@@ -1,0 +1,112 @@
+# Vector configuration for collecting orchestrator logs
+
+# Sources
+[sources.docker_logs]
+type = "docker_logs"
+docker_host = "/var/run/docker.sock"
+include_labels = ["com.docker.compose.service=orchestrator*"]
+include_containers = ["orchestrator-1", "orchestrator-2", "orchestrator-3"]
+
+[sources.orchestrator_logs]
+type = "file"
+include = ["/var/log/orchestrator/*.log"]
+read_from = "beginning"
+
+# Transforms
+[transforms.parse_orchestrator]
+type = "remap"
+inputs = ["docker_logs"]
+source = '''
+# Parse orchestrator log format
+if contains(string!(.message), "INFO") || contains(string!(.message), "WARN") || contains(string!(.message), "ERROR") {
+  parsed = parse_regex!(.message, r'^(?P<timestamp>\S+\s+\S+)\s+(?P<level>\w+)\s+(?P<module>\S+)\s+(?P<message>.*)')
+  .level = parsed.level
+  .module = parsed.module
+  .parsed_message = parsed.message
+  .timestamp = parse_timestamp!(parsed.timestamp, "%Y-%m-%d %H:%M:%S") ?? now()
+}
+
+# Add container metadata
+.container_name = .label."com.docker.compose.service" ?? "unknown"
+.container_id = .container_id
+.instance_id = .label."orchestrator.instance" ?? "unknown"
+
+# Parse job-related information if present
+if contains(string!(.message), "job_id") {
+  job_match = parse_regex(.message, r'job_id[=:]?\s*"?(?P<job_id>[^"\s]+)"?') ?? {}
+  .job_id = job_match.job_id ?? null
+}
+
+if contains(string!(.message), "block_number") || contains(string!(.message), "block") {
+  block_match = parse_regex(.message, r'block[_number]*[=:]?\s*(?P<block>\d+)') ?? {}
+  .block_number = to_int(block_match.block) ?? null
+}
+
+if contains(string!(.message), "job_type") {
+  type_match = parse_regex(.message, r'job_type[=:]?\s*"?(?P<job_type>[^"\s]+)"?') ?? {}
+  .job_type = type_match.job_type ?? null
+}
+'''
+
+[transforms.add_metadata]
+type = "remap"
+inputs = ["parse_orchestrator"]
+source = '''
+# Add static metadata
+.environment = "production"
+.service = "orchestrator"
+.cluster = "madara"
+
+# Add computed fields
+.severity = if .level == "ERROR" {
+  "high"
+} else if .level == "WARN" {
+  "medium"
+} else {
+  "low"
+}
+'''
+
+# Filter important logs
+[transforms.filter_important]
+type = "filter"
+inputs = ["add_metadata"]
+condition = '''
+.level == "ERROR" || 
+.level == "WARN" || 
+contains(string!(.message), "job") ||
+contains(string!(.message), "block") ||
+contains(string!(.message), "failed") ||
+contains(string!(.message), "success")
+'''
+
+# Sinks
+[sinks.loki]
+type = "loki"
+inputs = ["add_metadata"]
+endpoint = "http://loki:3100"
+encoding.codec = "json"
+labels.container_name = "{{ container_name }}"
+labels.instance_id = "{{ instance_id }}"
+labels.level = "{{ level }}"
+labels.service = "{{ service }}"
+labels.environment = "{{ environment }}"
+
+[sinks.console]
+type = "console"
+inputs = ["filter_important"]
+encoding.codec = "json"
+
+# Optional: Send to Elasticsearch
+[sinks.elasticsearch]
+type = "elasticsearch"
+inputs = ["add_metadata"]
+endpoints = ["http://elasticsearch:9200"]
+index = "orchestrator-logs-%Y.%m.%d"
+encoding.codec = "json"
+
+# Metrics about Vector itself
+[sinks.prometheus]
+type = "prometheus_exporter"
+address = "0.0.0.0:9598"
+default_namespace = "vector"

@@ -9,6 +9,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
+use tracing::{error, info, trace, warn};
 
 pub struct DataSubmissionJobTrigger;
 
@@ -18,11 +19,11 @@ impl JobTrigger for DataSubmissionJobTrigger {
     // 1. Fetch the latest completed Proving jobs without Data Submission jobs as successor jobs
     // 2. Create jobs.
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        tracing::trace!(log_type = "starting", category = "DataSubmissionWorker", "DataSubmissionWorker started.");
+        trace!(log_type = "starting", "DataSubmissionWorker started.");
 
         // Self-healing: recover any orphaned DataSubmission jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::DataSubmission).await {
-            tracing::error!(error = %e, "Failed to heal orphaned DataSubmission jobs, continuing with normal processing");
+            error!(error = %e, "Failed to heal orphaned DataSubmission jobs, continuing with normal processing");
         }
 
         let previous_job_type = match config.layer() {
@@ -38,7 +39,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
         for proving_job in successful_proving_jobs {
             // Extract proving metadata
             let proving_metadata: ProvingMetadata = proving_job.metadata.specific.try_into().map_err(|e| {
-                tracing::error!(
+                error!(
                     job_id = %proving_job.internal_id,
                     error = %e,
                     "Invalid metadata type for proving job"
@@ -66,12 +67,12 @@ impl JobTrigger for DataSubmissionJobTrigger {
             )
             .await
             {
-                Ok(_) => tracing::info!(
+                Ok(_) => info!(
                     block_id = %proving_job.internal_id,
                     "Successfully created new data submission job"
                 ),
                 Err(e) => {
-                    tracing::warn!(
+                    warn!(
                         block_id = %proving_job.internal_id,
                         error = %e,
                         "Failed to create new data submission job"
@@ -85,7 +86,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
             }
         }
 
-        tracing::trace!(log_type = "completed", category = "DataSubmissionWorker", "DataSubmissionWorker completed.");
+        trace!(log_type = "completed", "DataSubmissionWorker completed.");
         Ok(())
     }
 }

@@ -49,18 +49,18 @@ pub struct AtlanticCliArgs {
     pub cairo_verifier_program_hash: Option<String>,
 
     /// The cairo vm for atlantic
-    #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_CAIRO_VM", long, default_value = "rust")]
+    #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_CAIRO_VM", long, default_value = Some("rust"))]
     #[arg(required_if_eq("atlantic", "true"))]
     pub atlantic_verifier_cairo_vm: Option<AtlanticCairoVm>,
 
     /// The type of job atlantic should process
-    #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_RESULT", long, default_value = "proof-generation")]
+    #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_RESULT", long, default_value = Some("proof-generation"))]
     #[arg(required_if_eq("atlantic", "true"))]
     pub atlantic_verifier_result: Option<AtlanticQueryStep>,
 
     /// Network being used for the prover.
     #[arg(
-        env = "MADARA_ORCHESTRATOR_ATLANTIC_NETWORK", 
+        env = "MADARA_ORCHESTRATOR_ATLANTIC_NETWORK",
         long,
         value_parser = ["MAINNET", "TESTNET"]
     )]
