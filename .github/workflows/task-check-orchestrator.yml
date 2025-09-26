@@ -33,5 +33,4 @@ jobs:
       # Check Orchestrator
       - name: Cargo check
         run: |
-          export GIT_COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
           cargo check -p orchestrator --release
