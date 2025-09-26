@@ -238,7 +238,7 @@ impl BatchingTrigger {
                 SnosBatchStatus::Open, // Open the SNOS batch
                 &state_update,
                 &config,
-                &config.madara_client(),
+                config.madara_client(),
             )
             .await?;
         }
@@ -504,6 +504,7 @@ impl BatchingTrigger {
     /// 1. Store the state update and blob info in storage
     /// 2. Update or add the state of the Aggregator batch in DB
     /// 3. Update or add the state of an SNOS batch in the DB
+    #[allow(clippy::too_many_arguments)]
     async fn save_batch_state(
         &self,
         aggregator_batch: &AggregatorBatch,
