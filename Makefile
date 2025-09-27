@@ -198,7 +198,7 @@ check:
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
 	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
-	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore -f .
+	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
 	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
 	@cargo clippy --workspace --no-deps -- -D warnings
 	@echo -e "$(INFO)Running cargo clippy workspace tests...$(RESET)"

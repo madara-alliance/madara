@@ -42,25 +42,24 @@ jobs:
       # Build Madara
       - name: Cargo build
         run: |
-          export GIT_COMMIT_HASH=$GITHUB_SHA
           CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin madara --release
 
       # Generate hash for the Madara binary
       - name: Generate binary hashes
         id: generate-binary-hash
         run: |
-          # Use commit SHA with component name for deterministic hashing across workflows
-          COMMIT_HASH=${{ github.sha }}
+          # Use the actual PR commit, not the merge commit
+          PR_NUMBER=${{ github.event.pull_request.number || 'main' }}
 
           # Create hash using commit + component name
-          MADARA_HASH=$(echo "madara-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+          MADARA_HASH=$(echo "madara-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
           echo "madara-hash=$MADARA_HASH" >> $GITHUB_OUTPUT
-          echo "Hash of the madara is: $MADARA_HASH (commit: $COMMIT_HASH)"
+          echo "Hash of the madara is: $MADARA_HASH (PR number: $PR_NUMBER)"
 
           # Create hash using commit + cairo component name
-          CAIRO_HASH=$(echo "cairo-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+          CAIRO_HASH=$(echo "cairo-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
           echo "cairo-hash=$CAIRO_HASH" >> $GITHUB_OUTPUT
-          echo "Hash of cairo artifacts is: $CAIRO_HASH (commit: $COMMIT_HASH)"
+          echo "Hash of cairo artifacts is: $CAIRO_HASH (PR number: $PR_NUMBER)"
 
       # Upload Madara binary as artifact
       - name: Upload Madara binary

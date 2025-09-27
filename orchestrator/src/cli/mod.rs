@@ -170,6 +170,11 @@ pub struct RunCmd {
 
     #[arg(env = "MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", long)]
     pub store_audit_artifacts: bool,
+
+    /// Graceful shutdown timeout in seconds.
+    /// Provides sufficient time for workers to complete their current tasks before forcing termination.
+    #[arg(env = "MADARA_ORCHESTRATOR_GRACEFUL_SHUTDOWN_TIMEOUT", long, default_value = "120")]
+    pub graceful_shutdown_timeout: u64,
 }
 
 #[derive(Parser, Debug, Clone)]
