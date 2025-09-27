@@ -2,7 +2,18 @@
   "base_layer": {
     "layer": "ETHEREUM",
     "rpc_url": "http://localhost:8545",
-    "implementation_addresses": {}
+    "implementation_addresses": {},
+    "core_contract_init_data": {
+      "programHash": "0x1",
+      "aggregatorProgramHash": "0x0",
+      "verifier": "0x0000000000000000000000000000000000000000",
+      "configHash": "0x0",
+      "state": {
+        "globalRoot": "0x0",
+        "blockNumber": "0x0",
+        "blockHash": "0x0"
+      }
+    }
   },
   "madara": {
     "rpc_url": "http://localhost:9944"
