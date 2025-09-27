@@ -88,19 +88,16 @@ jobs:
 
   # Build Madara binary
   build-madara:
-    needs: [lint-code-style]
     uses: ./.github/workflows/task-build-madara.yml
     secrets: inherit
 
   # Build Orchestrator binary
   build-orchestrator:
-    needs: lint-code-style
     uses: ./.github/workflows/task-build-orchestrator.yml
     secrets: inherit
 
   # Build Bootstrapper binary
   build-bootstrapper:
-    needs: lint-code-style
     uses: ./.github/workflows/task-build-bootstrapper.yml
     secrets: inherit
 
