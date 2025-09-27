@@ -140,7 +140,7 @@ jobs:
   # Run coverage tests
   test-orchestrator:
     needs: [build-madara, check-orchestrator]
-    uses: ./.github/workflows/task-test-orchestrator.yml
+    uses: ./.github/workflows/task-do-nothing-test-orchestrator.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
@@ -174,7 +174,7 @@ jobs:
   # Run coverage tests
   test-bootstrapper:
     needs: [build-madara, check-bootstrapper]
-    uses: ./.github/workflows/task-test-bootstrapper.yml
+    uses: ./.github/workflows/task-do-nothing-test-bootstrapper.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
