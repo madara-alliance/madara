@@ -82,6 +82,35 @@ jobs:
   test-cli:
     uses: ./.github/workflows/task-do-nothing-test-cli.yml
 
+  # ========================================================================= #
+  #                                E2E Test                                   #
+  # ========================================================================= #
+
+  # Build Madara binary
+  build-madara:
+    needs: [lint-code-style]
+    uses: ./.github/workflows/task-build-madara.yml
+    secrets: inherit
+
+  # Build Orchestrator binary
+  build-orchestrator:
+    needs: lint-code-style
+    uses: ./.github/workflows/task-build-orchestrator.yml
+    secrets: inherit
+
+  # Build Bootstrapper binary
+  build-bootstrapper:
+    needs: lint-code-style
+    uses: ./.github/workflows/task-build-bootstrapper.yml
+    secrets: inherit
+
   # End-to-end tests
   test-end-to-end:
+    needs: [build-madara, build-orchestrator, build-bootstrapper]
     uses: ./.github/workflows/task-test-end-to-end.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+      orchestrator-binary-hash: ${{ needs.build-orchestrator.outputs.orchestrator-binary-hash }}
+      bootstrapper-binary-hash: ${{ needs.build-bootstrapper.outputs.bootstrapper-binary-hash }}
+      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
+    secrets: inherit

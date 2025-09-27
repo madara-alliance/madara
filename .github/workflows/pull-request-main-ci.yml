@@ -132,10 +132,10 @@ jobs:
 
   # TODO: maybe we can remove the check, if we are building the binary ourselves ?
   # Build Orchestrator binary
-  build-orchestrator:
-    needs: lint-code-style
-    uses: ./.github/workflows/task-build-orchestrator.yml
-    secrets: inherit
+  # build-orchestrator:
+  #   needs: lint-code-style
+  #   uses: ./.github/workflows/task-build-orchestrator.yml
+  #   secrets: inherit
 
   # Run coverage tests
   test-orchestrator:
@@ -165,11 +165,11 @@ jobs:
     uses: ./.github/workflows/task-check-bootstrapper.yml
     secrets: inherit
 
-  # Build Bootstrapper binary
-  build-bootstrapper:
-    needs: lint-code-style
-    uses: ./.github/workflows/task-build-bootstrapper.yml
-    secrets: inherit
+  # # Build Bootstrapper binary
+  # build-bootstrapper:
+  #   needs: lint-code-style
+  #   uses: ./.github/workflows/task-build-bootstrapper.yml
+  #   secrets: inherit
 
   # Run coverage tests
   test-bootstrapper:
