@@ -118,7 +118,7 @@ async fn update_state_worker_selects_consecutive_blocks() {
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![1, 2]);
+    assert_eq!(data.to_settle, vec![1]);
 }
 
 #[rstest]

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 use mongodb::bson::{doc, Bson};
 use mongodb::options::IndexOptions;
-use mongodb::{bson, Client, Collection, Database, IndexModel};
+pub(crate) use mongodb::{bson, Client, Collection, Database, IndexModel};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{error, info};
@@ -130,7 +130,7 @@ impl LockClient for MongoLockClient {
         let lock_info = LockInfo {
             _id: key.to_string(),
             value,
-            expires_at: Some(expires_at),
+            expires_at,
             owner,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
@@ -255,15 +255,11 @@ impl LockClient for MongoLockClient {
 
         match collection.find_one(doc! { "_id": key }, None).await {
             Ok(Some(lock)) => {
-                if let Some(expires_at) = lock.expires_at {
-                    let now = Utc::now();
-                    if expires_at > now {
-                        Ok(Some((expires_at - now).num_seconds()))
-                    } else {
-                        Ok(Some(0))
-                    }
+                let now = Utc::now();
+                if lock.expires_at > now {
+                    Ok(Some((lock.expires_at - now).num_seconds()))
                 } else {
-                    Ok(None)
+                    Ok(Some(0))
                 }
             }
             Ok(None) => Ok(None),

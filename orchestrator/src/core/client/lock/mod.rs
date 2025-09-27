@@ -5,6 +5,8 @@ pub mod mongodb;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use error::LockError;
+#[cfg(feature = "with_mongodb")]
+use mongodb::bson::serde_helpers::chrono_datetime_as_bson_datetime;
 use serde::{Deserialize, Serialize};
 
 /// Generic cache value that can store various data types
@@ -51,8 +53,11 @@ impl From<serde_json::Value> for LockValue {
 pub struct LockInfo {
     pub _id: String, // Unique Identifier
     pub value: LockValue,
-    pub expires_at: Option<DateTime<Utc>>,
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
+    pub expires_at: DateTime<Utc>,
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub created_at: DateTime<Utc>,
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
     pub owner: Option<String>,
 }

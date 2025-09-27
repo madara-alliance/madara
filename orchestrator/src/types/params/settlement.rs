@@ -61,6 +61,7 @@ impl TryFrom<RunCmd> for SettlementConfig {
                         .ok_or_else(|| {
                             OrchestratorError::SetupCommandError("Ethereum TXN WAIT SLEEP SECS required".to_string())
                         })?,
+                    max_gas_price_mul_factor: run_cmd.ethereum_settlement_args.max_gas_price_mul_factor,
                 };
                 Ok(Self::Ethereum(ethereum_params))
             }

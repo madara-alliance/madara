@@ -21,8 +21,6 @@ jobs:
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
       cairo-artifacts-hash: ${{ steps.generate-binary-hash.outputs.cairo-hash }}
-    permissions:
-      pull-requests: write
 
     steps:
       - name: Checkout Repository
@@ -48,18 +46,20 @@ jobs:
       - name: Generate binary hashes
         id: generate-binary-hash
         run: |
-          # Use the actual PR commit, not the merge commit
-          PR_NUMBER=${{ github.event.pull_request.number || 'main' }}
+          # Get current Unix timestamp for uniqueness
+          TIMESTAMP=$(date +%s)
 
-          # Create hash using commit + component name
-          MADARA_HASH=$(echo "madara-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
-          echo "madara-hash=$MADARA_HASH" >> $GITHUB_OUTPUT
-          echo "Hash of the madara is: $MADARA_HASH (PR number: $PR_NUMBER)"
+          # Path to the compiled Madara binary
+          BINARY_PATH=./target/release/madara
+          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
+          echo "madara-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the madara is: $HASH (with timestamp: $TIMESTAMP)"
 
-          # Create hash using commit + cairo component name
-          CAIRO_HASH=$(echo "cairo-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
-          echo "cairo-hash=$CAIRO_HASH" >> $GITHUB_OUTPUT
-          echo "Hash of cairo artifacts is: $CAIRO_HASH (PR number: $PR_NUMBER)"
+          # Path to the cairo artifacts
+          ARTIFACTS_PATH=./artifacts.tar.gz
+          HASH=$(echo "$TIMESTAMP" | cat - $ARTIFACTS_PATH | sha256sum | awk '{ print $1 }')
+          echo "cairo-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Hash of cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
 
       # Upload Madara binary as artifact
       - name: Upload Madara binary

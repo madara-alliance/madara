@@ -382,7 +382,7 @@ impl BatchingTrigger {
     }
 
     fn max_blocks_to_process_at_once(&self) -> u64 {
-        100
+        25 // Keeping it small to make the batching process less flaky
     }
 
     async fn check_and_close_batch(&self, config: &Arc<Config>, batch: &Batch) -> Result<(), JobError> {

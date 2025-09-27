@@ -28,4 +28,7 @@ pub struct EthereumSettlementCliArgs {
     /// Doesn't require an env variable
     #[arg(long, default_value = "60")]
     pub ethereum_settlement_txn_wait_sleep_delay_secs: Option<u64>,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR", long, default_value = "1.5")]
+    pub max_gas_price_mul_factor: f64,
 }
