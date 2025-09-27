@@ -3,6 +3,7 @@ mod counter;
 mod metrics;
 mod pipeline;
 mod probe;
+mod reorg;
 mod sync;
 mod tests;
 mod util;

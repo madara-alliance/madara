@@ -3,6 +3,7 @@ use crate::{
     import::BlockImporter,
     metrics::SyncMetrics,
     probe::ThrottledRepeatedFuture,
+    reorg::{detect_reorg},
     sync::{ForwardPipeline, SyncController, SyncControllerConfig},
 };
 use anyhow::Context;
@@ -53,23 +54,24 @@ impl ForwardSyncConfig {
 }
 
 pub type GatewaySync = SyncController<GatewayForwardSync>;
-pub fn forward_sync(
+pub async fn forward_sync(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     client: Arc<GatewayProvider>,
     controller_config: SyncControllerConfig,
     config: ForwardSyncConfig,
-) -> GatewaySync {
+) -> anyhow::Result<GatewaySync> {
     let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
     let get_pending_block = gateway_preconfirmed_block_sync(client.clone(), importer.clone(), backend.clone());
-    SyncController::new(
+    let forward_sync = GatewayForwardSync::new(backend.clone(), importer, client, config).await?;
+    Ok(SyncController::new(
         backend.clone(),
-        GatewayForwardSync::new(backend, importer, client, config),
+        forward_sync,
         probe,
         controller_config,
         Some(get_pending_block),
-    )
+    ))
 }
 
 pub struct GatewayForwardSync {
@@ -77,16 +79,56 @@ pub struct GatewayForwardSync {
     classes_pipeline: ClassesSync,
     apply_state_pipeline: ApplyStateSync,
     backend: Arc<MadaraBackend>,
+    client: Arc<GatewayProvider>,
+    importer: Arc<BlockImporter>,
+    config: ForwardSyncConfig,
 }
 
 impl GatewayForwardSync {
-    pub fn new(
+    pub async fn new(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
-    ) -> Self {
-        let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
+    ) -> anyhow::Result<Self> {
+        tracing::info!("🌐 Initializing sync from gateway");
+
+        let mut starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
+
+        let latest_full_block = backend.head_status().latest_full_block_n();
+        let starting_block_n = backend.head_status().next_full_block();
+
+        tracing::info!("🚀 GatewayForwardSync::new - latest_confirmed_block_n: {:?}, starting_block_n: {}",
+                      backend.latest_confirmed_block_n(), starting_block_n);
+
+        // If we have local blocks, check if we need to reorg before starting
+        if let Some(latest_block) = backend.latest_confirmed_block_n() {
+            tracing::info!("📊 Found local blocks, latest: {}", latest_block);
+            if latest_block > 0 {
+                tracing::info!("🔍 Checking for chain divergence before sync starts (latest local block: {})", latest_block);
+
+                // Check our latest block against the gateway
+                if let Some(common_ancestor) = detect_reorg(
+                    latest_block,
+                    &backend,
+                    &client,
+                ).await? {
+                    tracing::warn!("⚠️ REORG DETECTED at initialization - common ancestor: {}", common_ancestor);
+                    tracing::warn!("🔄 Rolling back from block {} to block {}", latest_block, common_ancestor);
+
+                    // Perform rollback
+                    backend.rollback_to_block(common_ancestor)?;
+
+                    // Update starting block after rollback
+                    starting_block_n = common_ancestor + 1;
+
+                    tracing::info!("✅ Rollback complete. Sync will start from block {}", starting_block_n);
+                } else {
+                    tracing::info!("✅ No chain divergence detected. Continuing from block {}", starting_block_n);
+                }
+            }
+        }
+
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
@@ -112,7 +154,39 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
         );
-        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
+        Ok(Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, client, importer, config })
+    }
+
+    fn reinit_pipelines_from_current_position(&mut self) {
+        // Reinitialize pipelines from the current database position
+        let starting_block_n = self.backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
+        tracing::info!("📊 Reinitializing pipelines from block #{} after rollback", starting_block_n);
+
+        self.blocks_pipeline = blocks::block_with_state_update_pipeline(
+            self.backend.clone(),
+            self.importer.clone(),
+            self.client.clone(),
+            starting_block_n,
+            self.config.block_parallelization,
+            self.config.block_batch_size,
+            self.config.keep_pre_v0_13_2_hashes,
+        );
+        self.classes_pipeline = classes::classes_pipeline(
+            self.backend.clone(),
+            self.importer.clone(),
+            self.client.clone(),
+            starting_block_n,
+            self.config.classes_parallelization,
+            self.config.classes_batch_size,
+        );
+        self.apply_state_pipeline = super::apply_state::apply_state_pipeline(
+            self.backend.clone(),
+            self.importer.clone(),
+            starting_block_n,
+            self.config.apply_state_parallelization,
+            self.config.apply_state_batch_size,
+            self.config.disable_tries,
+        );
     }
 
     fn pipeline_status(&self) -> PipelineStatus {
@@ -147,10 +221,43 @@ impl ForwardPipeline for GatewayForwardSync {
         tracing::debug!("Run pipeline to height={target_height:?}");
 
         let mut done = false;
+
+        // Reorg detection now happens in the constructor, before pipelines are initialized
+        // This ensures we don't start syncing with the wrong chain
+
         while !done {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
             {
                 let next_input_block_n = self.blocks_pipeline.next_input_block_n();
+
+                // Check for reorg before scheduling each block during sync
+                // Only check blocks we haven't synced yet but are within our stored range
+                if let Some(latest_block) = self.backend.latest_confirmed_block_n() {
+                    if next_input_block_n <= latest_block {
+                        if let Some(common_ancestor) = detect_reorg(
+                            next_input_block_n,
+                            &self.backend,
+                            &self.client,
+                        ).await? {
+                            // Reorg detected during sync!
+                            tracing::warn!("⚠️ REORG DETECTED during sync at block {} - common ancestor: {}", next_input_block_n, common_ancestor);
+                            tracing::warn!("🔄 Switching from previous chain to new chain from gateway");
+
+                            // Perform rollback
+                            self.backend.rollback_to_block(common_ancestor)?;
+
+                            tracing::info!("✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
+                                common_ancestor, common_ancestor + 1);
+
+                            // Reinitialize pipelines from the new position after rollback
+                            self.reinit_pipelines_from_current_position();
+
+                            // Continue with the sync from the new position
+                            // Don't return - let the loop continue with the updated pipelines
+                        }
+                    }
+                }
+
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
 
@@ -158,6 +265,40 @@ impl ForwardPipeline for GatewayForwardSync {
 
             tokio::select! {
                 Some(res) = self.apply_state_pipeline.next() => {
+                    // Check if we got a GlobalStateRoot mismatch error which might indicate a reorg
+                    if let Err(err) = &res {
+                        let err_msg = format!("{:?}", err);
+                        // Check both the error message and its cause for state root mismatch
+                        if err_msg.contains("Global state root mismatch") || err_msg.contains("GlobalStateRoot") {
+                            tracing::warn!("🔄 State root mismatch detected during apply_state - checking for potential reorg");
+                            tracing::debug!("Error details: {}", err);
+
+                            // Try to extract the block number from the error context
+                            if let Some(latest_block) = self.backend.latest_confirmed_block_n() {
+                                if let Some(common_ancestor) = detect_reorg(
+                                    latest_block,
+                                    &self.backend,
+                                    &self.client,
+                                ).await? {
+                                    tracing::warn!("⚠️ REORG DETECTED via state root mismatch - common ancestor: {}", common_ancestor);
+                                    tracing::warn!("🔄 Rolling back from block {} to block {}", latest_block, common_ancestor);
+
+                                    // Perform rollback
+                                    self.backend.rollback_to_block(common_ancestor)?;
+
+                                    // Reinitialize pipelines from the new position after rollback
+                                    self.reinit_pipelines_from_current_position();
+
+                                    tracing::info!("✅ Rollback complete. Sync will continue from block {}", common_ancestor + 1);
+
+                                    // Continue the loop without propagating the error
+                                    continue;
+                                } else {
+                                    tracing::warn!("⚠️ State root mismatch but no reorg detected - this might be a different issue");
+                                }
+                            }
+                        }
+                    }
                     res?;
                 }
                 Some(res) = self.classes_pipeline.next() => {
@@ -174,6 +315,8 @@ impl ForwardPipeline for GatewayForwardSync {
 
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
             for block_n in start_next_block..new_next_block {
+                tracing::info!("📊 Block #{} has passed through all 3 pipelines (blocks, classes, state) - marking as fully imported", block_n);
+
                 // Mark the block as fully imported.
                 self.backend.write_access().new_confirmed_block(block_n)?;
                 metrics.update(block_n, &self.backend).context("Updating metrics")?;
@@ -198,6 +341,13 @@ impl ForwardPipeline for GatewayForwardSync {
             self.classes_pipeline.status(),
             self.apply_state_pipeline.status(),
         );
+        let status = self.pipeline_status();
+        if let Some(min_block) = status.min() {
+            tracing::debug!(
+                "Pipeline positions - Blocks: {:?}, Classes: {:?}, State: {:?}, Min (fully processed): {}",
+                status.blocks, status.classes, status.apply_state, min_block
+            );
+        }
     }
 
     fn latest_block(&self) -> Option<u64> {
