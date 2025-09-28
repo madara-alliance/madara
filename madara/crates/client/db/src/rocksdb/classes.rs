@@ -139,10 +139,7 @@ impl RocksDBStorageInner {
 
             // Remove declared classes (Cairo 1/Sierra)
             for declared_class in &diff.declared_classes {
-                // Remove the class info entry
                 batch.delete_cf(&classes_info_col, declared_class.class_hash.to_bytes_be());
-
-                // Remove the compiled class entry (Sierra classes have compiled class hash)
                 batch.delete_cf(&classes_compiled_col, declared_class.compiled_class_hash.to_bytes_be());
             }
         }

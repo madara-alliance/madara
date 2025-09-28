@@ -95,9 +95,6 @@ impl GatewayForwardSync {
 
         let mut starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
 
-        let latest_full_block = backend.head_status().latest_full_block_n();
-        let starting_block_n = backend.head_status().next_full_block();
-
         tracing::info!("🚀 GatewayForwardSync::new - latest_confirmed_block_n: {:?}, starting_block_n: {}",
                       backend.latest_confirmed_block_n(), starting_block_n);
 

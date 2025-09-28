@@ -212,7 +212,6 @@ impl RocksDBStorage {
     /// 1. Remove all blocks after `revert_to`
     /// 2. Remove all classes declared in those blocks
     /// 3. Revert the state changes from those blocks
-    /// 4. Update the chain tip to the new position
     ///
     /// Returns the reverted state diffs in reverse order (newest to oldest).
     pub fn revert_to(&self, revert_to: u64) -> Result<Vec<(u64, StateDiff)>> {
@@ -226,11 +225,10 @@ impl RocksDBStorage {
         if !state_diffs.is_empty() {
             self.inner.class_db_revert(&state_diffs)
                 .with_context(|| format!("Reverting classes for {} blocks", state_diffs.len()))?;
-        }
 
-        // Optionally revert state trie changes
-        // Note: This may need to be implemented based on your state management needs
-        // self.inner.state_revert(&state_diffs)?;
+            self.contract_db_revert(&state_diffs)
+                .with_context(|| format!("Reverting contract state for {} blocks", state_diffs.len()))?;
+        }
 
         tracing::info!("Successfully reverted {} blocks", state_diffs.len());
         Ok(state_diffs)
@@ -263,6 +261,79 @@ impl RocksDBStorage {
 
         self.inner.db.write_opt(batch, &self.inner.writeopts_no_wal)?;
 
+        Ok(())
+    }
+
+    /// Completely clears all Bonsai trie column families in the database.
+    ///
+    /// This is used during re-org recovery to ensure the Bonsai tries start from a clean state
+    /// before rebuilding from state diffs. This prevents any stale or inconsistent trie state
+    /// from corrupting the rebuilt tries.
+    ///
+    /// # Safety
+    ///
+    /// This method deletes ALL Bonsai trie data. It should only be called:
+    /// 1. During a re-org recovery process
+    /// 2. When you plan to immediately rebuild the tries from state diffs
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub fn clear_bonsai_tries(&self) -> Result<()> {
+        use crate::rocksdb::trie::{
+            BONSAI_CLASS_FLAT_COLUMN, BONSAI_CLASS_LOG_COLUMN, BONSAI_CLASS_TRIE_COLUMN,
+            BONSAI_CONTRACT_FLAT_COLUMN, BONSAI_CONTRACT_LOG_COLUMN, BONSAI_CONTRACT_TRIE_COLUMN,
+            BONSAI_CONTRACT_STORAGE_FLAT_COLUMN, BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
+            BONSAI_CONTRACT_STORAGE_TRIE_COLUMN,
+        };
+
+        tracing::debug!("Clearing all Bonsai trie column families");
+
+        // List of all Bonsai-related columns that need to be cleared
+        let bonsai_columns = [
+            BONSAI_CONTRACT_FLAT_COLUMN,
+            BONSAI_CONTRACT_TRIE_COLUMN,
+            BONSAI_CONTRACT_LOG_COLUMN,
+            BONSAI_CONTRACT_STORAGE_FLAT_COLUMN,
+            BONSAI_CONTRACT_STORAGE_TRIE_COLUMN,
+            BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
+            BONSAI_CLASS_FLAT_COLUMN,
+            BONSAI_CLASS_TRIE_COLUMN,
+            BONSAI_CLASS_LOG_COLUMN,
+        ];
+
+        // For each Bonsai column, iterate through all keys and delete them
+        for column in &bonsai_columns {
+            let cf = self.inner.get_column(column.clone());
+            let mut batch = WriteBatchWithTransaction::default();
+            let mut count = 0;
+
+            // Iterate through all keys in the column family
+            let iter = self.inner.db.iterator_cf(&cf, rocksdb::IteratorMode::Start);
+            for item in iter {
+                match item {
+                    Ok((key, _)) => {
+                        batch.delete_cf(&cf, key);
+                        count += 1;
+                    }
+                    Err(e) => {
+                        tracing::error!("Error iterating Bonsai column {}: {}", column.rocksdb_name, e);
+                        return Err(e).context(format!("Iterating Bonsai column {}", column.rocksdb_name));
+                    }
+                }
+            }
+
+            // Write the batch to delete all keys in this column
+            if count > 0 {
+                self.inner
+                    .db
+                    .write(batch)
+                    .with_context(|| format!("Deleting {} keys from Bonsai column {}", count, column.rocksdb_name))?;
+                tracing::debug!("Cleared {} keys from Bonsai column {}", count, column.rocksdb_name);
+            }
+        }
+
+        tracing::info!("✅ All Bonsai trie column families cleared successfully");
         Ok(())
     }
 }

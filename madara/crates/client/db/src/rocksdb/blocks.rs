@@ -238,33 +238,18 @@ impl RocksDBStorageInner {
     pub(super) fn revert_to(&self, revert_to: u64) -> Result<Vec<(u64, StateDiff)>> {
         let mut batch = WriteBatchWithTransaction::default();
 
-        let tx_hash_to_index_col = self.get_column(TX_HASH_TO_INDEX_COLUMN);
-        let block_hash_to_block_n_col = self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN);
         let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
         let block_state_diff_col = self.get_column(BLOCK_STATE_DIFF_COLUMN);
-        let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
 
-        // Get the latest block number - we need to iterate from current tip down to revert_to
-        // For now, we'll iterate through blocks to find the latest
-        let latest_block_n = {
-            let mut latest = revert_to;
-            // Try to find the actual latest block by checking if subsequent blocks exist
-            loop {
-                let next_block = latest + 1;
-                let block_n_u32 = match u32::try_from(next_block) {
-                    Ok(n) => n,
-                    Err(_) => break,
-                };
-                if self.db.get_pinned_cf(&block_info_col, block_n_u32.to_be_bytes())?.is_none() {
-                    break;
-                }
-                latest = next_block;
-            }
-            latest
+        // Get the latest block number from the chain tip
+        let latest_block_n = match self.get_chain_tip()? {
+            crate::storage::StorageChainTip::Empty => revert_to,
+            crate::storage::StorageChainTip::Confirmed(block_n) => block_n,
+            crate::storage::StorageChainTip::Preconfirmed { header, .. } => header.block_number,
         };
 
         let mut state_diffs = Vec::with_capacity((latest_block_n - revert_to) as usize);
-        
+
         for block_n in (revert_to + 1..=latest_block_n).rev() {
             let block_n_u32 = match u32::try_from(block_n) {
                 Ok(n) => n,
@@ -286,11 +271,6 @@ impl RocksDBStorageInner {
                 }
             };
 
-            // Clear all transaction hashes from this block
-            for txn_hash in &block_info.tx_hashes {
-                batch.delete_cf(&tx_hash_to_index_col, txn_hash.to_bytes_be());
-            }
-
             // Get state diff for this block before removing it
             if let Some(state_diff_data) = self.db.get_pinned_cf(&block_state_diff_col, block_n_u32.to_be_bytes())? {
                 match super::deserialize::<StateDiff>(&state_diff_data) {
@@ -301,23 +281,8 @@ impl RocksDBStorageInner {
                 tracing::warn!("Block {} has no StateDiff during revert, skipping", block_n);
             }
 
-            // Delete all transactions for this block
-            for (tx_index, _) in block_info.tx_hashes.iter().enumerate() {
-                let tx_index_u16 = match u16::try_from(tx_index) {
-                    Ok(idx) => idx,
-                    Err(_) => continue,
-                };
-                batch.delete_cf(&block_txs_col, make_transaction_column_key(block_n_u32, tx_index_u16));
-            }
-
-            // Delete block info
-            batch.delete_cf(&block_info_col, block_n_u32.to_be_bytes());
-            
-            // Delete block hash to block number mapping
-            batch.delete_cf(&block_hash_to_block_n_col, block_info.block_hash.to_bytes_be());
-            
-            // Delete state diff
-            batch.delete_cf(&block_state_diff_col, block_n_u32.to_be_bytes());
+            // Use blocks_remove_block to remove all block data
+            self.blocks_remove_block(&block_info, &mut batch)?;
         }
 
         // Commit all the deletions
@@ -336,6 +301,23 @@ impl RocksDBStorageInner {
         Ok(state_diffs)
     }
 
+    /// Removes a block and all its associated data from the database.
+    ///
+    /// This function deletes:
+    /// - All transactions belonging to the block
+    /// - Transaction hash to index mappings
+    /// - Block header information
+    /// - Block hash to block number mapping
+    /// - State diff associated with the block
+    ///
+    /// # Arguments
+    ///
+    /// * `block_info` - The block information containing the block to remove
+    /// * `batch` - The write batch to add deletion operations to
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the block was successfully removed, or an error if any deletion failed.
     #[tracing::instrument(skip(self, batch))]
     pub(super) fn blocks_remove_block(
         &self,
