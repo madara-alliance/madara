@@ -203,7 +203,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
 
 #[rstest]
 #[tokio::test]
-#[ignore="Test is failing because of missing madara binary in CI. Tested getNonce manually and it's working fine."]
+#[ignore = "Test is failing because of missing madara binary in CI. Tested getNonce manually and it's working fine."]
 async fn test_get_nonce_works(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) {
     let (account, _madara_process) = setup.await;
     let nonce = account.get_nonce().await;
