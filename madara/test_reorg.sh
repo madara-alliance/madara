@@ -8,7 +8,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Binary path
+# Binary path - use the madara binary from cargo build
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MADARA="$HOME/cache/rust-targets/release/madara"
 MADARA_DB="$HOME/cache/madara/db"
 

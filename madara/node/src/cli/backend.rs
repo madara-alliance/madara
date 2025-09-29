@@ -61,7 +61,7 @@ pub struct BackendParams {
 
     /// This is the number of blocks for which you can get storage proofs using the storage proof endpoints.
     /// Blocks older than this limit will not be stored for retrieving historical merkle trie state. By default,
-    /// no historical merkle trie state access is allowed.
+    /// the historical merkle trie state access is limited to 100 blocks by default.
     #[clap(env = "MADARA_DB_MAX_SAVED_TRIE_LOGS", long, default_value = Some("100"))]
     pub db_max_saved_trie_logs: Option<usize>,
 

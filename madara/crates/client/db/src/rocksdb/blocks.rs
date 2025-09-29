@@ -248,7 +248,7 @@ impl RocksDBStorageInner {
             crate::storage::StorageChainTip::Preconfirmed { header, .. } => header.block_number,
         };
 
-        let mut state_diffs = Vec::with_capacity((latest_block_n - revert_to) as usize);
+        let mut block_n_to_state_diffs = Vec::with_capacity((latest_block_n - revert_to) as usize);
 
         for block_n in (revert_to + 1..=latest_block_n).rev() {
             let block_n_u32 = match u32::try_from(block_n) {
@@ -274,7 +274,7 @@ impl RocksDBStorageInner {
             // Get state diff for this block before removing it
             if let Some(state_diff_data) = self.db.get_pinned_cf(&block_state_diff_col, block_n_u32.to_be_bytes())? {
                 match super::deserialize::<StateDiff>(&state_diff_data) {
-                    Ok(state_diff) => state_diffs.push((block_n, state_diff)),
+                    Ok(state_diff) => block_n_to_state_diffs.push((block_n, state_diff)),
                     Err(e) => tracing::warn!("Failed to deserialize state diff for block {}: {}", block_n, e),
                 }
             } else {
@@ -298,7 +298,7 @@ impl RocksDBStorageInner {
             self.replace_chain_tip(&StorageChainTip::Confirmed(revert_to))?;
         }
 
-        Ok(state_diffs)
+        Ok(block_n_to_state_diffs)
     }
 
     /// Removes a block and all its associated data from the database.

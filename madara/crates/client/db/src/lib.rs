@@ -241,7 +241,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 
         // Init chain_tip and set starting block
         let storage_tip = if let Some(starting_block) = self.starting_block {
-            tracing::info!("🔧 Using unsafe_starting_block: {}", starting_block);
+            tracing::warn!("🔧 Using unsafe_starting_block: {}", starting_block);
             StorageChainTip::Confirmed(starting_block)
         } else {
             let tip = self.db.get_chain_tip()?;
@@ -345,34 +345,32 @@ impl MadaraBackend<RocksDBStorage> {
     /// This removes all blocks after the specified block number
     /// and reverts the state to that point
     pub fn rollback_to_block(&self, target_block_n: u64) -> Result<()> {
+        let start_time = std::time::Instant::now();
         tracing::warn!("⏮️ Rolling back database to block #{}", target_block_n);
 
         // Get the current latest block
         let current_block = self.latest_confirmed_block_n();
 
-        if let Some(current) = current_block {
-            if target_block_n >= current {
-                tracing::info!("Target block {} is >= current block {}, nothing to rollback", target_block_n, current);
-                return Ok(());
-            }
-        } else {
+        let Some(current_block) = current_block else {
             tracing::warn!("No blocks found in database, cannot rollback");
             return Ok(());
+        };
+
+        if target_block_n >= current_block {
+            tracing::info!(
+                "Target block {} is >= current block {}, nothing to rollback",
+                target_block_n,
+                current_block
+            );
+            return Ok(());
         }
-
-        let _current_block = current_block.unwrap();
-
         // First revert the database to get state consistency
         let state_diffs = self.db.revert_to(target_block_n)?;
         tracing::info!("📊 Reverted {} blocks, updating chain tip", state_diffs.len());
 
-        // CRITICAL: Update chain tip immediately after database revert
         self.chain_tip.send_replace(ChainTip::Confirmed(target_block_n));
         tracing::debug!("✓ Chain tip updated to block #{}", target_block_n);
 
-        // CRITICAL: After database revert, rebuild Bonsai trie state completely from database
-        // The Bonsai tries must be rebuilt from scratch to ensure perfect state consistency
-        // with the rolled-back database, eliminating any cached/stale state
         tracing::info!("🔨 Rebuilding Bonsai trie state from database after rollback");
 
         // Force flush and rebuild the trie state by clearing internal Bonsai state
@@ -394,12 +392,19 @@ impl MadaraBackend<RocksDBStorage> {
         // Flush to ensure consistency
         self.db.flush()?;
 
-        tracing::info!("✅ Rollback complete. Database now at block #{}", target_block_n);
+        let elapsed = start_time.elapsed();
+        tracing::info!("✅ Rollback complete. Database now at block #{} (took {:?})", target_block_n, elapsed);
         Ok(())
     }
 
     /// Rebuild Bonsai tries by clearing them completely and reapplying state diffs from genesis
     /// This ensures the trie state matches the database exactly after a reorg
+    ///
+    /// # Arguments
+    /// * `target_block_n` - The block number to rebuild state TO (inclusive). The state will
+    ///   include all state changes from blocks 0 through target_block_n.
+    ///   - If target_block_n = 0: Rebuilds to genesis state (block 0 state)
+    ///   - If target_block_n > 0: Rebuilds to the state after applying block target_block_n
     pub fn rebuild_bonsai_tries_from_database(&self, target_block_n: u64) -> Result<()> {
         tracing::info!("🔨 Rebuilding Bonsai tries for block #{} from database state", target_block_n);
 

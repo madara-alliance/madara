@@ -1,9 +1,9 @@
 use crate::{
     apply_state::ApplyStateSync,
-    import::BlockImporter,
+    import::{BlockImportError, BlockImporter},
     metrics::SyncMetrics,
     probe::ThrottledRepeatedFuture,
-    reorg::{detect_reorg},
+    reorg::detect_reorg,
     sync::{ForwardPipeline, SyncController, SyncControllerConfig},
 };
 use anyhow::Context;
@@ -65,13 +65,7 @@ pub async fn forward_sync(
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
     let get_pending_block = gateway_preconfirmed_block_sync(client.clone(), importer.clone(), backend.clone());
     let forward_sync = GatewayForwardSync::new(backend.clone(), importer, client, config).await?;
-    Ok(SyncController::new(
-        backend.clone(),
-        forward_sync,
-        probe,
-        controller_config,
-        Some(get_pending_block),
-    ))
+    Ok(SyncController::new(backend.clone(), forward_sync, probe, controller_config, Some(get_pending_block)))
 }
 
 pub struct GatewayForwardSync {
@@ -95,21 +89,23 @@ impl GatewayForwardSync {
 
         let mut starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
 
-        tracing::info!("🚀 GatewayForwardSync::new - latest_confirmed_block_n: {:?}, starting_block_n: {}",
-                      backend.latest_confirmed_block_n(), starting_block_n);
+        tracing::info!(
+            "🚀 GatewayForwardSync::new - latest_confirmed_block_n: {:?}, starting_block_n: {}",
+            backend.latest_confirmed_block_n(),
+            starting_block_n
+        );
 
         // If we have local blocks, check if we need to reorg before starting
         if let Some(latest_block) = backend.latest_confirmed_block_n() {
             tracing::info!("📊 Found local blocks, latest: {}", latest_block);
             if latest_block > 0 {
-                tracing::info!("🔍 Checking for chain divergence before sync starts (latest local block: {})", latest_block);
+                tracing::info!(
+                    "🔍 Checking for chain divergence before sync starts (latest local block: {})",
+                    latest_block
+                );
 
                 // Check our latest block against the gateway
-                if let Some(common_ancestor) = detect_reorg(
-                    latest_block,
-                    &backend,
-                    &client,
-                ).await? {
+                if let Some(common_ancestor) = detect_reorg(latest_block, &backend, &client).await? {
                     tracing::warn!("⚠️ REORG DETECTED at initialization - common ancestor: {}", common_ancestor);
                     tracing::warn!("🔄 Rolling back from block {} to block {}", latest_block, common_ancestor);
 
@@ -231,20 +227,25 @@ impl ForwardPipeline for GatewayForwardSync {
                 // Only check blocks we haven't synced yet but are within our stored range
                 if let Some(latest_block) = self.backend.latest_confirmed_block_n() {
                     if next_input_block_n <= latest_block {
-                        if let Some(common_ancestor) = detect_reorg(
-                            next_input_block_n,
-                            &self.backend,
-                            &self.client,
-                        ).await? {
+                        if let Some(common_ancestor) =
+                            detect_reorg(next_input_block_n, &self.backend, &self.client).await?
+                        {
                             // Reorg detected during sync!
-                            tracing::warn!("⚠️ REORG DETECTED during sync at block {} - common ancestor: {}", next_input_block_n, common_ancestor);
+                            tracing::warn!(
+                                "⚠️ REORG DETECTED during sync at block {} - common ancestor: {}",
+                                next_input_block_n,
+                                common_ancestor
+                            );
                             tracing::warn!("🔄 Switching from previous chain to new chain from gateway");
 
                             // Perform rollback
                             self.backend.rollback_to_block(common_ancestor)?;
 
-                            tracing::info!("✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
-                                common_ancestor, common_ancestor + 1);
+                            tracing::info!(
+                                "✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
+                                common_ancestor,
+                                common_ancestor + 1
+                            );
 
                             // Reinitialize pipelines from the new position after rollback
                             self.reinit_pipelines_from_current_position();
@@ -264,10 +265,13 @@ impl ForwardPipeline for GatewayForwardSync {
                 Some(res) = self.apply_state_pipeline.next() => {
                     // Check if we got a GlobalStateRoot mismatch error which might indicate a reorg
                     if let Err(err) = &res {
-                        let err_msg = format!("{:?}", err);
-                        // Check both the error message and its cause for state root mismatch
-                        if err_msg.contains("Global state root mismatch") || err_msg.contains("GlobalStateRoot") {
-                            tracing::warn!("🔄 State root mismatch detected during apply_state - checking for potential reorg");
+                        let is_state_root_mismatch = err
+                            .chain()
+                            .any(|e| e.downcast_ref::<BlockImportError>()
+                                .is_some_and(|bie| matches!(bie, BlockImportError::GlobalStateRoot { .. })));
+
+                        if is_state_root_mismatch {
+                            tracing::warn!("🔄 Global state root mismatch detected during apply_state - checking for potential reorg");
                             tracing::debug!("Error details: {}", err);
 
                             // Try to extract the block number from the error context
@@ -342,7 +346,10 @@ impl ForwardPipeline for GatewayForwardSync {
         if let Some(min_block) = status.min() {
             tracing::debug!(
                 "Pipeline positions - Blocks: {:?}, Classes: {:?}, State: {:?}, Min (fully processed): {}",
-                status.blocks, status.classes, status.apply_state, min_block
+                status.blocks,
+                status.classes,
+                status.apply_state,
+                min_block
             );
         }
     }

@@ -56,8 +56,10 @@ pub async fn detect_reorg(
             local_hash,
             gateway_block.block_hash
         );
-        
-        if local_hash != gateway_block.block_hash {
+
+        if local_hash == gateway_block.block_hash {
+            tracing::debug!("Block #{} hashes match - no reorg", block_to_check);
+        } else {
             tracing::warn!(
                 "⚠️ REORG DETECTED at block {}: local {:#x} != gateway {:#x}",
                 block_to_check,
@@ -72,8 +74,6 @@ pub async fn detect_reorg(
             ).await?;
 
             return Ok(Some(common_ancestor));
-        } else {
-            tracing::debug!("Block #{} hashes match - no reorg", block_to_check);
         }
     } else {
         tracing::debug!("Block #{} not found locally - no reorg check possible", block_to_check);
@@ -138,27 +138,47 @@ pub async fn find_common_ancestor(
     while check_block > 0 {
         check_block -= 1;
 
-        let local_block_view = backend.block_view_on_confirmed(check_block);
-        if local_block_view.is_none() {
+        let Some(local_block_view) = backend.block_view_on_confirmed(check_block) else {
             // Block not found locally - continue searching backwards
             // This can occur when the local node hasn't synced this far yet
             continue;
-        }
+        };
 
         let gateway_block = client
             .get_block(BlockId::Number(check_block))
             .await
             .context("Failed to fetch block for common ancestor search")?;
 
-        let local_info = local_block_view.unwrap().get_block_info()?;
+        let local_info = local_block_view.get_block_info()?;
         let local_hash = local_info.block_hash;
-        
+
         if local_hash == gateway_block.block_hash {
             tracing::info!("✅ Found common ancestor at block {}", check_block);
             return Ok(check_block);
         }
     }
-    
-    tracing::warn!("⚠️ Reorg extends all the way to genesis!");
-    Ok(0)
+
+    // Check block 0 (genesis) as the last resort
+    tracing::info!("🔍 Checking genesis block (block 0) as potential common ancestor");
+
+    let Some(local_genesis) = backend.block_view_on_confirmed(0) else {
+        anyhow::bail!("Genesis block (block 0) not found in local database - database may be corrupted");
+    };
+
+    let gateway_genesis = client
+        .get_block(BlockId::Number(0))
+        .await
+        .context("Failed to fetch genesis block from gateway")?;
+
+    let local_genesis_info = local_genesis.get_block_info()?;
+    if local_genesis_info.block_hash == gateway_genesis.block_hash {
+        tracing::warn!("⚠️ Reorg extends all the way to genesis!");
+        Ok(0)
+    } else {
+        anyhow::bail!(
+            "Genesis block mismatch! Local: {:#x}, Gateway: {:#x}. This indicates incompatible chains.",
+            local_genesis_info.block_hash,
+            gateway_genesis.block_hash
+        )
+    }
 }
