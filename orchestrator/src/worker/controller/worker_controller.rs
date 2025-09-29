@@ -43,8 +43,8 @@ impl WorkerController {
     }
 
     /// run - Run the WorkerController
-    /// This function starts the WorkerController and spawns workers for each queue type
-    /// It returns immediately after spawning all workers, making it non-blocking
+    /// This function starts the WorkerController and spawns event workers for each queue type
+    /// It waits for all workers to complete, which typically means it runs indefinitely until shutdown
     /// # Returns
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors

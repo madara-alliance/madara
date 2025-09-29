@@ -39,13 +39,13 @@ jobs:
       - name: Calculate expected binary hashes
         id: calculate-hashes
         run: |
-          COMMIT_HASH=${{ github.sha }}
+          PR_NUMBER=${{ github.event.pull_request.number || 'main' }}
 
-          # Calculate the same hashes as build workflows (component-commithash pattern)
-          MADARA_HASH=$(echo "madara-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
-          ORCHESTRATOR_HASH=$(echo "orchestrator-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
-          BOOTSTRAPPER_HASH=$(echo "bootstrapper-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
-          CAIRO_HASH=$(echo "cairo-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+          # Calculate the same hashes as build workflows (component-PR_NUMBER pattern)
+          MADARA_HASH=$(echo "madara-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
+          ORCHESTRATOR_HASH=$(echo "orchestrator-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
+          BOOTSTRAPPER_HASH=$(echo "bootstrapper-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
+          CAIRO_HASH=$(echo "cairo-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
 
           echo "madara-hash=$MADARA_HASH" >> $GITHUB_OUTPUT
           echo "orchestrator-hash=$ORCHESTRATOR_HASH" >> $GITHUB_OUTPUT
