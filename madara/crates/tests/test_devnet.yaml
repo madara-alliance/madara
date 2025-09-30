@@ -18,6 +18,7 @@ bouncer_config:
     state_diff_size: 131072
     l1_gas: 18446744073709551615
     n_txs: 18446744073709551615
+    proving_gas: 500000000
   builtin_weights:
     pedersen: 4050
     range_check: 70
