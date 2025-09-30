@@ -45,7 +45,6 @@ jobs:
         run: |
           docker pull localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
           docker pull mongo:latest
-          docker pull eqlabs/pathfinder:latest
 
       - name: Rust setup
         uses: ./.github/actions/setup-rust
