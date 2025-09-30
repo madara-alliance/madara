@@ -72,7 +72,7 @@ pub struct L2SyncParams {
     pub post_v0_13_2_hashes: bool,
 
     /// Enable bouncer config syncing.
-    #[arg(env = "MADARA_ENABLE_BOUNCER_CONFIG_SYNCING", long)]
+    #[arg(env = "MADARA_ENABLE_BOUNCER_CONFIG_SYNCING", long, default_value_t = false)]
     pub bouncer_config_sync_enable: bool,
 }
 
