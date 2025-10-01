@@ -52,7 +52,7 @@ impl ChainConfigFromExt for ChainConfig {
 
         Ok(ChainConfig {
             chain_id,
-            strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&strk_fee_token_address))?,
+            strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(strk_fee_token_address))?,
             is_l3: layer.is_l3(),
         })
     }
