@@ -9,7 +9,7 @@ use crate::{
 use async_trait::async_trait;
 use aws_config::Region;
 use aws_config::SdkConfig;
-use aws_sdk_sqs::types::QueueAttributeName;
+use aws_sdk_sqs::types::{MessageAttributeValue, QueueAttributeName};
 use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
@@ -167,24 +167,23 @@ impl SQS {
 
 #[async_trait]
 impl QueueClient for SQS {
-    /// **send_message** - Send a message to the queue
-    /// This function sends a message to the queue using FIFO queues with MessageGroupId for version-based filtering
-    /// It returns a Result<(), OrchestratorError> indicating whether the operation was successful or not
+    /// **send_message** - Send a message to the queue with version metadata
+    /// This function sends a message to standard SQS queues with version information
+    /// stored in message attributes for version-based filtering on the consumer side.
+    /// It returns a Result<(), QueueError> indicating whether the operation was successful or not
     async fn send_message(&self, queue: QueueType, payload: String, delay: Option<Duration>) -> Result<(), QueueError> {
-        // Always use FIFO queue with MessageGroupId for version-based filtering
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
 
         // Get the orchestrator version
         let version = generate_version_string();
 
-        // Generate a unique deduplication ID using timestamp and payload hash
-        let deduplication_id = format!(
-            "{}_{}",
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
-            // Use a simple hash of the payload for additional uniqueness
-            payload.len()
-        );
+        // Build message attribute for version
+        let version_attribute = MessageAttributeValue::builder()
+            .data_type("String")
+            .string_value(&version)
+            .build()
+            .map_err(|e| QueueError::MessageAttributeError(format!("Failed to build message attribute: {}", e)))?;
 
         let mut send_message_request = self
             .inner
@@ -192,8 +191,7 @@ impl QueueClient for SQS {
             .send_message()
             .queue_url(&queue_url)
             .message_body(&payload)
-            .message_group_id(&version)
-            .message_deduplication_id(&deduplication_id);
+            .message_attributes("OrchestratorVersion", version_attribute);
 
         // Add delay if specified
         if let Some(delay_duration) = delay {
@@ -202,11 +200,10 @@ impl QueueClient for SQS {
 
         send_message_request.send().await?;
 
-        tracing::info!(
-            "Sent versioned message to queue {} with version {} and deduplication_id {}",
+        tracing::debug!(
+            "Sent message to queue {} with version {}",
             queue_name,
-            version,
-            deduplication_id
+            version
         );
 
         Ok(())
@@ -236,59 +233,71 @@ impl QueueClient for SQS {
             SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
         Ok(consumer)
     }
-    /// TODO: this should not be need remove this after reviewing the code access for usage
+    /// Consume a message from the queue with version verification
+    /// This function continuously polls the queue and only returns messages that match
+    /// the current orchestrator version. Mismatched messages are returned to the queue with
+    /// changed visibility timeout, allowing other orchestrator versions to process them.
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
-        let mut consumer = self.get_consumer(queue).await?;
-
-        loop {
-            let delivery = consumer.receive().await?;
-
-            // Check if message version matches our orchestrator version
-            if let Err(version_error) = self.verify_message_version(&delivery) {
-                tracing::warn!("Version mismatch detected: {:?}. NACKing message back to queue.", version_error);
-
-                // NACK the message - this will return it to the queue for other consumers
-                if let Err(nack_error) = delivery.nack().await {
-                    tracing::error!("Failed to NACK message: {:?}", nack_error);
-                    // Even if NACK fails, we shouldn't process this mismatched message
-                    continue;
-                }
-
-                tracing::debug!("Successfully NACKed version-mismatched message back to queue");
-                // Continue the loop to get the next message
-                continue;
-            }
-
-            // Version matches - return the message for processing
-            tracing::debug!("Message version verified, returning for processing");
-            return Ok(delivery);
-        }
-    }
-}
-
-impl SQS {
-    /// Verify message version compatibility
-    /// Returns Ok(()) if version matches, Err(QueueError) if version mismatch
-    fn verify_message_version(&self, delivery: &Delivery) -> Result<(), QueueError> {
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
         let our_version = generate_version_string();
 
-        // Try to extract version from message attributes or GroupId
-        if let Some(payload) = delivery.payload() {
-            if let Some(attributes) = &payload.attributes {
-                if let Some(message_group_id) = attributes.get("MessageGroupId").and_then(|v| v.as_str()) {
-                    if message_group_id != our_version {
-                        return Err(QueueError::Generic(format!(
-                            "Version mismatch: expected={}, got={}",
-                            our_version, message_group_id
-                        )));
+        loop {
+            // Receive message directly from AWS SDK to access message attributes
+            let receive_result = self
+                .inner
+                .client()
+                .receive_message()
+                .queue_url(&queue_url)
+                .max_number_of_messages(1)
+                .message_attribute_names("OrchestratorVersion")
+                .wait_time_seconds(20)
+                .send()
+                .await?;
+
+            if let Some(messages) = receive_result.messages {
+                if let Some(message) = messages.into_iter().next() {
+                    // Extract version from message attributes
+                    let message_version = message
+                        .message_attributes()
+                        .and_then(|attrs| attrs.get("OrchestratorVersion"))
+                        .and_then(|attr| attr.string_value());
+
+                    match message_version {
+                        Some(version) if version != &our_version => {
+                            tracing::warn!(
+                                "Version mismatch: message={}, orchestrator={}. Changing visibility timeout.",
+                                version,
+                                our_version
+                            );
+
+                            // Change visibility timeout to 0 - returns message to queue immediately
+                            if let Some(receipt_handle) = message.receipt_handle() {
+                                let _ = self
+                                    .inner
+                                    .client()
+                                    .change_message_visibility()
+                                    .queue_url(&queue_url)
+                                    .receipt_handle(receipt_handle)
+                                    .visibility_timeout(0)
+                                    .send()
+                                    .await;
+                            }
+                            continue;
+                        }
+                        None => {
+                            tracing::warn!("Message has no version attribute - processing for backward compatibility");
+                        }
+                        Some(_) => {
+                            tracing::debug!("Message version verified");
+                        }
                     }
-                    tracing::debug!("Message version verified via MessageGroupId: {}", message_group_id);
-                } else {
-                    tracing::debug!("No MessageGroupId found - accepting message for backward compatibility");
+
+                    // Version matches or no version - return via omniqueue for consistent handling
+                    let mut consumer = self.get_consumer(queue).await?;
+                    return Ok(consumer.receive().await?);
                 }
             }
         }
-
-        Ok(())
     }
 }
