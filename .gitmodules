@@ -1,0 +1,6 @@
+[submodule "bootstrapper-v2/contracts/ethereum/lib/forge-std"]
+	path = bootstrapper-v2/contracts/ethereum/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "bootstrapper-v2/contracts/ethereum/lib/openzeppelin-contracts"]
+	path = bootstrapper-v2/contracts/ethereum/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts

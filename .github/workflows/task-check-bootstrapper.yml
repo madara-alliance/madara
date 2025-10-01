@@ -28,5 +28,4 @@ jobs:
       # Check Bootstrapper
       - name: Cargo check
         run: |
-          export GIT_COMMIT_HASH=$GITHUB_SHA
           cargo check -p bootstrapper --release

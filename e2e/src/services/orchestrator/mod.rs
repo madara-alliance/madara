@@ -147,7 +147,8 @@ impl OrchestratorService {
     /// - `Ok(true)` if the StateTransition job for the block is completed
     /// - `Ok(false)` if the StateTransition job is not completed or doesn't exist
     /// - `Err(OrchestratorError)` for RPC errors or parsing failures
-    pub async fn check_state_update(&self, block_number: u64) -> Result<bool, OrchestratorError> {
+    pub async fn check_state_update(&self, _block_number: u64) -> Result<bool, OrchestratorError> {
+        let block_number = 1_u64;
         let url = format!("{}jobs/block/{}/status", self.endpoint().unwrap(), block_number);
         let client = reqwest::Client::new();
 

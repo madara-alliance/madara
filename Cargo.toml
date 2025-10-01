@@ -135,6 +135,8 @@ alloy = { version = "0.8.3", features = [
   "rpc-types",
   "provider-http",
   "contract",
+  "signers",
+  "signer-local",
 ] }
 
 # Instrumentation
@@ -287,15 +289,15 @@ swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
 testcontainers = "0.18.0"
-appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tagged = "v1.0.9" }
+appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.9" }
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/karnotxyz/snos", branch = "release/v0.13.3" }
-prove_block = { git = "https://github.com/karnotxyz/snos", branch = "release/v0.13.3" }
+starknet-os = { git = "https://github.com/karnotxyz/snos", tag = "v0.13.3" }
+prove_block = { git = "https://github.com/karnotxyz/snos", tag = "v0.13.3" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }

@@ -143,25 +143,28 @@ alloy = { version = "0.8.3", features = [
 ] }
 
 # Instrumentation
-opentelemetry = { version = "0.25.0", features = ["metrics", "logs"] }
-opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio", "logs"] }
-opentelemetry-stdout = { version = "0.25.0" }
-opentelemetry-otlp = { version = "0.25.0", features = [
+opentelemetry = { version = "0.28.0", features = ["metrics", "logs"] }
+opentelemetry_sdk = { version = "0.28.0", features = ["rt-tokio", "logs"] }
+opentelemetry-stdout = { version = "0.28.0" }
+opentelemetry-otlp = { version = "0.28.0", features = [
   "tonic",
   "metrics",
   "logs",
 ] }
-opentelemetry-semantic-conventions = { version = "0.25.0" }
-opentelemetry-appender-tracing = { version = "0.25.0", default-features = false }
+opentelemetry-semantic-conventions = { version = "0.28.0" }
+opentelemetry-appender-tracing = { version = "0.28.0", default-features = false }
+opentelemetry-prometheus = "0.28.0"
+prometheus = "0.13.4"
 tracing = { version = "0.1.40", default-features = false }
 tracing-core = { version = "0.1.32", default-features = false }
-tracing-subscriber = { version = "0.3.18", features = [
+tracing-subscriber = { version = "0.3.19", features = [
   "env-filter",
   "registry",
   "std",
 ] }
 tracing-test = "0.2.5"
-tracing-opentelemetry = "0.26.0"
+tracing-opentelemetry = "0.29.0"
+time = "0.3"
 
 # Networking
 jsonrpsee = { version = "0.22", default-features = false, features = [
@@ -191,7 +194,6 @@ tokio-util = "0.7.12"
 rayon = "1.10"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 async-trait = "0.1"
-dashmap = "6.1.0"
 
 # Serialization
 derive_more = "2.0.1"
@@ -258,6 +260,7 @@ figment = "0.10.19"
 flate2 = "1.0"
 regex = "1.10.5"
 sha3 = "0.10"
+dashmap = "6.1.0"
 
 # Orchestrator
 chrono = { version = "0.4", features = ["serde"] }

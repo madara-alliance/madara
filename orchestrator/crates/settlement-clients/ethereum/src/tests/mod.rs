@@ -200,6 +200,7 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            txn_wait_sleep_delay_secs: 10,
         };
 
         // Deploying a dummy contract
@@ -280,6 +281,7 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            txn_wait_sleep_delay_secs: 60u64,
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
@@ -352,6 +354,7 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            txn_wait_sleep_delay_secs: 60u64,
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
@@ -391,9 +394,9 @@ mod settlement_client_tests {
 
         // get blob data from the file
         let blob_data_vec = vec![
-            get_blob_data_from_file(&data_dir.path().join("8373665/blobs/1.txt").to_str().unwrap().to_string())
+            get_blob_data_from_file(data_dir.path().join("8373665/blobs/1.txt").to_str().unwrap())
                 .expect("unable to get blob data from the file"),
-            get_blob_data_from_file(&data_dir.path().join("8373665/blobs/2.txt").to_str().unwrap().to_string())
+            get_blob_data_from_file(data_dir.path().join("8373665/blobs/2.txt").to_str().unwrap())
                 .expect("unable to get blob data from the file"),
         ];
 

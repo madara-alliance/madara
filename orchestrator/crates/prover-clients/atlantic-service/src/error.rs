@@ -2,6 +2,8 @@ use alloy::primitives::hex::FromHexError;
 use orchestrator_prover_client_interface::ProverClientError;
 use reqwest::StatusCode;
 
+type StatusMessage = String;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AtlanticError {
     #[error("Failed to add Atlantic job: {0}")]
@@ -17,7 +19,7 @@ pub enum AtlanticError {
     SubmitL2QueryFailure(#[source] reqwest::Error),
 
     #[error("Atlantic service returned an error {0}")]
-    AtlanticService(StatusCode),
+    AtlanticService(StatusCode, StatusMessage),
 
     #[error("Failed to read file: {0}")]
     FileError(#[from] std::io::Error),

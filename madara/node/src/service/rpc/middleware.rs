@@ -1,8 +1,8 @@
 //! JSON-RPC specific middleware.
 
+use anyhow::Context;
 use futures::future::{BoxFuture, FutureExt};
 use jsonrpsee::server::middleware::rpc::RpcServiceT;
-use mc_rpc::utils::ResultExt;
 use mp_chain_config::RpcVersion;
 use std::time::Instant;
 
@@ -71,7 +71,7 @@ where
                 status = status,
                 res_len = res_len,
                 response_time = response_time,
-                "{method} {status} {res_len} - {response_time} micros",
+                "{method} {status} {res_len} - {response_time} micros"
             );
 
             metrics.on_response(&req, &rp, now);
@@ -113,7 +113,7 @@ where
 
             let version = match RpcVersion::from_request_path(&path, version_default)
                 .map(|v| v.name())
-                .or_internal_server_error("Failed to get request path")
+                .context("Failed to get request path")
             {
                 Ok(version) => version,
                 Err(_) => {

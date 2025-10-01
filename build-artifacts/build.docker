@@ -50,6 +50,9 @@ RUN scripts/build-cairo.sh                                                      
     $COMPILE_SIERRA cairo_contracts/RolesExternalInitializer.sierra cairo_contracts/RolesExternalInitializer.casm && \
     $COMPILE_SIERRA cairo_contracts/ERC20.sierra cairo_contracts/ERC20.casm
 
+RUN find $STARKGATE_DIR/starkware -type f -name "*.sol" -exec sed -i.bak 's/\"starkware/\"src\/starkware/' {} \; -exec rm {}.bak \;
+RUN find $STARKGATE_DIR/starkware -type f -name "*.sol" -exec sed -i.bak 's/\"third_party/\"src\/third_party/' {} \; -exec rm {}.bak \;
+
 # =========================================================================== #
 #                          STARKGATE CONTRACTS (legacy)                       #
 # =========================================================================== #
@@ -89,8 +92,8 @@ WORKDIR build/Release/src
 #                                   CAIRO-LANG                                #
 # =========================================================================== #
 
-FROM builder as cairo-lang
-ENV CAIRO_LANG_REV="a86e92bfde9c171c0856d7b46580c66e004922f3"
+FROM builder AS cairo-lang
+ENV CAIRO_LANG_REV="8e11b8cc65ae1d0959328b1b4a40b92df8b58595"
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
 WORKDIR /contracts
@@ -102,7 +105,7 @@ RUN git checkout $CAIRO_LANG_REV
 
 RUN python3 -m venv venv
 ENV PATH="$CAIRO_LANG_DIR/venv/bin:$PATH"
-RUN pip install "cairo-lang==0.13.2" "sympy<1.13.0"
+RUN pip install "cairo-lang==0.13.3" "sympy<1.13.0"
 
 RUN cairo-compile src/starkware/starknet/core/os/os.cairo --output os_latest.json --cairo_path src
 
@@ -211,6 +214,46 @@ RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip
 RUN ./scarb/bin/scarb build
 
 # =========================================================================== #
+#                         BOOTSTRAPPER ETHEREUM                               #
+# =========================================================================== #
+
+FROM ghcr.io/foundry-rs/foundry:stable AS bootstrapper-ethereum
+WORKDIR /contracts
+
+ENV STARKGATE_DIR="/contracts/starkgate-contracts"
+
+COPY bootstrapper-v2/contracts/ethereum/ .
+COPY --from=starkgate-latest $STARKGATE_DIR/starkware/ ./src/starkware/
+COPY --from=starkgate-latest $STARKGATE_DIR/third_party/ ./src/third_party/
+RUN forge install --no-git && forge build
+
+
+# =========================================================================== #
+#                         BOOTSTRAPPER MADARA                                 #
+# =========================================================================== #
+FROM builder AS bootstrapper-madara
+
+ARG TARGETOS
+ARG TARGETARCH
+ENV SCARB_VERSION="2.11.3"
+ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  fi
+
+WORKDIR /contracts
+# Setup scarb
+RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
+
+COPY bootstrapper-v2/contracts/madara/ .
+
+# Compile contracts
+RUN ./scarb/bin/scarb build
+
+
+# =========================================================================== #
 #                                  ARTIFACTS                                  #
 # =========================================================================== #
 
@@ -222,6 +265,7 @@ WORKDIR starkgate_latest
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV ARTIFACTS_CAIRO="$STARKGATE_DIR/cairo_contracts"
 ENV ARTIFACTS_SOLID="$STARKGATE_DIR/artifacts"
+ENV BASE_CHAIN_FACTORY_DIR="bootstrapper/contracts/ethereum"
 
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.sierra erc20.sierra.json
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.casm erc20.casm.json
@@ -235,6 +279,15 @@ COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.sierra ERC20_070.sierra.json
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.casm ERC20_070.casm.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json eth_bridge_upgraded.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json eic_eth_bridge.json
+
+WORKDIR ../bootstrapper
+ENV BOOTSTRAPPER_DIR_BASE_CHAIN_FACTORY="/contracts"
+ENV BOOTSTRAPPER_DIR_MADARA_FACTORY="/contracts"
+
+COPY --from=starkgate-latest $STARKGATE_DIR/starkware ./solidity/starkware/
+COPY --from=starkgate-latest $STARKGATE_DIR/third_party ./solidity/third_party/
+COPY --from=bootstrapper-ethereum $BOOTSTRAPPER_DIR_BASE_CHAIN_FACTORY/out ./solidity/out/
+COPY --from=bootstrapper-madara $BOOTSTRAPPER_DIR_MADARA_FACTORY/target ./cairo/target/
 
 WORKDIR ../starkgate_legacy
 
