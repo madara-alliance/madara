@@ -5,7 +5,25 @@ name: Task - Test E2E
 # This workflow runs end-to-end tests for the Madara System
 # against the Madara, Orchestrator, Bootstrapper binaries to ensure e2e testing
 on:
+  workflow_dispatch:
   workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the madara artifact"
+        required: true
+        type: string
+      orchestrator-binary-hash:
+        description: "Hash used to retrieve the orchestrator artifact"
+        required: true
+        type: string
+      bootstrapper-binary-hash:
+        description: "Hash used to retrieve the bootstrapper artifact"
+        required: true
+        type: string
+      cairo-artifacts-hash:
+        description: "Hash used to retrieve the cairo artifacts"
+        required: true
+        type: string
 
 jobs:
   test-end-to-end:
@@ -27,7 +45,6 @@ jobs:
         run: |
           docker pull localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
           docker pull mongo:latest
-          docker pull eqlabs/pathfinder:latest
 
       - name: Rust setup
         uses: ./.github/actions/setup-rust
@@ -35,45 +52,28 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
-      # Calculate expected hashes for artifact downloads
-      - name: Calculate expected binary hashes
-        id: calculate-hashes
-        run: |
-          PR_NUMBER=${{ github.event.pull_request.number || 'main' }}
-
-          # Calculate the same hashes as build workflows (component-PR_NUMBER pattern)
-          MADARA_HASH=$(echo "madara-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
-          ORCHESTRATOR_HASH=$(echo "orchestrator-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
-          BOOTSTRAPPER_HASH=$(echo "bootstrapper-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
-          CAIRO_HASH=$(echo "cairo-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
-
-          echo "madara-hash=$MADARA_HASH" >> $GITHUB_OUTPUT
-          echo "orchestrator-hash=$ORCHESTRATOR_HASH" >> $GITHUB_OUTPUT
-          echo "bootstrapper-hash=$BOOTSTRAPPER_HASH" >> $GITHUB_OUTPUT
-          echo "cairo-hash=$CAIRO_HASH" >> $GITHUB_OUTPUT
-
       - name: Download Madara binary
         uses: actions/download-artifact@v4
         with:
-          name: madara-binary-${{ steps.calculate-hashes.outputs.madara-hash }}
+          name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
 
       - name: Download Orchestrator binary
         uses: actions/download-artifact@v4
         with:
-          name: orchestrator-binary-${{ steps.calculate-hashes.outputs.orchestrator-hash }}
+          name: orchestrator-binary-${{ inputs.orchestrator-binary-hash }}
           path: target/release/
 
       - name: Download Bootstrapper binary
         uses: actions/download-artifact@v4
         with:
-          name: bootstrapper-binary-${{ steps.calculate-hashes.outputs.bootstrapper-hash }}
+          name: bootstrapper-binary-${{ inputs.bootstrapper-binary-hash }}
           path: target/release/
 
-      - name: Download Cairo artifacts
+      - name: Download Cairo artiracts
         uses: actions/download-artifact@v4
         with:
-          name: build-artifacts-${{ steps.calculate-hashes.outputs.cairo-hash }}
+          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
           path: build-artifacts/
 
       - name: Download and extract Pathfinder binary
