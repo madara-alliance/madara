@@ -360,7 +360,7 @@ impl ChainConfig {
                 strk_fee_token_address: self.native_fee_token_address,
                 eth_fee_token_address: self.parent_fee_token_address,
             },
-            is_l3: true,
+            is_l3: false,
         }
     }
 }

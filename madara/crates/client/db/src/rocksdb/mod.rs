@@ -371,10 +371,10 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
 
     fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()> {
-        tracing::debug!("Writing state diff {block_n}");
+        tracing::debug!("Writing bouncer weights for block_n={block_n}");
         self.inner
             .blocks_store_bouncer_weights(block_n, value)
-            .with_context(|| format!("Storing state diff for block_n={block_n}"))
+            .with_context(|| format!("Storing bouncer weights for block_n={block_n}"))
     }
 
     fn write_events(&self, block_n: u64, events: &[mp_receipt::EventWithTransactionHash]) -> Result<()> {
