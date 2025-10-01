@@ -10,15 +10,15 @@ use mp_rpc::v0_7_1::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::validated::ValidatedMempoolTx;
+use mp_transactions::validated::ValidatedTransaction;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
-struct BypassInput(mpsc::Sender<ValidatedMempoolTx>);
+struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
 #[async_trait]
 impl SubmitValidatedTransaction for BypassInput {
-    async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
+    async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
     }
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
@@ -36,7 +36,7 @@ impl SubmitValidatedTransaction for BypassInput {
 pub struct BlockProductionHandle {
     /// Commands to executor task.
     executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
-    bypass_input: mpsc::Sender<ValidatedMempoolTx>,
+    bypass_input: mpsc::Sender<ValidatedTransaction>,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
 }
@@ -45,7 +45,7 @@ impl BlockProductionHandle {
     pub(crate) fn new(
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
-        bypass_input: mpsc::Sender<ValidatedMempoolTx>,
+        bypass_input: mpsc::Sender<ValidatedTransaction>,
     ) -> Self {
         Self {
             executor_commands,
@@ -69,7 +69,7 @@ impl BlockProductionHandle {
     }
 
     /// Send a transaction through the bypass channel to bypass mempool and validation.
-    pub async fn send_tx_raw(&self, tx: ValidatedMempoolTx) -> Result<(), ExecutorCommandError> {
+    pub async fn send_tx_raw(&self, tx: ValidatedTransaction) -> Result<(), ExecutorCommandError> {
         self.bypass_input.send(tx).await.map_err(|_| ExecutorCommandError::ChannelClosed)
     }
 }
@@ -114,7 +114,7 @@ impl SubmitTransaction for BlockProductionHandle {
 
 #[async_trait]
 impl SubmitValidatedTransaction for BlockProductionHandle {
-    async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
+    async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         self.send_tx_raw(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
     }
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {

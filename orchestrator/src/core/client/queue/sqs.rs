@@ -220,7 +220,7 @@ impl QueueClient for SQS {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
         let producer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: true }).build_producer().await?;
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_producer().await?;
         Ok(producer)
     }
 
@@ -233,7 +233,7 @@ impl QueueClient for SQS {
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
         tracing::info!("Found queue url {}", queue_url);
         let consumer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: true }).build_consumer().await?;
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
         Ok(consumer)
     }
     /// TODO: this should not be need remove this after reviewing the code access for usage

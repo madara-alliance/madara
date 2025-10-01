@@ -16,11 +16,13 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use std::str::FromStr;
 use std::sync::Arc;
+use tracing::{error, info};
 use url::Url;
 
 use crate::core::client::lock::mongodb::MongoLockClient;
 use crate::core::client::lock::LockClient;
 use crate::core::error::OrchestratorCoreResult;
+use crate::types::params::batching::BatchingParams;
 use crate::types::constant::generate_version_string;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
@@ -100,12 +102,19 @@ pub struct ConfigParam {
     pub madara_rpc_url: Url,
     pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
+    pub batching_config: BatchingParams,
     pub service_config: ServiceParams,
     pub server_config: ServerParams,
     /// Layout to use for running SNOS
     pub snos_layout_name: LayoutName,
     /// Layout to use for proving
     pub prover_layout_name: LayoutName,
+    /// Specifies if we should store job artifacts which are not used in the code i.e., not
+    /// necessary for the application, but can be used for auditing purposes.
+    ///
+    /// Currently, being used to check if we should store
+    /// * Aggregator Proof
+    pub store_audit_artifacts: bool,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -192,12 +201,14 @@ impl Config {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
             madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
+            batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
             snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())
                 .context("Failed to get SNOS layout name")?,
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())
                 .context("Failed to get prover layout name")?,
+            store_audit_artifacts: run_cmd.store_audit_artifacts,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
 
@@ -206,6 +217,11 @@ impl Config {
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
+
+        // Start mock Atlantic server if flag is enabled
+        if run_cmd.mock_atlantic_server {
+            Self::start_mock_atlantic_server(&prover_config, run_cmd.mock_atlantic_server).await;
+        }
 
         // External Clients Initialization
         let prover_client = Self::build_prover_service(&prover_config, &params);
@@ -272,7 +288,6 @@ impl Config {
     ///
     /// # Arguments
     /// * `prover_params` - The proving service parameters
-    /// * `params` - The config parameters
     /// # Returns
     /// * `Box<dyn ProverClient>` - The proving service
     pub(crate) fn build_prover_service(
@@ -285,6 +300,43 @@ impl Config {
             }
             ProverConfig::Atlantic(atlantic_params) => {
                 Box::new(AtlanticProverService::new_with_args(atlantic_params, &params.prover_layout_name))
+            }
+        }
+    }
+
+    /// start_mock_atlantic_server - Start the mock Atlantic server
+    ///
+    /// # Arguments
+    /// * `prover_params` - The proving service parameters
+    /// * `allow_mock_hash_server` - Whether to allow the mock Atlantic server
+    /// # Returns
+    /// * `Box<dyn ProverClient>` - The proving service
+    ///
+    /// # Notes
+    /// This function is used to start the mock Atlantic server if the flag is enabled and we're in testnet.
+    /// It starts the mock server in a background task and gives it time to start.
+    async fn start_mock_atlantic_server(prover_params: &ProverConfig, allow_mock_hash_server: bool) {
+        match prover_params {
+            ProverConfig::Atlantic(atlantic_params) => {
+                // Start mock Atlantic server if flag is enabled and we're in testnet
+                if allow_mock_hash_server && atlantic_params.atlantic_network == "TESTNET" {
+                    info!("Mock Atlantic server flag is enabled, starting mock server...");
+
+                    // Start the mock server in a background task
+                    tokio::spawn(async move {
+                        info!("Starting mock Atlantic server on port 4001");
+                        if let Err(e) = utils_mock_atlantic_server::start_mock_atlantic_server().await {
+                            error!("Failed to start mock Atlantic server: {}", e);
+                        }
+                    });
+
+                    // Give the mock server time to start
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    info!("Mock Atlantic server started successfully");
+                }
+            }
+            ProverConfig::Sharp(_) => {
+                tracing::warn!("Mock Atlantic server flag is enabled, but prover is not Atlantic");
             }
         }
     }

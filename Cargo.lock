@@ -1213,7 +1213,7 @@ checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 [[package]]
 name = "appchain-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun#edb5da9ef64670e10ad5f9feb4590bc950644acd"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.9#edb5da9ef64670e10ad5f9feb4590bc950644acd"
 dependencies = [
  "appchain-utils",
  "async-trait",
@@ -1233,7 +1233,7 @@ dependencies = [
 [[package]]
 name = "appchain-utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun#edb5da9ef64670e10ad5f9feb4590bc950644acd"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.9#edb5da9ef64670e10ad5f9feb4590bc950644acd"
 dependencies = [
  "async-trait",
  "color-eyre",
@@ -2615,9 +2615,9 @@ dependencies = [
 
 [[package]]
 name = "bip39"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33415e24172c1b7d6066f6d999545375ab8e1d95421d6784bdfff9496f292387"
+checksum = "43d193de1f7487df1914d3a568b772458861d33f9c54249612cc2893d6915054"
 dependencies = [
  "bitcoin_hashes",
 ]
@@ -2889,8 +2889,10 @@ name = "bootstrapper-v2"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "build-version",
  "clap",
  "dotenvy",
+ "fs_extra",
  "serde",
  "serde_json",
  "starknet 0.14.0",
@@ -3717,7 +3719,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.3#dd2d94e72a5b6b02940c54ad0fed07cbdcfc8733"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4753,15 +4755,26 @@ checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
 name = "e2e"
 version = "0.8.0"
 dependencies = [
+ "alloy 0.8.3",
+ "anyhow",
  "async-trait",
+ "color-eyre",
  "dotenvy",
  "env_logger",
+ "fs_extra",
  "httpmock",
+ "lazy_static",
  "log",
  "reqwest 0.12.8",
  "rstest 0.18.2",
  "serde",
  "serde_json",
+ "starknet 0.11.0",
+ "starknet-accounts 0.11.0",
+ "starknet-core 0.11.1",
+ "starknet-crypto 0.7.4",
+ "starknet-providers 0.11.0",
+ "starknet-signers 0.9.0",
  "strum 0.26.3",
  "strum_macros 0.26.4",
  "testcontainers",
@@ -8156,6 +8169,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test",
  "url",
+ "utils-mock-atlantic-server",
  "uuid 1.12.0",
 ]
 
@@ -8656,7 +8670,7 @@ dependencies = [
 [[package]]
 name = "pathfinder-common"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35#8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -8681,7 +8695,7 @@ dependencies = [
 [[package]]
 name = "pathfinder-crypto"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35#8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35"
 dependencies = [
  "bitvec",
  "fake",
@@ -8692,7 +8706,7 @@ dependencies = [
 [[package]]
 name = "pathfinder-serde"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35#8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35"
 dependencies = [
  "anyhow",
  "num-bigint",
@@ -9245,7 +9259,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.3#dd2d94e72a5b6b02940c54ad0fed07cbdcfc8733"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -9751,7 +9765,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.3#dd2d94e72a5b6b02940c54ad0fed07cbdcfc8733"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -9766,7 +9780,7 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.3#dd2d94e72a5b6b02940c54ad0fed07cbdcfc8733"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
@@ -10339,9 +10353,9 @@ dependencies = [
 
 [[package]]
 name = "schnorrkel"
-version = "0.11.4"
+version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8de18f6d8ba0aad7045f5feae07ec29899c1112584a38509a84ad7b04451eaa0"
+checksum = "6e9fcb6c2e176e86ec703e22560d99d65a5ee9056ae45a08e13e84ebf796296f"
 dependencies = [
  "arrayref",
  "arrayvec 0.7.6",
@@ -11156,8 +11170,8 @@ dependencies = [
  "auto_impl",
  "starknet-core 0.12.3",
  "starknet-crypto 0.7.4",
- "starknet-providers 0.12.0",
- "starknet-signers 0.10.0",
+ "starknet-providers 0.12.1",
+ "starknet-signers 0.10.2",
  "thiserror 1.0.65",
 ]
 
@@ -11462,7 +11476,7 @@ dependencies = [
 [[package]]
 name = "starknet-gateway-types"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35#8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35"
 dependencies = [
  "anyhow",
  "fake",
@@ -11494,7 +11508,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.3#dd2d94e72a5b6b02940c54ad0fed07cbdcfc8733"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -11543,7 +11557,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.3#dd2d94e72a5b6b02940c54ad0fed07cbdcfc8733"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
@@ -11586,9 +11600,9 @@ dependencies = [
 
 [[package]]
 name = "starknet-providers"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60e8e69ba7a36dea2d28333be82b4011f8784333d3ae5618482b6587c1ffb66c"
+checksum = "a9256247f718564b3e4c73cc941735012691c14903fbc25cea306745bcbfa384"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -11660,9 +11674,9 @@ dependencies = [
 
 [[package]]
 name = "starknet-signers"
-version = "0.10.0"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70b9e01b61ae51d722e2b100d6ef913c5a2e70d1ea672733d385f7296d6055ef"
+checksum = "518c7de189cd4158d45d33067c580094ad5cd2f027a90ac76d49a81c89fa37bc"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -12091,7 +12105,7 @@ dependencies = [
 [[package]]
 name = "tagged"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35#8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35"
 dependencies = [
  "fake",
 ]
@@ -12099,7 +12113,7 @@ dependencies = [
 [[package]]
 name = "tagged-debug-derive"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35#8c3a4cd0b68b9fd55dab87e8578ac910d6f75d35"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13088,6 +13102,7 @@ version = "0.8.0"
 dependencies = [
  "axum 0.7.7",
  "chrono",
+ "clap",
  "rand",
  "reqwest 0.12.8",
  "serde",

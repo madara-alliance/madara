@@ -105,9 +105,9 @@ impl MadaraConfig {
         Self::default()
     }
 
-    /// Create a builder for MadaraConfig
-    pub fn builder() -> MadaraConfigBuilder {
-        MadaraConfigBuilder::new()
+    /// Create a builder for MadaraConfig using current configuration values
+    pub fn builder(&self) -> MadaraConfigBuilder {
+        MadaraConfigBuilder { config: self.clone() }
     }
 
     /// Get the binary path
@@ -258,6 +258,9 @@ impl MadaraConfig {
         cmd.arg("--l1-gas-price").arg(self.l1_gas_price.to_string());
         cmd.arg("--blob-gas-price").arg(self.blob_gas_price.to_string());
         cmd.arg("--strk-per-eth").arg(self.strk_per_eth.to_string());
+
+        // Flush every n blocks
+        cmd.arg("--flush-every-n-blocks").arg("1");
 
         // Charge fee flag (inverted logic)
         if !self.charge_fee {

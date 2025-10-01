@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use cairo_vm::types::layout_name::LayoutName;
+use orchestrator_utils::http_client::extract_http_error_text;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::Method;
@@ -114,7 +115,8 @@ impl AtlanticClient {
             let response_text = response.bytes().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text.to_vec())
         } else {
-            Err(AtlanticError::AtlanticService(response.status()))
+            let (error_text, status) = extract_http_error_text(response, "get artifacts").await;
+            Err(AtlanticError::AtlanticService(status, error_text))
         }
     }
 
@@ -132,7 +134,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::GetBucketStatusFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "get bucket").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -143,6 +148,7 @@ impl AtlanticClient {
     pub async fn create_bucket(
         &self,
         atlantic_api_key: impl AsRef<str>,
+        mock_proof: bool,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
         // TODO: Use the aggregator version calculated from Madara Version being passed through ENV
         let response = self
@@ -161,6 +167,7 @@ impl AtlanticClient {
                     use_kzg_da: AGGREGATOR_USE_KZG_DA,
                     full_output: AGGREGATOR_FULL_OUTPUT,
                 },
+                mock_proof,
             })
             .map_err(AtlanticError::BodyParseError)?
             .send()
@@ -169,14 +176,17 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::CreateBucketFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "create bucket").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
     /// Close a bucket.
     /// No new child job can be added once the bucket is closed.
     /// We make sure that all the child jobs are completed before closing the bucket.
-    /// It's closed in Aggregator job.
+    /// It's closed in the Aggregator job.
     pub async fn close_bucket(
         &self,
         bucket_id: &str,
@@ -197,7 +207,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::CloseBucketFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "close bucket").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -223,7 +236,7 @@ impl AtlanticClient {
         );
 
         let mut request = self.proving_layer.customize_request(
-            // NOTE: Removing layout from the query params as it is unnecessary now (as conveyed by Atlantic)
+            // NOTE: Removing layout from the query params as it is unnecessary now (as conveyed by the Atlantic team)
             self.client
                 .request()
                 .method(Method::POST)
@@ -248,7 +261,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "add job").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -267,7 +283,10 @@ impl AtlanticClient {
         if response.status().is_success() {
             response.json().await.map_err(AtlanticError::GetJobStatusFailure)
         } else {
-            Err(AtlanticError::AtlanticService(response.status()))
+            {
+                let (error_text, status) = extract_http_error_text(response, "get job status").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -289,7 +308,10 @@ impl AtlanticClient {
             let response_text = response.text().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text)
         } else {
-            Err(AtlanticError::AtlanticService(response.status()))
+            {
+                let (error_text, status) = extract_http_error_text(response, "get proof by task id").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 
@@ -322,7 +344,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let (error_text, status) = extract_http_error_text(response, "submit L2 query").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
         }
     }
 

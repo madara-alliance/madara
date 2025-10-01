@@ -14,6 +14,9 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
       - name: Cleanup PR caches
         run: |
           echo "Fetching list of cache keys for this PR"

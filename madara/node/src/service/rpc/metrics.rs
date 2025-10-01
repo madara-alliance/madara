@@ -1,14 +1,12 @@
-use std::time::Instant;
-
 use jsonrpsee::types::Request;
 use jsonrpsee::MethodResponse;
-use opentelemetry::{
-    global::Error,
-    metrics::{Counter, Histogram},
-};
-
 use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
 use opentelemetry::{global, KeyValue};
+use opentelemetry::{
+    metrics::{Counter, Histogram},
+    InstrumentationScope,
+};
+use std::time::Instant;
 
 /// Metrics for RPC middleware storing information about the number of requests started/completed,
 /// calls started/completed and their timings.
@@ -30,52 +28,50 @@ pub struct RpcMetrics {
 
 impl RpcMetrics {
     /// Create an instance of metrics
-    pub fn register() -> Result<Self, Error> {
-        let common_scope_attributes = vec![KeyValue::new("crate", "rpc")];
-        let rpc_meter = global::meter_with_version(
-            "crates.rpc.opentelemetry",
-            Some("0.17"),
-            Some("https://opentelemetry.io/schemas/1.2.0"),
-            Some(common_scope_attributes.clone()),
+    pub fn register() -> anyhow::Result<Self> {
+        let meter = global::meter_with_scope(
+            InstrumentationScope::builder("crates.rpc.opentelemetry")
+                .with_attributes([KeyValue::new("crate", "rpc")])
+                .build(),
         );
 
         let calls_started = register_counter_metric_instrument(
-            &rpc_meter,
+            &meter,
             "calls_started".to_string(),
             "A counter to show block state at given time".to_string(),
             "".to_string(),
         );
 
         let calls_finished = register_counter_metric_instrument(
-            &rpc_meter,
+            &meter,
             "calls_finished".to_string(),
             "A counter to show block state at given time".to_string(),
             "".to_string(),
         );
 
         let calls_time = register_histogram_metric_instrument(
-            &rpc_meter,
+            &meter,
             "calls_time".to_string(),
             "A histogram to show the time taken for RPC calls".to_string(),
             "".to_string(),
         );
 
         let ws_sessions_opened = Some(register_counter_metric_instrument(
-            &rpc_meter,
+            &meter,
             "ws_sessions_opened".to_string(),
             "A counter to show the number of websocket sessions opened".to_string(),
             "".to_string(),
         ));
 
         let ws_sessions_closed = Some(register_counter_metric_instrument(
-            &rpc_meter,
+            &meter,
             "ws_sessions_closed".to_string(),
             "A counter to show the number of websocket sessions closed".to_string(),
             "".to_string(),
         ));
 
         let ws_sessions_time = register_histogram_metric_instrument(
-            &rpc_meter,
+            &meter,
             "ws_sessions_time".to_string(),
             "A histogram to show the time taken for RPC websocket sessions".to_string(),
             "".to_string(),

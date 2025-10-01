@@ -1,14 +1,11 @@
 use super::helpers::internal_error_response;
 use crate::helpers::{create_json_response, not_found_response};
 use hyper::Response;
-use mc_db::MadaraStorageError;
+use mc_db::view::block_id::BlockResolutionError;
 use mc_rpc::StarknetRpcApiError;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransactionError};
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
-use std::{
-    borrow::Cow,
-    fmt::{self, Display},
-};
+use std::borrow::Cow;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GatewayError {
@@ -16,14 +13,26 @@ pub enum GatewayError {
     Unsupported,
     #[error(transparent)]
     StarknetError(#[from] StarknetError),
-    #[error("Internal server error: {0}")]
-    InternalServerError(String),
+    #[error("Internal server error")]
+    InternalServerError,
 }
 
-impl From<MadaraStorageError> for GatewayError {
-    fn from(e: MadaraStorageError) -> Self {
-        tracing::error!(target: "gateway_errors", "Storage error: {}", e);
-        Self::InternalServerError(e.to_string())
+impl From<BlockResolutionError> for GatewayError {
+    fn from(value: BlockResolutionError) -> Self {
+        match value {
+            BlockResolutionError::NoBlocks => todo!(),
+            BlockResolutionError::BlockHashNotFound | BlockResolutionError::BlockNumberNotFound => {
+                StarknetError::block_not_found().into()
+            }
+            BlockResolutionError::Internal(error) => error.into(),
+        }
+    }
+}
+
+impl From<anyhow::Error> for GatewayError {
+    fn from(e: anyhow::Error) -> Self {
+        tracing::error!(target: "gateway_errors", "Internal gateway server error: {:#}", e);
+        Self::InternalServerError
     }
 }
 
@@ -31,10 +40,7 @@ impl From<GatewayError> for Response<String> {
     fn from(e: GatewayError) -> Response<String> {
         match e {
             GatewayError::StarknetError(e) => create_json_response(hyper::StatusCode::BAD_REQUEST, &e),
-            GatewayError::InternalServerError(error) => {
-                tracing::error!(target: "gateway_errors", "Internal server error: {error:#}");
-                internal_error_response()
-            }
+            GatewayError::InternalServerError => internal_error_response(),
             GatewayError::Unsupported => not_found_response(),
         }
     }
@@ -87,39 +93,7 @@ impl From<SubmitTransactionError> for GatewayError {
             SubmitTransactionError::Rejected(rejected_transaction_error) => {
                 Self::StarknetError(map_rejected_tx_error(rejected_transaction_error))
             }
-            SubmitTransactionError::Internal(error) => Self::InternalServerError(format!("{error:#}")),
-        }
-    }
-}
-
-pub trait ResultExt<T, E> {
-    fn or_internal_server_error<C: fmt::Display>(self, context: C) -> Result<T, GatewayError>;
-}
-
-impl<T, E: Display> ResultExt<T, E> for Result<T, E> {
-    fn or_internal_server_error<C: fmt::Display>(self, context: C) -> Result<T, GatewayError> {
-        match self {
-            Ok(val) => Ok(val),
-            Err(err) => {
-                tracing::error!(target: "gateway_errors", "{context}: {err:#}");
-                Err(GatewayError::InternalServerError(err.to_string()))
-            }
-        }
-    }
-}
-
-pub trait OptionExt<T> {
-    fn ok_or_internal_server_error<C: fmt::Display>(self, context: C) -> Result<T, GatewayError>;
-}
-
-impl<T> OptionExt<T> for Option<T> {
-    fn ok_or_internal_server_error<C: fmt::Display>(self, context: C) -> Result<T, GatewayError> {
-        match self {
-            Some(val) => Ok(val),
-            None => {
-                tracing::error!(target: "gateway_errors", "{context}");
-                Err(GatewayError::InternalServerError(context.to_string()))
-            }
+            SubmitTransactionError::Internal(error) => error.into(),
         }
     }
 }
@@ -134,9 +108,7 @@ impl From<StarknetRpcApiError> for GatewayError {
             }
         }
         match e {
-            StarknetRpcApiError::InternalServerError => {
-                GatewayError::InternalServerError("Internal server error".to_string())
-            }
+            StarknetRpcApiError::InternalServerError => GatewayError::InternalServerError,
             StarknetRpcApiError::BlockNotFound => GatewayError::StarknetError(StarknetError::block_not_found()),
             StarknetRpcApiError::InvalidContractClass { error } => GatewayError::StarknetError(StarknetError::new(
                 StarknetErrorCode::InvalidContractClass,
@@ -197,7 +169,7 @@ impl From<StarknetRpcApiError> for GatewayError {
                 StarknetErrorCode::TransactionFailed,
                 format!("An unexpected error occurred: {}", error),
             )),
-            e => GatewayError::InternalServerError(format!("Unexpected error: {:#?}", e)),
+            e => anyhow::Error::from(e).into(),
         }
     }
 }

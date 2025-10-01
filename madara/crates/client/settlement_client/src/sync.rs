@@ -8,7 +8,7 @@ use crate::L1ClientImpl;
 use mp_utils::service::ServiceContext;
 
 pub struct SyncWorkerConfig {
-    pub gas_provider_config: Option<GasPriceProviderConfig>,
+    pub gas_provider_config: GasPriceProviderConfig,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
     pub l1_head_sender: L1HeadSender,
 }
@@ -32,16 +32,14 @@ impl L1ClientImpl {
             ctx.clone(),
         ));
 
-        if let Some(gas_provider_config) = config.gas_provider_config {
-            if !gas_provider_config.all_is_fixed() {
-                join_set.spawn(gas_price_worker(
-                    self.provider.clone(),
-                    Arc::clone(&self.backend),
-                    ctx.clone(),
-                    gas_provider_config,
-                    config.l1_block_metrics,
-                ));
-            }
+        if !config.gas_provider_config.all_is_fixed() {
+            join_set.spawn(gas_price_worker(
+                self.provider.clone(),
+                Arc::clone(&self.backend),
+                ctx.clone(),
+                config.gas_provider_config,
+                config.l1_block_metrics,
+            ));
         }
 
         while let Some(res) = join_set.join_next().await {

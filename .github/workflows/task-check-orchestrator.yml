@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -25,8 +27,10 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
+      - name: Compile artifacts
+        run: make artifacts
+
       # Check Orchestrator
       - name: Cargo check
         run: |
-          export GIT_COMMIT_HASH=$GITHUB_SHA
           cargo check -p orchestrator --release

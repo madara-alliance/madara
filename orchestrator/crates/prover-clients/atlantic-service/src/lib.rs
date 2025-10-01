@@ -39,7 +39,11 @@ pub struct AtlanticValidatedArgs {
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
 pub struct AtlanticProverService {
     pub atlantic_client: AtlanticClient,
+    /// Optional fact-checker to verify the fact hash
+    /// * [None] if `MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH` env is set as `true`
+    /// * [Some] if `MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH` env is set as `false`
     pub fact_checker: Option<FactChecker>,
+    mock_fact_hash: bool,
     pub atlantic_api_key: String,
     pub proof_layout: LayoutName,
     pub atlantic_network: String,
@@ -87,7 +91,8 @@ impl ProverClient for AtlanticProverService {
                 Ok(atlantic_job_response.atlantic_query_id)
             }
             Task::CreateBucket => {
-                let response = self.atlantic_client.create_bucket(self.atlantic_api_key.clone()).await?;
+                let response =
+                    self.atlantic_client.create_bucket(self.atlantic_api_key.clone(), self.should_mock_proof()).await?;
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
@@ -265,11 +270,13 @@ impl AtlanticProverService {
         atlantic_api_key: String,
         job_config: AtlanticJobConfig,
         fact_checker: Option<FactChecker>,
+        mock_fact_hash: bool,
         cairo_verifier_program_hash: Option<String>,
     ) -> Self {
         Self {
             atlantic_client,
             fact_checker,
+            mock_fact_hash,
             atlantic_api_key,
             proof_layout: job_config.proof_layout.to_owned(),
             cairo_vm: job_config.cairo_vm,
@@ -304,6 +311,7 @@ impl AtlanticProverService {
                 network: atlantic_params.atlantic_network.clone(),
             },
             fact_checker,
+            atlantic_params.atlantic_mock_fact_hash.eq("true"),
             atlantic_params.cairo_verifier_program_hash.clone(),
         )
     }
@@ -324,6 +332,7 @@ impl AtlanticProverService {
                 network: "TESTNET".to_string(),
             },
             fact_checker,
+            atlantic_params.atlantic_mock_fact_hash.eq("true"),
             None,
         )
     }
@@ -338,5 +347,9 @@ impl AtlanticProverService {
                 atlantic_params.atlantic_settlement_layer.clone(),
             ))
         }
+    }
+
+    fn should_mock_proof(&self) -> bool {
+        self.mock_fact_hash
     }
 }

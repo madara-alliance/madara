@@ -1,0 +1,4 @@
+**/lib/**/*.md
+node_modules/**/*.md
+**/target/**/*.md
+docs/**/*.md

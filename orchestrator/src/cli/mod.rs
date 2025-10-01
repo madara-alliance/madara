@@ -8,6 +8,7 @@ pub use service::ServiceCliArgs as ServiceParams;
 use url::Url;
 
 pub mod alert;
+pub mod batching;
 pub mod cron;
 pub mod da;
 pub mod database;
@@ -144,6 +145,9 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub snos_args: snos::SNOSCliArgs,
 
+    #[clap(flatten)]
+    pub batching_args: batching::BatchingCliArgs,
+
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
 
@@ -158,6 +162,19 @@ pub struct RunCmd {
     pub service_args: service::ServiceCliArgs,
     #[clap(flatten)]
     pub instrumentation_args: instrumentation::InstrumentationCliArgs,
+
+    /// Run the mock Atlantic server for testing purposes.
+    /// This starts a local mock server that simulates the Atlantic prover service.
+    #[clap(long)]
+    pub mock_atlantic_server: bool,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", long)]
+    pub store_audit_artifacts: bool,
+
+    /// Graceful shutdown timeout in seconds.
+    /// Provides sufficient time for workers to complete their current tasks before forcing termination.
+    #[arg(env = "MADARA_ORCHESTRATOR_GRACEFUL_SHUTDOWN_TIMEOUT", long, default_value = "120")]
+    pub graceful_shutdown_timeout: u64,
 }
 
 #[derive(Parser, Debug, Clone)]
