@@ -26,7 +26,7 @@ use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Upd
 use std::cmp::{max, min};
 use std::sync::Arc;
 use tokio::try_join;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct BatchingTrigger;
 
@@ -627,7 +627,7 @@ impl BatchingTrigger {
     }
 
     fn max_blocks_to_process_at_once(&self) -> u64 {
-        100
+        25
     }
 
     /// Determines whether a new batch should be started based on the size of the compressed
@@ -658,6 +658,7 @@ impl BatchingTrigger {
         if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
             // If the MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env is set, we use that value
             // Mostly, it'll be used for testing purposes
+            warn!("Using MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {}", max_blocks_per_snos_batch);
             return Ok(batch.num_blocks >= max_blocks_per_snos_batch);
         }
         let current_builtins = BouncerWeights::empty();
