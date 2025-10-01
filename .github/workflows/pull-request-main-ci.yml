@@ -165,7 +165,7 @@ jobs:
     uses: ./.github/workflows/task-check-bootstrapper.yml
     secrets: inherit
 
-  # # Build Bootstrapper binary
+  # Build Bootstrapper binary
   # build-bootstrapper:
   #   needs: lint-code-style
   #   uses: ./.github/workflows/task-build-bootstrapper.yml
