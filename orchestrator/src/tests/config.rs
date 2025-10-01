@@ -25,6 +25,7 @@ use crate::types::Layer;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
+use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STRK_FEE_TOKEN};
 use httpmock::MockServer;
 use orchestrator_da_client_interface::{DaClient, MockDaClient};
 use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
@@ -596,6 +597,14 @@ pub(crate) fn get_env_params() -> EnvParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
         snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
+        strk_fee_token_address: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_STRK_NATIVE_FEE_TOKEN_ADDRESS",
+            DEFAULT_SEPOLIA_STRK_FEE_TOKEN,
+        ),
+        eth_fee_token_address: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_ETH_NATIVE_FEE_TOKEN_ADDRESS",
+            DEFAULT_SEPOLIA_ETH_FEE_TOKEN,
+        ),
     };
 
     let batching_config = BatchingParams {

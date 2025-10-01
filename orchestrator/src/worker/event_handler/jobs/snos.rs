@@ -9,12 +9,10 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
-// use crate::utils::COMPILED_OS; // Unused
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::{build_on_chain_data, get_fact_info, get_fact_l2, get_program_output};
 use async_trait::async_trait;
 use bytes::Bytes;
-// use cairo_vm::types::layout_name::LayoutName; // Unused
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
@@ -23,7 +21,6 @@ use generate_pie::generate_pie;
 use generate_pie::types::chain_config::ChainConfig;
 use generate_pie::types::os_hints::OsHintsConfiguration;
 use generate_pie::types::pie::{PieGenerationInput, PieGenerationResult};
-use orchestrator_utils::env_utils::get_env_var_or_panic;
 use orchestrator_utils::layer::Layer;
 use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet::providers::Provider;
@@ -39,13 +36,13 @@ pub struct SnosJobHandler;
 
 #[async_trait]
 pub trait ChainConfigFromExt {
-    async fn get_chain_config(rpc_url: String) -> Result<ChainConfig>;
+    async fn get_chain_config(rpc_url: &str, layer: &Layer, strk_fee_token_address: &str) -> Result<ChainConfig>;
 }
 
 #[async_trait]
 impl ChainConfigFromExt for ChainConfig {
-    async fn get_chain_config(rpc_url: String) -> Result<ChainConfig> {
-        let rpc_url = Url::parse(&rpc_url)?;
+    async fn get_chain_config(rpc_url: &str, layer: &Layer, strk_fee_token_address: &str) -> Result<ChainConfig> {
+        let rpc_url = Url::parse(rpc_url)?;
         let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
         let chain_id_in_hex = provider.chain_id().await?.to_fixed_hex_string();
 
@@ -53,19 +50,11 @@ impl ChainConfigFromExt for ChainConfig {
             .expect("Failed to decode chain id");
         let chain_id = ChainId::Other(chain_id_decoded);
 
-        // tracing::info!(
-        //     "chain id in hex: {:?}, chain id decoded: {:?}, chain id: {:?}, default: {:?}",
-        //     chain_id_in_hex,
-        //     String::from_utf8(hex::decode(chain_id_in_hex.trim_start_matches("0x"))?)?,
-        //     chain_id.to_string(),
-        //     ChainConfig::default().chain_id.to_string()
-        // );
-        let strk_fee_token_address_env_var =
-            get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_NATIVE_FEE_TOKEN_ADDRESS");
-        let strk_fee_token_address =
-            ContractAddress::try_from(Felt::from_hex_unchecked(&strk_fee_token_address_env_var))?;
-        // TODO: is_l3 should be updated from the config ideally!!!
-        Ok(ChainConfig { chain_id, strk_fee_token_address, is_l3: false })
+        Ok(ChainConfig {
+            chain_id,
+            strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&strk_fee_token_address))?,
+            is_l3: layer.is_l3(),
+        })
     }
 }
 
@@ -128,20 +117,26 @@ impl JobHandlerTrait for SnosJobHandler {
         let end_block_number = snos_metadata.end_block;
         debug!(job_id = %job.internal_id, start_block = %snos_metadata.start_block, end_block = %snos_metadata.end_block, num_blocks = %snos_metadata.num_blocks, "Retrieved batch information from metadata");
 
-        let _snos_url = config.snos_config().rpc_for_snos.to_string();
-        let _snos_url = _snos_url.trim_end_matches('/');
-        debug!(job_id = %job.internal_id, "Calling prove_block function");
+        let snos_url = config.snos_config().rpc_for_snos.to_string();
+        let snos_url = snos_url.trim_end_matches('/');
+        debug!(job_id = %job.internal_id, "Calling generate_pie function");
 
-        let rpc_url = get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL");
         let input = PieGenerationInput {
-            rpc_url: rpc_url.clone(),
+            rpc_url: snos_url.to_string(),
             blocks: (start_block_number..=end_block_number).collect(),
             // chain_config: ChainConfig::default(),
-            chain_config: ChainConfig::get_chain_config(rpc_url)
-                .await
-                .map_err(|e| JobError::Other(OtherError(eyre!("Failed to get chain config: {}", e))))?,
+            chain_config: ChainConfig::get_chain_config(
+                snos_url,
+                config.layer(),
+                &config.params.snos_config.strk_fee_token_address,
+            )
+            .await
+            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to get chain config: {}", e))))?,
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
+            layout: config.params.snos_layout_name,
+            strk_fee_token_address: config.params.snos_config.strk_fee_token_address.clone(),
+            eth_fee_token_address: config.params.snos_config.eth_fee_token_address.clone(),
         };
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
