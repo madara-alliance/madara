@@ -1266,20 +1266,30 @@
         },
         {
           "current": {
+            "selected": false,
             "text": "paradex-mainnet-lt_meter_service",
             "value": "paradex-mainnet-lt_meter_service"
           },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "definition": "label_values(block_state, service_name)",
+          "hide": 0,
+          "includeAll": false,
           "label": "Service Name",
+          "multi": false,
           "name": "namespace",
-          "options": [
-            {
-              "selected": true,
-              "text": "paradex-mainnet-lt_meter_service",
-              "value": "paradex-mainnet-lt_meter_service"
-            }
-          ],
-          "query": "paradex-mainnet-lt_meter_service",
-          "type": "textbox"
+          "options": [],
+          "query": {
+            "query": "label_values(block_state, service_name)",
+            "refId": "PrometheusVariableQueryEditor-VariableQuery"
+          },
+          "refresh": 1,
+          "regex": "",
+          "skipUrlSync": false,
+          "sort": 1,
+          "type": "query"
         },
         {
           "current": {
