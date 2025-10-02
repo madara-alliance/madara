@@ -2,13 +2,13 @@ use crate::core::config::Config;
 use alloy::transports::http::reqwest::StatusCode;
 use axum::response::IntoResponse;
 use axum::Router;
-use jobs::job_router;
 use blocks::block_router;
+use jobs::job_router;
 use public::local_route;
 use std::sync::Arc;
 
-pub(super) mod jobs;
 pub(super) mod blocks;
+pub(super) mod jobs;
 
 pub(super) mod public;
 

@@ -110,7 +110,6 @@ impl IntoResponse for JobRouteError {
     }
 }
 
-
 /// Represents errors related to block retrieval operations.
 ///
 /// This enum provides a set of error variants that can occur during block retrieval operations.
@@ -153,13 +152,15 @@ impl IntoResponse for BlockRouteError {
     fn into_response(self) -> Response {
         match self {
             BlockRouteError::InvalidBlockNumber(id) => {
-                (StatusCode::BAD_REQUEST, Json(ApiResponse::error(format!("Invalid Block Number: {}", id)))).into_response()
+                (StatusCode::BAD_REQUEST, Json(ApiResponse::error(format!("Invalid Block Number: {}", id))))
+                    .into_response()
             }
             BlockRouteError::NotFound(id) => {
                 (StatusCode::NOT_FOUND, Json(ApiResponse::error(format!("Block not found: {}", id)))).into_response()
             }
             BlockRouteError::DatabaseError(err) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(format!("Database error: {}", err)))).into_response()
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(format!("Database error: {}", err))))
+                    .into_response()
             }
         }
     }
