@@ -9,7 +9,9 @@ use reqwest::Method;
 use tracing::debug;
 use url::Url;
 
-use crate::constants::{AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL, RETRY_DELAY_MS, RETRY_MAX_ATTEMPTS};
+use crate::constants::{
+    AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL, RETRY_DELAY_MS, RETRY_MAX_ATTEMPTS,
+};
 use crate::error::AtlanticError;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
@@ -148,7 +150,8 @@ impl AtlanticClient {
                 let (error_text, status) = extract_http_error_text(response, "get artifacts").await;
                 Err(AtlanticError::AtlanticService(status, error_text))
             }
-        }).await
+        })
+        .await
     }
 
     /// Fetch the details of a bucket from the Atlantic client
@@ -171,7 +174,8 @@ impl AtlanticClient {
                     Err(AtlanticError::AtlanticService(status, error_text))
                 }
             }
-        }).await
+        })
+        .await
     }
 
     /// Create a new bucket for Applicative Recursion.
@@ -322,7 +326,8 @@ impl AtlanticClient {
                     Err(AtlanticError::AtlanticService(status, error_text))
                 }
             }
-        }).await
+        })
+        .await
     }
 
     /// Fetch proof from herodotus service.
@@ -350,7 +355,8 @@ impl AtlanticClient {
                     Err(AtlanticError::AtlanticService(status, error_text))
                 }
             }
-        }).await
+        })
+        .await
     }
 
     pub async fn submit_l2_query(

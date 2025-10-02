@@ -40,10 +40,10 @@ use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
 use alloy::providers::RootProvider;
 use alloy::transports::http::Http;
 use lazy_static::lazy_static;
-use tracing::{info, warn};
 use mockall::automock;
 use reqwest::Client;
 use tokio::time::sleep;
+use tracing::warn;
 
 // For more details on state update, refer to the core contract logic
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
