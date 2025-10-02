@@ -26,6 +26,9 @@ pub struct EthereumSettlementCliArgs {
 
     /// The amount of time in seconds to wait for state update txns
     /// Doesn't require an env variable
-    #[arg(long, default_value = "60")]
-    pub ethereum_settlement_txn_wait_sleep_delay_secs: Option<u64>,
+    #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_FINALITY_RETRY_WAIT_IN_SECS", long, default_value = "60")]
+    pub ethereum_finality_retry_wait_in_secs: Option<u64>,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR", long, default_value = "1.5")]
+    pub max_gas_price_mul_factor: f64,
 }

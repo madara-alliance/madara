@@ -144,7 +144,7 @@ impl JobHandlerTrait for ProvingJobHandler {
                         tracing::error!(
                             job_id = %job.internal_id,
                             error = %e,
-                            "Failed to get task status from prover client"
+                            "Failed to get proof from prover client"
                         );
                     })?;
                     tracing::debug!(
