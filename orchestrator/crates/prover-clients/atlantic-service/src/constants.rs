@@ -12,3 +12,7 @@ pub(crate) const ATLANTIC_PROOF_URL: &str = "https://storage.googleapis.com/hero
 // Aggregator job configurations
 pub(crate) const AGGREGATOR_USE_KZG_DA: bool = true;
 pub(crate) const AGGREGATOR_FULL_OUTPUT: bool = false;
+
+// Retry configuration for GET requests
+pub(crate) const RETRY_MAX_ATTEMPTS: u32 = 3;
+pub(crate) const RETRY_DELAY_MS: u64 = 5000;

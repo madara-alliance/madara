@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::extract_http_error_text;
@@ -8,7 +9,7 @@ use reqwest::Method;
 use tracing::debug;
 use url::Url;
 
-use crate::constants::{AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL};
+use crate::constants::{AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL, RETRY_DELAY_MS, RETRY_MAX_ATTEMPTS};
 use crate::error::AtlanticError;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
@@ -96,6 +97,33 @@ impl AtlanticClient {
         Self { client, proving_layer }
     }
 
+    /// Generic retry mechanism for GET queries
+    /// Attempts the provided async function up to RETRY_MAX_ATTEMPTS times with RETRY_DELAY_MS delay between attempts
+    async fn retry_get<F, Fut, T, E>(&self, operation_name: &str, mut f: F) -> Result<T, E>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Result<T, E>>,
+        E: std::fmt::Display,
+    {
+        let mut last_error = None;
+
+        for attempt in 1..=RETRY_MAX_ATTEMPTS {
+            match f().await {
+                Ok(result) => return Ok(result),
+                Err(err) => {
+                    debug!("Attempt {}/{} for {} failed: {}", attempt, RETRY_MAX_ATTEMPTS, operation_name, err);
+                    last_error = Some(err);
+
+                    if attempt < RETRY_MAX_ATTEMPTS {
+                        tokio::time::sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_error.expect("At least one attempt should have been made"))
+    }
+
     /// Fetch an artifact from the given path.
     /// This expects a URL from which it'll try to fetch the artifact.
     /// It's called by `get_artifacts` service function in `lib.rs`.
@@ -108,37 +136,42 @@ impl AtlanticClient {
     /// The artifact as a byte array if the request is successful, otherwise an error is returned
     pub async fn get_artifacts(&self, artifact_path: String) -> Result<Vec<u8>, AtlanticError> {
         debug!("Getting artifacts from {}", artifact_path);
-        let client = reqwest::Client::new();
-        let response = client.get(&artifact_path).send().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
 
-        if response.status().is_success() {
-            let response_text = response.bytes().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
-            Ok(response_text.to_vec())
-        } else {
-            let (error_text, status) = extract_http_error_text(response, "get artifacts").await;
-            Err(AtlanticError::AtlanticService(status, error_text))
-        }
+        self.retry_get("get_artifacts", || async {
+            let client = reqwest::Client::new();
+            let response = client.get(&artifact_path).send().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
+
+            if response.status().is_success() {
+                let response_text = response.bytes().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
+                Ok(response_text.to_vec())
+            } else {
+                let (error_text, status) = extract_http_error_text(response, "get artifacts").await;
+                Err(AtlanticError::AtlanticService(status, error_text))
+            }
+        }).await
     }
 
     /// Fetch the details of a bucket from the Atlantic client
     pub async fn get_bucket(&self, bucket_id: &str) -> Result<AtlanticGetBucketResponse, AtlanticError> {
-        let response = self
-            .client
-            .request()
-            .method(Method::GET)
-            .path("buckets")
-            .path(bucket_id)
-            .send()
-            .await
-            .map_err(AtlanticError::GetBucketStatusFailure)?;
+        self.retry_get("get_bucket", || async {
+            let response = self
+                .client
+                .request()
+                .method(Method::GET)
+                .path("buckets")
+                .path(bucket_id)
+                .send()
+                .await
+                .map_err(AtlanticError::GetBucketStatusFailure)?;
 
-        match response.status().is_success() {
-            true => response.json().await.map_err(AtlanticError::GetBucketStatusFailure),
-            false => {
-                let (error_text, status) = extract_http_error_text(response, "get bucket").await;
-                Err(AtlanticError::AtlanticService(status, error_text))
+            match response.status().is_success() {
+                true => response.json().await.map_err(AtlanticError::GetBucketStatusFailure),
+                false => {
+                    let (error_text, status) = extract_http_error_text(response, "get bucket").await;
+                    Err(AtlanticError::AtlanticService(status, error_text))
+                }
             }
-        }
+        }).await
     }
 
     /// Create a new bucket for Applicative Recursion.
@@ -270,24 +303,26 @@ impl AtlanticClient {
 
     /// Fetch the status of a job
     pub async fn get_job_status(&self, job_key: &str) -> Result<AtlanticGetStatusResponse, AtlanticError> {
-        let response = self
-            .client
-            .request()
-            .method(Method::GET)
-            .path("atlantic-query")
-            .path(job_key)
-            .send()
-            .await
-            .map_err(AtlanticError::GetJobStatusFailure)?;
+        self.retry_get("get_job_status", || async {
+            let response = self
+                .client
+                .request()
+                .method(Method::GET)
+                .path("atlantic-query")
+                .path(job_key)
+                .send()
+                .await
+                .map_err(AtlanticError::GetJobStatusFailure)?;
 
-        if response.status().is_success() {
-            response.json().await.map_err(AtlanticError::GetJobStatusFailure)
-        } else {
-            {
-                let (error_text, status) = extract_http_error_text(response, "get job status").await;
-                Err(AtlanticError::AtlanticService(status, error_text))
+            if response.status().is_success() {
+                response.json().await.map_err(AtlanticError::GetJobStatusFailure)
+            } else {
+                {
+                    let (error_text, status) = extract_http_error_text(response, "get job status").await;
+                    Err(AtlanticError::AtlanticService(status, error_text))
+                }
             }
-        }
+        }).await
     }
 
     /// Fetch proof from herodotus service.
@@ -300,19 +335,22 @@ impl AtlanticClient {
     pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
         // TODO: Update the code once a proper API is available for this
         debug!("Getting proof for task_id: {}", task_id);
-        let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
-        let client = reqwest::Client::new();
-        let response = client.get(&proof_path).send().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
 
-        if response.status().is_success() {
-            let response_text = response.text().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
-            Ok(response_text)
-        } else {
-            {
-                let (error_text, status) = extract_http_error_text(response, "get proof by task id").await;
-                Err(AtlanticError::AtlanticService(status, error_text))
+        self.retry_get("get_proof_by_task_id", || async {
+            let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
+            let client = reqwest::Client::new();
+            let response = client.get(&proof_path).send().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
+
+            if response.status().is_success() {
+                let response_text = response.text().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
+                Ok(response_text)
+            } else {
+                {
+                    let (error_text, status) = extract_http_error_text(response, "get proof by task id").await;
+                    Err(AtlanticError::AtlanticService(status, error_text))
+                }
             }
-        }
+        }).await
     }
 
     pub async fn submit_l2_query(
