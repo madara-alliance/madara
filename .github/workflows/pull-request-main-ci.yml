@@ -21,209 +21,179 @@ permissions:
 
 jobs:
   # ========================================================================= #
-  #                                E2E Test                                   #
-  # ========================================================================= #
-
-  # Build Madara binary
-  build-madara:
-    uses: ./.github/workflows/task-build-madara.yml
-    secrets: inherit
-
-  # Build Orchestrator binary
-  build-orchestrator:
-    uses: ./.github/workflows/task-build-orchestrator.yml
-    secrets: inherit
-
-  # Build Bootstrapper binary
-  build-bootstrapper:
-    uses: ./.github/workflows/task-build-bootstrapper.yml
-    secrets: inherit
-
-  # End-to-end tests
-  test-end-to-end:
-    needs: [ build-madara, build-orchestrator, build-bootstrapper ]
-    uses: ./.github/workflows/task-test-end-to-end.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-      orchestrator-binary-hash: ${{ needs.build-orchestrator.outputs.orchestrator-binary-hash }}
-      bootstrapper-binary-hash: ${{ needs.build-bootstrapper.outputs.bootstrapper-binary-hash }}
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
-    secrets: inherit
-
-  # ========================================================================= #
   #                                 DATABASE                                  #
   # ========================================================================= #
 
   # Update database version for schema changes
-#  update-version-db:
-#    if: github.event.pull_request.draft == false
-#    uses: ./.github/workflows/task-ci-version-file.yml
-#    with:
-#      label: db-migration
-#      version-file: .db-versions.yml
-#    secrets: inherit
-#
-#  # ========================================================================= #
-#  #                                 ARTIFACTS                                 #
-#  # ========================================================================= #
-#
-#  # Update artifact version for source changes
-#  update-version-artifacts:
-#    if: github.event.pull_request.draft == false
-#    uses: ./.github/workflows/task-ci-version-file.yml
-#    with:
-#      label: artifacts-update
-#      version-file: .artifact-versions.yml
-#    secrets: inherit
-#
-#  build-artifacts:
-#    needs: update-version-artifacts
-#    uses: ./.github/workflows/task-build-artifacts.yml
-#    with:
-#      should_run: ${{ needs.update-version-artifacts.outputs.update }}
-#    permissions:
-#      contents: read
-#      attestations: write
-#      id-token: write
-#    secrets: inherit
-#
-#  publish-artifacts:
-#    needs: [update-version-artifacts, build-artifacts]
-#    uses: ./.github/workflows/task-publish-image.yml
-#    with:
-#      image-name: artifacts
-#      tag: ${{ needs.build-artifacts.outputs.artifacts }}
-#      tag-version: ${{ needs.build-artifacts.outputs.artifacts-pr }}
-#      should_run: ${{ needs.update-version-artifacts.outputs.update }}
-#    permissions:
-#      contents: read
-#      packages: write
-#      attestations: write
-#      id-token: write
-#    secrets: inherit
-#
-#  # ========================================================================= #
-#  #                                   LINTS                                   #
-#  # ========================================================================= #
-#
-#  # Run Rust-specific linters
-#  lint-rust:
-#    needs: [update-version-db, publish-artifacts]
-#    uses: ./.github/workflows/task-lint-cargo.yml
-#    secrets: inherit
-#
-#  # Run linters for code style and quality
-#  lint-code-style:
-#    needs: [update-version-db, publish-artifacts]
-#    uses: ./.github/workflows/task-lint-code-style.yml
-#
-#  # ========================================================================= #
-#  #                                   MADARA                                  #
-#  # ========================================================================= #
-#
-#  # Build Madara binary
-#  build-madara:
-#    needs: [lint-code-style]
-#    uses: ./.github/workflows/task-build-madara.yml
-#    secrets: inherit
-#
-#  # Run coverage tests
-#  test-madara:
-#    needs: build-madara
-#    uses: ./.github/workflows/task-test-madara.yml
-#    with:
-#      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-#    secrets: inherit
-#
-#  # Run JavaScript tests against the built binary
-#  test-js:
-#    needs: build-madara
-#    uses: ./.github/workflows/task-test-js.yml
-#    with:
-#      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-#      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
-#
-#  # Run CLI tests against the built binary
-#  test-cli:
-#    needs: build-madara
-#    uses: ./.github/workflows/task-test-cli.yml
-#    secrets: inherit
-#
-#  # ========================================================================= #
-#  #                                ORCHESTRATOR                               #
-#  # ========================================================================= #
-#
-#  # Check Orchestrator binary
-#  # (We don't re-use the Orchestrator binary in other tests)
-#  check-orchestrator:
-#    needs: lint-code-style
-#    uses: ./.github/workflows/task-check-orchestrator.yml
-#    secrets: inherit
-#
-#  # TODO: maybe we can remove the check, if we are building the binary ourselves ?
-#  # Build Orchestrator binary
-#  # build-orchestrator:
-#  #   needs: lint-code-style
-#  #   uses: ./.github/workflows/task-build-orchestrator.yml
-#  #   secrets: inherit
-#
-#  # Run coverage tests
-#  test-orchestrator:
-#    needs: [build-madara, check-orchestrator]
-#    uses: ./.github/workflows/task-test-orchestrator.yml
-#    # with:
-#    #   madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-#    secrets: inherit
-#
-#  # Run e2e tests
-#  # Disabling for now, will be re-enabled after fixing SNOS multi jobs issue
-#  # e2e-orchestrator:
-#  #   needs: [build-madara, check-orchestrator]
-#  #   uses: ./.github/workflows/task-e2e-orchestrator.yml
-#  #   with:
-#  #     madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-#  #   secrets: inherit
-#
-#  # ========================================================================= #
-#  #                                BOOTSTRAPPER                               #
-#  # ========================================================================= #
-#
-#  # Check Bootstrapper binary
-#  # (We don't re-use the Bootstrapper binary in other tests)
-#  check-bootstrapper:
-#    needs: lint-code-style
-#    uses: ./.github/workflows/task-check-bootstrapper.yml
-#    secrets: inherit
-#
-#  # # Build Bootstrapper binary
-#  # build-bootstrapper:
-#  #   needs: lint-code-style
-#  #   uses: ./.github/workflows/task-build-bootstrapper.yml
-#  #   secrets: inherit
-#
-#  # Run coverage tests
-#  test-bootstrapper:
-#    needs: [build-madara, check-bootstrapper]
-#    uses: ./.github/workflows/task-test-bootstrapper.yml
-#    # with:
-#    #   madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-#    secrets: inherit
-#
-#  # ========================================================================= #
-#  #                                MERGE QUEUE                                #
-#  # ========================================================================= #
-#
-#  build-nightly-and-publish-madara:
-#    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
-#
-#  # test-hive:
-#  #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
-#
-#  build-nightly-and-publish-orchestrator:
-#    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
-#
-#  build-nightly-and-publish-bootstrapper:
-#    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
-#
-#  test-end-to-end:
-#    uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml
+  update-version-db:
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-ci-version-file.yml
+    with:
+      label: db-migration
+      version-file: .db-versions.yml
+    secrets: inherit
+
+  # ========================================================================= #
+  #                                 ARTIFACTS                                 #
+  # ========================================================================= #
+
+  # Update artifact version for source changes
+  update-version-artifacts:
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-ci-version-file.yml
+    with:
+      label: artifacts-update
+      version-file: .artifact-versions.yml
+    secrets: inherit
+
+  build-artifacts:
+    needs: update-version-artifacts
+    uses: ./.github/workflows/task-build-artifacts.yml
+    with:
+      should_run: ${{ needs.update-version-artifacts.outputs.update }}
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    secrets: inherit
+
+  publish-artifacts:
+    needs: [update-version-artifacts, build-artifacts]
+    uses: ./.github/workflows/task-publish-image.yml
+    with:
+      image-name: artifacts
+      tag: ${{ needs.build-artifacts.outputs.artifacts }}
+      tag-version: ${{ needs.build-artifacts.outputs.artifacts-pr }}
+      should_run: ${{ needs.update-version-artifacts.outputs.update }}
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+
+  # ========================================================================= #
+  #                                   LINTS                                   #
+  # ========================================================================= #
+
+  # Run Rust-specific linters
+  lint-rust:
+    needs: [update-version-db, publish-artifacts]
+    uses: ./.github/workflows/task-lint-cargo.yml
+    secrets: inherit
+
+  # Run linters for code style and quality
+  lint-code-style:
+    needs: [update-version-db, publish-artifacts]
+    uses: ./.github/workflows/task-lint-code-style.yml
+
+  # ========================================================================= #
+  #                                   MADARA                                  #
+  # ========================================================================= #
+
+  # Build Madara binary
+  build-madara:
+    needs: [lint-code-style]
+    uses: ./.github/workflows/task-build-madara.yml
+    secrets: inherit
+
+  # Run coverage tests
+  test-madara:
+    needs: build-madara
+    uses: ./.github/workflows/task-test-madara.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  # Run JavaScript tests against the built binary
+  test-js:
+    needs: build-madara
+    uses: ./.github/workflows/task-test-js.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
+
+  # Run CLI tests against the built binary
+  test-cli:
+    needs: build-madara
+    uses: ./.github/workflows/task-test-cli.yml
+    secrets: inherit
+
+  # ========================================================================= #
+  #                                ORCHESTRATOR                               #
+  # ========================================================================= #
+
+  # Check Orchestrator binary
+  # (We don't re-use the Orchestrator binary in other tests)
+  check-orchestrator:
+    needs: lint-code-style
+    uses: ./.github/workflows/task-check-orchestrator.yml
+    secrets: inherit
+
+  # TODO: maybe we can remove the check, if we are building the binary ourselves ?
+  # Build Orchestrator binary
+  # build-orchestrator:
+  #   needs: lint-code-style
+  #   uses: ./.github/workflows/task-build-orchestrator.yml
+  #   secrets: inherit
+
+  # Run coverage tests
+  test-orchestrator:
+    needs: [build-madara, check-orchestrator]
+    uses: ./.github/workflows/task-test-orchestrator.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  # Run e2e tests
+  # Disabling for now, will be re-enabled after fixing SNOS multi jobs issue
+  # e2e-orchestrator:
+  #   needs: [build-madara, check-orchestrator]
+  #   uses: ./.github/workflows/task-e2e-orchestrator.yml
+  #   with:
+  #     madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+  #   secrets: inherit
+
+  # ========================================================================= #
+  #                                BOOTSTRAPPER                               #
+  # ========================================================================= #
+
+  # Check Bootstrapper binary
+  # (We don't re-use the Bootstrapper binary in other tests)
+  check-bootstrapper:
+    needs: lint-code-style
+    uses: ./.github/workflows/task-check-bootstrapper.yml
+    secrets: inherit
+
+  # Build Bootstrapper binary
+  # build-bootstrapper:
+  #   needs: lint-code-style
+  #   uses: ./.github/workflows/task-build-bootstrapper.yml
+  #   secrets: inherit
+
+  # Run coverage tests
+  test-bootstrapper:
+    needs: [build-madara, check-bootstrapper]
+    uses: ./.github/workflows/task-test-bootstrapper.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  # ========================================================================= #
+  #                                MERGE QUEUE                                #
+  # ========================================================================= #
+
+  build-nightly-and-publish-madara:
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
+
+  # test-hive:
+  #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
+
+  build-nightly-and-publish-orchestrator:
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
+
+  build-nightly-and-publish-bootstrapper:
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
+
+  test-end-to-end:
+    uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml
