@@ -3,10 +3,13 @@ use alloy::transports::http::reqwest::StatusCode;
 use axum::response::IntoResponse;
 use axum::Router;
 use jobs::job_router;
+use blocks::block_router;
 use public::local_route;
 use std::sync::Arc;
 
 pub(super) mod jobs;
+pub(super) mod blocks;
+
 pub(super) mod public;
 
 /// Handles 404 Not Found responses for the application.
@@ -42,5 +45,6 @@ pub(crate) fn server_router(config: Arc<Config>) -> Router {
         .nest("/", local_route())
         .nest("/api", v1_routes)
         .nest("/jobs", job_router(config.clone()))
+        .nest("/blocks", block_router(config.clone()))
         .fallback(handler_404)
 }
