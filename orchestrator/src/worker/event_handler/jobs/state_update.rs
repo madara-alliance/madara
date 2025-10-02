@@ -135,7 +135,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             let to_settle_num = blocks_or_batches_to_settle[i];
             debug!(job_id = %job.internal_id, num = %to_settle_num, "Processing block/batch");
 
-            if !self.should_send_state_update(&config, to_settle_num).await? {
+            if !self.should_send_state_update_txn(&config, to_settle_num).await? {
                 sent_tx_hashes.push(format!("0x{:x}", B256::from_str("0").unwrap()));
                 continue;
             }
@@ -394,7 +394,7 @@ impl StateUpdateJobHandler {
         }
     }
 
-    async fn should_send_state_update(&self, config: &Arc<Config>, to_batch_num: u64) -> Result<bool, JobError> {
+    async fn should_send_state_update_txn(&self, config: &Arc<Config>, to_batch_num: u64) -> Result<bool, JobError> {
         #[cfg(feature = "testing")]
         return Ok(true);
 

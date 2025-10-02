@@ -40,7 +40,7 @@ use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
 use alloy::providers::RootProvider;
 use alloy::transports::http::Http;
 use lazy_static::lazy_static;
-use log::warn;
+use tracing::{info, warn};
 use mockall::automock;
 use reqwest::Client;
 use tokio::time::sleep;
@@ -84,7 +84,7 @@ pub struct EthereumSettlementValidatedArgs {
 
     pub starknet_operator_address: Address,
 
-    pub txn_wait_sleep_delay_secs: u64,
+    pub ethereum_finality_retry_wait_in_secs: u64,
 
     pub max_gas_price_mul_factor: f64,
 }
@@ -96,7 +96,7 @@ pub struct EthereumSettlementClient {
     wallet_address: Address,
     provider: Arc<RootProvider<Http<Client>>>,
     impersonate_account: Option<Address>,
-    txn_wait_sleep_delay_secs: u64,
+    tx_finality_retry_wait_in_seconds: u64,
     max_gas_price_mul_factor: f64,
 }
 
@@ -127,7 +127,7 @@ impl EthereumSettlementClient {
             wallet,
             wallet_address,
             impersonate_account: None,
-            txn_wait_sleep_delay_secs: settlement_cfg.txn_wait_sleep_delay_secs,
+            tx_finality_retry_wait_in_seconds: settlement_cfg.ethereum_finality_retry_wait_in_secs,
             max_gas_price_mul_factor: settlement_cfg.max_gas_price_mul_factor,
         }
     }
@@ -156,7 +156,7 @@ impl EthereumSettlementClient {
             wallet_address,
             impersonate_account,
             max_gas_price_mul_factor: 2f64,
-            txn_wait_sleep_delay_secs: 10,
+            tx_finality_retry_wait_in_seconds: 10,
         }
     }
 
@@ -380,7 +380,7 @@ impl SettlementClient for EthereumSettlementClient {
                 }
             }
             // Defaults to 60 seconds
-            sleep(Duration::from_secs(self.txn_wait_sleep_delay_secs)).await;
+            sleep(Duration::from_secs(self.tx_finality_retry_wait_in_seconds)).await;
         }
         Ok(None)
     }
