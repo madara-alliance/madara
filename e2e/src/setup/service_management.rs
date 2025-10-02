@@ -229,7 +229,7 @@ impl ServiceManager {
     }
 
     async fn wait_for_orchestrator_sync(&self, services: &RunningServices) -> Result<(), SetupError> {
-        let delay = Duration::from_secs(360); // Check every 5 mins
+        let delay = Duration::from_secs(120); // Check every 2 mins
         let timeout = Duration::from_secs(1800); // For 30 mins
 
         let operation = || async move {
