@@ -109,3 +109,59 @@ impl IntoResponse for JobRouteError {
         }
     }
 }
+
+/// Represents errors related to block retrieval operations.
+///
+/// This enum provides a set of error variants that can occur during block retrieval operations.
+/// Each variant includes a descriptive error message that can be used to provide meaningful feedback
+/// to the client.
+#[derive(Debug, thiserror::Error)]
+pub enum BlockRouteError {
+    /// Indicates that the provided block number is not valid (e.g., not a valid number)
+    #[error("Invalid Block Number: {0}")]
+    InvalidBlockNumber(String),
+
+    /// Indicates that the requested block could not be found in the system
+    #[error("Batch not found: {0}")]
+    NotFound(String),
+
+    /// Represents errors from database operations
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+}
+
+/// Implementation of axum's `IntoResponse` trait for converting errors into HTTP responses.
+///
+/// This implementation ensures that each error variant is mapped to an appropriate
+/// HTTP status code and formatted response body.
+///
+/// # Response Format
+/// All responses are returned as JSON with the following structure:
+/// ```json
+/// {
+///     "success": false,
+///     "message": "Error message here"
+/// }
+/// ```
+///
+/// # Status Code Mapping
+/// * `InvalidBlockNumber` -> 400 Bad Request
+/// * `NotFound` -> 404 Not Found
+/// * `DatabaseError` -> 500 Internal Server Error
+impl IntoResponse for BlockRouteError {
+    fn into_response(self) -> Response {
+        match self {
+            BlockRouteError::InvalidBlockNumber(id) => {
+                (StatusCode::BAD_REQUEST, Json(ApiResponse::error(format!("Invalid Block Number: {}", id))))
+                    .into_response()
+            }
+            BlockRouteError::NotFound(id) => {
+                (StatusCode::NOT_FOUND, Json(ApiResponse::error(format!("Block not found: {}", id)))).into_response()
+            }
+            BlockRouteError::DatabaseError(err) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiResponse::error(format!("Database error: {}", err))))
+                    .into_response()
+            }
+        }
+    }
+}
