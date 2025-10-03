@@ -15,7 +15,7 @@ use tracing::{error, warn};
 /// Initializes the worker with the provided configuration
 ///
 /// This function initializes the worker with the provided configuration.
-/// It starts all workers in the background and returns the controller immediately for shutdown management.
+/// It starts all workers in the background and returns the controller for shutdown management.
 /// The function should be called before the worker is started.
 ///
 /// # Arguments
