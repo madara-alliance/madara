@@ -27,9 +27,7 @@ impl TestContext {
             self.gateway_mock.client(),
             SyncControllerConfig::default().stop_on_sync(true).stop_at_block_n(Some(block_n)),
             ForwardSyncConfig::default(),
-        )
-        .await
-        .unwrap();
+        );
 
         sync.run(ServiceContext::default()).await.unwrap();
     }

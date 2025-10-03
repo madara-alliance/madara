@@ -158,7 +158,7 @@ impl ChainTip {
             },
         }
     }
-    fn from_storage(tip: StorageChainTip) -> Self {
+    pub fn from_storage(tip: StorageChainTip) -> Self {
         match tip {
             StorageChainTip::Empty => Self::Empty,
             StorageChainTip::Confirmed(block_n) => Self::Confirmed(block_n),
@@ -181,7 +181,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     sync_status: SyncStatusCell,
     starting_block: Option<u64>,
 
-    chain_tip: tokio::sync::watch::Sender<ChainTip>,
+    pub chain_tip: tokio::sync::watch::Sender<ChainTip>,
 
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
@@ -215,7 +215,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
         };
         backend.init().context("Initializing madara backend")?;
-
         Ok(backend)
     }
 
@@ -240,20 +239,11 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         }
 
         // Init chain_tip and set starting block
-        let storage_tip = if let Some(starting_block) = self.starting_block {
-            tracing::warn!("🔧 Using unsafe_starting_block: {}", starting_block);
+        let chain_tip = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
             StorageChainTip::Confirmed(starting_block)
         } else {
-            let tip = self.db.get_chain_tip()?;
-            tracing::info!("📖 Loaded chain tip from database: {:?}", tip);
-            tip
-        };
-        let chain_tip = ChainTip::from_storage(storage_tip);
-        tracing::info!(
-            "🏁 Backend initialized with chain_tip: {:?}, latest_confirmed: {:?}",
-            chain_tip,
-            chain_tip.latest_confirmed_block_n()
-        );
+            self.db.get_chain_tip()?
+        });
         self.starting_block = chain_tip.latest_confirmed_block_n();
         // On startup, remove all blocks past the chain tip, in case we have partial blocks in db.
         self.db.remove_all_blocks_starting_from(
@@ -326,146 +316,7 @@ impl MadaraBackend<RocksDBStorage> {
         }
         let db_path = base_path.join("db");
         let db = RocksDBStorage::open(&db_path, rocksdb_config).context("Opening rocksdb storage")?;
-        let backend = Self::new_and_init(db, chain_config, config)?;
-
-        // CRITICAL: Initialize Bonsai trie state for existing blocks after backend creation
-        // This prevents state root mismatches when a fullnode starts with existing data
-        if let Some(latest_block_n) = backend.latest_confirmed_block_n() {
-            if latest_block_n > 0 {
-                tracing::info!("🌳 Initializing Bonsai trie state for existing blocks (latest: {})", latest_block_n);
-                backend.init_bonsai_tries_for_existing_data(latest_block_n)?;
-                tracing::info!("✅ Bonsai trie state initialized for block #{}", latest_block_n);
-            }
-        }
-
-        Ok(Arc::new(backend))
-    }
-
-    /// Rollback the database to a specific block number
-    /// This removes all blocks after the specified block number
-    /// and reverts the state to that point
-    pub fn rollback_to_block(&self, target_block_n: u64) -> Result<()> {
-        let start_time = std::time::Instant::now();
-        tracing::warn!("⏮️ Rolling back database to block #{}", target_block_n);
-
-        // Get the current latest block
-        let current_block = self.latest_confirmed_block_n();
-
-        let Some(current_block) = current_block else {
-            tracing::warn!("No blocks found in database, cannot rollback");
-            return Ok(());
-        };
-
-        if target_block_n >= current_block {
-            tracing::info!(
-                "Target block {} is >= current block {}, nothing to rollback",
-                target_block_n,
-                current_block
-            );
-            return Ok(());
-        }
-        // First revert the database to get state consistency
-        let state_diffs = self.db.revert_to(target_block_n)?;
-        tracing::info!("📊 Reverted {} blocks, updating chain tip", state_diffs.len());
-
-        self.chain_tip.send_replace(ChainTip::Confirmed(target_block_n));
-        tracing::debug!("✓ Chain tip updated to block #{}", target_block_n);
-
-        tracing::info!("🔨 Rebuilding Bonsai trie state from database after rollback");
-
-        // Force flush and rebuild the trie state by clearing internal Bonsai state
-        // This ensures the tries are completely rebuilt from the database
-        self.rebuild_bonsai_tries_from_database(target_block_n)?;
-
-        tracing::info!("✅ Bonsai tries rebuilt from database for block #{}", target_block_n);
-
-        // Update the chain tip to the target block
-        let new_chain_tip =
-            if target_block_n == 0 { StorageChainTip::Empty } else { StorageChainTip::Confirmed(target_block_n) };
-
-        // Update the internal chain tip watcher
-        self.chain_tip.send_replace(ChainTip::from_storage(new_chain_tip.clone()));
-
-        // Update the stored chain tip
-        self.db.replace_chain_tip(&new_chain_tip)?;
-
-        // Flush to ensure consistency
-        self.db.flush()?;
-
-        let elapsed = start_time.elapsed();
-        tracing::info!("✅ Rollback complete. Database now at block #{} (took {:?})", target_block_n, elapsed);
-        Ok(())
-    }
-
-    /// Rebuild Bonsai tries by clearing them completely and reapplying state diffs from genesis
-    /// This ensures the trie state matches the database exactly after a reorg
-    ///
-    /// # Arguments
-    /// * `target_block_n` - The block number to rebuild state TO (inclusive). The state will
-    ///   include all state changes from blocks 0 through target_block_n.
-    ///   - If target_block_n = 0: Rebuilds to genesis state (block 0 state)
-    ///   - If target_block_n > 0: Rebuilds to the state after applying block target_block_n
-    pub fn rebuild_bonsai_tries_from_database(&self, target_block_n: u64) -> Result<()> {
-        tracing::info!("🔨 Rebuilding Bonsai tries for block #{} from database state", target_block_n);
-
-        // Force a database flush to ensure all data is persisted
-        self.db.flush()?;
-
-        // Step 1: Clear all Bonsai column families completely to start fresh
-        // This is critical after a reorg to prevent state corruption
-        tracing::info!("🧹 Clearing all Bonsai column families for fresh rebuild...");
-        self.db.clear_bonsai_tries()?;
-
-        // Step 2: Collect all state diffs from genesis to target block
-        let mut state_diffs = Vec::new();
-        for block_n in 0..=target_block_n {
-            if let Some(state_diff) = self.db.get_block_state_diff(block_n)? {
-                state_diffs.push(state_diff);
-            }
-        }
-
-        tracing::info!("📦 Collected {} state diffs for trie rebuild", state_diffs.len());
-
-        // Step 3: Apply all state diffs to rebuild the trie state from scratch
-        // Since we cleared everything above, this builds the trie from genesis
-        let _final_state_root = self.db.apply_to_global_trie(0, state_diffs.iter())?;
-
-        // Step 4: Update latest_applied_trie_update to match the rebuilt state
-        // This ensures subsequent sync correctly applies new blocks without skipping
-        self.db.write_latest_applied_trie_update(&Some(target_block_n))?;
-        tracing::info!("📝 Updated latest_applied_trie_update to block #{}", target_block_n);
-
-        // Step 5: Force a flush after rebuild to persist all changes
-        self.db.flush()?;
-
-        tracing::info!("✅ Bonsai tries rebuilt successfully for block #{}", target_block_n);
-
-        Ok(())
-    }
-
-    /// Initialize Bonsai trie state for existing data during backend startup
-    /// This prevents state root mismatches when starting with existing blocks
-    fn init_bonsai_tries_for_existing_data(&self, latest_block_n: u64) -> Result<()> {
-        tracing::debug!("🌳 Initializing Bonsai trie state for RocksDBStorage with {} blocks", latest_block_n);
-
-        // Force a database flush to ensure all data is persisted
-        self.db.flush()?;
-
-        // Perform root hash calculations to initialize Bonsai internal state
-        // This forces the Bonsai library to rebuild its internal state from the database
-        let contract_trie = self.db.contract_trie();
-        let class_trie = self.db.class_trie();
-
-        let _contract_root = contract_trie
-            .root_hash(crate::rocksdb::update_global_trie::bonsai_identifier::CONTRACT)
-            .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-
-        let _class_root = class_trie
-            .root_hash(crate::rocksdb::update_global_trie::bonsai_identifier::CLASS)
-            .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-
-        tracing::debug!("✅ Bonsai trie initialization completed for RocksDBStorage");
-        Ok(())
+        Ok(Arc::new(Self::new_and_init(db, chain_config, config)?))
     }
 }
 
@@ -748,21 +599,24 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
     /// parts.
     pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
-        self.inner.db.flush()?;
+        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
+
+        // Advance chain & clear preconfirmed atomically
+        self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
+
+        // Always flush after saving head status to ensure it's persisted
+        // This is critical for restart scenarios where we need to know the last synced block
+        self.inner.db.flush().context("Flushing database after head status update")?;
+
+        // Also flush based on the configured interval if set
         if self
             .inner
             .config
             .flush_every_n_blocks
             .is_some_and(|flush_every_n_blocks| block_number.checked_rem(flush_every_n_blocks) == Some(0))
         {
-            tracing::debug!("Flushing.");
-            self.inner.db.flush()?;
+            self.inner.db.flush().context("Periodic database flush")?;
         }
-
-        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
-
-        // Advance chain & clear preconfirmed atomically
-        self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
 
         Ok(())
     }
@@ -822,5 +676,10 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_latest_applied_trie_update(block_n)
+    }
+
+    /// Revert the blockchain to a specific block hash.
+    pub fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
+        self.db.revert_to(new_tip_block_hash)
     }
 }

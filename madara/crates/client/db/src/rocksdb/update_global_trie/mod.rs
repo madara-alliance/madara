@@ -40,13 +40,7 @@ pub fn apply_to_global_trie<'a>(
             || classes::class_trie_root(backend, &state_diff.declared_classes, block_n),
         );
 
-        let contract_root = contract_trie_root?;
-        let class_root = class_trie_root?;
-        let calculated_root = calculate_state_root(contract_root, class_root);
-        state_root = Some(calculated_root);
-
-        tracing::info!("📊 Block #{} state root calculation: contract_root={:#x}, class_root={:#x}, global_root={:#x}",
-                block_n, contract_root, class_root, calculated_root);
+        state_root = Some(calculate_state_root(contract_trie_root?, class_trie_root?));
     }
     state_root.context("Applying an empty batch to the global trie")
 }

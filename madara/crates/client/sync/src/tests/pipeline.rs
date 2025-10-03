@@ -57,9 +57,7 @@ async fn test_probed(mut ctx: TestContext) {
         ctx.gateway_mock.client(),
         SyncControllerConfig::default().service_state_sender(ctx.service_state_sender),
         ForwardSyncConfig::default(),
-    )
-    .await
-    .unwrap();
+    );
 
     let _task = AbortOnDrop::spawn(async move { sync.run(ServiceContext::default()).await.unwrap() });
 
@@ -105,9 +103,7 @@ async fn test_pending_block_update(mut ctx: TestContext) {
         ctx.gateway_mock.client(),
         SyncControllerConfig::default().service_state_sender(ctx.service_state_sender),
         ForwardSyncConfig::default(),
-    )
-    .await
-    .unwrap();
+    );
 
     let _task = AbortOnDrop::spawn(async move { sync.run(ServiceContext::default()).await.unwrap() });
 

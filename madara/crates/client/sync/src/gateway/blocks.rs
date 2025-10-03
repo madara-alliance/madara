@@ -6,7 +6,7 @@ use crate::{
 use anyhow::Context;
 use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
-    MadaraBackend,
+    MadaraBackend, MadaraStorageRead, MadaraStorageWrite,
 };
 use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockHeaderWithSignatures, BlockId, FullBlock, Header};
@@ -55,7 +55,7 @@ impl PipelineSteps for GatewaySyncSteps {
             let mut out = vec![];
             tracing::debug!("Gateway sync parallel step {:?}", block_range);
             for block_n in block_range {
-                tracing::info!("🔄 Fetching block #{} from gateway", block_n);
+                tracing::info!("📥 Fetching block #{} from gateway", block_n);
                 let block = self
                     .client
                     .get_state_update_with_block(BlockId::Number(block_n))
@@ -64,7 +64,98 @@ impl PipelineSteps for GatewaySyncSteps {
 
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
 
-                tracing::info!("📦 Received block #{} with hash: {:#x}", block_n, gateway_block.block_hash);
+                // Check for parent hash mismatch (reorg detection) BEFORE processing the block
+                if block_n > 0 {
+                    // Try to get the parent block's info (only confirmed blocks during gateway sync)
+                    match self._backend.block_view(&BlockId::Number(block_n - 1)) {
+                        Ok(parent_view) => {
+                            let parent_info = parent_view.get_block_info()?;
+                            let incoming_parent_hash = gateway_block.header.parent_block_hash;
+
+                            // For gateway sync, we only deal with confirmed blocks, so use as_closed()
+                            if let Some(closed_parent_info) = parent_info.as_closed() {
+                                let our_parent_hash = closed_parent_info.block_hash;
+
+                                if incoming_parent_hash != our_parent_hash {
+                                    tracing::warn!(
+                                        "🔄 REORG DETECTED: Parent hash mismatch at block_n={}! incoming_parent={:#x}, our_parent={:#x}",
+                                        block_n, incoming_parent_hash, our_parent_hash
+                                    );
+                                    tracing::info!("🔍 Finding common ancestor to handle reorg...");
+
+                                    // Find common ancestor by walking back our chain and comparing with gateway
+                                    let mut probe_block_n = block_n - 1;
+                                    let common_ancestor_hash = loop {
+                                        if probe_block_n == 0 {
+                                            tracing::warn!("🔍 Reached genesis block, using it as common ancestor");
+                                            let genesis_view = self._backend.block_view(&BlockId::Number(0))?;
+                                            let genesis_info = genesis_view.get_block_info()?;
+                                            break genesis_info.as_closed()
+                                                .ok_or_else(|| anyhow::anyhow!("Genesis must be confirmed"))?
+                                                .block_hash;
+                                        }
+
+                                        tracing::debug!("🔍 Probing block {} for common ancestor", probe_block_n);
+
+                                        // Get what we have stored for this block
+                                        if let Ok(block_view) = self._backend.block_view(&BlockId::Number(probe_block_n)) {
+                                            let block_info = block_view.get_block_info()?;
+                                            if let Some(closed_info) = block_info.as_closed() {
+                                                let our_hash = closed_info.block_hash;
+                                                tracing::debug!("🔍 Our block {} hash: {:#x}", probe_block_n, our_hash);
+
+                                                // Fetch the same block from gateway to compare
+                                                match self.client.get_state_update_with_block(BlockId::Number(probe_block_n)).await {
+                                                    Ok(gateway_response) => {
+                                                        let gateway_block = gateway_response.into_full_block()
+                                                            .with_context(|| format!("Parsing gateway block {}", probe_block_n))?;
+                                                        let gateway_hash = gateway_block.block_hash;
+                                                        tracing::debug!("🔍 Gateway block {} hash: {:#x}", probe_block_n, gateway_hash);
+
+                                                        if our_hash == gateway_hash {
+                                                            // Found common ancestor!
+                                                            tracing::info!("✅ Found common ancestor at block {}", probe_block_n);
+                                                            break our_hash;
+                                                        } else {
+                                                            tracing::debug!("❌ Block {} hash mismatch, continuing search", probe_block_n);
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        tracing::warn!("⚠️ Failed to fetch block {} from gateway: {}", probe_block_n, e);
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        probe_block_n -= 1;
+                                    };
+
+                                    tracing::info!("🔄 Triggering reorg to common ancestor hash={:#x}", common_ancestor_hash);
+                                    self._backend.revert_to(&common_ancestor_hash)?;
+
+                                    // Flush database to ensure revert is persisted
+                                    self._backend.db.flush()?;
+
+                                    // Reload the backend's cached chain tip from database after reorg
+                                    // The revert_to function updated the database, but the backend's cache is stale
+                                    let fresh_chain_tip = self._backend.db.get_chain_tip()
+                                        .context("Getting fresh chain tip after reorg")?;
+                                    let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
+                                    self._backend.chain_tip.send_replace(backend_chain_tip);
+                                    tracing::info!("✅ Reorg completed successfully, chain tip cache refreshed, aborting pipeline to restart from new chain tip");
+
+                                    // Return error to abort the entire pipeline
+                                    // The sync controller will restart from the database's new tip
+                                    anyhow::bail!("Reorg detected and processed, restarting sync from new chain tip");
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            // Parent block doesn't exist yet, which is normal for the first block
+                            tracing::trace!("Parent block {} not found, continuing normally", block_n - 1);
+                        }
+                    }
+                }
 
                 let keep_pre_v0_13_2_hashes = self.keep_pre_v0_13_2_hashes;
 
@@ -110,12 +201,12 @@ impl PipelineSteps for GatewaySyncSteps {
                         }
                         importer.verify_header(block_n, &signed_header)?;
 
-                        importer.save_header(block_n, signed_header.clone())?;
+                        importer.save_header(block_n, signed_header)?;
                         importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
                         importer.save_transactions(block_n, gateway_block.transactions)?;
                         importer.save_events(block_n, gateway_block.events)?;
 
-                        tracing::info!("✅ Stored block #{} (hash: {:#x}) from gateway", block_n, signed_header.block_hash);
+                        tracing::info!("✅ Block #{} saved: header, state_diff, transactions, events", block_n);
 
                         anyhow::Ok(gateway_block.state_diff)
                     })

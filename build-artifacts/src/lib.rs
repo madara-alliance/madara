@@ -131,7 +131,6 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
 
     let version = get_version(artifacts)?;
     let image = format!("ghcr.io/madara-alliance/artifacts:{version}");
-    println!("cargo::warning=fetching artifacts from image: {}", image);
     let container_name = format!("madara-artifacts-extractor-v{}", version);
 
     let root = &root.0;

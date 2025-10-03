@@ -205,137 +205,6 @@ impl RocksDBStorage {
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         })
     }
-
-    /// Reverts the chain back to the given block number.
-    ///
-    /// This will:
-    /// 1. Remove all blocks after `revert_to`
-    /// 2. Remove all classes declared in those blocks
-    /// 3. Revert the state changes from those blocks
-    ///
-    /// Returns the reverted state diffs in reverse order (newest to oldest).
-    pub fn revert_to(&self, revert_to: u64) -> Result<Vec<(u64, StateDiff)>> {
-        tracing::info!("Reverting chain to block {}", revert_to);
-
-        // First revert blocks and collect state diffs
-        let state_diffs = self.inner.revert_to(revert_to)
-            .with_context(|| format!("Reverting blocks to block_n={revert_to}"))?;
-
-        // Then revert classes using the collected state diffs
-        if !state_diffs.is_empty() {
-            self.inner.class_db_revert(&state_diffs)
-                .with_context(|| format!("Reverting classes for {} blocks", state_diffs.len()))?;
-
-            self.contract_db_revert(&state_diffs)
-                .with_context(|| format!("Reverting contract state for {} blocks", state_diffs.len()))?;
-        }
-
-        tracing::info!("Successfully reverted {} blocks", state_diffs.len());
-        Ok(state_diffs)
-    }
-
-    /// Revert items in the contract db.
-    ///
-    /// `state_diffs` should be a Vec of tuples containing the block number and the entire StateDiff
-    /// to be reverted in that block.
-    ///
-    /// **Warning:** While not enforced, the following should be true:
-    ///  * Each `StateDiff` should include the entire state for its block
-    ///  * `state_diffs` should form a contiguous range of blocks
-    ///  * that range should end with the current blockchain tip
-    ///
-    /// If this isn't the case, the blockchain will store inconsistent state for some blocks.
-    ///
-    /// Does not clear pending info; caller should do this if needed.
-    pub fn contract_db_revert(&self, state_diffs: &Vec<(u64, StateDiff)>) -> Result<()> {
-        if state_diffs.is_empty() {
-            return Ok(());
-        }
-
-        // Use the existing state_remove functionality in a batch
-        let mut batch = WriteBatchWithTransaction::default();
-
-        for (block_n, state_diff) in state_diffs {
-            self.inner.state_remove(*block_n, state_diff, &mut batch)?;
-        }
-
-        self.inner.db.write_opt(batch, &self.inner.writeopts_no_wal)?;
-
-        Ok(())
-    }
-
-    /// Completely clears all Bonsai trie column families in the database.
-    ///
-    /// This is used during re-org recovery to ensure the Bonsai tries start from a clean state
-    /// before rebuilding from state diffs. This prevents any stale or inconsistent trie state
-    /// from corrupting the rebuilt tries.
-    ///
-    /// # Safety
-    ///
-    /// This method deletes ALL Bonsai trie data. It should only be called:
-    /// 1. During a re-org recovery process
-    /// 2. When you plan to immediately rebuild the tries from state diffs
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database operation fails.
-    pub fn clear_bonsai_tries(&self) -> Result<()> {
-        use crate::rocksdb::trie::{
-            BONSAI_CLASS_FLAT_COLUMN, BONSAI_CLASS_LOG_COLUMN, BONSAI_CLASS_TRIE_COLUMN,
-            BONSAI_CONTRACT_FLAT_COLUMN, BONSAI_CONTRACT_LOG_COLUMN, BONSAI_CONTRACT_TRIE_COLUMN,
-            BONSAI_CONTRACT_STORAGE_FLAT_COLUMN, BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
-            BONSAI_CONTRACT_STORAGE_TRIE_COLUMN,
-        };
-
-        tracing::debug!("Clearing all Bonsai trie column families");
-
-        // List of all Bonsai-related columns that need to be cleared
-        let bonsai_columns = [
-            BONSAI_CONTRACT_FLAT_COLUMN,
-            BONSAI_CONTRACT_TRIE_COLUMN,
-            BONSAI_CONTRACT_LOG_COLUMN,
-            BONSAI_CONTRACT_STORAGE_FLAT_COLUMN,
-            BONSAI_CONTRACT_STORAGE_TRIE_COLUMN,
-            BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
-            BONSAI_CLASS_FLAT_COLUMN,
-            BONSAI_CLASS_TRIE_COLUMN,
-            BONSAI_CLASS_LOG_COLUMN,
-        ];
-
-        // For each Bonsai column, iterate through all keys and delete them
-        for column in &bonsai_columns {
-            let cf = self.inner.get_column(column.clone());
-            let mut batch = WriteBatchWithTransaction::default();
-            let mut count = 0;
-
-            // Iterate through all keys in the column family
-            let iter = self.inner.db.iterator_cf(&cf, rocksdb::IteratorMode::Start);
-            for item in iter {
-                match item {
-                    Ok((key, _)) => {
-                        batch.delete_cf(&cf, key);
-                        count += 1;
-                    }
-                    Err(e) => {
-                        tracing::error!("Error iterating Bonsai column {}: {}", column.rocksdb_name, e);
-                        return Err(e).context(format!("Iterating Bonsai column {}", column.rocksdb_name));
-                    }
-                }
-            }
-
-            // Write the batch to delete all keys in this column
-            if count > 0 {
-                self.inner
-                    .db
-                    .write(batch)
-                    .with_context(|| format!("Deleting {} keys from Bonsai column {}", count, column.rocksdb_name))?;
-                tracing::debug!("Cleared {} keys from Bonsai column {}", count, column.rocksdb_name);
-            }
-        }
-
-        tracing::info!("✅ All Bonsai trie column families cleared successfully");
-        Ok(())
-    }
 }
 
 impl MadaraStorageRead for RocksDBStorage {
@@ -600,5 +469,151 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .remove_all_blocks_starting_from(starting_from_block_n)
             .with_context(|| format!("Removing all blocks in range [{starting_from_block_n}..] from database"))
+    }
+
+    fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
+        tracing::info!("Reverting blockchain to block_hash={new_tip_block_hash:#x}");
+
+        let target_block_n = self.inner
+            .find_block_hash(new_tip_block_hash)
+            .context("Finding target block for reorg")?
+            .ok_or_else(|| anyhow::anyhow!("Target block hash {new_tip_block_hash:#x} not found"))?;
+
+        let target_block_info = self.inner
+            .get_block_info(target_block_n)
+            .context("Getting target block info")?
+            .ok_or_else(|| anyhow::anyhow!("Target block info not found for block_n={target_block_n}"))?;
+
+        // Get the current tip
+        let current_tip = match self.inner.get_chain_tip()? {
+            StorageChainTip::Empty => anyhow::bail!("Cannot revert when chain is empty"),
+            StorageChainTip::Confirmed(block_n) => block_n,
+            StorageChainTip::Preconfirmed { header, .. } => {
+                header.block_number.checked_sub(1)
+                    .ok_or_else(|| anyhow::anyhow!("Preconfirmed block is at genesis"))?
+            }
+        };
+
+        // Get current tip info for logging
+        let current_tip_info = self.inner
+            .get_block_info(current_tip)
+            .context("Getting current tip block info")?
+            .ok_or_else(|| anyhow::anyhow!("Current tip block info not found"))?;
+
+        if target_block_n == current_tip {
+            // Already at the common ancestor, no revert needed
+            tracing::info!(
+                "🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed"
+            );
+            return Ok((target_block_n, *new_tip_block_hash));
+        }
+
+        if target_block_n > current_tip {
+            anyhow::bail!("Cannot revert to block_n={target_block_n} which is > current tip={current_tip}");
+        }
+
+        tracing::info!(
+            "🔄 REORG: Starting blockchain reorganization from block_n={current_tip} to block_n={target_block_n}",
+        );
+        tracing::info!(
+            "🔄 REORG: Target block hash={:#x}, current tip hash={:#x}",
+            target_block_info.block_hash,
+            current_tip_info.block_hash
+        );
+
+        // Revert bonsai tries using their trie log functionality
+        // The bonsai-trie library maintains trie logs that allow reverting state
+        use bonsai_trie::id::BasicId;
+
+        let target_id = BasicId::new(target_block_n);
+        let current_id = BasicId::new(current_tip);
+
+        tracing::info!(
+            "🌳 REORG: Reverting bonsai tries from current={} to target={}",
+            current_tip,
+            target_block_n
+        );
+
+        // Revert each trie
+        tracing::debug!("🌳 REORG: Reverting contract trie...");
+        self.contract_trie()
+            .revert_to(target_id, current_id)
+            .map_err(|e| anyhow::anyhow!("Failed to revert contract trie: {e:?}"))?;
+        tracing::info!("✅ REORG: Contract trie reverted successfully");
+
+        tracing::debug!("🌳 REORG: Reverting contract storage trie...");
+        self.contract_storage_trie()
+            .revert_to(target_id, current_id)
+            .map_err(|e| anyhow::anyhow!("Failed to revert contract storage trie: {e:?}"))?;
+        tracing::info!("✅ REORG: Contract storage trie reverted successfully");
+
+        tracing::debug!("🌳 REORG: Reverting class trie...");
+        self.class_trie()
+            .revert_to(target_id, current_id)
+            .map_err(|e| anyhow::anyhow!("Failed to revert class trie: {e:?}"))?;
+        tracing::info!("✅ REORG: Class trie reverted successfully");
+
+        // CRITICAL: Commit all tries after reverting to ensure consistency
+        // This ensures the tries are in a clean state before applying new state diffs
+        tracing::info!("💾 REORG: Committing tries after revert...");
+        self.contract_trie().commit(target_id)
+            .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {e:?}"))?;
+        self.contract_storage_trie().commit(target_id)
+            .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {e:?}"))?;
+        self.class_trie().commit(target_id)
+            .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {e:?}"))?;
+        tracing::info!("✅ REORG: All tries committed successfully");
+
+        // Revert database state using the three revert functions
+        // First, revert blocks and collect state diffs
+        tracing::info!("📦 REORG: Starting block database revert...");
+        let state_diffs = self.inner
+            .block_db_revert(target_block_n)
+            .context("Reverting blocks database")?;
+        tracing::info!(
+            "✅ REORG: Block database reverted, collected {} state diffs",
+            state_diffs.len()
+        );
+
+        // Then use those state diffs to revert contract and class state
+        tracing::info!("📝 REORG: Starting contract database revert...");
+        self.inner
+            .contract_db_revert(&state_diffs)
+            .context("Reverting contract database")?;
+        tracing::info!("✅ REORG: Contract database reverted successfully");
+
+        tracing::info!("🎓 REORG: Starting class database revert...");
+        self.inner
+            .class_db_revert(&state_diffs)
+            .context("Reverting class database")?;
+        tracing::info!("✅ REORG: Class database reverted successfully");
+
+        // Update the chain tip to the target block
+        tracing::info!("🔗 REORG: Updating chain tip to block_n={}", target_block_n);
+        let new_tip = StorageChainTip::Confirmed(target_block_n);
+        self.replace_chain_tip(&new_tip).context("Updating chain tip after reorg")?;
+        tracing::info!("✅ REORG: Chain tip updated successfully");
+
+        // Update snapshots to reflect the new head
+        tracing::info!("📸 REORG: Updating snapshots to new head block_n={}", target_block_n);
+        self.snapshots.set_new_head(target_block_n);
+        tracing::info!("✅ REORG: Snapshots updated successfully");
+
+        tracing::info!("🔄 REORG: Resetting latest_applied_trie_update to block_n={}", target_block_n);
+        self.write_latest_applied_trie_update(&Some(target_block_n))
+            .context("Resetting latest_applied_trie_update after reorg")?;
+        tracing::info!("✅ REORG: latest_applied_trie_update reset successfully");
+
+        // Flush database to ensure all changes are persisted
+        tracing::info!("💾 REORG: Flushing database to persist changes...");
+        self.flush().context("Flushing database after reorg")?;
+        tracing::info!("✅ REORG: Database flushed successfully");
+
+        tracing::info!(
+            "🎉 REORG: Blockchain reorganization completed successfully! Reverted to block_n={target_block_n} block_hash={:#x}",
+            target_block_info.block_hash
+        );
+
+        Ok((target_block_n, target_block_info.block_hash))
     }
 }
