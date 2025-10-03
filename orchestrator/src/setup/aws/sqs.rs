@@ -59,7 +59,6 @@ impl Resource for InnerSQS {
                 AWSResourceIdentifier::Name(name) => {
                     let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
 
-                    // Standard queue attributes for existing queues
                     let mut creation_attributes = HashMap::new();
                     creation_attributes
                         .insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());

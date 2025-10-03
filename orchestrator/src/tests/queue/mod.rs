@@ -79,36 +79,142 @@ async fn test_queue_types() {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
+    use aws_config::{BehaviorVersion, Region};
+    use aws_sdk_sqs::types::MessageAttributeValue as AwsMessageAttributeValue;
+
+    /// Helper to create localstack AWS config
+    async fn get_localstack_config() -> aws_config::SdkConfig {
+        aws_config::defaults(BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .endpoint_url("http://localhost:4566")
+            .load()
+            .await
+    }
 
     /// Integration test for full message flow (requires localstack or AWS)
     #[rstest]
     #[tokio::test]
-    #[ignore] // Requires actual queue infrastructure
+    #[ignore] // Run with: cargo test --lib tests::queue::integration_tests -- --ignored --test-threads=1
     async fn test_full_message_flow_with_version() {
-        // Setup: Create test queue, send message, receive message
-        // Verify version attribute is present and correct
-        // This would be implemented with localstack in CI/CD
+        let config = get_localstack_config().await;
+        let queue_name = format!("test-queue-{}", uuid::Uuid::new_v4());
+
+        // Create test queue
+        let sqs_client = aws_sdk_sqs::Client::new(&config);
+        sqs_client.create_queue().queue_name(&queue_name).send().await.expect("Failed to create queue");
+
+        let queue_url = sqs_client
+            .get_queue_url()
+            .queue_name(&queue_name)
+            .send()
+            .await
+            .expect("Failed to get queue URL")
+            .queue_url()
+            .unwrap()
+            .to_string();
+
+        // Send message with version attribute
+        let test_payload = "test message content";
+        let version = generate_version_string();
+
+        let version_attr = AwsMessageAttributeValue::builder()
+            .data_type("String")
+            .string_value(&version)
+            .build()
+            .expect("Failed to build attribute");
+
+        sqs_client
+            .send_message()
+            .queue_url(&queue_url)
+            .message_body(test_payload)
+            .message_attributes("OrchestratorVersion", version_attr)
+            .send()
+            .await
+            .expect("Failed to send message");
+
+        // Receive and verify message
+        let receive_result = sqs_client
+            .receive_message()
+            .queue_url(&queue_url)
+            .message_attribute_names("OrchestratorVersion")
+            .send()
+            .await
+            .expect("Failed to receive message");
+
+        let messages = receive_result.messages();
+        assert!(!messages.is_empty(), "No messages received");
+        assert_eq!(messages.len(), 1, "Expected exactly one message");
+
+        let message = &messages[0];
+        assert_eq!(message.body(), Some(test_payload));
+
+        // Verify version attribute
+        let attrs = message.message_attributes();
+        assert!(attrs.is_some(), "No attributes");
+        let version_attr = attrs.unwrap().get("OrchestratorVersion");
+        assert!(version_attr.is_some(), "Version attribute missing");
+        assert_eq!(version_attr.unwrap().string_value(), Some(version.as_str()));
+
+        // Cleanup
+        sqs_client.delete_queue().queue_url(&queue_url).send().await.ok();
     }
 
-    /// Integration test for version mismatch handling
+    /// Integration test for backward compatibility - messages without version attribute
     #[rstest]
     #[tokio::test]
-    #[ignore] // Requires actual queue infrastructure
-    async fn test_version_mismatch_visibility_timeout() {
-        // Setup: Send message with different version
-        // Consume message
-        // Verify visibility timeout is changed to 0
-        // Verify message is available again immediately
-    }
-
-    /// Integration test for backward compatibility
-    #[rstest]
-    #[tokio::test]
-    #[ignore] // Requires actual queue infrastructure
+    #[ignore] // Run with: cargo test --lib tests::queue::integration_tests -- --ignored --test-threads=1
     async fn test_backward_compatibility_no_version_attribute() {
-        // Setup: Send message without version attribute (old message)
-        // Consume message
-        // Verify message is processed despite missing version
+        let config = get_localstack_config().await;
+        let queue_name = format!("test-queue-{}", uuid::Uuid::new_v4());
+
+        // Create test queue
+        let sqs_client = aws_sdk_sqs::Client::new(&config);
+        sqs_client.create_queue().queue_name(&queue_name).send().await.expect("Failed to create queue");
+
+        let queue_url = sqs_client
+            .get_queue_url()
+            .queue_name(&queue_name)
+            .send()
+            .await
+            .expect("Failed to get queue URL")
+            .queue_url()
+            .unwrap()
+            .to_string();
+
+        // Send message WITHOUT version attribute (simulating legacy message)
+        let test_payload = "legacy message";
+
+        sqs_client
+            .send_message()
+            .queue_url(&queue_url)
+            .message_body(test_payload)
+            .send()
+            .await
+            .expect("Failed to send message");
+
+        // Receive and verify message is processed
+        let receive_result = sqs_client
+            .receive_message()
+            .queue_url(&queue_url)
+            .message_attribute_names("OrchestratorVersion")
+            .send()
+            .await
+            .expect("Failed to receive message");
+
+        let messages = receive_result.messages();
+        assert!(!messages.is_empty(), "No messages received");
+        assert_eq!(messages.len(), 1, "Expected exactly one message");
+
+        let message = &messages[0];
+        assert_eq!(message.body(), Some(test_payload));
+
+        // Verify NO version attribute (backward compatibility)
+        let attrs = message.message_attributes();
+        assert!(attrs.is_none() || !attrs.unwrap().contains_key("OrchestratorVersion"),
+                "Legacy message should not have version attribute");
+
+        // Cleanup
+        sqs_client.delete_queue().queue_url(&queue_url).send().await.ok();
     }
 }
 

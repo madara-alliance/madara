@@ -175,10 +175,8 @@ impl QueueClient for SQS {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
 
-        // Get the orchestrator version
         let version = generate_version_string();
 
-        // Build message attribute for version
         let version_attribute = MessageAttributeValue::builder()
             .data_type("String")
             .string_value(&version)
@@ -193,7 +191,6 @@ impl QueueClient for SQS {
             .message_body(&payload)
             .message_attributes("OrchestratorVersion", version_attribute);
 
-        // Add delay if specified
         if let Some(delay_duration) = delay {
             send_message_request = send_message_request.delay_seconds(delay_duration.as_secs() as i32);
         }
@@ -243,7 +240,6 @@ impl QueueClient for SQS {
         let our_version = generate_version_string();
 
         loop {
-            // Receive message directly from AWS SDK to access message attributes
             let receive_result = self
                 .inner
                 .client()
@@ -257,7 +253,6 @@ impl QueueClient for SQS {
 
             if let Some(messages) = receive_result.messages {
                 if let Some(message) = messages.into_iter().next() {
-                    // Extract version from message attributes
                     let message_version = message
                         .message_attributes()
                         .and_then(|attrs| attrs.get("OrchestratorVersion"))
@@ -270,8 +265,6 @@ impl QueueClient for SQS {
                                 version,
                                 our_version
                             );
-
-                            // Change visibility timeout to 0 - returns message to queue immediately
                             if let Some(receipt_handle) = message.receipt_handle() {
                                 let _ = self
                                     .inner
