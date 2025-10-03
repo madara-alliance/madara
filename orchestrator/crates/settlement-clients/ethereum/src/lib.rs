@@ -43,7 +43,7 @@ use lazy_static::lazy_static;
 use mockall::automock;
 use reqwest::Client;
 use tokio::time::sleep;
-use tracing::warn;
+use tracing::{info, warn};
 
 // For more details on state update, refer to the core contract logic
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
@@ -213,9 +213,8 @@ impl EthereumSettlementClient {
 impl SettlementClient for EthereumSettlementClient {
     /// Should register the proof on the base layer and return an external id
     /// which can be used to track the status.
-    #[allow(unused)]
-    async fn register_proof(&self, proof: [u8; 32]) -> Result<String> {
-        todo!("register_proof is not implemented yet")
+    async fn register_proof(&self, _proof: [u8; 32]) -> Result<String> {
+        unimplemented!("register_proof is not implemented for EthereumSettlementClient")
     }
 
     /// Should be used to update state on core contract when DA is done in calldata
@@ -226,7 +225,7 @@ impl SettlementClient for EthereumSettlementClient {
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
     ) -> Result<String> {
-        tracing::info!(
+        info!(
             log_type = "starting",
             category = "update_state",
             function_type = "calldata",
@@ -237,7 +236,7 @@ impl SettlementClient for EthereumSettlementClient {
         let onchain_data_size = U256::from_be_bytes(onchain_data_size);
         let tx_receipt =
             self.core_contract_client.update_state(program_output, onchain_data_hash, onchain_data_size).await?;
-        tracing::info!(
+        info!(
             log_type = "completed",
             category = "update_state",
             function_type = "calldata",
@@ -316,7 +315,7 @@ impl SettlementClient for EthereumSettlementClient {
 
     /// Should verify the inclusion of a tx in the settlement layer
     async fn verify_tx_inclusion(&self, tx_hash: &str) -> Result<SettlementVerificationStatus> {
-        tracing::info!(
+        info!(
             log_type = "starting",
             category = "verify_tx",
             function_type = "inclusion",
@@ -328,7 +327,7 @@ impl SettlementClient for EthereumSettlementClient {
         match maybe_tx_status {
             Some(tx_status) => {
                 if tx_status.status() {
-                    tracing::info!(
+                    info!(
                         log_type = "completed",
                         category = "verify_tx",
                         function_type = "inclusion",
@@ -337,7 +336,7 @@ impl SettlementClient for EthereumSettlementClient {
                     );
                     Ok(SettlementVerificationStatus::Verified)
                 } else {
-                    tracing::info!(
+                    info!(
                         log_type = "pending",
                         category = "verify_tx",
                         function_type = "inclusion",
@@ -353,7 +352,7 @@ impl SettlementClient for EthereumSettlementClient {
                 }
             }
             None => {
-                tracing::info!(
+                info!(
                     log_type = "pending",
                     category = "verify_tx",
                     function_type = "inclusion",

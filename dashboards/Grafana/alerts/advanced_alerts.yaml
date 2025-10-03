@@ -1,0 +1,559 @@
+# Advanced Alert Rules for Resource Management and Data Integrity
+# These alerts monitor queue depth, worker health, and data consistency
+
+apiVersion: 1
+groups:
+  - name: queue_worker_health
+    interval: 30s
+    rules:
+      # Queue Depth Monitoring
+      - uid: queue-depth-warning
+        title: "Queue Depth Building Up"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'queue_depth{queue_type=~"snos_job_processing|proving_job_processing|data_submission_job_processing"}'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 100
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: max
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: max
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Queue {{ $labels.queue_type }} has {{ $values.A.Value | humanize }} messages pending"
+          summary: "Queue backlog building up - potential processing bottleneck"
+        labels:
+          severity: warning
+          component: queue
+          team: infrastructure
+
+      - uid: queue-depth-critical
+        title: "Queue Depth Critical"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'queue_depth{queue_type=~"snos_job_processing|proving_job_processing|data_submission_job_processing"}'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 500
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: max
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: max
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "Queue {{ $labels.queue_type }} has {{ $values.A.Value | humanize }} messages - immediate scaling required"
+          summary: "Critical queue depth - system may become unresponsive"
+        labels:
+          severity: critical
+          component: queue
+          team: infrastructure
+
+      # Worker Health Monitoring
+      - uid: worker-restart-detected
+        title: "Worker Restart Detected"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'increase(worker_restarts_total[5m])'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          description: "Worker {{ $labels.worker_type }} has restarted {{ $values.A.Value | humanize }} times"
+          summary: "Worker controller failed and restarted"
+        labels:
+          severity: critical
+          component: worker
+          team: infrastructure
+
+  - name: resource_capacity
+    interval: 1m
+    rules:
+      # Batch Size Monitoring
+      - uid: batch-size-warning
+        title: "Batch Size Approaching Limit"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'batch_size_bytes / 24576 * 100'  # MAX_BLOB_SIZE = 24576
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 80
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: max
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: max
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: NoData
+        for: 3m
+        annotations:
+          description: "Batch size is at {{ $values.A.Value | humanize }}% of maximum capacity"
+          summary: "Batch size approaching maximum blob limit"
+        labels:
+          severity: warning
+          component: batching
+          team: infrastructure
+
+      - uid: batch-size-critical
+        title: "Batch Size Critical"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'batch_size_bytes / 24576 * 100'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 95
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: max
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: max
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: NoData
+        for: 1m
+        annotations:
+          description: "Batch size at {{ $values.A.Value | humanize }}% - immediate submission required"
+          summary: "Batch size at critical level - may exceed limits"
+        labels:
+          severity: critical
+          component: batching
+          team: infrastructure
+
+      # Graceful Shutdown Monitoring
+      - uid: shutdown-timeout-warning
+        title: "Graceful Shutdown Taking Too Long"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'shutdown_duration_seconds'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 240  # 80% of 300s timeout
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: NoData
+        for: 10s
+        annotations:
+          description: "Shutdown has been running for {{ $values.A.Value | humanizeDuration }} - may be forced soon"
+          summary: "Graceful shutdown approaching timeout"
+        labels:
+          severity: warning
+          component: lifecycle
+          team: infrastructure
+
+  - name: data_integrity
+    interval: 1m
+    rules:
+      # Job State Consistency
+      - uid: job-stuck-locked
+        title: "Jobs Stuck in Locked State"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'time() - job_locked_timestamp{status="LockedForProcessing"} > 1800'  # 30 minutes
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: count
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: count
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "{{ $values.B.Value | humanize }} jobs have been locked for over 30 minutes"
+          summary: "Potential deadlock or crashed worker - jobs stuck in locked state"
+        labels:
+          severity: critical
+          component: jobs
+          team: infrastructure
+
+      # Verification Failures Pattern Detection
+      - uid: verification-failure-pattern
+        title: "Repeated Verification Failures"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'count by(block_number) (increase(job_verification_failures{job_type="ProofCreation"}[30m])) > 3'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: count
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: count
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Block {{ $labels.block_number }} has failed verification multiple times"
+          summary: "Potential data corruption or computation error detected"
+        labels:
+          severity: critical
+          component: verification
+          team: infrastructure
+
+      # Verification Timeout Detection
+      - uid: verification-timeout-surge
+        title: "Verification Timeouts Surge"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'sum(increase(job_status_transitions{to_status="VerificationTimeout"}[10m]))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 5
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          description: "{{ $values.A.Value | humanize }} jobs timed out during verification in the last 10 minutes"
+          summary: "High number of verification timeouts - check verification service"
+        labels:
+          severity: warning
+          component: verification
+          team: infrastructure
+
+      # Consecutive Failures Detection
+      - uid: consecutive-job-failures
+        title: "Consecutive Job Failures for Same Type"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'consecutive_failures{job_type=~"SnosRun|ProofCreation|DataSubmission|StateTransition"}'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 3
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: max
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: max
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          description: "Job type {{ $labels.job_type }} has failed {{ $values.A.Value | humanize }} times consecutively"
+          summary: "Repeated failures indicate systemic issue - manual intervention required"
+        labels:
+          severity: critical
+          component: jobs
+          team: infrastructure
+
+  - name: system_anomalies
+    interval: 2m
+    rules:
+      # Anomaly Detection - Sudden Drop in Success Rate
+      - uid: success-rate-anomaly
+        title: "Sudden Drop in Success Rate"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 1800
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'avg(rate(successful_job_operations_jobs_total[30m] offset 30m))'
+              legendFormat: "baseline"
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'avg(rate(successful_job_operations_jobs_total[30m]))'
+              legendFormat: "current"
+              refId: B
+          - refId: C
+            datasourceUid: "-100"
+            model:
+              expression: "($A - $B) / $A * 100"
+              reducer: last
+              refId: C
+              type: math
+          - refId: D
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 50  # 50% drop
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: C
+              reducer: last
+              refId: D
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: NoData
+        for: 5m
+        annotations:
+          description: "Success rate dropped by {{ $values.C.Value | humanize }}% compared to baseline"
+          summary: "Anomalous drop in job success rate detected"
+        labels:
+          severity: critical
+          component: anomaly
+          team: infrastructure

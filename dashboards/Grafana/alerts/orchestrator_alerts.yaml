@@ -1,0 +1,498 @@
+# Madara Orchestrator Alert Rules for Grafana
+# This file contains comprehensive alert rules for monitoring the orchestrator
+# Import this into Grafana to set up alerting
+
+apiVersion: 1
+groups:
+  - name: orchestrator_health
+    interval: 30s
+    rules:
+      # Critical System Health Alerts
+      - uid: orchestrator-service-down
+        title: "Orchestrator Service Down"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'up{job="orchestrator"}'
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "The orchestrator service has been down for more than 2 minutes"
+          runbook_url: "https://docs.madara.io/runbooks/orchestrator-down"
+          summary: "Orchestrator service is not responding - immediate action required"
+        labels:
+          severity: critical
+          component: orchestrator
+          team: infrastructure
+
+      - uid: health-check-failure
+        title: "Health Check Failing"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'probe_success{job="blackbox", instance=~".*health.*"}'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.5
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: avg
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: avg
+              refId: B
+              type: classic_conditions
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 3m
+        annotations:
+          description: "Health endpoint has been failing for 3 consecutive checks"
+          summary: "Orchestrator health check is failing"
+        labels:
+          severity: critical
+          component: orchestrator
+          team: infrastructure
+
+  - name: job_processing_pipeline
+    interval: 1m
+    rules:
+      # Block Processing Lag Alerts
+      - uid: snos-block-lag
+        title: "SNOS Block Processing Lag"
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'max(block_state{operation_job_type="SnosRun", job_status="success"})'
+              refId: A
+          - refId: B
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'max(block_state{operation_job_type="ProofCreation", job_status="success"})'
+              refId: B
+          - refId: C
+            datasourceUid: "-100"
+            model:
+              expression: "$A - $B"
+              reducer: last
+              refId: C
+              type: math
+          - refId: D
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 10
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: C
+              reducer: last
+              refId: D
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "SNOS is ahead of Proof Creation by {{ $values.C }} blocks"
+          summary: "Pipeline bottleneck detected - Proof Creation lagging"
+        labels:
+          severity: warning
+          component: pipeline
+          job_type: ProofCreation
+
+      - uid: high-job-failure-rate
+        title: "High Job Failure Rate"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'sum by(operation_job_type) (rate(failed_job_operations_jobs_total[5m])) / (sum by(operation_job_type) (rate(successful_job_operations_jobs_total[5m])) + sum by(operation_job_type) (rate(failed_job_operations_jobs_total[5m])))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.1
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Job failure rate is {{ $values.A.Value | humanizePercentage }} for {{ $labels.operation_job_type }}"
+          summary: "High failure rate detected for job processing"
+        labels:
+          severity: warning
+          component: jobs
+
+      - uid: no-block-progress
+        title: "No Block Progress"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1200
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'changes(max by(operation_job_type) (block_state{job_status="success"})[15m:])'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: min
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: min
+              refId: B
+              type: classic_conditions
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 15m
+        annotations:
+          description: "No block progression detected for {{ $labels.operation_job_type }} in the last 15 minutes"
+          summary: "System appears stuck - no block progress"
+        labels:
+          severity: critical
+          component: pipeline
+
+  - name: performance_sla
+    interval: 1m
+    rules:
+      - uid: high-job-response-time
+        title: "High Job Response Time"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'avg by(operation_job_type) (jobs_response_time_seconds)'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 30
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: avg
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: avg
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Job response time for {{ $labels.operation_job_type }} is {{ $values.A.Value | humanizeDuration }}"
+          summary: "Jobs taking too long to process"
+        labels:
+          severity: warning
+          component: performance
+
+      - uid: high-db-response-time
+        title: "High Database Response Time"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'avg(db_calls_response_time_seconds)'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: avg
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: avg
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Database response time is {{ $values.A.Value | humanizeDuration }}"
+          summary: "Database performance degraded"
+        labels:
+          severity: warning
+          component: database
+
+  - name: external_dependencies
+    interval: 1m
+    rules:
+      - uid: prover-service-failures
+        title: "Prover Service Failures"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'sum(rate(failed_job_operations_jobs_total{operation_job_type="ProofCreation"}[5m]))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.5
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Proof creation jobs are failing at {{ $values.A.Value | humanize }} per second"
+          summary: "External prover service may be unavailable"
+        labels:
+          severity: critical
+          component: external
+          service: prover
+
+      - uid: da-layer-failures
+        title: "Data Availability Layer Issues"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'sum(increase(failed_job_operations_jobs_total{operation_job_type="DataSubmission"}[10m]))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 5
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          description: "{{ $values.A.Value | humanize }} data submission failures in the last 10 minutes"
+          summary: "DA layer connectivity or submission issues"
+        labels:
+          severity: critical
+          component: external
+          service: da_layer
+
+      - uid: settlement-layer-failures
+        title: "Settlement Layer Issues"
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'sum(rate(failed_job_operations_jobs_total{operation_job_type=~"StateTransition|ProofRegistration"}[5m]))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.2
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Settlement layer interaction failures detected"
+          summary: "L1/Settlement layer connectivity issues"
+        labels:
+          severity: critical
+          component: external
+          service: settlement

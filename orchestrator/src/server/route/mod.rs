@@ -47,4 +47,5 @@ pub(crate) fn server_router(config: Arc<Config>) -> Router {
         .nest("/jobs", job_router(config.clone()))
         .nest("/blocks", block_router(config.clone()))
         .fallback(handler_404)
+        .layer(axum::middleware::from_fn(crate::server::middleware::trace_context))
 }
