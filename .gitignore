@@ -101,3 +101,4 @@ e2e_data/
 out
 cache
 s3
+.venv

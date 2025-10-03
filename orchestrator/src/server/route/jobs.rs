@@ -9,7 +9,7 @@ use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use super::super::error::JobRouteError;
-use super::super::types::{ApiResponse, BlockJobStatusResponse, JobId, JobRouteResult, JobStatusResponseItem};
+use super::super::types::{ApiResponse, JobId, JobRouteResult, JobStatusResponse, JobStatusResponseItem};
 use crate::core::config::Config;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -170,7 +170,7 @@ pub fn job_router(config: Arc<Config>) -> Router {
 /// * `State(config)` - Shared application configuration
 ///
 /// # Returns
-/// * `JobRouteResult<BlockJobStatusResponse>` - Success response with job statuses or error details
+/// * `JobRouteResult<JobStatusResponse>` - Success response with job statuses or error details
 #[instrument(skip(config), fields(block_number = %block_number))]
 async fn handle_get_job_status_by_block_request(
     Path(block_number): Path<u64>,
@@ -184,8 +184,8 @@ async fn handle_get_job_status_by_block_request(
                 job_status_items.push(JobStatusResponseItem { job_type: job.job_type, id: job.id, status: job.status });
             }
             info!(count = job_status_items.len(), "Successfully fetched job statuses for block");
-            Ok(Json(ApiResponse::<BlockJobStatusResponse>::success_with_data(
-                BlockJobStatusResponse { jobs: job_status_items },
+            Ok(Json(ApiResponse::<JobStatusResponse>::success_with_data(
+                JobStatusResponse { jobs: job_status_items },
                 Some(format!("Successfully fetched job statuses for block {}", block_number)),
             ))
             .into_response())

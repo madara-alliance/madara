@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::LazyLock;
-
 use crate::types::queue::QueueType;
 use crate::types::Layer;
+use orchestrator_utils::env_utils::get_env_var_or_default;
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
 #[derive(Clone)]
 pub struct DlqConfig {
@@ -39,6 +39,8 @@ pub struct QueueConfig {
     pub supported_layers: Vec<Layer>,
 }
 
+// TODO: this should be dynamically created based on the run command params.
+// So that we can skip parsing envs here again
 pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     map.insert(
@@ -64,7 +66,9 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::default_with_message_count(200),
+            queue_control: QueueControlConfig::default_with_message_count(
+                get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS", "5").parse().expect("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS does not have correct value. Should be a whole number"),
+            ),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
@@ -82,7 +86,9 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10),
+            queue_control: QueueControlConfig::default_with_message_count(
+                get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS", "10").parse().expect("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS does not have correct value. Should be a whole number"),
+            ),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
