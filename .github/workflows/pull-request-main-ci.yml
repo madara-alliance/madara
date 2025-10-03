@@ -7,8 +7,8 @@ name: Workflow - Pull Request Main
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [ main ]
+    types: [ opened, synchronize, reopened, ready_for_review ]
 
 # Use concurrency to prevent multiple workflows running on the same PR
 concurrency:
@@ -58,7 +58,7 @@ jobs:
     secrets: inherit
 
   publish-artifacts:
-    needs: [update-version-artifacts, build-artifacts]
+    needs: [ update-version-artifacts, build-artifacts ]
     uses: ./.github/workflows/task-publish-image.yml
     with:
       image-name: artifacts
@@ -78,13 +78,13 @@ jobs:
 
   # Run Rust-specific linters
   lint-rust:
-    needs: [update-version-db, publish-artifacts]
+    needs: [ update-version-db, publish-artifacts ]
     uses: ./.github/workflows/task-lint-cargo.yml
     secrets: inherit
 
   # Run linters for code style and quality
   lint-code-style:
-    needs: [update-version-db, publish-artifacts]
+    needs: [ update-version-db, publish-artifacts ]
     uses: ./.github/workflows/task-lint-code-style.yml
 
   # ========================================================================= #
@@ -93,7 +93,7 @@ jobs:
 
   # Build Madara binary
   build-madara:
-    needs: [lint-code-style]
+    needs: [ lint-code-style ]
     uses: ./.github/workflows/task-build-madara.yml
     secrets: inherit
 
@@ -139,7 +139,7 @@ jobs:
 
   # Run coverage tests
   test-orchestrator:
-    needs: [build-madara, check-orchestrator]
+    needs: [ build-madara, check-orchestrator ]
     uses: ./.github/workflows/task-test-orchestrator.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
@@ -158,11 +158,10 @@ jobs:
   #                                BOOTSTRAPPER                               #
   # ========================================================================= #
 
-  # Check Bootstrapper binary
-  # (We don't re-use the Bootstrapper binary in other tests)
+  # Deprecating bootstrapper V1
   check-bootstrapper:
     needs: lint-code-style
-    uses: ./.github/workflows/task-check-bootstrapper.yml
+    uses: ./.github/workflows/task-do-nothing-check-bootstrapper.yml
     secrets: inherit
 
   # Deprecating bootstrapper V1
