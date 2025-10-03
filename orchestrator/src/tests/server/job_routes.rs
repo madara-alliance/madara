@@ -213,6 +213,7 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
     let block_number = 123;
 
     // Create some jobs for the block
+    let snos_job = build_job_item(JobType::SnosRun, JobStatus::Completed, block_number);
     let proving_job = build_job_item(JobType::ProofCreation, JobStatus::PendingVerification, block_number);
     let data_submission_job = build_job_item(JobType::DataSubmission, JobStatus::Created, block_number);
     let state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 1); // internal_id is not block_number for ST
@@ -230,6 +231,7 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
     let mut state_transition_job_updated = state_transition_job.clone();
     state_transition_job_updated.metadata.specific = state_transition_job_specific_metadata;
 
+    config.database().create_job(snos_job.clone()).await.unwrap();
     config.database().create_job(proving_job.clone()).await.unwrap();
     config.database().create_job(data_submission_job.clone()).await.unwrap();
     config.database().create_job(state_transition_job_updated.clone()).await.unwrap();
@@ -257,8 +259,6 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
     assert!(response_body.success);
     assert_eq!(response_body.message, Some(format!("Successfully fetched job statuses for block {}", block_number)));
     let jobs_response = response_body.data.unwrap().jobs;
-
-    println!("{:?}", jobs_response);
 
     assert_eq!(jobs_response.len(), 3);
 

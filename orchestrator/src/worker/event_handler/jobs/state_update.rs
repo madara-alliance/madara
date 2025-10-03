@@ -407,7 +407,7 @@ impl StateUpdateJobHandler {
         }
 
         // Get the batch details for the batch to settle
-        let batches = config.database().get_batches_by_indexes(vec![to_batch_num]).await?;
+        let batches = config.database().get_aggregator_batches_by_indexes(vec![to_batch_num]).await?;
         if batches.is_empty() {
             return Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", to_batch_num))));
         }

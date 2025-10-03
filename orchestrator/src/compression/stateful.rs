@@ -12,7 +12,7 @@ use starknet_core::types::{BlockId, StarknetError};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, warn};
+use tracing::warn;
 
 // https://community.starknet.io/t/starknet-v0-13-4-pre-release-notes/115257
 const STATEFUL_SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
@@ -39,7 +39,6 @@ pub async fn compress(
     last_block_before_state_update: u64,
     provider: &Arc<JsonRpcClient<HttpTransport>>,
 ) -> Result<StateUpdate> {
-    debug!("Doing stateful compression with last block before state update: {}", last_block_before_state_update);
     let mut state_update = state_update.clone();
 
     let mapping =
@@ -66,7 +65,6 @@ pub async fn compress(
 
     // Sort the compressed StateUpdate
     sort_state_diff(&mut state_update);
-    debug!("Stateful compression completed with last block before state update: {}", last_block_before_state_update);
     Ok(state_update)
 }
 
