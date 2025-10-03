@@ -43,7 +43,7 @@ use lazy_static::lazy_static;
 use mockall::automock;
 use reqwest::Client;
 use tokio::time::sleep;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 // For more details on state update, refer to the core contract logic
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol

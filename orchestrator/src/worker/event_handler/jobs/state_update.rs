@@ -198,6 +198,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// 2. The expected last settled block from our configuration is indeed the one found in the
     ///    provider.
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+        let internal_id = job.internal_id.clone();
         info!(log_type = "starting", "State update job verification started.");
 
         // Get state update metadata
@@ -364,10 +365,13 @@ impl StateUpdateJobHandler {
         }
     }
 
-    async fn should_send_state_update_txn(&self, config: &Arc<Config>, to_batch_num: u64) -> Result<bool, JobError> {
-        #[cfg(feature = "testing")]
-        return Ok(true);
+    #[cfg(feature = "testing")]
+    async fn should_send_state_update_txn(&self, _config: &Arc<Config>, _to_batch_num: u64) -> Result<bool, JobError> {
+        Ok(true)
+    }
 
+    #[cfg(not(feature = "testing"))]
+    async fn should_send_state_update_txn(&self, config: &Arc<Config>, to_batch_num: u64) -> Result<bool, JobError> {
         // Always send state update for L3s
         // TODO: Update the L3 code as well to check for the contract state before making a txn
         if config.layer() == &Layer::L3 {
