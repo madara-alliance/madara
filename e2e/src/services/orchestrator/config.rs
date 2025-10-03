@@ -301,7 +301,7 @@ impl OrchestratorConfig {
         // Add settlement flags
         if self.settle_on_ethereum {
             command.arg("--settle-on-ethereum");
-            command.arg("--ethereum-settlement-txn-wait-sleep-delay-secs").arg(4.to_string());
+            command.arg("--ethereum-finality-retry-wait-in-secs").arg(4.to_string());
             if let Some(rpc_url) = self.ethereum_rpc_url() {
                 command.arg("--ethereum-rpc-url").arg(rpc_url.to_string());
             }

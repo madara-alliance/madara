@@ -1,9 +1,8 @@
-use std::collections::HashMap;
-use std::sync::LazyLock;
-
 use crate::types::queue::QueueType;
 use crate::types::Layer;
 use orchestrator_utils::env_utils::get_env_var_or_default;
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
 #[derive(Clone)]
 pub struct DlqConfig {
@@ -40,6 +39,8 @@ pub struct QueueConfig {
     pub supported_layers: Vec<Layer>,
 }
 
+// TODO: this should be dynamically created based on the run command params.
+// So that we can skip parsing envs here again
 pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     map.insert(

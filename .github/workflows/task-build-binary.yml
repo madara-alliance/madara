@@ -30,8 +30,6 @@ jobs:
     runs-on: blacksmith-16vcpu-ubuntu-2204
     outputs:
       binary-hash: ${{ steps.generate-binary-hash.outputs.binary-hash }}
-    permissions:
-      pull-requests: write
 
     steps:
       - name: Checkout Repository
@@ -77,13 +75,13 @@ jobs:
       - name: Generate binary hash
         id: generate-binary-hash
         run: |
-          # Use the actual PR number
-          PR_NUMBER=${{ github.event.pull_request.number || 'main' }}
+          # Use commit SHA with component name for deterministic hashing across workflows
+          COMMIT_HASH=${{ github.sha }}
 
-          # Create hash using component name + PR number (same pattern as Madara)
-          BINARY_HASH=$(echo "${{ inputs.binary-name }}-${PR_NUMBER}" | sha256sum | awk '{ print $1 }')
+          # Create hash using component name + commit hash (same pattern as Madara)
+          BINARY_HASH=$(echo "${{ inputs.binary-name }}-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
           echo "binary-hash=$BINARY_HASH" >> $GITHUB_OUTPUT
-          echo "Hash of the ${{ inputs.binary-name }} is: $BINARY_HASH (PR number: $PR_NUMBER)"
+          echo "Hash of the ${{ inputs.binary-name }} is: $BINARY_HASH (commit: $COMMIT_HASH)"
 
       # Upload binary as artifact
       - name: Upload ${{ inputs.binary-name }} binary

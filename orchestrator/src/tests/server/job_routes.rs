@@ -251,7 +251,7 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
 
     assert_eq!(response.status(), 200);
     let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<crate::server::types::BlockJobStatusResponse> =
+    let response_body: ApiResponse<crate::server::types::JobStatusResponse> =
         serde_json::from_slice(&body_bytes).unwrap();
 
     assert!(response_body.success);
@@ -291,7 +291,7 @@ async fn test_get_job_status_by_block_number_not_found(#[future] setup_trigger: 
 
     assert_eq!(response.status(), 200); // Endpoint itself is found, just no data for this block
     let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<crate::server::types::BlockJobStatusResponse> =
+    let response_body: ApiResponse<crate::server::types::JobStatusResponse> =
         serde_json::from_slice(&body_bytes).unwrap();
 
     assert!(response_body.success);

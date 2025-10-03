@@ -3,7 +3,7 @@ use axum::response::Response;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::error::JobRouteError;
+use super::error::{BlockRouteError, JobRouteError};
 
 /// Represents a job identifier in API requests.
 ///
@@ -127,6 +127,13 @@ pub struct JobStatusResponseItem {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BlockJobStatusResponse {
+pub struct JobStatusResponse {
     pub jobs: Vec<JobStatusResponseItem>,
+}
+
+pub type BlockRouteResult = Result<Response<axum::body::Body>, BlockRouteError>;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BlockStatusResponse {
+    pub batch_number: u64,
 }

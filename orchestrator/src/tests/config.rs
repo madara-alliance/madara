@@ -590,7 +590,10 @@ pub(crate) fn get_env_params() -> EnvParams {
             "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
         ))
         .expect("Invalid Starknet operator address"),
-        txn_wait_sleep_delay_secs: 60u64,
+        ethereum_finality_retry_wait_in_secs: 60u64,
+        max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
+            .parse()
+            .expect("Invalid max gas price mul factor"),
     });
 
     let snos_config = SNOSParams {
