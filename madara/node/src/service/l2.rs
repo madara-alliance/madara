@@ -121,7 +121,6 @@ impl Service for SyncService {
                         .disable_tries(this.params.disable_tries)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
                 )
-                .await?
                 .run(ctx.clone())
                 .await?;
 
@@ -156,7 +155,6 @@ impl Service for SyncService {
                     .disable_tries(this.params.disable_tries)
                     .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
             )
-            .await?
             .run(ctx)
             .await
         });
