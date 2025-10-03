@@ -67,10 +67,13 @@ impl ProvingLayer for EthereumLayer {
     }
 }
 
-struct StarknetLayer;
+struct StarknetLayer {
+    layout: String,
+}
+
 impl ProvingLayer for StarknetLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", &AtlanticQueryStep::ProofGeneration.to_string())
+        request.form_text("result", &AtlanticQueryStep::ProofGeneration.to_string()).form_text("layout", &self.layout)
     }
 }
 
@@ -92,7 +95,7 @@ impl AtlanticClient {
 
         let proving_layer: Box<dyn ProvingLayer> = match atlantic_params.atlantic_settlement_layer.as_str() {
             "ethereum" => Box::new(EthereumLayer),
-            "starknet" => Box::new(StarknetLayer),
+            "starknet" => Box::new(StarknetLayer { layout: "dynamic".to_string() }),
             _ => panic!("Invalid settlement layer: {}", atlantic_params.atlantic_settlement_layer),
         };
 
