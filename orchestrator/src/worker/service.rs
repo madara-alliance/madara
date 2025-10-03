@@ -85,7 +85,6 @@ impl JobService {
     ///
     /// # State Transitions
     /// * Any valid state -> PendingProcess
-    #[tracing::instrument(skip(config), fields(category = "general"), ret, err)]
     pub async fn queue_job_for_processing(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let job = Self::get_job(id, config.clone()).await?;
 
@@ -107,7 +106,6 @@ impl JobService {
     /// # Notes
     /// * Resets verification attempt count to 0
     /// * Sets appropriate delay for verification polling
-    #[tracing::instrument(skip(config), fields(category = "general"), ret, err)]
     pub async fn queue_job_for_verification(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let mut job = Self::get_job(id, config.clone()).await?;
         let job_handler = factory::get_job_handler(&job.job_type).await;
