@@ -461,7 +461,7 @@ impl BlockImporterCtx {
     /// Called in a rayon-pool context.
     pub fn save_bouncer_weights(&self, block_n: u64, bouncer_weights: BouncerWeights) -> Result<(), BlockImportError> {
         self.backend.write_access().write_bouncer_weights(block_n, &bouncer_weights).map_err(|error| {
-            BlockImportError::InternalDb { error, context: format!("Storing state_diff for {block_n}").into() }
+            BlockImportError::InternalDb { error, context: format!("Storing bouncer weights for {block_n}").into() }
         })?;
         Ok(())
     }

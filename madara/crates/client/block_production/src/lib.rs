@@ -312,8 +312,6 @@ impl BlockProductionTask {
                         .write_access()
                         .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
                         .context("Closing block")?;
-                    // backend.write_access().write_state_diff(state.block_number, &state_diff).context("Updating State Diff with alias")?;
-                    // tracing::info!("state diff we have is: {:?}", state_diff);
                     anyhow::Ok(())
                 })
                 .await?;
