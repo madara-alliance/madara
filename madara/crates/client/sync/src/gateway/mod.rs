@@ -31,7 +31,7 @@ pub struct ForwardSyncConfig {
 impl Default for ForwardSyncConfig {
     fn default() -> Self {
         Self {
-            block_parallelization: 128,
+            block_parallelization: 256,
             block_batch_size: 1,
             classes_parallelization: 256,
             classes_batch_size: 1,

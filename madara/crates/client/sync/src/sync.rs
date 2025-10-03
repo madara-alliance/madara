@@ -1,12 +1,16 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
 use mc_db::sync_status::SyncStatus;
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraStorageRead};
 use mc_settlement_client::state_update::{L1HeadReceiver, StateUpdate};
 use mp_gateway::block::ProviderBlockHeader;
 use std::sync::Arc;
 use std::{cmp, time::Duration};
+use anyhow::anyhow;
+use mp_block::BlockId;
 use tokio::time::Instant;
+use mc_db::storage::StorageChainTip;
+use crate::sync_utils::squash;
 
 pub trait ForwardPipeline {
     fn run(
@@ -39,7 +43,7 @@ pub struct SyncControllerConfig {
     pub global_stop_on_sync: bool,
     /// Disable syncing the pending block.
     pub no_pending_block: bool,
-    /// Stop the service once fully synced, meaning the pipeline cannot be run again and the probe did not return
+    /// Stop the service once fully synced, meaning the pipeline cannot be run again, and the probe did not return
     /// any new block - or the sync arrived at the block_n specified by [`Self::stop_at_block_n`].
     /// By default, the sync process will not stop, and pending block task / the probe will continue to run, even if
     /// [`Self::stop_at_block_n`] is set.
@@ -125,6 +129,13 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     pub async fn run(&mut self, mut ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
+        
+        // Get the pre-sync status 
+        let first_block = match self.backend.db.get_chain_tip()? {
+            StorageChainTip::Confirmed(block_number) => block_number,
+            _ => return Err(anyhow!("Chain tip is not confirmed")),
+        };
+
         let interval_duration = Duration::from_secs(3);
         let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -137,6 +148,47 @@ impl<P: ForwardPipeline> SyncController<P> {
             }
         }
         self.show_status();
+
+        // TODO: will this also depend on the Starknet version?
+        // TODO: add feature flag to enable/disable this functionality
+        // TODO: add appropriate CLI flags
+
+        // Define the block range for state root calculation
+        let latest_block = match self.backend.db.get_chain_tip()? {
+            StorageChainTip::Confirmed(block_number) => block_number,
+            _ => return Err(anyhow!("Chain tip is not confirmed")),
+        };
+
+        println!("SNAP-SYNC: Processing blocks {} to {}", first_block, latest_block);
+
+        // Initialize with the first block's state diff
+        let first_view = self.backend.block_view(BlockId::Number(first_block))?;
+        let mut accumulated_state_diff = first_view.get_state_diff()?;
+
+        // Squash state diffs from subsequent blocks
+        for block_number in (first_block + 1)..=latest_block {
+            let view = self.backend.block_view(BlockId::Number(block_number))?;
+            let next_state_diff = view.get_state_diff()?;
+
+            println!("SNAP-SYNC: Merging block {}", block_number);
+
+            // Squash the current accumulated diff with the next block's diff
+            let state_diffs = vec![&accumulated_state_diff, &next_state_diff];
+            accumulated_state_diff = squash(state_diffs, Some(first_block-1), self.backend.clone()).await?;
+        }
+
+        println!("SNAP-SYNC: Calculating global state root for blocks {}..{}", first_block, latest_block);
+
+        // Apply the accumulated state diff to calculate the global state root
+        let global_state_root = self.backend
+            .write_access()
+            .apply_to_global_trie(first_block, vec![accumulated_state_diff].iter())?;
+
+        println!("SNAP-SYNC: Global state root: {:?} for blocks {}..{}", global_state_root, first_block, latest_block);
+
+        // TODO: validate the computed global state root against the gateway's value
+
+        // Handle shutdown based on configuration
         if self.config.global_stop_on_sync {
             tracing::info!("🌐 Reached stop-on-sync condition, shutting down node...");
             ctx.cancel_global();
@@ -222,7 +274,7 @@ impl<P: ForwardPipeline> SyncController<P> {
                         && probe_height == new_probe_height
                         && !self.pending_block_task_is_running()
                     {
-                        // Probe returned the same thing as last time, and we cannot run the pipeline.
+                        // The Probe returned the same thing as last time, and we cannot run the pipeline.
                         // This is the exit condition when stop_on_sync is enabled,
                         // except if there is a stop_at_block_n.
                         break Ok(());

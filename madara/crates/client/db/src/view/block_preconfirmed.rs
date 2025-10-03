@@ -3,9 +3,7 @@ use crate::{
     prelude::*,
     rocksdb::RocksDBStorage,
 };
-use mp_block::{
-    header::PreconfirmedHeader, FullBlockWithoutCommitments, MadaraPreconfirmedBlockInfo, TransactionWithReceipt,
-};
+use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, MadaraPreconfirmedBlockInfo, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{
