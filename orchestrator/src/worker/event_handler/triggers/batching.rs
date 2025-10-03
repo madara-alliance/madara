@@ -11,12 +11,14 @@ use crate::types::batch::{
     AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
 };
 use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use blockifier::bouncer::BouncerWeights;
 use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
+use opentelemetry::KeyValue;
 use orchestrator_prover_client_interface::Task;
 use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::jsonrpc::HttpTransport;
@@ -25,8 +27,9 @@ use starknet_core::types::Felt;
 use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Update};
 use std::cmp::{max, min};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::try_join;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, trace};
 
 pub struct BatchingTrigger;
 
@@ -38,7 +41,7 @@ impl JobTrigger for BatchingTrigger {
     /// 2. Fetch the last batch and check its `end_block`
     /// 3. Assign batches to all the remaining blocks and store the squashed state update in storage
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        info!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
+        info!(log_type = "starting", "BatchingWorker started");
 
         // Trying to acquire lock on Batching Worker (Taking a lock for 1 hr)
         match config
@@ -116,7 +119,7 @@ impl JobTrigger for BatchingTrigger {
         // Releasing the lock
         config.lock().release_lock("BatchingWorker", None).await?;
 
-        info!(log_type = "completed", category = "BatchingWorker", "BatchingWorker completed.");
+        trace!(log_type = "completed", "BatchingWorker completed.");
         Ok(())
     }
 }
@@ -133,7 +136,7 @@ impl BatchingTrigger {
     ) -> Result<(), JobError> {
         if end_block_number < start_block_number {
             return Err(JobError::Other(OtherError(eyre!(
-                "end_block_number {} is smaller than start_block_number {}",
+                "Failed to assign batch to blocks as end_block_number ({}) is smaller than start_block_number ({})",
                 end_block_number,
                 start_block_number
             ))));
@@ -141,6 +144,8 @@ impl BatchingTrigger {
 
         info!("Assigning batches to blocks from {} to {}", start_block_number, end_block_number);
 
+        tracing::Span::current().record("block_start", start_block_number);
+        tracing::Span::current().record("block_end", end_block_number);
         // Get the database
         let database = config.database();
 
@@ -227,6 +232,7 @@ impl BatchingTrigger {
             (state_update, latest_aggregator_batch, latest_snos_batch) = self
                 .assign_batch(block_number, state_update, latest_aggregator_batch, latest_snos_batch, &config)
                 .await?;
+            tracing::Span::current().record("batch_id", latest_aggregator_batch.index);
         }
 
         // This just updates the aggregator/snos batch in the DB and does not close the batch
@@ -387,24 +393,49 @@ impl BatchingTrigger {
         start_snos_batch: u64,
         start_block: u64,
     ) -> Result<AggregatorBatch, JobError> {
+        // Start timing batch creation
+        let start_time = Instant::now();
+
         // Start a new bucket
         let bucket_id = config
             .prover_client()
             .submit_task(Task::CreateBucket)
             .await
             .map_err(|e| {
-                tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+                error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
                 JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
             })?;
         info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
-        Ok(AggregatorBatch::new(
+
+        let batch = AggregatorBatch::new(
             index,
             start_snos_batch,
             start_block,
             self.get_state_update_file_path(index),
             self.get_blob_dir_path(index),
-            bucket_id.to_string(),
-        ))
+            bucket_id.clone(),
+        );
+
+        // Record batch creation time
+        let duration = start_time.elapsed();
+        let attributes = [
+            KeyValue::new("batch_index", index.to_string()),
+            KeyValue::new("start_block", start_block.to_string()),
+            KeyValue::new("bucket_id", bucket_id.to_string()),
+        ];
+        ORCHESTRATOR_METRICS.batch_creation_time.record(duration.as_secs_f64(), &attributes);
+
+        // Update batching rate (batches per hour)
+        // This is a simple counter that will be used to calculate rate in Grafana
+        ORCHESTRATOR_METRICS.batching_rate.record(1.0, &attributes);
+
+        info!(
+            index = %index,
+            duration_seconds = %duration.as_secs_f64(),
+            "Batch created successfully"
+        );
+
+        Ok(batch)
     }
 
     /// Function to create a new SNOS batch.

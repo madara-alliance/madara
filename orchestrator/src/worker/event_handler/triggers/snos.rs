@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use color_eyre::eyre::Result;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
+use tracing::{debug, error, info, trace, warn};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -50,7 +51,7 @@ impl JobTrigger for SnosJobTrigger {
 
         // Self-healing: recover any orphaned SNOS jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::SnosRun).await {
-            tracing::error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
+            error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
         }
 
         // Get all snos batches that are closed but don't have a SnosRun job created yet
@@ -71,11 +72,11 @@ impl JobTrigger for SnosJobTrigger {
                 .await
             {
                 Ok(_) => {
-                    tracing::info!(batch_id = %snos_batch.snos_batch_id,"Successfully created new snos job");
+                    info!(batch_id = %snos_batch.snos_batch_id,"Successfully created new snos job");
                     config.database().update_or_create_snos_batch(&snos_batch, &SnosBatchUpdates {end_block: None, status: Some(SnosBatchStatus::SnosJobCreated)}).await?;
                 },
                 Err(e) => {
-                    tracing::warn!(
+                    warn!(
                         batch_id = %snos_batch.snos_batch_id,
                         error = %e,
                         "Failed to create new snos job"
@@ -89,10 +90,11 @@ impl JobTrigger for SnosJobTrigger {
             }
         }
 
-        tracing::trace!(log_type = "completed", category = "SnosWorker", "SnosWorker completed.");
+        trace!(log_type = "completed", category = "SnosWorker", "SnosWorker completed.");
         Ok(())
     }
 }
+
 // create_job_metadata is a helper function to create job metadata for a given block number and layer
 // set full_output to true if layer is L3, false otherwise
 fn create_job_metadata(start_block: u64, end_block: u64, full_output: bool) -> JobMetadata {

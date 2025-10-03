@@ -8,6 +8,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{DaMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use async_trait::async_trait;
@@ -21,6 +22,8 @@ use starknet_core::types::{
 use std::collections::{HashMap, HashSet};
 use std::ops::{Add, Mul, Rem};
 use std::sync::Arc;
+use std::time::Instant;
+use tracing::{debug, error, info, trace, warn};
 
 pub struct DAJobHandler;
 
@@ -42,7 +45,6 @@ impl DAJobHandler {
         );
     }
 
-    #[tracing::instrument(skip(elements))]
     pub fn fft_transformation(elements: Vec<BigUint>) -> Result<Vec<BigUint>, JobError> {
         let xs: Vec<BigUint> = (0..BLOB_LEN)
             .map(|i| {
@@ -171,7 +173,7 @@ impl DAJobHandler {
             let mut blob = chunk.to_vec();
             if blob.len() < chunk_size {
                 blob.resize(chunk_size, 0);
-                tracing::debug!("Warning: Last chunk of {} bytes was padded to full blob size", chunk.len());
+                debug!("Warning: Last chunk of {} bytes was padded to full blob size", chunk.len());
             }
             blobs.push(blob);
         }
@@ -199,27 +201,17 @@ impl DAJobHandler {
 
 #[async_trait]
 impl JobHandlerTrait for DAJobHandler {
-    #[tracing::instrument(fields(category = "da"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        tracing::info!(log_type = "starting", category = "da", function_type = "create_job",  block_no = %internal_id, "DA job creation started.");
+        info!(log_type = "starting", category = "da", function_type = "create_job",  block_no = %internal_id, "DA job creation started.");
 
         let job_item = JobItem::create(internal_id.clone(), JobType::DataSubmission, JobStatus::Created, metadata);
 
-        tracing::info!(log_type = "completed", category = "da", function_type = "create_job", block_no = %internal_id, "DA job creation completed.");
+        info!(log_type = "completed", category = "da", function_type = "create_job", block_no = %internal_id, "DA job creation completed.");
         Ok(job_item)
     }
 
-    #[tracing::instrument(fields(category = "da"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
-        tracing::info!(
-            log_type = "starting",
-            category = "da",
-            function_type = "process_job",
-            job_id = ?job.id,
-            block_no = %internal_id,
-            "DA job processing started."
-        );
+        info!(log_type = "starting", "DA job processing started.");
 
         // Get DA-specific metadata
         let mut da_metadata: DaMetadata = job.metadata.specific.clone().try_into()?;
@@ -233,41 +225,40 @@ impl JobHandlerTrait for DAJobHandler {
 
         let state_update = match state_update {
             MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
-                tracing::warn!(job_id = ?job.id, block_no = block_no, "Block is still pending");
+                warn!(block_no = block_no, "Block is still pending");
                 Err(DaError::BlockPending { block_no: block_no.to_string(), job_id: job.id })?
             }
             MaybePreConfirmedStateUpdate::Update(state_update) => state_update,
         };
-        tracing::debug!(job_id = ?job.id, "Retrieved state update");
+        debug!("Retrieved state update");
 
         // constructing the data from the rpc
         let blob_data = Self::state_update_to_blob_data(block_no, state_update, config.clone()).await?;
         // transforming the data so that we can apply FFT on this.
         let blob_data_biguint = Self::convert_to_biguint(blob_data.clone());
-        tracing::trace!(job_id = ?job.id, "Converted blob data to BigUint");
+        trace!("Converted blob data to BigUint");
 
         let transformed_data = Self::fft_transformation(blob_data_biguint)
             .wrap_err("Failed to apply FFT transformation")
             .map_err(|e| {
-                tracing::error!(job_id = ?job.id, error = ?e, "Failed to apply FFT transformation");
+                error!(error = ?e, "Failed to apply FFT transformation");
                 JobError::Other(OtherError(e))
             })?;
-        tracing::trace!(job_id = ?job.id, "Applied FFT transformation");
+        trace!("Applied FFT transformation");
 
         // Get blob data path from metadata
         let blob_data_path = da_metadata.blob_data_path.as_ref().ok_or_else(|| {
-            tracing::error!(job_id = ?job.id, "Blob data path not found in metadata");
+            error!("Blob data path not found in metadata");
             JobError::Other(OtherError(eyre!("Blob data path not found in metadata")))
         })?;
 
         // Store the transformed data
         Self::store_blob_data(transformed_data.clone(), blob_data_path, config.clone()).await?;
-        tracing::debug!(job_id = ?job.id, "Stored blob data");
+        debug!("Stored blob data");
 
         let max_bytes_per_blob = config.da_client().max_bytes_per_blob().await;
         let max_blob_per_txn = config.da_client().max_blob_per_txn().await;
-        tracing::trace!(
-            job_id = ?job.id,
+        trace!(
             max_bytes_per_blob = max_bytes_per_blob,
             max_blob_per_txn = max_blob_per_txn,
             "Retrieved DA client configuration"
@@ -279,14 +270,14 @@ impl JobHandlerTrait for DAJobHandler {
             .try_into()
             .wrap_err("Unable to convert the blob length into u64 format.".to_string())
             .map_err(|e| {
-                tracing::error!(job_id = ?job.id, error = ?e, "Failed to convert blob length to u64");
+                error!(error = ?e, "Failed to convert blob length to u64");
                 JobError::Other(OtherError(e))
             })?;
-        tracing::debug!(job_id = ?job.id, blob_count = current_blob_length, "Converted data to blobs");
+        debug!(blob_count = current_blob_length, "Converted data to blobs");
 
         // Check blob limit
         if current_blob_length > max_blob_per_txn {
-            tracing::error!(
+            error!(
                 job_id = ?job.id,
                 current_blob_length = current_blob_length,
                 max_blob_per_txn = max_blob_per_txn,
@@ -300,49 +291,44 @@ impl JobHandlerTrait for DAJobHandler {
             })?
         }
 
-        // Publish to DA layer
+        let settlement_start = Instant::now();
+
         let external_id = config.da_client().publish_state_diff(blob_array, &[0; 32]).await.map_err(|e| {
-            tracing::error!(job_id = ?job.id, error = ?e, "Failed to publish state diff to DA layer");
+            error!(error = ?e, "Failed to publish state diff to DA layer");
             JobError::Other(OtherError(e))
         })?;
+
+        // Record settlement time
+        let settlement_duration = settlement_start.elapsed().as_secs_f64();
+        MetricsRecorder::record_settlement_time(&job.job_type, settlement_duration);
 
         da_metadata.tx_hash = Some(external_id.clone());
         job.metadata.specific = JobSpecificMetadata::Da(da_metadata);
 
-        tracing::info!(
+        info!(
             log_type = "completed",
-            category = "da",
-            function_type = "process_job",
-            job_id = ?job.id,
-            block_no = %internal_id,
             external_id = ?external_id,
             "Successfully published state diff to DA layer."
         );
         Ok(external_id)
     }
 
-    #[tracing::instrument(fields(category = "da"), skip(self, config), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
-        tracing::info!(
-            log_type = "starting", category = "da",
-            function_type = "verify_job", job_id = ?job.id,
-            block_no = %internal_id, "DA job verification started."
-        );
+        info!(log_type = "starting", "DA job verification started.");
         let verification_status = config
             .da_client()
             .verify_inclusion(job.external_id.unwrap_string().map_err(|e| {
-                tracing::error!(job_id = ?job.id, error = ?e, "Failed to unwrap external ID");
+                error!(error = ?e, "Failed to unwrap external ID");
                 JobError::Other(OtherError(e))
             })?)
             .await
             .map_err(|e| {
-                tracing::error!(job_id = ?job.id, error = ?e, "Job verification failed");
+                error!(job_id = ?job.id, error = ?e, "Job verification failed");
                 JobError::Other(OtherError(e))
             })?
             .into();
 
-        tracing::info!(log_type = "completed", category = "da", function_type = "verify_job", job_id = ?job.id,  block_no = %internal_id, verification_status = ?verification_status, "DA job verification completed.");
+        info!(log_type = "completed", "DA job verification completed.");
         Ok(verification_status)
     }
     fn max_process_attempts(&self) -> u64 {

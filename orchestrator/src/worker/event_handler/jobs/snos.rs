@@ -30,7 +30,7 @@ use starknet_core::types::Felt;
 
 use std::sync::Arc;
 use tempfile::NamedTempFile;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 pub struct SnosJobHandler;
 
@@ -73,41 +73,20 @@ impl OsHintsConfigurationFromLayer for OsHintsConfiguration {
 
 #[async_trait]
 impl JobHandlerTrait for SnosJobHandler {
-    #[tracing::instrument(fields(category = "snos"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        tracing::info!(
-            log_type = "starting",
-            category = "snos",
-            function_type = "create_job",
-            block_no = %internal_id,
-            "SNOS job creation started."
-        );
+        info!(log_type = "starting", "SNOS job creation started.");
         let job_item = JobItem::create(internal_id.clone(), JobType::SnosRun, JobStatus::Created, metadata);
-        tracing::info!(
-            log_type = "completed",
-            category = "snos",
-            function_type = "create_job",
-            block_no = %internal_id,
-            "SNOS job creation completed."
-        );
+        info!(log_type = "completed", "SNOS job creation completed.");
         Ok(job_item)
     }
 
-    #[tracing::instrument(fields(category = "snos"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
-        tracing::info!(
-            log_type = "starting",
-            category = "snos",
-            function_type = "process_job",
-            job_id = ?job.id,
-            block_no = %internal_id,
-            "SNOS job processing started."
-        );
-        debug!(job_id = %job.internal_id, "Processing SNOS job");
+        info!(log_type = "starting", "SNOS job processing started.");
+        debug!("Processing SNOS job");
         // Get SNOS metadata
         let snos_metadata: SnosMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
-            error!(job_id = %job.internal_id, error = %e, "Failed to convert metadata to SnosMetadata");
+            error!(error = %e, "Failed to convert metadata to SnosMetadata");
         })?;
 
         debug!("SNOS metadata retrieved {:?}", snos_metadata);
@@ -115,11 +94,11 @@ impl JobHandlerTrait for SnosJobHandler {
         // Get block number from metadata (using start_block as the primary block for processing)
         let start_block_number = snos_metadata.start_block;
         let end_block_number = snos_metadata.end_block;
-        debug!(job_id = %job.internal_id, start_block = %snos_metadata.start_block, end_block = %snos_metadata.end_block, num_blocks = %snos_metadata.num_blocks, "Retrieved batch information from metadata");
+        debug!(start_block = %snos_metadata.start_block, end_block = %snos_metadata.end_block, num_blocks = %snos_metadata.num_blocks, "Retrieved batch information from metadata");
 
         let snos_url = config.snos_config().rpc_for_snos.to_string();
         let snos_url = snos_url.trim_end_matches('/');
-        debug!(job_id = %job.internal_id, "Calling generate_pie function");
+        debug!("Calling generate_pie function");
 
         let input = PieGenerationInput {
             rpc_url: snos_url.to_string(),
@@ -140,10 +119,10 @@ impl JobHandlerTrait for SnosJobHandler {
         };
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
-            error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
+            error!(error = %e, "SNOS execution failed");
             SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
         })?;
-        debug!(job_id = %job.internal_id, "prove_block function completed successfully");
+        debug!("generate_pie function completed successfully");
 
         let cairo_pie = snos_output.output.cairo_pie;
 
@@ -158,28 +137,28 @@ impl JobHandlerTrait for SnosJobHandler {
         // And in case of KZG flag == 1 :
         //      we calculate the fact info
         let (fact_hash, program_output) = if os_output.get(8) == Some(&Felt::ZERO) {
-            debug!(job_id = %job.internal_id, "Using calldata for settlement layer");
+            debug!("Using calldata for settlement layer");
             // Get the program output from CairoPie
             let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
-                error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
+                error!(error = %e, "Failed to get fact hash");
                 JobError::FactError(FactError::L2FactCompute)
             })?;
             let program_output = get_program_output(&cairo_pie, false).map_err(|e| {
-                error!(job_id = %job.internal_id, error = %e, "Failed to get program output");
+                error!(error = %e, "Failed to get program output");
                 JobError::FactError(FactError::ProgramOutputCompute)
             })?;
             (fact_hash, program_output)
         } else if os_output.get(8) == Some(&Felt::ONE) {
-            debug!(job_id = %job.internal_id, "Using blobs for settlement layer");
+            debug!("Using blobs for settlement layer");
             // Get the program output from CairoPie
             let fact_info = get_fact_info(&cairo_pie, None, false)?;
             (fact_info.fact, fact_info.program_output)
         } else {
-            error!(job_id = %job.internal_id, "Invalid KZG flag");
+            error!("Invalid KZG flag");
             return Err(JobError::from(SnosError::UnsupportedKZGFlag));
         };
 
-        debug!(job_id = %job.internal_id, "Fact info calculated successfully");
+        debug!("Fact info calculated successfully");
 
         // Update the metadata with new paths and fact info
         if let JobSpecificMetadata::Snos(metadata) = &mut job.metadata.specific {
@@ -187,7 +166,7 @@ impl JobHandlerTrait for SnosJobHandler {
             metadata.snos_n_steps = Some(cairo_pie.execution_resources.n_steps);
         }
 
-        debug!(job_id = %job.internal_id, "Storing SNOS outputs");
+        debug!("Storing SNOS outputs");
         if config.layer() == &Layer::L3 {
             // Store the on-chain data path
             self.store_l2(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output)
@@ -198,27 +177,16 @@ impl JobHandlerTrait for SnosJobHandler {
                 .await?;
         }
 
-        tracing::info!(
-            log_type = "completed",
-            category = "snos",
-            function_type = "process_job",
-            job_id = ?job.id,
-            batch_index = %snos_metadata.snos_batch_index,
-            start_block = %snos_metadata.start_block,
-            end_block = %snos_metadata.end_block,
-            "SNOS job processed successfully."
-        );
+        info!(log_type = "completed", "SNOS job processed successfully.");
 
         Ok(snos_metadata.snos_batch_index.to_string())
     }
 
-    #[tracing::instrument(fields(category = "snos"), skip(self, _config), ret, err)]
-    async fn verify_job(&self, _config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
-        tracing::info!(log_type = "starting", category = "snos", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, "SNOS job verification started.");
+    async fn verify_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+        info!(log_type = "starting", "SNOS job verification started.");
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
-        tracing::info!(log_type = "completed", category = "snos", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, "SNOS job verification completed.");
+        info!(log_type = "completed", "SNOS job verification completed.");
         Ok(JobVerificationStatus::Verified)
     }
 

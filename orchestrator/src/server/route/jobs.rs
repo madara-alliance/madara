@@ -5,7 +5,7 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use opentelemetry::KeyValue;
-use tracing::{error, info, instrument};
+use tracing::{error, info, Span};
 use uuid::Uuid;
 
 use super::super::error::JobRouteError;
@@ -34,12 +34,13 @@ use crate::worker::service::JobService;
 /// # Errors
 /// * `JobRouteError::InvalidId` - If the provided ID is not a valid UUID
 /// * `JobRouteError::ProcessingError` - If job processing fails
-#[instrument(skip(config), fields(job_id = %id))]
 async fn handle_process_job_request(
     Path(JobId { id }): Path<JobId>,
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
+    // Record job_id in the current request span for consistent logging
+    Span::current().record("job_id", tracing::field::display(job_id));
 
     match JobService::queue_job_for_processing(job_id, config.clone()).await {
         Ok(_) => {
@@ -75,12 +76,13 @@ async fn handle_process_job_request(
 /// # Errors
 /// * `JobRouteError::InvalidId` - If the provided ID is not a valid UUID
 /// * `JobRouteError::ProcessingError` - If queueing for verification fails
-#[instrument(skip(config), fields(job_id = %id))]
 async fn handle_verify_job_request(
     Path(JobId { id }): Path<JobId>,
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
+    // Record job_id in the current request span for consistent logging
+    Span::current().record("job_id", tracing::field::display(job_id));
 
     match JobService::queue_job_for_verification(job_id, config.clone()).await {
         Ok(_) => {
@@ -115,12 +117,13 @@ async fn handle_verify_job_request(
 /// # Errors
 /// * `JobRouteError::InvalidId` - If the provided ID is not a valid UUID
 /// * `JobRouteError::ProcessingError` - If retry attempt fails
-#[instrument(skip(config), fields(job_id = %id))]
 async fn handle_retry_job_request(
     Path(JobId { id }): Path<JobId>,
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
+    // Record job_id in the current request span for consistent logging
+    Span::current().record("job_id", tracing::field::display(job_id));
 
     match JobHandlerService::retry_job(job_id, config.clone()).await {
         Ok(_) => {
@@ -168,8 +171,7 @@ pub fn job_router(config: Arc<Config>) -> Router {
 /// * `State(config)` - Shared application configuration
 ///
 /// # Returns
-/// * `JobRouteResult<JobStatusResponse>` - Success response with job statuses or error details
-#[instrument(skip(config), fields(block_number = %block_number))]
+/// * `JobRouteResult<BlockJobStatusResponse>` - Success response with job statuses or error details
 async fn handle_get_job_status_by_block_request(
     Path(block_number): Path<u64>,
     State(config): State<Arc<Config>>,
