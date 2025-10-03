@@ -227,70 +227,66 @@ impl QueueClient for SQS {
         Ok(consumer)
     }
     /// Consume a message from the queue with version verification
-    /// This function polls the queue once and only returns messages that match
-    /// the current orchestrator version. Mismatched messages are returned to the queue.
-    /// If no messages are available, it returns an error from the underlying queue.
+    /// This function continuously polls the queue and only returns messages that match
+    /// the current orchestrator version. Mismatched messages are returned to the queue with
+    /// changed visibility timeout, allowing other orchestrator versions to process them.
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
         let our_version = get_version_string();
 
-        // First, peek at the message with AWS SDK to check version
-        let receive_result = self
-            .inner
-            .client()
-            .receive_message()
-            .queue_url(&queue_url)
-            .max_number_of_messages(1)
-            .message_attribute_names("OrchestratorVersion")
-            .wait_time_seconds(20)
-            .send()
-            .await?;
+        loop {
+            let receive_result = self
+                .inner
+                .client()
+                .receive_message()
+                .queue_url(&queue_url)
+                .max_number_of_messages(1)
+                .message_attribute_names("OrchestratorVersion")
+                .wait_time_seconds(20)
+                .send()
+                .await?;
 
-        // If there are messages, check version compatibility
-        if let Some(messages) = receive_result.messages {
-            if let Some(message) = messages.into_iter().next() {
-                let message_version = message
-                    .message_attributes()
-                    .and_then(|attrs| attrs.get("OrchestratorVersion"))
-                    .and_then(|attr| attr.string_value());
+            if let Some(messages) = receive_result.messages {
+                if let Some(message) = messages.into_iter().next() {
+                    let message_version = message
+                        .message_attributes()
+                        .and_then(|attrs| attrs.get("OrchestratorVersion"))
+                        .and_then(|attr| attr.string_value());
 
-                match message_version {
-                    Some(version) if version != our_version => {
-                        tracing::warn!(
-                            "Version mismatch: message={}, orchestrator={}. Changing visibility timeout.",
-                            version,
-                            our_version
-                        );
-                        // Return the message to the queue immediately for other versions to process
-                        if let Some(receipt_handle) = message.receipt_handle() {
-                            let _ = self
-                                .inner
-                                .client()
-                                .change_message_visibility()
-                                .queue_url(&queue_url)
-                                .receipt_handle(receipt_handle)
-                                .visibility_timeout(0)
-                                .send()
-                                .await;
+                    match message_version {
+                        Some(version) if version != our_version => {
+                            tracing::warn!(
+                                "Version mismatch: message={}, orchestrator={}. Changing visibility timeout.",
+                                version,
+                                our_version
+                            );
+                            if let Some(receipt_handle) = message.receipt_handle() {
+                                let _ = self
+                                    .inner
+                                    .client()
+                                    .change_message_visibility()
+                                    .queue_url(&queue_url)
+                                    .receipt_handle(receipt_handle)
+                                    .visibility_timeout(0)
+                                    .send()
+                                    .await;
+                            }
+                            continue;
                         }
-                        // Return error indicating version mismatch
-                        return Err(QueueError::MessageAttributeError(
-                            "Version mismatch - message belongs to different orchestrator version".to_string(),
-                        ));
+                        None => {
+                            tracing::warn!("Message has no version attribute - processing for backward compatibility");
+                        }
+                        Some(_) => {
+                            tracing::debug!("Message version verified");
+                        }
                     }
-                    None => {
-                        tracing::warn!("Message has no version attribute - processing for backward compatibility");
-                    }
-                    Some(_) => {
-                        tracing::debug!("Message version verified");
-                    }
+
+                    // Version matches or no version - return via omniqueue for consistent handling
+                    let mut consumer = self.get_consumer(queue).await?;
+                    return Ok(consumer.receive().await?);
                 }
             }
         }
-
-        // Version matches or no version - proceed with omniqueue consumer for consistent handling
-        let mut consumer = self.get_consumer(queue).await?;
-        Ok(consumer.receive().await?)
     }
 }
