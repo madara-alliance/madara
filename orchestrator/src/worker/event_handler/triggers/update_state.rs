@@ -4,7 +4,7 @@ use crate::types::jobs::metadata::{
     SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::constants::STATE_UPDATE_MAX_NO_BLOCK_PROCESSING;
+use crate::utils::constants::{STATE_UPDATE_MAX_NO_BATCH_PROCESSING, STATE_UPDATE_MAX_NO_BLOCK_PROCESSING};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -134,7 +134,8 @@ impl JobTrigger for UpdateStateJobTrigger {
         }
 
         // Sanitize the list of blocks/batches to be processed
-        let to_process = find_successive_items_in_vector(to_process, Some(STATE_UPDATE_MAX_NO_BLOCK_PROCESSING));
+        let to_process =
+            find_successive_items_in_vector(to_process, Some(self.max_items_to_process_in_single_job(config.layer())));
 
         // Getting settlement context
         let settlement_context = match config.layer() {
@@ -254,6 +255,14 @@ impl UpdateStateJobTrigger {
         }
 
         Ok(())
+    }
+
+    /// Get the maximum number of items to process in a single job
+    fn max_items_to_process_in_single_job(&self, layer: &Layer) -> usize {
+        match layer {
+            Layer::L2 => STATE_UPDATE_MAX_NO_BATCH_PROCESSING,
+            Layer::L3 => STATE_UPDATE_MAX_NO_BLOCK_PROCESSING,
+        }
     }
 }
 

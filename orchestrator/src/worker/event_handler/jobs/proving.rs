@@ -133,7 +133,7 @@ impl JobHandlerTrait for ProvingJobHandler {
                     let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
                         error!(
                             error = %e,
-                            "Failed to get task status from prover client"
+                            "Failed to get proof from prover client"
                         );
                     })?;
                     debug!("Downloading and storing proof to path: {}", download_path);
