@@ -91,15 +91,15 @@ where
         let span = ctx.span(id).expect("Span not found, this is a bug");
 
         // Get existing fields or create new
-        let existing_fields = span.extensions().get::<CustomSpanFields>().cloned()
-            // .map(|f| f.clone())
-            .unwrap_or_else(CustomSpanFields::new);
+        let mut extensions = span.extensions_mut();
+        let existing_fields = extensions.remove::<CustomSpanFields>().unwrap_or_else(CustomSpanFields::new);
 
         let mut collector = SpanFieldCollector::new();
         collector.fields = existing_fields;
         values.record(&mut collector);
 
-        span.extensions_mut().insert(collector.fields);
+        // Reinsert the updated fields (extensions was already removed above)
+        extensions.insert(collector.fields);
     }
 }
 
