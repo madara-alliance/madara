@@ -70,9 +70,12 @@ impl JobTrigger for ProvingJobTrigger {
                 }
             };
 
-            // Create proving job metadata
+            // Create proving job metadata, propagating Starknet version from SNOS job
             let proving_metadata = JobMetadata {
-                common: CommonMetadata::default(),
+                common: CommonMetadata {
+                    starknet_version: snos_job.metadata.common.starknet_version.clone(),
+                    ..Default::default()
+                },
                 specific: JobSpecificMetadata::Proving(ProvingMetadata {
                     block_number: snos_metadata.block_number,
                     // Set input path as CairoPie type

@@ -34,6 +34,11 @@ pub struct CommonMetadata {
     pub verification_completed_at: Option<DateTime<Utc>>,
     /// Reason for job failure if any
     pub failure_reason: Option<String>,
+    /// Starknet protocol version associated with the block being processed.
+    /// This version is extracted from the block header returned by the sequencer/full node.
+    /// Format: "0.13.2", "0.13.4", etc.
+    /// Used to ensure version-specific processing logic is applied correctly across the pipeline.
+    pub starknet_version: Option<String>,
 }
 
 /// Metadata specific to data availability (DA) jobs.

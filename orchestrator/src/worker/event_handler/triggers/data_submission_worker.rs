@@ -47,9 +47,12 @@ impl JobTrigger for DataSubmissionJobTrigger {
                 e
             })?;
 
-            // Create DA metadata
+            // Create DA metadata, propagating Starknet version from proving job
             let da_metadata = JobMetadata {
-                common: CommonMetadata::default(),
+                common: CommonMetadata {
+                    starknet_version: proving_job.metadata.common.starknet_version.clone(),
+                    ..Default::default()
+                },
                 specific: JobSpecificMetadata::Da(DaMetadata {
                     block_number: proving_metadata.block_number,
                     // Set the blob data path using block number

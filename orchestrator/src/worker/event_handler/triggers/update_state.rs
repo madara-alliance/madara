@@ -156,9 +156,15 @@ impl JobTrigger for UpdateStateJobTrigger {
             Layer::L3 => self.collect_paths_l3(&config, &to_process, &mut state_update_metadata).await?,
         }
 
-        // Create StateTransition job metadata
+        let starknet_version = if let Some(first_job) = jobs_to_process.first() {
+            first_job.metadata.common.starknet_version.clone()
+        } else {
+            None
+        };
+
+        // Create StateTransition job metadata, propagating Starknet version from parent jobs
         let metadata = JobMetadata {
-            common: CommonMetadata::default(),
+            common: CommonMetadata { starknet_version, ..Default::default() },
             specific: JobSpecificMetadata::StateUpdate(state_update_metadata),
         };
 

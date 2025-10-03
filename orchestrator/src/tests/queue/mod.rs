@@ -1,6 +1,6 @@
 use rstest::*;
 
-use crate::types::constant::generate_version_string;
+use crate::types::constant::get_version_string;
 use crate::types::queue::QueueType;
 use aws_sdk_sqs::types::MessageAttributeValue;
 
@@ -17,7 +17,7 @@ async fn test_send_message_with_version_attribute() {
 #[rstest]
 #[tokio::test]
 async fn test_version_string_generation() {
-    let version = generate_version_string();
+    let version = get_version_string();
 
     // Version should follow the format: starknet-X.X.X::orchestrator-X.X.X
     assert!(version.contains("starknet-"));
@@ -29,13 +29,10 @@ async fn test_version_string_generation() {
 #[rstest]
 #[tokio::test]
 async fn test_message_attribute_creation() {
-    let version = generate_version_string();
+    let version = get_version_string();
 
     // Test that MessageAttributeValue can be built successfully
-    let attribute_result = MessageAttributeValue::builder()
-        .data_type("String")
-        .string_value(&version)
-        .build();
+    let attribute_result = MessageAttributeValue::builder().data_type("String").string_value(&version).build();
 
     assert!(attribute_result.is_ok());
 
@@ -48,7 +45,7 @@ async fn test_message_attribute_creation() {
 #[rstest]
 #[tokio::test]
 async fn test_version_matching() {
-    let our_version = generate_version_string();
+    let our_version = get_version_string();
     let same_version = our_version.clone();
     let different_version = "starknet-0.0.0::orchestrator-0.0.0".to_string();
 
@@ -115,7 +112,7 @@ mod integration_tests {
 
         // Send message with version attribute
         let test_payload = "test message content";
-        let version = generate_version_string();
+        let version = get_version_string();
 
         let version_attr = AwsMessageAttributeValue::builder()
             .data_type("String")
@@ -210,8 +207,10 @@ mod integration_tests {
 
         // Verify NO version attribute (backward compatibility)
         let attrs = message.message_attributes();
-        assert!(attrs.is_none() || !attrs.unwrap().contains_key("OrchestratorVersion"),
-                "Legacy message should not have version attribute");
+        assert!(
+            attrs.is_none() || !attrs.unwrap().contains_key("OrchestratorVersion"),
+            "Legacy message should not have version attribute"
+        );
 
         // Cleanup
         sqs_client.delete_queue().queue_url(&queue_url).send().await.ok();
@@ -226,8 +225,8 @@ mod unit_tests {
     #[rstest]
     #[tokio::test]
     async fn test_version_consistency() {
-        let version1 = generate_version_string();
-        let version2 = generate_version_string();
+        let version1 = get_version_string();
+        let version2 = get_version_string();
 
         // Same process should generate same version
         assert_eq!(version1, version2);
@@ -237,7 +236,7 @@ mod unit_tests {
     #[rstest]
     #[tokio::test]
     async fn test_version_format() {
-        let version = generate_version_string();
+        let version = get_version_string();
         let parts: Vec<&str> = version.split("::").collect();
 
         assert_eq!(parts.len(), 2, "Version should have exactly 2 parts separated by '::'");

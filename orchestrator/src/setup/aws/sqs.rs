@@ -99,18 +99,9 @@ impl Resource for InnerSQS {
                         let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
 
                         // Standard DLQ creation (no FIFO attributes)
-                        let dlq_res = self
-                            .client()
-                            .create_queue()
-                            .queue_name(&dlq_name)
-                            .send()
-                            .await
-                            .map_err(|e| {
-                                OrchestratorError::ResourceSetupError(format!(
-                                    "Failed to create DLQ '{}': {}",
-                                    dlq_name, e
-                                ))
-                            })?;
+                        let dlq_res = self.client().create_queue().queue_name(&dlq_name).send().await.map_err(|e| {
+                            OrchestratorError::ResourceSetupError(format!("Failed to create DLQ '{}': {}", dlq_name, e))
+                        })?;
 
                         let dlq_url = dlq_res.queue_url().ok_or_else(|| {
                             OrchestratorError::ResourceSetupError("Failed to get dl queue url".to_string())

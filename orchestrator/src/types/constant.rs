@@ -41,18 +41,33 @@ lazy_static! {
     pub static ref ONE: BigUint = 1u32.to_biguint().unwrap();
 }
 
-
 /// Version of the Madara client
 pub const MADARA_VERSION: &str = "0.1.0";
 
-/// Version of the Starknet client
+/// Version of the Starknet client (placeholder for queue versioning)
 pub const STARKNET_VERSION: &str = "0.1.0";
 
 /// Version of the Orchestrator
-pub const ORCHESTRATOR_VERSION: &str = "1.0.0";
+pub const ORCHESTRATOR_VERSION: &str = "0.1.0";
 
-/// Generate a version string combining Starknet and Orchestrator versions
+/// Supported Starknet protocol versions by this orchestrator build.
+/// This list must be kept in sync with the SNOS library version (currently v0.13.3).
+pub const SUPPORTED_STARKNET_VERSIONS: &[&str] = &["0.13.0", "0.13.1", "0.13.1.1", "0.13.2", "0.13.3"];
+
+/// Get a version string combining Starknet and Orchestrator versions
 /// This format allows for future extensibility with additional dependencies
-pub fn generate_version_string() -> String {
+pub fn get_version_string() -> String {
     format!("starknet-{}::orchestrator-{}", STARKNET_VERSION, ORCHESTRATOR_VERSION)
+}
+
+/// Validates if a Starknet protocol version is supported by this orchestrator.
+///
+/// # Arguments
+/// * `version` - The Starknet version string to validate (e.g., "0.13.2")
+///
+/// # Returns
+/// * `true` if the version is supported, `false` otherwise
+/// ```
+pub fn is_starknet_version_supported(version: &str) -> bool {
+    SUPPORTED_STARKNET_VERSIONS.contains(&version)
 }

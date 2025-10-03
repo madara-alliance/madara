@@ -1,5 +1,5 @@
 use crate::core::client::queue::QueueError;
-use crate::types::constant::generate_version_string;
+use crate::types::constant::get_version_string;
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::ARN;
 use crate::{
@@ -175,7 +175,7 @@ impl QueueClient for SQS {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
 
-        let version = generate_version_string();
+        let version = get_version_string();
 
         let version_attribute = MessageAttributeValue::builder()
             .data_type("String")
@@ -197,11 +197,7 @@ impl QueueClient for SQS {
 
         send_message_request.send().await?;
 
-        tracing::debug!(
-            "Sent message to queue {} with version {}",
-            queue_name,
-            version
-        );
+        tracing::debug!("Sent message to queue {} with version {}", queue_name, version);
 
         Ok(())
     }
@@ -237,7 +233,7 @@ impl QueueClient for SQS {
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
-        let our_version = generate_version_string();
+        let our_version = get_version_string();
 
         loop {
             let receive_result = self
@@ -259,7 +255,7 @@ impl QueueClient for SQS {
                         .and_then(|attr| attr.string_value());
 
                     match message_version {
-                        Some(version) if version != &our_version => {
+                        Some(version) if version != our_version => {
                             tracing::warn!(
                                 "Version mismatch: message={}, orchestrator={}. Changing visibility timeout.",
                                 version,
