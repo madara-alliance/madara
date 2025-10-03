@@ -22,8 +22,8 @@ use url::Url;
 use crate::core::client::lock::mongodb::MongoLockClient;
 use crate::core::client::lock::LockClient;
 use crate::core::error::OrchestratorCoreResult;
-use crate::types::params::batching::BatchingParams;
 use crate::types::constant::generate_version_string;
+use crate::types::params::batching::BatchingParams;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
 use crate::{
