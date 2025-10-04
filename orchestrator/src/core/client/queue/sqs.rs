@@ -12,7 +12,7 @@ use aws_config::SdkConfig;
 use aws_sdk_sqs::types::{MessageAttributeValue, QueueAttributeName};
 use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
-use omniqueue::{Delivery, QueueError as OmniQueueError};
+use omniqueue::Delivery;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -100,6 +100,36 @@ impl InnerSQS {
     /// This function returns the queue name based on the queue type provided
     pub fn get_queue_name_from_type(name: &str, queue_type: &QueueType) -> String {
         name.replace("{}", &queue_type.to_string())
+    }
+
+    /// get_dlq_url_from_queue - Get the DLQ URL for a given queue
+    /// This function retrieves the dead letter queue URL configured for a queue
+    pub async fn get_dlq_url_from_queue(&self, queue_url: &str) -> Result<Option<String>, QueueError> {
+        let attributes = self
+            .client()
+            .get_queue_attributes()
+            .queue_url(queue_url)
+            .attribute_names(QueueAttributeName::RedrivePolicy)
+            .send()
+            .await?;
+
+        if let Some(attrs) = attributes.attributes() {
+            if let Some(redrive_policy) = attrs.get(&QueueAttributeName::RedrivePolicy) {
+                // Parse the redrive policy JSON to extract DLQ ARN
+                if let Ok(policy) = serde_json::from_str::<serde_json::Value>(redrive_policy) {
+                    if let Some(dlq_arn) = policy.get("deadLetterTargetArn").and_then(|v| v.as_str()) {
+                        // Parse the ARN and construct DLQ URL
+                        let arn = ARN::parse(dlq_arn)
+                            .map_err(|_| QueueError::InvalidArn(format!("Invalid DLQ ARN: {}", dlq_arn)))?;
+
+                        let dlq_url =
+                            format!("https://sqs.{}.amazonaws.com/{}/{}", arn.region, arn.account_id, arn.resource);
+                        return Ok(Some(dlq_url));
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -256,7 +286,7 @@ impl QueueClient for SQS {
 
             // Handle no-data scenario - return the error to caller
             if messages.is_empty() {
-                return Err(QueueError::ErrorFromQueueError(OmniQueueError::NoData));
+                continue;
             }
 
             let message = &messages[0];
@@ -308,16 +338,49 @@ impl QueueClient for SQS {
                 let mut consumer = self.get_consumer(queue).await?;
                 return Ok(consumer.receive().await?);
             } else {
-                // Nack the message by setting visibility timeout to 0
-                tracing::debug!("Nacking message with mismatched version");
+                // Delete from processing queue and re-enqueue to DLQ to preserve the message
+                // while preventing it from blocking the main queue or triggering automatic DLQ
+                // after exceeding maxReceiveCount.
+                tracing::warn!(
+                    "Version mismatch detected. Deleting message from processing queue and re-enqueueing to DLQ for investigation."
+                );
+
+                // Get the message body to re-enqueue
+                let message_body = message.body().unwrap_or("");
+
+                // Delete from the processing queue
                 self.inner
                     .client()
-                    .change_message_visibility()
+                    .delete_message()
                     .queue_url(&queue_url)
                     .receipt_handle(receipt_handle)
-                    .visibility_timeout(0)
                     .send()
                     .await?;
+
+                // Try to get DLQ URL and re-enqueue the message
+                if let Some(dlq_url) = self.inner.get_dlq_url_from_queue(&queue_url).await? {
+                    // Re-enqueue to DLQ with version mismatch context
+                    let version_mismatch_attr = MessageAttributeValue::builder()
+                        .data_type("String")
+                        .string_value("VersionMismatch")
+                        .build()
+                        .map_err(|e| QueueError::MessageAttributeError(format!("Failed to build attribute: {}", e)))?;
+
+                    self.inner
+                        .client()
+                        .send_message()
+                        .queue_url(&dlq_url)
+                        .message_body(message_body)
+                        .message_attributes("FailureReason", version_mismatch_attr)
+                        .send()
+                        .await?;
+
+                    tracing::info!("Successfully re-enqueued version-mismatched message to DLQ");
+                } else {
+                    tracing::warn!(
+                        "No DLQ configured for queue. Version-mismatched message was deleted without re-enqueueing."
+                    );
+                }
 
                 // Continue the loop to get the next message
             }
