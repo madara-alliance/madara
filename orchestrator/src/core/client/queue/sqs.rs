@@ -12,7 +12,7 @@ use aws_config::SdkConfig;
 use aws_sdk_sqs::types::{MessageAttributeValue, QueueAttributeName};
 use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
-use omniqueue::Delivery;
+use omniqueue::{Delivery, QueueError as OmniQueueError};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -227,14 +227,100 @@ impl QueueClient for SQS {
         Ok(consumer)
     }
     /// Consume a message from the queue with version verification.
-    /// This function uses omniqueue's consumer to receive messages, avoiding the double-consumption
-    /// issue. Since version filtering at the consumer level is not directly supported by omniqueue,
-    /// we rely on the assumption that all messages in production will have the correct version
-    /// (ensured by send_message adding the version attribute). For tests and scenarios where
-    /// version mismatches might occur, messages are consumed and the application logic should
-    /// handle any inconsistencies gracefully.
+    ///
+    /// This implementation filters messages by orchestrator version:
+    /// - Messages without version attributes are accepted (backward compatibility)
+    /// - Messages with matching version are accepted
+    /// - Messages with mismatched versions are nacked (visibility timeout set to 0)
+    ///
+    /// The loop continues until a valid message is found or an error occurs (including NoData).
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
-        let mut consumer = self.get_consumer(queue).await?;
-        Ok(consumer.receive().await?)
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+        let local_version = get_version_string();
+
+        loop {
+            // Receive message using AWS SDK to access attributes
+            let receive_result = self
+                .inner
+                .client()
+                .receive_message()
+                .queue_url(&queue_url)
+                .message_attribute_names("OrchestratorVersion")
+                .max_number_of_messages(1)
+                .wait_time_seconds(20)
+                .send()
+                .await?;
+
+            let messages = receive_result.messages();
+
+            // Handle no-data scenario - return the error to caller
+            if messages.is_empty() {
+                return Err(QueueError::ErrorFromQueueError(OmniQueueError::NoData));
+            }
+
+            let message = &messages[0];
+            let receipt_handle = message
+                .receipt_handle()
+                .ok_or_else(|| QueueError::MessageAttributeError("Missing receipt handle".to_string()))?;
+
+            // Check version attribute
+            let should_accept = match message.message_attributes() {
+                Some(attrs) => match attrs.get("OrchestratorVersion") {
+                    Some(version_attr) => match version_attr.string_value() {
+                        Some(msg_version) => {
+                            tracing::debug!("Message version: {}, Local version: {}", msg_version, local_version);
+                            msg_version == local_version
+                        }
+                        None => {
+                            tracing::warn!("OrchestratorVersion attribute exists but has no value");
+                            true // Accept if attribute exists but has no value
+                        }
+                    },
+                    None => {
+                        tracing::debug!(
+                            "No OrchestratorVersion attribute found, accepting message (backward compatibility)"
+                        );
+                        true // Accept messages without version attribute
+                    }
+                },
+                None => {
+                    tracing::debug!("No message attributes, accepting message (backward compatibility)");
+                    true // Accept messages without any attributes
+                }
+            };
+
+            if should_accept {
+                // Make the message immediately available again by setting visibility to 0
+                // so omniqueue can consume it
+                self.inner
+                    .client()
+                    .change_message_visibility()
+                    .queue_url(&queue_url)
+                    .receipt_handle(receipt_handle)
+                    .visibility_timeout(0)
+                    .send()
+                    .await?;
+
+                tracing::debug!("Accepted message with matching version, making it available for omniqueue");
+
+                // Now consume via omniqueue - it should get the message we just made available
+                let mut consumer = self.get_consumer(queue).await?;
+                return Ok(consumer.receive().await?);
+            } else {
+                // Nack the message by setting visibility timeout to 0
+                tracing::debug!("Nacking message with mismatched version");
+                self.inner
+                    .client()
+                    .change_message_visibility()
+                    .queue_url(&queue_url)
+                    .receipt_handle(receipt_handle)
+                    .visibility_timeout(0)
+                    .send()
+                    .await?;
+
+                // Continue the loop to get the next message
+            }
+        }
     }
 }
