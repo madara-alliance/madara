@@ -41,6 +41,91 @@ pub struct GatewaySyncSteps {
     client: Arc<GatewayProvider>,
     keep_pre_v0_13_2_hashes: bool,
 }
+
+impl GatewaySyncSteps {
+    /// Finds the common ancestor block hash between the local chain and gateway during a reorg.
+    ///
+    /// This function walks backwards from a given block number, comparing local block hashes
+    /// with gateway block hashes until it finds a matching hash, which indicates the common
+    /// ancestor (the last valid block before the fork).
+    ///
+    /// # Arguments
+    ///
+    /// * `starting_block_n` - The block number to start searching backwards from (typically block_n - 1
+    ///   when a parent hash mismatch is detected)
+    ///
+    /// # Returns
+    ///
+    /// Returns the block hash of the common ancestor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// * Unable to fetch blocks from the gateway
+    /// * Unable to read blocks from local storage
+    /// * Genesis block is not confirmed
+    /// * No common ancestor is found (should never happen in practice)
+    ///
+    /// 1. Start from `starting_block_n` and walk backwards
+    /// 2. For each block:
+    ///    - Get our local block hash
+    ///    - Fetch the same block from gateway
+    ///    - Compare the hashes
+    /// 3. If hashes match, we found the common ancestor
+    /// 4. If we reach genesis (block 0), use it as the common ancestor
+    async fn find_common_ancestor(&self, starting_block_n: u64) -> anyhow::Result<mp_convert::Felt> {
+        tracing::info!("🔍 Finding common ancestor starting from block {}", starting_block_n);
+
+        let mut probe_block_n = starting_block_n;
+
+        loop {
+            if probe_block_n == 0 {
+                tracing::warn!("🔍 Reached genesis block, using it as common ancestor");
+                let genesis_view = self._backend.block_view(&BlockId::Number(0))?;
+                let genesis_info = genesis_view.get_block_info()?;
+                return Ok(genesis_info
+                    .as_closed()
+                    .ok_or_else(|| anyhow::anyhow!("Genesis must be confirmed"))?
+                    .block_hash);
+            }
+
+            tracing::debug!("🔍 Probing block {} for common ancestor", probe_block_n);
+
+            // Get what we have stored for this block
+            if let Ok(block_view) = self._backend.block_view(&BlockId::Number(probe_block_n)) {
+                let block_info = block_view.get_block_info()?;
+                if let Some(closed_info) = block_info.as_closed() {
+                    let our_hash = closed_info.block_hash;
+                    tracing::debug!("🔍 Our block {} hash: {:#x}", probe_block_n, our_hash);
+
+                    // Fetch the same block from gateway to compare
+                    match self.client.get_state_update_with_block(BlockId::Number(probe_block_n)).await {
+                        Ok(gateway_response) => {
+                            let gateway_block = gateway_response
+                                .into_full_block()
+                                .with_context(|| format!("Parsing gateway block {}", probe_block_n))?;
+                            let gateway_hash = gateway_block.block_hash;
+                            tracing::debug!("🔍 Gateway block {} hash: {:#x}", probe_block_n, gateway_hash);
+
+                            if our_hash == gateway_hash {
+                                // Found common ancestor!
+                                tracing::info!("✅ Found common ancestor at block {}", probe_block_n);
+                                return Ok(our_hash);
+                            } else {
+                                tracing::debug!("❌ Block {} hash mismatch, continuing search", probe_block_n);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("⚠️ Failed to fetch block {} from gateway: {}", probe_block_n, e);
+                        }
+                    }
+                }
+            }
+
+            probe_block_n -= 1;
+        }
+    }
+}
 impl PipelineSteps for GatewaySyncSteps {
     type InputItem = ();
     type SequentialStepInput = Vec<StateDiff>;
@@ -81,77 +166,25 @@ impl PipelineSteps for GatewaySyncSteps {
                                         "🔄 REORG DETECTED: Parent hash mismatch at block_n={}! incoming_parent={:#x}, our_parent={:#x}",
                                         block_n, incoming_parent_hash, our_parent_hash
                                     );
-                                    tracing::info!("🔍 Finding common ancestor to handle reorg...");
 
-                                    // Find common ancestor by walking back our chain and comparing with gateway
-                                    let mut probe_block_n = block_n - 1;
-                                    let common_ancestor_hash = loop {
-                                        if probe_block_n == 0 {
-                                            tracing::warn!("🔍 Reached genesis block, using it as common ancestor");
-                                            let genesis_view = self._backend.block_view(&BlockId::Number(0))?;
-                                            let genesis_info = genesis_view.get_block_info()?;
-                                            break genesis_info.as_closed()
-                                                .ok_or_else(|| anyhow::anyhow!("Genesis must be confirmed"))?
-                                                .block_hash;
-                                        }
-
-                                        tracing::debug!("🔍 Probing block {} for common ancestor", probe_block_n);
-
-                                        // Get what we have stored for this block
-                                        if let Ok(block_view) = self._backend.block_view(&BlockId::Number(probe_block_n)) {
-                                            let block_info = block_view.get_block_info()?;
-                                            if let Some(closed_info) = block_info.as_closed() {
-                                                let our_hash = closed_info.block_hash;
-                                                tracing::debug!("🔍 Our block {} hash: {:#x}", probe_block_n, our_hash);
-
-                                                // Fetch the same block from gateway to compare
-                                                match self.client.get_state_update_with_block(BlockId::Number(probe_block_n)).await {
-                                                    Ok(gateway_response) => {
-                                                        let gateway_block = gateway_response.into_full_block()
-                                                            .with_context(|| format!("Parsing gateway block {}", probe_block_n))?;
-                                                        let gateway_hash = gateway_block.block_hash;
-                                                        tracing::debug!("🔍 Gateway block {} hash: {:#x}", probe_block_n, gateway_hash);
-
-                                                        if our_hash == gateway_hash {
-                                                            // Found common ancestor!
-                                                            tracing::info!("✅ Found common ancestor at block {}", probe_block_n);
-                                                            break our_hash;
-                                                        } else {
-                                                            tracing::debug!("❌ Block {} hash mismatch, continuing search", probe_block_n);
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        tracing::warn!("⚠️ Failed to fetch block {} from gateway: {}", probe_block_n, e);
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        probe_block_n -= 1;
-                                    };
+                                    let common_ancestor_hash = self.find_common_ancestor(block_n - 1).await?;
 
                                     tracing::info!("🔄 Triggering reorg to common ancestor hash={:#x}", common_ancestor_hash);
                                     self._backend.revert_to(&common_ancestor_hash)?;
 
-                                    // Flush database to ensure revert is persisted
                                     self._backend.db.flush()?;
 
-                                    // Reload the backend's cached chain tip from database after reorg
-                                    // The revert_to function updated the database, but the backend's cache is stale
                                     let fresh_chain_tip = self._backend.db.get_chain_tip()
                                         .context("Getting fresh chain tip after reorg")?;
                                     let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
                                     self._backend.chain_tip.send_replace(backend_chain_tip);
                                     tracing::info!("✅ Reorg completed successfully, chain tip cache refreshed, aborting pipeline to restart from new chain tip");
 
-                                    // Return error to abort the entire pipeline
-                                    // The sync controller will restart from the database's new tip
                                     anyhow::bail!("Reorg detected and processed, restarting sync from new chain tip");
                                 }
                             }
                         }
                         Err(_) => {
-                            // Parent block doesn't exist yet, which is normal for the first block
                             tracing::trace!("Parent block {} not found, continuing normally", block_n - 1);
                         }
                     }

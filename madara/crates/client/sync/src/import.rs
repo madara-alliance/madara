@@ -513,7 +513,7 @@ impl BlockImporterCtx {
         state_diffs: Vec<StateDiff>,
     ) -> Result<(), BlockImportError> {
         let next_to_import = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
-        
+
         if next_to_import >= block_range.end {
             tracing::warn!(
                 "⚠️ Aborting apply_to_global_trie for block_range={:?}: already imported up to {}, indicating reorg occurred. Skipping stale work.",
@@ -540,7 +540,11 @@ impl BlockImporterCtx {
 
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
-        tracing::info!("✅ State diff applied successfully for blocks {:?}, latest_applied_trie_update set to {}", block_range, last_block_n);
+        tracing::info!(
+            "✅ State diff applied successfully for blocks {:?}, latest_applied_trie_update set to {}",
+            block_range,
+            last_block_n
+        );
 
         // Sanity check: verify state root.
         if !self.config.no_check {

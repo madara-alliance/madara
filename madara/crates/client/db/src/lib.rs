@@ -599,15 +599,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
     /// parts.
     pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
-        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
-
-        // Advance chain & clear preconfirmed atomically
-        self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
-
-        // Always flush after saving head status to ensure it's persisted
-        // This is critical for restart scenarios where we need to know the last synced block
-        self.inner.db.flush().context("Flushing database after head status update")?;
-
         // Also flush based on the configured interval if set
         if self
             .inner
@@ -615,8 +606,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .flush_every_n_blocks
             .is_some_and(|flush_every_n_blocks| block_number.checked_rem(flush_every_n_blocks) == Some(0))
         {
+            tracing::debug!("Flushing.");
             self.inner.db.flush().context("Periodic database flush")?;
         }
+
+        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
+
+        // Advance chain & clear preconfirmed atomically
+        self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
 
         Ok(())
     }

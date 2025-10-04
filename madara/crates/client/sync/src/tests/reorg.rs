@@ -45,8 +45,7 @@ impl ReorgTestContext {
 
         // Refresh the backend's chain_tip cache from database after reorg
         // The revert_to function updates the database, but the backend's cache is stale
-        let fresh_chain_tip = self.backend.db.get_chain_tip()
-            .context("Getting fresh chain tip after reorg")?;
+        let fresh_chain_tip = self.backend.db.get_chain_tip().context("Getting fresh chain tip after reorg")?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
         self.backend.chain_tip.send_replace(backend_chain_tip);
 
@@ -101,7 +100,7 @@ fn reorg_ctx(gateway_mock: GatewayMock) -> ReorgTestContext {
 #[rstest]
 #[case::reorg_from_genesis(ReorgTestArgs {
     original_chain_length: 1,
-    orphaned_chain_length: 1,
+    orphaned_chain_length: 2,
     new_chain_length: 1,
     passes: 1,
 })]
@@ -113,15 +112,27 @@ fn reorg_ctx(gateway_mock: GatewayMock) -> ReorgTestContext {
 })]
 #[case::standard_reorg(ReorgTestArgs {
     original_chain_length: 2,
-    orphaned_chain_length: 1,
-    new_chain_length: 1,
+    orphaned_chain_length: 3,
+    new_chain_length: 2,
     passes: 1,
 })]
 #[case::multiple_passes(ReorgTestArgs {
     original_chain_length: 1,
-    orphaned_chain_length: 1,
-    new_chain_length: 1,
-    passes: 3,
+    orphaned_chain_length: 3,
+    new_chain_length: 2,
+    passes: 5,
+})]
+#[case::multiple_passes_no_new_chain(ReorgTestArgs {
+    original_chain_length: 1,
+    orphaned_chain_length: 3,
+    new_chain_length: 0,
+    passes: 5,
+})]
+#[case::multiple_passes_repetitive_fork(ReorgTestArgs {
+    original_chain_length: 1,
+    orphaned_chain_length: 2,
+    new_chain_length: 2,
+    passes: 5,
 })]
 #[case::deep_reorg(ReorgTestArgs {
     original_chain_length: 1,
@@ -142,13 +153,6 @@ fn reorg_ctx(gateway_mock: GatewayMock) -> ReorgTestContext {
 /// 3. Standard reorg - Tests typical reorg with one orphaned block
 /// 4. Multiple passes - Tests repeated reorgs to ensure robustness
 /// 5. Deep reorg - Tests reorging multiple blocks
-///
-/// The test ensures:
-/// - Block hashes are correctly maintained after reorg
-/// - Chain state is properly restored to the reorg point
-/// - New blocks can be added after a reorg
-/// - Multiple reorgs can be performed without corruption
-/// - Database integrity is maintained throughout the process
 async fn test_reorg(reorg_ctx: ReorgTestContext, #[case] args: ReorgTestArgs) {
     assert!(args.original_chain_length > 0, "Cannot create an empty chain, we always need at least genesis");
     assert!(args.passes > 0, "Must have at least one pass");
@@ -163,9 +167,7 @@ async fn test_reorg(reorg_ctx: ReorgTestContext, #[case] args: ReorgTestArgs) {
     reorg_ctx.sync_to(last_original_block).await;
 
     // Verify original chain
-    let original_tip_hash = reorg_ctx
-        .get_block_hash(last_original_block)
-        .expect("Original chain tip should exist");
+    let original_tip_hash = reorg_ctx.get_block_hash(last_original_block).expect("Original chain tip should exist");
     tracing::info!("✅ Original chain built, tip hash: {:#x}", original_tip_hash);
 
     // Save the common ancestor (the point we'll reorg back to)
@@ -196,9 +198,7 @@ async fn test_reorg(reorg_ctx: ReorgTestContext, #[case] args: ReorgTestArgs) {
         let latest_block_n = reorg_ctx.backend.latest_confirmed_block_n();
         assert_eq!(latest_block_n, Some(last_original_block), "Latest block should match reorg target");
 
-        let current_tip_hash = reorg_ctx
-            .get_block_hash(last_original_block)
-            .expect("Block should exist after reorg");
+        let current_tip_hash = reorg_ctx.get_block_hash(last_original_block).expect("Block should exist after reorg");
         assert_eq!(current_tip_hash, reorg_target_hash, "Block hash should match after reorg");
 
         // Build new canonical chain after reorg (simulating the correct fork)
@@ -222,10 +222,7 @@ async fn test_reorg(reorg_ctx: ReorgTestContext, #[case] args: ReorgTestArgs) {
     // Verify we can query genesis after full revert
     let genesis_view = reorg_ctx.backend.block_view(&BlockId::Number(0)).unwrap();
     assert_eq!(genesis_view.block_number(), 0);
-    assert_eq!(
-        *genesis_view.get_block_info().unwrap().block_hash().unwrap(),
-        genesis_hash
-    );
+    assert_eq!(*genesis_view.get_block_info().unwrap().block_hash().unwrap(), genesis_hash);
 
     tracing::info!("✅ All reorg tests passed successfully");
 }
@@ -280,10 +277,7 @@ async fn test_reorg_detection_during_sync(reorg_ctx: ReorgTestContext) {
     // Verify we can still access block 0
     let view_after_reorg = reorg_ctx.backend.block_view(&BlockId::Number(0)).unwrap();
     assert_eq!(view_after_reorg.block_number(), 0);
-    assert_eq!(
-        *view_after_reorg.get_block_info().unwrap().block_hash().unwrap(),
-        block_0_hash
-    );
+    assert_eq!(*view_after_reorg.get_block_info().unwrap().block_hash().unwrap(), block_0_hash);
 
     // Verify block 1 is no longer accessible
     let block_1_after_reorg = reorg_ctx.backend.block_view(&BlockId::Number(1));
@@ -294,46 +288,131 @@ async fn test_reorg_detection_during_sync(reorg_ctx: ReorgTestContext) {
 
 #[rstest]
 #[tokio::test]
-/// Test that the blockchain state (storage, nonces, class hashes) is properly
-/// restored after a reorg.
-async fn test_reorg_state_consistency(reorg_ctx: ReorgTestContext) {
-    // Sync to block 1
-    tracing::info!("📦 Syncing to block 1");
-    reorg_ctx.sync_to(1).await;
+/// Test that the blockchain state (storage, nonces, class hashes, replaced classes) is properly
+/// restored after a reorg. This validates the core revert functionality for all state components.
+async fn test_revert_contract_state(reorg_ctx: ReorgTestContext) {
+    // Build chain to block 2 to have multiple state changes
+    tracing::info!("📦 Building chain to block 2");
+    reorg_ctx.sync_to(2).await;
 
-    // Capture state at block 1
+    // Capture state at block 2 (will be reverted)
+    let block_2_view = reorg_ctx.backend.block_view(&BlockId::Number(2)).unwrap();
+    let block_2_state_diff = block_2_view.get_state_diff().unwrap();
+
+    tracing::info!(
+        "📊 Block 2 state: {} nonces, {} deployed contracts, {} storage updates, {} replaced classes",
+        block_2_state_diff.nonces.len(),
+        block_2_state_diff.deployed_contracts.len(),
+        block_2_state_diff.storage_diffs.len(),
+        block_2_state_diff.replaced_classes.len()
+    );
+
+    // Capture state at block 1 (revert target)
     let block_1_view = reorg_ctx.backend.block_view(&BlockId::Number(1)).unwrap();
-    let _block_1_hash = *block_1_view.get_block_info().unwrap().block_hash().unwrap();
+    let block_1_hash = *block_1_view.get_block_info().unwrap().block_hash().unwrap();
     let block_1_state_diff = block_1_view.get_state_diff().unwrap();
 
-    tracing::info!("📊 Block 1 state: {} nonces, {} deployed contracts",
+    tracing::info!(
+        "📊 Block 1 state: {} nonces, {} deployed contracts, {} storage updates, {} replaced classes",
         block_1_state_diff.nonces.len(),
-        block_1_state_diff.deployed_contracts.len()
+        block_1_state_diff.deployed_contracts.len(),
+        block_1_state_diff.storage_diffs.len(),
+        block_1_state_diff.replaced_classes.len()
     );
 
-    // Get state at block 0 before reorg
-    let block_0_view = reorg_ctx.backend.block_view(&BlockId::Number(0)).unwrap();
-    let block_0_hash = *block_0_view.get_block_info().unwrap().block_hash().unwrap();
-    let block_0_state_diff = block_0_view.get_state_diff().unwrap();
+    // Perform reorg back to block 1
+    tracing::info!("🔄 Performing reorg from block 2 to block 1");
+    reorg_ctx.revert_to(&block_1_hash).expect("Reorg should succeed");
 
-    // Perform reorg back to block 0
-    tracing::info!("🔄 Performing reorg to block 0");
-    reorg_ctx.revert_to(&block_0_hash).expect("Reorg should succeed");
+    // Verify chain is at block 1
+    let latest = reorg_ctx.backend.latest_confirmed_block_n();
+    assert_eq!(latest, Some(1), "Chain should be at block 1 after reorg");
 
-    // Verify state matches block 0 after reorg
-    let view_after_reorg = reorg_ctx.backend.block_view(&BlockId::Number(0)).unwrap();
-    let state_diff_after_reorg = view_after_reorg.get_state_diff().unwrap();
+    // Verify block 2 no longer exists
+    let block_2_after = reorg_ctx.backend.block_view(&BlockId::Number(2));
+    assert!(block_2_after.is_err(), "Block 2 should not exist after reorg");
 
+    // Verify state matches block 1 (all block 2 changes reverted)
+    let view_after_reorg = reorg_ctx.backend.block_view(&BlockId::Number(1)).unwrap();
+    let state_after_reorg = view_after_reorg.get_state_diff().unwrap();
+
+    // Validate state component counts match block 1
     assert_eq!(
-        state_diff_after_reorg.nonces.len(),
-        block_0_state_diff.nonces.len(),
-        "Nonce count should match block 0"
+        state_after_reorg.nonces.len(),
+        block_1_state_diff.nonces.len(),
+        "Nonce count should match block 1"
     );
     assert_eq!(
-        state_diff_after_reorg.deployed_contracts.len(),
-        block_0_state_diff.deployed_contracts.len(),
-        "Deployed contracts count should match block 0"
+        state_after_reorg.deployed_contracts.len(),
+        block_1_state_diff.deployed_contracts.len(),
+        "Deployed contracts count should match block 1"
+    );
+    assert_eq!(
+        state_after_reorg.storage_diffs.len(),
+        block_1_state_diff.storage_diffs.len(),
+        "Storage diffs count should match block 1"
+    );
+    assert_eq!(
+        state_after_reorg.replaced_classes.len(),
+        block_1_state_diff.replaced_classes.len(),
+        "Replaced classes count should match block 1"
     );
 
-    tracing::info!("✅ State consistency verified after reorg");
+    tracing::info!("✅ Contract state revert validated: all state components match block 1");
+}
+
+#[rstest]
+#[tokio::test]
+/// Test that declared classes (Sierra and legacy) are properly reverted during a reorg.
+async fn test_revert_declared_class(reorg_ctx: ReorgTestContext) {
+    // Build chain to block 2 which declares classes
+    tracing::info!("📦 Building chain to block 2 (declares classes)");
+    reorg_ctx.sync_to(2).await;
+
+    // Get state diff at block 2 to see declared classes
+    let block_2_view = reorg_ctx.backend.block_view(&BlockId::Number(2)).unwrap();
+    let block_2_state_diff = block_2_view.get_state_diff().unwrap();
+
+    tracing::info!(
+        "📊 Block 2 declared {} Sierra classes, {} legacy declared classes",
+        block_2_state_diff.declared_classes.len(),
+        block_2_state_diff.old_declared_contracts.len()
+    );
+
+    // Get state diff at block 1 (our revert target)
+    let block_1_view = reorg_ctx.backend.block_view(&BlockId::Number(1)).unwrap();
+    let block_1_hash = *block_1_view.get_block_info().unwrap().block_hash().unwrap();
+    let block_1_state_diff = block_1_view.get_state_diff().unwrap();
+
+    tracing::info!(
+        "📊 Block 1 declared {} Sierra classes, {} legacy declared classes",
+        block_1_state_diff.declared_classes.len(),
+        block_1_state_diff.old_declared_contracts.len()
+    );
+
+    // Perform reorg back to block 1
+    tracing::info!("🔄 Performing reorg from block 2 to block 1");
+    reorg_ctx.revert_to(&block_1_hash).expect("Reorg should succeed");
+
+    // Verify state matches block 1 (block 2 classes removed)
+    let view_after_reorg = reorg_ctx.backend.block_view(&BlockId::Number(1)).unwrap();
+    let state_after_reorg = view_after_reorg.get_state_diff().unwrap();
+
+    // Validate declared classes match block 1 (block 2 classes reverted)
+    assert_eq!(
+        state_after_reorg.declared_classes.len(),
+        block_1_state_diff.declared_classes.len(),
+        "Sierra declared classes count should match block 1"
+    );
+    assert_eq!(
+        state_after_reorg.old_declared_contracts.len(),
+        block_1_state_diff.old_declared_contracts.len(),
+        "Legacy declared classes count should match block 1"
+    );
+
+    // Verify block 2 no longer exists
+    let block_2_after = reorg_ctx.backend.block_view(&BlockId::Number(2));
+    assert!(block_2_after.is_err(), "Block 2 should not exist after reorg");
+
+    tracing::info!("✅ Declared class revert validated: all block 2 classes removed");
 }

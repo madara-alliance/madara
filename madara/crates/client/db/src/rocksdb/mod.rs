@@ -15,6 +15,8 @@ use crate::{
         MadaraStorageWrite, StorageChainTip, StorageTxIndex, StoredChainInfo,
     },
 };
+
+use bonsai_trie::id::BasicId;
 use bincode::Options;
 use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
 use mp_class::ConvertedClass;
@@ -471,6 +473,47 @@ impl MadaraStorageWrite for RocksDBStorage {
             .with_context(|| format!("Removing all blocks in range [{starting_from_block_n}..] from database"))
     }
 
+    /// Reverts the blockchain state to a specific block hash during a chain reorganization.
+    ///
+    /// This function performs a complete rollback of the blockchain state to a target block,
+    /// which is typically the common ancestor between the current chain and a new canonical chain.
+    /// It ensures data consistency by reverting all state components including Bonsai tries,
+    /// block data, contract state, and class definitions.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_tip_block_hash` - The block hash to revert to. This must be an existing block
+    ///   that is an ancestor of the current chain tip. The block with this hash will become
+    ///   the new chain tip after the revert completes.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok((block_number, block_hash))` where:
+    /// * `block_number` - The block number of the new chain tip
+    /// * `block_hash` - The block hash of the new chain tip (same as input `new_tip_block_hash`)
+    ///
+    /// # Implementation Details
+    ///
+    /// The revert process performs the following steps in order:
+    ///
+    /// 1. **Validation**: Finds and validates the target block exists and is finalized
+    /// 2. **Range Calculation**: Determines the range of blocks to remove (target_block + 1..=current_tip)
+    /// 3. **Bonsai Tries Revert**: Reverts the contract, contract_storage, and class tries to the target block's state
+    /// 4. **Trie Commit**: Commits the reverted tries to ensure consistency
+    /// 5. **Block Database Revert**: Removes blocks in the calculated range and collects state diffs
+    /// 6. **Contract & Class Revert**: Uses collected state diffs to revert contract and class databases
+    /// 7. **Chain Tip Update**: Updates the chain tip to the target block
+    /// 8. **Snapshot Update**: Updates the head snapshot to the target block
+    /// 9. **Applied Update Reset**: Resets the latest_applied_trie_update marker
+    /// 10. **Database Flush**: Ensures all changes are persisted to disk
+    ///
+    /// # Notes
+    ///
+    /// * After calling this function, the caller MUST refresh the backend's chain_tip cache
+    ///   by reading from the database, as this function only updates the database state.
+    /// * This is a destructive operation - all blocks after the target block are permanently removed.
+    /// * The function is atomic - if any step fails, the database may be in an inconsistent state.
+    /// ```
     fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
         tracing::info!("Reverting blockchain to block_hash={new_tip_block_hash:#x}");
 
@@ -484,7 +527,6 @@ impl MadaraStorageWrite for RocksDBStorage {
             .context("Getting target block info")?
             .ok_or_else(|| anyhow::anyhow!("Target block info not found for block_n={target_block_n}"))?;
 
-        // Get the current tip
         let current_tip = match self.inner.get_chain_tip()? {
             StorageChainTip::Empty => anyhow::bail!("Cannot revert when chain is empty"),
             StorageChainTip::Confirmed(block_n) => block_n,
@@ -494,14 +536,12 @@ impl MadaraStorageWrite for RocksDBStorage {
             }
         };
 
-        // Get current tip info for logging
         let current_tip_info = self.inner
             .get_block_info(current_tip)
             .context("Getting current tip block info")?
             .ok_or_else(|| anyhow::anyhow!("Current tip block info not found"))?;
 
         if target_block_n == current_tip {
-            // Already at the common ancestor, no revert needed
             tracing::info!(
                 "🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed"
             );
@@ -521,9 +561,6 @@ impl MadaraStorageWrite for RocksDBStorage {
             current_tip_info.block_hash
         );
 
-        // Revert bonsai tries using their trie log functionality
-        // The bonsai-trie library maintains trie logs that allow reverting state
-        use bonsai_trie::id::BasicId;
 
         let target_id = BasicId::new(target_block_n);
         let current_id = BasicId::new(current_tip);
@@ -534,7 +571,6 @@ impl MadaraStorageWrite for RocksDBStorage {
             target_block_n
         );
 
-        // Revert each trie
         tracing::debug!("🌳 REORG: Reverting contract trie...");
         self.contract_trie()
             .revert_to(target_id, current_id)
@@ -553,8 +589,6 @@ impl MadaraStorageWrite for RocksDBStorage {
             .map_err(|e| anyhow::anyhow!("Failed to revert class trie: {e:?}"))?;
         tracing::info!("✅ REORG: Class trie reverted successfully");
 
-        // CRITICAL: Commit all tries after reverting to ensure consistency
-        // This ensures the tries are in a clean state before applying new state diffs
         tracing::info!("💾 REORG: Committing tries after revert...");
         self.contract_trie().commit(target_id)
             .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {e:?}"))?;
@@ -588,13 +622,11 @@ impl MadaraStorageWrite for RocksDBStorage {
             .context("Reverting class database")?;
         tracing::info!("✅ REORG: Class database reverted successfully");
 
-        // Update the chain tip to the target block
         tracing::info!("🔗 REORG: Updating chain tip to block_n={}", target_block_n);
         let new_tip = StorageChainTip::Confirmed(target_block_n);
         self.replace_chain_tip(&new_tip).context("Updating chain tip after reorg")?;
         tracing::info!("✅ REORG: Chain tip updated successfully");
 
-        // Update snapshots to reflect the new head
         tracing::info!("📸 REORG: Updating snapshots to new head block_n={}", target_block_n);
         self.snapshots.set_new_head(target_block_n);
         tracing::info!("✅ REORG: Snapshots updated successfully");
@@ -604,7 +636,6 @@ impl MadaraStorageWrite for RocksDBStorage {
             .context("Resetting latest_applied_trie_update after reorg")?;
         tracing::info!("✅ REORG: latest_applied_trie_update reset successfully");
 
-        // Flush database to ensure all changes are persisted
         tracing::info!("💾 REORG: Flushing database to persist changes...");
         self.flush().context("Flushing database after reorg")?;
         tracing::info!("✅ REORG: Database flushed successfully");

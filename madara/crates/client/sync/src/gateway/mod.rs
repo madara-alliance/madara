@@ -97,8 +97,11 @@ impl GatewayForwardSync {
 
         let latest_full_block = backend.latest_block_n().unwrap_or(0);
         let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
-        tracing::info!("📊 Database head status: latest_full_block={:?}, starting sync from block #{}",
-            latest_full_block, starting_block_n);
+        tracing::info!(
+            "📊 Database head status: latest_full_block={:?}, starting sync from block #{}",
+            latest_full_block,
+            starting_block_n
+        );
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
@@ -220,11 +223,6 @@ impl ForwardPipeline for GatewayForwardSync {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
             {
                 let next_input_block_n = self.blocks_pipeline.next_input_block_n();
-
-                // TODO: Integrate reorg detection here
-                // The reorg detection logic from PR #296 needs API adaptation
-                // to work with the current madara block_view API
-                // The underlying revert functions are already implemented and working
 
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
