@@ -7,9 +7,16 @@ use mp_convert::Felt;
 use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry};
 use mc_db::{MadaraBackend, MadaraStorageRead};
 
+// Define the timing macro at the module level
+macro_rules! log_elapsed {
+    ($start:expr, $label:expr) => {{
+        let elapsed = $start.elapsed();
+        tracing::info!("Snap_Sync: {} - Elapsed time: {:?}", $label, elapsed);
+    }};
+}
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
-/// TODO: might be able to change this to take all apply once if ram allows and speed is better !
+/// This function now performs RAW accumulation without pre_range_block checks
 pub async fn squash(
     state_diffs: Vec<&StateDiff>,
     pre_range_block: Option<u64>,
@@ -17,18 +24,87 @@ pub async fn squash(
 ) -> anyhow::Result<StateDiff> {
 
     let state_diff_map = StateDiffMap::from_state_diffs(state_diffs);
-    let mut state_diff = state_diff_map.get_state_diff(pre_range_block, backend.clone()).await?;
+
+    // Convert to StateDiff without pre_range filtering
+    let mut state_diff = state_diff_map.to_raw_state_diff();
 
     state_diff.sort();
 
     Ok(state_diff)
 }
 
+/// New function: Compress a raw accumulated state diff by checking against pre_range_block
+/// This should be called ONCE after all accumulation is complete
+pub async fn compress_state_diff(
+    raw_state_diff: StateDiff,
+    pre_range_block: u64,
+    backend: Arc<MadaraBackend>,
+) -> anyhow::Result<StateDiff> {
+    let start_time = std::time::Instant::now();
+
+    tracing::info!("Snap_Sync: Starting compression with pre_range_block={}", pre_range_block);
+
+    // Process storage diffs with pre_range checks
+    let storage_diffs = stream::iter(raw_state_diff.storage_diffs.into_iter().enumerate())
+        .map(|(idx, contract_diff)| {
+            let backend = backend.clone();
+            async move {
+                compress_single_contract(
+                    contract_diff.address,
+                    contract_diff.storage_entries,
+                    backend,
+                    pre_range_block
+                ).await
+            }
+        })
+        .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
+        .try_filter_map(|contract_storage_diff| async move { Ok(contract_storage_diff) })
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    log_elapsed!(start_time, "Storage diffs compressed");
+
+    // Process deployed contracts and replaced classes
+    let mut deployed_contracts_map: HashMap<Felt, Felt> = raw_state_diff
+        .deployed_contracts
+        .into_iter()
+        .map(|item| (item.address, item.class_hash))
+        .collect();
+
+    let replaced_classes_map: HashMap<Felt, Felt> = raw_state_diff
+        .replaced_classes
+        .into_iter()
+        .map(|item| (item.contract_address, item.class_hash))
+        .collect();
+
+    let (replaced_classes, deployed_contracts) = process_deployed_contracts_and_replaced_classes(
+        backend.clone(),
+        Some(pre_range_block),
+        deployed_contracts_map,
+        replaced_classes_map,
+    ).await?;
+
+    log_elapsed!(start_time, "Deployed contracts and replaced classes compressed");
+
+    let mut compressed_diff = StateDiff {
+        storage_diffs,
+        deployed_contracts,
+        declared_classes: raw_state_diff.declared_classes,
+        old_declared_contracts: raw_state_diff.old_declared_contracts,
+        nonces: raw_state_diff.nonces,
+        replaced_classes,
+    };
+
+    compressed_diff.sort();
+
+    log_elapsed!(start_time, "Compression completed");
+
+    Ok(compressed_diff)
+}
 
 
-
-const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 40;
-const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 100;
+const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 400;
+const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 10000;
 const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
 const MAX_GET_CLASS_HASH_AT_CALL_RETRY: u64 = 3;
 
@@ -40,113 +116,197 @@ struct StateDiffMap {
     deprecated_declared_classes: HashSet<Felt>,
     nonces: HashMap<Felt, Felt>,
     replaced_classes: HashMap<Felt, Felt>,
+    touched_contracts: HashSet<Felt>,
 }
 
 impl StateDiffMap {
     fn from_state_diffs(ordered_state_diffs: Vec<&StateDiff>) -> Self {
-        // Maps to efficiently track the latest state
+        let start_time = std::time::Instant::now();
+        tracing::info!("Snap_Sync: Starting from_state_diffs with {} state diffs", ordered_state_diffs.len());
+
         let mut state_diff_map = StateDiffMap::default();
 
-        // Process each update in order
-        for state_diff in ordered_state_diffs {
+        for (idx, state_diff) in ordered_state_diffs.iter().enumerate() {
             // Process storage diffs
             for contract_diff in &state_diff.storage_diffs {
                 let contract_addr = contract_diff.address;
+                state_diff_map.touched_contracts.insert(contract_addr);
+
                 let contract_storage = state_diff_map.storage_diffs.entry(contract_addr).or_default();
 
                 for entry in &contract_diff.storage_entries {
                     contract_storage.insert(entry.key, entry.value);
                 }
             }
+            log_elapsed!(start_time, format!("Iteration {}: Storage diffs processed", idx));
 
             // Process deployed contracts
             for item in &state_diff.deployed_contracts {
                 state_diff_map.deployed_contracts.insert(item.address, item.class_hash);
             }
+            log_elapsed!(start_time, format!("Iteration {}: Deployed contracts processed", idx));
 
             // Process declared classes
             for item in &state_diff.declared_classes {
                 state_diff_map.declared_classes.insert(item.class_hash, item.compiled_class_hash);
             }
+            log_elapsed!(start_time, format!("Iteration {}: Declared classes processed", idx));
 
             // Process nonces
             for item in &state_diff.nonces {
                 state_diff_map.nonces.insert(item.contract_address, item.nonce);
             }
+            log_elapsed!(start_time, format!("Iteration {}: Nonces processed", idx));
 
             // Process replaced classes
             for item in &state_diff.replaced_classes {
                 state_diff_map.replaced_classes.insert(item.contract_address, item.class_hash);
             }
+            log_elapsed!(start_time, format!("Iteration {}: Replaced classes processed", idx));
 
             // Process deprecated classes
             for class_hash in &state_diff.old_declared_contracts {
                 state_diff_map.deprecated_declared_classes.insert(*class_hash);
             }
+            log_elapsed!(start_time, format!("Iteration {}: Deprecated classes processed", idx));
         }
+
+        tracing::info!("Snap_Sync: from_state_diffs completed - {} unique contracts touched", state_diff_map.touched_contracts.len());
+        log_elapsed!(start_time, "from_state_diffs completed");
 
         state_diff_map
     }
 
-    async fn get_state_diff(
-        self,
-        pre_range_block: Option<u64>,
-        backend: Arc<MadaraBackend>,
-    ) -> anyhow::Result<StateDiff> {
-        // Processing all contracts in parallel.
-        // The idea is that it might be the case that for a contract, a particular storage slot is
-        // changed twice to finally have the original value, in which case the new final value is not
-        // different from the value in the previous batch and hence it shouldn't be in the storage diff
-        // The result is the storage diff of all the contracts
+    /// NEW: Convert to raw StateDiff without any pre_range filtering
+    /// This is MUCH faster as it does no DB lookups
+    fn to_raw_state_diff(self) -> StateDiff {
+        let start_time = std::time::Instant::now();
 
-        let storage_diffs = stream::iter(self.storage_diffs)
-            .map(|(contract_addr, storage_map)| {
-                let backend = backend.clone();
-                async move {
-                    process_single_contract(contract_addr, storage_map, backend, pre_range_block).await
-                }
+        tracing::info!("Snap_Sync: Converting to raw state diff with {} touched contracts", self.touched_contracts.len());
+
+        // Convert storage diffs - only include touched contracts
+        let storage_diffs: Vec<ContractStorageDiffItem> = self.touched_contracts
+            .into_iter()
+            .filter_map(|contract_addr| {
+                self.storage_diffs.get(&contract_addr).map(|storage_map| {
+                    let storage_entries: Vec<StorageEntry> = storage_map
+                        .iter()
+                        .map(|(key, value)| StorageEntry { key: *key, value: *value })
+                        .collect();
+
+                    ContractStorageDiffItem {
+                        address: contract_addr,
+                        storage_entries,
+                    }
+                })
             })
-            .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
-            .try_filter_map(|contract_storage_diff| async move { Ok(contract_storage_diff) })
-            .try_collect::<Vec<_>>()
-            .await?;
+            .filter(|item| !item.storage_entries.is_empty())
+            .collect();
 
-        // Processing deployed contracts and replaced classes
-        // The idea is that it might be the case that a class is replaced twice to the original value,
-        // in which case we shouldn't put it in replaced classes
-        // Secondly, it might also be possible that a contract is deployed and its class is replaced
-        // in the same batch, in which case we should just update the class hash in deployed contracts
-        // and remove it from the replaced class map
-        let (replaced_classes, deployed_contracts) = process_deployed_contracts_and_replaced_classes(
-            backend.clone(),
-            pre_range_block,
-            self.deployed_contracts,
-            self.replaced_classes,
-        )
-            .await?;
+        log_elapsed!(start_time, "Raw storage diffs created");
 
-        // Declared classes
+        let deployed_contracts = self
+            .deployed_contracts
+            .into_iter()
+            .map(|(address, class_hash)| DeployedContractItem { address, class_hash })
+            .collect();
+
         let declared_classes = self
             .declared_classes
             .into_iter()
             .map(|(class_hash, compiled_class_hash)| DeclaredClassItem { class_hash, compiled_class_hash })
             .collect();
 
-        // Nonces
-        let nonces =
-            self.nonces.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect();
+        let nonces = self
+            .nonces
+            .into_iter()
+            .map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce })
+            .collect();
 
-        // Deprecated classes
+        let replaced_classes = self
+            .replaced_classes
+            .into_iter()
+            .map(|(contract_address, class_hash)| ReplacedClassItem { contract_address, class_hash })
+            .collect();
+
         let deprecated_declared_classes = self.deprecated_declared_classes.into_iter().collect();
 
-        Ok(StateDiff {
+        log_elapsed!(start_time, "Raw state diff conversion completed");
+
+        StateDiff {
             storage_diffs,
             deployed_contracts,
             declared_classes,
             old_declared_contracts: deprecated_declared_classes,
             nonces,
             replaced_classes,
-        })
+        }
+    }
+
+    // REMOVED: Old get_state_diff method that did pre_range filtering
+}
+
+/// NEW: Compress a single contract's storage entries by checking against pre_range_block
+async fn compress_single_contract(
+    contract_addr: Felt,
+    storage_entries: Vec<StorageEntry>,
+    backend: Arc<MadaraBackend>,
+    pre_range_block: u64,
+) -> anyhow::Result<Option<ContractStorageDiffItem>> {
+    let start_time = std::time::Instant::now();
+    let entry_count = storage_entries.len();
+
+    // Check if contract existed at pre_range_block
+    let contract_existed = check_contract_existed_at_block(backend.clone(), contract_addr, pre_range_block).await?;
+
+    log_elapsed!(start_time, format!("Contract {:?}: Checked existence (existed: {})", contract_addr, contract_existed));
+
+    let compressed_entries = if contract_existed {
+        // Contract existed - check each storage entry against pre_range value
+        stream::iter(storage_entries)
+            .map(|entry| {
+                let backend = backend.clone();
+                async move {
+                    let pre_range_value = check_pre_range_storage_value(
+                        backend,
+                        contract_addr,
+                        entry.key,
+                        pre_range_block
+                    ).await;
+                    (entry, pre_range_value)
+                }
+            })
+            .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
+            .filter_map(|(entry, pre_range_value)| async move {
+                // Only keep if value changed
+                if pre_range_value != Some(entry.value) {
+                    Some(entry)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .await
+    } else {
+        // Contract didn't exist - filter out zero values (default state)
+        storage_entries
+            .into_iter()
+            .filter(|entry| entry.value != Felt::ZERO)
+            .collect()
+    };
+
+    log_elapsed!(
+        start_time,
+        format!("Contract {:?}: Compressed {} -> {} entries", contract_addr, entry_count, compressed_entries.len())
+    );
+
+    if !compressed_entries.is_empty() {
+        Ok(Some(ContractStorageDiffItem {
+            address: contract_addr,
+            storage_entries: compressed_entries,
+        }))
+    } else {
+        Ok(None)
     }
 }
 
@@ -191,7 +351,13 @@ async fn process_deployed_contracts_and_replaced_classes(
                 .try_collect::<Vec<_>>()
                 .await?
         }
-        None => Vec::new(),
+        None => {
+            // No pre_range_block - include all replaced classes
+            replaced_class_hashes
+                .into_iter()
+                .map(|(contract_address, class_hash)| ReplacedClassItem { contract_address, class_hash })
+                .collect()
+        }
     };
 
     let deployed_contract_items: Vec<DeployedContractItem> = deployed_contracts
@@ -220,69 +386,6 @@ async fn process_class(
     }
 }
 
-/// Processes the storage of a single contract to do the following
-/// 1. Check if the contract existed in the `pre_range_block`
-/// 2. If yes, check the value of all keys in the storage map of this contract in the `pre_range_block`
-/// 3. If no, filter the non-zero values in the storage map
-async fn process_single_contract(
-    contract_addr: Felt,
-    storage_map: HashMap<Felt, Felt>,
-    backend: Arc<MadaraBackend>,
-    pre_range_block_option: Option<u64>,
-) -> anyhow::Result<Option<ContractStorageDiffItem>> {
-    let storage_entries = match pre_range_block_option {
-        None => {
-            // pre_range_block is not available, filter non-zero values
-            // We don't need zero values if this is the first block (i.e., pre_range_block doesn't exist)
-            // since zero is the default value
-            storage_map
-                .into_iter()
-                .filter(|(_, value)| *value != Felt::ZERO)
-                .map(|(key, value)| StorageEntry { key, value })
-                .collect()
-        }
-        Some(pre_range_block) => {
-            if check_contract_existed_at_block(backend.clone(), contract_addr, pre_range_block).await? {
-                // Process storage entries only for an existing contract
-                stream::iter(storage_map)
-                    .map(|(key, value)| {
-                        let backend = backend.clone();
-                        async move {
-                            let pre_range_value =
-                                check_pre_range_storage_value(backend, contract_addr, key, pre_range_block);
-                            (key, value, pre_range_value)
-                        }
-                    })
-                    .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
-                    .filter_map(|(key, value, pre_range_value)| async move {
-                        if pre_range_value != Some(value) {
-                            Some(StorageEntry { key, value })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .await
-            } else {
-                // Contract didn't exist, filter non-zero values
-                // We don't need zero values if the contract didn't exist at the pre-range block
-                // since zero is the default value
-                storage_map
-                    .into_iter()
-                    .filter(|(_, value)| *value != Felt::ZERO)
-                    .map(|(key, value)| StorageEntry { key, value })
-                    .collect()
-            }
-        }
-    };
-
-    if !storage_entries.is_empty() {
-        Ok(Some(ContractStorageDiffItem { address: contract_addr, storage_entries }))
-    } else {
-        Ok(None)
-    }
-}
-
 /// This function tells if the contract existed at the given block number
 pub async fn check_contract_existed_at_block(
     backend: Arc<MadaraBackend>,
@@ -290,7 +393,6 @@ pub async fn check_contract_existed_at_block(
     block_number: u64,
 ) -> anyhow::Result<bool> {
     let x = get_class_hash_at(backend.clone(), block_number, contract_address).await?.is_some();
-    // println!("Contract : {:?} {} for block number : {:?}",  contract_address, x, block_number);
     Ok(x)
 }
 
@@ -316,7 +418,6 @@ pub async fn get_class_hash_at(
             )
         })?;
 
-    // println!("TESTING SYNC-SNAP : {:?} has class hash : {:?}", contract_address, class_hash);
     Ok(class_hash)
 }
 
@@ -342,19 +443,23 @@ where
     }
 }
 
-/// This function returns the storage value of a key at a given block number
-/// It retries up to [MAX_GET_STORAGE_AT_CALL_RETRY] times
-pub fn check_pre_range_storage_value(
+
+pub async fn check_pre_range_storage_value(
     backend: Arc<MadaraBackend>,
     contract_address: Felt,
     key: Felt,
     pre_range_block: u64,
 ) -> Option<Felt> {
-    retry_sync(
-        || backend.db.get_storage_at(pre_range_block, &contract_address, &key),
-        MAX_GET_STORAGE_AT_CALL_RETRY,
-        Some(Duration::from_secs(5)),
-    )
+    tokio::task::spawn_blocking(move || {
+        retry_sync(
+            || backend.db.get_storage_at(pre_range_block, &contract_address, &key),
+            MAX_GET_STORAGE_AT_CALL_RETRY,
+            Some(Duration::from_secs(5)),
+        )
         .ok()
         .flatten()
+    })
+    .await
+    .ok()
+    .flatten()
 }

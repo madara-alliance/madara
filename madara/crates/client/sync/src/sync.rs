@@ -10,7 +10,8 @@ use anyhow::anyhow;
 use mp_block::BlockId;
 use tokio::time::Instant;
 use mc_db::storage::StorageChainTip;
-use crate::sync_utils::squash;
+use crate::sync_utils::{compress_state_diff, squash};
+use mp_state_update::StateDiff;
 
 pub trait ForwardPipeline {
     fn run(
@@ -129,8 +130,8 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     pub async fn run(&mut self, mut ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
-        
-        // Get the pre-sync status 
+
+        // Get the pre-sync status
         let first_block = match self.backend.db.get_chain_tip()? {
             StorageChainTip::Confirmed(block_number) => block_number,
             _ => return Err(anyhow!("Chain tip is not confirmed")),
@@ -161,23 +162,32 @@ impl<P: ForwardPipeline> SyncController<P> {
 
         println!("SNAP-SYNC: Processing blocks {} to {}", first_block, latest_block);
 
-        // Initialize with the first block's state diff
-        let first_view = self.backend.block_view(BlockId::Number(first_block))?;
-        let mut accumulated_state_diff = first_view.get_state_diff()?;
+        // Collect all state diffs first WITHOUT any pre_range checks
+        let mut all_state_diffs = Vec::new();
 
-        // Squash state diffs from subsequent blocks
-        for block_number in (first_block + 1)..=latest_block {
+        for block_number in first_block..=latest_block {
             let view = self.backend.block_view(BlockId::Number(block_number))?;
-            let next_state_diff = view.get_state_diff()?;
-
-            println!("SNAP-SYNC: Merging block {}", block_number);
-
-            // Squash the current accumulated diff with the next block's diff
-            let state_diffs = vec![&accumulated_state_diff, &next_state_diff];
-            accumulated_state_diff = squash(state_diffs, Some(first_block-1), self.backend.clone()).await?;
+            let state_diff = view.get_state_diff()?;
+            all_state_diffs.push(state_diff);
         }
 
-        println!("SNAP-SYNC: Calculating global state root for blocks {}..{}", first_block, latest_block);
+        println!("SNAP-SYNC: Collected {} state diffs, now squashing...", all_state_diffs.len());
+
+        // Squash all state diffs at once WITHOUT pre_range checks
+        // This is fast because it's just in-memory HashMap operations
+        let state_diff_refs: Vec<&StateDiff> = all_state_diffs.iter().collect();
+        let raw_accumulated_diff = squash(state_diff_refs, None, self.backend.clone()).await?;
+
+        println!("SNAP-SYNC: Raw squash complete. Now compressing with pre_range_block={}...", first_block - 1);
+
+        // NOW do the compression with pre_range checks - this happens ONCE
+        let accumulated_state_diff = compress_state_diff(
+            raw_accumulated_diff,
+            first_block - 1,
+            self.backend.clone()
+        ).await?;
+
+        println!("SNAP-SYNC: Compression complete. Calculating global state root for blocks {}..{}", first_block, latest_block);
 
         // Apply the accumulated state diff to calculate the global state root
         let global_state_root = self.backend
@@ -186,8 +196,6 @@ impl<P: ForwardPipeline> SyncController<P> {
 
         println!("SNAP-SYNC: Global state root: {:?} for blocks {}..{}", global_state_root, first_block, latest_block);
 
-        // TODO: validate the computed global state root against the gateway's value
-
         // Handle shutdown based on configuration
         if self.config.global_stop_on_sync {
             tracing::info!("🌐 Reached stop-on-sync condition, shutting down node...");
@@ -195,6 +203,7 @@ impl<P: ForwardPipeline> SyncController<P> {
         } else {
             tracing::info!("🌐 Sync process ended");
         }
+
         Ok(())
     }
 
