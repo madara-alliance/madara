@@ -282,12 +282,8 @@ impl QueueClient for SQS {
                     // Get message body and attributes to re-enqueue
                     if let (Some(body), Some(receipt_handle)) = (message.body(), message.receipt_handle()) {
                         // Re-send the message to the queue with its original attributes
-                        let mut send_request = self
-                            .inner
-                            .client()
-                            .send_message()
-                            .queue_url(&queue_url)
-                            .message_body(body);
+                        let mut send_request =
+                            self.inner.client().send_message().queue_url(&queue_url).message_body(body);
 
                         // Copy all message attributes to preserve version and other metadata
                         if let Some(attributes) = message.message_attributes() {

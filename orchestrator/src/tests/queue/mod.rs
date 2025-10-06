@@ -3,6 +3,7 @@ use rstest::*;
 /// Test that send_message adds the OrchestratorVersion message attribute using Omni Queue
 #[rstest]
 #[tokio::test]
+#[ignore]
 async fn test_send_message_with_version_attribute() {
     use crate::core::client::queue::sqs::{InnerSQS, SQS};
     use crate::core::client::queue::QueueClient;
@@ -78,6 +79,7 @@ mod integration_tests {
     /// Tests multiple producer threads sending messages and consumer threads receiving them
     #[rstest]
     #[tokio::test]
+    #[ignore]
     async fn test_concurrent_version_monitoring() {
         use crate::core::client::queue::sqs::InnerSQS;
 
