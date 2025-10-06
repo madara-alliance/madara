@@ -58,7 +58,7 @@ impl JobTrigger for AggregatorJobTrigger {
                 )
                 .await
             {
-                Ok(jobs) if !jobs.is_empty() => jobs[0].metadata.common.starknet_version.clone(),
+                Ok(jobs) if !jobs.is_empty() => jobs[0].metadata.common.starknet_version,
                 _ => {
                     warn!(
                         batch_id = %batch.id,

@@ -1,5 +1,4 @@
 use aws_sdk_sqs::error::SdkError;
-use aws_sdk_sqs::operation::change_message_visibility::ChangeMessageVisibilityError;
 use aws_sdk_sqs::operation::delete_message::DeleteMessageError;
 use aws_sdk_sqs::operation::get_queue_attributes::GetQueueAttributesError;
 use aws_sdk_sqs::operation::get_queue_url::GetQueueUrlError;
@@ -27,9 +26,6 @@ pub enum QueueError {
 
     #[error("Failed to receive message: {0}")]
     ReceiveMessageError(#[from] SdkError<ReceiveMessageError>),
-
-    #[error("Failed to change message visibility: {0}")]
-    ChangeMessageVisibilityError(#[from] SdkError<ChangeMessageVisibilityError>),
 
     #[error("Failed to delete message: {0}")]
     DeleteMessageError(#[from] SdkError<DeleteMessageError>),

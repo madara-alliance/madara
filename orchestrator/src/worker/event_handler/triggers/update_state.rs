@@ -157,7 +157,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         }
 
         let starknet_version = if let Some(first_job) = jobs_to_process.first() {
-            first_job.metadata.common.starknet_version.clone()
+            first_job.metadata.common.starknet_version
         } else {
             None
         };

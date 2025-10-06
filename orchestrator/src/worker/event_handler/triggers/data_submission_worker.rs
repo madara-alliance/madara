@@ -50,7 +50,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
             // Create DA metadata, propagating Starknet version from proving job
             let da_metadata = JobMetadata {
                 common: CommonMetadata {
-                    starknet_version: proving_job.metadata.common.starknet_version.clone(),
+                    starknet_version: proving_job.metadata.common.starknet_version,
                     ..Default::default()
                 },
                 specific: JobSpecificMetadata::Da(DaMetadata {

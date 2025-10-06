@@ -1,5 +1,5 @@
 use crate::core::client::queue::QueueError;
-use crate::types::constant::get_version_string;
+use crate::types::constant::{get_version_string, ORCHESTRATOR_VERSION_ATTRIBUTE};
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::ARN;
 use crate::{
@@ -101,36 +101,6 @@ impl InnerSQS {
     pub fn get_queue_name_from_type(name: &str, queue_type: &QueueType) -> String {
         name.replace("{}", &queue_type.to_string())
     }
-
-    /// get_dlq_url_from_queue - Get the DLQ URL for a given queue
-    /// This function retrieves the dead letter queue URL configured for a queue
-    pub async fn get_dlq_url_from_queue(&self, queue_url: &str) -> Result<Option<String>, QueueError> {
-        let attributes = self
-            .client()
-            .get_queue_attributes()
-            .queue_url(queue_url)
-            .attribute_names(QueueAttributeName::RedrivePolicy)
-            .send()
-            .await?;
-
-        if let Some(attrs) = attributes.attributes() {
-            if let Some(redrive_policy) = attrs.get(&QueueAttributeName::RedrivePolicy) {
-                // Parse the redrive policy JSON to extract DLQ ARN
-                if let Ok(policy) = serde_json::from_str::<serde_json::Value>(redrive_policy) {
-                    if let Some(dlq_arn) = policy.get("deadLetterTargetArn").and_then(|v| v.as_str()) {
-                        // Parse the ARN and construct DLQ URL
-                        let arn = ARN::parse(dlq_arn)
-                            .map_err(|_| QueueError::InvalidArn(format!("Invalid DLQ ARN: {}", dlq_arn)))?;
-
-                        let dlq_url =
-                            format!("https://sqs.{}.amazonaws.com/{}/{}", arn.region, arn.account_id, arn.resource);
-                        return Ok(Some(dlq_url));
-                    }
-                }
-            }
-        }
-        Ok(None)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -219,7 +189,7 @@ impl QueueClient for SQS {
             .send_message()
             .queue_url(&queue_url)
             .message_body(&payload)
-            .message_attributes("OrchestratorVersion", version_attribute);
+            .message_attributes(ORCHESTRATOR_VERSION_ATTRIBUTE, version_attribute);
 
         if let Some(delay_duration) = delay {
             send_message_request = send_message_request.delay_seconds(delay_duration.as_secs() as i32);
@@ -239,8 +209,9 @@ impl QueueClient for SQS {
     async fn get_producer(&self, queue: QueueType) -> Result<SqsProducer, QueueError> {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
         let producer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_producer().await?;
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: true }).build_producer().await?;
         Ok(producer)
     }
 
@@ -252,138 +223,97 @@ impl QueueClient for SQS {
         tracing::debug!("Getting queue url for queue name {}", queue_name);
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
         tracing::debug!("Found queue url {}", queue_url);
+
         let consumer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: true }).build_consumer().await?;
         Ok(consumer)
     }
-    /// Consume a message from the queue with version verification.
+    /// Consume a message from the queue with version filtering.
     ///
-    /// This implementation filters messages by orchestrator version:
-    /// - Messages without version attributes are accepted (backward compatibility)
-    /// - Messages with matching version are accepted
-    /// - Messages with mismatched versions are nacked (visibility timeout set to 0)
+    /// This function filters messages based on the OrchestratorVersion attribute:
+    /// - Accepts messages with matching orchestrator version
+    /// - Accepts messages without version attribute (backward compatibility)
+    /// - Re-enqueues messages with incompatible versions for other orchestrator instances
     ///
-    /// The loop continues until a valid message is found or an error occurs (including NoData).
+    /// The filtering ensures that only compatible messages are processed by this
+    /// orchestrator instance, preventing version conflicts in multi-version deployments.
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
+        let current_version = get_version_string();
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
-        let local_version = get_version_string();
 
-        loop {
-            // Receive message using AWS SDK to access attributes
-            let receive_result = self
-                .inner
-                .client()
-                .receive_message()
-                .queue_url(&queue_url)
-                .message_attribute_names("OrchestratorVersion")
-                .max_number_of_messages(1)
-                .wait_time_seconds(20)
-                .send()
-                .await?;
+        // Receive a message using Omni Queue
+        let mut consumer = self.get_consumer(queue.clone()).await?;
+        let delivery = consumer.receive().await?;
 
-            let messages = receive_result.messages();
+        // Get the receipt handle to fetch message attributes from AWS SDK
+        // Note: Omni Queue doesn't expose message attributes, so we need to use AWS SDK
+        // to receive the message again with attributes
+        let messages = self
+            .inner
+            .client()
+            .receive_message()
+            .queue_url(&queue_url)
+            .max_number_of_messages(1)
+            .message_attribute_names("All")
+            .send()
+            .await?;
 
-            // Handle no-data scenario - return the error to caller
-            if messages.is_empty() {
-                continue;
-            }
-
-            let message = &messages[0];
-            let receipt_handle = message
-                .receipt_handle()
-                .ok_or_else(|| QueueError::MessageAttributeError("Missing receipt handle".to_string()))?;
-
-            // Check version attribute
-            let should_accept = match message.message_attributes() {
-                Some(attrs) => match attrs.get("OrchestratorVersion") {
-                    Some(version_attr) => match version_attr.string_value() {
-                        Some(msg_version) => {
-                            tracing::debug!("Message version: {}, Local version: {}", msg_version, local_version);
-                            msg_version == local_version
-                        }
-                        None => {
-                            tracing::warn!("OrchestratorVersion attribute exists but has no value");
-                            true // Accept if attribute exists but has no value
-                        }
-                    },
-                    None => {
-                        tracing::debug!(
-                            "No OrchestratorVersion attribute found, accepting message (backward compatibility)"
-                        );
-                        true // Accept messages without version attribute
+        if let Some(messages) = messages.messages {
+            if let Some(message) = messages.first() {
+                // Check version attribute
+                let version_match = if let Some(attributes) = message.message_attributes() {
+                    if let Some(version_attr) = attributes.get(ORCHESTRATOR_VERSION_ATTRIBUTE) {
+                        version_attr.string_value() == Some(&current_version)
+                    } else {
+                        true
                     }
-                },
-                None => {
-                    tracing::debug!("No message attributes, accepting message (backward compatibility)");
-                    true // Accept messages without any attributes
-                }
-            };
-
-            if should_accept {
-                // Make the message immediately available again by setting visibility to 0
-                // so omniqueue can consume it
-                self.inner
-                    .client()
-                    .change_message_visibility()
-                    .queue_url(&queue_url)
-                    .receipt_handle(receipt_handle)
-                    .visibility_timeout(0)
-                    .send()
-                    .await?;
-
-                tracing::debug!("Accepted message with matching version, making it available for omniqueue");
-
-                // Now consume via omniqueue - it should get the message we just made available
-                let mut consumer = self.get_consumer(queue).await?;
-                return Ok(consumer.receive().await?);
-            } else {
-                // Delete from processing queue and re-enqueue to DLQ to preserve the message
-                // while preventing it from blocking the main queue or triggering automatic DLQ
-                // after exceeding maxReceiveCount.
-                tracing::warn!(
-                    "Version mismatch detected. Deleting message from processing queue and re-enqueueing to DLQ for investigation."
-                );
-
-                // Get the message body to re-enqueue
-                let message_body = message.body().unwrap_or("");
-
-                // Delete from the processing queue
-                self.inner
-                    .client()
-                    .delete_message()
-                    .queue_url(&queue_url)
-                    .receipt_handle(receipt_handle)
-                    .send()
-                    .await?;
-
-                // Try to get DLQ URL and re-enqueue the message
-                if let Some(dlq_url) = self.inner.get_dlq_url_from_queue(&queue_url).await? {
-                    // Re-enqueue to DLQ with version mismatch context
-                    let version_mismatch_attr = MessageAttributeValue::builder()
-                        .data_type("String")
-                        .string_value("VersionMismatch")
-                        .build()
-                        .map_err(|e| QueueError::MessageAttributeError(format!("Failed to build attribute: {}", e)))?;
-
-                    self.inner
-                        .client()
-                        .send_message()
-                        .queue_url(&dlq_url)
-                        .message_body(message_body)
-                        .message_attributes("FailureReason", version_mismatch_attr)
-                        .send()
-                        .await?;
-
-                    tracing::info!("Successfully re-enqueued version-mismatched message to DLQ");
                 } else {
-                    tracing::warn!(
-                        "No DLQ configured for queue. Version-mismatched message was deleted without re-enqueueing."
-                    );
-                }
+                    true
+                };
 
-                // Continue the loop to get the next message
+                if !version_match {
+                    tracing::warn!(
+                        "Skipping message with incompatible version: expected {}, got {:?}",
+                        current_version,
+                        message.message_attributes().and_then(|attrs| attrs.get(ORCHESTRATOR_VERSION_ATTRIBUTE))
+                    );
+
+                    // Get message body and attributes to re-enqueue
+                    if let (Some(body), Some(receipt_handle)) = (message.body(), message.receipt_handle()) {
+                        // Re-send the message to the queue with its original attributes
+                        let mut send_request = self
+                            .inner
+                            .client()
+                            .send_message()
+                            .queue_url(&queue_url)
+                            .message_body(body);
+
+                        // Copy all message attributes to preserve version and other metadata
+                        if let Some(attributes) = message.message_attributes() {
+                            for (key, value) in attributes {
+                                send_request = send_request.message_attributes(key.clone(), value.clone());
+                            }
+                        }
+
+                        // Send the message back to the queue
+                        send_request.send().await?;
+
+                        // Delete the original message after successful re-enqueue
+                        self.inner
+                            .client()
+                            .delete_message()
+                            .queue_url(&queue_url)
+                            .receipt_handle(receipt_handle)
+                            .send()
+                            .await?;
+                    }
+
+                    // Return NoData error to signal caller to retry
+                    return Err(omniqueue::QueueError::NoData.into());
+                }
             }
         }
+        Ok(delivery)
     }
 }

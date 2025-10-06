@@ -50,9 +50,58 @@ pub const STARKNET_VERSION: &str = "0.1.0";
 /// Version of the Orchestrator
 pub const ORCHESTRATOR_VERSION: &str = "0.1.0";
 
+/// Message attribute name for orchestrator version in queue messages
+pub const ORCHESTRATOR_VERSION_ATTRIBUTE: &str = "OrchestratorVersion";
+
+/// Supported Starknet protocol versions by this orchestrator build.
+/// This enum must be kept in sync with the SNOS library version (currently v0.13.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum StarknetVersion {
+    #[serde(rename = "0.13.0")]
+    V0_13_0,
+    #[serde(rename = "0.13.1")]
+    V0_13_1,
+    #[serde(rename = "0.13.2")]
+    V0_13_2,
+    #[serde(rename = "0.13.3")]
+    V0_13_3,
+}
+
+impl StarknetVersion {
+    /// Convert version enum to string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            StarknetVersion::V0_13_0 => "0.13.0",
+            StarknetVersion::V0_13_1 => "0.13.1",
+            StarknetVersion::V0_13_2 => "0.13.2",
+            StarknetVersion::V0_13_3 => "0.13.3",
+        }
+    }
+}
+
+impl std::str::FromStr for StarknetVersion {
+    type Err = String;
+
+    fn from_str(version: &str) -> Result<Self, Self::Err> {
+        match version {
+            "0.13.0" => Ok(StarknetVersion::V0_13_0),
+            "0.13.1" => Ok(StarknetVersion::V0_13_1),
+            "0.13.2" => Ok(StarknetVersion::V0_13_2),
+            "0.13.3" => Ok(StarknetVersion::V0_13_3),
+            _ => Err(format!("Unsupported Starknet version: {}", version)),
+        }
+    }
+}
+
+impl std::fmt::Display for StarknetVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Supported Starknet protocol versions by this orchestrator build.
 /// This list must be kept in sync with the SNOS library version (currently v0.13.3).
-pub const SUPPORTED_STARKNET_VERSIONS: &[&str] = &["0.13.0", "0.13.1", "0.13.1.1", "0.13.2", "0.13.3"];
+pub const SUPPORTED_STARKNET_VERSIONS: &[&str] = &["0.13.0", "0.13.1", "0.13.2", "0.13.3"];
 
 /// Get a version string combining Starknet and Orchestrator versions
 /// This format allows for future extensibility with additional dependencies

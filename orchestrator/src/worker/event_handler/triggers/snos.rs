@@ -1,7 +1,6 @@
 use crate::core::config::Config;
 use crate::types::constant::{
-    is_starknet_version_supported, CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME,
-    SNOS_OUTPUT_FILE_NAME,
+    StarknetVersion, CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SnosMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -516,28 +515,32 @@ impl SnosJobTrigger {
 async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64>) -> Result<()> {
     for block_num in block_numbers_to_pocesss {
         let starknet_version = match fetch_block_starknet_version(&config, block_num).await {
-            Ok(version) => {
-                if !is_starknet_version_supported(&version) {
-                    error!(
-                        block_id = %block_num,
-                        starknet_version = %version,
-                        "Block has unsupported Starknet version, skipping job creation"
-                    );
-                    let attributes = [
-                        KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
-                        KeyValue::new("operation_type", "create_job"),
-                        KeyValue::new("failure_reason", "unsupported_starknet_version"),
-                    ];
-                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
-                    continue;
+            Ok(version_str) => {
+                // Try to parse the version string into our enum using FromStr trait
+                match version_str.parse::<StarknetVersion>() {
+                    Ok(version) => {
+                        info!(
+                            block_id = %block_num,
+                            starknet_version = %version,
+                            "Validated Starknet version for block"
+                        );
+                        Some(version)
+                    }
+                    Err(_) => {
+                        error!(
+                            block_id = %block_num,
+                            starknet_version = %version_str,
+                            "Block has unsupported Starknet version, skipping job creation"
+                        );
+                        let attributes = [
+                            KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
+                            KeyValue::new("operation_type", "create_job"),
+                            KeyValue::new("failure_reason", "unsupported_starknet_version"),
+                        ];
+                        ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                        continue;
+                    }
                 }
-
-                info!(
-                    block_id = %block_num,
-                    starknet_version = %version,
-                    "Validated Starknet version for block"
-                );
-                Some(version)
             }
             Err(e) => {
                 warn!(
@@ -615,7 +618,7 @@ async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -
 ///
 /// # Returns
 /// * `JobMetadata` - Complete job metadata with common and SNOS-specific fields
-fn create_job_metadata(block_number: u64, full_output: bool, starknet_version: Option<String>) -> JobMetadata {
+fn create_job_metadata(block_number: u64, full_output: bool, starknet_version: Option<StarknetVersion>) -> JobMetadata {
     JobMetadata {
         common: CommonMetadata { starknet_version, ..Default::default() },
         specific: JobSpecificMetadata::Snos(SnosMetadata {

@@ -73,7 +73,7 @@ impl JobTrigger for ProvingJobTrigger {
             // Create proving job metadata, propagating Starknet version from SNOS job
             let proving_metadata = JobMetadata {
                 common: CommonMetadata {
-                    starknet_version: snos_job.metadata.common.starknet_version.clone(),
+                    starknet_version: snos_job.metadata.common.starknet_version,
                     ..Default::default()
                 },
                 specific: JobSpecificMetadata::Proving(ProvingMetadata {
