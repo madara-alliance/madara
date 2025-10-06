@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use color_eyre::eyre::Result;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -85,7 +85,7 @@ impl JobTrigger for SnosJobTrigger {
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
-                    ORCHESTRATOR_METRICS.failed_job_operations.add(1, &attributes);
+                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
                 }
             }
         }

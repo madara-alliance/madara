@@ -174,7 +174,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                     KeyValue::new("operation_job_type", format!("{:?}", JobType::StateTransition)),
                     KeyValue::new("operation_type", format!("{:?}", "create_job")),
                 ];
-                ORCHESTRATOR_METRICS.failed_job_operations.add(1, &attributes);
+                ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
                 return Err(e.into());
             }
         }

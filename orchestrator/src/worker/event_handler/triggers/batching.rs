@@ -29,7 +29,7 @@ use std::cmp::{max, min};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::try_join;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 pub struct BatchingTrigger;
 
@@ -397,14 +397,13 @@ impl BatchingTrigger {
         let start_time = Instant::now();
 
         // Start a new bucket
-        let bucket_id = config
-            .prover_client()
-            .submit_task(Task::CreateBucket)
-            .await
-            .map_err(|e| {
-                error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
-                JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
-            })?;
+        let bucket_id = config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
+            error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+            JobError::Other(OtherError(eyre!(
+                "Prover Client Error: Failed to submit create bucket task to prover client, {}",
+                e
+            ))) // TODO: Add a new error type to be used for prover client error
+        })?;
         info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
 
         let batch = AggregatorBatch::new(

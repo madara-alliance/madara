@@ -355,7 +355,7 @@ impl JobHandlerService {
         );
 
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.successful_job_operations.add(1, &attributes);
+        ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, &job.internal_id, external_id.into(), &attributes)?;
 
@@ -589,7 +589,7 @@ impl JobHandlerService {
 
         info!(log_type = "completed", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job completed for block");
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.successful_job_operations.add(1, &attributes);
+        ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, &job.internal_id, job.external_id, &attributes)?;
         Ok(())

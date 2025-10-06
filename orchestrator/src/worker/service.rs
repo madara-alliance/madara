@@ -194,7 +194,7 @@ impl JobService {
                 );
                 ORCHESTRATOR_METRICS
                     .failed_jobs
-                    .add(1, &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))]);
+                    .add(1.0, &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))]);
 
                 // Send SNS alert for job failure
                 let alert_message = format!(

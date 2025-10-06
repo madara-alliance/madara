@@ -610,7 +610,7 @@ impl DatabaseClient for MongoDbClient {
     /// upper_cap: 70000
     async fn get_missing_block_numbers_by_type_and_caps(
         &self,
-        job_type: JobType,
+        _job_type: JobType,
         lower_cap: u64,
         upper_cap: u64,
         limit: Option<i64>,
