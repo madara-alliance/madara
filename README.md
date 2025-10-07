@@ -38,7 +38,7 @@ Madara is a powerful Starknet client written in Rust.
   - [Warp Update](#warp-update)
   - [Running without `--warp-update-sender`](#running-without---warp-update-sender)
 - ✅ [Supported Features](#-supported-features)
-  - [Starknet Compliant](#starknet-compliant)
+  - [Starknet-compliant](#starknet-compliant)
   - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
   - [State Commitment Computation](#state-commitment-computation)
 - 💬 [Get in touch](#-get-in-touch)
@@ -62,7 +62,7 @@ Ensure you have all the necessary dependencies available on your host system.
 | ---------- | ---------- | ----------------------------------------------------------------- |
 | Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Clang      | Latest     | `sudo apt-get install clang`                                      |
-| Openssl    | 0.10       | `sudo apt install openssl`                                        |
+| OpenSSL    | 0.10       | `sudo apt install openssl`                                        |
 
 Once all dependencies are satisfied, you can clone the Madara repository:
 
@@ -326,7 +326,7 @@ The supported file formats are `json`, `toml` and `yaml`.
 You can find examples on [configs](configs/).
 
 > [!NOTE]
-> If the command-line argument is specified then it takes precedent over the
+> If the command-line argument is specified then it takes precedence over the
 > environment variable.
 
 ## 🌐 Interactions
@@ -716,12 +716,12 @@ a regular sync.
 > Starknet does not currently have a specification for its feeder-gateway
 > protocol, so despite our best efforts at output parity, you might still notice
 > some discrepancies between official feeder gateway endpoints and our own
-> implementation. Please let us know about if you encounter this by
+> implementation. Please let us know if you encounter this by
 > [raising an issue](https://github.com/madara-alliance/madara/issues/new/choose)
 
 ### State Commitment Computation
 
-Madara supports merkelized state commitments through its own implementation of
+Madara supports Merkelized state commitments through its own implementation of
 Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-alliance/bonsai-trie).
 You can read more about Starknet Block structure and how it affects state
 commitment in the [Starknet documentation](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
