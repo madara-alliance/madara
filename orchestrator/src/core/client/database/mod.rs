@@ -131,21 +131,6 @@ pub trait DatabaseClient: Send + Sync {
         limit: Option<i64>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
-    /// Get all missed jobs by type and block number limits
-    ///
-    /// # Arguments
-    /// * `job_type` - The type of job to search for
-    /// * `lower_cap` - Lower bound of block numbers (inclusive)
-    /// * `upper_cap` - Upper bound of block numbers (inclusive)
-    /// * `limit` - Optional limit on number of results
-    async fn get_missing_block_numbers_by_type_and_caps(
-        &self,
-        job_type: JobType,
-        lower_cap: u64,
-        upper_cap: u64,
-        limit: Option<i64>,
-    ) -> Result<Vec<u64>, DatabaseError>;
-
     /// Get jobs between internal IDs for a specific type and status
     ///
     /// # Arguments
