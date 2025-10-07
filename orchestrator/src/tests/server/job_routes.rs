@@ -265,7 +265,7 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
     assert_eq!(response_body.message, Some(format!("Successfully fetched job statuses for block {}", block_number)));
     let jobs_response = response_body.data.unwrap().jobs;
 
-    assert_eq!(jobs_response.len(), 3);
+    assert_eq!(jobs_response.len(), 4);
 
     // Check that the correct jobs are returned
     assert!(jobs_response.iter().any(|j| j.id == snos_job.id && j.status == JobStatus::Completed));

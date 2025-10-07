@@ -52,6 +52,14 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
         let job_item = get_job_item_mock_by_id(block_num_str.clone(), uuid);
         let job_item_clone = job_item.clone();
 
+        db.expect_get_snos_batches_by_indices()
+            .withf({
+                let snos_batch_num = block_num;
+                move |i| *i == vec![snos_batch_num]
+            })
+            .times(1)
+            .returning(|_| Ok(Vec::new()));
+
         job_handler
             .expect_create_job()
             .with(eq(block_num_str.clone()), mockall::predicate::always())
@@ -148,6 +156,11 @@ async fn test_create_snos_job_for_existing_batch(
         let uuid = Uuid::new_v4();
         let job_item = get_job_item_mock_by_id(snos_batch_num.to_string(), uuid);
         let job_item_clone = job_item.clone();
+
+        db.expect_get_snos_batches_by_indices()
+            .withf(move |i| *i == vec![snos_batch_num])
+            .times(1)
+            .returning(|_| Ok(Vec::new()));
 
         db.expect_create_job()
             .withf(move |item| item.internal_id == snos_batch_num.to_string())
