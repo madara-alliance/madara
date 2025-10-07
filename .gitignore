@@ -99,3 +99,4 @@ e2e_data/
 
 out
 cache
+sequencer_venv/

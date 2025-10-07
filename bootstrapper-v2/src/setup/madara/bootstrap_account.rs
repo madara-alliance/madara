@@ -1,9 +1,6 @@
 use anyhow::Context;
 use starknet::{
-    accounts::{
-        Account, AccountFactory, ExecutionEncoding, OpenZeppelinAccountFactory,
-        SingleOwnerAccount,
-    },
+    accounts::{Account, AccountFactory, ExecutionEncoding, OpenZeppelinAccountFactory, SingleOwnerAccount},
     core::types::{
         contract::{CompiledClass, SierraClass},
         BlockId, BlockTag, Felt,
@@ -43,18 +40,23 @@ impl<'a> BootstrapAccount<'a> {
     // A felt representation of the string 'BOOTSTRAP'.
     pub async fn bootstrap_declare(&self) -> anyhow::Result<()> {
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json").unwrap(),
+            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json")
+                .unwrap(),
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
 
-        let contract_casm_artifact: CompiledClass =
-            serde_json::from_reader(std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.compiled_contract_class.json").unwrap())
-                .context("Failed to read OpenZeppelin Account casm file")?;
+        let contract_casm_artifact: CompiledClass = serde_json::from_reader(
+            std::fs::File::open(
+                "contracts/madara/target/dev/madara_factory_contracts_Account.compiled_contract_class.json",
+            )
+            .unwrap(),
+        )
+        .context("Failed to read OpenZeppelin Account casm file")?;
 
         // Check if already declared
         if self
             .provider
-            .get_class(BlockId::Tag(starknet::core::types::BlockTag::Pending), contract_artifact.class_hash()?)
+            .get_class(BlockId::Tag(starknet::core::types::BlockTag::PreConfirmed), contract_artifact.class_hash()?)
             .await
             .is_ok()
         {
@@ -71,8 +73,13 @@ impl<'a> BootstrapAccount<'a> {
         let declaration = self
             .account
             .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-            .nonce(Felt::ZERO)
-            .gas(0);
+            .l1_gas_price(0)
+            .l2_gas_price(0)
+            .l1_data_gas_price(0)
+            .l1_gas(0)
+            .l2_gas(0)
+            .l1_data_gas(0)
+            .nonce(Felt::ZERO);
 
         let result = declaration.send().await?;
 
@@ -96,7 +103,8 @@ impl<'a> BootstrapAccount<'a> {
     ) -> anyhow::Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>> {
         // Read the OpenZeppelin Account contract artifacts to get the class hash
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json").unwrap(),
+            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json")
+                .unwrap(),
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
 
@@ -111,22 +119,20 @@ impl<'a> BootstrapAccount<'a> {
         let salt = Felt::from(123); // Salt for deployment
 
         // Create an OpenZeppelin account factory for deployment
-        let account_factory = OpenZeppelinAccountFactory::new(
-            class_hash,
-            self.account.chain_id(),
-            &signer,
-            self.provider,
-        )
-        .await
-        .context("Failed to create OpenZeppelin account factory")?;
+        let account_factory =
+            OpenZeppelinAccountFactory::new(class_hash, self.account.chain_id(), &signer, self.provider)
+                .await
+                .context("Failed to create OpenZeppelin account factory")?;
 
         // Deploy the account using the factory
-        let deploy_result = account_factory
-            .deploy_v3(salt)
-            .gas(0)
-            .send()
-            .await
-            .context("Failed deploying OpenZeppelin account")?;
+        let deploy_result =
+            account_factory.deploy_v3(salt)
+            .l1_gas_price(0)
+            .l2_gas_price(0)
+            .l1_data_gas_price(0)
+            .l1_gas(0)
+            .l2_gas(0)
+            .l1_data_gas(0).send().await.context("Failed deploying OpenZeppelin account")?;
 
         wait_for_transaction(self.provider, deploy_result.transaction_hash, "OpenZeppelin Account Deployment").await?;
         log::info!("OpenZeppelin Account deployment successful!");
@@ -144,7 +150,7 @@ impl<'a> BootstrapAccount<'a> {
             ExecutionEncoding::New,
         );
 
-        new_account.set_block_id(BlockId::Tag(BlockTag::Pending));
+        new_account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
 
         Ok(new_account)
     }

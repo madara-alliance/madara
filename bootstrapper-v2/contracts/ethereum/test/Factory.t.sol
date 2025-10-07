@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {Factory} from "src/factory/Factory.sol";
 import "src/factory/libraries/DataTypes.sol";
-import {ConfigureSingleBridgeEIC} from "src/eic/configureSingleBridge.sol";
+import {ConfigureSingleBridgeEIC} from "src/eic/ConfigureSingleBridgeEIC.sol";
 
 contract FactoryTest is Test {
   Factory public factory;

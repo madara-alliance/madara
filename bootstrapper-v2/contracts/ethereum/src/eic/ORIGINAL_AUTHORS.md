@@ -16,7 +16,7 @@ Import paths have been modified throughout the files to suit the project structu
 
 ### 2. Role Initialization Fix
 
-In `ConfigureSingleBridge.sol`, the `RolesLib.initialize()` call has been commented out to
+In `ConfigureSingleBridgeEIC.sol`, the `RolesLib.initialize()` call has been commented out to
 prevent reinitialization of roles. This modification was necessary because:
 
 - The new Starkware Proxy handles role initialization during deployment in its constructor

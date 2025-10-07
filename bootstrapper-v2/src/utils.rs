@@ -107,7 +107,7 @@ pub async fn declare_contract(
     let class_hash = contract_artifact_casm.class_hash().unwrap();
     let sierra_class_hash = contract_artifact.class_hash().unwrap();
 
-    if account.provider().get_class(BlockId::Tag(BlockTag::Pending), sierra_class_hash).await.is_ok() {
+    if account.provider().get_class(BlockId::Tag(BlockTag::PreConfirmed), sierra_class_hash).await.is_ok() {
         log::info!("Class already declared, skipping declaration.");
         return sierra_class_hash;
     }
@@ -116,7 +116,12 @@ pub async fn declare_contract(
 
     let txn = account
         .declare_v3(Arc::new(flattened_class), class_hash)
-        .gas(0)
+        .l1_gas_price(0)
+        .l2_gas_price(0)
+        .l1_data_gas_price(0)
+        .l1_gas(0)
+        .l2_gas(0)
+        .l1_data_gas(0)
         .send()
         .await
         .expect("Error in declaring the contract using Cairo 1 declaration using the provided account");
@@ -130,8 +135,12 @@ pub async fn execute_v3(
 ) -> anyhow::Result<InvokeTransactionResult, anyhow::Error> {
     let txn_res = account
         .execute_v3(calls.clone())
-        .gas(0)
-        .send()
+        .l1_gas_price(0)
+        .l2_gas_price(0)
+        .l1_data_gas_price(0)
+        .l1_gas(0)
+        .l2_gas(0)
+        .l1_data_gas(0)
         .await
         .context("Error in making execute_v3 the contract for calls {:?}")?;
 
