@@ -17,9 +17,9 @@
 
 </div>
 
-# 🥷 Madara: Starknet Client
+# 🥷 Madara: StarkNet Client
 
-Madara is a powerful Starknet client written in Rust.
+Madara is a powerful StarkNet client written in Rust.
 
 ## Table of Contents
 
@@ -38,7 +38,7 @@ Madara is a powerful Starknet client written in Rust.
   - [Warp Update](#warp-update)
   - [Running without `--warp-update-sender`](#running-without---warp-update-sender)
 - ✅ [Supported Features](#-supported-features)
-  - [Starknet Compliant](#starknet-compliant)
+  - [StarkNet Compliant](#starknet-compliant)
   - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
   - [State Commitment Computation](#state-commitment-computation)
 - 💬 [Get in touch](#-get-in-touch)
@@ -334,7 +334,7 @@ You can find examples on [configs](configs/).
 [⬅️ back to top](#-madara-starknet-client)
 
 Madara fully supports all the JSON-RPC methods as of the latest version of the
-Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+StarkNet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 These methods can be categorized into three main types: Read-Only Access Methods,
 Trace Generation Methods, and Write Methods. They are accessible through port
 **9944** unless specified otherwise with `--rpc-port`.
@@ -423,13 +423,13 @@ Here is a list of all the supported methods with their current status:
 > Write methods are forwarded to the Sequencer and are not executed by Madara.
 > These might fail if you provide the wrong arguments or in case of a
 > conflicting state. Make sure to refer to the
-> [Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs)
+> [StarkNet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs)
 > for a list of potential errors.
 
 ### Madara-specific JSON-RPC Methods
 
 As well as the official RPC methods, Madara also supports its own set of custom
-extensions to the starknet specs. These are referred to as `admin` methods and
+extensions to the StarkNet specs. These are referred to as `admin` methods and
 are exposed on a separate port **9943** unless specified otherwise with
 `--rpc-admin-port`.
 
@@ -477,7 +477,7 @@ are exposed on a separate port **9943** unless specified otherwise with
 You can use any JSON-RPC client to interact with Madara, such as `curl`,
 `httpie`, `websocat` or any client sdk in your preferred programming language.
 For more detailed information on how to call each method, please refer to the
-[Starknet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+[StarkNet JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
 #### Http RPC
 
@@ -700,20 +700,20 @@ cargo run --bin madara --release --            \
 
 [⬅️ back to top](#-madara-starknet-client)
 
-### Starknet compliant
+### StarkNet compliant
 
-Madara is compliant with the latest `v0.13.2` version of Starknet and `v0.7.1`
+Madara is compliant with the latest `v0.13.2` version of StarkNet and `v0.7.1`
 JSON-RPC specs. You can find out more about this in the [interactions](#-interactions)
-section or at the official Starknet [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+section or at the official StarkNet [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
 ### Feeder-Gateway State Synchronization
 
-Madara supports its own implementation of the Starknet feeder gateway, which
+Madara supports its own implementation of the StarkNet feeder gateway, which
 allows nodes to synchronize state from each other at much faster speeds than
 a regular sync.
 
 > [!NOTE]
-> Starknet does not currently have a specification for its feeder-gateway
+> StarkNet does not currently have a specification for its feeder-gateway
 > protocol, so despite our best efforts at output parity, you might still notice
 > some discrepancies between official feeder gateway endpoints and our own
 > implementation. Please let us know about if you encounter this by
@@ -723,8 +723,8 @@ a regular sync.
 
 Madara supports merkelized state commitments through its own implementation of
 Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-alliance/bonsai-trie).
-You can read more about Starknet Block structure and how it affects state
-commitment in the [Starknet documentation](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
+You can read more about StarkNet Block structure and how it affects state
+commitment in the [StarkNet documentation](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
 
 ## 💬 Get in touch
 
