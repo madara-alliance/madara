@@ -132,10 +132,8 @@ impl<P: ForwardPipeline> SyncController<P> {
     pub async fn run(&mut self, mut ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
 
         // Get the pre-sync status
-        let first_block = match self.backend.db.get_chain_tip()? {
-            StorageChainTip::Confirmed(block_number) => block_number,
-            _ => return Err(anyhow!("Chain tip is not confirmed")),
-        };
+        let first_block = self.backend.get_latest_applied_trie_update()?.unwrap_or(0);
+        println!("First block: {}", first_block);
 
         let interval_duration = Duration::from_secs(3);
         let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
@@ -193,6 +191,8 @@ impl<P: ForwardPipeline> SyncController<P> {
         let global_state_root = self.backend
             .write_access()
             .apply_to_global_trie(first_block, vec![accumulated_state_diff].iter())?;
+
+        self.backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
 
         println!("SNAP-SYNC: Global state root: {:?} for blocks {}..{}", global_state_root, first_block, latest_block);
 

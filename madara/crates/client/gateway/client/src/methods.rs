@@ -61,13 +61,29 @@ impl GatewayProvider {
         &self,
         block_id: BlockId,
     ) -> Result<ProviderStateUpdateWithBlock, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_uri_segment("get_state_update")
-            .expect("Failed to add URI segment. This should not fail in prod")
-            .with_block_id(&block_id)
-            .add_param(Cow::from("includeBlock"), "true");
+        let max_retries = 5;
+        let mut last_error = None;
 
-        request.send_get::<ProviderStateUpdateWithBlock>().await
+        for attempt in 0..max_retries {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_state_update")
+                .expect("Failed to add URI segment. This should not fail in prod")
+                .with_block_id(&block_id)
+                .add_param(Cow::from("includeBlock"), "true");
+
+            match request.send_get::<ProviderStateUpdateWithBlock>().await {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < max_retries - 1 {
+                        // Optional: add delay between retries
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100 * (attempt as u64 + 1))).await;
+                    }
+                }
+            }
+        }
+
+        Err(last_error.unwrap())
     }
 
     pub async fn get_signature(&self, block_id: BlockId) -> Result<ProviderBlockSignature, SequencerError> {
