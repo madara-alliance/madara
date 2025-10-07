@@ -131,7 +131,6 @@ pub async fn execute_v3(
     let txn_res = account
         .execute_v3(calls.clone())
         .gas(0)
-        .gas_price(0)
         .send()
         .await
         .context("Error in making execute_v3 the contract for calls {:?}")?;

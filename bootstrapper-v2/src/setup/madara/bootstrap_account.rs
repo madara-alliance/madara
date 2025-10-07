@@ -72,8 +72,7 @@ impl<'a> BootstrapAccount<'a> {
             .account
             .declare_v3(Arc::new(flattened_class), compiled_class_hash)
             .nonce(Felt::ZERO)
-            .gas(0)
-            .gas_price(0);
+            .gas(0);
 
         let result = declaration.send().await?;
 
@@ -125,7 +124,6 @@ impl<'a> BootstrapAccount<'a> {
         let deploy_result = account_factory
             .deploy_v3(salt)
             .gas(0)
-            .gas_price(0)
             .send()
             .await
             .context("Failed deploying OpenZeppelin account")?;
