@@ -468,7 +468,10 @@ impl StateUpdateJobHandler {
                 self.update_state_for_block(
                     config,
                     to_settle_num,
-                    artifacts.snos_output.unwrap(),
+                    artifacts.snos_output.ok_or(JobError::Other(OtherError(eyre!(
+                        "SNOS output not found for state update for block {}",
+                        to_settle_num
+                    ))))?,
                     nonce,
                     artifacts.program_output,
                     artifacts.blob_data,

@@ -46,8 +46,7 @@ impl ChainConfigFromExt for ChainConfig {
         let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
         let chain_id_in_hex = provider.chain_id().await?.to_fixed_hex_string();
 
-        let chain_id_decoded = String::from_utf8(hex::decode(chain_id_in_hex.trim_start_matches("0x"))?)
-            .expect("Failed to decode chain id");
+        let chain_id_decoded = String::from_utf8(hex::decode(chain_id_in_hex.trim_start_matches("0x"))?)?;
         let chain_id = ChainId::Other(chain_id_decoded);
 
         Ok(ChainConfig {

@@ -43,11 +43,7 @@ impl JobTrigger for SnosJobTrigger {
     /// - Respects concurrency limits defined in service configuration
     /// - Processes blocks in order while filling available slots efficiently
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
-        tracing::trace!(
-            log_type = "starting",
-            category = "ProofRegistrationWorker",
-            "ProofRegistrationWorker started."
-        );
+        trace!(log_type = "starting", category = "SnosRunWorker", "SnosRunWorker started.");
 
         // Self-healing: recover any orphaned SNOS jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::SnosRun).await {
