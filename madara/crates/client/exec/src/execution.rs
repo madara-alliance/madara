@@ -26,7 +26,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         let mut executed_prev = 0;
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
-            tracing::debug!("executing {:#x}", hash.to_felt());
+            tracing::info!("executing {:#x}", hash.to_felt());
             tx.execute(&mut self.state, &self.block_context).map_err(|err| TxExecError {
                 view: format!("{}", self.view()),
                 hash,

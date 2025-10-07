@@ -13,6 +13,7 @@ mod to_starknet_types;
 
 pub use from_blockifier::from_blockifier_execution_info;
 pub use starknet_core::types::Hash256;
+use mp_rpc::v0_9_0::DataAvailability;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransactionReceipt {

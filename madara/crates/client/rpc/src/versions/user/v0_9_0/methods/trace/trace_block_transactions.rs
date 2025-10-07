@@ -1,6 +1,8 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
 use anyhow::Context;
+use tracing::log;
+use tracing::log::log;
 use mc_db::{MadaraBlockView, MadaraStateView};
 use mc_exec::trace::execution_result_to_tx_trace_v0_9;
 use mc_exec::{MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
@@ -30,11 +32,13 @@ pub(super) fn prepare_tx_for_reexecution(
 pub async fn trace_block_transactions_view(
     view: &MadaraBlockView,
 ) -> StarknetRpcResult<Vec<TraceBlockTransactionsResult>> {
+    log::info!("getting started with the trace_block_transactions_view");
     let mut exec_context = view.new_execution_context_at_block_start()?;
 
     if exec_context.protocol_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
         return Err(StarknetRpcApiError::unsupported_txn_version());
     }
+    log::info!("exec_context built successfully");
 
     let state_view = view.state_view();
     let transactions: Vec<_> = view
@@ -42,7 +46,7 @@ pub async fn trace_block_transactions_view(
         .into_iter()
         .map(|tx| prepare_tx_for_reexecution(&state_view, tx))
         .collect::<Result<_, _>>()?;
-
+    println!("we got txns: {:?}", transactions);
     let (executions_results, exec_context) = mp_utils::spawn_blocking(move || {
         Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], transactions)?, exec_context))
     })
@@ -66,6 +70,8 @@ pub async fn trace_block_transactions(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<TraceBlockTransactionsResult>> {
+    log::info!("got the block trace transaction request for block_id: {:?}", block_id);
     let view = starknet.resolve_block_view(block_id)?;
+    log::info!("got the view: {:?}", view);
     trace_block_transactions_view(&view).await
 }
