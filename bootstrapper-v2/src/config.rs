@@ -2,6 +2,7 @@ use crate::setup::base_layer::ethereum::factory::Factory;
 use crate::setup::base_layer::BaseLayerSetupTrait;
 use serde::Deserialize;
 use std::collections::HashMap;
+use crate::setup::base_layer::ethereum::ImplementationContract;
 
 use crate::setup::base_layer::ethereum::EthereumSetup;
 use crate::setup::base_layer::starknet::StarknetSetup;
@@ -27,7 +28,7 @@ pub enum BaseLayerConfig {
         // and pointing to the same implementation contract.
         // This would save gas and cost, as the heavy implementation contracts are only deployed once.
         // This a map of the implementation contract name to the implementation contract address.
-        implementation_addresses: HashMap<String, String>,
+        implementation_addresses: HashMap<ImplementationContract, String>,
         core_contract_init_data: Box<Factory::CoreContractInitData>,
     },
     Starknet {

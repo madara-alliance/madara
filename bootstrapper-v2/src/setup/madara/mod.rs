@@ -26,14 +26,33 @@ use starknet::{providers::Provider, signers::LocalWallet};
 use std::collections::HashMap;
 use std::fs;
 
+// Types for Map keys
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum MadaraClasses {
+    TokenBridge,
+    Erc20,
+    Eic,
+    UniversalDeployer,
+    MadaraFactory,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum DeployedContract {
+    UniversalDeployer,
+    MadaraFactory,
+    L2EthToken,
+    L2EthBridge,
+    L2TokenBridge,
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct MadaraSetup {
     rpc_url: String,
     provider: JsonRpcClient<HttpTransport>,
     account: Option<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>>,
-    classes: HashMap<String, Felt>,
-    addresses: HashMap<String, Felt>,
+    classes: HashMap<MadaraClasses, Felt>,
+    addresses: HashMap<DeployedContract, Felt>,
 }
 
 #[allow(dead_code)]
@@ -123,11 +142,11 @@ impl MadaraSetup {
         log::info!("Madara Factory Class Hash: 0x{:x}", madara_factory_class_hash);
 
         // Store all class hashes after declarations are complete
-        self.insert_class_hash("token_bridge", token_bridge_class_hash);
-        self.insert_class_hash("erc20", erc20_class_hash);
-        self.insert_class_hash("eic", eic_class_hash);
-        self.insert_class_hash("universal_deployer", universal_deployer_class_hash);
-        self.insert_class_hash("madara_factory", madara_factory_class_hash);
+        self.insert_class_hash(MadaraClasses::TokenBridge, token_bridge_class_hash);
+        self.insert_class_hash(MadaraClasses::Erc20, erc20_class_hash);
+        self.insert_class_hash(MadaraClasses::Eic, eic_class_hash);
+        self.insert_class_hash(MadaraClasses::UniversalDeployer, universal_deployer_class_hash);
+        self.insert_class_hash(MadaraClasses::MadaraFactory, madara_factory_class_hash);
 
         log::info!("All contract declarations completed successfully!");
 
@@ -182,7 +201,7 @@ impl MadaraSetup {
         let account_provider = account.provider();
 
         let universal_deployer_class =
-            self.get_class_hash("universal_deployer").context("Universal deployer not declared").unwrap();
+            self.get_class_hash(&MadaraClasses::UniversalDeployer).context("Universal deployer not declared").unwrap();
 
         let calldata = Vec::from([*universal_deployer_class, Felt::ZERO, Felt::ONE, Felt::ZERO]);
         let calls = vec![Call { to: account_address, selector: selector!("deploy_contract"), calldata }];
@@ -192,7 +211,7 @@ impl MadaraSetup {
 
         let udc_address = get_contract_address_from_deploy_tx(account_provider, &res).await.unwrap();
 
-        self.insert_address("universal_deployer", udc_address);
+        self.insert_address(DeployedContract::UniversalDeployer, udc_address);
         log::info!("Universal deployer deployed successfully at address: 0x{:x}", udc_address);
 
         Ok(udc_address)
@@ -213,13 +232,13 @@ impl MadaraSetup {
         log::info!("Deploying MadaraFactory contract...");
 
         let madara_factory_class_hash =
-            *self.get_class_hash("madara_factory").context("MadaraFactory class not declared")?;
+            *self.get_class_hash(&MadaraClasses::MadaraFactory).context("MadaraFactory class not declared")?;
 
-        let token_bridge_class = *self.get_class_hash("token_bridge").context("Token bridge class not declared")?;
+        let token_bridge_class = *self.get_class_hash(&MadaraClasses::TokenBridge).context("Token bridge class not declared")?;
 
-        let eic_class = *self.get_class_hash("eic").context("EIC class not declared")?;
+        let eic_class = *self.get_class_hash(&MadaraClasses::Eic).context("EIC class not declared")?;
 
-        let erc20_class = *self.get_class_hash("erc20").context("ERC20 class not declared")?;
+        let erc20_class = *self.get_class_hash(&MadaraClasses::Erc20).context("ERC20 class not declared")?;
 
         // Convert L1 bridge addresses from string to EthAddress
         let l1_eth_bridge_eth = EthAddress::from_hex(l1_eth_bridge_address).context("Invalid L1 ETH bridge address")?;
@@ -264,7 +283,7 @@ impl MadaraSetup {
 
         let madara_factory_address =
             get_contract_address_from_deploy_tx(account.provider(), &madara_factory_res).await.unwrap();
-        self.insert_address("madara_factory", madara_factory_address);
+        self.insert_address(DeployedContract::MadaraFactory, madara_factory_address);
 
         log::info!("MadaraFactory deployed successfully at address: 0x{:x}", madara_factory_address);
 
@@ -295,9 +314,9 @@ impl MadaraSetup {
         // Note: The deploy_bridges function returns (l2_eth_token, l2_eth_bridge, l2_token_bridge)
         // but we need to extract these from events or transaction receipt
         let deployed_addresses = get_contracts_deployed_addresses(account.provider(), &deploy_bridges_res).await?;
-        self.insert_address("l2_eth_token", deployed_addresses.l2_eth_token);
-        self.insert_address("l2_eth_bridge", deployed_addresses.l2_eth_bridge);
-        self.insert_address("l2_token_bridge", deployed_addresses.l2_token_bridge);
+        self.insert_address(DeployedContract::L2EthToken, deployed_addresses.l2_eth_token);
+        self.insert_address(DeployedContract::L2EthBridge, deployed_addresses.l2_eth_bridge);
+        self.insert_address(DeployedContract::L2TokenBridge, deployed_addresses.l2_token_bridge);
 
         log::info!("Bridge contracts deployment initiated via MadaraFactory");
 
@@ -305,41 +324,41 @@ impl MadaraSetup {
     }
 
     /// Get a class hash by name
-    pub fn get_class_hash(&self, name: &str) -> Option<&Felt> {
+    pub fn get_class_hash(&self, name: &MadaraClasses) -> Option<&Felt> {
         self.classes.get(name)
     }
 
     /// Get an address by name
-    pub fn get_address(&self, name: &str) -> Option<&Felt> {
+    pub fn get_address(&self, name: &DeployedContract) -> Option<&Felt> {
         self.addresses.get(name)
     }
 
     /// Insert a class hash
-    pub fn insert_class_hash(&mut self, name: &str, class_hash: Felt) {
-        self.classes.insert(name.to_string(), class_hash);
+    pub fn insert_class_hash(&mut self, name: MadaraClasses, class_hash: Felt) {
+        self.classes.insert(name, class_hash);
     }
 
     /// Insert an address
-    pub fn insert_address(&mut self, name: &str, address: Felt) {
-        self.addresses.insert(name.to_string(), address);
+    pub fn insert_address(&mut self, name: DeployedContract, address: Felt) {
+        self.addresses.insert(name, address);
     }
 
     /// Save the current class hashes and addresses to a JSON file
     fn save_madara_addresses(&self, madara_addresses_path: &str) -> anyhow::Result<()> {
         let madara_addresses = serde_json::json!({
             "classes": {
-                "token_bridge": format!("0x{:x}", self.get_class_hash("token_bridge").unwrap()),
-                "erc20": format!("0x{:x}", self.get_class_hash("erc20").unwrap()),
-                "eic": format!("0x{:x}", self.get_class_hash("eic").unwrap()),
-                "universal_deployer": format!("0x{:x}", self.get_class_hash("universal_deployer").unwrap()),
-                "madara_factory": format!("0x{:x}", self.get_class_hash("madara_factory").unwrap()),
+                "token_bridge": format!("0x{:x}", self.get_class_hash(&MadaraClasses::TokenBridge).unwrap()),
+                "erc20": format!("0x{:x}", self.get_class_hash(&MadaraClasses::Erc20).unwrap()),
+                "eic": format!("0x{:x}", self.get_class_hash(&MadaraClasses::Eic).unwrap()),
+                "universal_deployer": format!("0x{:x}", self.get_class_hash(&MadaraClasses::UniversalDeployer).unwrap()),
+                "madara_factory": format!("0x{:x}", self.get_class_hash(&MadaraClasses::MadaraFactory).unwrap()),
             },
             "addresses": {
-                "universal_deployer": format!("0x{:x}", self.addresses.get("universal_deployer").unwrap_or(&Felt::ZERO)),
-                "madara_factory": format!("0x{:x}", self.addresses.get("madara_factory").unwrap_or(&Felt::ZERO)),
-                "l2_eth_token": format!("0x{:x}", self.addresses.get("l2_eth_token").unwrap_or(&Felt::ZERO)),
-                "l2_eth_bridge": format!("0x{:x}", self.addresses.get("l2_eth_bridge").unwrap_or(&Felt::ZERO)),
-                "l2_token_bridge": format!("0x{:x}", self.addresses.get("l2_token_bridge").unwrap_or(&Felt::ZERO)),
+                "universal_deployer": format!("0x{:x}", self.addresses.get(&DeployedContract::UniversalDeployer).unwrap_or(&Felt::ZERO)),
+                "madara_factory": format!("0x{:x}", self.addresses.get(&DeployedContract::MadaraFactory).unwrap_or(&Felt::ZERO)),
+                "l2_eth_token": format!("0x{:x}", self.addresses.get(&DeployedContract::L2EthToken).unwrap_or(&Felt::ZERO)),
+                "l2_eth_bridge": format!("0x{:x}", self.addresses.get(&DeployedContract::L2EthBridge).unwrap_or(&Felt::ZERO)),
+                "l2_token_bridge": format!("0x{:x}", self.addresses.get(&DeployedContract::L2TokenBridge).unwrap_or(&Felt::ZERO)),
             }
         });
 

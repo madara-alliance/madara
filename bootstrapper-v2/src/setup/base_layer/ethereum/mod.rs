@@ -20,6 +20,19 @@ use log;
 use serde_json;
 use std::collections::HashMap;
 
+// Types for Map keys
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ImplementationContract {
+    CoreContract,
+    Manager,
+    Registry,
+    MultiBridge,
+    EthBridge,
+    EthBridgeEic,
+    BaseLayerFactory,
+}
+
+
 use factory::{Factory, FactoryDeploy};
 
 pub static IMPLEMENTATION_CONTRACTS: [&str; 6] =
@@ -32,7 +45,7 @@ pub struct EthereumSetup {
     // TODO: Good to have later is to enforce the
     // keys in ImplementationContracts struct.
     // This might be done using a alloy::sol macro.
-    implementation_address: HashMap<String, String>,
+    implementation_address: HashMap<ImplementationContract, String>,
     core_contract_init_data: Factory::CoreContractInitData,
     addresses_output_path: String,
     base_layer_contracts: Option<BaseLayerContracts>,
@@ -42,7 +55,7 @@ impl EthereumSetup {
     pub fn new(
         rpc_url: String,
         private_key: String,
-        implementation_address: HashMap<String, String>,
+        implementation_address: HashMap<ImplementationContract, String>,
         core_contract_init_data: Factory::CoreContractInitData,
         addresses_output_path: &str,
     ) -> Self {
@@ -92,13 +105,13 @@ impl EthereumSetup {
     fn save_ethereum_addresses(&self) -> anyhow::Result<()> {
         let base_layer_addresses = serde_json::json!({
             "implementation_addresses": {
-                "coreContract": self.implementation_address.get("coreContract"),
-                "manager": self.implementation_address.get("manager"),
-                "registry": self.implementation_address.get("registry"),
-                "multiBridge": self.implementation_address.get("multiBridge"),
-                "ethBridge": self.implementation_address.get("ethBridge"),
-                "ethBridgeEIC": self.implementation_address.get("ethBridgeEIC"),
-                "base_layer_factory": self.implementation_address.get("base_layer_factory"),
+                "coreContract": self.implementation_address.get(&ImplementationContract::CoreContract),
+                "manager": self.implementation_address.get(&ImplementationContract::Manager),
+                "registry": self.implementation_address.get(&ImplementationContract::Registry),
+                "multiBridge": self.implementation_address.get(&ImplementationContract::MultiBridge),
+                "ethBridge": self.implementation_address.get(&ImplementationContract::EthBridge),
+                "ethBridgeEIC": self.implementation_address.get(&ImplementationContract::EthBridgeEic),
+                "base_layer_factory": self.implementation_address.get(&ImplementationContract::BaseLayerFactory),
             },
             "addresses": self.base_layer_contracts.as_ref().map(|contracts| {
                 serde_json::to_value(contracts).unwrap_or(serde_json::Value::Null)
@@ -131,7 +144,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
                     .with_context(|| format!("Failed to deploy {}", contract))?;
 
                 log::info!("Deployed coreContract at address: {:?}", address);
-                self.implementation_address.insert(contract.to_string(), address.to_string());
+                self.implementation_address.insert(ImplementationContract::CoreContract, address.to_string());
             } else if contract == "ethBridgeEIC" {
                 let artifact_path = "./contracts/ethereum/out/configureSingleBridge.sol/ConfigureSingleBridgeEIC.json";
                 let address = self
@@ -139,7 +152,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
                     .await
                     .with_context(|| format!("Failed to deploy {}", contract))?;
                 log::info!("Deployed ConfigureSingleBridgeEIC at address: {:?}", address);
-                self.implementation_address.insert(contract.to_string(), address.to_string());
+                self.implementation_address.insert(ImplementationContract::EthBridgeEic, address.to_string());
             } else {
                 let artifact_path = format!("../build-artifacts/starkgate_latest/solidity/{}.json", contract);
                 let address = self
@@ -147,7 +160,14 @@ impl BaseLayerSetupTrait for EthereumSetup {
                     .await
                     .with_context(|| format!("Failed to deploy {}", contract))?;
                 log::info!("Deployed {} at address: {:?}", contract, address);
-                self.implementation_address.insert(contract.to_string(), address.to_string());
+                let contract_enum = match contract {
+                    "manager" => ImplementationContract::Manager,
+                    "registry" => ImplementationContract::Registry,
+                    "multiBridge" => ImplementationContract::MultiBridge,
+                    "ethBridge" => ImplementationContract::EthBridge,
+                    _ => panic!("Unknown contract: {}", contract),
+                };
+                self.implementation_address.insert(contract_enum, address.to_string());
             }
         }
 
@@ -175,7 +195,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
             .context("Failed to deploy Ethereum Factory")?;
         log::info!("Deployed factory at {:?}", factory_deploy.address());
 
-        self.implementation_address.insert("base_layer_factory".to_string(), factory_deploy.address().to_string());
+        self.implementation_address.insert(ImplementationContract::BaseLayerFactory, factory_deploy.address().to_string());
 
         save_addresses_to_file(
             serde_json::to_string_pretty(&self.implementation_address)?,
