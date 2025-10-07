@@ -21,15 +21,15 @@ runs:
       with:
         python-version: ${{ inputs.python-version }}
 
-    - name: Cache Python dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          sequencer_venv
-          ~/.cache/pip
-        key: python-cairo-${{ runner.os }}-${{ inputs.python-version }}-v3
-        restore-keys: |
-          python-cairo-${{ runner.os }}-${{ inputs.python-version }}-
+#    - name: Cache Python dependencies
+#      uses: actions/cache@v4
+#      with:
+#        path: |
+#          sequencer_venv
+#          ~/.cache/pip
+#        key: python-cairo-${{ runner.os }}-${{ inputs.python-version }}-v3
+#        restore-keys: |
+#          python-cairo-${{ runner.os }}-${{ inputs.python-version }}-
 
     - name: Ensure Cargo dependencies are available
       shell: bash
