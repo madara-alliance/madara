@@ -1169,36 +1169,50 @@ impl DatabaseClient for MongoDbClient {
         let block_number_i64 = block_number as i64; // MongoDB typically handles numbers as i32 or i64
 
         // Query for jobs where metadata.specific.block_number matches
-        let query1 = doc! {
+        let query_all = doc! {
             "metadata.specific.block_number": block_number_i64,
             "job_type": {
                 "$in": [
-                    bson::to_bson(&JobType::SnosRun)?,
                     bson::to_bson(&JobType::ProofCreation)?,
                     bson::to_bson(&JobType::ProofRegistration)?,
                     bson::to_bson(&JobType::DataSubmission)?,
-                    bson::to_bson(&JobType::Aggregator)?,
                 ]
             }
         };
 
         // Query for StateTransition jobs where metadata.specific.blocks_to_settle contains the block_number
-        let query2 = doc! {
+        let query_state_transition = doc! {
             "job_type": bson::to_bson(&JobType::StateTransition)?,
             "metadata.specific.context.to_settle": { "$elemMatch": { "$eq": block_number_i64 } }
+        };
+
+        // Query for SnosRun and Aggregator jobs
+        let query_snos_and_aggregator = doc! {
+           "job_type": {
+                "$in": [
+                    bson::to_bson(&JobType::SnosRun)?,
+                    bson::to_bson(&JobType::Aggregator)?,
+                ]
+            },
+            "metadata.specific.start_block": { "$lte": block_number_i64 },
+            "metadata.specific.end_block": { "$gte": block_number_i64 }
         };
 
         let mut results: Vec<JobItem> = Vec::new();
 
         let job_collection = self.get_job_collection();
 
-        // Execute first query
-        let cursor1 = job_collection.find(query1, None).await?;
-        results.extend(cursor1.try_collect::<Vec<JobItem>>().await?);
+        // Execute query for all jobs
+        let cursor_all = job_collection.find(query_all, None).await?;
+        results.extend(cursor_all.try_collect::<Vec<JobItem>>().await?);
 
-        // Execute second query
-        let cursor2 = job_collection.find(query2, None).await?;
-        results.extend(cursor2.try_collect::<Vec<JobItem>>().await?);
+        // Execute query for state transition jobs
+        let cursor_state_transition = job_collection.find(query_state_transition, None).await?;
+        results.extend(cursor_state_transition.try_collect::<Vec<JobItem>>().await?);
+
+        // Execute query for snos and aggregator jobs
+        let cursor_snos_and_aggregator = job_collection.find(query_snos_and_aggregator, None).await?;
+        results.extend(cursor_snos_and_aggregator.try_collect::<Vec<JobItem>>().await?);
 
         debug!(count = results.len(), "Fetched jobs by block number");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_block_number")];
@@ -1373,7 +1387,6 @@ fn vec_to_single_result<T>(results: Vec<T>, operation_name: &str) -> Result<Opti
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use mongodb::bson::doc;
     use mongodb::options::ClientOptions;
