@@ -33,6 +33,14 @@ use tracing::{debug, error, info, trace, warn};
 
 pub struct BatchingTrigger;
 
+struct BatchState<'a> {
+    aggregator_batch: &'a AggregatorBatch,
+    snos_batch: &'a SnosBatch,
+    close_aggregator_batch: bool,       // boolean to decide if we can close the block
+    snos_batch_status: SnosBatchStatus, // New status of SNOS batch
+    state_update: &'a StateUpdate,
+}
+
 // Community doc for v0.13.2 - https://community.starknet.io/t/starknet-v0-13-2-pre-release-notes/114223
 
 #[async_trait::async_trait]
@@ -238,11 +246,13 @@ impl BatchingTrigger {
         // This just updates the aggregator/snos batch in the DB and does not close the batch
         if let Some(state_update) = state_update {
             self.save_batch_state(
-                &latest_aggregator_batch,
-                &latest_snos_batch,
-                false,                 // Don't close the aggregator batch
-                SnosBatchStatus::Open, // Open the SNOS batch
-                &state_update,
+                BatchState {
+                    aggregator_batch: &latest_aggregator_batch,
+                    snos_batch: &latest_snos_batch,
+                    close_aggregator_batch: false, // Don't close the aggregator batch
+                    snos_batch_status: SnosBatchStatus::Open, // Open the SNOS batch
+                    state_update: &state_update,
+                },
                 &config,
                 config.madara_client(),
             )
@@ -305,11 +315,13 @@ impl BatchingTrigger {
 
                             // Close the current batches (both aggregator and SNOS) and save the state
                             self.save_batch_state(
-                                &current_aggregator_batch,
-                                &current_snos_batch,
-                                true,                    // Close the aggregator batch
-                                SnosBatchStatus::Closed, // Close the SNOS batch
-                                &squashed_state_update,
+                                BatchState {
+                                    aggregator_batch: &current_aggregator_batch,
+                                    snos_batch: &current_snos_batch,
+                                    close_aggregator_batch: true, // Close the aggregator batch
+                                    snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
+                                    state_update: &squashed_state_update,
+                                },
                                 config,
                                 provider,
                             )
@@ -328,11 +340,13 @@ impl BatchingTrigger {
                         } else if self.should_close_snos_batch(config, &current_snos_batch).await? {
                             // Close the current SNOS batch and start a new one
                             self.save_batch_state(
-                                &current_aggregator_batch,
-                                &current_snos_batch,
-                                false,                   // Don't close the aggregator batch
-                                SnosBatchStatus::Closed, // Close the SNOS batch
-                                &squashed_state_update,
+                                BatchState {
+                                    aggregator_batch: &current_aggregator_batch,
+                                    snos_batch: &current_snos_batch,
+                                    close_aggregator_batch: false, // Don't close the aggregator batch
+                                    snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
+                                    state_update: &squashed_state_update,
+                                },
                                 config,
                                 provider,
                             )
@@ -534,21 +548,25 @@ impl BatchingTrigger {
     /// 1. Store the state update and blob info in storage
     /// 2. Update or add the state of the Aggregator batch in DB
     /// 3. Update or add the state of an SNOS batch in the DB
-    #[allow(clippy::too_many_arguments)]
-    async fn save_batch_state(
+    async fn save_batch_state<'a>(
         &self,
-        aggregator_batch: &AggregatorBatch,
-        snos_batch: &SnosBatch,
-        close_aggregator_batch: bool,       // boolean to decide if we can close the block
-        snos_batch_status: SnosBatchStatus, // New status of SNOS batch
-        state_update: &StateUpdate,
+        batch_state: BatchState<'a>,
         config: &Arc<Config>,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<(), JobError> {
         try_join!(
-            self.store_aggregator_batch_state_update(aggregator_batch, state_update, config, provider),
-            self.update_or_close_aggregator_batch(aggregator_batch, close_aggregator_batch, config,),
-            self.update_or_close_snos_batch(snos_batch, config, snos_batch_status),
+            self.store_aggregator_batch_state_update(
+                batch_state.aggregator_batch,
+                batch_state.state_update,
+                config,
+                provider
+            ),
+            self.update_or_close_aggregator_batch(
+                batch_state.aggregator_batch,
+                batch_state.close_aggregator_batch,
+                config,
+            ),
+            self.update_or_close_snos_batch(batch_state.snos_batch, config, batch_state.snos_batch_status),
         )?;
 
         Ok(())
