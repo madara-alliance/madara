@@ -52,7 +52,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
 
         let existing_snos_batch = crate::types::batch::SnosBatch {
             snos_batch_id: 1,
-            aggregator_batch_index: 1,
+            aggregator_batch_index: Some(1),
             start_block: 0,
             end_block: 3,
             num_blocks: 4,

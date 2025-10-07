@@ -348,7 +348,7 @@ async fn test_create_snos_batch() {
     let database_client = config.database();
 
     // Create a SNOS batch
-    let snos_batch = SnosBatch::new(1, 100, 200);
+    let snos_batch = SnosBatch::new(1, Some(100), 200);
 
     // Create the batch in the database
     let created_batch = database_client.create_snos_batch(snos_batch.clone()).await.unwrap();
