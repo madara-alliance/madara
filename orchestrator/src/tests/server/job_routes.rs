@@ -214,7 +214,7 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
 
     // Create some jobs for the block
     let mut snos_job = build_job_item(JobType::SnosRun, JobStatus::Completed, 1); // internal_id is not block_number for SnosRun jobs
-    if let JobSpecificMetadata::Snos(ref mut x) = snos_job.metadata {
+    if let JobSpecificMetadata::Snos(ref mut x) = snos_job.metadata.specific {
         x.start_block = block_number - 1;
         x.end_block = block_number + 1;
     }
