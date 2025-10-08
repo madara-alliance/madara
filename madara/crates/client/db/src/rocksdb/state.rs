@@ -243,10 +243,6 @@ impl RocksDBStorageInner {
             return Ok(());
         }
 
-        let contract_class_hash_col = self.get_column(CONTRACT_CLASS_HASH_COLUMN);
-        let contract_nonce_col = self.get_column(CONTRACT_NONCE_COLUMN);
-        let contract_storage_col = self.get_column(CONTRACT_STORAGE_COLUMN);
-
         let mut batch = WriteBatchWithTransaction::default();
         let mut total_deployed = 0;
         let mut total_replaced = 0;
@@ -263,31 +259,14 @@ impl RocksDBStorageInner {
                 diff.storage_diffs.len()
             );
 
-            let block_n_u32 = u32::try_from(*block_n).context("Converting block_n to u32")?;
+            // Reuse existing state_remove logic
+            self.state_remove(*block_n, diff, &mut batch)?;
 
-            for item in &diff.deployed_contracts {
-                batch.delete_cf(&contract_class_hash_col, make_contract_column_key(&item.address, block_n_u32));
-                total_deployed += 1;
-            }
-            for item in &diff.replaced_classes {
-                batch.delete_cf(&contract_class_hash_col, make_contract_column_key(&item.contract_address, block_n_u32));
-                total_replaced += 1;
-            }
-
-            for update in &diff.nonces {
-                batch.delete_cf(&contract_nonce_col, make_contract_column_key(&update.contract_address, block_n_u32));
-                total_nonces += 1;
-            }
-
-            for storage_diff in &diff.storage_diffs {
-                for entry in &storage_diff.storage_entries {
-                    batch.delete_cf(
-                        &contract_storage_col,
-                        make_storage_column_key(&storage_diff.address, &entry.key, block_n_u32),
-                    );
-                    total_storage_entries += 1;
-                }
-            }
+            // Track totals for logging
+            total_deployed += diff.deployed_contracts.len();
+            total_replaced += diff.replaced_classes.len();
+            total_nonces += diff.nonces.len();
+            total_storage_entries += diff.storage_diffs.iter().map(|sd| sd.storage_entries.len()).sum::<usize>();
         }
 
         tracing::info!(

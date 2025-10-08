@@ -126,8 +126,8 @@ impl GatewaySyncSteps {
             if let Ok(block_view) = self._backend.block_view(&BlockId::Number(probe_block_n)) {
                 let block_info = block_view.get_block_info()?;
                 if let Some(closed_info) = block_info.as_closed() {
-                    let our_hash = closed_info.block_hash;
-                    tracing::debug!("🔍 Our block {} hash: {:#x}", probe_block_n, our_hash);
+                    let local_block_hash = closed_info.block_hash;
+                    tracing::debug!("🔍 Our block {} hash: {:#x}", probe_block_n, local_block_hash);
 
                     // Fetch the same block from gateway to compare
                     match self.client.get_state_update_with_block(BlockId::Number(probe_block_n)).await {
@@ -138,10 +138,10 @@ impl GatewaySyncSteps {
                             let gateway_hash = gateway_block.block_hash;
                             tracing::debug!("🔍 Gateway block {} hash: {:#x}", probe_block_n, gateway_hash);
 
-                            if our_hash == gateway_hash {
+                            if local_block_hash == gateway_hash {
                                 // Found common ancestor!
                                 tracing::info!("✅ Found common ancestor at block {}", probe_block_n);
-                                return Ok(our_hash);
+                                return Ok(local_block_hash);
                             } else {
                                 tracing::debug!("❌ Block {} hash mismatch, continuing search", probe_block_n);
                             }
