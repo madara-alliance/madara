@@ -8,7 +8,7 @@ use crate::core::StorageClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
-use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
+use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
@@ -447,7 +447,7 @@ impl BatchingTrigger {
     /// 4. Batch is not yet closed
     fn should_close_batch(&self, config: &Arc<Config>, state_update_len: Option<usize>, batch: &Batch) -> bool {
         (!batch.is_batch_ready)
-            && ((state_update_len.is_some() && state_update_len.unwrap() > MAX_BLOB_SIZE)
+            && ((state_update_len.is_some() && state_update_len.unwrap() > config.params.batching_config.max_blob_size)
                 || (batch.num_blocks >= config.params.batching_config.max_batch_size)
                 || ((Utc::now().round_subsecs(0) - batch.created_at).abs().num_seconds() as u64
                     >= config.params.batching_config.max_batch_time_seconds))
