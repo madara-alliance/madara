@@ -56,7 +56,7 @@ impl<'a> BootstrapAccount<'a> {
         // Check if already declared
         if self
             .provider
-            .get_class(BlockId::Tag(starknet::core::types::BlockTag::PreConfirmed), contract_artifact.class_hash()?)
+            .get_class(BlockId::Tag(starknet::core::types::BlockTag::Pending), contract_artifact.class_hash()?)
             .await
             .is_ok()
         {
@@ -73,12 +73,7 @@ impl<'a> BootstrapAccount<'a> {
         let declaration = self
             .account
             .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-            .l1_gas_price(0)
-            .l2_gas_price(0)
-            .l1_data_gas_price(0)
-            .l1_gas(0)
-            .l2_gas(0)
-            .l1_data_gas(0)
+            .gas(0)
             .nonce(Felt::ZERO);
 
         let result = declaration.send().await?;
@@ -127,12 +122,8 @@ impl<'a> BootstrapAccount<'a> {
         // Deploy the account using the factory
         let deploy_result =
             account_factory.deploy_v3(salt)
-            .l1_gas_price(0)
-            .l2_gas_price(0)
-            .l1_data_gas_price(0)
-            .l1_gas(0)
-            .l2_gas(0)
-            .l1_data_gas(0).send().await.context("Failed deploying OpenZeppelin account")?;
+            .gas(0)
+            .send().await.context("Failed deploying OpenZeppelin account")?;
 
         wait_for_transaction(self.provider, deploy_result.transaction_hash, "OpenZeppelin Account Deployment").await?;
         log::info!("OpenZeppelin Account deployment successful!");
@@ -150,7 +141,7 @@ impl<'a> BootstrapAccount<'a> {
             ExecutionEncoding::New,
         );
 
-        new_account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
+        new_account.set_block_id(BlockId::Tag(BlockTag::Pending));
 
         Ok(new_account)
     }

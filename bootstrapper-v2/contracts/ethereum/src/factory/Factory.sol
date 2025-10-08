@@ -13,7 +13,6 @@ import {IRoles} from "./interfaces/IRoles.sol";
 import {IStarknetGovernor} from "./interfaces/IStarknetGovernor.sol";
 import {IProxyRoles} from "./interfaces/IProxyRoles.sol";
 
-import {console} from "forge-std/console.sol";
 // int.from_bytes(Web3.keccak(text="ROLE_APP_ROLE_ADMIN"), "big") & MASK_250 .
 bytes32 constant APP_ROLE_ADMIN = bytes32(
     uint256(0x03e615638e0b79444a70f8c695bf8f2a47033bf1cf95691ec3130f64939cee99)
@@ -33,12 +32,6 @@ contract Factory is Ownable, Implementations {
     address implementation,
     bytes memory initData
   ) public {
-    console.log(
-      "Adding implementation: ",
-      implementation,
-      " to proxy: ",
-      proxy
-    );
     IRoles(proxy).registerUpgradeGovernor(address(this));
     IProxy(proxy).addImplementation(implementation, initData, false);
     IProxy(proxy).upgradeTo(implementation, initData, false);

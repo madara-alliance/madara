@@ -28,14 +28,14 @@ impl StarknetSetup {
 impl BaseLayerSetupTrait for StarknetSetup {
     #[allow(unused_variables)]
     async fn init(&mut self) -> anyhow::Result<()> {
-        Ok(())
+        unimplemented!("Starknet base layer is not implemented yet")
     }
 
     async fn setup(&mut self) -> anyhow::Result<()> {
-        Ok(())
+        unimplemented!("Starknet base layer is not implemented yet")
     }
 
     async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> anyhow::Result<()> {
-        Ok(())
+        unimplemented!("Starknet base layer is not implemented yet")
     }
 }

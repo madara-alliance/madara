@@ -32,7 +32,6 @@ pub enum ImplementationContract {
     BaseLayerFactory,
 }
 
-
 use factory::{Factory, FactoryDeploy};
 
 pub static IMPLEMENTATION_CONTRACTS: [&str; 6] =
@@ -146,7 +145,8 @@ impl BaseLayerSetupTrait for EthereumSetup {
                 log::info!("Deployed coreContract at address: {:?}", address);
                 self.implementation_address.insert(ImplementationContract::CoreContract, address.to_string());
             } else if contract == "ethBridgeEIC" {
-                let artifact_path = "./contracts/ethereum/out/configureSingleBridge.sol/ConfigureSingleBridgeEIC.json";
+                let artifact_path =
+                    "./contracts/ethereum/out/ConfigureSingleBridgeEIC.sol/ConfigureSingleBridgeEIC.json";
                 let address = self
                     .deploy_contract_from_artifact(artifact_path)
                     .await
@@ -185,9 +185,8 @@ impl BaseLayerSetupTrait for EthereumSetup {
 
         // Convert implementation addresses to the required format
         // (to be passed to the factory constructor)
-        let implementations_addresses = serde_json::to_string_pretty(&self.implementation_address)?;
         let implementation_contracts =
-            serde_json::from_str(&implementations_addresses).context("Failed to parse implementation addresses")?;
+            serde_json::from_str(&serde_json::to_string_pretty(&self.implementation_address)?).context("Failed to parse implementation addresses")?;
 
         // Deploy the factory contract
         let factory_deploy = FactoryDeploy::new(provider, self.signer.address(), implementation_contracts)
@@ -195,7 +194,8 @@ impl BaseLayerSetupTrait for EthereumSetup {
             .context("Failed to deploy Ethereum Factory")?;
         log::info!("Deployed factory at {:?}", factory_deploy.address());
 
-        self.implementation_address.insert(ImplementationContract::BaseLayerFactory, factory_deploy.address().to_string());
+        self.implementation_address
+            .insert(ImplementationContract::BaseLayerFactory, factory_deploy.address().to_string());
 
         save_addresses_to_file(
             serde_json::to_string_pretty(&self.implementation_address)?,
