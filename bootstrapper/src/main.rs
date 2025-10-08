@@ -164,6 +164,15 @@ impl ConfigBuilder {
         if let Ok(config_hash_version) = std::env::var("CONFIG_HASH_VERSION") {
             self.config_hash_version = Some(config_hash_version);
         }
+        if let Ok(app_chain_id) = std::env::var("APP_CHAIN_ID") {
+            self.app_chain_id = app_chain_id;
+        }
+        if let Ok(core_contract_address) = std::env::var("CORE_CONTRACT_ADDRESS") {
+            self.core_contract_address = Some(core_contract_address);
+        }
+        if let Ok(core_contract_implementation_address) = std::env::var("CORE_CONTRACT_IMPLEMENTATION_ADDRESS") {
+            self.core_contract_implementation_address = Some(core_contract_implementation_address);
+        }
         self
     }
 
@@ -277,8 +286,8 @@ pub async fn main() -> color_eyre::Result<()> {
             let output = setup_core_contract(&config_file, &clients).await;
 
             BootstrapperOutput {
-                starknet_contract_address: Some(output.core_contract_client.address()),
-                starknet_contract_implementation_address: Some(output.core_contract_client.implementation_address()),
+                core_contract_address: Some(output.core_contract_client.address()),
+                core_contract_implementation_address: Some(output.core_contract_client.implementation_address()),
                 ..Default::default()
             }
         }
@@ -360,9 +369,9 @@ async fn get_account<'a>(clients: &'a Clients, config_file: &'a ConfigFile) -> R
 #[derive(Serialize, Clone, Default)]
 pub struct BootstrapperOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub starknet_contract_address: Option<Address>,
+    pub core_contract_address: Option<Address>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub starknet_contract_implementation_address: Option<Address>,
+    pub core_contract_implementation_address: Option<Address>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub eth_bridge_setup_outputs: Option<EthBridgeSetupOutput>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -383,8 +392,8 @@ pub async fn bootstrap(config_file: &mut ConfigFile, clients: &Clients) -> Boots
     let l2_output = setup_l2(config_file, clients).await;
 
     BootstrapperOutput {
-        starknet_contract_address: Some(core_contract_client.core_contract_client.address()),
-        starknet_contract_implementation_address: Some(
+        core_contract_address: Some(core_contract_client.core_contract_client.address()),
+        core_contract_implementation_address: Some(
             core_contract_client.core_contract_client.implementation_address(),
         ),
         ..l2_output
