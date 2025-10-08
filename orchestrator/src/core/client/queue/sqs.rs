@@ -228,6 +228,29 @@ impl QueueClient for SQS {
     }
     /// Consume a message from the queue with version filtering.
     ///
+    /// # Why We Don't Use OmniQueue Consumer Builder
+    ///
+    /// This implementation uses internal AWS SQS SDK functions instead of the OmniQ consumer builder
+    /// due to the following reasons:
+    ///
+    /// 1. **Attribute-Level Filtering Requirements**: We need to filter messages based on the
+    ///    `OrchestratorVersion` message attribute to ensure version compatibility. The default
+    ///    OmniQ consumer builder does not provide extensibility for attribute-level filtering
+    ///    during message consumption.
+    ///
+    /// 2. **Server-Side Filtering Limitation**: AWS SQS does not support server-side filtering
+    ///    based on message attributes. All filtering must be implemented on the client-side,
+    ///    requiring direct access to message metadata before consumption.
+    ///
+    /// 3. **Re-enqueue Incompatible Messages**: When a message has an incompatible version, we need to:
+    ///    - Delete the message from the queue
+    ///    - Re-enqueue it with the same attributes for other orchestrator instances
+    ///    - Continue polling for compatible messages
+    ///    This workflow requires fine-grained control over message lifecycle that isn't available
+    ///    through the standard OmniQ abstraction.
+    ///
+    /// # Version Filtering Logic
+    ///
     /// This function filters messages based on the OrchestratorVersion attribute:
     /// - Accepts messages with matching orchestrator version
     /// - Accepts messages without version attribute (backward compatibility)
