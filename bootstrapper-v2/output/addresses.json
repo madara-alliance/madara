@@ -1,0 +1,18 @@
+{
+  "addresses": {
+    "coreContract": "0xe73bc5bd4763a3307ab5f8f126634b7e12e3da9b",
+    "ethTokenBridge": "0x8bebfb9d4307e2e0bc5f6115bea5c5eee4a23971",
+    "manager": "0xb267c5f8279a939062a20d29ca9b185b61380f10",
+    "registry": "0x08ab489c878cc3f12e52953ffde61a298359d998",
+    "tokenBridge": "0x121c11ca1b262e7a6ec03243a3ccaf826c3ecf62"
+  },
+  "implementation_addresses": {
+    "base_layer_factory": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+    "coreContract": "0x59b670e9fA9D0A427751Af201D676719a970857b",
+    "ethBridge": "0x4A679253410272dd5232B3Ff7cF5dbB88f295319",
+    "ethBridgeEIC": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+    "manager": "0x4ed7c70F96B99c776995fB64377f0d4aB3B0e1C1",
+    "multiBridge": "0xa85233C63b9Ee964Add6F2cffe00Fd84eb32338f",
+    "registry": "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44"
+  }
+}

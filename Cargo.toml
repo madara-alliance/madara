@@ -6,7 +6,6 @@ members = [
   "e2e-tests",
   # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
   "build-artifacts",
-  "bootstrapper-v2",
   "test_utils/crates/mock-atlantic-server",
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -14,8 +13,11 @@ default-members = [
   # "madara",
   "orchestrator",
   # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
+  "bootstrapper",
+  "orchestrator",
 ]
 resolver = "2"
+exclude = ["bootstrapper-v2"]
 
 [workspace.package]
 authors = ["Madara <https://github.com/madara-alliance>"]
@@ -114,7 +116,7 @@ starknet-providers = "0.16.0"
 starknet-signers = "0.14.0"
 starknet = "0.17.0"
 
-starknet-types-core = { version = "0.2.1", default-features = false, features = [
+starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
 ] }
 
@@ -296,6 +298,7 @@ swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
 testcontainers = "0.18.0"
+appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.9" }
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
