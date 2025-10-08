@@ -74,8 +74,8 @@ impl<'a> BootstrapAccount<'a> {
             .account
             .declare_v3(Arc::new(flattened_class), compiled_class_hash)
             .l1_gas(0)
-            .l2_gas(440000)
-            .l1_data_gas(128)
+            .l2_gas(0)
+            .l1_data_gas(0)
             .nonce(Felt::ZERO);
 
         let result = declaration.send().await?;
@@ -100,7 +100,7 @@ impl<'a> BootstrapAccount<'a> {
     ) -> anyhow::Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>> {
         // Read the OpenZeppelin Account contract artifacts to get the class hash
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json")
+            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_AccountUpgradeable.contract_class.json")
                 .unwrap(),
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
@@ -124,9 +124,6 @@ impl<'a> BootstrapAccount<'a> {
         // Deploy the account using the factory
         let deploy_result =
             account_factory.deploy_v3(salt)
-            .l1_gas_price(0)
-            .l2_gas_price(0)
-            .l1_data_gas_price(0)
             .l1_gas(0)
             .l2_gas(0)
             .l1_data_gas(0).send().await.context("Failed deploying OpenZeppelin account")?;

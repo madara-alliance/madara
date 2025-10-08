@@ -272,8 +272,8 @@ impl TransactionValidator {
             tx,
             execution_flags: ExecutionFlags {
                 only_query: false,
-                charge_fee: true,
-                validate,
+                charge_fee: false, // TODO: this should be as per the flag we have right?
+                validate: false, // TODO: maybe based on the charge fee itself?
                 strict_nonce_check: false,
             },
         };
@@ -288,14 +288,16 @@ impl TransactionValidator {
                 .into());
             };
 
-            tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
+            tracing::info!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
             let account_tx = account_tx.clone();
             let mut validator = MadaraBlockView::from(self.backend.block_view_on_preconfirmed_or_fake()?)
                 .new_execution_context()?
                 .into_transaction_validator();
             // spawn_blocking: avoid starving the tokio workers during execution.
+            tracing::info!("starting the validation!!!");
             mp_utils::spawn_blocking(move || validator.perform_validations(account_tx)).await?;
+            tracing::info!("validatoin successfull");
         }
 
         // Forward the validated tx.
@@ -343,6 +345,7 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedDeclareTxn,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        tracing::info!("got the submit declare transaction here in the transaction validator");
         if tx.is_query() {
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::InvalidTransactionVersion,
@@ -365,7 +368,7 @@ impl SubmitTransaction for TransactionValidator {
         };
 
         let res = ClassAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), class_hash };
-
+        tracing::info!("calling the accept_tx now");
         self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
     }

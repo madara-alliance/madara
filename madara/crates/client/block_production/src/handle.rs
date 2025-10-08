@@ -88,6 +88,7 @@ impl SubmitTransaction for BlockProductionHandle {
         &self,
         tx: BroadcastedDeclareTxn,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        println!("got declare txn in the block production handle");
         self.tx_converter.submit_declare_transaction(tx).await
     }
     async fn submit_deploy_account_transaction(

@@ -143,6 +143,13 @@ impl ValidatedTransaction {
         };
 
         let tx = BTransaction::new_for_sequencing(tx);
+        let tx = match tx {
+            BTransaction::Account(mut txn) => {
+                txn.execution_flags.charge_fee = false;
+                BTransaction::Account(txn)
+            },
+            _ => tx
+        };
         Ok((tx, self.arrived_at, self.declared_class))
     }
 }

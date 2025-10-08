@@ -95,6 +95,7 @@ impl SubmitTransaction for GatewayProvider {
         &self,
         tx: BroadcastedDeclareTxn,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        println!("got the declare txn for the GatewayProvider");
         self.add_declare_transaction(tx.try_into().map_err(map_conv_error)?)
             .await
             .map_err(map_gateway_error)

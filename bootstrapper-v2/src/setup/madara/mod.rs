@@ -25,6 +25,8 @@ use starknet::{
 use starknet::{providers::Provider, signers::LocalWallet};
 use std::collections::HashMap;
 use std::fs;
+use std::thread::sleep;
+use std::time::Duration;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]

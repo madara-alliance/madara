@@ -65,7 +65,7 @@ impl TransactionWithHash {
             class_info,
             paid_fee_on_l1,
             deployed_address.map(|address| address.try_into().expect("Address conversion should never fail")),
-            ExecutionFlags::default(),
+            ExecutionFlags { only_query: false, charge_fee: false, validate: false, strict_nonce_check: false },
         )?)
     }
 }

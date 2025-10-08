@@ -46,7 +46,7 @@ pub async fn trace_block_transactions_view(
         .into_iter()
         .map(|tx| prepare_tx_for_reexecution(&state_view, tx))
         .collect::<Result<_, _>>()?;
-    println!("we got txns: {:?}", transactions);
+    // println!("we got txns: {:?}", transactions);
     let (executions_results, exec_context) = mp_utils::spawn_blocking(move || {
         Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], transactions)?, exec_context))
     })
@@ -72,6 +72,5 @@ pub async fn trace_block_transactions(
 ) -> StarknetRpcResult<Vec<TraceBlockTransactionsResult>> {
     log::info!("got the block trace transaction request for block_id: {:?}", block_id);
     let view = starknet.resolve_block_view(block_id)?;
-    log::info!("got the view: {:?}", view);
     trace_block_transactions_view(&view).await
 }

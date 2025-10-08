@@ -41,7 +41,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
             .enumerate()
             .map(|(index, tx): (_, Transaction)| {
                 let hash = tx.tx_hash();
-                tracing::debug!("executing {:#x} (trace)", hash.to_felt());
+                tracing::info!("executing {:#x} (trace)", hash.to_felt());
                 let tx_type = tx.tx_type();
                 let fee_type = tx.fee_type();
 

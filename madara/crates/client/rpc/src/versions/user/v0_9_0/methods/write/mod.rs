@@ -18,6 +18,7 @@ impl StarknetWriteRpcApiV0_9_0Server for Starknet {
     ///
     /// * `declare_transaction_result` - the result of the declare transaction
     async fn add_declare_transaction(&self, declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash> {
+        println!("got the declare transaction");
         V0_8_1Impl::add_declare_transaction(self, declare_transaction).await
     }
 

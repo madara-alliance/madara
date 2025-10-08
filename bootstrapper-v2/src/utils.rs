@@ -116,12 +116,9 @@ pub async fn declare_contract(
 
     let txn = account
         .declare_v3(Arc::new(flattened_class), class_hash)
-        .l1_gas_price(0)
-        .l2_gas_price(0)
-        .l1_data_gas_price(0)
-        .l1_gas(0)
-        .l2_gas(0)
-        .l1_data_gas(0)
+        .l1_gas(1000000000)
+        .l2_gas(1000000000)
+        .l1_data_gas(1000000000)
         .send()
         .await
         .expect("Error in declaring the contract using Cairo 1 declaration using the provided account");
@@ -135,12 +132,9 @@ pub async fn execute_v3(
 ) -> anyhow::Result<InvokeTransactionResult, anyhow::Error> {
     let txn_res = account
         .execute_v3(calls.clone())
-        .l1_gas_price(0)
-        .l2_gas_price(0)
-        .l1_data_gas_price(0)
-        .l1_gas(0)
-        .l2_gas(0)
-        .l1_data_gas(0)
+        .l1_gas(1000000000)
+        .l2_gas(1000000000)
+        .l1_data_gas(1000000000)
         .send()
         .await
         .context("Error in making execute_v3 the contract for calls {:?}")?;

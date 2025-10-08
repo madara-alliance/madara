@@ -57,6 +57,7 @@ impl SubmitTransaction for SubmitTransactionSwitch {
         &self,
         tx: BroadcastedDeclareTxn,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        println!("got the declare txn in the SubmitTransactionSwitch");
         self.provider()?.submit_declare_transaction(tx).await
     }
     async fn submit_deploy_account_transaction(

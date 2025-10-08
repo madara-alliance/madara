@@ -1,9 +1,9 @@
 {
   "addresses": {
-    "l2_eth_bridge": "0x62cacd4c439ebf2922712f980a5836a87338560354571a1388014d164dbc6cb",
-    "l2_eth_token": "0x1c400f3f8dec43f87911c95a7f74cbd21d59884b1b112fb2bd611d8a28f23d4",
-    "l2_token_bridge": "0x5373c1890513cb06053bf45bd20f40ce242a427a3135411cc8ac964e3a06ba8",
-    "madara_factory": "0x565d49d2103657a83c355cdbfd068a4d39e4f1a4a3fc14dadbfd88bbf70423",
+    "l2_eth_bridge": "0x40f4529749e7f30dac740550b893aad4fe82a195bdfa862bbceec74a96cf0b5",
+    "l2_eth_token": "0x439764b39c10ef5fd88f3f4528abbd6c97f787d528075b5508de47671fc3244",
+    "l2_token_bridge": "0x4afb2c485dae3bee4182ba7b943f8bf7256f41363433df044e311ac7633b40b",
+    "madara_factory": "0x167a0e49a1804da11593a27cf023e602a9c15fce0ba3040734763d3d3d2532c",
     "universal_deployer": "0x2ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125"
   },
   "classes": {
