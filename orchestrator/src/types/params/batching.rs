@@ -1,4 +1,5 @@
 use crate::cli::batching::BatchingCliArgs;
+use crate::types::constant::BLOB_LEN;
 
 #[derive(Debug, Clone)]
 pub struct BatchingParams {
@@ -7,6 +8,13 @@ pub struct BatchingParams {
     pub batching_worker_lock_duration: u64,
     pub max_blocks_per_snos_batch: Option<u64>,
     pub max_snos_batches_per_aggregator_batch: u64,
+    pub max_num_blobs: usize,
+    /// Max number of felts (each encoded using 256 bits) that can be attached in a single state
+    /// update transaction.
+    ///
+    /// It's calculated by multiplying [BLOB_LEN] with max number of blobs to attach in a txn
+    /// (taken through ENV/CLI, default is 6, max that ethereum allows is 9)
+    pub max_blob_size: usize,
 }
 
 impl From<BatchingCliArgs> for BatchingParams {
@@ -17,6 +25,8 @@ impl From<BatchingCliArgs> for BatchingParams {
             batching_worker_lock_duration: args.batching_worker_lock_duration,
             max_blocks_per_snos_batch: args.max_blocks_per_snos_batch,
             max_snos_batches_per_aggregator_batch: args.max_snos_batches_per_aggregator_batch,
+            max_num_blobs: args.max_num_blobs,
+            max_blob_size: args.max_num_blobs * BLOB_LEN,
         }
     }
 }
