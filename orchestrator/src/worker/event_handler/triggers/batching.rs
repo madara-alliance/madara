@@ -693,7 +693,7 @@ impl BatchingTrigger {
         state_update_len: Option<usize>,
         batch: &AggregatorBatch,
     ) -> bool {
-        info!("checking if we need to close the aggregator batch");
+        debug!("checking if we need to close the aggregator batch");
         (!batch.is_batch_ready)
             && ((state_update_len.is_some() && state_update_len.unwrap() > MAX_BLOB_SIZE)
                 || (batch.num_blocks >= config.params.batching_config.max_batch_size)
@@ -702,7 +702,7 @@ impl BatchingTrigger {
     }
 
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
-        info!("checking if we need to close the snos batch");
+        debug!("checking if we need to close the snos batch");
         if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
             // If the MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env is set, we use that value
             // Mostly, it'll be used for testing purposes
