@@ -35,8 +35,8 @@ async fn test_setup(args: &ConfigFile, clients: &Clients) -> BootstrapperOutput 
     let l2_output = setup_l2(&mut config, clients).await;
 
     BootstrapperOutput {
-        starknet_contract_address: Some(core_contract_address),
-        starknet_contract_implementation_address: Some(core_contract_implementation_address),
+        core_contract_address: Some(core_contract_address),
+        core_contract_implementation_address: Some(core_contract_implementation_address),
         ..l2_output
     }
 }
