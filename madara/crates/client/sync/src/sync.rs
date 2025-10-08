@@ -129,12 +129,8 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     pub async fn run(&mut self, mut ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
-        
-        // Get the pre-sync status 
-        let first_block = match self.backend.db.get_chain_tip()? {
-            StorageChainTip::Confirmed(block_number) => block_number,
-            _ => return Err(anyhow!("Chain tip is not confirmed")),
-        };
+
+        let first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
 
         let interval_duration = Duration::from_secs(3);
         let mut interval = tokio::time::interval_at(Instant::now() + interval_duration, interval_duration);
@@ -174,7 +170,14 @@ impl<P: ForwardPipeline> SyncController<P> {
 
             // Squash the current accumulated diff with the next block's diff
             let state_diffs = vec![&accumulated_state_diff, &next_state_diff];
-            accumulated_state_diff = squash(state_diffs, Some(first_block-1), self.backend.clone()).await?;
+
+            let pre_range_block_check = if first_block == 0 {
+                None
+            } else {
+                Some(first_block - 1)
+            };
+
+            accumulated_state_diff = squash(state_diffs, pre_range_block_check, self.backend.clone()).await?;
         }
 
         println!("SNAP-SYNC: Calculating global state root for blocks {}..{}", first_block, latest_block);
@@ -182,9 +185,11 @@ impl<P: ForwardPipeline> SyncController<P> {
         // Apply the accumulated state diff to calculate the global state root
         let global_state_root = self.backend
             .write_access()
-            .apply_to_global_trie(first_block, vec![accumulated_state_diff].iter())?;
+            .apply_to_global_trie(latest_block, vec![accumulated_state_diff].iter())?;
 
         println!("SNAP-SYNC: Global state root: {:?} for blocks {}..{}", global_state_root, first_block, latest_block);
+
+        self.backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
 
         // TODO: validate the computed global state root against the gateway's value
 
