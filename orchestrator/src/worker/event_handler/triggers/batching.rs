@@ -21,6 +21,7 @@ use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
 use orchestrator_prover_client_interface::Task;
 use orchestrator_utils::layer::Layer;
+use serde::{Deserialize, Serialize};
 use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
@@ -40,6 +41,12 @@ struct BatchState<'a> {
     close_aggregator_batch: bool,       // boolean to decide if we can close the block
     snos_batch_status: SnosBatchStatus, // New status of SNOS batch
     state_update: &'a StateUpdate,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct JsonRpcResponse {
+    pub result: Option<BouncerWeights>,
+    pub error: Option<serde_json::Value>,
 }
 
 // Community doc for v0.13.2 - https://community.starknet.io/t/starknet-v0-13-2-pre-release-notes/114223
@@ -437,7 +444,7 @@ impl BatchingTrigger {
         if self.should_close_snos_batch(config, &current_snos_batch).await? {
             // Close the current batch and start a new batch
             self.update_or_close_snos_batch(&current_snos_batch, config, SnosBatchStatus::Closed).await?;
-            self.start_snos_batch(block_number, None, current_snos_batch.snos_batch_id + 1)
+            self.start_snos_batch(current_snos_batch.snos_batch_id + 1, None, block_number)
         } else {
             // Continue with the same SNOS batch
             self.update_snos_batch_info(current_snos_batch, block_number).await
@@ -497,6 +504,11 @@ impl BatchingTrigger {
     async fn get_range_for_assigning_batches_l3(&self, config: &Arc<Config>) -> Result<(u64, u64), JobError> {
         // Getting the latest snos batch in DB
         let latest_snos_batch = config.database().get_latest_snos_batch().await?;
+
+        // Check if any existing SNOS batch needs to be closed
+        if let Some(snos_batch) = &latest_snos_batch {
+            self.check_and_close_snos_batch(config, snos_batch).await?;
+        }
 
         // Getting the latest block number for snos batch from DB
         let latest_snos_block_in_db = latest_snos_batch.map_or(-1, |batch| batch.end_block as i64);
@@ -829,6 +841,10 @@ impl BatchingTrigger {
                     >= config.params.batching_config.max_batch_time_seconds))
     }
 
+    /// Determine if we need to close the snos batch.
+    ///
+    /// NOTE: This will check if the builtin weights are overflowing for blocks from start block
+    /// till end block + 1
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
         info!("checking if we need to close the snos batch");
         if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
@@ -837,17 +853,37 @@ impl BatchingTrigger {
             warn!("Using MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {}", max_blocks_per_snos_batch);
             return Ok(batch.num_blocks >= max_blocks_per_snos_batch);
         }
-        let current_builtins = BouncerWeights::empty();
-        for block_number in batch.start_block..=batch.end_block {
+
+        if (Utc::now().round_subsecs(0) - batch.created_at).abs().num_seconds() as u64
+            >= config.params.batching_config.max_batch_time_seconds
+        {
+            return Ok(true);
+        }
+
+        let mut current_builtins = Some(BouncerWeights::empty());
+        for block_number in batch.start_block..=(batch.end_block + 1) {
             // Get the bouncer weights for this block
             info!("getting the bouncer weights for block number: {:?}", block_number);
             let bouncer_weights = self
                 .get_block_builtin_weights(config, block_number)
                 .await
                 .map_err(|e| JobError::ProviderError(e.to_string()))?;
-            current_builtins.checked_add(bouncer_weights);
+            if let Some(cb) = &mut current_builtins {
+                current_builtins = cb.checked_add(bouncer_weights);
+            } else {
+                // Addition caused overflow in last iteration
+                panic!("Builtin addition caused overflow at block {}. This was batch from {} to {}. This should not have happened", block_number, batch.start_block, batch.end_block);
+            }
         }
-        Ok(config.params.bouncer_weights_limit.checked_sub(current_builtins).is_none())
+
+        if let Some(cb) = &mut current_builtins {
+            Ok(config.params.bouncer_weights_limit.checked_sub(*cb).is_none())
+        } else {
+            // Addition cause overflow in last iteration. This is okay since the last addition was
+            // from a block which is not present in the Batch.
+            // We should close the batch here
+            Ok(true)
+        }
     }
 
     /// Checks if we need to close the batches and closes them if needed.
@@ -883,6 +919,22 @@ impl BatchingTrigger {
                     &SnosBatchUpdates { end_block: Some(snos_batch.end_block), status: Some(SnosBatchStatus::Closed) },
                 )
                 .await?;
+        } else {
+            self.check_and_close_snos_batch(config, snos_batch).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn check_and_close_snos_batch(&self, config: &Arc<Config>, snos_batch: &SnosBatch) -> Result<(), JobError> {
+        if self.should_close_snos_batch(config, snos_batch).await? {
+            config
+                .database()
+                .update_or_create_snos_batch(
+                    snos_batch,
+                    &SnosBatchUpdates { end_block: Some(snos_batch.end_block), status: Some(SnosBatchStatus::Closed) },
+                )
+                .await?;
         }
 
         Ok(())
@@ -895,7 +947,7 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         block_number: u64,
     ) -> Result<BouncerWeights, JobError> {
-        use serde::{Deserialize, Serialize};
+        use serde::Serialize;
 
         #[derive(Serialize)]
         struct JsonRpcRequest {
@@ -908,12 +960,6 @@ impl BatchingTrigger {
         #[derive(Serialize)]
         struct AdminRequestData {
             block_number: u64,
-        }
-
-        #[derive(Deserialize)]
-        struct JsonRpcResponse {
-            result: Option<BouncerWeights>,
-            error: Option<serde_json::Value>,
         }
 
         // Create the JSON-RPC request in the style of starknet_providers
