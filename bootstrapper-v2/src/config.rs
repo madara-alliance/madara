@@ -2,7 +2,7 @@ use crate::setup::base_layer::ethereum::factory::Factory;
 use crate::setup::base_layer::BaseLayerSetupTrait;
 use serde::Deserialize;
 use std::collections::HashMap;
-use crate::setup::base_layer::ethereum::ImplementationContract;
+use crate::setup::base_layer::ethereum::implementation_contracts::ImplementationContract;
 
 use crate::setup::base_layer::ethereum::EthereumSetup;
 use crate::setup::base_layer::starknet::StarknetSetup;

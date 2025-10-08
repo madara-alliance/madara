@@ -2,6 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Proxy} from "src/starkware/solidity/upgrade/Proxy.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import "./libraries/DataTypes.sol";
 import {Implementations} from "./Implementations.sol";
@@ -17,7 +18,7 @@ import {IProxyRoles} from "./interfaces/IProxyRoles.sol";
 bytes32 constant APP_ROLE_ADMIN = bytes32(
     uint256(0x03e615638e0b79444a70f8c695bf8f2a47033bf1cf95691ec3130f64939cee99)
 );
-contract Factory is Ownable, Implementations {
+contract Factory is Ownable, Pausable, Implementations {
   event BaseLayerContractsDeployed(BaseLayerContracts _baseLayerContracts);
 
   constructor(
@@ -35,6 +36,7 @@ contract Factory is Ownable, Implementations {
     IRoles(proxy).registerUpgradeGovernor(address(this));
     IProxy(proxy).addImplementation(implementation, initData, false);
     IProxy(proxy).upgradeTo(implementation, initData, false);
+    IRoles(proxy).revokeUpgradeGovernor(address(this));
   }
 
   function setup(
@@ -42,6 +44,7 @@ contract Factory is Ownable, Implementations {
     address operator,
     address governor
   ) public returns (BaseLayerContracts memory baseLayerContracts) {
+    _requireNotPaused();
     baseLayerContracts.coreContract = setupCoreContract(
       implementationContracts.coreContract,
       coreContractInitData,
@@ -90,7 +93,7 @@ contract Factory is Ownable, Implementations {
 
     emit BaseLayerContractsDeployed(baseLayerContracts);
     return baseLayerContracts;
-  }
+  } 
 
   function setupCoreContract(
     address coreContractImplementation,
@@ -98,6 +101,7 @@ contract Factory is Ownable, Implementations {
     address operator,
     address governor
   ) public returns (address) {
+    _requireNotPaused();
     // Deploying proxy with 0 upgradeActivationDelay
     Proxy coreContractProxy = new Proxy(0);
     // [sub_contracts_addresses[], eic address, initData].
@@ -143,6 +147,7 @@ contract Factory is Ownable, Implementations {
     address messagingContract, // coreContract
     address governor
   ) public returns (address) {
+    _requireNotPaused();
     Proxy multiBridgeProxy = new Proxy(0);
     bytes memory initData = abi.encode(
       address(0),
@@ -167,6 +172,7 @@ contract Factory is Ownable, Implementations {
     address eicContract,
     address governor
   ) public returns (address) {
+    _requireNotPaused();
     Proxy ethBridgePxoxy = new Proxy(0);
     // 'eth' is 0x657468
     bytes memory initData = abi.encode(
@@ -192,6 +198,7 @@ contract Factory is Ownable, Implementations {
     address managerProxy,
     address governor
   ) public {
+    _requireNotPaused();
     bytes memory initData = abi.encode(address(0), managerProxy);
     addImplementationAndUpgrade(
       address(registryProxy),
@@ -230,6 +237,7 @@ contract Factory is Ownable, Implementations {
     address ethTokenBridge,
     address tokenBridge
   ) public onlyOwner {
+    _requireNotPaused();
     IRoles(ethTokenBridge).registerAppRoleAdmin(address(this));
     IRoles(ethTokenBridge).registerAppGovernor(address(this));
     IBridge(ethTokenBridge).setL2TokenBridge(l2EthBridgeAddress);

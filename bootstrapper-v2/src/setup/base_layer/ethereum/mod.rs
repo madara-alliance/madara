@@ -1,4 +1,5 @@
 pub mod factory;
+pub mod implementation_contracts;
 
 use crate::setup::base_layer::BaseLayerSetupTrait;
 use crate::utils::save_addresses_to_file;
@@ -19,23 +20,8 @@ use factory::BaseLayerContracts;
 use log;
 use serde_json;
 use std::collections::HashMap;
-
-// Types for Map keys
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum ImplementationContract {
-    CoreContract,
-    Manager,
-    Registry,
-    MultiBridge,
-    EthBridge,
-    EthBridgeEic,
-    BaseLayerFactory,
-}
-
 use factory::{Factory, FactoryDeploy};
-
-pub static IMPLEMENTATION_CONTRACTS: [&str; 6] =
-    ["coreContract", "manager", "registry", "multiBridge", "ethBridge", "ethBridgeEIC"];
+use implementation_contracts::{ImplementationContract, IMPLEMENTATION_CONTRACTS_DATA};
 
 #[allow(dead_code)]
 pub struct EthereumSetup {
@@ -109,8 +95,8 @@ impl EthereumSetup {
                 "registry": self.implementation_address.get(&ImplementationContract::Registry),
                 "multiBridge": self.implementation_address.get(&ImplementationContract::MultiBridge),
                 "ethBridge": self.implementation_address.get(&ImplementationContract::EthBridge),
-                "ethBridgeEIC": self.implementation_address.get(&ImplementationContract::EthBridgeEic),
-                "base_layer_factory": self.implementation_address.get(&ImplementationContract::BaseLayerFactory),
+                "ethBridgeEIC": self.implementation_address.get(&ImplementationContract::EthBridgeEIC),
+                "baseLayerFactory": self.implementation_address.get(&ImplementationContract::BaseLayerFactory),
             },
             "addresses": self.base_layer_contracts.as_ref().map(|contracts| {
                 serde_json::to_value(contracts).unwrap_or(serde_json::Value::Null)
@@ -133,42 +119,14 @@ impl EthereumSetup {
 #[async_trait]
 impl BaseLayerSetupTrait for EthereumSetup {
     async fn init(&mut self) -> anyhow::Result<()> {
-        for contract in IMPLEMENTATION_CONTRACTS {
-            // let address = self.implementation_address.get(contract).unwrap();
-            if contract == "coreContract" {
-                let artifact_path = "../build-artifacts/cairo_lang/Starknet.json";
-                let address = self
-                    .deploy_contract_from_artifact(artifact_path)
-                    .await
-                    .with_context(|| format!("Failed to deploy {}", contract))?;
+        for contract_info in IMPLEMENTATION_CONTRACTS_DATA {
+            let address = self
+                .deploy_contract_from_artifact(&contract_info.artifact_path)
+                .await
+                .with_context(|| format!("Failed to deploy {:?}", contract_info.implementation_contract))?;
 
-                log::info!("Deployed coreContract at address: {:?}", address);
-                self.implementation_address.insert(ImplementationContract::CoreContract, address.to_string());
-            } else if contract == "ethBridgeEIC" {
-                let artifact_path =
-                    "./contracts/ethereum/out/ConfigureSingleBridgeEIC.sol/ConfigureSingleBridgeEIC.json";
-                let address = self
-                    .deploy_contract_from_artifact(artifact_path)
-                    .await
-                    .with_context(|| format!("Failed to deploy {}", contract))?;
-                log::info!("Deployed ConfigureSingleBridgeEIC at address: {:?}", address);
-                self.implementation_address.insert(ImplementationContract::EthBridgeEic, address.to_string());
-            } else {
-                let artifact_path = format!("../build-artifacts/starkgate_latest/solidity/{}.json", contract);
-                let address = self
-                    .deploy_contract_from_artifact(&artifact_path)
-                    .await
-                    .with_context(|| format!("Failed to deploy {}", contract))?;
-                log::info!("Deployed {} at address: {:?}", contract, address);
-                let contract_enum = match contract {
-                    "manager" => ImplementationContract::Manager,
-                    "registry" => ImplementationContract::Registry,
-                    "multiBridge" => ImplementationContract::MultiBridge,
-                    "ethBridge" => ImplementationContract::EthBridge,
-                    _ => panic!("Unknown contract: {}", contract),
-                };
-                self.implementation_address.insert(contract_enum, address.to_string());
-            }
+            log::info!("Deployed {:?} at address: {:?}", contract_info.implementation_contract, address);
+            self.implementation_address.insert(contract_info.implementation_contract, address.to_string());
         }
 
         // Write the addresses to a JSON file
