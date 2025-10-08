@@ -1,4 +1,5 @@
 use crate::types::params::OTELConfig;
+use crate::utils::logging::{JsonEventFormatter, PrettyFormatter};
 use crate::OrchestratorResult;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{global, KeyValue};
@@ -12,6 +13,7 @@ use opentelemetry_sdk::{runtime, Resource};
 use std::time::Duration;
 use tracing::warn;
 use tracing_opentelemetry::OpenTelemetryLayer;
+use tracing_subscriber::fmt as fmt_layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::EnvFilter;
 use url::Url;
@@ -37,20 +39,42 @@ impl OrchestratorInstrumentation {
                 Ok(Self { otel_config: config.clone(), meter_provider: None })
             }
             Some(ref endpoint) => {
-                let tracing_subscriber = tracing_subscriber::registry()
-                    .with(tracing_subscriber::fmt::layer())
-                    .with(EnvFilter::from_default_env());
-
                 let meter_provider = Self::instrument_metric_provider(config, endpoint)?;
                 let tracer = Self::instrument_tracer_provider(config, endpoint)?;
                 let logger = Self::instrument_logger_provider(config, endpoint)?;
 
-                let subscriber = tracing_subscriber
-                    .with(OpenTelemetryLayer::new(tracer))
-                    .with(OpenTelemetryTracingBridge::new(&logger));
+                // Respect LOG_FORMAT when composing the subscriber with OTEL layers
+                let log_format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string());
 
-                // Force overwrite any existing global subscriber
-                let _ = tracing::subscriber::set_global_default(subscriber);
+                if log_format == "json" {
+                    let subscriber = tracing_subscriber::registry()
+                        .with(EnvFilter::from_default_env())
+                        .with(
+                            fmt_layer::layer()
+                                .with_target(true)
+                                .with_thread_ids(false)
+                                .with_file(true)
+                                .with_line_number(true)
+                                .event_format(JsonEventFormatter),
+                        )
+                        .with(OpenTelemetryLayer::new(tracer))
+                        .with(OpenTelemetryTracingBridge::new(&logger));
+                    let _ = tracing::subscriber::set_global_default(subscriber);
+                } else {
+                    let subscriber = tracing_subscriber::registry()
+                        .with(EnvFilter::from_default_env())
+                        .with(
+                            fmt_layer::layer()
+                                .with_target(true)
+                                .with_thread_ids(false)
+                                .with_file(true)
+                                .with_line_number(true)
+                                .event_format(PrettyFormatter),
+                        )
+                        .with(OpenTelemetryLayer::new(tracer))
+                        .with(OpenTelemetryTracingBridge::new(&logger));
+                    let _ = tracing::subscriber::set_global_default(subscriber);
+                }
                 warn!("OpenTelemetry tracing subscriber initialized (existing subscriber overwritten if present)");
                 Ok(Self { otel_config: config.clone(), meter_provider: Some(meter_provider) })
             }

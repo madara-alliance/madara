@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
+use tracing::{debug, error, info, trace, warn};
 
 pub struct ProvingJobTrigger;
 
@@ -19,24 +20,24 @@ impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        tracing::info!(log_type = "starting", category = "ProvingWorker", "ProvingWorker started.");
+        info!(log_type = "starting", "ProvingWorker started.");
 
-        // Self-healing: recover any orphaned Proving jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofCreation).await {
-            tracing::error!(error = %e, "Failed to heal orphaned Proving jobs, continuing with normal processing");
-        }
+        // Self-healing: We intentionally do not heal orphaned Proving jobs as
+        // they might create inconsistent state on the atlantic side,
+        // sending request twice, opening the same bucket again, adding the the
+        // same block again etc.
 
         let successful_snos_jobs = config
             .database()
             .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation)
             .await?;
 
-        tracing::debug!("Found {} successful SNOS jobs without proving jobs", successful_snos_jobs.len());
+        debug!("Found {} successful SNOS jobs without proving jobs", successful_snos_jobs.len());
 
         for snos_job in successful_snos_jobs {
             // Extract SNOS metadata
             let snos_metadata: SnosMetadata = snos_job.metadata.specific.try_into().map_err(|e| {
-                tracing::error!(job_id = %snos_job.internal_id, error = %e, "Invalid metadata type for SNOS job");
+                error!(job_id = %snos_job.internal_id, error = %e, "Invalid metadata type for SNOS job");
                 e
             })?;
 
@@ -51,7 +52,7 @@ impl JobTrigger for ProvingJobTrigger {
                             Some(snos_metadata.block_number - batch.start_block + 1),
                         ),
                         None => {
-                            tracing::warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.block_number);
+                            warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.block_number);
                             continue;
                         }
                     }
@@ -61,7 +62,7 @@ impl JobTrigger for ProvingJobTrigger {
                     let snos_fact = match &snos_metadata.snos_fact {
                         Some(fact) => fact.clone(),
                         None => {
-                            tracing::error!(job_id = %snos_job.internal_id, "SNOS fact not found in metadata");
+                            error!(job_id = %snos_job.internal_id, "SNOS fact not found in metadata");
                             continue;
                         }
                     };
@@ -87,7 +88,7 @@ impl JobTrigger for ProvingJobTrigger {
                 }),
             };
 
-            tracing::debug!(job_id = %snos_job.internal_id, "Creating proof creation job for SNOS job");
+            debug!(job_id = %snos_job.internal_id, "Creating proof creation job for SNOS job");
             match JobHandlerService::create_job(
                 JobType::ProofCreation,
                 snos_job.internal_id.clone(),
@@ -96,9 +97,9 @@ impl JobTrigger for ProvingJobTrigger {
             )
             .await
             {
-                Ok(_) => tracing::info!(block_id = %snos_job.internal_id, "Successfully created new proving job"),
+                Ok(_) => info!(block_id = %snos_job.internal_id, "Successfully created new proving job"),
                 Err(e) => {
-                    tracing::warn!(job_id = %snos_job.internal_id, error = %e, "Failed to create new proving job");
+                    warn!(job_id = %snos_job.internal_id, error = %e, "Failed to create new proving job");
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::ProofCreation)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
@@ -108,7 +109,7 @@ impl JobTrigger for ProvingJobTrigger {
             }
         }
 
-        tracing::trace!(log_type = "completed", category = "ProvingWorker", "ProvingWorker completed.");
+        trace!(log_type = "completed", "ProvingWorker completed.");
         Ok(())
     }
 }

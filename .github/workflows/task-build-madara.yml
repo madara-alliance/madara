@@ -21,8 +21,6 @@ jobs:
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
       cairo-artifacts-hash: ${{ steps.generate-binary-hash.outputs.cairo-hash }}
-    permissions:
-      pull-requests: write
 
     steps:
       - name: Checkout Repository
@@ -42,7 +40,6 @@ jobs:
       # Build Madara
       - name: Cargo build
         run: |
-          export GIT_COMMIT_HASH=$GITHUB_SHA
           CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin madara --release
 
       # Generate hash for the Madara binary

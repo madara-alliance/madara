@@ -185,7 +185,7 @@ frestart: fclean
 .PHONY: artifacts
 artifacts:
 	./scripts/artifacts.sh
-	
+
 
 .PHONY: check
 check:
@@ -197,8 +197,6 @@ check:
 	@cargo fmt -- --check
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
-	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
-	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore -f .
 	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
 	@cargo clippy --workspace --no-deps -- -D warnings
 	@echo -e "$(INFO)Running cargo clippy workspace tests...$(RESET)"
@@ -207,6 +205,8 @@ check:
 	@cargo clippy --workspace --exclude madara --features testing --no-deps -- -D warnings
 	@echo -e "$(INFO)Running cargo clippy with testing features and tests...$(RESET)"
 	@cargo clippy --workspace --exclude madara --features testing --tests --no-deps -- -D warnings
+	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
+	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
 
 .PHONY: fmt
@@ -260,23 +260,23 @@ git-hook:
 .PHONY: setup-l2
 setup-l2:
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
-	@cargo run --package orchestrator -- setup  --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: setup-l3
 setup-l3:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
-	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: run-orchestrator-l2
 run-orchestrator-l2:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum 2>&1
+	@cargo run --release --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum --madara-version 0.13.2 2>&1
 
 
 .PHONY: run-orchestrator-l3
 run-orchestrator-l3:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet 2>&1
+	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --mock-atlantic-server --da-on-starknet 2>&1
 
 .PHONY: watch-orchestrator
 watch-orchestrator:

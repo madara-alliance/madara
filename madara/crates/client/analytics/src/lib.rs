@@ -18,22 +18,20 @@
 //! [services]: mp_utils::service::Service
 
 use ::time::UtcOffset;
+use formatter::CustomFormatter;
+use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceRunner};
+use opentelemetry::global;
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use opentelemetry::trace::TracerProvider;
-use opentelemetry::{global, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{ExportConfig, WithExportConfig};
-use opentelemetry_sdk::logs::LoggerProvider;
-use opentelemetry_sdk::metrics::reader::{DefaultAggregationSelector, DefaultTemporalitySelector};
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
-use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
-use opentelemetry_sdk::{runtime, Resource};
-use std::fmt;
+use opentelemetry_sdk::trace::{BatchConfigBuilder, BatchSpanProcessor, SdkTracerProvider};
+use opentelemetry_sdk::Resource;
+use prometheus_endpoint::PrometheusEndpoint;
 use std::fmt::Display;
-use std::time::{Duration, SystemTime};
-use time::{format_description, OffsetDateTime};
-use tracing::field::{Field, Visit};
-use tracing::Level;
+use std::time::Duration;
 use tracing_core::LevelFilter;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -41,134 +39,171 @@ use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::EnvFilter;
 use url::Url;
 
-/// Utility class responsible for initializing metrics for the node.
-pub struct Analytics {
-    meter_provider: Option<SdkMeterProvider>,
-    service_name: String,
-    collection_endpoint: Option<Url>,
+mod formatter;
+mod prometheus_endpoint;
+
+pub use prometheus_endpoint::PrometheusEndpointConfig;
+
+#[derive(Debug, Clone)]
+pub struct AnalyticsConfig {
+    pub service_name: String,
+    pub collection_endpoint: Option<Url>,
+    pub prometheus_endpoint_config: PrometheusEndpointConfig,
 }
 
-impl Analytics {
-    pub fn new(service_name: String, collection_endpoint: Option<Url>) -> anyhow::Result<Self> {
-        Ok(Self { meter_provider: None, service_name, collection_endpoint })
+impl Default for AnalyticsConfig {
+    fn default() -> Self {
+        Self {
+            service_name: "Madara".into(),
+            collection_endpoint: None,
+            prometheus_endpoint_config: Default::default(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Providers {
+    meter_provider: SdkMeterProvider,
+    tracer_provider: SdkTracerProvider,
+    logger_provider: SdkLoggerProvider,
+}
+
+pub struct AnalyticsService {
+    providers: Option<Providers>,
+    config: AnalyticsConfig,
+    prometheus_endpoint: Option<PrometheusEndpoint>,
+}
+
+impl AnalyticsService {
+    pub fn new(config: AnalyticsConfig) -> anyhow::Result<Self> {
+        let prometheus_endpoint = if config.prometheus_endpoint_config.enabled {
+            Some(PrometheusEndpoint::new(config.prometheus_endpoint_config.clone())?)
+        } else {
+            None
+        };
+        Ok(Self { providers: None, config, prometheus_endpoint })
     }
 
     /// Initializes metrics, along with the [opentelemetry] collector endpoint should it have been
     /// set via the `analytics_collection_endpoint` cli argument.
     pub fn setup(&mut self) -> anyhow::Result<()> {
-        let local_offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
-        let custom_formatter = CustomFormatter { local_offset };
-
         let tracing_subscriber = tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer().event_format(custom_formatter).with_writer(std::io::stderr))
+            .with(tracing_subscriber::fmt::layer().event_format(CustomFormatter::new()))
             .with(EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env()?);
 
-        if self.collection_endpoint.is_none() {
+        if let Some(endpoint) = self.prometheus_endpoint.as_mut() {
+            let exporter = endpoint.exporter.take().expect("Endpoint already setup");
+            let provider = SdkMeterProvider::builder().with_reader(exporter).build();
+            global::set_meter_provider(provider);
             tracing_subscriber.init();
-            return Ok(());
-        };
+            Ok(())
+        } else {
+            let Some(otel_endpoint) = &self.config.collection_endpoint else {
+                tracing_subscriber.init();
+                return Ok(());
+            };
 
-        let tracer = self.init_tracer_provider()?;
-        let logger_provider = self.init_logs()?;
-        self.meter_provider = Some(self.init_metric_provider()?);
+            let tracer_provider = self.init_tracer_provider(otel_endpoint)?;
+            global::set_tracer_provider(tracer_provider.clone());
 
-        let layer = OpenTelemetryTracingBridge::new(&logger_provider);
-        tracing_subscriber.with(OpenTelemetryLayer::new(tracer)).with(layer).init();
-        Ok(())
+            let meter_provider = self.init_meter_provider(otel_endpoint)?;
+            global::set_meter_provider(meter_provider.clone());
+
+            let logger_provider = self.init_logs_provider(otel_endpoint)?;
+            tracing_subscriber
+                .with(OpenTelemetryLayer::new(
+                    tracer_provider.tracer(format!("{}{}", self.config.service_name, "_subscriber")),
+                ))
+                .with(OpenTelemetryTracingBridge::new(&logger_provider))
+                .init();
+
+            self.providers = Some(Providers { meter_provider, tracer_provider, logger_provider });
+
+            Ok(())
+        }
     }
 
-    fn init_tracer_provider(&self) -> anyhow::Result<Tracer> {
-        //  Guard clause if otel is disabled
-        let otel_endpoint = self
-            .collection_endpoint
-            .clone()
-            .ok_or(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel providers."))?;
+    fn init_tracer_provider(&self, otel_endpoint: &Url) -> anyhow::Result<SdkTracerProvider> {
+        let exporter =
+            opentelemetry_otlp::SpanExporter::builder().with_tonic().with_endpoint(otel_endpoint.clone()).build()?;
 
         let batch_config = BatchConfigBuilder::default().with_max_export_batch_size(128).build();
 
-        let provider = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(otel_endpoint.to_string()))
-            .with_trace_config(Config::default().with_resource(Resource::new(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                format!("{}{}", self.service_name, "_trace_service"),
-            )])))
-            .with_batch_config(batch_config)
-            .install_batch(runtime::Tokio)
-            .expect("Failed to install tracer provider");
+        let processor = BatchSpanProcessor::builder(exporter).with_batch_config(batch_config).build();
 
-        global::set_tracer_provider(provider.clone());
-        Ok(provider.tracer(format!("{}{}", self.service_name, "_subscriber")))
+        let provider = SdkTracerProvider::builder()
+            .with_span_processor(processor)
+            .with_resource(
+                Resource::builder()
+                    .with_service_name(format!("{}{}", self.config.service_name, "_trace_service"))
+                    .build(),
+            )
+            .build();
+
+        Ok(provider)
     }
 
-    fn init_metric_provider(&self) -> anyhow::Result<SdkMeterProvider> {
-        //  Guard clause if otel is disabled
-        let otel_endpoint = self
-            .collection_endpoint
-            .clone()
-            .ok_or(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel providers."))?;
-
-        let export_config = ExportConfig { endpoint: otel_endpoint.to_string(), ..ExportConfig::default() };
-
-        // Creates and builds the OTLP exporter
+    fn init_meter_provider(&self, otel_endpoint: &Url) -> anyhow::Result<SdkMeterProvider> {
         let exporter =
-            opentelemetry_otlp::new_exporter().tonic().with_export_config(export_config).build_metrics_exporter(
-                // TODO: highly likely that changing these configs will result in correct collection of traces, inhibiting full
-                // channel issue
-                Box::new(DefaultAggregationSelector::new()),
-                Box::new(DefaultTemporalitySelector::new()),
-            );
+            opentelemetry_otlp::MetricExporter::builder().with_tonic().with_endpoint(otel_endpoint.clone()).build()?;
 
         // Creates a periodic reader that exports every 5 seconds
-        let reader = PeriodicReader::builder(exporter.expect("Failed to build metrics exporter"), runtime::Tokio)
-            .with_interval(Duration::from_secs(5))
-            .build();
+        let reader = PeriodicReader::builder(exporter).with_interval(Duration::from_secs(5)).build();
 
         // Builds a meter provider with the periodic reader
         let provider = SdkMeterProvider::builder()
             .with_reader(reader)
-            .with_resource(Resource::new(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                format!("{}{}", self.service_name, "_meter_service"),
-            )]))
+            .with_resource(
+                Resource::builder()
+                    .with_service_name(format!("{}{}", self.config.service_name, "_meter_service"))
+                    .build(),
+            )
             .build();
-        global::set_meter_provider(provider.clone());
         Ok(provider)
     }
 
-    fn init_logs(&self) -> anyhow::Result<LoggerProvider> {
-        //  Guard clause if otel is disabled
-        let otel_endpoint = self
-            .collection_endpoint
-            .clone()
-            .ok_or(anyhow::anyhow!("OTEL endpoint is not set, not initializing otel providers."))?;
+    fn init_logs_provider(&self, otel_endpoint: &Url) -> anyhow::Result<SdkLoggerProvider> {
+        let exporter =
+            opentelemetry_otlp::LogExporter::builder().with_tonic().with_endpoint(otel_endpoint.clone()).build()?;
 
-        let logger = opentelemetry_otlp::new_pipeline()
-            .logging()
-            .with_resource(Resource::new(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                format!("{}{}", self.service_name, "_logs_service"),
-            )]))
-            .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(otel_endpoint.to_string()))
-            .install_batch(runtime::Tokio)?;
-
-        Ok(logger)
+        Ok(SdkLoggerProvider::builder()
+            .with_resource(
+                Resource::builder()
+                    .with_service_name(format!("{}{}", self.config.service_name, "_logs_service"))
+                    .build(),
+            )
+            .with_batch_exporter(exporter)
+            .build())
     }
+}
 
-    /// Closes the [opentelemetry] collection endpoint if it has been set via the
-    /// `analytics_collection_endpoint` cli argument.
-    pub fn shutdown(&self) -> anyhow::Result<()> {
-        // guard clause if otel is disabled
-        if self.collection_endpoint.is_none() {
-            return Ok(());
-        }
+#[async_trait::async_trait]
+impl Service for AnalyticsService {
+    /// Default impl does not start any task.
+    async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
+        let mut endpoint = self.prometheus_endpoint.take();
+        let providers = self.providers.take();
+        runner.service_loop(move |mut ctx| async move {
+            if let Some(endpoint) = endpoint.as_mut() {
+                endpoint.run(ctx).await?;
+            } else {
+                ctx.cancelled().await;
+            }
 
-        if let Some(meter_provider) = self.meter_provider.clone() {
-            global::shutdown_tracer_provider();
-            let _ = meter_provider.shutdown();
-        }
-
+            if let Some(provider) = providers {
+                provider.logger_provider.shutdown()?;
+                provider.meter_provider.shutdown()?;
+                provider.tracer_provider.shutdown()?;
+            }
+            anyhow::Ok(())
+        });
         Ok(())
+    }
+}
+impl ServiceId for AnalyticsService {
+    #[inline(always)]
+    fn svc_id(&self) -> mp_utils::service::PowerOfTwo {
+        MadaraServiceId::Analytics.svc_id()
     }
 }
 
@@ -181,12 +216,12 @@ pub trait GaugeType<T> {
 
 impl GaugeType<f64> for f64 {
     fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<f64> {
-        meter.f64_gauge(name).with_description(description).with_unit(unit).init()
+        meter.f64_gauge(name).with_description(description).with_unit(unit).build()
     }
 }
 impl GaugeType<u64> for u64 {
     fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<u64> {
-        meter.u64_gauge(name).with_description(description).with_unit(unit).init()
+        meter.u64_gauge(name).with_description(description).with_unit(unit).build()
     }
 }
 
@@ -208,12 +243,12 @@ pub trait CounterType<T> {
 
 impl CounterType<u64> for u64 {
     fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> Counter<u64> {
-        meter.u64_counter(name).with_description(description).with_unit(unit).init()
+        meter.u64_counter(name).with_description(description).with_unit(unit).build()
     }
 }
 impl CounterType<f64> for f64 {
     fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> Counter<f64> {
-        meter.f64_counter(name).with_description(description).with_unit(unit).init()
+        meter.f64_counter(name).with_description(description).with_unit(unit).build()
     }
 }
 
@@ -235,12 +270,12 @@ pub trait HistogramType<T> {
 
 impl HistogramType<f64> for f64 {
     fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<f64> {
-        meter.f64_histogram(name).with_description(description).with_unit(unit).init()
+        meter.f64_histogram(name).with_description(description).with_unit(unit).build()
     }
 }
 impl HistogramType<u64> for u64 {
     fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<u64> {
-        meter.u64_histogram(name).with_description(description).with_unit(unit).init()
+        meter.u64_histogram(name).with_description(description).with_unit(unit).build()
     }
 }
 
@@ -251,152 +286,4 @@ pub fn register_histogram_metric_instrument<T: HistogramType<T> + Display>(
     unit: String,
 ) -> Histogram<T> {
     T::register_histogram(crate_meter, instrument_name, desc, unit)
-}
-
-use tracing::Subscriber;
-use tracing_subscriber::{
-    fmt::{format::Writer, FmtContext, FormatEvent, FormatFields},
-    registry::LookupSpan,
-};
-
-struct ValueVisitor {
-    field_name: String,
-    value: String,
-}
-
-impl Visit for ValueVisitor {
-    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-        if field.name() == self.field_name {
-            self.value = format!("{:?}", value);
-        }
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == self.field_name {
-            self.value = value.to_string();
-        }
-    }
-}
-
-struct CustomFormatter {
-    local_offset: UtcOffset,
-}
-
-impl<S, N> FormatEvent<S, N> for CustomFormatter
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-    N: for<'a> FormatFields<'a> + 'static,
-{
-    fn format_event(
-        &self,
-        _ctx: &FmtContext<'_, S, N>,
-        mut writer: Writer<'_>,
-        event: &tracing::Event<'_>,
-    ) -> std::fmt::Result {
-        let now = SystemTime::now();
-        let datetime: OffsetDateTime = now.into();
-        let local_datetime = datetime.to_offset(self.local_offset);
-        let format =
-            format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]:[subsecond digits:3]").unwrap();
-        let ts = local_datetime.format(&format).unwrap();
-
-        let brackets_style = console::Style::new().dim();
-
-        let metadata = event.metadata();
-        let level = metadata.level();
-        let target = metadata.target();
-
-        let get_field_value = |field_name: &str| -> String {
-            let mut visitor = ValueVisitor { field_name: field_name.to_string(), value: String::new() };
-            event.record(&mut visitor);
-            visitor.value.trim_matches('"').to_string()
-        };
-
-        match (level, target) {
-            (&Level::INFO, "rpc_calls") => {
-                let status = get_field_value("status");
-                let method = get_field_value("method");
-                let res_len = get_field_value("res_len");
-                let response_time = get_field_value("response_time");
-
-                let rpc_style = console::Style::new().magenta();
-
-                let status_style =
-                    if status == "200" { console::Style::new().green() } else { console::Style::new().red() };
-
-                let time_style = if response_time.parse::<f64>().unwrap_or(0.0) <= 5.0 {
-                    console::Style::new()
-                } else {
-                    console::Style::new().yellow()
-                };
-
-                writeln!(
-                    writer,
-                    "{} {} {} {} {} {} {} {} bytes - {} ms",
-                    brackets_style.apply_to(format!("[{ts}]")),
-                    brackets_style.apply_to(format!("[{level}]")),
-                    brackets_style.apply_to("["),
-                    rpc_style.apply_to("HTTP"),
-                    brackets_style.apply_to("]"),
-                    method,
-                    status_style.apply_to(&status),
-                    res_len,
-                    time_style.apply_to(&response_time),
-                )
-            }
-            (&Level::INFO, _) => {
-                let message = get_field_value("message");
-
-                writeln!(
-                    writer,
-                    "{} {} {}",
-                    brackets_style.apply_to(format!("[{ts}]")),
-                    brackets_style.apply_to(format!("[{level}]")),
-                    message,
-                )
-            }
-            (&Level::WARN, _) => {
-                let message = get_field_value("message");
-                writeln!(
-                    writer,
-                    "{} {} {}",
-                    brackets_style.apply_to(format!("[{ts}]")),
-                    brackets_style.apply_to(format!("[{level}]")),
-                    message,
-                )
-            }
-            (&Level::ERROR, "rpc_errors") => {
-                let message = get_field_value("message");
-
-                writeln!(
-                    writer,
-                    "{} {} {}",
-                    brackets_style.apply_to(format!("[{ts}]")),
-                    brackets_style.apply_to(format!("[{level}]")),
-                    message,
-                )
-            }
-            (&Level::ERROR, _) => {
-                let message = get_field_value("message");
-                writeln!(
-                    writer,
-                    "{} {} {}",
-                    brackets_style.apply_to(format!("[{ts}]")),
-                    brackets_style.apply_to(format!("[{level}]")),
-                    message,
-                )
-            }
-            _ => {
-                let message = get_field_value("message");
-
-                writeln!(
-                    writer,
-                    "{} {} {}",
-                    brackets_style.apply_to(format!("[{ts}]")),
-                    brackets_style.apply_to(format!("[{level}]")),
-                    message,
-                )
-            }
-        }
-    }
 }

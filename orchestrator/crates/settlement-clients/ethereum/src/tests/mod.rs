@@ -178,12 +178,12 @@ mod settlement_client_tests {
 
     #[rstest]
     #[tokio::test]
-    /// Tests if the method is able to do a transaction with same function selector on a dummy
-    /// contract. If we impersonate starknet operator then we loose out on testing for validity
+    /// Tests if the method is able to do a transaction with the same function selector on a dummy
+    /// contract. If we impersonate a starknet operator, then we lose out on testing for validity
     /// of signature in the transaction. Starknet core contract has a modifier `onlyOperator`
     /// that restricts anyone but the operator to send transaction to `updateStateKzgDa` method
-    /// And hence to test the signature and transaction via a dummy contract that has same function
-    /// selector as `updateStateKzgDa`. and anvil is for testing on fork Eth.
+    /// And hence to test the signature and transaction via a dummy contract that has the same
+    /// function selector as `updateStateKzgDa`. Anvil is for testing on fork Eth.
     async fn update_state_blob_with_dummy_contract_works() {
         dotenvy::from_filename_override(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
 
@@ -200,6 +200,10 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            ethereum_finality_retry_wait_in_secs: 10,
+            max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
+                .parse()
+                .expect("Invalid max gas price mul factor"),
         };
 
         // Deploying a dummy contract
@@ -280,6 +284,10 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            ethereum_finality_retry_wait_in_secs: 60u64,
+            max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
+                .parse()
+                .expect("Invalid max gas price mul factor"),
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
@@ -352,6 +360,10 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            ethereum_finality_retry_wait_in_secs: 60u64,
+            max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
+                .parse()
+                .expect("Invalid max gas price mul factor"),
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(

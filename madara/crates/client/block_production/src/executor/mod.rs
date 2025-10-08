@@ -1,12 +1,8 @@
 use crate::util::{BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
-use blockifier::{
-    blockifier::transaction_executor::{TransactionExecutionOutput, TransactionExecutorResult},
-    state::cached_state::StorageEntry,
-};
+use blockifier::blockifier::transaction_executor::{TransactionExecutionOutput, TransactionExecutorResult};
 use mc_db::MadaraBackend;
-use mp_convert::Felt;
-use std::{any::Any, collections::HashMap, panic::AssertUnwindSafe, sync::Arc};
+use std::{any::Any, panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver},
     oneshot,
@@ -47,9 +43,7 @@ pub enum ExecutorCommand {
 pub enum ExecutorMessage {
     /// Asks the block production task to start a new block.
     StartNewBlock {
-        /// Used to add the block_n-10 block hash table entry to the state diff.
-        initial_state_diffs_storage: HashMap<StorageEntry, Felt>,
-        /// The proto-header. It's exactly like PendingHeader, but it does not have the parent_block_hash field because it's not known yet.
+        /// The proto-header. It's exactly like PreconfirmedHeader, but it does not have the parent_block_hash field because it's not known yet.
         exec_ctx: BlockExecutionContext,
     },
     BatchExecuted(BatchExecutionResult),

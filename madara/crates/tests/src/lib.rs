@@ -364,13 +364,13 @@ impl MadaraCmd {
     }
 
     pub fn hook_stdout_and_wait_for_ports(&mut self, rpc: bool, gateway: bool) {
-        let stderr =
-            self.process.as_mut().unwrap().stderr.take().expect("Could not capture stderr from Madara process");
+        let stdout =
+            self.process.as_mut().unwrap().stdout.take().expect("Could not capture stdout from Madara process");
         let pid = self.process.as_ref().unwrap().id();
 
         let stdout_prefix = if !self.label.is_empty() { format!("[{pid} {}]", self.label) } else { format!("[{pid}]") };
 
-        let reader = BufReader::new(stderr);
+        let reader = BufReader::new(stdout);
         let (tx, rx) = mpsc::channel();
 
         thread::spawn(move || {
@@ -519,6 +519,7 @@ impl MadaraCmdBuilder {
 
         let mut cmd = Command::new(target_bin);
         cmd.envs(self.env)
+            .env("CLICOLOR_FORCE", "1")
             .args(self.args)
             .args(["--base-path".into(), self.tempdir.path().display().to_string()])
             .args(

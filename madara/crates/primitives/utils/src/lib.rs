@@ -1,10 +1,4 @@
-#![allow(clippy::new_without_default)]
-use std::{
-    future::Future,
-    pin::Pin,
-    task,
-    time::{Duration, Instant},
-};
+use std::{future::Future, pin::Pin, task};
 use tokio::{sync::oneshot, task::JoinHandle};
 
 pub mod crypto;
@@ -16,6 +10,19 @@ pub mod service;
 
 pub use hash::trim_hash;
 
+#[track_caller] // forward the tokio track_caller
+pub fn spawn<F: Future + Send + 'static>(future: F) -> AbortOnDrop<F::Output>
+where
+    F::Output: Send + 'static,
+{
+    AbortOnDrop::spawn(future)
+}
+
+#[track_caller]
+pub fn spawn_blocking<F: FnOnce() -> R + Send + 'static, R: Send + 'static>(f: F) -> AbortOnDrop<R> {
+    AbortOnDrop::spawn_blocking(f)
+}
+
 /// This ensures structural-concurrency. Use this when you know the task is cancellation-safe, it is fine to just
 /// drop the futures. Otherwise, you will need to use a graceful abort signal.
 pub struct AbortOnDrop<T>(JoinHandle<T>);
@@ -23,6 +30,11 @@ impl<T: Send + 'static> AbortOnDrop<T> {
     #[track_caller] // forward the tokio track_caller
     pub fn spawn<F: Future<Output = T> + Send + 'static>(future: F) -> Self {
         Self(tokio::spawn(future))
+    }
+
+    #[track_caller]
+    pub fn spawn_blocking<F: FnOnce() -> T + Send + 'static>(f: F) -> Self {
+        Self(tokio::task::spawn_blocking(f))
     }
 }
 impl<T> Drop for AbortOnDrop<T> {
@@ -56,26 +68,5 @@ impl Drop for StopHandle {
         if let Some(sender) = self.0.take() {
             let _res = sender.send(());
         }
-    }
-}
-
-pub struct PerfStopwatch(pub Instant);
-
-impl PerfStopwatch {
-    #[tracing::instrument(name = "PerfStopwatch::new")]
-    pub fn new() -> PerfStopwatch {
-        PerfStopwatch(Instant::now())
-    }
-
-    #[tracing::instrument(name = "PerfStopwatch::elapsed", skip(self))]
-    pub fn elapsed(&self) -> Duration {
-        self.0.elapsed()
-    }
-}
-
-#[macro_export]
-macro_rules! stopwatch_end {
-    ($stopwatch:expr, $($arg:tt)+) => {
-        tracing::debug!($($arg)+, $stopwatch.elapsed())
     }
 }

@@ -1,9 +1,7 @@
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
+use crate::Starknet;
 use mp_block::BlockId;
 use starknet_types_core::felt::Felt;
-
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::ResultExt;
-use crate::Starknet;
 
 /// Get the contract class hash in the given block for the contract deployed at the given
 /// address
@@ -18,20 +16,9 @@ use crate::Starknet;
 ///
 /// * `class_hash` - The class hash of the given contract
 pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
-    // Check if block exists. We have to return a different error in that case.
-    let block_exists =
-        starknet.backend.contains_block(&block_id).or_internal_server_error("Checking if block is in database")?;
-    if !block_exists {
-        return Err(StarknetRpcApiError::BlockNotFound);
-    }
-
-    let class_hash = starknet
-        .backend
-        .get_contract_class_hash_at(&block_id, &contract_address)
-        .or_internal_server_error("Error getting contract class hash at")?
-        .ok_or(StarknetRpcApiError::contract_not_found())?;
-
-    Ok(class_hash)
+    let view = starknet.backend.view_on(&block_id)?;
+    tracing::debug!("{view:?}");
+    view.get_contract_class_hash(&contract_address)?.ok_or(StarknetRpcApiError::contract_not_found())
 }
 
 #[cfg(test)]

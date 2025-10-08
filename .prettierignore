@@ -4,6 +4,7 @@ madara/crates/primitives/class/resources/*
 infra/Signoz
 build-artifacts/
 dashboards
+docs/
 
 orchestrator/cairo-lang/
 orchestrator/madara-bootstrapper/

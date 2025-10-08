@@ -14,7 +14,6 @@ use std::sync::Arc;
 // Configuration struct to group related parameters
 pub struct L1SyncConfig {
     pub l1_core_address: String,
-    pub authority: bool,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
     pub l1_head_snd: L1HeadSender,
 }
@@ -30,49 +29,40 @@ impl L1SyncService {
         backend: Arc<MadaraBackend>,
         sync_config: L1SyncConfig,
     ) -> anyhow::Result<Self> {
-        let gas_price_needed = sync_config.authority;
-        let gas_provider_config = if gas_price_needed {
-            let mut gas_price_provider_builder = GasPriceProviderConfigBuilder::default();
-            if let Some(fix_gas) = config.l1_gas_price {
-                gas_price_provider_builder.set_fix_gas_price(fix_gas.into());
+        let mut gas_price_provider_builder = GasPriceProviderConfigBuilder::default();
+        if let Some(fix_gas) = config.l1_gas_price {
+            gas_price_provider_builder.set_fix_gas_price(fix_gas.into());
+        }
+        if let Some(fix_blob_gas) = config.blob_gas_price {
+            gas_price_provider_builder.set_fix_data_gas_price(fix_blob_gas.into());
+        }
+        if let Some(strk_per_eth_fix) = config.strk_per_eth {
+            gas_price_provider_builder.set_fix_strk_per_eth(strk_per_eth_fix);
+        }
+        if let Some(ref oracle_url) = config.oracle_url {
+            if let Some(ref oracle_api_key) = config.oracle_api_key {
+                let oracle = PragmaOracleBuilder::new()
+                    .with_api_url(oracle_url.clone())
+                    .with_api_key(oracle_api_key.clone())
+                    .build();
+                gas_price_provider_builder.set_oracle_provider(Arc::new(oracle));
+            } else {
+                bail!("Only Pragma oracle is supported, please provide the oracle API key");
             }
-            if let Some(fix_blob_gas) = config.blob_gas_price {
-                gas_price_provider_builder.set_fix_data_gas_price(fix_blob_gas.into());
-            }
-            if let Some(strk_per_eth_fix) = config.strk_per_eth {
-                gas_price_provider_builder.set_fix_strk_per_eth(strk_per_eth_fix);
-            }
-            if let Some(ref oracle_url) = config.oracle_url {
-                if let Some(ref oracle_api_key) = config.oracle_api_key {
-                    let oracle = PragmaOracleBuilder::new()
-                        .with_api_url(oracle_url.clone())
-                        .with_api_key(oracle_api_key.clone())
-                        .build();
-                    gas_price_provider_builder.set_oracle_provider(Arc::new(oracle));
-                } else {
-                    bail!("Only Pragma oracle is supported, please provide the oracle API key");
-                }
-            }
-            Some(
-                gas_price_provider_builder
-                    .with_poll_interval(config.gas_price_poll)
-                    .build()
-                    .context("Building gas price provider config")?,
-            )
-        } else {
-            None
-        };
+        }
+        let gas_provider_config = gas_price_provider_builder
+            .with_poll_interval(config.gas_price_poll)
+            .build()
+            .context("Building gas price provider config")?;
 
-        if let Some(config) = gas_provider_config.as_ref() {
-            if config.all_is_fixed() {
-                // safe to unwrap because we checked that all values are set
-                let l1_gas_quote = L1GasQuote {
-                    l1_gas_price: config.fix_gas_price.unwrap(),
-                    l1_data_gas_price: config.fix_data_gas_price.unwrap(),
-                    strk_per_eth: config.fix_strk_per_eth.unwrap(),
-                };
-                backend.set_last_l1_gas_quote(l1_gas_quote);
-            }
+        if gas_provider_config.all_is_fixed() {
+            // safe to unwrap because we checked that all values are set
+            let l1_gas_quote = L1GasQuote {
+                l1_gas_price: gas_provider_config.fix_gas_price.unwrap(),
+                l1_data_gas_price: gas_provider_config.fix_data_gas_price.unwrap(),
+                strk_per_eth: gas_provider_config.fix_strk_per_eth.unwrap(),
+            };
+            backend.set_last_l1_gas_quote(l1_gas_quote);
         }
 
         if config.l1_sync_disabled {
@@ -95,15 +85,14 @@ impl L1SyncService {
             }
         };
 
-        if let Some(config) = gas_provider_config.as_ref() {
-            if !config.all_is_fixed() {
-                tracing::info!("⏳ Getting initial L1 gas prices");
-                // Gas prices are needed before starting the block producer
-                let l1_gas_quote = mc_settlement_client::gas_price::update_gas_price(client.provider(), config)
+        if !gas_provider_config.all_is_fixed() {
+            tracing::info!("⏳ Getting initial L1 gas prices");
+            // Gas prices are needed before starting the block producer
+            let l1_gas_quote =
+                mc_settlement_client::gas_price::update_gas_price(client.provider(), &gas_provider_config)
                     .await
                     .context("Getting initial gas prices")?;
-                backend.set_last_l1_gas_quote(l1_gas_quote);
-            }
+            backend.set_last_l1_gas_quote(l1_gas_quote);
         }
 
         Ok(Self {

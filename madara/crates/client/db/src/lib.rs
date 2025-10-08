@@ -111,682 +111,642 @@
 //! [`DbBlockId`]: db_block_id::DbBlockId
 //! [`RawDbBlockId`]: db_block_id::RawDbBlockId
 
-use anyhow::Context;
-use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
-use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
-use chain_head::ChainHead;
-use db_metrics::DbMetrics;
-use events::EventChannels;
-use mp_block::EventWithInfo;
-use mp_block::L1GasQuote;
-use mp_block::MadaraBlockInfo;
+use crate::gas::L1GasQuoteCell;
+use crate::preconfirmed::PreconfirmedBlock;
+use crate::preconfirmed::PreconfirmedExecutedTransaction;
+use crate::rocksdb::RocksDBConfig;
+use crate::rocksdb::RocksDBStorage;
+use crate::storage::StorageChainTip;
+use crate::storage::StoredChainInfo;
+use crate::sync_status::SyncStatusCell;
+use mp_block::commitments::BlockCommitments;
+use mp_block::commitments::CommitmentComputationContext;
+use mp_block::BlockHeaderWithSignatures;
+use mp_block::FullBlockWithoutCommitments;
+use mp_block::TransactionWithReceipt;
 use mp_chain_config::ChainConfig;
-use mp_convert::Felt;
+use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
-use rocksdb::backup::{BackupEngine, BackupEngineOptions};
-use rocksdb::{
-    BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, Env, FlushOptions, MultiThreaded, WriteOptions,
-};
-use rocksdb_options::rocksdb_global_options;
-use snapshots::Snapshots;
-use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::{fmt, fs};
-use tokio::sync::{mpsc, oneshot, RwLock};
-use watch::BlockWatch;
+use mp_state_update::StateDiff;
+use mp_transactions::validated::ValidatedTransaction;
+use mp_transactions::L1HandlerTransactionWithFee;
+use prelude::*;
+use std::path::Path;
 
-mod chain_head;
 mod db_version;
-mod error;
-mod events;
-mod events_bloom_filter;
-mod rocksdb_options;
-mod rocksdb_snapshot;
-mod snapshots;
-mod watch;
+mod prelude;
+pub mod storage;
 
-pub mod block_db;
-pub mod bonsai_db;
-pub mod class_db;
-pub mod contract_db;
-pub mod db_block_id;
-pub mod db_metrics;
-pub mod devnet_db;
-pub mod l1_db;
-pub mod mempool_db;
-pub mod storage_updates;
-pub mod stream;
-#[cfg(any(test, feature = "testing"))]
+pub mod gas;
+pub mod preconfirmed;
+pub mod rocksdb;
+pub mod subscription;
+pub mod sync_status;
 pub mod tests;
-mod update_global_trie;
+pub mod view;
 
-pub use bonsai_db::GlobalTrie;
-pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
-pub use error::{BonsaiStorageError, MadaraStorageError, TrieType};
-pub use rocksdb_options::{RocksDBConfig, StatsLevel};
-pub use watch::{ClosedBlocksReceiver, LastBlockOnL1Receiver, PendingBlockReceiver, PendingTxsReceiver};
-pub type DB = DBWithThreadMode<MultiThreaded>;
-pub use rocksdb;
-pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
+pub use storage::{
+    DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
+    MadaraStorageWrite, StorageTxIndex,
+};
+pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
 
-const DB_UPDATES_BATCH_SIZE: usize = 1024;
-
-fn open_rocksdb(path: &Path, config: &RocksDBConfig) -> anyhow::Result<Arc<DB>> {
-    let opts = rocksdb_global_options(config)?;
-    tracing::debug!("opening db at {:?}", path.display());
-    let db = DB::open_cf_descriptors(
-        &opts,
-        path,
-        Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options(config))),
-    )?;
-
-    Ok(Arc::new(db))
-}
-
-/// This runs in another thread as the backup engine is not thread safe
-fn spawn_backup_db_task(
-    backup_dir: &Path,
-    restore_from_latest_backup: bool,
-    db_path: &Path,
-    db_restored_cb: oneshot::Sender<()>,
-    mut recv: mpsc::Receiver<BackupRequest>,
-) -> anyhow::Result<()> {
-    let mut backup_opts = BackupEngineOptions::new(backup_dir).context("Creating backup options")?;
-    let cores = std::thread::available_parallelism().map(|e| e.get() as i32).unwrap_or(1);
-    backup_opts.set_max_background_operations(cores);
-
-    let mut engine = BackupEngine::open(&backup_opts, &Env::new().context("Creating rocksdb env")?)
-        .context("Opening backup engine")?;
-
-    if restore_from_latest_backup {
-        tracing::info!("⏳ Restoring latest backup...");
-        tracing::debug!("restore path is {db_path:?}");
-        fs::create_dir_all(db_path).with_context(|| format!("Creating parent directories {:?}", db_path))?;
-
-        let opts = rocksdb::backup::RestoreOptions::default();
-        engine.restore_from_latest_backup(db_path, db_path, &opts).context("Restoring database")?;
-        tracing::debug!("restoring latest backup done");
-    }
-
-    db_restored_cb.send(()).ok().context("Receiver dropped")?;
-
-    while let Some(BackupRequest { callback, db }) = recv.blocking_recv() {
-        engine.create_new_backup_flush(&db, true).context("Creating rocksdb backup")?;
-        let _ = callback.send(());
-    }
-
-    Ok(())
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Column {
-    // Blocks storage
-    // block_n => Block info
-    BlockNToBlockInfo,
-    // block_n => Block inner
-    BlockNToBlockInner,
-    /// Many To One
-    TxHashToBlockN,
-    /// One To One
-    BlockHashToBlockN,
-    /// One To One
-    BlockNToStateDiff,
-    /// block_n => bloom filter for events
-    EventBloom,
-    /// Meta column for block storage (sync tip, pending block)
-    BlockStorageMeta,
-
-    /// Contract class hash to class data
-    ClassInfo,
-    ClassCompiled,
-    PendingClassInfo,
-    PendingClassCompiled,
-
-    // History of contract class hashes
-    // contract_address history block_number => class_hash
-    ContractToClassHashes,
-
-    // History of contract nonces
-    // contract_address history block_number => nonce
-    ContractToNonces,
-
-    // Pending columns for contract db
-    PendingContractToClassHashes,
-    PendingContractToNonces,
-    PendingContractStorage,
-
-    // History of contract key => values
-    // (contract_address, storage_key) history block_number => felt
-    ContractStorage,
-
-    // Each bonsai storage has 3 columns
-    BonsaiContractsTrie,
-    BonsaiContractsFlat,
-    BonsaiContractsLog,
-
-    BonsaiContractsStorageTrie,
-    BonsaiContractsStorageFlat,
-    BonsaiContractsStorageLog,
-
-    BonsaiClassesTrie,
-    BonsaiClassesFlat,
-    BonsaiClassesLog,
-
-    CoreContractNonceToTxnHash,
-    // List of pending l1 to l2 messages to handle.
-    CoreContractNonceToPendingMsg,
-
-    /// Devnet: stores the private keys for the devnet predeployed contracts
-    Devnet,
-
-    MempoolTransactions,
-}
-
-impl fmt::Debug for Column {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.rocksdb_name())
-    }
-}
-
-impl fmt::Display for Column {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.rocksdb_name())
-    }
-}
-
-impl Column {
-    pub const ALL: &'static [Self] = {
-        use Column::*;
-        &[
-            BlockNToBlockInfo,
-            BlockNToBlockInner,
-            TxHashToBlockN,
-            BlockHashToBlockN,
-            BlockStorageMeta,
-            BlockNToStateDiff,
-            EventBloom,
-            ClassInfo,
-            ClassCompiled,
-            PendingClassInfo,
-            PendingClassCompiled,
-            ContractToClassHashes,
-            ContractToNonces,
-            ContractStorage,
-            BonsaiContractsTrie,
-            BonsaiContractsFlat,
-            BonsaiContractsLog,
-            BonsaiContractsStorageTrie,
-            BonsaiContractsStorageFlat,
-            BonsaiContractsStorageLog,
-            BonsaiClassesTrie,
-            BonsaiClassesFlat,
-            BonsaiClassesLog,
-            CoreContractNonceToTxnHash,
-            CoreContractNonceToPendingMsg,
-            PendingContractToClassHashes,
-            PendingContractToNonces,
-            PendingContractStorage,
-            Devnet,
-            MempoolTransactions,
-        ]
-    };
-    pub const NUM_COLUMNS: usize = Self::ALL.len();
-
-    pub(crate) fn rocksdb_name(&self) -> &'static str {
-        use Column::*;
-        match self {
-            BlockNToBlockInfo => "block_n_to_block_info",
-            BlockNToBlockInner => "block_n_to_block_inner",
-            TxHashToBlockN => "tx_hash_to_block_n",
-            BlockHashToBlockN => "block_hash_to_block_n",
-            BlockStorageMeta => "block_storage_meta",
-            BlockNToStateDiff => "block_n_to_state_diff",
-            EventBloom => "event_bloom",
-            BonsaiContractsTrie => "bonsai_contracts_trie",
-            BonsaiContractsFlat => "bonsai_contracts_flat",
-            BonsaiContractsLog => "bonsai_contracts_log",
-            BonsaiContractsStorageTrie => "bonsai_contracts_storage_trie",
-            BonsaiContractsStorageFlat => "bonsai_contracts_storage_flat",
-            BonsaiContractsStorageLog => "bonsai_contracts_storage_log",
-            BonsaiClassesTrie => "bonsai_classes_trie",
-            BonsaiClassesFlat => "bonsai_classes_flat",
-            BonsaiClassesLog => "bonsai_classes_log",
-            ClassInfo => "class_info",
-            ClassCompiled => "class_compiled",
-            PendingClassInfo => "pending_class_info",
-            PendingClassCompiled => "pending_class_compiled",
-            ContractToClassHashes => "contract_to_class_hashes",
-            ContractToNonces => "contract_to_nonces",
-            ContractStorage => "contract_storage",
-            CoreContractNonceToTxnHash => "core_contract_nonce_to_txn_hash",
-            CoreContractNonceToPendingMsg => "core_contract_nonce_to_pending_msg",
-            PendingContractToClassHashes => "pending_contract_to_class_hashes",
-            PendingContractToNonces => "pending_contract_to_nonces",
-            PendingContractStorage => "pending_contract_storage",
-            Devnet => "devnet",
-            MempoolTransactions => "mempool_transactions",
-        }
-    }
-}
-
-#[cfg(test)]
-#[test]
-fn test_column_all() {
-    assert_eq!(Column::ALL.len(), Column::NUM_COLUMNS);
-}
-
-pub trait DatabaseExt {
-    fn get_column(&self, col: Column) -> Arc<BoundColumnFamily<'_>>;
-}
-
-impl DatabaseExt for DB {
-    fn get_column(&self, col: Column) -> Arc<BoundColumnFamily<'_>> {
-        let name = col.rocksdb_name();
-        match self.cf_handle(name) {
-            Some(column) => column,
-            None => panic!("column {name} not initialized"),
-        }
-    }
-}
-
-fn make_write_opt_no_wal() -> WriteOptions {
-    let mut opts = WriteOptions::new();
-    opts.disable_wal(true);
-    opts
-}
-
-#[derive(Debug)]
-pub struct TrieLogConfig {
-    pub max_saved_trie_logs: usize,
-    pub max_kept_snapshots: usize,
-    pub snapshot_interval: u64,
-}
-
-impl Default for TrieLogConfig {
-    fn default() -> Self {
-        Self { max_saved_trie_logs: 0, max_kept_snapshots: 0, snapshot_interval: 5 }
-    }
-}
-
+/// Current chain tip.
 #[derive(Default, Clone)]
-pub enum SyncStatus {
+pub enum ChainTip {
+    /// Empty pre-genesis state. There are no blocks currently in the backend.
     #[default]
-    NotRunning,
-    Running {
-        highest_block_n: u64,
-        highest_block_hash: Felt,
-    },
+    Empty,
+    /// Latest block is a confirmed block.
+    Confirmed(/* block_number */ u64),
+    /// Latest block is a preconfirmed block.
+    Preconfirmed(Arc<PreconfirmedBlock>),
 }
 
-#[derive(Default)]
-pub(crate) struct SyncStatusCell(RwLock<SyncStatus>);
-impl SyncStatusCell {
-    pub(crate) async fn set(&self, sync_status: SyncStatus) {
-        let mut status = self.0.write().await;
-        *status = sync_status;
+// Use [`Arc::ptr_eq`] for quick equality check: we don't want to compare the content of the transactions
+// for the preconfirmed block case.
+impl PartialEq for ChainTip {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Empty, Self::Empty) => true,
+            (Self::Confirmed(l0), Self::Confirmed(r0)) => l0 == r0,
+            (Self::Preconfirmed(l0), Self::Preconfirmed(r0)) => Arc::ptr_eq(l0, r0),
+            _ => false,
+        }
     }
-    pub(crate) async fn get(&self) -> SyncStatus {
-        self.0.read().await.clone()
+}
+impl Eq for ChainTip {}
+
+impl fmt::Debug for ChainTip {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => write!(f, "Empty"),
+            Self::Confirmed(block_n) => write!(f, "Confirmed block_n={block_n}"),
+            Self::Preconfirmed(preconfirmed_block) => {
+                write!(f, "Preconfirmed block_n={}", preconfirmed_block.header.block_number)
+            }
+        }
+    }
+}
+
+impl ChainTip {
+    pub fn on_confirmed_block_n_or_empty(block_n: Option<u64>) -> Self {
+        match block_n {
+            Some(block_n) => Self::Confirmed(block_n),
+            None => Self::Empty,
+        }
+    }
+
+    /// Latest block_n, which may be the pre-confirmed block.
+    pub fn block_n(&self) -> Option<u64> {
+        match self {
+            Self::Empty => None,
+            Self::Confirmed(block_n) => Some(*block_n),
+            Self::Preconfirmed(b) => Some(b.header.block_number),
+        }
+    }
+    pub fn latest_confirmed_block_n(&self) -> Option<u64> {
+        match self {
+            Self::Empty => None,
+            Self::Preconfirmed(b) => b.header.block_number.checked_sub(1),
+            Self::Confirmed(block_n) => Some(*block_n),
+        }
+    }
+    pub fn is_preconfirmed(&self) -> bool {
+        matches!(self, Self::Preconfirmed(_))
+    }
+    pub fn as_preconfirmed(&self) -> Option<&Arc<PreconfirmedBlock>> {
+        match self {
+            Self::Preconfirmed(b) => Some(b),
+            _ => None,
+        }
+    }
+
+    /// Convert to the chain tip type for use in the storage backend. It is distinct from our the internal
+    /// ChainTip to hide implementation details from the storage implementation.
+    fn to_storage(&self) -> StorageChainTip {
+        match self {
+            Self::Empty => StorageChainTip::Empty,
+            Self::Confirmed(block_n) => StorageChainTip::Confirmed(*block_n),
+            Self::Preconfirmed(preconfirmed_block) => StorageChainTip::Preconfirmed {
+                header: preconfirmed_block.header.clone(),
+                content: preconfirmed_block.content.borrow().executed_transactions().cloned().collect(),
+            },
+        }
+    }
+    fn from_storage(tip: StorageChainTip) -> Self {
+        match tip {
+            StorageChainTip::Empty => Self::Empty,
+            StorageChainTip::Confirmed(block_n) => Self::Confirmed(block_n),
+            StorageChainTip::Preconfirmed { header, content } => {
+                Self::Preconfirmed(PreconfirmedBlock::new_with_content(header, content, /* candidates */ []).into())
+            }
+        }
     }
 }
 
 /// Madara client database backend singleton.
-pub struct MadaraBackend {
-    backup_handle: Option<mpsc::Sender<BackupRequest>>,
-    db: Arc<DB>,
+#[derive(Debug)]
+pub struct MadaraBackend<DB = RocksDBStorage> {
+    // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
+    pub db: DB,
     chain_config: Arc<ChainConfig>,
-    db_metrics: DbMetrics,
-    snapshots: Arc<Snapshots>,
-    head_status: ChainHead,
-    watch_events: EventChannels,
-    watch_blocks: BlockWatch,
-    watch_gas_quote: tokio::sync::watch::Sender<Option<L1GasQuote>>,
-    /// WriteOptions with wal disabled
-    writeopts_no_wal: WriteOptions,
+    // db_metrics: DbMetrics,
+    watch_gas_quote: L1GasQuoteCell,
     config: MadaraBackendConfig,
-    // keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
-    #[cfg(any(test, feature = "testing"))]
-    _temp_dir: Option<tempfile::TempDir>,
     sync_status: SyncStatusCell,
     starting_block: Option<u64>,
-}
 
-impl fmt::Debug for MadaraBackend {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut s = f.debug_struct("MadaraBackend");
-        s.field("backup_handle", &self.backup_handle)
-            .field("db", &self.db)
-            .field("chain_config", &self.chain_config)
-            .field("db_metrics", &self.db_metrics)
-            .field("config", &self.config)
-            .finish()
-    }
-}
+    chain_tip: tokio::sync::watch::Sender<ChainTip>,
 
-pub struct DatabaseService {
-    handle: Arc<MadaraBackend>,
-}
+    /// Current finalized block_n on L1.
+    latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
 
-impl DatabaseService {
-    /// Create a new database service.
-    ///
-    /// # Arguments
-    ///
-    /// * `base_path` - The path to the database directory.
-    /// * `backup_dir` - Optional path to the backup directory.
-    /// * `restore_from_latest_backup` - Whether to restore the database from the latest backup.
-    /// * `chain_config` - The chain configuration.
-    ///
-    /// # Returns
-    ///
-    /// A new database service.
-    ///
-    pub async fn new(chain_config: Arc<ChainConfig>, config: MadaraBackendConfig) -> anyhow::Result<Self> {
-        tracing::info!("💾 Opening database at: {}", config.base_path.display());
-
-        let handle = MadaraBackend::open(chain_config, config).await?;
-
-        if let Some(block_n) = handle.head_status().latest_full_block_n() {
-            tracing::info!("📦 Database latest block: #{block_n}");
-        }
-
-        Ok(Self { handle })
-    }
-
-    pub fn backend(&self) -> &Arc<MadaraBackend> {
-        &self.handle
-    }
-
+    /// Keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
     #[cfg(any(test, feature = "testing"))]
-    pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Self {
-        Self { handle: MadaraBackend::open_for_testing(chain_config) }
-    }
+    _temp_dir: Option<tempfile::TempDir>,
 }
 
-impl Service for DatabaseService {}
-
-impl ServiceId for DatabaseService {
-    #[inline(always)]
-    fn svc_id(&self) -> PowerOfTwo {
-        MadaraServiceId::Database.svc_id()
-    }
-}
-
-struct BackupRequest {
-    callback: oneshot::Sender<()>,
-    db: Arc<DB>,
-}
-
-impl Drop for MadaraBackend {
-    fn drop(&mut self) {
-        tracing::info!("⏳ Gracefully closing the database...");
-        self.flush().expect("Error when flushing the database"); // flush :)
-        self.db.cancel_all_background_work(true);
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MadaraBackendConfig {
-    pub base_path: PathBuf,
-    pub backup_dir: Option<PathBuf>,
-    pub restore_from_latest_backup: bool,
-    pub trie_log: TrieLogConfig,
-    pub backup_every_n_blocks: Option<u64>,
     pub flush_every_n_blocks: Option<u64>,
-    pub rocksdb: RocksDBConfig,
+    /// When false, the preconfirmed block is never saved to database.
+    pub save_preconfirmed: bool,
+    pub unsafe_starting_block: Option<u64>,
 }
 
-impl MadaraBackendConfig {
-    pub fn new(base_path: impl AsRef<Path>) -> Self {
-        Self {
-            base_path: base_path.as_ref().to_path_buf(),
-            backup_dir: None,
-            restore_from_latest_backup: false,
-            trie_log: Default::default(),
-            backup_every_n_blocks: None,
-            flush_every_n_blocks: None,
-            rocksdb: Default::default(),
-        }
-    }
-    pub fn backup_dir(self, backup_dir: Option<PathBuf>) -> Self {
-        Self { backup_dir, ..self }
-    }
-    pub fn restore_from_latest_backup(self, restore_from_latest_backup: bool) -> Self {
-        Self { restore_from_latest_backup, ..self }
-    }
-    pub fn backup_every_n_blocks(self, backup_every_n_blocks: Option<u64>) -> Self {
-        Self { backup_every_n_blocks, ..self }
-    }
-    pub fn flush_every_n_blocks(self, flush_every_n_blocks: Option<u64>) -> Self {
-        Self { flush_every_n_blocks, ..self }
-    }
-    pub fn trie_log(self, trie_log: TrieLogConfig) -> Self {
-        Self { trie_log, ..self }
-    }
-}
-
-impl MadaraBackend {
-    pub fn chain_config(&self) -> &Arc<ChainConfig> {
-        &self.chain_config
-    }
-
-    fn new(
-        backup_handle: Option<mpsc::Sender<BackupRequest>>,
-        db: Arc<DB>,
-        chain_config: Arc<ChainConfig>,
-        config: MadaraBackendConfig,
-    ) -> anyhow::Result<Self> {
-        let snapshots = Arc::new(Snapshots::new(
-            Arc::clone(&db),
-            ChainHead::load_from_db(&db).context("Getting latest block_n from database")?.global_trie.current(),
-            Some(config.trie_log.max_kept_snapshots),
-            config.trie_log.snapshot_interval,
-        ));
-        let backend = Self {
-            writeopts_no_wal: make_write_opt_no_wal(),
-            db_metrics: DbMetrics::register().context("Registering db metrics")?,
-            backup_handle,
+impl<D: MadaraStorage> MadaraBackend<D> {
+    fn new_and_init(db: D, chain_config: Arc<ChainConfig>, config: MadaraBackendConfig) -> Result<Self> {
+        let mut backend = Self {
             db,
+            // db_metrics: DbMetrics::register().context("Registering db metrics")?,
             chain_config,
-            watch_events: EventChannels::new(100),
+            starting_block: config.unsafe_starting_block,
             config,
-            starting_block: None,
             sync_status: SyncStatusCell::default(),
-            head_status: ChainHead::default(),
-            snapshots,
-            watch_blocks: BlockWatch::new(),
-            watch_gas_quote: tokio::sync::watch::channel(None).0,
+            watch_gas_quote: L1GasQuoteCell::default(),
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
+            chain_tip: tokio::sync::watch::Sender::new(Default::default()),
+            latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
         };
-        backend.watch_blocks.init_initial_values(&backend).context("Initializing watch channels initial values")?;
+        backend.init().context("Initializing madara backend")?;
         Ok(backend)
     }
 
+    fn init(&mut self) -> Result<()> {
+        // Check chain configuration
+        if let Some(res) = self.db.get_stored_chain_info()? {
+            if res.chain_id != self.chain_config.chain_id {
+                bail!(
+                    "The database has been created on the network \"{}\" (chain id `{}`), \
+                            but the node is configured for network \"{}\" (chain id `{}`).",
+                    res.chain_name,
+                    res.chain_id,
+                    self.chain_config.chain_name,
+                    self.chain_config.chain_id
+                )
+            }
+        } else {
+            self.db.write_chain_info(&StoredChainInfo {
+                chain_id: self.chain_config.chain_id.clone(),
+                chain_name: self.chain_config.chain_name.clone(),
+            })?;
+        }
+
+        // Init chain_tip and set starting block
+        let chain_tip = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
+            StorageChainTip::Confirmed(starting_block)
+        } else {
+            self.db.get_chain_tip()?
+        });
+        self.starting_block = chain_tip.latest_confirmed_block_n();
+        // On startup, remove all blocks past the chain tip, in case we have partial blocks in db.
+        self.db.remove_all_blocks_starting_from(
+            chain_tip.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0),
+        )?;
+        self.chain_tip.send_replace(chain_tip);
+
+        // Init L1 head
+        self.latest_l1_confirmed.send_replace(self.db.get_confirmed_on_l1_tip()?);
+
+        Ok(())
+    }
+
+    /// Get a write handle for the backend. This is the function you need to call to save new blocks, modify the preconfirmed block,
+    /// and do any other such thing. The backend chain_tip can only be modified through this.
+    ///
+    /// As a caller, you are responsible for ensuring the backend is not being concurrently
+    /// modified in an unexpected way. In practice, this means:
+    /// - You are allowed to use the `write_*` low-level functions to write block parts concurrently.
+    /// - You are not allowed to use the other functions to advance the chain tip
+    ///
+    /// Failure to do so could result in errors and/or invalid state, which includes invalid state being saved to the database.
+    /// The functions are still safe to use, since it's a logic error and not a memory safety issue.
+    ///
+    /// In addition, all of the associated functions need to be called in a rayon thread pool context. **Do not call
+    /// them from the tokio pool!**
+    // TODO: ensure exclusive access? all of these requirements could be checked relatively cheaply. There are also
+    // ways to make the aforementioned logic errors unrepreasentable by designing the API a little better.
+    pub fn write_access(self: &Arc<Self>) -> MadaraBackendWriter<D> {
+        MadaraBackendWriter { inner: self.clone() }
+    }
+
+    /// Set the current latest block confirmed on L1. This will also wake watchers to L1 head changes.
+    ///
+    /// Warning: It is invalid to set this new `latest_l1_confirmed` to a lower value than the current one, or
+    /// to a higher value than the current block on l2.
+    // FIXME: In these cases, the update should not succeed and an error should be returned.
+    pub fn set_latest_l1_confirmed(&self, latest_l1_confirmed: Option<u64>) -> Result<()> {
+        self.db.write_confirmed_on_l1_tip(latest_l1_confirmed)?;
+        self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
+        Ok(())
+    }
+}
+
+impl MadaraBackend<RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
-    pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
+    pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<Self> {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
-        let config = MadaraBackendConfig::new(&temp_dir);
-        let db = open_rocksdb(temp_dir.as_ref(), &config.rocksdb).unwrap();
-        let mut backend = Self::new(None, db, chain_config, config).unwrap();
+        let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).unwrap();
+        let mut backend = Self::new_and_init(db, chain_config, Default::default()).unwrap();
         backend._temp_dir = Some(temp_dir);
         Arc::new(backend)
     }
 
     /// Open the db.
-    pub async fn open(
+    pub fn open_rocksdb(
+        base_path: &Path,
         chain_config: Arc<ChainConfig>,
         config: MadaraBackendConfig,
-    ) -> anyhow::Result<Arc<MadaraBackend>> {
+        rocksdb_config: RocksDBConfig,
+    ) -> Result<Arc<Self>> {
         // check if the db version is compatible with the current binary
         tracing::debug!("checking db version");
-        if let Some(db_version) =
-            db_version::check_db_version(&config.base_path).context("Checking database version")?
-        {
+        if let Some(db_version) = db_version::check_db_version(base_path).context("Checking database version")? {
             tracing::debug!("version of existing db is {db_version}");
         }
-
-        let db_path = config.base_path.join("db");
-
-        // when backups are enabled, a thread is spawned that owns the rocksdb BackupEngine (it is not thread safe) and it receives backup requests using a mpsc channel
-        // There is also another oneshot channel involved: when restoring the db at startup, we want to wait for the backupengine to finish restoration before returning from open()
-        let backup_handle = if let Some(backup_dir) = config.backup_dir.clone() {
-            let (restored_cb_sender, restored_cb_recv) = oneshot::channel();
-
-            let (sender, receiver) = mpsc::channel(1);
-            let db_path = db_path.clone();
-            std::thread::spawn(move || {
-                spawn_backup_db_task(
-                    &backup_dir,
-                    config.restore_from_latest_backup,
-                    &db_path,
-                    restored_cb_sender,
-                    receiver,
-                )
-                .expect("Database backup thread")
-            });
-
-            tracing::debug!("blocking on db restoration");
-            restored_cb_recv.await.context("Restoring database")?;
-            tracing::debug!("done blocking on db restoration");
-
-            Some(sender)
-        } else {
-            None
-        };
-
-        let db = open_rocksdb(&db_path, &config.rocksdb)?;
-
-        let mut backend = Self::new(backup_handle, db, chain_config, config)?;
-        backend.check_configuration()?;
-        backend.load_head_status_from_db()?;
-        backend.update_metrics();
-        backend.set_starting_block(backend.head_status.latest_full_block_n());
-        Ok(Arc::new(backend))
-    }
-
-    /// This function needs to be called by the downstream block importer consumer service to mark a
-    /// new block as fully imported. See the [module documentation](self) to get details on what this exactly means.
-    pub async fn on_full_block_imported(
-        &self,
-        block_info: Arc<MadaraBlockInfo>,
-        events: impl IntoIterator<Item = EventWithTransactionHash>,
-    ) -> anyhow::Result<()> {
-        let block_n = block_info.header.block_number;
-        self.head_status.set_latest_full_block_n(Some(block_n));
-        self.snapshots.set_new_head(db_block_id::DbBlockId::Number(block_n));
-
-        for (index, event) in events.into_iter().enumerate() {
-            if let Err(e) = self.watch_events.publish(EventWithInfo {
-                event: event.event,
-                block_hash: Some(block_info.block_hash),
-                block_number: Some(block_info.header.block_number),
-                transaction_hash: event.transaction_hash,
-                event_index_in_block: index,
-            }) {
-                tracing::debug!("Failed to send event to subscribers: {e}");
-            }
-        }
-        self.watch_blocks.on_new_block(block_info);
-
-        self.save_head_status_to_db()?;
-
-        if self
-            .config
-            .flush_every_n_blocks
-            .is_some_and(|every_n_blocks| every_n_blocks != 0 && block_n % every_n_blocks == 0)
-        {
-            self.flush().context("Flushing database")?;
-        }
-
-        if self
-            .config
-            .backup_every_n_blocks
-            .is_some_and(|every_n_blocks| every_n_blocks != 0 && block_n % every_n_blocks == 0)
-        {
-            self.backup().await.context("Making DB backup")?;
-        }
-        Ok(())
-    }
-
-    pub fn flush(&self) -> anyhow::Result<()> {
-        tracing::debug!("doing a db flush");
-        let mut opts = FlushOptions::default();
-        opts.set_wait(true);
-        // we have to collect twice here :/
-        let columns = Column::ALL.iter().map(|e| self.db.get_column(*e)).collect::<Vec<_>>();
-        let columns = columns.iter().collect::<Vec<_>>();
-
-        self.db.flush_cfs_opt(&columns, &opts).context("Flushing database")?;
-
-        Ok(())
-    }
-
-    #[tracing::instrument(skip(self))]
-    pub async fn backup(&self) -> anyhow::Result<()> {
-        let (callback_sender, callback_recv) = oneshot::channel();
-        let _res = self
-            .backup_handle
-            .as_ref()
-            .context("backups are not enabled")?
-            .try_send(BackupRequest { callback: callback_sender, db: Arc::clone(&self.db) });
-        callback_recv.await.context("Backups task died :(")?;
-        Ok(())
-    }
-
-    // tries
-
-    pub(crate) fn get_bonsai<H: StarkHash + Send + Sync>(
-        &self,
-        map: DatabaseKeyMapping,
-    ) -> BonsaiStorage<BasicId, BonsaiDb, H> {
-        let config = BonsaiStorageConfig {
-            max_saved_trie_logs: Some(self.config.trie_log.max_saved_trie_logs),
-            max_saved_snapshots: Some(self.config.trie_log.max_kept_snapshots),
-            snapshot_interval: self.config.trie_log.snapshot_interval,
-        };
-
-        BonsaiStorage::new(
-            BonsaiDb::new(Arc::clone(&self.db), Arc::clone(&self.snapshots), map),
-            config,
-            // Every global tree has keys of 251 bits.
-            251,
-        )
-    }
-
-    pub fn contract_trie(&self) -> GlobalTrie<Pedersen> {
-        self.get_bonsai(DatabaseKeyMapping {
-            flat: Column::BonsaiContractsFlat,
-            trie: Column::BonsaiContractsTrie,
-            log: Column::BonsaiContractsLog,
-        })
-    }
-
-    pub fn contract_storage_trie(&self) -> GlobalTrie<Pedersen> {
-        self.get_bonsai(DatabaseKeyMapping {
-            flat: Column::BonsaiContractsStorageFlat,
-            trie: Column::BonsaiContractsStorageTrie,
-            log: Column::BonsaiContractsStorageLog,
-        })
-    }
-
-    pub fn class_trie(&self) -> GlobalTrie<Poseidon> {
-        self.get_bonsai(DatabaseKeyMapping {
-            flat: Column::BonsaiClassesFlat,
-            trie: Column::BonsaiClassesTrie,
-            log: Column::BonsaiClassesLog,
-        })
-    }
-
-    /// Returns the total storage size
-    pub fn update_metrics(&self) -> u64 {
-        self.db_metrics.update(&self.db)
+        let db_path = base_path.join("db");
+        let db = RocksDBStorage::open(&db_path, rocksdb_config).context("Opening rocksdb storage")?;
+        Ok(Arc::new(Self::new_and_init(db, chain_config, config)?))
     }
 }
 
-pub mod bonsai_identifier {
-    pub const CONTRACT: &[u8] = b"0xcontract";
-    pub const CLASS: &[u8] = b"0xclass";
+#[derive(Clone, Debug)]
+pub struct AddFullBlockResult {
+    pub new_state_root: Felt,
+    pub commitments: BlockCommitments,
+    pub block_hash: Felt,
+    pub parent_block_hash: Felt,
+}
+
+impl<D: MadaraStorageRead> MadaraBackend<D> {
+    pub fn latest_confirmed_block_n(&self) -> Option<u64> {
+        self.chain_tip.borrow().latest_confirmed_block_n()
+    }
+    /// Latest block_n, which may be the pre-confirmed block.
+    pub fn latest_block_n(&self) -> Option<u64> {
+        self.chain_tip.borrow().block_n()
+    }
+    pub fn has_preconfirmed_block(&self) -> bool {
+        self.chain_tip.borrow().is_preconfirmed()
+    }
+    pub fn latest_l1_confirmed_block_n(&self) -> Option<u64> {
+        *self.latest_l1_confirmed.borrow()
+    }
+
+    fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
+        self.chain_tip.borrow().as_preconfirmed().cloned()
+    }
+
+    /// Get the latest block_n that was in the db when this backend instance was initialized.
+    pub fn get_starting_block(&self) -> Option<u64> {
+        self.starting_block
+    }
+
+    pub fn chain_config(&self) -> &Arc<ChainConfig> {
+        &self.chain_config
+    }
+}
+
+/// Structure holding exclusive access to write the blocks and the tip of the chain.
+///
+/// Note: All of the associated functions need to be called in a rayon thread pool context.
+pub struct MadaraBackendWriter<D: MadaraStorage> {
+    inner: Arc<MadaraBackend<D>>,
+}
+
+impl<D: MadaraStorage> MadaraBackendWriter<D> {
+    fn replace_chain_tip(&self, new_tip: ChainTip) -> Result<()> {
+        // Note: while you could think it is possible for the `chain_tip` to change between this next line when we
+        // originally get it, and when we save the replace it to a new one, leading to possible corruption in this
+        // race condition, we have explicitely forbidden `MadaraBackendWriter` as a whole to be used concurrently.
+        let current_tip = self.inner.chain_tip.borrow().clone();
+
+        // Detect if state transition is valid.
+        match (&current_tip, &new_tip) {
+            // Adding the genesis block, which can be preconfirmed or confirmed. Replacing empty with empty won't work (block_n returns None).
+            (ChainTip::Empty, block) => ensure!(block.block_n() == Some(0), "Can only replace the empty chain tip with a genesis block. [current_tip={current_tip:?}, new_tip={new_tip:?}]"),
+            // Never valid.
+            (_, ChainTip::Empty) => bail!("Cannot replace the chain tip to empty. [current_tip={current_tip:?}, new_tip={new_tip:?}]"),
+            // Block is closed, preconfirmed replaces confirmed at same height.
+            // OR: preconfirmed block is being cleared.
+            (ChainTip::Preconfirmed(preconfirmed), ChainTip::Confirmed(new_block_n)) => ensure!(
+                preconfirmed.header.block_number == *new_block_n || preconfirmed.header.block_number == *new_block_n + 1,
+                "Replacing chain tip from preconfirmed to confirmed requires the new block_n to match the previous one, or be one less than it. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
+            ),
+            // New preconfirmed at same height, replacing the previous proposal.
+            (ChainTip::Preconfirmed(preconfirmed), ChainTip::Preconfirmed(new_preconfirmed)) => ensure!(
+                preconfirmed.header.block_number == new_preconfirmed.header.block_number,
+                "Replacing chain tip from preconfirmed to preconfirmed requires the new block_n to match the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
+            ),
+            // New preconfirmed block on top of a confirmed block.
+            (ChainTip::Confirmed(block_n), ChainTip::Preconfirmed(preconfirmed)) => ensure!(
+                block_n + 1 == preconfirmed.header.block_number,
+                "Replacing chain tip from confirmed to preconfirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
+            ),
+            // New confirmed block is added on top of a confirmed block.
+            (ChainTip::Confirmed(block_n), ChainTip::Confirmed(new_block_n)) => ensure!(
+                block_n + 1 == *new_block_n,
+                "Replacing chain tip from confirmed to confirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
+            ),
+        }
+
+        let current_tip_in_db = if self.inner.config.save_preconfirmed {
+            &current_tip
+        } else {
+            // Remove the pre-confirmed case: we save the parent confirmed in that case.
+            &ChainTip::on_confirmed_block_n_or_empty(current_tip.latest_confirmed_block_n())
+        };
+
+        let new_tip_in_db = if self.inner.config.save_preconfirmed {
+            &new_tip
+        } else {
+            // Remove the pre-confirmed case: we save the parent confirmed in that case.
+            &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
+        };
+        // Write to db if needed.
+        if current_tip_in_db != new_tip_in_db {
+            self.inner.db.replace_chain_tip(&new_tip_in_db.to_storage())?;
+        }
+
+        // Write to the backend. This also sends the notification to subscribers :)
+        self.inner.chain_tip.send_replace(new_tip);
+
+        Ok(())
+    }
+
+    /// Append transactions to the current preconfirmed block. Returns an error if there is no preconfirmed block.
+    /// Replaces all candidate transactions with the content of `replace_candidates`.
+    pub fn append_to_preconfirmed(
+        &self,
+        executed: &[PreconfirmedExecutedTransaction],
+        replace_candidates: impl IntoIterator<Item = Arc<ValidatedTransaction>>,
+    ) -> Result<()> {
+        let block = self.inner.preconfirmed_block().context("There is no current preconfirmed block")?;
+
+        if self.inner.config.save_preconfirmed {
+            let start_tx_index = block.content.borrow().n_executed();
+            // We don't save candidate transactions.
+            self.inner.db.append_preconfirmed_content(start_tx_index as u64, executed)?;
+        }
+
+        block.append(executed.iter().cloned(), replace_candidates);
+
+        Ok(())
+    }
+
+    /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
+    pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool) -> Result<AddFullBlockResult> {
+        let (block, classes) = self
+            .inner
+            .block_view_on_preconfirmed()
+            .context("There is no current preconfirmed block")?
+            .get_full_block_with_classes()?;
+
+        // Write the block & apply to global trie
+
+        let result = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;
+
+        self.new_confirmed_block(block.header.block_number)?;
+
+        Ok(result)
+    }
+
+    /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
+    pub fn clear_preconfirmed(&self) -> Result<()> {
+        self.replace_chain_tip(ChainTip::on_confirmed_block_n_or_empty(self.inner.latest_confirmed_block_n()))
+    }
+
+    /// Start a new preconfirmed block on top of the latest confirmed block. Deletes and replaces the current preconfirmed block if present.
+    /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
+    pub fn new_preconfirmed(&self, block: PreconfirmedBlock) -> Result<()> {
+        self.replace_chain_tip(ChainTip::Preconfirmed(Arc::new(block)))
+    }
+
+    /// Add a block. Returns the block hash.
+    /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
+    pub fn add_full_block_with_classes(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        classes: &[ConvertedClass],
+        pre_v0_13_2_hash_override: bool,
+    ) -> Result<AddFullBlockResult> {
+        let block_n = block.header.block_number;
+        let result = self.write_new_confirmed_inner(block, classes, pre_v0_13_2_hash_override)?;
+
+        self.new_confirmed_block(block_n)?;
+        Ok(result)
+    }
+
+    /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
+    /// all the block parts. Returns the block hash.
+    fn write_new_confirmed_inner(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        classes: &[ConvertedClass],
+        pre_v0_13_2_hash_override: bool,
+    ) -> Result<AddFullBlockResult> {
+        let parent_block_hash = if let Some(last_block) = self.inner.block_view_on_last_confirmed() {
+            last_block.get_block_info()?.block_hash
+        } else {
+            Felt::ZERO // genesis
+        };
+
+        let commitments = BlockCommitments::compute(
+            &CommitmentComputationContext {
+                protocol_version: self.inner.chain_config.latest_protocol_version,
+                chain_id: self.inner.chain_config.chain_id.to_felt(),
+            },
+            &block.transactions,
+            &block.state_diff,
+            &block.events,
+        );
+
+        // Global state root and block hash.
+        let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
+
+        let header =
+            block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
+        let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
+
+        // Save the block.
+
+        self.write_header(BlockHeaderWithSignatures { header, block_hash, consensus_signatures: vec![] })?;
+        self.write_transactions(block.header.block_number, &block.transactions)?;
+        self.write_state_diff(block.header.block_number, &block.state_diff)?;
+        self.write_events(block.header.block_number, &block.events)?;
+        self.write_classes(block.header.block_number, classes)?;
+
+        Ok(AddFullBlockResult { new_state_root: global_state_root, commitments, block_hash, parent_block_hash })
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()> {
+        self.inner.db.write_header(header)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()> {
+        self.inner.db.write_transactions(block_n, txs)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()> {
+        self.inner.db.write_state_diff(block_n, value)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()> {
+        self.inner.db.write_events(block_n, txs)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
+        self.inner.db.write_classes(block_n, converted_classes)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// Write a state diff to the global tries.
+    /// Returns the new state root.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn apply_to_global_trie<'a>(
+        &self,
+        start_block_n: u64,
+        state_diffs: impl IntoIterator<Item = &'a StateDiff>,
+    ) -> Result<Felt> {
+        self.inner.db.apply_to_global_trie(start_block_n, state_diffs)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    /// This function in particular marks a fully imported block as confirmed. It also clears the current preconfirmed block, if any.
+    ///
+    /// **Warning**: The caller must ensure this new imported block is the one following the current confirmed block.
+    /// You are not allowed to call this function with earlier or later blocks.
+    /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
+    /// parts.
+    pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
+        if self
+            .inner
+            .config
+            .flush_every_n_blocks
+            .is_some_and(|flush_every_n_blocks| block_number.checked_rem(flush_every_n_blocks) == Some(0))
+        {
+            tracing::debug!("Flushing.");
+            self.inner.db.flush()?;
+        }
+
+        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
+
+        // Advance chain & clear preconfirmed atomically
+        self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
+
+        Ok(())
+    }
+
+    // /// Returns the total storage size
+    // pub fn update_metrics(&self) -> u64 {
+    //     self.db_metrics.update(&self.db)
+    // }
+}
+
+// Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
+impl<D: MadaraStorageRead> MadaraBackend<D> {
+    pub fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
+        self.db.get_l1_messaging_sync_tip()
+    }
+    pub fn get_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
+        self.db.get_pending_message_to_l2(core_contract_nonce)
+    }
+    pub fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
+        self.db.get_next_pending_message_to_l2(start_nonce)
+    }
+    pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
+        self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
+    }
+    pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
+        self.db.get_mempool_transactions()
+    }
+    pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
+        self.db.get_devnet_predeployed_keys()
+    }
+    pub fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
+        self.db.get_latest_applied_trie_update()
+    }
+}
+// Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
+impl<D: MadaraStorageWrite> MadaraBackend<D> {
+    pub fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()> {
+        self.db.write_l1_messaging_sync_tip(l1_block_n)
+    }
+    pub fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
+        self.db.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash)
+    }
+    pub fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
+        self.db.write_pending_message_to_l2(msg)
+    }
+    pub fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
+        self.db.remove_pending_message_to_l2(core_contract_nonce)
+    }
+    pub fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()> {
+        self.db.write_devnet_predeployed_keys(devnet_keys)
+    }
+    pub fn remove_saved_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
+        self.db.remove_mempool_transactions(tx_hashes)
+    }
+    pub fn write_saved_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
+        self.db.write_mempool_transaction(tx)
+    }
+    pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
+        self.db.write_latest_applied_trie_update(block_n)
+    }
 }

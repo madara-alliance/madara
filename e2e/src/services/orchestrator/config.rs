@@ -48,6 +48,8 @@ pub enum OrchestratorError {
     NetworkError(String),
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
+    #[error("Not Synced yet")]
+    NotSynced,
 }
 
 #[derive(Debug, Clone)]
@@ -124,7 +126,7 @@ impl Default for OrchestratorConfig {
 
             max_block_to_process: None,
             min_block_to_process: None,
-            madara_version: "0.13.2".to_string(),
+            madara_version: "0.13.3".to_string(),
             logs: (false, true),
         }
     }
@@ -299,6 +301,7 @@ impl OrchestratorConfig {
         // Add settlement flags
         if self.settle_on_ethereum {
             command.arg("--settle-on-ethereum");
+            command.arg("--ethereum-finality-retry-wait-in-secs").arg(4.to_string());
             if let Some(rpc_url) = self.ethereum_rpc_url() {
                 command.arg("--ethereum-rpc-url").arg(rpc_url.to_string());
             }

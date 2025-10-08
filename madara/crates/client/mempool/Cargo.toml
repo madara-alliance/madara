@@ -41,7 +41,6 @@ testing = ["mc-db/testing", "mockall"]
 mc-analytics.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
-mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
@@ -58,6 +57,8 @@ starknet_api.workspace = true
 # Other
 anyhow.workspace = true
 async-trait.workspace = true
+dashmap.workspace = true
+futures.workspace = true
 mockall = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true

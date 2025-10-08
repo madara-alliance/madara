@@ -1,11 +1,12 @@
 //! Executor thread internal logic.
 
+use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
-use blockifier::{
-    blockifier::transaction_executor::TransactionExecutor,
-    state::{cached_state::StorageEntry, state_api::State},
-};
+use blockifier::{blockifier::transaction_executor::TransactionExecutor, state::state_api::State};
 use futures::future::OptionFuture;
+use mc_db::MadaraBackend;
+use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
+use mp_convert::{Felt, ToFelt};
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
 use std::{
@@ -13,16 +14,7 @@ use std::{
     mem,
     sync::Arc,
 };
-use tokio::{
-    sync::{broadcast, mpsc},
-    time::Instant,
-};
-
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
-use mp_convert::{Felt, ToFelt};
-
-use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
+use tokio::{sync::mpsc, time::Instant};
 
 struct ExecutorStateExecuting {
     exec_ctx: BlockExecutionContext,
@@ -170,9 +162,12 @@ impl ExecutorThread {
         let Some(block_n_min_10) = block_n.checked_sub(10) else { return Ok(None) };
 
         let get_hash_from_db = || {
-            self.backend
-                .get_block_hash(&DbBlockId::Number(block_n_min_10))
-                .context("Getting block hash of block_n - 10")
+            if let Some(view) = self.backend.block_view_on_confirmed(block_n_min_10) {
+                // block exists
+                anyhow::Ok(Some(view.get_block_info().context("Getting block hash of block_n - 10")?.block_hash))
+            } else {
+                Ok(None)
+            }
         };
 
         // Optimistically get the hash from database without subscribing to the closed_blocks channel.
@@ -181,18 +176,13 @@ impl ExecutorThread {
         } else {
             tracing::debug!("Waiting on block_n={} to get closed. (current={})", block_n_min_10, block_n);
             loop {
-                let mut receiver = self.backend.subscribe_closed_blocks();
+                let mut receiver = self.backend.watch_chain_tip();
                 // We need to re-query the DB here since the it is possible for the block hash to have arrived just in between.
                 if let Some(block_hash) = get_hash_from_db()? {
                     break Ok(Some((block_n_min_10, block_hash)));
                 }
                 tracing::debug!("Waiting for hash of block_n-10.");
-                match receiver.blocking_recv() {
-                    Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
-                    Err(broadcast::error::RecvError::Closed) => {
-                        anyhow::bail!("Backend latest block channel closed")
-                    }
-                }
+                self.wait_rt.block_on(async { receiver.recv().await });
             }
         }
     }
@@ -219,8 +209,8 @@ impl ExecutorThread {
     fn create_execution_state(
         &mut self,
         state: ExecutorStateNewBlock,
-        previous_l2_gas_used: u64,
-    ) -> anyhow::Result<(ExecutorStateExecuting, HashMap<StorageEntry, Felt>)> {
+        previous_l2_gas_used: u128,
+    ) -> anyhow::Result<ExecutorStateExecuting> {
         let previous_l2_gas_price = state.state_adaptor.latest_gas_prices().strk_l2_gas_price;
         let exec_ctx = create_execution_context(
             &self.backend,
@@ -233,10 +223,10 @@ impl ExecutorThread {
         let mut executor =
             self.backend.new_executor_for_block_production(state.state_adaptor, exec_ctx.to_blockifier()?)?;
 
-        // Prepare the block_n_min_10 state diff entry.
-        let mut state_maps_storages = HashMap::default();
-
-        if let Some((block_n_min_10, block_hash_n_min_10)) = self.wait_for_hash_of_block_min_10(exec_ctx.block_n)? {
+        // Prepare the block_n-10 state diff entry on the 0x1 contract.
+        if let Some((block_n_min_10, block_hash_n_min_10)) =
+            self.wait_for_hash_of_block_min_10(exec_ctx.block_number)?
+        {
             let contract_address = 1u64.into();
             let key = block_n_min_10.into();
             executor
@@ -245,7 +235,6 @@ impl ExecutorThread {
                 .expect("Blockifier block context has been taken")
                 .set_storage_at(contract_address, key, block_hash_n_min_10)
                 .context("Cannot set storage value in cache")?;
-            state_maps_storages.insert((contract_address, key), block_hash_n_min_10);
 
             tracing::debug!(
                 "State diff inserted {:#x} {:#x} => {block_hash_n_min_10:#x}",
@@ -253,15 +242,12 @@ impl ExecutorThread {
                 key.to_felt()
             );
         }
-        Ok((
-            ExecutorStateExecuting {
-                exec_ctx,
-                executor,
-                consumed_l1_to_l2_nonces: state.consumed_l1_to_l2_nonces,
-                declared_classes: HashMap::new(),
-            },
-            state_maps_storages,
-        ))
+        Ok(ExecutorStateExecuting {
+            exec_ctx,
+            executor,
+            consumed_l1_to_l2_nonces: state.consumed_l1_to_l2_nonces,
+            declared_classes: HashMap::new(),
+        })
     }
 
     fn initial_state(&self) -> anyhow::Result<ExecutorThreadState> {
@@ -341,16 +327,15 @@ impl ExecutorThread {
                 ExecutorThreadState::Executing(ref mut executor_state_executing) => executor_state_executing,
                 ExecutorThreadState::NewBlock(state_new_block) => {
                     // Create new execution state.
-                    let (execution_state, initial_state_diffs_storage) = self
+                    let execution_state = self
                         .create_execution_state(state_new_block, l2_gas_consumed_block)
                         .context("Creating execution state")?;
                     l2_gas_consumed_block = 0;
 
-                    tracing::debug!("Starting new block, block_n={}", execution_state.exec_ctx.block_n);
+                    tracing::debug!("Starting new block, block_n={}", execution_state.exec_ctx.block_number);
                     if self
                         .replies_sender
                         .blocking_send(super::ExecutorMessage::StartNewBlock {
-                            initial_state_diffs_storage,
                             exec_ctx: execution_state.exec_ctx.clone(),
                         })
                         .is_err()
@@ -394,7 +379,7 @@ impl ExecutorThread {
                         tracing::trace!("Successful execution of transaction {:#x}", btx.tx_hash().to_felt());
 
                         stats.n_added_to_block += 1;
-                        stats.l2_gas_consumed += execution_info.receipt.gas.l2_gas.0;
+                        stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);
                         block_empty = false;
                         if execution_info.is_reverted() {
                             stats.n_reverted += 1;
@@ -428,7 +413,9 @@ impl ExecutorThread {
             tracing::debug!("Block now full: {:?}", block_full);
 
             let exec_result = super::BatchExecutionResult { executed_txs, blockifier_results, stats };
-            if self.replies_sender.blocking_send(super::ExecutorMessage::BatchExecuted(exec_result)).is_err() {
+            if exec_result.stats.n_executed > 0
+                && self.replies_sender.blocking_send(super::ExecutorMessage::BatchExecuted(exec_result)).is_err()
+            {
                 // Receiver closed
                 break Ok(());
             }
@@ -441,7 +428,7 @@ impl ExecutorThread {
             if force_close || block_full || block_time_deadline_reached {
                 tracing::debug!(
                     "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
-                    execution_state.exec_ctx.block_n,
+                    execution_state.exec_ctx.block_number,
                 );
 
                 if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock).is_err() {

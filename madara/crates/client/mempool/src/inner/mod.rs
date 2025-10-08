@@ -7,7 +7,7 @@ use crate::inner::{
     timestamp_queue::TimestampQueue,
     tx::{EvictionScore, MempoolTransaction, ScoreFunction},
 };
-use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx};
+use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
@@ -124,7 +124,7 @@ impl InnerMempool {
             .map(|(contract_address, account)| (contract_address, &account.current_nonce))
     }
 
-    pub fn transactions(&self) -> impl Iterator<Item = &ValidatedMempoolTx> {
+    pub fn transactions(&self) -> impl Iterator<Item = &ValidatedTransaction> {
         self.accounts.all_accounts().iter().flat_map(|(_, acc)| acc.queued_txs.values()).map(|t| &t.inner)
     }
 }
@@ -143,7 +143,7 @@ impl InnerMempool {
     }
 
     /// Update indices based on an account update, and extend `removed_txs` with the removed txs.
-    fn apply_update(&mut self, account_update: AccountUpdate, removed_txs: &mut impl Extend<ValidatedMempoolTx>) {
+    fn apply_update(&mut self, account_update: AccountUpdate, removed_txs: &mut impl Extend<ValidatedTransaction>) {
         tracing::debug!("Apply update {account_update:#?}");
         self.ready_queue.apply_account_update(&account_update);
         self.timestamp_queue.apply_account_update(&account_update);
@@ -169,9 +169,9 @@ impl InnerMempool {
     pub fn insert_tx(
         &mut self,
         now: TxTimestamp,
-        tx: ValidatedMempoolTx,
+        tx: ValidatedTransaction,
         account_nonce: Nonce,
-        removed_txs: &mut impl Extend<ValidatedMempoolTx>,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
     ) -> Result<(), TxInsertionError> {
         // Prechecks: TTL
         if let Some(ttl) = self.config.ttl {
@@ -238,7 +238,11 @@ impl InnerMempool {
 
     /// Applies the [EvictionScore] policy: we remove the least desirable transaction in the mempool if it is less desirable than this
     /// new one.
-    fn try_make_room_for(&mut self, new_tx: &EvictionScore, removed_txs: &mut impl Extend<ValidatedMempoolTx>) -> bool {
+    fn try_make_room_for(
+        &mut self,
+        new_tx: &EvictionScore,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) -> bool {
         tracing::debug!("Try make room for {new_tx:?}");
         let Some(account_key) = self.eviction_queue.get_next_if_less_desirable_than(new_tx) else {
             return false;
@@ -263,7 +267,7 @@ impl InnerMempool {
         &mut self,
         contract_address: &ContractAddress,
         account_nonce: &Nonce,
-        removed_txs: &mut impl Extend<ValidatedMempoolTx>,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
     ) {
         tracing::debug!("Update account nonce {contract_address:?} {account_nonce:?}");
         let Some(account_update) = self.accounts.update_account_nonce(contract_address, account_nonce) else { return };
@@ -273,7 +277,7 @@ impl InnerMempool {
     /// Pop the next ready transaction for block building, or `None` if the mempool has no ready transaction.
     /// This does not increment the nonce of the account, meaning the next transactions for the accounts will not be ready until an
     /// `update_account_nonce` is issued.
-    pub fn pop_next_ready(&mut self) -> Option<ValidatedMempoolTx> {
+    pub fn pop_next_ready(&mut self) -> Option<ValidatedTransaction> {
         // Get the next ready account,
         let account_key = self.ready_queue.get_next_ready()?;
 
@@ -299,7 +303,11 @@ impl InnerMempool {
     /// * `now`: current time.
     /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps
     ///   the caller do bookkeeping if necessary (remove from db, send update notifications...)
-    pub fn remove_all_ttl_exceeded_txs(&mut self, now: TxTimestamp, removed_txs: &mut impl Extend<ValidatedMempoolTx>) {
+    pub fn remove_all_ttl_exceeded_txs(
+        &mut self,
+        now: TxTimestamp,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) {
         let Some(ttl) = self.config.ttl else { return };
         let limit_ts = now.saturating_sub(ttl);
         while let Some(tx_key) = self.timestamp_queue.first_older_than(limit_ts) {
@@ -308,11 +316,11 @@ impl InnerMempool {
         }
     }
 
-    pub fn get_transaction_by_hash(&self, tx_hash: &TransactionHash) -> Option<&ValidatedMempoolTx> {
+    pub fn get_transaction_by_hash(&self, tx_hash: &TransactionHash) -> Option<&ValidatedTransaction> {
         self.by_tx_hash.get(tx_hash).and_then(|key| self.accounts.get_tx_by_key(key)).map(|tx| &tx.inner)
     }
 
-    pub fn get_transaction(&self, contract_address: &ContractAddress, nonce: &Nonce) -> Option<&ValidatedMempoolTx> {
+    pub fn get_transaction(&self, contract_address: &ContractAddress, nonce: &Nonce) -> Option<&ValidatedTransaction> {
         self.accounts.get_transaction(contract_address, nonce).map(|tx| &tx.inner)
     }
 

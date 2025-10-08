@@ -88,11 +88,30 @@ impl Transaction {
 
     pub fn version(&self) -> u8 {
         match self {
-            Transaction::Invoke(tx) => tx.version(),
-            Transaction::L1Handler(tx) => tx.version(),
-            Transaction::Declare(tx) => tx.version(),
-            Transaction::Deploy(tx) => tx.version(),
-            Transaction::DeployAccount(tx) => tx.version(),
+            Self::Invoke(tx) => tx.version(),
+            Self::L1Handler(tx) => tx.version(),
+            Self::Declare(tx) => tx.version(),
+            Self::Deploy(tx) => tx.version(),
+            Self::DeployAccount(tx) => tx.version(),
+        }
+    }
+
+    pub fn transaction_hash(&self) -> &Felt {
+        match self {
+            Self::Invoke(tx) => tx.transaction_hash(),
+            Self::L1Handler(tx) => &tx.transaction_hash,
+            Self::Declare(tx) => tx.transaction_hash(),
+            Self::Deploy(tx) => &tx.transaction_hash,
+            Self::DeployAccount(tx) => tx.transaction_hash(),
+        }
+    }
+    pub fn contract_address(&self) -> &Felt {
+        match self {
+            Self::Invoke(tx) => tx.contract_address(),
+            Self::L1Handler(tx) => &tx.contract_address,
+            Self::Declare(tx) => tx.contract_address(),
+            Self::Deploy(tx) => &tx.contract_address,
+            Self::DeployAccount(tx) => tx.contract_address(),
         }
     }
 }
@@ -116,6 +135,21 @@ impl InvokeTransaction {
             InvokeTransaction::V0(_) => 0,
             InvokeTransaction::V1(_) => 1,
             InvokeTransaction::V3(_) => 3,
+        }
+    }
+
+    pub fn transaction_hash(&self) -> &Felt {
+        match self {
+            Self::V0(tx) => &tx.transaction_hash,
+            Self::V1(tx) => &tx.transaction_hash,
+            Self::V3(tx) => &tx.transaction_hash,
+        }
+    }
+    pub fn contract_address(&self) -> &Felt {
+        match self {
+            Self::V0(tx) => &tx.sender_address,
+            Self::V1(tx) => &tx.sender_address,
+            Self::V3(tx) => &tx.sender_address,
         }
     }
 }
@@ -320,6 +354,23 @@ impl DeclareTransaction {
             DeclareTransaction::V1(_) => 1,
             DeclareTransaction::V2(_) => 2,
             DeclareTransaction::V3(_) => 3,
+        }
+    }
+
+    pub fn transaction_hash(&self) -> &Felt {
+        match self {
+            Self::V0(tx) => &tx.transaction_hash,
+            Self::V1(tx) => &tx.transaction_hash,
+            Self::V2(tx) => &tx.transaction_hash,
+            Self::V3(tx) => &tx.transaction_hash,
+        }
+    }
+    pub fn contract_address(&self) -> &Felt {
+        match self {
+            Self::V0(tx) => &tx.sender_address,
+            Self::V1(tx) => &tx.sender_address,
+            Self::V2(tx) => &tx.sender_address,
+            Self::V3(tx) => &tx.sender_address,
         }
     }
 }
@@ -560,6 +611,19 @@ impl DeployAccountTransaction {
         match self {
             DeployAccountTransaction::V1(_) => 1,
             DeployAccountTransaction::V3(_) => 3,
+        }
+    }
+
+    pub fn transaction_hash(&self) -> &Felt {
+        match self {
+            Self::V1(tx) => &tx.transaction_hash,
+            Self::V3(tx) => &tx.transaction_hash,
+        }
+    }
+    pub fn contract_address(&self) -> &Felt {
+        match self {
+            Self::V1(tx) => &tx.contract_address,
+            Self::V3(tx) => &tx.sender_address,
         }
     }
 }
