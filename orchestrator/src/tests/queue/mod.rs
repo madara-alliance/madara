@@ -1,89 +1,31 @@
 use rstest::*;
 
-/// Test that send_message adds the OrchestratorVersion message attribute using Omni Queue
-#[rstest]
-#[tokio::test]
-#[ignore]
-async fn test_send_message_with_version_attribute() {
+#[cfg(test)]
+mod tests {
+    use super::*;
     use crate::core::client::queue::sqs::{InnerSQS, SQS};
     use crate::core::client::queue::QueueClient;
     use crate::types::params::{AWSResourceIdentifier, QueueArgs};
     use crate::types::queue::QueueType;
     use aws_config::{BehaviorVersion, Region};
+    use orchestrator_utils::env_utils::get_env_var_or_panic;
 
-    // Create localstack AWS config
-    // Use environment variable to determine endpoint, defaulting to localhost for tests
-    let endpoint_url = std::env::var("LOCALSTACK_ENDPOINT").unwrap_or_else(|_| "http://localhost:4566".to_string());
-    let config = aws_config::defaults(BehaviorVersion::latest())
-        .region(Region::new("us-east-1"))
-        .endpoint_url(endpoint_url)
-        .load()
-        .await;
-
-    let queue_name = format!("test-snos-job-processing-{}", uuid::Uuid::new_v4());
-
-    // Create queue using InnerSQS (needed for test setup only)
-    let inner_sqs = InnerSQS::new(&config);
-    inner_sqs.client().create_queue().queue_name(&queue_name).send().await.expect("Failed to create queue");
-
-    // Create SQS client using our QueueClient abstraction
-    let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_name.clone()) };
-    let sqs = SQS::new(&config, &queue_args);
-
-    // Send message using our QueueClient (which adds version attribute)
-    let test_payload = "test message content";
-    sqs.send_message(QueueType::SnosJobProcessing, test_payload.to_string(), None)
-        .await
-        .expect("Failed to send message");
-
-    // Receive message using Omni Queue consumer
-    let delivery =
-        sqs.consume_message_from_queue(QueueType::SnosJobProcessing).await.expect("Failed to consume message");
-
-    // Verify message payload
-    let payload_bytes = delivery.borrow_payload().expect("Failed to get payload");
-    let payload = String::from_utf8(payload_bytes.to_vec()).expect("Failed to parse payload as UTF-8");
-    assert_eq!(payload, test_payload);
-
-    // Acknowledge the message
-    delivery.ack().await.expect("Failed to ack message");
-
-    // Cleanup
-    let queue_url = inner_sqs.get_queue_url_from_client(&queue_name).await.expect("Failed to get queue URL");
-    inner_sqs.client().delete_queue().queue_url(&queue_url).send().await.ok();
-}
-
-#[cfg(test)]
-mod integration_tests {
-    use super::*;
-    use crate::core::client::queue::sqs::SQS;
-    use crate::core::client::queue::QueueClient;
-    use crate::types::params::{AWSResourceIdentifier, QueueArgs};
-    use crate::types::queue::QueueType;
-    use aws_config::{BehaviorVersion, Region};
-    use std::sync::{Arc, Mutex};
-    use tokio::time::{sleep, Duration};
-
-    /// Helper to create localstack AWS config
-    async fn get_localstack_config() -> aws_config::SdkConfig {
-        // Use environment variable to determine endpoint, defaulting to localhost for tests
-        let endpoint_url = std::env::var("LOCALSTACK_ENDPOINT").unwrap_or_else(|_| "http://localhost:4566".to_string());
+    /// Fixture to create localstack AWS config
+    #[fixture]
+    async fn localstack_config() -> aws_config::SdkConfig {
+        let aws_endpoint_url = get_env_var_or_panic("AWS_ENDPOINT_URL");
         aws_config::defaults(BehaviorVersion::latest())
             .region(Region::new("us-east-1"))
-            .endpoint_url(endpoint_url)
+            .endpoint_url(aws_endpoint_url)
             .load()
             .await
     }
 
-    /// Integration test for concurrent message production and consumption using Omni Queue
-    /// Tests multiple producer threads sending messages and consumer threads receiving them
+    /// Test that send_message adds the OrchestratorVersion message attribute using Omni Queue
     #[rstest]
     #[tokio::test]
-    #[ignore]
-    async fn test_concurrent_version_monitoring() {
-        use crate::core::client::queue::sqs::InnerSQS;
-
-        let config = get_localstack_config().await;
+    async fn test_send_message_with_version_attribute(#[future] localstack_config: aws_config::SdkConfig) {
+        let config = localstack_config.await;
         let queue_name = format!("test-snos-job-processing-{}", uuid::Uuid::new_v4());
 
         // Create queue using InnerSQS (needed for test setup only)
@@ -92,81 +34,139 @@ mod integration_tests {
 
         // Create SQS client using our QueueClient abstraction
         let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_name.clone()) };
-        let sqs = Arc::new(SQS::new(&config, &queue_args));
+        let sqs = SQS::new(&config, &queue_args);
 
-        // Track messages received
-        let received_count = Arc::new(Mutex::new(0));
+        // Send message using our QueueClient (which adds version attribute)
+        let test_payload = "test message content";
+        sqs.send_message(QueueType::SnosJobProcessing, test_payload.to_string(), None)
+            .await
+            .expect("Failed to send message");
 
-        // Spawn producer threads sending messages
-        let mut producer_handles = vec![];
+        // Receive message using Omni Queue consumer
+        let delivery =
+            sqs.consume_message_from_queue(QueueType::SnosJobProcessing).await.expect("Failed to consume message");
 
-        for producer_id in 0..3 {
-            let sqs_clone = Arc::clone(&sqs);
-            let producer = tokio::spawn(async move {
-                for i in 0..5 {
-                    let payload = format!("producer-{}-message-{}", producer_id, i);
-                    sqs_clone
-                        .send_message(QueueType::SnosJobProcessing, payload, None)
-                        .await
-                        .expect("Failed to send message");
-                    sleep(Duration::from_millis(10)).await;
-                }
-            });
-            producer_handles.push(producer);
+        // Verify message payload
+        let payload_bytes = delivery.borrow_payload().expect("Failed to get payload");
+        let payload = String::from_utf8(payload_bytes.to_vec()).expect("Failed to parse payload as UTF-8");
+        assert_eq!(payload, test_payload);
+
+        // Acknowledge the message
+        delivery.ack().await.expect("Failed to ack message");
+
+        // Cleanup
+        let queue_url = inner_sqs.get_queue_url_from_client(&queue_name).await.expect("Failed to get queue URL");
+        inner_sqs.client().delete_queue().queue_url(&queue_url).send().await.ok();
+    }
+
+    /// Integration test for version-based message filtering
+    /// Tests that consumers only receive messages matching their orchestrator version
+    /// and incompatible messages are NOT consumed (remain in queue or go to DLQ)
+    #[rstest]
+    #[tokio::test]
+    async fn test_version_filtering_consumes_only_compatible_messages(
+        #[future] localstack_config: aws_config::SdkConfig,
+    ) {
+        use crate::core::client::queue::sqs::InnerSQS;
+        use crate::core::cloud::CloudProvider;
+        use crate::core::config::Config;
+        use crate::types::constant::ORCHESTRATOR_VERSION_ATTRIBUTE;
+        use aws_sdk_sqs::types::MessageAttributeValue;
+        use std::sync::Arc;
+        use tokio::time::{sleep, Duration};
+
+        let config = localstack_config.await;
+        let queue_name = format!("test-snos-job-processing-{}", uuid::Uuid::new_v4());
+
+        // Create queue using InnerSQS (needed for test setup only)
+        let inner_sqs = InnerSQS::new(&config);
+        inner_sqs.client().create_queue().queue_name(&queue_name).send().await.expect("Failed to create queue");
+
+        // Create CloudProvider and use Config to build queue client (proper way for tests)
+        let provider_config = Arc::new(CloudProvider::AWS(Box::new(config.clone())));
+        let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_name.clone()) };
+        let sqs =
+            Config::build_queue_client(&queue_args, provider_config).await.expect("Failed to create queue client");
+
+        let incompatible_version = "orchestrator-0.0.1";
+        let queue_url = inner_sqs.get_queue_url_from_client(&queue_name).await.expect("Failed to get queue URL");
+
+        // Send 10 messages with current version (should be consumed)
+        for i in 0..10 {
+            let payload = format!("compatible-message-{}", i);
+            sqs.send_message(QueueType::SnosJobProcessing, payload, None)
+                .await
+                .expect("Failed to send compatible message");
         }
 
-        // Wait for all producers to finish
-        for handle in producer_handles {
-            handle.await.expect("Producer thread panicked");
+        // Send 5 messages with incompatible version (should NOT be consumed)
+        for i in 0..5 {
+            let payload = format!("incompatible-message-{}", i);
+            let version_attr = MessageAttributeValue::builder()
+                .data_type("String")
+                .string_value(incompatible_version)
+                .build()
+                .expect("Failed to build version attribute");
+
+            inner_sqs
+                .client()
+                .send_message()
+                .queue_url(&queue_url)
+                .message_body(&payload)
+                .message_attributes(ORCHESTRATOR_VERSION_ATTRIBUTE, version_attr)
+                .send()
+                .await
+                .expect("Failed to send incompatible message");
         }
 
         // Give a moment for messages to be available
         sleep(Duration::from_millis(100)).await;
 
-        // Spawn consumer threads
-        let mut consumer_handles = vec![];
+        // Track messages received
+        let mut compatible_received = 0;
+        let mut incompatible_received = 0;
 
-        for _ in 0..3 {
-            let sqs_clone = Arc::clone(&sqs);
-            let received_clone = Arc::clone(&received_count);
-            let consumer = tokio::spawn(async move {
-                for _ in 0..5 {
-                    match sqs_clone.consume_message_from_queue(QueueType::SnosJobProcessing).await {
-                        Ok(delivery) => {
-                            // Verify we got a message
-                            let payload_bytes = delivery.borrow_payload().expect("Failed to get payload");
-                            let payload =
-                                String::from_utf8(payload_bytes.to_vec()).expect("Failed to parse payload as UTF-8");
-                            assert!(payload.contains("producer-"), "Message should be from a producer");
+        // Consume messages with timeout
+        let start = tokio::time::Instant::now();
+        let timeout = Duration::from_secs(10);
 
-                            // Increment received count
-                            *received_clone.lock().unwrap() += 1;
+        while start.elapsed() < timeout && compatible_received < 10 {
+            match sqs.consume_message_from_queue(QueueType::SnosJobProcessing).await {
+                Ok(delivery) => {
+                    // Verify we got a message
+                    let payload_bytes = delivery.borrow_payload().expect("Failed to get payload");
+                    let payload = String::from_utf8(payload_bytes.to_vec()).expect("Failed to parse payload as UTF-8");
 
-                            // Acknowledge the message
-                            delivery.ack().await.expect("Failed to ack message");
-                        }
-                        Err(_) => {
-                            // No message available, wait and retry
-                            sleep(Duration::from_millis(50)).await;
-                        }
+                    if payload.contains("compatible-message") {
+                        println!("Received compatible message: {}", payload);
+                        compatible_received += 1;
+                    } else if payload.contains("incompatible-message") {
+                        println!("Received incompatible message: {}", payload);
+                        incompatible_received += 1;
+                    }
+
+                    // Acknowledge the message
+                    delivery.ack().await.expect("Failed to ack message");
+                }
+                Err(e) => {
+                    // Check if it's a NoData error (version mismatch or no messages)
+                    if e.to_string().contains("NoData") {
+                        sleep(Duration::from_millis(100)).await;
+                    } else {
+                        println!("Error: {}", e);
+                        sleep(Duration::from_millis(100)).await;
                     }
                 }
-            });
-            consumer_handles.push(consumer);
+            }
         }
 
-        // Wait for all consumers to finish
-        for handle in consumer_handles {
-            handle.await.expect("Consumer thread panicked");
-        }
+        println!("Compatible messages received: {}", compatible_received);
+        println!("Incompatible messages received: {}", incompatible_received);
 
-        // Verify that we received all messages
-        let total_received = *received_count.lock().unwrap();
-        println!("Total messages received: {}", total_received);
-        assert_eq!(total_received, 15, "Should have received all 15 messages (3 producers × 5 messages)");
+        assert_eq!(compatible_received, 10, "Should have received all 10 compatible messages");
+        assert_eq!(incompatible_received, 0, "Should NOT have received any incompatible messages");
 
         // Cleanup
-        let queue_url = inner_sqs.get_queue_url_from_client(&queue_name).await.expect("Failed to get queue URL");
         inner_sqs.client().delete_queue().queue_url(&queue_url).send().await.ok();
     }
 }

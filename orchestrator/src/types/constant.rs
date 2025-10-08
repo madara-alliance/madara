@@ -41,14 +41,8 @@ lazy_static! {
     pub static ref ONE: BigUint = 1u32.to_biguint().unwrap();
 }
 
-/// Version of the Madara client
-pub const MADARA_VERSION: &str = "0.1.0";
-
-/// Version of the Starknet client (placeholder for queue versioning)
-pub const STARKNET_VERSION: &str = "0.1.0";
-
-/// Version of the Orchestrator
-pub const ORCHESTRATOR_VERSION: &str = "0.1.0";
+/// Version of the Orchestrator - loaded from Cargo.toml at compile time
+pub const ORCHESTRATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Message attribute name for orchestrator version in queue messages
 pub const ORCHESTRATOR_VERSION_ATTRIBUTE: &str = "OrchestratorVersion";
@@ -101,12 +95,11 @@ impl std::fmt::Display for StarknetVersion {
 
 /// Supported Starknet protocol versions by this orchestrator build.
 /// This list must be kept in sync with the SNOS library version (currently v0.13.3).
-pub const SUPPORTED_STARKNET_VERSIONS: &[&str] = &["0.13.0", "0.13.1", "0.13.2", "0.13.3"];
+const SUPPORTED_STARKNET_VERSIONS: &[&str] = &["0.13.2", "0.13.3"];
 
-/// Get a version string combining Starknet and Orchestrator versions
-/// This format allows for future extensibility with additional dependencies
+/// Get the orchestrator version string for queue message filtering
 pub fn get_version_string() -> String {
-    format!("starknet-{}::orchestrator-{}", STARKNET_VERSION, ORCHESTRATOR_VERSION)
+    format!("orchestrator-{}", ORCHESTRATOR_VERSION)
 }
 
 /// Validates if a Starknet protocol version is supported by this orchestrator.

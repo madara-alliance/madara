@@ -3,6 +3,7 @@ use crate::types::constant::BLOB_DATA_FILE_NAME;
 use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::Layer;
+use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -36,6 +37,8 @@ impl JobTrigger for DataSubmissionJobTrigger {
             .get_jobs_without_successor(previous_job_type, JobStatus::Completed, JobType::DataSubmission)
             .await?;
 
+        let successful_proving_jobs = filter_jobs_by_orchestrator_version(successful_proving_jobs);
+
         for proving_job in successful_proving_jobs {
             // Extract proving metadata
             let proving_metadata: ProvingMetadata = proving_job.metadata.specific.try_into().map_err(|e| {
@@ -47,12 +50,9 @@ impl JobTrigger for DataSubmissionJobTrigger {
                 e
             })?;
 
-            // Create DA metadata, propagating Starknet version from proving job
+            // Create DA metadata
             let da_metadata = JobMetadata {
-                common: CommonMetadata {
-                    starknet_version: proving_job.metadata.common.starknet_version,
-                    ..Default::default()
-                },
+                common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Da(DaMetadata {
                     block_number: proving_metadata.block_number,
                     // Set the blob data path using block number

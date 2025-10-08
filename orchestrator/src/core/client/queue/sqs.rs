@@ -1,5 +1,5 @@
 use crate::core::client::queue::QueueError;
-use crate::types::constant::{get_version_string, ORCHESTRATOR_VERSION_ATTRIBUTE};
+use crate::types::constant::{ORCHESTRATOR_VERSION, ORCHESTRATOR_VERSION_ATTRIBUTE};
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::ARN;
 use crate::{
@@ -175,11 +175,9 @@ impl QueueClient for SQS {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
 
-        let version = get_version_string();
-
         let version_attribute = MessageAttributeValue::builder()
             .data_type("String")
-            .string_value(&version)
+            .string_value(ORCHESTRATOR_VERSION)
             .build()
             .map_err(|e| QueueError::MessageAttributeError(format!("Failed to build message attribute: {}", e)))?;
 
@@ -197,7 +195,7 @@ impl QueueClient for SQS {
 
         send_message_request.send().await?;
 
-        tracing::debug!("Sent message to queue {} with version {}", queue_name, version);
+        tracing::debug!("Sent message to queue {} with version {}", queue_name, ORCHESTRATOR_VERSION);
 
         Ok(())
     }
@@ -211,7 +209,7 @@ impl QueueClient for SQS {
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
 
         let producer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: true }).build_producer().await?;
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_producer().await?;
         Ok(producer)
     }
 
@@ -225,7 +223,7 @@ impl QueueClient for SQS {
         tracing::debug!("Found queue url {}", queue_url);
 
         let consumer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: true }).build_consumer().await?;
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
         Ok(consumer)
     }
     /// Consume a message from the queue with version filtering.
@@ -238,78 +236,80 @@ impl QueueClient for SQS {
     /// The filtering ensures that only compatible messages are processed by this
     /// orchestrator instance, preventing version conflicts in multi-version deployments.
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
-        let current_version = get_version_string();
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
 
-        // Receive a message using Omni Queue
-        let mut consumer = self.get_consumer(queue.clone()).await?;
-        let delivery = consumer.receive().await?;
+        loop {
+            let messages = self
+                .inner
+                .client()
+                .receive_message()
+                .queue_url(&queue_url)
+                .max_number_of_messages(1)
+                .message_attribute_names("All")
+                .visibility_timeout(0)
+                .send()
+                .await?;
 
-        // Get the receipt handle to fetch message attributes from AWS SDK
-        // Note: Omni Queue doesn't expose message attributes, so we need to use AWS SDK
-        // to receive the message again with attributes
-        let messages = self
-            .inner
-            .client()
-            .receive_message()
-            .queue_url(&queue_url)
-            .max_number_of_messages(1)
-            .message_attribute_names("All")
-            .send()
-            .await?;
+            let Some(messages_vec) = messages.messages else {
+                return Err(omniqueue::QueueError::NoData.into());
+            };
 
-        if let Some(messages) = messages.messages {
-            if let Some(message) = messages.first() {
-                // Check version attribute
-                let version_match = if let Some(attributes) = message.message_attributes() {
-                    if let Some(version_attr) = attributes.get(ORCHESTRATOR_VERSION_ATTRIBUTE) {
-                        version_attr.string_value() == Some(&current_version)
-                    } else {
-                        true
-                    }
+            let Some(message) = messages_vec.first() else {
+                return Err(omniqueue::QueueError::NoData.into());
+            };
+
+            // Check version attribute
+            let version_match = if let Some(attributes) = message.message_attributes() {
+                if let Some(version_attr) = attributes.get(ORCHESTRATOR_VERSION_ATTRIBUTE) {
+                    version_attr.string_value() == Some(ORCHESTRATOR_VERSION)
                 } else {
                     true
-                };
+                }
+            } else {
+                true
+            };
 
-                if !version_match {
-                    tracing::warn!(
-                        "Skipping message with incompatible version: expected {}, got {:?}",
-                        current_version,
-                        message.message_attributes().and_then(|attrs| attrs.get(ORCHESTRATOR_VERSION_ATTRIBUTE))
-                    );
+            if !version_match {
+                tracing::warn!(
+                    "Skipping message with incompatible version: expected {}, got {:?}",
+                    ORCHESTRATOR_VERSION,
+                    message.message_attributes().and_then(|attrs| attrs.get(ORCHESTRATOR_VERSION_ATTRIBUTE))
+                );
 
-                    // Get message body and attributes to re-enqueue
-                    if let (Some(body), Some(receipt_handle)) = (message.body(), message.receipt_handle()) {
-                        // Re-send the message to the queue with its original attributes
-                        let mut send_request =
-                            self.inner.client().send_message().queue_url(&queue_url).message_body(body);
+                // Get message body and attributes to re-enqueue
+                if let (Some(body), Some(receipt_handle)) = (message.body(), message.receipt_handle()) {
+                    // Re-send the message to the queue with its original attributes
+                    let mut send_request = self.inner.client().send_message().queue_url(&queue_url).message_body(body);
 
-                        // Copy all message attributes to preserve version and other metadata
-                        if let Some(attributes) = message.message_attributes() {
-                            for (key, value) in attributes {
-                                send_request = send_request.message_attributes(key.clone(), value.clone());
-                            }
+                    // Copy all message attributes to preserve version and other metadata
+                    if let Some(attributes) = message.message_attributes() {
+                        for (key, value) in attributes {
+                            send_request = send_request.message_attributes(key.clone(), value.clone());
                         }
-
-                        // Send the message back to the queue
-                        send_request.send().await?;
-
-                        // Delete the original message after successful re-enqueue
-                        self.inner
-                            .client()
-                            .delete_message()
-                            .queue_url(&queue_url)
-                            .receipt_handle(receipt_handle)
-                            .send()
-                            .await?;
                     }
 
-                    // Return NoData error to signal caller to retry
-                    return Err(omniqueue::QueueError::NoData.into());
+                    // Send the message back to the queue
+                    send_request.send().await?;
+
+                    // Delete the original message after successful re-enqueue
+                    self.inner
+                        .client()
+                        .delete_message()
+                        .queue_url(&queue_url)
+                        .receipt_handle(receipt_handle)
+                        .send()
+                        .await?;
                 }
+
+                continue;
             }
+
+            // Compatible message found - now consume it properly using omniqueue
+            // The message should still be available since we used visibility_timeout=0
+            let mut consumer = self.get_consumer(queue.clone()).await?;
+            let delivery = consumer.receive().await?;
+            return Ok(delivery);
         }
-        Ok(delivery)
     }
 }

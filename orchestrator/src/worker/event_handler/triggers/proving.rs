@@ -4,6 +4,7 @@ use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -31,6 +32,8 @@ impl JobTrigger for ProvingJobTrigger {
             .database()
             .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation)
             .await?;
+
+        let successful_snos_jobs = filter_jobs_by_orchestrator_version(successful_snos_jobs);
 
         debug!("Found {} successful SNOS jobs without proving jobs", successful_snos_jobs.len());
 
@@ -70,12 +73,9 @@ impl JobTrigger for ProvingJobTrigger {
                 }
             };
 
-            // Create proving job metadata, propagating Starknet version from SNOS job
+            // Create proving job metadata
             let proving_metadata = JobMetadata {
-                common: CommonMetadata {
-                    starknet_version: snos_job.metadata.common.starknet_version,
-                    ..Default::default()
-                },
+                common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Proving(ProvingMetadata {
                     block_number: snos_metadata.block_number,
                     // Set input path as CairoPie type

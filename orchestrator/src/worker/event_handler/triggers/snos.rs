@@ -614,13 +614,17 @@ async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -
 /// # Arguments
 /// * `block_number` - The block number to process
 /// * `full_output` - Set to true if layer is L3, false otherwise
-/// * `starknet_version` - The Starknet protocol version for this block (from block header)
+/// * `starknet_version` - The Starknet protocol version for this block (from block header) - validated but not stored
 ///
 /// # Returns
 /// * `JobMetadata` - Complete job metadata with common and SNOS-specific fields
-fn create_job_metadata(block_number: u64, full_output: bool, starknet_version: Option<StarknetVersion>) -> JobMetadata {
+fn create_job_metadata(
+    block_number: u64,
+    full_output: bool,
+    _starknet_version: Option<StarknetVersion>,
+) -> JobMetadata {
     JobMetadata {
-        common: CommonMetadata { starknet_version, ..Default::default() },
+        common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
             block_number,
             full_output,

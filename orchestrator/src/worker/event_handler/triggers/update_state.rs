@@ -5,6 +5,7 @@ use crate::types::jobs::metadata::{
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::constants::{STATE_UPDATE_MAX_NO_BATCH_PROCESSING, STATE_UPDATE_MAX_NO_BLOCK_PROCESSING};
+use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -93,6 +94,8 @@ impl JobTrigger for UpdateStateJobTrigger {
             }
         };
 
+        let jobs_to_process = filter_jobs_by_orchestrator_version(jobs_to_process);
+
         let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id.parse::<u64>()).try_collect()?;
         to_process.sort();
 
@@ -156,15 +159,9 @@ impl JobTrigger for UpdateStateJobTrigger {
             Layer::L3 => self.collect_paths_l3(&config, &to_process, &mut state_update_metadata).await?,
         }
 
-        let starknet_version = if let Some(first_job) = jobs_to_process.first() {
-            first_job.metadata.common.starknet_version
-        } else {
-            None
-        };
-
-        // Create StateTransition job metadata, propagating Starknet version from parent jobs
+        // Create StateTransition job metadata
         let metadata = JobMetadata {
-            common: CommonMetadata { starknet_version, ..Default::default() },
+            common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(state_update_metadata),
         };
 

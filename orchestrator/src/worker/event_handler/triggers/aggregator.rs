@@ -47,31 +47,9 @@ impl JobTrigger for AggregatorJobTrigger {
                 }
             }
 
-            // Extract Starknet version from one of the child proving jobs
-            let starknet_version = match config
-                .database()
-                .get_jobs_between_internal_ids(
-                    JobType::ProofCreation,
-                    JobStatus::Completed,
-                    batch.start_block,
-                    batch.start_block,
-                )
-                .await
-            {
-                Ok(jobs) if !jobs.is_empty() => jobs[0].metadata.common.starknet_version,
-                _ => {
-                    warn!(
-                        batch_id = %batch.id,
-                        batch_index = %batch.index,
-                        "Could not fetch Starknet version from child jobs"
-                    );
-                    None
-                }
-            };
-
-            // Construct aggregator job metadata, propagating Starknet version from child proving jobs
+            // Construct aggregator job metadata
             let metadata = JobMetadata {
-                common: CommonMetadata { starknet_version, ..Default::default() },
+                common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                     batch_num: batch.index,
                     bucket_id: batch.bucket_id,
