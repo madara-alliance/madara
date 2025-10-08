@@ -133,7 +133,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
                 log::info!("Deployed coreContract at address: {:?}", address);
                 self.implementation_address.insert(contract.to_string(), address.to_string());
             } else if contract == "ethBridgeEIC" {
-                let artifact_path = "./contracts/ethereum/out/configureSingleBridge.sol/ConfigureSingleBridgeEIC.json";
+                let artifact_path = "./contracts/ethereum/out/ConfigureSingleBridgeEIC.sol/ConfigureSingleBridgeEIC.json";
                 let address = self
                     .deploy_contract_from_artifact(artifact_path)
                     .await

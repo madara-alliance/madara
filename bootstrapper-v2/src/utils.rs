@@ -141,6 +141,7 @@ pub async fn execute_v3(
         .l1_gas(0)
         .l2_gas(0)
         .l1_data_gas(0)
+        .send()
         .await
         .context("Error in making execute_v3 the contract for calls {:?}")?;
 
