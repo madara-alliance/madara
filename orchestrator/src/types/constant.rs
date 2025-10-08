@@ -13,9 +13,7 @@ pub const ON_CHAIN_DATA_FILE_NAME: &str = "onchain_data.json";
 pub const STORAGE_STATE_UPDATE_DIR: &str = "state_update";
 pub const STORAGE_BLOB_DIR: &str = "blob";
 pub const STORAGE_ARTIFACTS_DIR: &str = "artifacts";
-pub const BLOB_LEN: usize = 4096;
-pub const MAX_BLOBS: usize = 6;
-pub const MAX_BLOB_SIZE: usize = BLOB_LEN * MAX_BLOBS; // This represents the maximum size of data that you can use in a single transaction
+pub const BLOB_LEN: usize = 4096; // Max number of felts (each encoded using 256 bits) that we can include in an Ethereum BLOB
 
 pub const BOOT_LOADER_PROGRAM_CONTRACT: &str = "0x5ab580b04e3532b6b18f81cfa654a05e29dd8e2352d88df1e765a84072db07";
 
