@@ -73,12 +73,9 @@ impl<'a> BootstrapAccount<'a> {
         let declaration = self
             .account
             .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-            .l1_gas_price(0)
-            .l2_gas_price(0)
-            .l1_data_gas_price(0)
             .l1_gas(0)
-            .l2_gas(0)
-            .l1_data_gas(0)
+            .l2_gas(440000)
+            .l1_data_gas(128)
             .nonce(Felt::ZERO);
 
         let result = declaration.send().await?;
