@@ -243,13 +243,19 @@ impl ForwardPipeline for GatewayForwardSync {
                             self.apply_state_pipeline.push(range, state_diffs);
                         }
                         Err(e) => {
-                            // Check if this is a reorg error
+                            // Check if this is a reorg error or genesis mismatch recovery
                             let error_msg = e.to_string();
                             if error_msg.contains("Reorg detected and processed") {
                                 tracing::info!("🔄 Handling reorg: reinitializing all pipelines from new chain tip");
                                 self.reinit_pipelines();
                                 // Break inner loop to restart with fresh pipeline instances
                                 // Returning Ok() causes the outer run loop to call us again with new pipelines
+                                break;
+                            } else if error_msg.contains("Genesis mismatch resolved - database cleared") {
+                                tracing::info!("🔄 Handling genesis mismatch recovery: reinitializing all pipelines from empty database");
+                                self.reinit_pipelines();
+                                // Pipeline will now start from block 0 (empty database)
+                                // Will fetch correct genesis from upstream
                                 break;
                             } else {
                                 // Propagate other errors

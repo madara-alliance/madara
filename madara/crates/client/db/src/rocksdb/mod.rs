@@ -602,7 +602,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         // First, revert blocks and collect state diffs
         tracing::info!("📦 REORG: Starting block database revert...");
         let state_diffs = self.inner
-            .block_db_revert(target_block_n)
+            .block_db_revert(target_block_n, current_tip)
             .context("Reverting blocks database")?;
         tracing::info!(
             "✅ REORG: Block database reverted, collected {} state diffs",

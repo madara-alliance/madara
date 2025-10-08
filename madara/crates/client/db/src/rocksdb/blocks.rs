@@ -267,7 +267,11 @@ impl RocksDBStorageInner {
     /// Returns a Vec of `(block_number, state_diff)` where the Vec is in reverse order (the first
     /// element is the current tip of the chain and the last are `revert_to_block_n + 1`).
     #[tracing::instrument(skip(self))]
-    pub(super) fn block_db_revert(&self, revert_to_block_n: u64) -> Result<Vec<(u64, StateDiff)>> {
+    pub(super) fn block_db_revert(
+        &self,
+        revert_to_block_n: u64,
+        current_tip_block_n: u64,
+    ) -> Result<Vec<(u64, StateDiff)>> {
         tracing::info!("📦 REORG [block_db_revert]: Starting, target block_n={}", revert_to_block_n);
 
         let block_hash_to_block_n_col = self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN);
@@ -276,11 +280,7 @@ impl RocksDBStorageInner {
         let tx_hash_to_index_col = self.get_column(TX_HASH_TO_INDEX_COLUMN);
         let block_n_to_state_diff = self.get_column(BLOCK_STATE_DIFF_COLUMN);
 
-        let mut latest_block_n = revert_to_block_n + 1;
-        while self.get_block_info(latest_block_n)?.is_some() {
-            latest_block_n += 1;
-        }
-        latest_block_n -= 1;
+        let latest_block_n = current_tip_block_n;
 
         tracing::info!(
             "📦 REORG [block_db_revert]: Found latest block_n={}, will remove {} blocks",

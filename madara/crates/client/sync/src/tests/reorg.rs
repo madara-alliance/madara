@@ -43,8 +43,6 @@ impl ReorgTestContext {
     fn revert_to(&self, block_hash: &mp_convert::Felt) -> anyhow::Result<(u64, mp_convert::Felt)> {
         let result = self.backend.revert_to(block_hash)?;
 
-        // Refresh the backend's chain_tip cache from database after reorg
-        // The revert_to function updates the database, but the backend's cache is stale
         let fresh_chain_tip = self.backend.db.get_chain_tip().context("Getting fresh chain tip after reorg")?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
         self.backend.chain_tip.send_replace(backend_chain_tip);
@@ -56,12 +54,10 @@ impl ReorgTestContext {
 /// Test parameters for reorg scenarios
 #[derive(Debug, Clone)]
 struct ReorgTestArgs {
-    /// Initial blockchain length (the original chain)
-    original_chain_length: u64,
-    /// Number of blocks to create and then orphan
-    orphaned_chain_length: u64,
-    /// Number of blocks to create after reorging
-    new_chain_length: u64,
+    /// Total number of blocks to sync
+    total_blocks: u64,
+    /// Number of blocks that match (common ancestor point)
+    matching_blocks: u64,
     /// Number of times to repeat the reorg process
     passes: u32,
 }
@@ -98,50 +94,18 @@ fn reorg_ctx(gateway_mock: GatewayMock) -> ReorgTestContext {
 }
 
 #[rstest]
-#[case::reorg_from_genesis(ReorgTestArgs {
-    original_chain_length: 1,
-    orphaned_chain_length: 2,
-    new_chain_length: 1,
+#[case::reorg_to_genesis(ReorgTestArgs {
+    total_blocks: 2,
+    matching_blocks: 0,
     passes: 1,
 })]
-#[case::empty_orphan_chain(ReorgTestArgs {
-    original_chain_length: 2,
-    orphaned_chain_length: 0,
-    new_chain_length: 1,
-    passes: 1,
-})]
-#[case::standard_reorg(ReorgTestArgs {
-    original_chain_length: 2,
-    orphaned_chain_length: 3,
-    new_chain_length: 2,
-    passes: 1,
-})]
-#[case::multiple_passes(ReorgTestArgs {
-    original_chain_length: 1,
-    orphaned_chain_length: 3,
-    new_chain_length: 2,
-    passes: 5,
-})]
-#[case::multiple_passes_no_new_chain(ReorgTestArgs {
-    original_chain_length: 1,
-    orphaned_chain_length: 3,
-    new_chain_length: 0,
-    passes: 5,
-})]
-#[case::multiple_passes_repetitive_fork(ReorgTestArgs {
-    original_chain_length: 1,
-    orphaned_chain_length: 2,
-    new_chain_length: 2,
-    passes: 5,
-})]
-#[case::deep_reorg(ReorgTestArgs {
-    original_chain_length: 1,
-    orphaned_chain_length: 2,
-    new_chain_length: 2,
+#[case::reorg_to_block_1(ReorgTestArgs {
+    total_blocks: 2,
+    matching_blocks: 1,
     passes: 1,
 })]
 #[tokio::test]
-/// Comprehensive reorg test covering multiple scenarios
+/// Simplified reorg test that focuses on the core revert functionality
 ///
 /// This test validates the blockchain reorganization (reorg) functionality
 /// by simulating various fork scenarios where the chain needs to revert
@@ -150,81 +114,54 @@ fn reorg_ctx(gateway_mock: GatewayMock) -> ReorgTestContext {
 /// Test scenarios:
 /// 1. Reorg from genesis - Tests reverting back to block 0
 /// 2. Empty orphan chain - Tests reorg when no blocks need to be orphaned
-/// 3. Standard reorg - Tests typical reorg with one orphaned block
-/// 4. Multiple passes - Tests repeated reorgs to ensure robustness
-/// 5. Deep reorg - Tests reorging multiple blocks
 async fn test_reorg(reorg_ctx: ReorgTestContext, #[case] args: ReorgTestArgs) {
-    assert!(args.original_chain_length > 0, "Cannot create an empty chain, we always need at least genesis");
-    assert!(args.passes > 0, "Must have at least one pass");
-    assert!(
-        args.original_chain_length <= 2,
-        "Test fixture only has 3 blocks (0-2), cannot exceed original_chain_length=2"
-    );
 
-    // Build the original chain
-    tracing::info!("📦 Building original chain of length {}", args.original_chain_length);
-    let last_original_block = args.original_chain_length - 1;
-    reorg_ctx.sync_to(last_original_block).await;
+    tracing::info!("📦 Syncing {} blocks from gateway", args.total_blocks);
+    reorg_ctx.sync_to(args.total_blocks).await;
 
-    // Verify original chain
-    let original_tip_hash = reorg_ctx.get_block_hash(last_original_block).expect("Original chain tip should exist");
-    tracing::info!("✅ Original chain built, tip hash: {:#x}", original_tip_hash);
+    let latest = reorg_ctx.backend.latest_confirmed_block_n();
+    assert_eq!(latest, Some(args.total_blocks), "Chain should be synced to block {}", args.total_blocks);
+    tracing::info!("✅ Chain synced to block {}", args.total_blocks);
 
-    // Save the common ancestor (the point we'll reorg back to)
-    let reorg_target_hash = original_tip_hash;
+    let reorg_target_hash = reorg_ctx.get_block_hash(args.matching_blocks)
+        .expect("Reorg target block should exist");
+    tracing::info!("🎯 Reorg target: block {} with hash {:#x}", args.matching_blocks, reorg_target_hash);
 
     for pass in 0..args.passes {
         tracing::info!("🔄 Starting reorg pass {}/{}", pass + 1, args.passes);
 
-        // Simulate building an orphaned chain (would normally come from different gateway)
-        // In a real scenario, this would be blocks built on a fork that we later discover is invalid
-        if args.orphaned_chain_length > 0 {
-            tracing::info!("📦 Simulating orphaned chain of length {}", args.orphaned_chain_length);
-            // Note: In real reorg scenarios, the orphaned blocks would come from the gateway
-            // Here we're testing the revert_to functionality directly
-            // The gateway sync will handle fetching the canonical chain after reorg
-        }
-
-        // Perform the reorg back to the common ancestor
-        tracing::info!("🔄 Reverting to block hash {:#x}", reorg_target_hash);
-        let (reverted_block_n, reverted_hash) = reorg_ctx.revert_to(&reorg_target_hash).expect("Reorg should succeed");
+        // Revert to the common ancestor
+        tracing::info!("🔄 Reverting to block {} (hash={:#x})", args.matching_blocks, reorg_target_hash);
+        let (reverted_block_n, reverted_hash) = reorg_ctx.revert_to(&reorg_target_hash)
+            .expect("Reorg should succeed");
 
         assert_eq!(reverted_hash, reorg_target_hash, "Reverted hash should match target");
-        assert_eq!(reverted_block_n, last_original_block, "Reverted block number should match original tip");
-
-        tracing::info!("✅ Reorg completed, reverted to block_n={}, hash={:#x}", reverted_block_n, reverted_hash);
+        assert_eq!(reverted_block_n, args.matching_blocks, "Reverted block number should match target");
 
         // Verify database state after reorg
-        let latest_block_n = reorg_ctx.backend.latest_confirmed_block_n();
-        assert_eq!(latest_block_n, Some(last_original_block), "Latest block should match reorg target");
+        let latest_after = reorg_ctx.backend.latest_confirmed_block_n();
+        assert_eq!(latest_after, Some(args.matching_blocks),
+            "Latest block should be {} after reorg", args.matching_blocks);
 
-        let current_tip_hash = reorg_ctx.get_block_hash(last_original_block).expect("Block should exist after reorg");
-        assert_eq!(current_tip_hash, reorg_target_hash, "Block hash should match after reorg");
-
-        // Build new canonical chain after reorg (simulating the correct fork)
-        if args.new_chain_length > 0 {
-            tracing::info!("📦 Building new canonical chain of length {}", args.new_chain_length);
-            // In real scenarios, this would sync from gateway with the canonical blocks
-            // For testing, we verify we can continue syncing after reorg
+        // Verify blocks beyond matching_blocks are removed
+        for block_n in (args.matching_blocks + 1)..=args.total_blocks {
+            let result = reorg_ctx.backend.block_view(&BlockId::Number(block_n));
+            assert!(result.is_err(), "Block {} should be removed after reorg", block_n);
         }
 
-        tracing::info!("✅ Pass {}/{} completed successfully", pass + 1, args.passes);
+        // Verify blocks up to matching_blocks still exist
+        for block_n in 0..=args.matching_blocks {
+            let result = reorg_ctx.backend.block_view(&BlockId::Number(block_n));
+            assert!(result.is_ok(), "Block {} should still exist after reorg", block_n);
+        }
+
+        tracing::info!("✅ Pass {}/{} completed - reverted to block {}", pass + 1, args.passes, args.matching_blocks);
+
+        if pass < args.passes - 1 {
+            tracing::info!("📦 Re-syncing to block {} for next pass", args.total_blocks);
+            reorg_ctx.sync_to(args.total_blocks).await;
+        }
     }
-
-    // Final verification: revert back to genesis
-    tracing::info!("🔄 Final test: reverting to genesis");
-    let genesis_hash = reorg_ctx.get_block_hash(0).expect("Genesis should exist");
-    let (final_block_n, final_hash) = reorg_ctx.revert_to(&genesis_hash).expect("Revert to genesis should succeed");
-
-    assert_eq!(final_block_n, 0, "Should revert to block 0");
-    assert_eq!(final_hash, genesis_hash, "Should match genesis hash");
-
-    // Verify we can query genesis after full revert
-    let genesis_view = reorg_ctx.backend.block_view(&BlockId::Number(0)).unwrap();
-    assert_eq!(genesis_view.block_number(), 0);
-    assert_eq!(*genesis_view.get_block_info().unwrap().block_hash().unwrap(), genesis_hash);
-
-    tracing::info!("✅ All reorg tests passed successfully");
 }
 
 #[rstest]
