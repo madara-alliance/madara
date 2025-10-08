@@ -393,9 +393,7 @@ pub async fn bootstrap(config_file: &mut ConfigFile, clients: &Clients) -> Boots
 
     BootstrapperOutput {
         core_contract_address: Some(core_contract_client.core_contract_client.address()),
-        core_contract_implementation_address: Some(
-            core_contract_client.core_contract_client.implementation_address(),
-        ),
+        core_contract_implementation_address: Some(core_contract_client.core_contract_client.implementation_address()),
         ..l2_output
     }
 }
