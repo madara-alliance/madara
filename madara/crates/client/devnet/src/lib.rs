@@ -1,3 +1,47 @@
+//! The Madara Devnet is a local, single node blockchain network which mirrors the functionality of
+//! the Starknet mainnet. This allows you to produce your own local state and experiment on it. It
+//! is also very useful in setting up a sample chain for running tests.
+//!
+//! Below is a list of the core responsibilities of the Madara devnet.
+//!
+//! ## UDC Deployment
+//!
+//! Madara Devnet is responsible for deploying the **Universal Deployer** smart contract. This
+//! contract is used as the basis to deploy other contracts. It contains a special [deploy syscall]
+//! which is required to deploy new instances of a previously declared class.
+//!
+//! ## Native token deployment
+//!
+//! Madara Devenet also deploys ERC20 [openzeppelin] contracts for the `ETH` and `STRK` tokens. By
+//! convention, these are each located at a unique identifiable address which remains stable across
+//! `mainnet`, `testnet` and `devnet`.
+//!
+//! - **STRK**: `0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d`
+//! - **ETH**: `0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7`
+//!
+//! ## Devnet accounts
+//!
+//! Finally, the Madara Devnet also deploys some test accounts with a prepaid `ETH` and `STRK`
+//! balance. These accounts, along with their addresses and private key, have their information
+//! displayed on node startup.
+//!
+//! ```bash
+//! ==== DEVNET PREDEPLOYED CONTRACTS ====
+//!
+//! (#1) Address: 0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d
+//!   Private key: 0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07
+//!   Balance: 10000 STRK, 10000 ETH
+//!
+//! (#2) Address: 0x008a1719e7ca19f3d91e8ef50a48fc456575f645497a1d55f30e3781f786afe4
+//!   Private key: 0x0514977443078cf1e0c36bc88b89ada9a46061a5cf728f40274caea21d76f174
+//!   Balance: 10000 STRK, 10000 ETH
+//!
+//!   ...
+//! ```
+//!
+//! [deploy syscall]: https://github.com/starkware-libs/cairo/blob/40d31f5b49ea3eeaa8e235ec0532d0647b39b7be/corelib/src/starknet/syscalls.cairo#L29C1-L48C92
+//! [openzeppelin]: https://www.openzeppelin.com/
+
 use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_block::{

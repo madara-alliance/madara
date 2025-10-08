@@ -1,3 +1,123 @@
+//! Madara mempool. This crate manages the transaction pool for sequencer nodes, accepting
+//! transactions from RPC endpoints and organizing them for block production.
+//!
+//! # Overview
+//!
+//! The Mempool stores transactions waiting to be included in blocks. It efficiently indexes
+//! transactions for insertion, retrieval and deletion using several coordinated queues that
+//! maintain different orderings. Each queue serves a specific purpose: finding ready transactions,
+//! expiring old ones, looking up by hash, or choosing which to evict when full.
+//!
+//! The mempool is split into two layers: the outer [`Mempool`] handles persistence and metrics,
+//! while the inner [`InnerMempool`] manages the actual transaction storage and ordering logic.
+//!
+//! # Transaction Ordering
+//!
+//! The inner mempool maintains four specialized queues that work together:
+//!
+//! - [`ready_queue`]: Orders accounts that have transactions ready to execute (where the
+//!   transaction nonce matches the account nonce)
+//! - [`timestamp_queue`]: Orders all transactions by arrival time for TTL expiration
+//! - [`by_tx_hash`]: Maps transaction hashes to their location for quick lookups
+//! - [`eviction_queue`]: Orders accounts by eviction priority when the mempool is full
+//!
+//! # Dynamic Scoring
+//!
+//! Transaction priority is determined by a [`ScoreFunction`] enum which supports two modes:
+//!
+//! - **FCFS mode**: First-come-first-served based on timestamp
+//! - **Tip mode**: Prioritizes by tip amount with minimum bump requirements
+//!
+//! While the scoring function is an enum that could theoretically be swapped at runtime, this
+//! functionality is not yet implemented. The mode is set at startup based on chain configuration.
+//!
+//! # Transaction Insertion Flow
+//!
+//! When a transaction is inserted into the mempool:
+//!
+//! 1. **It is received by the outer mempool** via [`add_tx`], which handles metrics and
+//!    forwards the transaction to the inner mempool.
+//! 2. **The transaction is forwarded to the inner mempool** via [`insert_tx`]. This handles the
+//!    actual insertion and eviction logic.
+//! 3. **Pre-insertion checks are performed**:
+//!    - Declare transactions are rejected if they do not follow the current account nonce.
+//!    - For a transaction to be replaced it needs to offer a sufficient tip bump.
+//!    - Duplicate transactions are rejected
+//!    - TTL is verified
+//! 4. **Space check**: If the mempool is full, we attempt eviction (see next section)
+//! 5. **Insertion**: The transaction is added to the primary accounts structure
+//! 6. **Update propagation**: All queues are updated to reflect the change
+//!
+//! # Transaction Eviction
+//!
+//! When the mempool reaches capacity:
+//!
+//! 1. **We look for an eviction candidate**: we check the `eviction_queue` for the account with the
+//!    highest eviction score (accounts with transactions furthest from being executable).
+//! 2. **If the new transaction has lower priority** than the worst transaction in the mempool, it
+//!    is rejected.
+//! 3. **Make room**: remove the last transaction from account chosen in step 1.
+//! 4. **Insertion**: The transaction is added to the primary accounts structure
+//! 5. **Update propagation**: All queues are updated to reflect the change
+//!
+//! The eviction score considers both nonce distance (how far from executable) and transaction
+//! score within that distance tier.
+//!
+//! # Mempool Updates
+//!
+//! After any change (insertion, removal, or nonce update), the mempool maintains consistency
+//! through a modular update system. This is backed by the [`AccountUpdate`] struct, which describes
+//! what changes took place (which account was affect, which transactions were added/removed).
+//!
+//! Based on this, the [`AccountUpdate`] is the applied to each inner mempool queue in the following
+//! order:
+//!
+//!    1. `ready_queue` (update ready status)
+//!    2. `timestamp_queue` (add/remove by timestamp)
+//!    3. `by_tx_hash` (update hash lookups)
+//!    4. `eviction_queue` (update eviction priorities)
+//!    5. `limiter` (track transaction counts)
+//!
+//! Finally, we return a list of all transactions which have been removed in the process. This
+//! design keeps the invariants modular and makes them easier to update in the future.
+//!
+//! # Reading from the Mempool
+//!
+//! The mempool provides several ways to read transactions:
+//!
+//! ## Block Production via MempoolConsumer
+//!
+//! The [`MempoolConsumer`] provides an iterator interface for block production. It acquires a
+//! write lock on the inner mempool and pops transactions in priority order. **Warning**: This
+//! holds the lock, preventing new transactions from being added. Use sparingly to avoid deadlocks.
+//!
+//! ```no_run
+//! let consumer = mempool.get_consumer().await;
+//! for tx in consumer {
+//!     // Process transaction
+//! }
+//! ```
+//!
+//! ## Notifications via tx_sender
+//!
+//! The `tx_sender` broadcast channel sends a continuous stream of transaction hashes as they are
+//! added to the mempool. This is used by `mc-rpc` to implement transaction status subscriptions.
+//!
+//! ## Quick Checks via received_txs
+//!
+//! The `received_txs` set allows checking if a transaction exists without locking the inner
+//! mempool. This is useful for quick status checks from RPC methods.
+//!
+//! [`ready_queue`]: InnerMempool::ready_queue
+//! [`timestamp_queue`]: InnerMempool::timestamp_queue
+//! [`by_tx_hash`]: InnerMempool::by_tx_hash
+//! [`eviction_queue`]: InnerMempool::eviction_queue
+//! [`ScoreFunction`]: tx::ScoreFunction
+//! [`add_tx`]: Mempool::add_tx
+//! [`insert_tx`]: InnerMempool::insert_tx
+//! [`AccountUpdate`]: accounts::AccountUpdate
+//! [`MempoolConsumer`]: crate::MempoolConsumer
+
 use anyhow::Context;
 use dashmap::DashMap;
 use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
