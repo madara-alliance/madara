@@ -112,26 +112,26 @@ mod tests {
         let notify = Arc::new(Notify::new());
 
         // nonce 4, is pending, not being cancelled, not consumed in db. => OK
-        backend.add_pending_message_to_l2(l1_handler_tx(4)).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(4)).unwrap();
         mock_l1_handler_tx(&mut mock, 4, true, false);
         // nonce 5, is pending, not being cancelled, not consumed in db. => OK
-        backend.add_pending_message_to_l2(l1_handler_tx(5)).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(5)).unwrap();
         mock_l1_handler_tx(&mut mock, 5, true, false);
         // nonce 7, is pending, not being cancelled, not consumed in db. => OK
-        backend.add_pending_message_to_l2(l1_handler_tx(7)).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(7)).unwrap();
         mock_l1_handler_tx(&mut mock, 7, true, false);
         // nonce 3, not pending, not being cancelled, not consumed in db. => NOT OK
-        backend.add_pending_message_to_l2(l1_handler_tx(3)).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(3)).unwrap();
         mock_l1_handler_tx(&mut mock, 3, false, false);
         // nonce 84, is pending, being cancelled, not consumed in db. => NOT OK
-        backend.add_pending_message_to_l2(l1_handler_tx(84)).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(84)).unwrap();
         mock_l1_handler_tx(&mut mock, 84, true, true);
         // nonce 99, is pending, not being cancelled, consumed in db. => NOT OK
-        backend.add_pending_message_to_l2(l1_handler_tx(99)).unwrap();
-        backend.set_l1_handler_txn_hash_by_nonce(99, Felt::TWO).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(99)).unwrap();
+        backend.write_l1_handler_txn_hash_by_nonce(99, &Felt::TWO).unwrap();
         mock_l1_handler_tx(&mut mock, 99, true, false);
         // nonce 103, is pending, not being cancelled, not consumed in db. => OK
-        backend.add_pending_message_to_l2(l1_handler_tx(103)).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(103)).unwrap();
         mock_l1_handler_tx(&mut mock, 103, true, false);
 
         let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify);
@@ -163,7 +163,7 @@ mod tests {
             // fut is subscribed to the notify now.
             // Write and wake up.
 
-            backend.add_pending_message_to_l2(l1_handler_tx(4)).unwrap();
+            backend.write_pending_message_to_l2(&l1_handler_tx(4)).unwrap();
             notify.notify_waiters();
 
             // should be woken up and return tx.
@@ -176,7 +176,7 @@ mod tests {
         } // listener is dropped.
 
         // no one is listening, write
-        backend.add_pending_message_to_l2(l1_handler_tx(5)).unwrap();
+        backend.write_pending_message_to_l2(&l1_handler_tx(5)).unwrap();
 
         // Should return the msg.
         {

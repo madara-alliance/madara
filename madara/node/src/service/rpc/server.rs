@@ -136,7 +136,7 @@ pub async fn start_server(
                     } else if req.uri().path() == "/health" {
                         Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
                     } else if req.uri().path() == "/ready" {
-                        let sync_status = syncing(&starknet).await;
+                        let sync_status = syncing(&starknet);
                         match sync_status {
                             Ok(sync_status) => match sync_status {
                                 SyncingStatus::Syncing(_) => Ok(hyper::Response::builder()

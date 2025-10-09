@@ -9,7 +9,7 @@ use futures::future::try_join_all;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, info_span};
+use tracing::{error, info, info_span, warn, Instrument};
 
 #[derive(Clone)]
 pub struct WorkerController {
@@ -43,8 +43,8 @@ impl WorkerController {
     }
 
     /// run - Run the WorkerController
-    /// This function starts the WorkerController and spawns workers for each queue type
-    /// It returns immediately after spawning all workers, making it non-blocking
+    /// This function starts the WorkerController and spawns event workers for each queue type
+    /// It waits for all workers to complete, which typically means it runs indefinitely until shutdown
     /// # Returns
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
@@ -60,7 +60,7 @@ impl WorkerController {
             let self_clone = self.clone();
             worker_set.spawn(async move { self_clone.create_span(&queue_type).await });
         }
-        // since there is not support to join all in futures, we need to join each worker one by one
+        // Since there is no support to join all in futures, we need to join each worker one by one
         while let Some(result) = worker_set.join_next().await {
             // If any worker fails (initialization or infrastructure error), propagate the error
             // This will trigger application shutdown
@@ -129,37 +129,56 @@ impl WorkerController {
         ]
     }
 
-    #[tracing::instrument(skip(self), fields(q = %q))]
+    /// Create a span for a queue type.
+    /// This function creates a span for a queue type and starts a worker for that queue.
+    /// It returns a `Result<(), EventSystemError>` indicating whether the operation was successful or not.
+    /// Note that this is a blocking function. It'll return only
+    /// 1. There is a graceful shutdown (`Ok` in this case)
+    /// 2. There is an error in the queue message handler (`Err` in this case)
+    ///
+    /// It does the following things:
+    /// 1. Create an info span for the given queue
+    /// 2. Create an event handler for the queue for handling the actual messages using [create_event_handler](#method.create_event_handler)
+    /// 3. Start the handler for starting message consumption
+    ///
+    /// # Arguments
+    /// * `q` - The queue type for which to create a span
+    /// # Returns
+    /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
+    /// # Errors
+    /// * `EventSystemError` - If there is an error during the operation
     async fn create_span(&self, q: &QueueType) -> EventSystemResult<()> {
         let span = info_span!("worker", q = ?q);
-        let _guard = span.enter();
-        info!("Starting worker for queue type {:?}", q);
 
-        // If worker creation fails, this is a critical initialization error
-        let handler = match self.create_event_handler(q).await {
-            Ok(handler) => handler,
-            Err(e) => {
-                tracing::error!("🚨 Critical: Failed to create handler for queue type {:?}: {:?}", q, e);
-                tracing::error!("This is a worker initialization error that requires system shutdown");
-                return Err(e);
-            }
-        };
+        async move {
+            // If worker creation fails, this is a critical initialization error
+            let handler = match self.create_event_handler(q).await {
+                Ok(handler) => handler,
+                Err(e) => {
+                    error!("🚨 Critical: Failed to create handler for queue type {:?}: {:?}", q, e);
+                    error!("This is a worker initialization error that requires system shutdown");
+                    return Err(e);
+                }
+            };
 
-        // Run the worker - job processing errors within the worker are handled internally
-        // Only infrastructure/initialization errors should propagate out
-        match handler.run().await {
-            Ok(_) => {
-                // Worker completed unexpectedly - this should not happen in normal operation
-                // since workers run infinite loops. This indicates a problem.
-                tracing::warn!("Worker for queue type {:?} completed unexpectedly (this is normal during shutdown)", q);
-                Ok(())
-            }
-            Err(e) => {
-                tracing::error!("🚨 Critical: Worker for queue type {:?} failed with infrastructure error: {:?}", q, e);
-                tracing::error!("This indicates a serious system problem that requires shutdown");
-                Err(e)
+            // Run the worker - job processing errors within the worker are handled internally
+            // Only infrastructure/initialization errors should propagate out
+            match handler.run().await {
+                Ok(_) => {
+                    // Worker completed unexpectedly - this should not happen in normal operation
+                    // since workers run infinite loops. This indicates a problem.
+                    warn!("Worker for queue type {:?} completed unexpectedly (this is normal during shutdown)", q);
+                    Ok(())
+                }
+                Err(e) => {
+                    error!("🚨 Critical: Worker for queue type {:?} failed with infrastructure error: {:?}", q, e);
+                    error!("This indicates a serious system problem that requires shutdown");
+                    Err(e)
+                }
             }
         }
+        .instrument(span)
+        .await
     }
 
     /// shutdown - Trigger a graceful shutdown
@@ -172,7 +191,7 @@ impl WorkerController {
     pub async fn shutdown(&self) -> EventSystemResult<()> {
         info!("Initiating WorkerController graceful shutdown");
 
-        // Signal all workers to shutdown gracefully
+        // Signal all workers to shut down gracefully
         let workers = self.workers()?;
         info!("Signaling {} workers to shutdown gracefully", workers.len());
 

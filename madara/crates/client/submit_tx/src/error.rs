@@ -11,7 +11,7 @@ pub enum SubmitTransactionError {
     /// Any internal error. Note that when redirecting transactions from one node to another,
     /// any transport/connectivity/unexpected gateway errors will appear as internal here.
     #[error("Internal error: {0:#}")]
-    Internal(anyhow::Error),
+    Internal(#[from] anyhow::Error),
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -6,9 +6,9 @@ use crate::{
     sync::{ForwardPipeline, SyncController, SyncControllerConfig},
 };
 use anyhow::Context;
-use blocks::{gateway_pending_block_sync, GatewayBlockSync};
+use blocks::{gateway_preconfirmed_block_sync, GatewayBlockSync};
 use classes::ClassesSync;
-use mc_db::{db_block_id::RawDbBlockId, MadaraBackend};
+use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockId, BlockTag};
 use mp_gateway::block::ProviderBlockHeader;
@@ -62,7 +62,7 @@ pub fn forward_sync(
 ) -> GatewaySync {
     let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
-    let get_pending_block = gateway_pending_block_sync(client.clone(), importer.clone(), backend.clone());
+    let get_pending_block = gateway_preconfirmed_block_sync(client.clone(), importer.clone(), backend.clone());
     SyncController::new(
         backend.clone(),
         GatewayForwardSync::new(backend, importer, client, config),
@@ -86,7 +86,7 @@ impl GatewayForwardSync {
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
     ) -> Self {
-        let starting_block_n = backend.head_status().next_full_block();
+        let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
@@ -174,23 +174,8 @@ impl ForwardPipeline for GatewayForwardSync {
 
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
             for block_n in start_next_block..new_next_block {
-                // Notify of a new full block here.
-                let block_info = self
-                    .backend
-                    .get_block_info(&RawDbBlockId::Number(block_n))
-                    .context("Getting block info")?
-                    .context("Block not found")?
-                    .into_closed()
-                    .context("Block is pending")?;
-
-                let inner = self
-                    .backend
-                    .get_block_inner(&RawDbBlockId::Number(block_n))
-                    .context("Getting block inner")?
-                    .context("Block not found")?;
-                let block_events = inner.events();
-
-                self.backend.on_full_block_imported(block_info.into(), block_events).await?;
+                // Mark the block as fully imported.
+                self.backend.write_access().new_confirmed_block(block_n)?;
                 metrics.update(block_n, &self.backend).context("Updating metrics")?;
             }
         }
@@ -216,7 +201,7 @@ impl ForwardPipeline for GatewayForwardSync {
     }
 
     fn latest_block(&self) -> Option<u64> {
-        self.backend.head_status().latest_full_block_n()
+        self.backend.latest_confirmed_block_n()
     }
 }
 

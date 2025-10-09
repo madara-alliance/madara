@@ -131,6 +131,8 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
 
     let version = get_version(artifacts)?;
     let image = format!("ghcr.io/madara-alliance/artifacts:{version}");
+    println!("cargo::warning=fetching artifacts from image: {}", image);
+    let container_name = format!("madara-artifacts-extractor-v{}", version);
 
     let root = &root.0;
 
@@ -143,42 +145,49 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
         .then_some(())
         .ok_or_else(|| err_handl(cmd, "Failed to download artifacts"))?;
 
-    // Create extraction container
+    // Remove any existing container with the same name
     let mut docker = std::process::Command::new("docker");
-    let cmd = docker.args(["create", &image, "do-nothing"]);
-    cmd.status()
-        .expect(err_msg)
-        .success()
-        .then_some(())
-        .ok_or_else(|| err_handl(cmd, "Failed to create extraction container"))?;
+    docker.args(["rm", "-f", &container_name]).status().ok();
 
-    let output = cmd.output().unwrap();
-    let container = String::from_utf8_lossy(&output.stdout);
-    let container = container.trim_end_matches("\n");
+    // Create extraction container with consistent name
+    let mut docker = std::process::Command::new("docker");
+    let cmd = docker.args(["create", "--name", &container_name, &image, "do-nothing"]);
+    let output = cmd.output().expect(err_msg);
+
+    if !output.status.success() {
+        return Err(err_handl(cmd, "Failed to create extraction container"));
+    }
 
     // Copy artifacts from container
     let mut docker = std::process::Command::new("docker");
-    let cmd = docker.args(["cp", &format!("{container}:/artifacts.tar.gz"), &root.to_string_lossy()]);
-    cmd.status()
+    let cmd = docker.args(["cp", &format!("{}:/artifacts.tar.gz", container_name), &root.to_string_lossy()]);
+    let copy_result = cmd
+        .status()
         .expect(err_msg)
         .success()
         .then_some(())
-        .ok_or_else(|| err_handl(cmd, "Failed to copy artifacts from extraction container"))?;
+        .ok_or_else(|| err_handl(cmd, "Failed to copy artifacts from extraction container"));
+
+    // Always attempt to remove container, even if copy failed
+    let mut docker = std::process::Command::new("docker");
+    let cleanup_cmd = docker.args(["rm", "-f", &container_name]);
+    let cleanup_result = cleanup_cmd.status();
+
+    // Check if copy failed
+    copy_result?;
+
+    // Check if cleanup failed
+    if let Ok(status) = cleanup_result {
+        if !status.success() {
+            println!("cargo::warning=Failed to remove container {}", container_name);
+        }
+    }
 
     // Extract artifacts
     let artifacts = std::fs::File::open(root.join("artifacts.tar.gz")).map_err(BuildError::Io)?;
     let decoder = flate2::read::GzDecoder::new(artifacts);
     let mut archive = tar::Archive::new(decoder);
     archive.unpack(root).map_err(BuildError::Io)?;
-
-    // Remove container
-    let mut docker = std::process::Command::new("docker");
-    let cmd = docker.args(["rm", container]);
-    cmd.status()
-        .expect(err_msg)
-        .success()
-        .then_some(())
-        .ok_or_else(|| err_handl(cmd, "Failed to remove extraction container"))?;
 
     Ok(())
 }

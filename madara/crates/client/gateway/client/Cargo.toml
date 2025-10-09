@@ -14,6 +14,10 @@ workspace = true
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[features]
+default = []
+deny_unknown_fields = ["mp-gateway/deny_unknown_fields"]
+
 [dependencies]
 
 # Madara

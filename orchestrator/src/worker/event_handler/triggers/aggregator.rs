@@ -12,6 +12,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
+use tracing::{debug, error, info, trace, warn};
 
 pub struct AggregatorJobTrigger;
 
@@ -21,12 +22,12 @@ impl JobTrigger for AggregatorJobTrigger {
     /// 2. Check if all the child jobs for this batch are Completed
     /// 3. Create the Aggregator job for all such Batches and update the Batch status
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        tracing::info!(log_type = "starting", category = "AggregatorWorker", "AggregatorWorker started.");
+        info!(log_type = "starting", "AggregatorWorker started");
 
         // Get all the closed batches
         let closed_batches = config.database().get_batches_by_status(BatchStatus::Closed, Some(10)).await?;
 
-        tracing::debug!("Found {} closed batches", closed_batches.len());
+        debug!("Found {} closed batches", closed_batches.len());
 
         // Process each batch
         for batch in closed_batches {
@@ -34,14 +35,14 @@ impl JobTrigger for AggregatorJobTrigger {
             match self.check_child_jobs_status(batch.start_block, batch.end_block, config.clone()).await {
                 Ok(are_completed) => {
                     if are_completed {
-                        tracing::debug!(batch_id = %batch.id, batch_index = %batch.index, "All child jobs are completed");
+                        debug!(batch_id = %batch.id, batch_index = %batch.index, "All child jobs are completed");
                     } else {
-                        tracing::debug!(batch_id = %batch.id, batch_index = %batch.index, "Not all child jobs are completed");
+                        debug!(batch_id = %batch.id, batch_index = %batch.index, "Not all child jobs are completed");
                         continue;
                     }
                 }
                 Err(err) => {
-                    tracing::error!(batch_id = %batch.id, batch_index = %batch.index, "Failed to check child jobs status : {} ", err);
+                    error!(batch_id = %batch.id, batch_index = %batch.index, error = %err, "Failed to check child jobs status");
                     continue;
                 }
             }
@@ -53,10 +54,13 @@ impl JobTrigger for AggregatorJobTrigger {
                     batch_num: batch.index,
                     bucket_id: batch.bucket_id,
                     num_blocks: batch.num_blocks,
-                    download_proof: Some(format!(
-                        "{}/batch/{}/{}",
-                        STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME
-                    )),
+                    start_block: batch.start_block,
+                    end_block: batch.end_block,
+                    download_proof: if config.params.store_audit_artifacts {
+                        Some(format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME))
+                    } else {
+                        None
+                    },
                     blob_data_path: format!("{}/batch/{}", STORAGE_BLOB_DIR, batch.index),
                     cairo_pie_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, CAIRO_PIE_FILE_NAME),
                     snos_output_path: format!(
@@ -80,10 +84,10 @@ impl JobTrigger for AggregatorJobTrigger {
                         .database()
                         .update_batch_status_by_index(batch.index, BatchStatus::PendingAggregatorRun)
                         .await?;
-                    tracing::info!(batch_id = %batch.id, batch_index = %batch.index, "Successfully created new aggregator job")
+                    info!(batch_id = %batch.id, batch_index = %batch.index, "Successfully created new aggregator job")
                 }
                 Err(_) => {
-                    tracing::warn!(batch_id = %batch.id, batch_index = %batch.index, "Failed to create new aggregator job");
+                    warn!(batch_id = %batch.id, batch_index = %batch.index, "Failed to create new aggregator job");
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::Aggregator)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
@@ -93,7 +97,7 @@ impl JobTrigger for AggregatorJobTrigger {
             }
         }
 
-        tracing::trace!(log_type = "completed", category = "AggregatorWorker", "AggregatorWorker completed.");
+        trace!(log_type = "completed", "AggregatorWorker completed");
         Ok(())
     }
 }

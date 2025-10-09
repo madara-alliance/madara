@@ -32,6 +32,7 @@ mc-exec = { workspace = true }
 mc-submit-tx = { workspace = true }
 mp-block = { workspace = true, default-features = true }
 mp-chain-config = { workspace = true }
+mp-class = { workspace = true }
 mp-convert = { workspace = true, default-features = true }
 mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }

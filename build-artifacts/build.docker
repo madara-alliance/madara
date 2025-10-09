@@ -108,7 +108,7 @@ RUN git checkout $CAIRO_LANG_TAG
 
 RUN python3 -m venv venv
 ENV PATH="$CAIRO_LANG_DIR/venv/bin:$PATH"
-RUN pip install "cairo-lang==0.13.2" "sympy<1.13.0"
+RUN pip install "cairo-lang==0.13.3" "sympy<1.13.0"
 
 RUN curl -L https://foundry.paradigm.xyz | bash
 ENV PATH="$PATH:/root/.foundry/bin"

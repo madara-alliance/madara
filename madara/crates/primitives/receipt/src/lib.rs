@@ -54,13 +54,13 @@ impl From<DeployAccountTransactionReceipt> for TransactionReceipt {
 }
 
 impl TransactionReceipt {
-    pub fn transaction_hash(&self) -> Felt {
+    pub fn transaction_hash(&self) -> &Felt {
         match self {
-            TransactionReceipt::Invoke(receipt) => receipt.transaction_hash,
-            TransactionReceipt::L1Handler(receipt) => receipt.transaction_hash,
-            TransactionReceipt::Declare(receipt) => receipt.transaction_hash,
-            TransactionReceipt::Deploy(receipt) => receipt.transaction_hash,
-            TransactionReceipt::DeployAccount(receipt) => receipt.transaction_hash,
+            TransactionReceipt::Invoke(receipt) => &receipt.transaction_hash,
+            TransactionReceipt::L1Handler(receipt) => &receipt.transaction_hash,
+            TransactionReceipt::Declare(receipt) => &receipt.transaction_hash,
+            TransactionReceipt::Deploy(receipt) => &receipt.transaction_hash,
+            TransactionReceipt::DeployAccount(receipt) => &receipt.transaction_hash,
         }
     }
 
@@ -154,17 +154,17 @@ impl TransactionReceipt {
         }
     }
 
-    pub fn contract_address(&self) -> Option<Felt> {
+    pub fn contract_address(&self) -> Option<&Felt> {
         match self {
-            TransactionReceipt::Deploy(receipt) => Some(receipt.contract_address),
-            TransactionReceipt::DeployAccount(receipt) => Some(receipt.contract_address),
+            TransactionReceipt::Deploy(receipt) => Some(&receipt.contract_address),
+            TransactionReceipt::DeployAccount(receipt) => Some(&receipt.contract_address),
             _ => None,
         }
     }
 
     pub fn compute_hash(&self) -> Felt {
         Poseidon::hash_array(&[
-            self.transaction_hash(),
+            *self.transaction_hash(),
             self.actual_fee().amount,
             compute_messages_sent_hash(self.messages_sent()),
             self.execution_result().compute_hash(),
@@ -174,7 +174,7 @@ impl TransactionReceipt {
         ])
     }
 
-    pub fn l2_gas_used(&self) -> u64 {
+    pub fn l2_gas_used(&self) -> u128 {
         self.execution_resources().total_gas_consumed.l2_gas
     }
 
@@ -392,9 +392,9 @@ pub struct ExecutionResources {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GasVector {
-    pub l1_gas: u64,
-    pub l1_data_gas: u64,
-    pub l2_gas: u64,
+    pub l1_gas: u128,
+    pub l1_data_gas: u128,
+    pub l2_gas: u128,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

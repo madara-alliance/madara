@@ -1,41 +1,42 @@
-use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
+use crate::errors::StarknetRpcResult;
+use crate::Starknet;
+use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
+use mp_convert::Felt;
 use mp_rpc::v0_7_1::{
     BlockHeader, BlockStatus, BlockWithReceipts, PendingBlockHeader, PendingBlockWithReceipts,
     StarknetGetBlockWithTxsAndReceiptsResult, TransactionAndReceipt, TxnFinalityStatus,
 };
 
-use crate::errors::StarknetRpcResult;
-use crate::Starknet;
-
 pub fn get_block_with_receipts(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
-    tracing::debug!("get_block_with_receipts called with {:?}", block_id);
-    let block = starknet.get_block(&block_id)?;
-
-    let transactions = block.inner.transactions.into_iter().map(|tx| tx.into());
-
-    let is_on_l1 = if let Some(block_n) = block.info.block_n() {
-        block_n <= starknet.get_l1_last_confirmed_block()?
-    } else {
-        false
-    };
-
+    let view = starknet.backend.block_view(block_id)?;
+    let block_info = view.get_block_info()?;
+    let is_on_l1 = view.is_on_l1();
     let finality_status = if is_on_l1 { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
 
-    let receipts = block.inner.receipts.into_iter().map(|receipt| receipt.to_starknet_types(finality_status.clone()));
-
-    let transactions_with_receipts = Iterator::zip(transactions, receipts)
-        .map(|(transaction, receipt)| TransactionAndReceipt { receipt, transaction })
+    let transactions_with_receipts = view
+        .get_executed_transactions(..)?
+        .into_iter()
+        .map(|tx| TransactionAndReceipt {
+            receipt: tx.receipt.to_starknet_types(finality_status),
+            transaction: tx.transaction.into(),
+        })
         .collect();
 
-    match block.info {
-        MadaraMaybePendingBlockInfo::Pending(block) => {
+    let parent_hash = if let Some(b) = view.parent_block() {
+        b.get_block_info()?.block_hash
+    } else {
+        Felt::ZERO // genesis
+    };
+
+    match block_info {
+        MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
                 transactions: transactions_with_receipts,
                 pending_block_header: PendingBlockHeader {
-                    parent_hash: block.header.parent_block_hash,
+                    parent_hash,
                     timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
                     l1_gas_price: block.header.gas_prices.l1_gas_price(),
@@ -45,14 +46,14 @@ pub fn get_block_with_receipts(
                 },
             }))
         }
-        MadaraMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Block(BlockWithReceipts {
                 transactions: transactions_with_receipts,
                 status,
                 block_header: BlockHeader {
                     block_hash: block.block_hash,
-                    parent_hash: block.header.parent_block_hash,
+                    parent_hash,
                     block_number: block.header.block_number,
                     new_root: block.header.global_state_root,
                     timestamp: block.header.block_timestamp.0,
@@ -74,17 +75,17 @@ mod tests {
         errors::StarknetRpcApiError,
         test_utils::{rpc_test_setup, sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
+    use assert_matches::assert_matches;
     use mc_db::MadaraBackend;
     use mp_block::{
-        header::{BlockTimestamp, GasPrices},
-        BlockTag, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
+        header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
+        BlockTag, FullBlockWithoutCommitments, TransactionWithReceipt,
     };
     use mp_chain_config::StarknetVersion;
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
     };
     use mp_rpc::v0_7_1::{L1DaMode, ResourcePrice};
-    use mp_state_update::StateDiff;
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
@@ -106,7 +107,7 @@ mod tests {
                 block_hash: block_hashes[0],
                 parent_hash: Felt::ZERO,
                 block_number: 0,
-                new_root: Felt::from_hex_unchecked("0x88912"),
+                new_root: Felt::from_hex_unchecked("0x0"),
                 timestamp: 43,
                 sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
                 l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
@@ -202,72 +203,69 @@ mod tests {
     #[rstest]
     fn test_get_block_with_receipts_pending_always_present(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {
         let (backend, rpc) = rpc_test_setup;
-        backend
-            .store_block(
-                MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
-                        header: Header {
-                            parent_block_hash: Felt::ZERO,
-                            block_number: 0,
-                            transaction_count: 1,
-                            global_state_root: Felt::from_hex_unchecked("0x88912"),
-                            sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
-                            block_timestamp: BlockTimestamp(43),
-                            transaction_commitment: Felt::from_hex_unchecked("0xbabaa0"),
-                            event_count: 0,
-                            event_commitment: Felt::from_hex_unchecked("0xb"),
-                            state_diff_length: Some(5),
-                            state_diff_commitment: Some(Felt::from_hex_unchecked("0xb1")),
-                            receipt_commitment: Some(Felt::from_hex_unchecked("0xb4")),
-                            protocol_version: StarknetVersion::V0_13_1_1,
-                            gas_prices: GasPrices {
-                                eth_l1_gas_price: 123,
-                                strk_l1_gas_price: 12,
-                                eth_l1_data_gas_price: 44,
-                                strk_l1_data_gas_price: 52,
-                                eth_l2_gas_price: 0,
-                                strk_l2_gas_price: 0,
-                            },
-                            l1_da_mode: mp_chain_config::L1DataAvailabilityMode::Blob,
+        let block_hash = backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader {
+                        block_number: 0,
+                        sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+                        block_timestamp: BlockTimestamp(43),
+                        protocol_version: StarknetVersion::V0_13_1_1,
+                        gas_prices: GasPrices {
+                            eth_l1_gas_price: 123,
+                            strk_l1_gas_price: 12,
+                            eth_l1_data_gas_price: 44,
+                            strk_l1_data_gas_price: 52,
+                            eth_l2_gas_price: 0,
+                            strk_l2_gas_price: 0,
                         },
-                        block_hash: Felt::from_hex_unchecked("0x1777177171"),
-                        tx_hashes: vec![Felt::from_hex_unchecked("0x8888888")],
-                    }),
-                    inner: MadaraBlockInner {
-                        transactions: vec![Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                        l1_da_mode: mp_chain_config::L1DataAvailabilityMode::Blob,
+                    },
+                    state_diff: Default::default(),
+                    transactions: vec![TransactionWithReceipt {
+                        transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                             max_fee: Felt::from_hex_unchecked("0x12"),
                             signature: vec![].into(),
                             contract_address: Felt::from_hex_unchecked("0x4343"),
                             entry_point_selector: Felt::from_hex_unchecked("0x1212"),
                             calldata: vec![Felt::from_hex_unchecked("0x2828")].into(),
-                        }))],
-                        receipts: vec![TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                        })),
+                        receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
                             transaction_hash: Felt::from_hex_unchecked("0x8888888"),
                             actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
                             messages_sent: vec![],
                             events: vec![],
                             execution_resources: ExecutionResources::default(),
                             execution_result: ExecutionResult::Succeeded,
-                        })],
-                    },
+                        }),
+                    }],
+                    events: vec![],
                 },
-                StateDiff::default(),
-                vec![],
+                &[],
+                true,
             )
-            .unwrap();
+            .unwrap()
+            .block_hash;
 
-        let res = StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
-            transactions: vec![],
+        assert_matches!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
+            transactions,
             pending_block_header: PendingBlockHeader {
-                parent_hash: Felt::from_hex_unchecked("0x1777177171"),
-                sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
-                timestamp: 43,
-                starknet_version: StarknetVersion::V0_13_1_1.to_string(),
-                l1_data_gas_price: ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() },
-                l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
+                parent_hash,
+                sequencer_address,
+                timestamp: _,
+                starknet_version,
+                l1_data_gas_price,
+                l1_gas_price,
                 l1_da_mode: L1DaMode::Blob,
             },
+        }) => {
+            assert_eq!(parent_hash, block_hash);
+            assert_eq!(transactions, vec![]);
+            assert_eq!(sequencer_address, Felt::from_hex_unchecked("0xbabaa"));
+            assert_eq!(starknet_version, StarknetVersion::V0_13_1_1.to_string());
+            assert_eq!(l1_data_gas_price, ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() });
+            assert_eq!(l1_gas_price, ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() });
         });
-        assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
     }
 }

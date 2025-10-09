@@ -148,28 +148,46 @@ impl OrchestratorService {
     /// - `Ok(false)` if the StateTransition job is not completed or doesn't exist
     /// - `Err(OrchestratorError)` for RPC errors or parsing failures
     pub async fn check_state_update(&self, block_number: u64) -> Result<bool, OrchestratorError> {
-        let url = format!("{}jobs/block/{}/status", self.endpoint().unwrap(), block_number);
         let client = reqwest::Client::new();
 
-        println!("Orchestrator URL: {}", url);
+        // Step 1: Fetch batch for the block
+        let url = format!("{}blocks/batch-for-block/{}", self.endpoint().unwrap(), block_number);
+
+        let response_1 = client.get(&url).header("accept", "application/json").send().await.map_err(|e| {
+            println!("Failed to send request to orchestrator: {}", e);
+            OrchestratorError::NetworkError(e.to_string())
+        })?;
+
+        let json_1 = response_1.json::<serde_json::Value>().await.map_err(|e| {
+            println!("Failed to parse JSON response: {}", e);
+            OrchestratorError::InvalidResponse(e.to_string())
+        })?;
+
+        // Check if the API call was successful
+        let success_1 = json_1.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        if !success_1 {
+            let message = json_1.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            println!("Orchestrator API error: {}", message);
+            return Err(OrchestratorError::InvalidResponse(message.to_string()));
+        }
+
+        // Extract the batch number from the response
+        let batch_number = json_1.get("data").and_then(|data| data.get("batch_number")).unwrap();
+
+        // Step 2: Fetch the status of the batch's state_transition job
+        let url = format!("{}jobs/block/{}/status", self.endpoint().unwrap(), batch_number);
+        let client = reqwest::Client::new();
 
         let response = client.get(&url).header("accept", "application/json").send().await.map_err(|e| {
             println!("Failed to send request to orchestrator: {}", e);
             OrchestratorError::NetworkError(e.to_string())
         })?;
-        let response_clone = client.get(&url).header("accept", "application/json").send().await.map_err(|e| {
-            println!("Failed to send request to orchestrator: {}", e);
-            OrchestratorError::NetworkError(e.to_string())
-        })?;
-
-        println!("Orchestrator URL: {:?}", response_clone.text().await);
 
         let json = response.json::<serde_json::Value>().await.map_err(|e| {
             println!("Failed to parse JSON response: {}", e);
             OrchestratorError::InvalidResponse(e.to_string())
         })?;
-
-        println!("JSON RESPONSE : {}", json);
 
         // Check if the API call was successful
         let success = json.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
