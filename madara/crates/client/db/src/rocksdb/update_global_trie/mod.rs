@@ -42,6 +42,7 @@ pub fn apply_to_global_trie<'a>(
 
         state_root = Some(calculate_state_root(contract_trie_root?, class_trie_root?));
     }
+    println!("Global State root: {:?} for block {}", state_root.unwrap(), start_block_n);
     state_root.context("Applying an empty batch to the global trie")
 }
 
