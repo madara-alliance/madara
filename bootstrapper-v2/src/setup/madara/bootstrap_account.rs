@@ -20,7 +20,9 @@ pub struct BootstrapAccount<'a> {
 
 impl<'a> BootstrapAccount<'a> {
     pub fn new(provider: &'a JsonRpcClient<HttpTransport>, chain_id: Felt) -> Self {
-        let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_hex("0x424f4f545354524150").unwrap()));
+        let signer = LocalWallet::from(SigningKey::from_secret_scalar(
+            Felt::from_hex("0x424f4f545354524150").context("Invalid bootstrap private key hex").unwrap()
+        ));
 
         let account = SingleOwnerAccount::new(
             provider.clone(),
@@ -41,7 +43,7 @@ impl<'a> BootstrapAccount<'a> {
     pub async fn bootstrap_declare(&self) -> anyhow::Result<()> {
         let contract_artifact: SierraClass = serde_json::from_reader(
             std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json")
-                .unwrap(),
+                .context("Failed to open OpenZeppelin Account sierra file")?,
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
 
@@ -49,7 +51,7 @@ impl<'a> BootstrapAccount<'a> {
             std::fs::File::open(
                 "contracts/madara/target/dev/madara_factory_contracts_Account.compiled_contract_class.json",
             )
-            .unwrap(),
+            .context("Failed to open OpenZeppelin Account casm file")?,
         )
         .context("Failed to read OpenZeppelin Account casm file")?;
 
@@ -68,7 +70,7 @@ impl<'a> BootstrapAccount<'a> {
         let compiled_class_hash = contract_casm_artifact.class_hash()?;
 
         // We need to flatten the ABI into a string first
-        let flattened_class = contract_artifact.clone().flatten().unwrap();
+        let flattened_class = contract_artifact.clone().flatten().context("Failed to flatten contract artifact")?;
 
         let declaration = self
             .account
@@ -99,7 +101,7 @@ impl<'a> BootstrapAccount<'a> {
         // Read the OpenZeppelin Account contract artifacts to get the class hash
         let contract_artifact: SierraClass = serde_json::from_reader(
             std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json")
-                .unwrap(),
+                .context("Failed to open OpenZeppelin Account sierra file")?,
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
 

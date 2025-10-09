@@ -65,7 +65,7 @@ pub async fn wait_for_transaction(
 ) -> Result<(), anyhow::Error> {
     let transaction_receipt = get_transaction_receipt(provider_l2, transaction_hash).await;
 
-    let transaction_status = transaction_receipt.ok().unwrap();
+    let transaction_status = transaction_receipt.context("Failed to get transaction receipt")?;
 
     log::trace!("txn : {:?} : {:?}", tag, transaction_status);
     let exec_result: ExecutionResult = match transaction_status.receipt {
@@ -97,23 +97,27 @@ pub async fn declare_contract(
     sierra_path: &str,
     casm_path: &str,
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
-) -> Felt {
+) -> anyhow::Result<Felt> {
     log::info!("sierra_path: {:?}", sierra_path);
     log::info!("casm_path: {:?}", casm_path);
-    let contract_artifact: SierraClass = serde_json::from_reader(std::fs::File::open(sierra_path).unwrap()).unwrap();
+    let contract_artifact: SierraClass = serde_json::from_reader(
+        std::fs::File::open(sierra_path).context("Failed to open sierra file")?
+    ).context("Failed to parse sierra file")?;
 
     let contract_artifact_casm: CompiledClass =
-        serde_json::from_reader(std::fs::File::open(casm_path).unwrap()).unwrap();
+        serde_json::from_reader(
+            std::fs::File::open(casm_path).context("Failed to open casm file")?
+        ).context("Failed to parse casm file")?;
 
-    let class_hash = contract_artifact.class_hash().unwrap();
-    let compiled_class_hash = contract_artifact_casm.class_hash().unwrap();
+    let class_hash = contract_artifact.class_hash().context("Failed to get class hash from sierra artifact")?;
+    let compiled_class_hash = contract_artifact_casm.class_hash().context("Failed to get class hash from casm artifact")?;
 
     if account.provider().get_class(BlockId::Tag(BlockTag::Pending), class_hash).await.is_ok() {
         log::info!("Class already declared, skipping declaration.");
-        return class_hash;
+        return Ok(class_hash);
     }
 
-    let flattened_class = contract_artifact.flatten().unwrap();
+    let flattened_class = contract_artifact.flatten().context("Failed to flatten contract artifact")?;
 
     let txn = account
         .declare_v3(Arc::new(flattened_class), compiled_class_hash)
@@ -121,8 +125,8 @@ pub async fn declare_contract(
         .send()
         .await
         .expect("Error in declaring the contract using Cairo 1 declaration using the provided account");
-    wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await.unwrap();
-    class_hash
+    wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await.context("Failed to wait for contract declaration transaction")?;
+    Ok(class_hash)
 }
 
 pub async fn execute_v3(
@@ -142,7 +146,7 @@ pub async fn execute_v3(
         &format!("invoking_contract for calls {:?}", calls),
     )
     .await
-    .unwrap();
+    .context("Failed to wait for transaction execution")?;
 
     Ok(txn_res)
 }
