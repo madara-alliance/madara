@@ -52,13 +52,14 @@ impl JobTrigger for SnosJobTrigger {
 
         // Get all snos batches that are closed but don't have a SnosRun job created yet
         for snos_batch in config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed).await? {
-            // Create DA metadata
+            // Create SNOS job metadata
             let snos_metadata = create_job_metadata(
                 snos_batch.start_block,
                 snos_batch.end_block,
                 config.snos_config().snos_full_output,
             );
 
+            // Create a new job and add it to the queue
             match JobHandlerService::create_job(
                 JobType::SnosRun,
                 snos_batch.snos_batch_id.clone().to_string(), /* changing mapping here snos_batch_id => internal_id for snos and then eventually proving jobs*/
