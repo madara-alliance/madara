@@ -268,7 +268,7 @@ contract Factory is Ownable, Pausable, Implementations {
     _pause();
   }
 
-  function unpasuse() external onlyOwner {
+  function unpause() external onlyOwner {
     _unpause();
   }
 }
