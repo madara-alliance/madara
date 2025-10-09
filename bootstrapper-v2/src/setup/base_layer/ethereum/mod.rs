@@ -14,7 +14,6 @@ use alloy::{
     sol,
     sol_types::SolValue,
 };
-use anyhow::Context;
 use async_trait::async_trait;
 use factory::BaseLayerContracts;
 use log;
@@ -22,6 +21,32 @@ use serde_json;
 use std::collections::HashMap;
 use factory::{Factory, FactoryDeploy};
 use implementation_contracts::{ImplementationContract, IMPLEMENTATION_CONTRACTS_DATA};
+use thiserror::Error;
+use anyhow::Result;
+
+// Custom error types using thiserror - grouped into broader categories
+#[derive(Error, Debug)]
+pub enum EthereumSetupError {
+    // Network and provider errors
+    #[error("Network error: {0}")]
+    Network(String),
+    
+    // Contract deployment errors
+    #[error("Contract deployment error: {0}")]
+    ContractDeployment(String),
+    
+    // Contract execution errors
+    #[error("Contract execution error: {0}")]
+    ContractExecution(String),
+    
+    // Configuration and data errors
+    #[error("Configuration error: {0}")]
+    Configuration(String),
+    
+    // File I/O and serialization errors
+    #[error("File I/O error: {0}")]
+    FileIo(String),
+}
 
 #[allow(dead_code)]
 pub struct EthereumSetup {
@@ -55,39 +80,43 @@ impl EthereumSetup {
         }
     }
 
-    async fn deploy_contract_from_artifact(&self, artifact_path: &str) -> anyhow::Result<Address> {
+    async fn deploy_contract_from_artifact(&self, artifact_path: &str) -> Result<Address, EthereumSetupError> {
         let provider = ProviderBuilder::new()
             .wallet(self.signer.clone())
-            .connect_http(self.rpc_url.parse().expect("Invalid RPC URL"));
+            .connect_http(self.rpc_url.parse().map_err(|e| EthereumSetupError::Network(format!("Invalid RPC URL: {}", e)))?);
 
         // Read the artifact file
         let artifact_content = std::fs::read_to_string(artifact_path)
-            .with_context(|| format!("Failed to read artifact for: {}", artifact_path))?;
-        let artifact: serde_json::Value = serde_json::from_str(&artifact_content)?;
+            .map_err(|e| EthereumSetupError::FileIo(format!("Failed to read artifact for {}: {}", artifact_path, e)))?;
+        let artifact: serde_json::Value = serde_json::from_str(&artifact_content)
+            .map_err(|e| EthereumSetupError::FileIo(format!("Failed to parse artifact JSON: {}", e)))?;
 
         let bytecode = artifact["bytecode"]["object"]
             .as_str()
-            .context("Bytecode not found in artifact")?
+            .ok_or(EthereumSetupError::Configuration("Bytecode not found in artifact".to_string()))?
             .strip_prefix("0x")
-            .context("Incorrect bytecode")?
+            .ok_or(EthereumSetupError::Configuration("Incorrect bytecode format".to_string()))?
             .to_string();
 
-        let deploy_code = hex::decode(bytecode).context("Failed to decode bytecode")?;
+        let deploy_code = hex::decode(bytecode)
+            .map_err(|e| EthereumSetupError::Configuration(format!("Failed to decode bytecode: {}", e)))?;
 
         let deploy_tx = TransactionRequest::default().with_deploy_code(deploy_code);
         let pending_transaction_builder = provider.send_transaction(deploy_tx).await;
         let transaction_receipt = pending_transaction_builder
-            .with_context(|| format!("Failed to send deployment transaction {}", artifact_path))?
+            .map_err(|e| EthereumSetupError::ContractDeployment(format!("Failed to send deployment transaction for {}: {}", artifact_path, e)))?
             .get_receipt()
             .await;
-        let receipt = transaction_receipt.context("Failed to get transaction receipt")?;
+        let receipt = transaction_receipt
+            .map_err(|e| EthereumSetupError::ContractDeployment(format!("Failed to get transaction receipt: {}", e)))?;
 
-        let address = receipt.contract_address.context("No contract address in receipt")?;
+        let address = receipt.contract_address
+            .ok_or(EthereumSetupError::ContractDeployment("No contract address in receipt".to_string()))?;
         Ok(address)
     }
 
     /// Save the current class hashes and addresses to a JSON file
-    fn save_ethereum_addresses(&self) -> anyhow::Result<()> {
+    fn save_ethereum_addresses(&self) -> Result<(), EthereumSetupError> {
         let base_layer_addresses = serde_json::json!({
             "implementation_addresses": {
                 "coreContract": self.implementation_address.get(&ImplementationContract::CoreContract),
@@ -103,11 +132,11 @@ impl EthereumSetup {
             }).unwrap_or(serde_json::Value::Null)
         });
 
-        crate::utils::save_addresses_to_file(
-            serde_json::to_string_pretty(&base_layer_addresses)?,
-            &self.addresses_output_path,
-        )
-        .context("Failed to save addresses")?;
+        let json_string = serde_json::to_string_pretty(&base_layer_addresses)
+            .map_err(|e| EthereumSetupError::FileIo(format!("JSON serialization error: {}", e)))?;
+        
+        crate::utils::save_addresses_to_file(json_string, &self.addresses_output_path)
+            .map_err(|e| EthereumSetupError::FileIo(format!("Failed to save addresses to {}: {}", self.addresses_output_path, e)))?;
 
         log::info!("Ethereum base layer addresses saved to: {}", self.addresses_output_path);
 
@@ -118,53 +147,58 @@ impl EthereumSetup {
 // Base layer setup trait implementation
 #[async_trait]
 impl BaseLayerSetupTrait for EthereumSetup {
-    async fn init(&mut self) -> anyhow::Result<()> {
+    async fn init(&mut self) -> Result<()> {
         for contract_info in IMPLEMENTATION_CONTRACTS_DATA {
             let address = self
-                .deploy_contract_from_artifact(&contract_info.artifact_path)
+                .deploy_contract_from_artifact(contract_info.artifact_path)
                 .await
-                .with_context(|| format!("Failed to deploy {:?}", contract_info.implementation_contract))?;
+                .map_err(|e| EthereumSetupError::ContractDeployment(format!("Failed to deploy {:?}: {}", contract_info.implementation_contract, e)))?;
 
             log::info!("Deployed {:?} at address: {:?}", contract_info.implementation_contract, address);
             self.implementation_address.insert(contract_info.implementation_contract, address.to_string());
         }
 
         // Write the addresses to a JSON file
-        let addresses_json = serde_json::to_string_pretty(&self.implementation_address)?;
-        save_addresses_to_file(addresses_json, &self.addresses_output_path)?;
+        let addresses_json = serde_json::to_string_pretty(&self.implementation_address)
+            .map_err(|e| EthereumSetupError::FileIo(format!("JSON serialization error: {}", e)))?;
+        save_addresses_to_file(addresses_json, &self.addresses_output_path)
+            .map_err(|e| EthereumSetupError::FileIo(format!("Failed to save addresses: {}", e)))?;
 
         Ok(())
     }
 
-    async fn setup(&mut self) -> anyhow::Result<()> {
+    async fn setup(&mut self) -> Result<()> {
         let provider = ProviderBuilder::new()
             .wallet(self.signer.clone())
-            .connect_http(self.rpc_url.parse().expect("Invalid RPC URL"));
+            .connect_http(self.rpc_url.parse().map_err(|e| EthereumSetupError::Network(format!("Invalid RPC URL: {}", e)))?);
 
         // Convert implementation addresses to the required format
         // (to be passed to the factory constructor)
         let implementation_contracts =
-            serde_json::from_str(&serde_json::to_string_pretty(&self.implementation_address)?).context("Failed to parse implementation addresses")?;
+            serde_json::from_str(&serde_json::to_string_pretty(&self.implementation_address)
+                .map_err(|e| EthereumSetupError::FileIo(format!("JSON serialization error: {}", e)))?)
+                .map_err(|e| EthereumSetupError::Configuration(format!("Failed to parse implementation addresses: {}", e)))?;
 
         // Deploy the factory contract
         let factory_deploy = FactoryDeploy::new(provider, self.signer.address(), implementation_contracts)
             .await
-            .context("Failed to deploy Ethereum Factory")?;
+            .map_err(|e| EthereumSetupError::ContractDeployment(format!("Failed to deploy Ethereum Factory: {}", e)))?;
         log::info!("Deployed factory at {:?}", factory_deploy.address());
 
         self.implementation_address
             .insert(ImplementationContract::BaseLayerFactory, factory_deploy.address().to_string());
 
         save_addresses_to_file(
-            serde_json::to_string_pretty(&self.implementation_address)?,
+            serde_json::to_string_pretty(&self.implementation_address)
+                .map_err(|e| EthereumSetupError::FileIo(format!("JSON serialization error: {}", e)))?,
             &self.addresses_output_path,
         )
-        .context("Failed to save addresses")?;
+        .map_err(|e| EthereumSetupError::FileIo(format!("Failed to save addresses: {}", e)))?;
 
         let base_layer_contracts = factory_deploy
             .setup(self.core_contract_init_data.clone(), self.signer.address(), self.signer.address())
             .await
-            .context("Failed to initialize Ethereum Factory")?;
+            .map_err(|e| EthereumSetupError::ContractExecution(format!("Failed to initialize Ethereum Factory: {}", e)))?;
 
         // Store the base layer contracts for later use
         self.base_layer_contracts = Some(base_layer_contracts);
@@ -175,68 +209,73 @@ impl BaseLayerSetupTrait for EthereumSetup {
         Ok(())
     }
 
-    #[allow(unused_variables)]
-    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> anyhow::Result<()> {
+    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<()> {
         // Read the base layer factory address from addresses.json
         let addresses_content =
-            std::fs::read_to_string(&self.addresses_output_path).context("Failed to read addresses.json")?;
+            std::fs::read_to_string(&self.addresses_output_path)
+                .map_err(|e| EthereumSetupError::FileIo(format!("Failed to read addresses.json: {}", e)))?;
         let addresses: serde_json::Value =
-            serde_json::from_str(&addresses_content).context("Failed to parse addresses.json")?;
+            serde_json::from_str(&addresses_content)
+                .map_err(|e| EthereumSetupError::FileIo(format!("Failed to parse addresses.json: {}", e)))?;
 
         let base_layer_factory_address = addresses["implementation_addresses"]["base_layer_factory"]
             .as_str()
-            .context("base_layer_factory address not found in addresses.json")?;
+            .ok_or(EthereumSetupError::Configuration("base_layer_factory address not found in addresses.json".to_string()))?;
 
         // Read the L2 bridge addresses from madara_addresses.json
         let madara_addresses_content =
-            std::fs::read_to_string(madara_addresses_path).context("Failed to read madara_addresses.json")?;
+            std::fs::read_to_string(madara_addresses_path)
+                .map_err(|e| EthereumSetupError::FileIo(format!("Failed to read madara_addresses.json: {}", e)))?;
         let madara_addresses: serde_json::Value =
-            serde_json::from_str(&madara_addresses_content).context("Failed to parse madara_addresses.json")?;
+            serde_json::from_str(&madara_addresses_content)
+                .map_err(|e| EthereumSetupError::FileIo(format!("Failed to parse madara_addresses.json: {}", e)))?;
 
         let l2_eth_bridge_address = madara_addresses["addresses"]["l2_eth_bridge"]
             .as_str()
-            .context("ethTokenBridge address not found in madara_addresses.json")?;
+            .ok_or(EthereumSetupError::Configuration("ethTokenBridge address not found in madara_addresses.json".to_string()))?;
         let l2_erc20_bridge_address = madara_addresses["addresses"]["l2_token_bridge"]
             .as_str()
-            .context("tokenBridge address not found in madara_addresses.json")?;
+            .ok_or(EthereumSetupError::Configuration("tokenBridge address not found in madara_addresses.json".to_string()))?;
 
         // Read the deployed bridge addresses from addresses.json
         let eth_token_bridge = addresses["addresses"]["ethTokenBridge"]
             .as_str()
-            .context("ethTokenBridge address not found in addresses.json")?;
+            .ok_or(EthereumSetupError::Configuration("ethTokenBridge address not found in addresses.json".to_string()))?;
         let token_bridge = addresses["addresses"]["tokenBridge"]
             .as_str()
-            .context("tokenBridge address not found in addresses.json")?;
+            .ok_or(EthereumSetupError::Configuration("tokenBridge address not found in addresses.json".to_string()))?;
 
         // Convert hex addresses to U256 format
         let l2_eth_bridge_u256 = alloy::primitives::U256::from_str_radix(
             l2_eth_bridge_address.strip_prefix("0x").unwrap_or(l2_eth_bridge_address),
             16,
         )
-        .context("Failed to convert l2EthBridgeAddress to U256")?;
+        .map_err(|e| EthereumSetupError::Configuration(format!("Failed to convert l2EthBridgeAddress to U256: {}", e)))?;
 
         let l2_erc20_bridge_u256 = alloy::primitives::U256::from_str_radix(
             l2_erc20_bridge_address.strip_prefix("0x").unwrap_or(l2_erc20_bridge_address),
             16,
         )
-        .context("Failed to convert l2Erc20BridgeAddress to U256")?;
+        .map_err(|e| EthereumSetupError::Configuration(format!("Failed to convert l2Erc20BridgeAddress to U256: {}", e)))?;
 
         // Convert string addresses to Address format
         let eth_token_bridge_address =
-            eth_token_bridge.parse::<alloy::primitives::Address>().context("Failed to parse ethTokenBridge address")?;
+            eth_token_bridge.parse::<alloy::primitives::Address>()
+                .map_err(|e| EthereumSetupError::Configuration(format!("Failed to parse ethTokenBridge address: {}", e)))?;
         let token_bridge_address =
-            token_bridge.parse::<alloy::primitives::Address>().context("Failed to parse tokenBridge address")?;
+            token_bridge.parse::<alloy::primitives::Address>()
+                .map_err(|e| EthereumSetupError::Configuration(format!("Failed to parse tokenBridge address: {}", e)))?;
 
         // Create a provider and instantiate the factory contract
         let provider = ProviderBuilder::new()
             .wallet(self.signer.clone())
-            .connect_http(self.rpc_url.parse().expect("Invalid RPC URL"));
+            .connect_http(self.rpc_url.parse().map_err(|e| EthereumSetupError::Network(format!("Invalid RPC URL: {}", e)))?);
 
         // Create a new factory instance with the deployed address
         let factory_instance = Factory::new(
             base_layer_factory_address
                 .parse::<alloy::primitives::Address>()
-                .context("Failed to parse base_layer_factory address")?,
+                .map_err(|e| EthereumSetupError::Configuration(format!("Failed to parse base_layer_factory address: {}", e)))?,
             provider,
         );
 
@@ -244,9 +283,11 @@ impl BaseLayerSetupTrait for EthereumSetup {
         factory_instance
             .setL2Bridge(l2_eth_bridge_u256, l2_erc20_bridge_u256, eth_token_bridge_address, token_bridge_address)
             .send()
-            .await?
+            .await
+            .map_err(|e| EthereumSetupError::ContractExecution(format!("Failed to send setL2Bridge transaction: {}", e)))?
             .watch()
-            .await?;
+            .await
+            .map_err(|e| EthereumSetupError::ContractExecution(format!("Failed to watch setL2Bridge transaction: {}", e)))?;
 
         log::info!("Successfully called set_l2_bridge on factory contract");
 
