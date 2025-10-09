@@ -166,7 +166,7 @@ pub async fn get_contract_address_from_deploy_tx(
 ) -> anyhow::Result<Felt> {
     let deploy_tx_hash = tx.transaction_hash;
 
-    wait_for_transaction(rpc, deploy_tx_hash, "get_contract_address_from_deploy_tx").await.unwrap();
+    wait_for_transaction(rpc, deploy_tx_hash, "get_contract_address_from_deploy_tx").await?;
 
     let deploy_tx_receipt = get_transaction_receipt(rpc, deploy_tx_hash).await?;
 
@@ -176,7 +176,7 @@ pub async fn get_contract_address_from_deploy_tx(
                 .events
                 .iter()
                 .find(|e| e.keys[0] == get_selector_from_name("ContractDeployed").unwrap())
-                .unwrap()
+                .context("ContractDeployed event not found")?
                 .data[0]
         }
         _ => return Err(anyhow!("Expected invoke transaction receipt")),
@@ -191,7 +191,7 @@ pub async fn get_contracts_deployed_addresses(
 ) -> anyhow::Result<ContractsDeployedAddresses> {
     let tx_hash = tx.transaction_hash;
 
-    wait_for_transaction(rpc, tx_hash, "get_contracts_deployed_addresses").await.unwrap();
+    wait_for_transaction(rpc, tx_hash, "get_contracts_deployed_addresses").await?;
 
     let tx_receipt = get_transaction_receipt(rpc, tx_hash).await?;
 
