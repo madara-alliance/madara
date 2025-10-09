@@ -26,6 +26,7 @@ pub struct ForwardSyncConfig {
     pub apply_state_batch_size: usize,
     pub disable_tries: bool,
     pub keep_pre_v0_13_2_hashes: bool,
+    pub enable_bouncer_config_sync: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -39,6 +40,7 @@ impl Default for ForwardSyncConfig {
             apply_state_batch_size: 4,
             disable_tries: false,
             keep_pre_v0_13_2_hashes: false,
+            enable_bouncer_config_sync: false,
         }
     }
 }
@@ -49,6 +51,9 @@ impl ForwardSyncConfig {
     }
     pub fn keep_pre_v0_13_2_hashes(self, val: bool) -> Self {
         Self { keep_pre_v0_13_2_hashes: val, ..self }
+    }
+    pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
+        Self { enable_bouncer_config_sync: val, ..self }
     }
 }
 
@@ -95,6 +100,7 @@ impl GatewayForwardSync {
             config.block_parallelization,
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
+            config.enable_bouncer_config_sync,
         );
         let classes_pipeline = classes::classes_pipeline(
             backend.clone(),

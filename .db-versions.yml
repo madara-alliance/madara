@@ -1,5 +1,7 @@
-current_version: 7
+current_version: 8
 versions:
+  - version: 8
+    pr: 790
   - version: 7
     pr: 772
   - version: 6

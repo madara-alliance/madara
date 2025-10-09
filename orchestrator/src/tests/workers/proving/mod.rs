@@ -5,7 +5,7 @@ use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{db_checks_proving_worker, get_job_by_mock_id_vector};
-use crate::types::batch::Batch;
+use crate::types::batch::AggregatorBatch;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
@@ -46,8 +46,9 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
     let mut snos_jobs = Vec::new();
 
     db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
-    db.expect_get_batch_for_block()
-        .returning(|_| Ok(Some(Batch { bucket_id: String::from("ABCD1234"), start_block: 0, ..Default::default() })));
+    db.expect_get_aggregator_batch_for_block().returning(|_| {
+        Ok(Some(AggregatorBatch { bucket_id: String::from("ABCD1234"), start_block: 0, ..Default::default() }))
+    });
 
     for i in 1..=num_jobs {
         // Skip job with ID 3 if incomplete_runs is true
