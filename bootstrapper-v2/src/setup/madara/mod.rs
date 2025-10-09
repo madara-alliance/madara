@@ -1,9 +1,7 @@
-pub mod account_helpers;
 pub mod bootstrap_account;
 
 use crate::utils::declare_contract;
-use crate::{config::MadaraConfig, utils::execute_v3};
-use account_helpers::{get_contract_address_from_deploy_tx, get_contracts_deployed_addresses};
+use crate::{config::MadaraConfig, utils::{execute_v3, get_contract_address_from_deploy_tx, get_contracts_deployed_addresses}};
 use anyhow::Context;
 use bootstrap_account::BootstrapAccount;
 use log;
