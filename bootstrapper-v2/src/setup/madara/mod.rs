@@ -1,9 +1,11 @@
 pub mod bootstrap_account;
+pub mod class_contracts;
 
 use crate::utils::declare_contract;
 use crate::{config::MadaraConfig, utils::{execute_v3, get_contract_address_from_deploy_tx, get_contracts_deployed_addresses}};
 use anyhow::Context;
 use bootstrap_account::BootstrapAccount;
+use class_contracts::{MadaraClass, MADARA_CLASSES_DATA};
 use log;
 use starknet::core::types::Call;
 use starknet::macros::selector;
@@ -22,17 +24,10 @@ use starknet::{
 };
 use starknet::{providers::Provider, signers::LocalWallet};
 use std::collections::HashMap;
+use std::fmt::format;
 use std::fs;
 
-// Types for Map keys
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum MadaraClasses {
-    TokenBridge,
-    Erc20,
-    Eic,
-    UniversalDeployer,
-    MadaraFactory,
-}
+// Types for Map keys - using MadaraClass from class_contracts module
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum DeployedContract {
@@ -49,7 +44,7 @@ pub struct MadaraSetup {
     rpc_url: String,
     provider: JsonRpcClient<HttpTransport>,
     account: Option<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>>,
-    classes: HashMap<MadaraClasses, Felt>,
+    classes: HashMap<MadaraClass, Felt>,
     addresses: HashMap<DeployedContract, Felt>,
 }
 
@@ -76,77 +71,25 @@ impl MadaraSetup {
         bootstrap_account.bootstrap_declare().await?;
         self.account = Some(bootstrap_account.deploy_account(private_key).await?);
 
-        // Declare the required contract classes
-        let account = self.account.as_ref().context("Account not initialized. Call init() first.")?;
-
         log::info!("Starting contract declarations...");
 
-        // Declare token bridge contracts
-        log::info!("Declaring token bridge contract...");
-        let token_bridge_class_hash = declare_contract(
-            "../build-artifacts/starkgate_latest/cairo/token_bridge.sierra.json",
-            "../build-artifacts/starkgate_latest/cairo/token_bridge.casm.json",
-            account,
-        )
-        .await
-        .context("Failed to declare token bridge contract")?;
-        log::info!("Token bridge contract declared successfully!");
+        // Declare all contracts using the data array
+        for class_info in MADARA_CLASSES_DATA.iter() {
+            log::info!("Declaring contract...");
+            let class_hash = declare_contract(
+                class_info.sierra_path,
+                class_info.casm_path,
+                self.account.as_ref().context("Account not initialized. Call init() first.")?,
+            )
+            .await
+            .context(format!("Failed to declare contract: {:?}", class_info.madara_class))?;
 
-        log::info!("Declaring ERC20 contract...");
-        let erc20_class_hash = declare_contract(
-            "../build-artifacts/starkgate_latest/cairo/ERC20_070.sierra.json",
-            "../build-artifacts/starkgate_latest/cairo/ERC20_070.casm.json",
-            account,
-        )
-        .await
-        .context("Failed to declare ERC20 contract")?;
-        log::info!("ERC20 contract declared successfully!");
-
-        // Declare EIC contract
-        log::info!("Declaring EIC contract...");
-        let eic_class_hash = declare_contract(
-            "./contracts/madara/target/dev/madara_factory_contracts_EIC.contract_class.json",
-            "./contracts/madara/target/dev/madara_factory_contracts_EIC.compiled_contract_class.json",
-            account,
-        )
-        .await
-        .context("Failed to declare EIC contract")?;
-        log::info!("EIC contract declared successfully!");
-
-        // Declare UniversalDeployer contract
-        log::info!("Declaring UniversalDeployer contract...");
-        let universal_deployer_class_hash = declare_contract(
-            "./contracts/madara/target/dev/madara_factory_contracts_UniversalDeployer.contract_class.json",
-            "./contracts/madara/target/dev/madara_factory_contracts_UniversalDeployer.compiled_contract_class.json",
-            account,
-        )
-        .await
-        .context("Failed to declare UniversalDeployer contract")?;
-        log::info!("Universal Deployer contract declared successfully!");
-
-        // Declare MadaraFactory contract
-        log::info!("Declaring MadaraFactory contract...");
-        let madara_factory_class_hash = declare_contract(
-            "./contracts/madara/target/dev/madara_factory_contracts_MadaraFactory.contract_class.json",
-            "./contracts/madara/target/dev/madara_factory_contracts_MadaraFactory.compiled_contract_class.json",
-            account,
-        )
-        .await
-        .context("Failed to declare MadaraFactory contract")?;
-        log::info!("MadaraFactory contract declared successfully!");
-
-        log::info!("Token Bridge Class Hash: 0x{:x}", token_bridge_class_hash);
-        log::info!("ERC20 Class Hash: 0x{:x}", erc20_class_hash);
-        log::info!("EIC Class Hash: 0x{:x}", eic_class_hash);
-        log::info!("Universal Deployer Class Hash: 0x{:x}", universal_deployer_class_hash);
-        log::info!("Madara Factory Class Hash: 0x{:x}", madara_factory_class_hash);
-
-        // Store all class hashes after declarations are complete
-        self.insert_class_hash(MadaraClasses::TokenBridge, token_bridge_class_hash);
-        self.insert_class_hash(MadaraClasses::Erc20, erc20_class_hash);
-        self.insert_class_hash(MadaraClasses::Eic, eic_class_hash);
-        self.insert_class_hash(MadaraClasses::UniversalDeployer, universal_deployer_class_hash);
-        self.insert_class_hash(MadaraClasses::MadaraFactory, madara_factory_class_hash);
+            
+            log::info!("Contract declared successfully! Class Hash: 0x{:x}", class_hash);
+            
+            // Store the class hash immediately
+            self.insert_class_hash(class_info.madara_class, class_hash);
+        }
 
         log::info!("All contract declarations completed successfully!");
 
@@ -201,7 +144,7 @@ impl MadaraSetup {
         let account_provider = account.provider();
 
         let universal_deployer_class =
-            self.get_class_hash(&MadaraClasses::UniversalDeployer).context("Universal deployer not declared")?;
+            self.get_class_hash(&MadaraClass::UniversalDeployer).context("Universal deployer not declared")?;
 
         let calldata = Vec::from([*universal_deployer_class, Felt::ZERO, Felt::ONE, Felt::ZERO]);
         let calls = vec![Call { to: account_address, selector: selector!("deploy_contract"), calldata }];
@@ -234,13 +177,13 @@ impl MadaraSetup {
         log::info!("Deploying MadaraFactory contract...");
 
         let madara_factory_class_hash =
-            self.get_class_hash(&MadaraClasses::MadaraFactory).context("MadaraFactory class not declared")?;
+            self.get_class_hash(&MadaraClass::MadaraFactory).context("MadaraFactory class not declared")?;
 
-        let token_bridge_class = self.get_class_hash(&MadaraClasses::TokenBridge).context("Token bridge class not declared")?;
+        let token_bridge_class = self.get_class_hash(&MadaraClass::TokenBridge).context("Token bridge class not declared")?;
 
-        let eic_class = self.get_class_hash(&MadaraClasses::Eic).context("EIC class not declared")?;
+        let eic_class = self.get_class_hash(&MadaraClass::Eic).context("EIC class not declared")?;
 
-        let erc20_class = self.get_class_hash(&MadaraClasses::Erc20).context("ERC20 class not declared")?;
+        let erc20_class = self.get_class_hash(&MadaraClass::Erc20).context("ERC20 class not declared")?;
 
         // Convert L1 bridge addresses from string to EthAddress
         let l1_eth_bridge_eth = EthAddress::from_hex(l1_eth_bridge_address).context("Invalid L1 ETH bridge address")?;
@@ -327,7 +270,7 @@ impl MadaraSetup {
     }
 
     /// Get a class hash by name
-    pub fn get_class_hash(&self, name: &MadaraClasses) -> Option<&Felt> {
+    pub fn get_class_hash(&self, name: &MadaraClass) -> Option<&Felt> {
         self.classes.get(name)
     }
 
@@ -337,7 +280,7 @@ impl MadaraSetup {
     }
 
     /// Insert a class hash
-    pub fn insert_class_hash(&mut self, name: MadaraClasses, class_hash: Felt) {
+    pub fn insert_class_hash(&mut self, name: MadaraClass, class_hash: Felt) {
         self.classes.insert(name, class_hash);
     }
 
@@ -350,11 +293,11 @@ impl MadaraSetup {
     fn save_madara_addresses(&self, madara_addresses_path: &str) -> anyhow::Result<()> {
         let madara_addresses = serde_json::json!({
             "classes": {
-                "token_bridge": format!("0x{:x}", self.get_class_hash(&MadaraClasses::TokenBridge).context("Token bridge class hash not found")?),
-                "erc20": format!("0x{:x}", self.get_class_hash(&MadaraClasses::Erc20).context("ERC20 class hash not found")?),
-                "eic": format!("0x{:x}", self.get_class_hash(&MadaraClasses::Eic).context("EIC class hash not found")?),
-                "universal_deployer": format!("0x{:x}", self.get_class_hash(&MadaraClasses::UniversalDeployer).context("Universal deployer class hash not found")?),
-                "madara_factory": format!("0x{:x}", self.get_class_hash(&MadaraClasses::MadaraFactory).context("Madara factory class hash not found")?),
+                "token_bridge": format!("0x{:x}", self.get_class_hash(&MadaraClass::TokenBridge).context("Token bridge class hash not found")?),
+                "erc20": format!("0x{:x}", self.get_class_hash(&MadaraClass::Erc20).context("ERC20 class hash not found")?),
+                "eic": format!("0x{:x}", self.get_class_hash(&MadaraClass::Eic).context("EIC class hash not found")?),
+                "universal_deployer": format!("0x{:x}", self.get_class_hash(&MadaraClass::UniversalDeployer).context("Universal deployer class hash not found")?),
+                "madara_factory": format!("0x{:x}", self.get_class_hash(&MadaraClass::MadaraFactory).context("Madara factory class hash not found")?),
             },
             "addresses": {
                 "universal_deployer": format!("0x{:x}", self.addresses.get(&DeployedContract::UniversalDeployer).unwrap_or(&Felt::ZERO)),
