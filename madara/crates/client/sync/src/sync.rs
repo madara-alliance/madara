@@ -131,8 +131,9 @@ impl<P: ForwardPipeline> SyncController<P> {
     pub async fn run(&mut self, mut ctx: mp_utils::service::ServiceContext) -> anyhow::Result<()> {
 
         // Get the pre-sync status
-        // // let first_block = self.backend.get_latest_applied_trie_update()?.unwrap_or(0);
-        // let first_block = 0;
+        let test_latest_block = self.backend.get_latest_applied_trie_update()?.unwrap_or(0);
+        // println!("Latest block: {}", test_latest_block);
+        let first_block = 0;
         // println!("First block: {}", first_block);
 
         let interval_duration = Duration::from_secs(3);
@@ -148,62 +149,61 @@ impl<P: ForwardPipeline> SyncController<P> {
         }
         self.show_status();
 
-        // // TODO: will this also depend on the Starknet version?
-        // // TODO: add feature flag to enable/disable this functionality
-        // // TODO: add appropriate CLI flags
+        // TODO: will this also depend on the Starknet version?
+        // TODO: add feature flag to enable/disable this functionality
+        // TODO: add appropriate CLI flags
 
-        // // Define the block range for state root calculation
-        // // let latest_block = match self.backend.db.get_chain_tip()? {
-        // //     StorageChainTip::Confirmed(block_number) => block_number,
-        // //     _ => return Err(anyhow!("Chain tip is not confirmed")),
-        // // };
-        // let latest_block = 402062_u64;
+        // Define the block range for state root calculation
+        let latest_block = match self.backend.db.get_chain_tip()? {
+            StorageChainTip::Confirmed(block_number) => block_number,
+            _ => return Err(anyhow!("Chain tip is not confirmed")),
+        };
 
-        // println!("SNAP-SYNC: Processing blocks {} to {}", first_block, latest_block);
+        println!("SNAP-SYNC: Processing blocks {} to {}", first_block, latest_block);
 
-        // // Collect all state diffs first WITHOUT any pre_range checks
+        // Collect all state diffs first WITHOUT any pre_range checks
 
-        // let mut state_diff_map = StateDiffMap::default();
+        let mut state_diff_map = StateDiffMap::default();
 
-        // for block_number in first_block..=latest_block {
-        //     let view = self.backend.block_view(BlockId::Number(block_number))?;
-        //     let single_contract_state_diff = view.get_state_diff()?;
-        //     state_diff_map.apply_state_diff(&single_contract_state_diff);
-        //     println!("Processed block {}", block_number);
-        // }
+        for block_number in first_block..=latest_block {
+            let view = self.backend.block_view(BlockId::Number(block_number))?;
+            let single_contract_state_diff = view.get_state_diff()?;
+            state_diff_map.apply_state_diff(&single_contract_state_diff);
+            println!("Processed block {}", block_number);
+        }
 
-        // let state_diff = {
-        //     let mut state_diff = state_diff_map.to_raw_state_diff();
-        //     state_diff.sort();
-        //     state_diff
-        // };
-        // println!("Processed all blocks");
+        let state_diff = {
+            let mut state_diff = state_diff_map.to_raw_state_diff();
+            state_diff.sort();
+            state_diff
+        };
+        println!("Processed all blocks");
 
-        // let pre_range_block_check = if first_block == 0 {
-        //     None
-        // } else {
-        //     Some(first_block.saturating_sub(1))
-        // };
+        let pre_range_block_check = if first_block == 0 {
+            None
+        } else {
+            Some(first_block.saturating_sub(1))
+        };
 
-        // println!("Pre-range block check: {:?}", pre_range_block_check);
+        println!("Pre-range block check: {:?}", pre_range_block_check);
 
-        // let accumulated_state_diff = compress_state_diff(
-        //     state_diff,
-        //     pre_range_block_check,
-        //     self.backend.clone()
-        // ).await?;
+        let accumulated_state_diff = compress_state_diff(
+            state_diff,
+            pre_range_block_check,
+            self.backend.clone()
+        ).await?;
 
-        // println!("SNAP-SYNC: Raw squash complete. Now compressing with pre_range_block={}...", pre_range_block_check);
+        println!("SNAP-SYNC: Raw squash complete. Now compressing with pre_range_block={:?}...", pre_range_block_check);
 
-        // let global_state_root = self.backend
-        //     .write_access()
-        //     .apply_to_global_trie(first_block, vec![accumulated_state_diff].iter())?;
+        let global_state_root = self.backend
+            .write_access()
+            .apply_to_global_trie(latest_block.checked_sub(1).unwrap(), vec![accumulated_state_diff].iter())?;
 
-        // println!("Global state root after applying accumulated state diff: {:?}", global_state_root);
+        println!("Global state root after applying accumulated state diff: {:?}", global_state_root);
 
-        // self.backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
+        self.backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
 
-        // println!("Global state root: {:?}", global_state_root);
+        println!("Global state root: {:?}", global_state_root);
 
         // Handle shutdown based on configuration
         if self.config.global_stop_on_sync {
