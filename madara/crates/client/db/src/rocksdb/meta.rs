@@ -139,7 +139,10 @@ impl RocksDBStorageInner {
             }
         };
 
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+
+        let mut writeopts = rocksdb::WriteOptions::default();
+        writeopts.set_sync(true); 
+        self.db.write_opt(batch, &writeopts)?;
         Ok(())
     }
 
