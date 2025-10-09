@@ -112,6 +112,16 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         });
     }
 
+    // Mock block with tx hashes calls for version checking
+    for block_num in start_block..end_block + 1 {
+        let block_response = get_dummy_block_with_tx_hashes(block_num);
+        server.mock(|when, then| {
+            when.path("/").body_includes("starknet_getBlockWithTxHashes");
+            then.status(200)
+                .body(serde_json::to_vec(&json!({ "id": 1,"jsonrpc":"2.0","result": block_response })).unwrap());
+        });
+    }
+
     crate::worker::event_handler::triggers::batching::BatchingTrigger.run_worker(services.config).await?;
 
     rpc_block_call_mock.assert();
@@ -135,4 +145,27 @@ fn get_dummy_state_update(block_num: u64) -> serde_json::Value {
     });
 
     serde_json::to_value(&state_update).unwrap()
+}
+
+fn get_dummy_block_with_tx_hashes(block_num: u64) -> serde_json::Value {
+    json!({
+        "status": "ACCEPTED_ON_L1",
+        "block_hash": format!("0x{:x}", block_num),
+        "parent_hash": format!("0x{:x}", block_num.saturating_sub(1)),
+        "block_number": block_num,
+        "new_root": format!("0x{:x}", block_num + 1),
+        "timestamp": 1234567890,
+        "sequencer_address": "0x0",
+        "l1_gas_price": {
+            "price_in_wei": "0x1",
+            "price_in_fri": "0x1"
+        },
+        "l1_data_gas_price": {
+            "price_in_wei": "0x1",
+            "price_in_fri": "0x1"
+        },
+        "l1_da_mode": "CALLDATA",
+        "starknet_version": "0.13.2",
+        "transactions": []
+    })
 }
