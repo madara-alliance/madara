@@ -184,6 +184,7 @@ frestart: fclean
 
 .PHONY: artifacts
 artifacts:
+	@git submodule update --init --recursive
 	./scripts/artifacts.sh
 
 
