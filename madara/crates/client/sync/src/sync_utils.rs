@@ -7,46 +7,18 @@ use mp_convert::Felt;
 use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry};
 use mc_db::{MadaraBackend, MadaraStorageRead};
 
-// Define the timing macro at the module level
-macro_rules! log_elapsed {
-    ($start:expr, $label:expr) => {{
-        let elapsed = $start.elapsed();
-        tracing::info!("Snap_Sync: {} - Elapsed time: {:?}", $label, elapsed);
-    }};
-}
-
-/// squash_state_updates merge all the StateUpdate into a single StateUpdate
-/// This function now performs RAW accumulation without pre_range_block checks
-pub async fn squash(
-    state_diffs: Vec<&StateDiff>,
-    pre_range_block: Option<u64>,
-    backend: Arc<MadaraBackend>,
-) -> anyhow::Result<StateDiff> {
-
-    let state_diff_map = StateDiffMap::from_state_diffs(state_diffs);
-
-    // Convert to StateDiff without pre_range filtering
-    let mut state_diff = state_diff_map.to_raw_state_diff();
-
-    state_diff.sort();
-
-    Ok(state_diff)
-}
-
 /// New function: Compress a raw accumulated state diff by checking against pre_range_block
 /// This should be called ONCE after all accumulation is complete
 pub async fn compress_state_diff(
     raw_state_diff: StateDiff,
-    pre_range_block: u64,
+    pre_range_block: Option<u64>,
     backend: Arc<MadaraBackend>,
 ) -> anyhow::Result<StateDiff> {
-    let start_time = std::time::Instant::now();
-
-    tracing::info!("Snap_Sync: Starting compression with pre_range_block={}", pre_range_block);
+    // tracing::info!("Snap_Sync: Starting compression with pre_range_block={}", pre_range_block);
 
     // Process storage diffs with pre_range checks
     let storage_diffs = stream::iter(raw_state_diff.storage_diffs.into_iter().enumerate())
-        .map(|(idx, contract_diff)| {
+        .map(|(_idx, contract_diff)| {
             let backend = backend.clone();
             async move {
                 compress_single_contract(
@@ -62,10 +34,8 @@ pub async fn compress_state_diff(
         .try_collect::<Vec<_>>()
         .await?;
 
-    log_elapsed!(start_time, "Storage diffs compressed");
-
     // Process deployed contracts and replaced classes
-    let mut deployed_contracts_map: HashMap<Felt, Felt> = raw_state_diff
+    let deployed_contracts_map: HashMap<Felt, Felt> = raw_state_diff
         .deployed_contracts
         .into_iter()
         .map(|item| (item.address, item.class_hash))
@@ -79,12 +49,10 @@ pub async fn compress_state_diff(
 
     let (replaced_classes, deployed_contracts) = process_deployed_contracts_and_replaced_classes(
         backend.clone(),
-        Some(pre_range_block),
+        pre_range_block,
         deployed_contracts_map,
         replaced_classes_map,
     ).await?;
-
-    log_elapsed!(start_time, "Deployed contracts and replaced classes compressed");
 
     let mut compressed_diff = StateDiff {
         storage_diffs,
@@ -97,8 +65,6 @@ pub async fn compress_state_diff(
 
     compressed_diff.sort();
 
-    log_elapsed!(start_time, "Compression completed");
-
     Ok(compressed_diff)
 }
 
@@ -109,7 +75,7 @@ const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
 const MAX_GET_CLASS_HASH_AT_CALL_RETRY: u64 = 3;
 
 #[derive(Default)]
-struct StateDiffMap {
+pub struct StateDiffMap {
     storage_diffs: HashMap<Felt, HashMap<Felt, Felt>>,
     deployed_contracts: HashMap<Felt, Felt>,
     declared_classes: HashMap<Felt, Felt>,
@@ -120,72 +86,56 @@ struct StateDiffMap {
 }
 
 impl StateDiffMap {
-    fn from_state_diffs(ordered_state_diffs: Vec<&StateDiff>) -> Self {
-        let start_time = std::time::Instant::now();
-        tracing::info!("Snap_Sync: Starting from_state_diffs with {} state diffs", ordered_state_diffs.len());
 
-        let mut state_diff_map = StateDiffMap::default();
+    /// Apply a single state diff to the existing StateDiffMap
+    pub fn apply_state_diff(&mut self, state_diff: &StateDiff) {
+        // tracing::info!("Snap_Sync: Applying state diff to existing StateDiffMap");
 
-        for (idx, state_diff) in ordered_state_diffs.iter().enumerate() {
-            // Process storage diffs
-            for contract_diff in &state_diff.storage_diffs {
-                let contract_addr = contract_diff.address;
-                state_diff_map.touched_contracts.insert(contract_addr);
+        // Process storage diffs
+        for contract_diff in &state_diff.storage_diffs {
+            let contract_addr = contract_diff.address;
+            self.touched_contracts.insert(contract_addr);
 
-                let contract_storage = state_diff_map.storage_diffs.entry(contract_addr).or_default();
+            let contract_storage = self.storage_diffs.entry(contract_addr).or_default();
 
-                for entry in &contract_diff.storage_entries {
-                    contract_storage.insert(entry.key, entry.value);
-                }
+            for entry in &contract_diff.storage_entries {
+                contract_storage.insert(entry.key, entry.value);
             }
-            log_elapsed!(start_time, format!("Iteration {}: Storage diffs processed", idx));
-
-            // Process deployed contracts
-            for item in &state_diff.deployed_contracts {
-                state_diff_map.deployed_contracts.insert(item.address, item.class_hash);
-            }
-            log_elapsed!(start_time, format!("Iteration {}: Deployed contracts processed", idx));
-
-            // Process declared classes
-            for item in &state_diff.declared_classes {
-                state_diff_map.declared_classes.insert(item.class_hash, item.compiled_class_hash);
-            }
-            log_elapsed!(start_time, format!("Iteration {}: Declared classes processed", idx));
-
-            // Process nonces
-            for item in &state_diff.nonces {
-                state_diff_map.nonces.insert(item.contract_address, item.nonce);
-            }
-            log_elapsed!(start_time, format!("Iteration {}: Nonces processed", idx));
-
-            // Process replaced classes
-            for item in &state_diff.replaced_classes {
-                state_diff_map.replaced_classes.insert(item.contract_address, item.class_hash);
-            }
-            log_elapsed!(start_time, format!("Iteration {}: Replaced classes processed", idx));
-
-            // Process deprecated classes
-            for class_hash in &state_diff.old_declared_contracts {
-                state_diff_map.deprecated_declared_classes.insert(*class_hash);
-            }
-            log_elapsed!(start_time, format!("Iteration {}: Deprecated classes processed", idx));
+        }
+        // Process deployed contracts
+        for item in &state_diff.deployed_contracts {
+            self.deployed_contracts.insert(item.address, item.class_hash);
         }
 
-        tracing::info!("Snap_Sync: from_state_diffs completed - {} unique contracts touched", state_diff_map.touched_contracts.len());
-        log_elapsed!(start_time, "from_state_diffs completed");
+        // Process declared classes
+        for item in &state_diff.declared_classes {
+            self.declared_classes.insert(item.class_hash, item.compiled_class_hash);
+        }
 
-        state_diff_map
+        // Process nonces
+        for item in &state_diff.nonces {
+            self.nonces.insert(item.contract_address, item.nonce);
+        }
+
+        // Process replaced classes
+        for item in &state_diff.replaced_classes {
+            self.replaced_classes.insert(item.contract_address, item.class_hash);
+        }
+
+        // Process deprecated classes
+        for class_hash in &state_diff.old_declared_contracts {
+            self.deprecated_declared_classes.insert(*class_hash);
+        }
     }
 
     /// NEW: Convert to raw StateDiff without any pre_range filtering
     /// This is MUCH faster as it does no DB lookups
-    fn to_raw_state_diff(self) -> StateDiff {
-        let start_time = std::time::Instant::now();
+    pub fn to_raw_state_diff(&self) -> StateDiff {
 
-        tracing::info!("Snap_Sync: Converting to raw state diff with {} touched contracts", self.touched_contracts.len());
+        // tracing::info!("Snap_Sync: Converting to raw state diff with {} touched contracts", self.touched_contracts.len());
 
         // Convert storage diffs - only include touched contracts
-        let storage_diffs: Vec<ContractStorageDiffItem> = self.touched_contracts
+        let storage_diffs: Vec<ContractStorageDiffItem> = self.touched_contracts.clone()
             .into_iter()
             .filter_map(|contract_addr| {
                 self.storage_diffs.get(&contract_addr).map(|storage_map| {
@@ -203,35 +153,32 @@ impl StateDiffMap {
             .filter(|item| !item.storage_entries.is_empty())
             .collect();
 
-        log_elapsed!(start_time, "Raw storage diffs created");
 
         let deployed_contracts = self
-            .deployed_contracts
+            .deployed_contracts.clone()
             .into_iter()
             .map(|(address, class_hash)| DeployedContractItem { address, class_hash })
             .collect();
 
         let declared_classes = self
-            .declared_classes
+            .declared_classes.clone()
             .into_iter()
             .map(|(class_hash, compiled_class_hash)| DeclaredClassItem { class_hash, compiled_class_hash })
             .collect();
 
         let nonces = self
-            .nonces
+            .nonces.clone()
             .into_iter()
             .map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce })
             .collect();
 
         let replaced_classes = self
-            .replaced_classes
+            .replaced_classes.clone()
             .into_iter()
             .map(|(contract_address, class_hash)| ReplacedClassItem { contract_address, class_hash })
             .collect();
 
-        let deprecated_declared_classes = self.deprecated_declared_classes.into_iter().collect();
-
-        log_elapsed!(start_time, "Raw state diff conversion completed");
+        let deprecated_declared_classes = self.deprecated_declared_classes.clone().into_iter().collect();
 
         StateDiff {
             storage_diffs,
@@ -242,8 +189,6 @@ impl StateDiffMap {
             replaced_classes,
         }
     }
-
-    // REMOVED: Old get_state_diff method that did pre_range filtering
 }
 
 /// NEW: Compress a single contract's storage entries by checking against pre_range_block
@@ -251,60 +196,60 @@ async fn compress_single_contract(
     contract_addr: Felt,
     storage_entries: Vec<StorageEntry>,
     backend: Arc<MadaraBackend>,
-    pre_range_block: u64,
+    pre_range_block_option: Option<u64>,
 ) -> anyhow::Result<Option<ContractStorageDiffItem>> {
-    let start_time = std::time::Instant::now();
-    let entry_count = storage_entries.len();
+    let storage_entries = match pre_range_block_option {
+        Some(pre_range_block) => {
+            // Check if contract existed at pre_range_block
+            let contract_existed = check_contract_existed_at_block(backend.clone(), contract_addr, pre_range_block).await?;
 
-    // Check if contract existed at pre_range_block
-    let contract_existed = check_contract_existed_at_block(backend.clone(), contract_addr, pre_range_block).await?;
+            let compressed_entries = if contract_existed {
+                // Contract existed - check each storage entry against pre_range value
+                stream::iter(storage_entries)
+                    .map(|entry| {
+                        let backend = backend.clone();
+                        async move {
+                            let pre_range_value = check_pre_range_storage_value(
+                                backend,
+                                contract_addr,
+                                entry.key,
+                                pre_range_block
+                            ).await;
+                            (entry, pre_range_value)
+                        }
+                    })
+                    .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
+                    .filter_map(|(entry, pre_range_value)| async move {
+                        // Only keep if value changed
+                        if pre_range_value != Some(entry.value) {
+                            Some(entry)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .await
+            } else {
+                // Contract didn't exist - filter out zero values (default state)
+                storage_entries
+                    .into_iter()
+                    .filter(|entry| entry.value != Felt::ZERO)
+                    .collect()
+            };
 
-    log_elapsed!(start_time, format!("Contract {:?}: Checked existence (existed: {})", contract_addr, contract_existed));
-
-    let compressed_entries = if contract_existed {
-        // Contract existed - check each storage entry against pre_range value
-        stream::iter(storage_entries)
-            .map(|entry| {
-                let backend = backend.clone();
-                async move {
-                    let pre_range_value = check_pre_range_storage_value(
-                        backend,
-                        contract_addr,
-                        entry.key,
-                        pre_range_block
-                    ).await;
-                    (entry, pre_range_value)
-                }
-            })
-            .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
-            .filter_map(|(entry, pre_range_value)| async move {
-                // Only keep if value changed
-                if pre_range_value != Some(entry.value) {
-                    Some(entry)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .await
-    } else {
-        // Contract didn't exist - filter out zero values (default state)
-        storage_entries
-            .into_iter()
-            .filter(|entry| entry.value != Felt::ZERO)
-            .collect()
+            compressed_entries
+        }
+        None => {
+            // No pre_range_block - filter out zero values (default state)
+            storage_entries
+                .into_iter()
+                .filter(|entry| entry.value != Felt::ZERO)
+                .collect()
+        }
     };
 
-    log_elapsed!(
-        start_time,
-        format!("Contract {:?}: Compressed {} -> {} entries", contract_addr, entry_count, compressed_entries.len())
-    );
-
-    if !compressed_entries.is_empty() {
-        Ok(Some(ContractStorageDiffItem {
-            address: contract_addr,
-            storage_entries: compressed_entries,
-        }))
+    if !storage_entries.is_empty() {
+        Ok(Some(ContractStorageDiffItem { address: contract_addr, storage_entries }))
     } else {
         Ok(None)
     }

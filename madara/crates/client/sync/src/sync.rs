@@ -10,8 +10,7 @@ use anyhow::anyhow;
 use mp_block::BlockId;
 use tokio::time::Instant;
 use mc_db::storage::StorageChainTip;
-use crate::sync_utils::{compress_state_diff, squash};
-use mp_state_update::StateDiff;
+use crate::sync_utils::{compress_state_diff, StateDiffMap};
 
 pub trait ForwardPipeline {
     fn run(
@@ -161,40 +160,42 @@ impl<P: ForwardPipeline> SyncController<P> {
         println!("SNAP-SYNC: Processing blocks {} to {}", first_block, latest_block);
 
         // Collect all state diffs first WITHOUT any pre_range checks
-        let mut all_state_diffs = Vec::new();
+
+        let mut state_diff_map = StateDiffMap::default();
 
         for block_number in first_block..=latest_block {
             let view = self.backend.block_view(BlockId::Number(block_number))?;
-            let state_diff = view.get_state_diff()?;
-            all_state_diffs.push(state_diff);
+            let single_contract_state_diff = view.get_state_diff()?;
+            state_diff_map.apply_state_diff(&single_contract_state_diff);
         }
 
-        println!("SNAP-SYNC: Collected {} state diffs, now squashing...", all_state_diffs.len());
+        let state_diff = {
+            let mut state_diff = state_diff_map.to_raw_state_diff();
+            state_diff.sort();
+            state_diff
+        };
 
-        // Squash all state diffs at once WITHOUT pre_range checks
-        // This is fast because it's just in-memory HashMap operations
-        let state_diff_refs: Vec<&StateDiff> = all_state_diffs.iter().collect();
-        let raw_accumulated_diff = squash(state_diff_refs, None, self.backend.clone()).await?;
+        let pre_range_block_check = if first_block == 0 {
+            None
+        } else {
+            Some(first_block.saturating_sub(1))
+        };
 
-        println!("SNAP-SYNC: Raw squash complete. Now compressing with pre_range_block={}...", first_block - 1);
-
-        // NOW do the compression with pre_range checks - this happens ONCE
         let accumulated_state_diff = compress_state_diff(
-            raw_accumulated_diff,
-            first_block - 1,
+            state_diff,
+            pre_range_block_check,
             self.backend.clone()
         ).await?;
 
-        println!("SNAP-SYNC: Compression complete. Calculating global state root for blocks {}..{}", first_block, latest_block);
+        println!("SNAP-SYNC: Raw squash complete. Now compressing with pre_range_block={}...", first_block - 1);
 
-        // Apply the accumulated state diff to calculate the global state root
         let global_state_root = self.backend
             .write_access()
             .apply_to_global_trie(first_block, vec![accumulated_state_diff].iter())?;
 
         self.backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
 
-        println!("SNAP-SYNC: Global state root: {:?} for blocks {}..{}", global_state_root, first_block, latest_block);
+        println!("Global state root: {:?}", global_state_root);
 
         // Handle shutdown based on configuration
         if self.config.global_stop_on_sync {
