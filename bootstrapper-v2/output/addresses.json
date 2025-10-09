@@ -1,18 +1,18 @@
 {
   "addresses": {
-    "coreContract": "0x56639db16ac50a89228026e42a316b30179a5376",
-    "ethTokenBridge": "0x3ce1c8f80f7c4594e8fb328d26de8bcb85c80fa2",
-    "manager": "0x0665fbb86a3aceca91df68388ec4bbe11556ddce",
-    "registry": "0x9d63c831188174d95338a847bc027095a2442550",
-    "tokenBridge": "0xe61fdedbcb68e8966c869e51eab9020cfaadf066"
+    "coreContract": "0x3b02ff1e626ed7a8fd6ec5299e2c54e1421b626b",
+    "ethTokenBridge": "0xd79ae87f2c003ec925fb7e9c11585709bfe41473",
+    "manager": "0xba12646cc07adbe43f8bd25d83fb628d29c8a762",
+    "registry": "0x7ab4c4804197531f7ed6a6bc0f0781f706ff7953",
+    "tokenBridge": "0xc8cb5439c767a63aca1c01862252b2f3495fdcfe"
   },
   "implementation_addresses": {
-    "baseLayerFactory": "0x4ed7c70F96B99c776995fB64377f0d4aB3B0e1C1",
-    "coreContract": "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1",
-    "ethBridge": "0xc6e7DF5E7b4f2A278906862b61205850344D4e7d",
-    "ethBridgeEIC": "0x59b670e9fA9D0A427751Af201D676719a970857b",
-    "manager": "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
-    "multiBridge": "0x3Aa5ebB10DC797CAC828524e59A333d0A371443c",
-    "registry": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
+    "baseLayerFactory": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+    "coreContract": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "ethBridge": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+    "ethBridgeEIC": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+    "manager": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "multiBridge": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+    "registry": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
   }
 }
