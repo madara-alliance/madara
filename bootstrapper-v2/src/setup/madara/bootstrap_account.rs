@@ -111,7 +111,8 @@ impl<'a> BootstrapAccount<'a> {
             Felt::from_hex(private_key).context("Invalid private key format")?,
         ));
 
-        let salt = Felt::from(123); // Salt for deployment
+
+        let salt = Felt::from(0u64); // Salt for deployment
 
         // Create an OpenZeppelin account factory for deployment
         let account_factory =

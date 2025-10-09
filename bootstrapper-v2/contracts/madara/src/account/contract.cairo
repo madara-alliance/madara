@@ -5,6 +5,11 @@
 ///
 /// OpenZeppelin's upgradeable account which can change its public key and declare, deploy, or call
 /// contracts. Supports outside execution by implementing SRC9.
+///
+/// This contract is exactly taken from the OpenZeppelin preset in openzeppelin_account::presets::AccountUpgradeable.
+/// We have made the following modifications:
+/// - Added a deploy_contract function for contract deployment functionality
+/// - Removed the upgrade component as it was not needed for our use case
 #[starknet::contract(account)]
 pub mod AccountUpgradeable {
     use core::hash::{HashStateExTrait, HashStateTrait};

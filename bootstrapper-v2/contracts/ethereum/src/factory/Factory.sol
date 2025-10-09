@@ -32,7 +32,7 @@ contract Factory is Ownable, Pausable, Implementations {
     address proxy,
     address implementation,
     bytes memory initData
-  ) public {
+  ) private {
     IRoles(proxy).registerUpgradeGovernor(address(this));
     IProxy(proxy).addImplementation(implementation, initData, false);
     IProxy(proxy).upgradeTo(implementation, initData, false);
@@ -100,7 +100,7 @@ contract Factory is Ownable, Pausable, Implementations {
     CoreContractInitData calldata coreContractInitData,
     address operator,
     address governor
-  ) public returns (address) {
+  ) public onlyOwner returns (address) {
     _requireNotPaused();
     // Deploying proxy with 0 upgradeActivationDelay
     Proxy coreContractProxy = new Proxy(0);
@@ -146,7 +146,7 @@ contract Factory is Ownable, Pausable, Implementations {
     address managerProxy,
     address messagingContract, // coreContract
     address governor
-  ) public returns (address) {
+  ) public onlyOwner returns (address) {
     _requireNotPaused();
     Proxy multiBridgeProxy = new Proxy(0);
     bytes memory initData = abi.encode(
@@ -171,7 +171,7 @@ contract Factory is Ownable, Pausable, Implementations {
     address messagingContract, // coreContractProxy
     address eicContract,
     address governor
-  ) public returns (address) {
+  ) public onlyOwner returns (address) {
     _requireNotPaused();
     Proxy ethBridgePxoxy = new Proxy(0);
     // 'eth' is 0x657468
@@ -197,7 +197,7 @@ contract Factory is Ownable, Pausable, Implementations {
     address registryImplementation,
     address managerProxy,
     address governor
-  ) public {
+  ) public onlyOwner {
     _requireNotPaused();
     bytes memory initData = abi.encode(address(0), managerProxy);
     addImplementationAndUpgrade(
@@ -261,5 +261,13 @@ contract Factory is Ownable, Pausable, Implementations {
     IRoles(proxyContract).registerAppRoleAdmin(governanceAdmin);
     IRoles(proxyContract).registerAppRoleAdmin(address(this));
     IRoles(proxyContract).registerAppGovernor(governanceAdmin);
+  }
+
+  function pause() external onlyOwner {
+    _pause();
+  }
+
+  function unpasuse() external onlyOwner {
+    _unpause();
   }
 }
