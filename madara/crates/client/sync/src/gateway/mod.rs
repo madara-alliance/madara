@@ -52,7 +52,7 @@ impl ForwardSyncConfig {
     pub fn keep_pre_v0_13_2_hashes(self, val: bool) -> Self {
         Self { keep_pre_v0_13_2_hashes: val, ..self }
     }
-    pub fn snap_sync(self, val: bool) -> Self { 
+    pub fn snap_sync(self, val: bool) -> Self {
         Self { snap_sync: val, ..self }
     }
 }
@@ -110,7 +110,6 @@ impl GatewayForwardSync {
             config.classes_parallelization,
             config.classes_batch_size,
         );
-        // TODO: make this snap_sync dynamic from the env!
         let apply_state_pipeline = super::apply_state::apply_state_pipeline(backend.clone(), importer.clone(), starting_block_n, config.apply_state_parallelization, config.apply_state_batch_size, config.disable_tries, config.snap_sync);
         Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
     }

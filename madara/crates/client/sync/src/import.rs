@@ -1,4 +1,4 @@
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraStorageRead};
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
     BlockHeaderWithSignatures, Header, TransactionWithReceipt,
@@ -16,6 +16,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRef
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
+use anyhow::Context;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct BlockValidationConfig {
@@ -530,8 +531,20 @@ impl BlockImporterCtx {
 
         println!("Global State Root till block {:?} is {:?}", block_range.end.checked_sub(1), got);
 
-        // TODO: Snaity check should happen!
         // Sanity check: verify state root.
+        if !self.config.no_check {
+            let expected = self
+                .backend
+                .db
+                .get_block_info(last_block_n)? // Raw get
+                .context("Block header can't be found")?
+                .header
+                .global_state_root;
+
+            if expected != got {
+                return Err(BlockImportError::GlobalStateRoot { got, expected });
+            }
+        }
 
         Ok(())
     }
