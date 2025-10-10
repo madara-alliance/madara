@@ -273,7 +273,7 @@ impl TransactionValidator {
             execution_flags: ExecutionFlags {
                 only_query: false,
                 charge_fee: false, // TODO: this should be as per the flag we have right?
-                validate: false, // TODO: maybe based on the charge fee itself?
+                validate,
                 strict_nonce_check: false,
             },
         };
