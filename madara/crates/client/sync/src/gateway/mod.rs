@@ -145,6 +145,8 @@ impl ForwardPipeline for GatewayForwardSync {
     ) -> anyhow::Result<()> {
         tracing::debug!("Run pipeline to height={target_height:?}");
 
+        self.apply_state_pipeline.steps.set_target_block(target_height);
+
         let mut done = false;
         while !done {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height

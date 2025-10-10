@@ -27,6 +27,7 @@ pub fn apply_state_pipeline(
             disable_tries,
             snap_sync,
             state_diff_map: Mutex::new(Default::default()),
+            target_block: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
         },
         parallelization,
         batch_size,
@@ -40,6 +41,7 @@ pub struct ApplyStateSteps {
     disable_tries: bool,
     snap_sync: bool,
     state_diff_map: Mutex<crate::sync_utils::StateDiffMap>,
+    target_block: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl PipelineController<ApplyStateSteps> {
@@ -93,7 +95,9 @@ impl ApplyStateSteps {
         println!("Current first block: {}", current_first_block);
         println!("Latest block: {}", latest_block);
 
-        if latest_block >= (current_first_block + 1000) {
+        let target_block = self.target_block.load(std::sync::atomic::Ordering::Relaxed);
+
+        if latest_block >= (current_first_block + 1000) || latest_block >= target_block {
             println!("End of state triggered, applying state diff");
 
             // Lock to read and prepare state_diff
@@ -140,6 +144,10 @@ impl ApplyStateSteps {
             *state_diff_map = crate::sync_utils::StateDiffMap::default();
         }
         Ok(ApplyOutcome::Success(()))
+    }
+
+    pub fn set_target_block(&self, target: u64) {
+        self.target_block.store(target, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
