@@ -195,7 +195,7 @@ impl ForwardPipeline for GatewayForwardSync {
             "📥 Blocks: {} | Classes: {} | State: {}",
             self.blocks_pipeline.status(),
             self.classes_pipeline.status(),
-            self.apply_state_pipeline.status(),
+            self.apply_state_pipeline.trie_state_status(),
         );
     }
 

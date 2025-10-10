@@ -7,6 +7,7 @@ use mc_db::MadaraBackend;
 use mp_state_update::StateDiff;
 use std::{ops::Range, sync::Arc};
 use tokio::sync::Mutex;
+use crate::pipeline::PipelineStatus;
 use crate::sync_utils::compress_state_diff;
 
 pub type ApplyStateSync = PipelineController<ApplyStateSteps>;
@@ -35,10 +36,21 @@ pub fn apply_state_pipeline(
 
 pub struct ApplyStateSteps {
     importer: Arc<BlockImporter>,
-    backend: Arc<MadaraBackend>,
+    pub(crate) backend: Arc<MadaraBackend>,
     disable_tries: bool,
     snap_sync: bool,
     state_diff_map: Mutex<crate::sync_utils::StateDiffMap>,
+}
+
+impl PipelineController<ApplyStateSteps> {
+
+    pub fn trie_state_status(&self) -> PipelineStatus {
+        PipelineStatus {
+            jobs: self.queue_len(),
+            applying: self.is_applying(),
+            latest_applied: self.steps.backend.get_latest_applied_trie_update().ok().flatten(),
+        }
+    }
 }
 
 impl ApplyStateSteps {
