@@ -1,4 +1,5 @@
 use crate::core::client::queue::QueueError;
+use crate::types::constant::{ORCHESTRATOR_VERSION, ORCHESTRATOR_VERSION_ATTRIBUTE};
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::ARN;
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
 use async_trait::async_trait;
 use aws_config::Region;
 use aws_config::SdkConfig;
-use aws_sdk_sqs::types::QueueAttributeName;
+use aws_sdk_sqs::types::{MessageAttributeValue, QueueAttributeName};
 use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
@@ -166,15 +167,36 @@ impl SQS {
 
 #[async_trait]
 impl QueueClient for SQS {
-    /// **send_message** - Send a message to the queue
-    /// This function sends a message to the queue.
-    /// It returns a Result<(), OrchestratorError> indicating whether the operation was successful or not
+    /// **send_message** - Send a message to the queue with version metadata
+    /// This function sends a message to standard SQS queues with version information
+    /// stored in message attributes for version-based filtering on the consumer side.
+    /// It returns a Result<(), QueueError> indicating whether the operation was successful or not
     async fn send_message(&self, queue: QueueType, payload: String, delay: Option<Duration>) -> Result<(), QueueError> {
-        let producer = self.get_producer(queue).await?;
-        match delay {
-            Some(d) => producer.send_raw_scheduled(payload.as_str(), d).await?,
-            None => producer.send_raw(payload.as_str()).await?,
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        let version_attribute = MessageAttributeValue::builder()
+            .data_type("String")
+            .string_value(ORCHESTRATOR_VERSION)
+            .build()
+            .map_err(|e| QueueError::MessageAttributeError(format!("Failed to build message attribute: {}", e)))?;
+
+        let mut send_message_request = self
+            .inner
+            .client()
+            .send_message()
+            .queue_url(&queue_url)
+            .message_body(&payload)
+            .message_attributes(ORCHESTRATOR_VERSION_ATTRIBUTE, version_attribute);
+
+        if let Some(delay_duration) = delay {
+            send_message_request = send_message_request.delay_seconds(delay_duration.as_secs() as i32);
         }
+
+        send_message_request.send().await?;
+
+        tracing::debug!("Sent message to queue {} with version {}", queue_name, ORCHESTRATOR_VERSION);
+
         Ok(())
     }
 
@@ -185,6 +207,7 @@ impl QueueClient for SQS {
     async fn get_producer(&self, queue: QueueType) -> Result<SqsProducer, QueueError> {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
         let producer =
             SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_producer().await?;
         Ok(producer)
@@ -198,13 +221,107 @@ impl QueueClient for SQS {
         tracing::debug!("Getting queue url for queue name {}", queue_name);
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
         tracing::debug!("Found queue url {}", queue_url);
+
         let consumer =
             SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
         Ok(consumer)
     }
-    /// TODO: this should not be need remove this after reviewing the code access for usage
+    /// Consume a message from the queue with version filtering.
+    ///
+    /// # Why We Don't Use OmniQueue Consumer Builder
+    ///
+    /// This implementation uses internal AWS SQS SDK functions instead of the OmniQ consumer builder
+    /// due to the following reasons:
+    ///
+    /// 1. **Attribute-Level Filtering Requirements**: We need to filter messages based on the
+    ///    `OrchestratorVersion` message attribute to ensure version compatibility. The default
+    ///    OmniQ consumer builder does not provide extensibility for attribute-level filtering
+    ///    during message consumption.
+    ///
+    /// 2. **Server-Side Filtering Limitation**: AWS SQS does not support server-side filtering
+    ///    based on message attributes. All filtering must be implemented on the client-side,
+    ///    requiring direct access to message metadata before consumption.
+    ///
+    /// 3. **Re-enqueue Incompatible Messages**: When a message has an incompatible version, we need to:
+    ///    - Delete the message from the queue
+    ///    - Re-enqueue it with the same attributes for other orchestrator instances
+    ///    - Continue polling for compatible messages
+    ///    This workflow requires fine-grained control over message lifecycle that isn't available
+    ///    through the standard OmniQ abstraction.
+    ///
+    /// # Version Filtering Logic
+    ///
+    /// This function filters messages based on the OrchestratorVersion attribute:
+    /// - Accepts messages with matching orchestrator version
+    /// - Accepts messages without version attribute (backward compatibility)
+    /// - Re-enqueues messages with incompatible versions for other orchestrator instances
+    ///
+    /// The filtering ensures that only compatible messages are processed by this
+    /// orchestrator instance, preventing version conflicts in multi-version deployments.
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
-        let mut consumer = self.get_consumer(queue).await?;
-        Ok(consumer.receive().await?)
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        let messages = self
+            .inner
+            .client()
+            .receive_message()
+            .queue_url(&queue_url)
+            .max_number_of_messages(1)
+            .message_attribute_names("All")
+            .visibility_timeout(30)
+            .send()
+            .await?;
+
+        let Some(messages_vec) = messages.messages else {
+            return Err(omniqueue::QueueError::NoData.into());
+        };
+
+        let Some(message) = messages_vec.first() else {
+            return Err(omniqueue::QueueError::NoData.into());
+        };
+
+        let version_match = if let Some(attributes) = message.message_attributes() {
+            if let Some(version_attr) = attributes.get(ORCHESTRATOR_VERSION_ATTRIBUTE) {
+                version_attr.string_value() == Some(ORCHESTRATOR_VERSION)
+            } else {
+                true
+            }
+        } else {
+            true
+        };
+
+        if !version_match {
+            tracing::debug!(
+                "Skipping message with incompatible version: expected {}, got {:?}",
+                ORCHESTRATOR_VERSION,
+                message.message_attributes().and_then(|attrs| attrs.get(ORCHESTRATOR_VERSION_ATTRIBUTE))
+            );
+
+            if let (Some(body), Some(receipt_handle)) = (message.body(), message.receipt_handle()) {
+                let mut send_request = self.inner.client().send_message().queue_url(&queue_url).message_body(body);
+
+                if let Some(attributes) = message.message_attributes() {
+                    for (key, value) in attributes {
+                        send_request = send_request.message_attributes(key.clone(), value.clone());
+                    }
+                }
+
+                send_request.send().await?;
+                self.inner
+                    .client()
+                    .delete_message()
+                    .queue_url(&queue_url)
+                    .receipt_handle(receipt_handle)
+                    .send()
+                    .await?;
+            }
+
+            return Err(omniqueue::QueueError::NoData.into());
+        }
+        let consumer = self.get_consumer(queue.clone()).await?;
+        let delivery = consumer.wrap_message(messages_vec.first().unwrap());
+
+        Ok(delivery)
     }
 }

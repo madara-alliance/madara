@@ -282,7 +282,7 @@ c-kzg = "1.0.3"
 dotenvy = "0.15.7"
 log = "0.4.21"
 mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
-omniqueue = { version = "0.2.0" }
+omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0" }
 tokio-stream = "0.1.15"
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
 swiftness_proof_parser = "0.1.0"

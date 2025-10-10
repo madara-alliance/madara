@@ -57,7 +57,7 @@ impl JobHandlerService {
     pub async fn create_job(
         job_type: JobType,
         internal_id: String,
-        metadata: JobMetadata,
+        mut metadata: JobMetadata,
         config: Arc<Config>,
     ) -> Result<(), JobError> {
         let start = Instant::now();
@@ -83,6 +83,9 @@ impl JobHandlerService {
             warn!("{}", JobError::JobAlreadyExists { internal_id, job_type });
             return Ok(());
         }
+
+        // Set orchestrator version on job creation
+        metadata.common.orchestrator_version = Some(crate::types::constant::ORCHESTRATOR_VERSION.to_string());
 
         let job_handler = factory::get_job_handler(&job_type).await;
         let job_item = job_handler.create_job(internal_id.clone(), metadata).await?;

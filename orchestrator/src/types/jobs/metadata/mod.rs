@@ -34,6 +34,10 @@ pub struct CommonMetadata {
     pub verification_completed_at: Option<DateTime<Utc>>,
     /// Reason for job failure if any
     pub failure_reason: Option<String>,
+    /// Orchestrator version that created this job.
+    /// Used to ensure only compatible orchestrator versions process jobs they can handle.
+    /// This prevents version conflicts in multi-version deployments.
+    pub orchestrator_version: Option<String>,
 }
 
 /// Metadata specific to data availability (DA) jobs.

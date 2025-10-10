@@ -7,8 +7,7 @@ use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
-use omniqueue::backends::SqsConsumer;
-use omniqueue::{Delivery, QueueError};
+use omniqueue::Delivery;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -112,20 +111,16 @@ impl EventWorker {
         }
     }
 
-    async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
-        Ok(self.config.clone().queue().get_consumer(self.queue_type.clone()).await.expect("error"))
-    }
-
-    /// get_message - Get the next message from the queue with proper async waiting
-    /// This function blocks until a message is available or an error occurs
+    /// get_message - Get the next message from the queue with version-based filtering
+    /// This function blocks until a compatible message is available or an error occurs
+    /// Messages with incompatible versions are re-enqueued for other orchestrator instances
     /// It returns a Result<Delivery, EventSystemError> - never returns None
     pub async fn get_message(&self) -> EventSystemResult<Delivery> {
-        let mut consumer = self.consumer().await?;
         loop {
             debug!("Polling for message from queue {:?}", self.queue_type);
-            match consumer.receive().await {
+            match self.config.clone().queue().consume_message_from_queue(self.queue_type.clone()).await {
                 Ok(delivery) => return Ok(delivery),
-                Err(QueueError::NoData) => {
+                Err(e) if e.to_string().contains("NoData") => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }

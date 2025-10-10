@@ -5,6 +5,7 @@ use crate::types::jobs::metadata::{
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::constants::{STATE_UPDATE_MAX_NO_BATCH_PROCESSING, STATE_UPDATE_MAX_NO_BLOCK_PROCESSING};
+use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -92,6 +93,8 @@ impl JobTrigger for UpdateStateJobTrigger {
                 )
             }
         };
+
+        let jobs_to_process = filter_jobs_by_orchestrator_version(jobs_to_process);
 
         let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id.parse::<u64>()).try_collect()?;
         to_process.sort();
