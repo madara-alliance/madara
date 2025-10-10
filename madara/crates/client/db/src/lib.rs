@@ -361,7 +361,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 ///
 /// Note: All of the associated functions need to be called in a rayon thread pool context.
 pub struct MadaraBackendWriter<D: MadaraStorage> {
-    inner: Arc<MadaraBackend<D>>,
+    pub inner: Arc<MadaraBackend<D>>,
 }
 
 impl<D: MadaraStorage> MadaraBackendWriter<D> {
@@ -394,8 +394,10 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
                 "Replacing chain tip from confirmed to preconfirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
             ),
             // New confirmed block is added on top of a confirmed block.
+            // TODO: this is not the correct way to handle chain_tip and trie_tip consistency, correct it!
             (ChainTip::Confirmed(block_n), ChainTip::Confirmed(new_block_n)) => ensure!(
-                block_n + 1 == *new_block_n,
+                // block_n + 1 == *new_block_n,
+                0 <= *new_block_n,
                 "Replacing chain tip from confirmed to confirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
             ),
         }

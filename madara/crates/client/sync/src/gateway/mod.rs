@@ -31,7 +31,7 @@ pub struct ForwardSyncConfig {
 impl Default for ForwardSyncConfig {
     fn default() -> Self {
         Self {
-            block_parallelization: 128,
+            block_parallelization: 256,
             block_batch_size: 1,
             classes_parallelization: 256,
             classes_batch_size: 1,
@@ -86,12 +86,17 @@ impl GatewayForwardSync {
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
     ) -> Self {
+        // TODO: this is not the right way to get the starting block number
         let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
+        let current_first_block = backend.get_latest_applied_trie_update().unwrap().map(|n| n + 1).unwrap_or(0);
+        println!("Current first block: {}", current_first_block);
+        println!("Starting block number: {}", starting_block_n);
+
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
             client.clone(),
-            starting_block_n,
+            current_first_block,
             config.block_parallelization,
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
@@ -100,18 +105,12 @@ impl GatewayForwardSync {
             backend.clone(),
             importer.clone(),
             client.clone(),
-            starting_block_n,
+            current_first_block,
             config.classes_parallelization,
             config.classes_batch_size,
         );
-        let apply_state_pipeline = super::apply_state::apply_state_pipeline(
-            backend.clone(),
-            importer.clone(),
-            starting_block_n,
-            config.apply_state_parallelization,
-            config.apply_state_batch_size,
-            config.disable_tries,
-        );
+        // TODO: make this snap_sync dynamic from the env!
+        let apply_state_pipeline = super::apply_state::apply_state_pipeline(backend.clone(), importer.clone(), current_first_block, config.apply_state_parallelization, config.apply_state_batch_size, config.disable_tries, true);
         Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
     }
 

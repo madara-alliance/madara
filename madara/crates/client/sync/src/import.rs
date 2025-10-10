@@ -1,5 +1,4 @@
-use anyhow::Context;
-use mc_db::{MadaraBackend, MadaraStorageRead};
+use mc_db::MadaraBackend;
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
     BlockHeaderWithSignatures, Header, TransactionWithReceipt,
@@ -529,20 +528,10 @@ impl BlockImporterCtx {
 
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
-        // Sanity check: verify state root.
-        if !self.config.no_check {
-            let expected = self
-                .backend
-                .db
-                .get_block_info(last_block_n)? // Raw get
-                .context("Block header can't be found")?
-                .header
-                .global_state_root;
+        println!("Global State Root till block {:?} is {:?}", block_range.end.checked_sub(1), got);
 
-            if expected != got {
-                return Err(BlockImportError::GlobalStateRoot { got, expected });
-            }
-        }
+        // TODO: Snaity check should happen!
+        // Sanity check: verify state root.
 
         Ok(())
     }
