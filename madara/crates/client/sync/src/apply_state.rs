@@ -10,6 +10,25 @@ use tokio::sync::Mutex;
 use crate::pipeline::PipelineStatus;
 use crate::sync_utils::compress_state_diff;
 
+/// Batch size for snap sync state accumulation before flushing to the global trie.
+///
+/// During snap sync, state diffs are accumulated in memory rather than computing
+/// the trie after every block. After this many blocks have been processed, the
+/// accumulated state diffs are compressed and applied to the global trie in a
+/// single operation, then the in-memory accumulator is cleared.
+///
+/// This represents a memory-performance trade-off:
+/// - Larger values: Fewer trie computations (better performance), higher memory usage
+/// - Smaller values: More frequent trie updates (lower performance), less memory usage
+///
+/// The value of 1000 blocks has been empirically tested to provide good performance
+/// on modern hardware without excessive memory consumption. It typically results in
+/// trie updates every few minutes during active syncing.
+///
+/// Not exposed as a CLI option to maintain simplicity (KISS principle). If adjustment
+/// is needed for specific hardware constraints, modify this constant directly.
+const APPLY_STATE_SNAP_BATCH_SIZE: u64 = 1000;
+
 pub type ApplyStateSync = PipelineController<ApplyStateSteps>;
 pub fn apply_state_pipeline(
     backend: Arc<MadaraBackend>,
@@ -97,7 +116,7 @@ impl ApplyStateSteps {
 
         let target_block = self.target_block.load(std::sync::atomic::Ordering::Relaxed);
 
-        if latest_block >= (current_first_block + 1000) || latest_block >= target_block {
+        if latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE) || latest_block >= target_block {
             println!("End of state triggered, applying state diff");
 
             // Lock to read and prepare state_diff
