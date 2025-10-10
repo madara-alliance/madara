@@ -33,6 +33,7 @@
     "l2_sync_disabled": false,
     "unsafe_starting_block": null,
     "disable_tries": false,
+    "snap_sync": false,
     "gateway_key": null,
     "gateway_url": null,
     "warp_update_port_rpc": 9943,

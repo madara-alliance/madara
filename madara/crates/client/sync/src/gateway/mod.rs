@@ -25,6 +25,7 @@ pub struct ForwardSyncConfig {
     pub apply_state_parallelization: usize,
     pub apply_state_batch_size: usize,
     pub disable_tries: bool,
+    pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
 }
 
@@ -38,6 +39,7 @@ impl Default for ForwardSyncConfig {
             apply_state_parallelization: 16,
             apply_state_batch_size: 4,
             disable_tries: false,
+            snap_sync: false,
             keep_pre_v0_13_2_hashes: false,
         }
     }
@@ -49,6 +51,9 @@ impl ForwardSyncConfig {
     }
     pub fn keep_pre_v0_13_2_hashes(self, val: bool) -> Self {
         Self { keep_pre_v0_13_2_hashes: val, ..self }
+    }
+    pub fn snap_sync(self, val: bool) -> Self { 
+        Self { snap_sync: val, ..self }
     }
 }
 
@@ -86,17 +91,13 @@ impl GatewayForwardSync {
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
     ) -> Self {
-        // TODO: this is not the right way to get the starting block number
         let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
-        let current_first_block = backend.get_latest_applied_trie_update().unwrap().map(|n| n + 1).unwrap_or(0);
-        println!("Current first block: {}", current_first_block);
-        println!("Starting block number: {}", starting_block_n);
 
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
             client.clone(),
-            current_first_block,
+            starting_block_n,
             config.block_parallelization,
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
@@ -105,12 +106,12 @@ impl GatewayForwardSync {
             backend.clone(),
             importer.clone(),
             client.clone(),
-            current_first_block,
+            starting_block_n,
             config.classes_parallelization,
             config.classes_batch_size,
         );
         // TODO: make this snap_sync dynamic from the env!
-        let apply_state_pipeline = super::apply_state::apply_state_pipeline(backend.clone(), importer.clone(), current_first_block, config.apply_state_parallelization, config.apply_state_batch_size, config.disable_tries, true);
+        let apply_state_pipeline = super::apply_state::apply_state_pipeline(backend.clone(), importer.clone(), starting_block_n, config.apply_state_parallelization, config.apply_state_batch_size, config.disable_tries, config.snap_sync);
         Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
     }
 
@@ -118,7 +119,7 @@ impl GatewayForwardSync {
         PipelineStatus {
             blocks: self.blocks_pipeline.last_applied_block_n(),
             classes: self.classes_pipeline.last_applied_block_n(),
-            apply_state: self.apply_state_pipeline.last_applied_block_n(),
+            apply_state: self.backend.get_latest_applied_trie_update().ok().flatten(),
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
 use mc_db::sync_status::SyncStatus;
-use mc_db::{MadaraBackend, MadaraStorageWrite};
+use mc_db::MadaraBackend;
 use mc_settlement_client::state_update::{L1HeadReceiver, StateUpdate};
 use mp_gateway::block::ProviderBlockHeader;
 use std::sync::Arc;

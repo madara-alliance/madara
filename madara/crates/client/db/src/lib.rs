@@ -396,8 +396,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             // New confirmed block is added on top of a confirmed block.
             // TODO: this is not the correct way to handle chain_tip and trie_tip consistency, correct it!
             (ChainTip::Confirmed(block_n), ChainTip::Confirmed(new_block_n)) => ensure!(
-                // block_n + 1 == *new_block_n,
-                0 <= *new_block_n,
+                block_n + 1 == *new_block_n,
                 "Replacing chain tip from confirmed to confirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
             ),
         }

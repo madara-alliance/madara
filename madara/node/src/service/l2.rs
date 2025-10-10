@@ -120,6 +120,7 @@ impl Service for SyncService {
                     SyncControllerConfig::default().stop_on_sync(true).no_pending_block(true),
                     mc_sync::gateway::ForwardSyncConfig::default()
                         .disable_tries(this.params.disable_tries)
+                        .snap_sync(this.params.snap_sync)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
                 )
                 .run(ctx.clone())
@@ -154,6 +155,7 @@ impl Service for SyncService {
                 config,
                 mc_sync::gateway::ForwardSyncConfig::default()
                     .disable_tries(this.params.disable_tries)
+                    .snap_sync(this.params.snap_sync)
                     .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
             )
             .run(ctx)
