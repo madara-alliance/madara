@@ -97,6 +97,7 @@ pub fn build_batch(
         updated_at: Utc::now().round_subsecs(0),
         bucket_id: String::from("ABCD1234"),
         status: BatchStatus::Open,
+        orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
     }
 }
 
