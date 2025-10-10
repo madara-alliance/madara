@@ -8,7 +8,7 @@ use crate::core::StorageClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
-use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
+use crate::types::constant::{ORCHESTRATOR_VERSION, STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
@@ -173,33 +173,38 @@ impl BatchingTrigger {
     ) -> Result<(Option<StateUpdate>, Batch), JobError> {
         // Get the provider
         let provider = config.madara_client();
-        if let Some(ref prev_update) = prev_state_update {
-            let current_block_version = self.fetch_block_starknet_version(block_number, provider).await?;
-            let prev_block_version = self.fetch_block_starknet_version(current_batch.end_block, provider).await?;
 
-            if current_block_version != prev_block_version {
-                info!(
-                    block_number = %block_number,
-                    current_version = %current_block_version,
-                    batch_version = %prev_block_version,
-                    "Starknet version mismatch detected, closing current batch"
-                );
+        // Check orchestrator version compatibility for batch integrity
+        // A batch/bucket can only contain blocks processed by the same orchestrator version
+        if current_batch.orchestrator_version != ORCHESTRATOR_VERSION {
+            info!(
+                block_number = %block_number,
+                current_orchestrator_version = %ORCHESTRATOR_VERSION,
+                batch_orchestrator_version = %current_batch.orchestrator_version,
+                "Orchestrator version mismatch detected, closing current batch to maintain version consistency"
+            );
 
+            // Close the current batch with the previous state update
+            if let Some(ref prev_update) = prev_state_update {
                 self.close_batch(&current_batch, prev_update, true, config, current_batch.end_block, provider).await?;
-                let new_batch = self.start_batch(config, current_batch.index + 1, block_number).await?;
-                let current_state_update = provider
-                    .get_state_update(BlockId::Number(block_number))
-                    .await
-                    .map_err(|e| JobError::ProviderError(e.to_string()))?;
-
-                return match current_state_update {
-                    Update(state_update) => Ok((Some(state_update), new_batch)),
-                    PendingUpdate(_) => {
-                        info!("Skipping batching for block {} as it is still pending", block_number);
-                        Ok((None, new_batch))
-                    }
-                };
             }
+
+            // Start a new batch with the current orchestrator version
+            let new_batch = self.start_batch(config, current_batch.index + 1, block_number).await?;
+
+            // Get state update for the current block
+            let current_state_update = provider
+                .get_state_update(BlockId::Number(block_number))
+                .await
+                .map_err(|e| JobError::ProviderError(e.to_string()))?;
+
+            return match current_state_update {
+                Update(state_update) => Ok((Some(state_update), new_batch)),
+                PendingUpdate(_) => {
+                    info!("Skipping batching for block {} as it is still pending", block_number);
+                    Ok((None, new_batch))
+                }
+            };
         }
 
         // Get the state update for the block
@@ -479,41 +484,5 @@ impl BatchingTrigger {
                 || (batch.num_blocks >= config.params.batching_config.max_batch_size)
                 || ((Utc::now().round_subsecs(0) - batch.created_at).abs().num_seconds() as u64
                     >= config.params.batching_config.max_batch_time_seconds))
-    }
-
-    /// Fetches the Starknet protocol version for a given block from the sequencer.
-    ///
-    /// # Arguments
-    /// * `block_number` - The block number to query
-    /// * `provider` - The Starknet provider to query
-    ///
-    /// # Returns
-    /// * `Result<String>` - The Starknet version string from the block header
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// - The block cannot be fetched from the provider
-    /// - The block is still pending
-    async fn fetch_block_starknet_version(
-        &self,
-        block_number: u64,
-        provider: &Arc<JsonRpcClient<HttpTransport>>,
-    ) -> Result<String, JobError> {
-        let block = provider
-            .get_block_with_tx_hashes(BlockId::Number(block_number))
-            .await
-            .map_err(|e| JobError::ProviderError(format!("Failed to fetch block {}: {}", block_number, e)))?;
-
-        let starknet_version = match block {
-            starknet::core::types::MaybePendingBlockWithTxHashes::Block(block) => block.starknet_version,
-            starknet::core::types::MaybePendingBlockWithTxHashes::PendingBlock(_) => {
-                return Err(JobError::Other(OtherError(eyre!(
-                    "Block {} is still pending, cannot determine final Starknet version",
-                    block_number
-                ))));
-            }
-        };
-
-        Ok(starknet_version)
     }
 }
