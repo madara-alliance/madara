@@ -24,6 +24,13 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_DISABLE_TRIES", long)]
     pub disable_tries: bool,
 
+    /// Enable snap sync.
+    /// When importing a block, the state root computation is the most expensive operation.
+    /// This feature batches the state root computation, which can significantly speed up syncing.
+    /// While maintaining the global tries.
+    #[clap(env = "MADARA_SNAP_SYNC", long)]
+    pub snap_sync: bool,
+
     /// Gateway api key to avoid rate limiting (optional).
     #[clap(env = "MADARA_GATEWAY_KEY", long, value_name = "API KEY")]
     pub gateway_key: Option<String>,

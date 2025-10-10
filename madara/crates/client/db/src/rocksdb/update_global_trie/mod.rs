@@ -57,6 +57,22 @@ fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> F
     }
 }
 
+pub fn get_state_root(backend: &RocksDBStorage) ->  Result<Felt> {
+    let contract_trie = backend.contract_trie();
+    let contract_trie_root_hash = contract_trie.root_hash(bonsai_identifier::CONTRACT).unwrap();
+
+    let class_trie = backend.class_trie();
+    let class_trie_root_hash = class_trie.root_hash(bonsai_identifier::CLASS).unwrap();
+
+    let state_root = calculate_state_root(contract_trie_root_hash, class_trie_root_hash);
+
+    println!("contract_trie_root_hash: {contract_trie_root_hash:#?}");
+    println!("class_trie_root_hash: {class_trie_root_hash:#?}");
+    println!("state_root: {state_root:#?}");
+
+    Ok(state_root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
