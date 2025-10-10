@@ -151,6 +151,12 @@ pub struct RunCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
 
+    #[arg(env = "MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL", long)]
+    pub madara_admin_rpc_url: Option<Url>,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_BOUNCER_WEIGHTS_LIMIT_FILE", long)]
+    pub bouncer_weights_limit_file: Option<std::path::PathBuf>,
+
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
 

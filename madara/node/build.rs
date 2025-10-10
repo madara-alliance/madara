@@ -87,7 +87,7 @@ fn get_git_paths(path: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
 
                 Ok(Some(vec![git_head_path, git_refs_path]))
             } else {
-                Err(io::Error::new(io::ErrorKind::Other, "You are most likely in a detached HEAD state"))
+                Err(io::Error::other("You are most likely in a detached HEAD state"))
             }
         } else if metadata.is_file() {
             // We are in a worktree, so find out where the actual worktrees/<name>/HEAD file is.
@@ -117,10 +117,10 @@ fn get_git_paths(path: &Path) -> Result<Option<Vec<PathBuf>>, io::Error> {
 
                 Ok(Some(vec![git_head_path, git_refs_path]))
             } else {
-                Err(io::Error::new(io::ErrorKind::Other, "You are most likely in a detached HEAD state"))
+                Err(io::Error::other("You are most likely in a detached HEAD state"))
             }
         } else {
-            Err(io::Error::new(io::ErrorKind::Other, "Invalid .git format (Not a directory or a file)"))
+            Err(io::Error::other("Invalid .git format (Not a directory or a file)"))
         }
     } else {
         Ok(None)

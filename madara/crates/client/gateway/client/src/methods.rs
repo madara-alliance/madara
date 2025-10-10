@@ -1,4 +1,5 @@
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
+use blockifier::bouncer::BouncerWeights;
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
 use mp_gateway::block::ProviderBlockPreConfirmed;
@@ -55,6 +56,15 @@ impl GatewayProvider {
             .with_block_id(&block_id);
 
         request.send_get::<ProviderStateUpdate>().await
+    }
+
+    pub async fn get_block_bouncer_weights(&self, block_number: u64) -> Result<BouncerWeights, SequencerError> {
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_block_bouncer_weights")
+            .expect("Failed to add URI segment. This should not fail in prod")
+            .with_block_id(&BlockId::Number(block_number));
+
+        request.send_get::<BouncerWeights>().await
     }
 
     pub async fn get_state_update_with_block(

@@ -430,8 +430,9 @@ impl ExecutorThread {
                     "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
                     execution_state.exec_ctx.block_number,
                 );
+                let block_exec_summary = execution_state.executor.finalize()?;
 
-                if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock).is_err() {
+                if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock(block_exec_summary)).is_err() {
                     // Receiver closed
                     break Ok(());
                 }

@@ -109,4 +109,7 @@ pub enum JobError {
     /// Indicates an error occurred while downcasting from an object
     #[error("Orchestrator Error: {0}")]
     AnyHowError(#[from] anyhow::Error),
+
+    #[error("Batching Error: {0}")]
+    BatchingNotInSync(String),
 }
