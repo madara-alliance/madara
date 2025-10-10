@@ -7874,8 +7874,7 @@ dependencies = [
 [[package]]
 name = "omniqueue"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cba3b7f69e420be6e32a580307e38aef7f53ac01cc09c3bb6851aec37d710894"
+source = "git+https://github.com/itsparser/omniqueue-rs?branch=branch-from-0.2.0#6ff45941b09650067a7f69da9b36a581481870f8"
 dependencies = [
  "async-trait",
  "aws-config",
