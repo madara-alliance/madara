@@ -226,38 +226,57 @@ impl QueueClient for SQS {
             SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
         Ok(consumer)
     }
-    /// Consume a message from the queue with version filtering.
+    /// Consume a message from the queue with client-side version filtering.
     ///
-    /// # Why We Don't Use OmniQueue Consumer Builder
+    /// # Implementation Strategy
     ///
-    /// This implementation uses internal AWS SQS SDK functions instead of the OmniQ consumer builder
-    /// due to the following reasons:
+    /// This function implements **client-side version filtering** because AWS SQS does not support
+    /// server-side filtering based on message attribute values. The process is:
     ///
-    /// 1. **Attribute-Level Filtering Requirements**: We need to filter messages based on the
-    ///    `OrchestratorVersion` message attribute to ensure version compatibility. The default
-    ///    OmniQ consumer builder does not provide extensibility for attribute-level filtering
-    ///    during message consumption.
+    /// 1. **Receive Message**: Fetch a message from SQS with all message attributes (line 265-274)
+    /// 2. **Extract Version**: Read the `OrchestratorVersion` attribute from message metadata (line 284-292)
+    /// 3. **Version Check**: Compare message version against current orchestrator version (line 294)
+    /// 4. **Handle Mismatch**: If versions don't match, delete the original message and re-enqueue
+    ///    it with the same attributes, allowing other orchestrator instances to process it (line 309-389)
+    /// 5. **Process or Retry**: If compatible, wrap and return for processing; if incompatible, return NoData
     ///
-    /// 2. **Server-Side Filtering Limitation**: AWS SQS does not support server-side filtering
-    ///    based on message attributes. All filtering must be implemented on the client-side,
-    ///    requiring direct access to message metadata before consumption.
+    /// # Why Not Use OmniQueue Consumer
     ///
-    /// 3. **Re-enqueue Incompatible Messages**: When a message has an incompatible version, we need to:
-    ///    - Delete the message from the queue
-    ///    - Re-enqueue it with the same attributes for other orchestrator instances
-    ///    - Continue polling for compatible messages
-    ///    This workflow requires fine-grained control over message lifecycle that isn't available
-    ///    through the standard OmniQ abstraction.
+    /// OmniQueue's consumer abstraction doesn't provide access to message attributes before
+    /// acknowledging receipt, which is required for our version-based routing. We need to:
+    /// - Inspect message attributes before deciding whether to process
+    /// - Re-enqueue messages with different versions (delete + send pattern)
+    /// - Maintain message attributes when re-enqueueing for other consumers
     ///
     /// # Version Filtering Logic
     ///
-    /// This function filters messages based on the OrchestratorVersion attribute:
-    /// - Accepts messages with matching orchestrator version
-    /// - Accepts messages without version attribute (backward compatibility)
-    /// - Re-enqueues messages with incompatible versions for other orchestrator instances
+    /// - **Matching version**: Returns message wrapped in OmniQueue Delivery for processing
+    /// - **No version attribute**: Accepts message (backward compatibility with pre-versioning messages)
+    /// - **Mismatched version**: Deletes and re-enqueues message, then returns NoData to continue polling
     ///
-    /// The filtering ensures that only compatible messages are processed by this
-    /// orchestrator instance, preventing version conflicts in multi-version deployments.
+    /// # Re-enqueue Pattern (Delete + Send)
+    ///
+    /// We use delete-then-send instead of ChangeMessageVisibility(0) because:
+    /// 1. Preserves message attributes across the re-enqueue operation
+    /// 2. Resets the receive count (prevents premature DLQ routing for version mismatches)
+    /// 3. Creates a fresh message that other version consumers can immediately receive
+    ///
+    /// Trade-off: This pattern bypasses receive count tracking, so messages with version
+    /// mismatches won't be automatically sent to DLQ even after max retries. This is
+    /// intentional - version mismatches are not processing failures.
+    ///
+    /// # Performance Implications
+    ///
+    /// This creates additional SQS API calls (ReceiveMessage -> DeleteMessage -> SendMessage)
+    /// for incompatible messages. In environments with multiple orchestrator versions processing
+    /// the same queue, this can increase costs and latency. Consider using separate queues
+    /// per version for high-throughput scenarios.
+    ///
+    /// # Error Handling
+    ///
+    /// - If re-enqueue send fails: Returns error, message remains hidden until visibility timeout
+    /// - If re-enqueue send succeeds but delete fails: Message is duplicated (better than loss)
+    /// - If message is malformed (missing body/receipt_handle): Logs critical error and returns NoData
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
@@ -292,29 +311,98 @@ impl QueueClient for SQS {
         };
 
         if !version_match {
-            tracing::debug!(
-                "Skipping message with incompatible version: expected {}, got {:?}",
-                ORCHESTRATOR_VERSION,
-                message.message_attributes().and_then(|attrs| attrs.get(ORCHESTRATOR_VERSION_ATTRIBUTE))
+            let message_version = message
+                .message_attributes()
+                .and_then(|attrs| attrs.get(ORCHESTRATOR_VERSION_ATTRIBUTE))
+                .and_then(|v| v.string_value())
+                .unwrap_or("none");
+
+            tracing::info!(
+                queue = %queue_name,
+                expected_version = %ORCHESTRATOR_VERSION,
+                message_version = %message_version,
+                message_id = ?message.message_id(),
+                "Skipping message with incompatible version - will re-enqueue for compatible orchestrator"
             );
 
-            if let (Some(body), Some(receipt_handle)) = (message.body(), message.receipt_handle()) {
-                let mut send_request = self.inner.client().send_message().queue_url(&queue_url).message_body(body);
+            match (message.body(), message.receipt_handle()) {
+                (Some(body), Some(receipt_handle)) => {
+                    // Re-enqueue incompatible message with proper error handling
+                    // Note: We use delete+send instead of ChangeMessageVisibility(0) because:
+                    // 1. Preserves message attributes across the re-enqueue operation
+                    // 2. Resets the receive count (prevents premature DLQ routing)
+                    // 3. Creates a fresh message that other version consumers can immediately receive
+                    let mut send_request = self.inner.client().send_message().queue_url(&queue_url).message_body(body);
 
-                if let Some(attributes) = message.message_attributes() {
-                    for (key, value) in attributes {
-                        send_request = send_request.message_attributes(key.clone(), value.clone());
+                    if let Some(attributes) = message.message_attributes() {
+                        for (key, value) in attributes {
+                            send_request = send_request.message_attributes(key.clone(), value.clone());
+                        }
+                    }
+
+                    // Send first - if this fails, delete won't be attempted (message preserved)
+                    match send_request.send().await {
+                        Ok(_) => {
+                            tracing::debug!(
+                                queue = %queue_name,
+                                message_version = %message_version,
+                                "Successfully re-enqueued incompatible message"
+                            );
+
+                            // Only delete if re-enqueue succeeded
+                            if let Err(e) = self
+                                .inner
+                                .client()
+                                .delete_message()
+                                .queue_url(&queue_url)
+                                .receipt_handle(receipt_handle)
+                                .send()
+                                .await
+                            {
+                                tracing::error!(
+                                    queue = %queue_name,
+                                    error = %e,
+                                    message_version = %message_version,
+                                    "Failed to delete message after successful re-enqueue - message will be duplicated"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                queue = %queue_name,
+                                error = %e,
+                                message_version = %message_version,
+                                message_id = ?message.message_id(),
+                                "CRITICAL: Failed to re-enqueue incompatible message - message may be lost after visibility timeout"
+                            );
+                            return Err(e.into());
+                        }
                     }
                 }
-
-                send_request.send().await?;
-                self.inner
-                    .client()
-                    .delete_message()
-                    .queue_url(&queue_url)
-                    .receipt_handle(receipt_handle)
-                    .send()
-                    .await?;
+                (None, Some(_)) => {
+                    tracing::error!(
+                        queue = %queue_name,
+                        message_id = ?message.message_id(),
+                        message_version = %message_version,
+                        "CRITICAL: Incompatible message missing body - cannot re-enqueue, message will be lost"
+                    );
+                }
+                (Some(_), None) => {
+                    tracing::error!(
+                        queue = %queue_name,
+                        message_id = ?message.message_id(),
+                        message_version = %message_version,
+                        "CRITICAL: Incompatible message missing receipt handle - cannot re-enqueue, message will be lost"
+                    );
+                }
+                (None, None) => {
+                    tracing::error!(
+                        queue = %queue_name,
+                        message_id = ?message.message_id(),
+                        message_version = %message_version,
+                        "CRITICAL: Incompatible message missing both body and receipt handle - malformed SQS message"
+                    );
+                }
             }
 
             return Err(omniqueue::QueueError::NoData.into());

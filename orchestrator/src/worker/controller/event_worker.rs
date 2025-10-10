@@ -120,11 +120,18 @@ impl EventWorker {
             debug!("Polling for message from queue {:?}", self.queue_type);
             match self.config.clone().queue().consume_message_from_queue(self.queue_type.clone()).await {
                 Ok(delivery) => return Ok(delivery),
-                Err(e) if e.to_string().contains("NoData") => {
+                Err(crate::core::client::queue::QueueError::ErrorFromQueueError(omniqueue::QueueError::NoData)) => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
-                Err(e) => return Err(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() })?,
+                Err(e) => {
+                    error!(
+                        queue = ?self.queue_type,
+                        error = %e,
+                        "Failed to consume message from queue"
+                    );
+                    return Err(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() })?;
+                }
             }
         }
     }
