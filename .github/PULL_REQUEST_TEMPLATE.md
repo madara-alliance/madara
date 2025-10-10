@@ -6,14 +6,14 @@
 
 Please add the labels corresponding to the type of changes your PR introduces:
 
-- Bugfix
-- Feature
-- Code style update (formatting, renaming)
-- Refactoring (no functional changes, no API changes)
-- Build-related changes
-- Documentation content changes
-- Testing
-- Other (please describe):
+- [ ] Bugfix
+- [ ] Feature
+- [ ] Code style update (formatting, renaming)
+- [ ] Refactoring (no functional changes, no API changes)
+- [ ] Build-related changes
+- [ ] Documentation content changes
+- [ ] Testing
+- [ ] Other (please describe):
 
 ## What is the current behavior?
 
