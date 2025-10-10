@@ -36,13 +36,14 @@ impl GatewayProvider {
             match request_fn().await {
                 Ok(result) => return Ok(result),
                 Err(e) => {
-                    last_error = Some(e);
                     if attempt < MAX_RETRIES - 1 {
+                        tracing::warn!("Failed to get with {:?}, retrying", e);
                         // Exponential backoff: 100ms * 2^attempt
                         // attempt 0: 100ms, attempt 1: 200ms, attempt 2: 400ms, attempt 3: 800ms, attempt 4: 1600ms
                         let delay_ms = 100u64 * 2u64.pow(attempt as u32);
                         tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
                     }
+                    last_error = Some(e);
                 }
             }
         }
