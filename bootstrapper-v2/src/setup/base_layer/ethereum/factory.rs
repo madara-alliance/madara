@@ -1,5 +1,5 @@
 use alloy::{primitives::Address, sol};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures_util::StreamExt;
 pub use Factory::BaseLayerContracts;
 use Factory::{CoreContractInitData, FactoryInstance, ImplementationContracts};
@@ -47,11 +47,11 @@ where
         let mut event_stream = contract_deployed_filter.into_stream().take(1);
         let event = tokio::time::timeout(
             std::time::Duration::from_secs(300), // 5 minutes
-            event_stream.next()
+            event_stream.next(),
         )
         .await
-        .map_err(|_| anyhow::anyhow!("Timeout waiting for BaseLayerContractsDeployed event after 5 minutes"))?
-        .ok_or_else(|| anyhow::anyhow!("Failed to receive BaseLayerContractsDeployed event"))?;
+        .context("Timeout waiting for BaseLayerContractsDeployed event after 5 minutes")?
+        .context("Failed to receive BaseLayerContractsDeployed event")?;
 
         match event {
             Ok((event_data, log)) => {

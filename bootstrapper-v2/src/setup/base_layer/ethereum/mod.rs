@@ -218,9 +218,9 @@ impl BaseLayerSetupTrait for EthereumSetup {
             serde_json::from_str(&addresses_content)
                 .map_err(|e| EthereumSetupError::FileIo(format!("Failed to parse addresses.json: {}", e)))?;
 
-        let base_layer_factory_address = addresses["implementation_addresses"]["base_layer_factory"]
+        let base_layer_factory_address = addresses["implementation_addresses"]["baseLayerFactory"]
             .as_str()
-            .ok_or(EthereumSetupError::Configuration("base_layer_factory address not found in addresses.json".to_string()))?;
+            .ok_or(EthereumSetupError::Configuration("baseLayerFactory address not found in addresses.json".to_string()))?;
 
         // Read the L2 bridge addresses from madara_addresses.json
         let madara_addresses_content =
