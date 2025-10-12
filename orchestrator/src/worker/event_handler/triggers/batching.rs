@@ -10,7 +10,7 @@ use crate::error::other::OtherError;
 use crate::types::batch::{
     AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
 };
-use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
+use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
@@ -693,16 +693,16 @@ impl BatchingTrigger {
         state_update_len: Option<usize>,
         batch: &AggregatorBatch,
     ) -> bool {
-        info!("checking if we need to close the aggregator batch");
+        debug!("checking if we need to close the aggregator batch");
         (!batch.is_batch_ready)
-            && ((state_update_len.is_some() && state_update_len.unwrap() > MAX_BLOB_SIZE)
+            && ((state_update_len.is_some() && state_update_len.unwrap() > config.params.batching_config.max_blob_size)
                 || (batch.num_blocks >= config.params.batching_config.max_batch_size)
                 || ((Utc::now().round_subsecs(0) - batch.created_at).abs().num_seconds() as u64
                     >= config.params.batching_config.max_batch_time_seconds))
     }
 
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
-        info!("checking if we need to close the snos batch");
+        debug!("checking if we need to close the snos batch");
         if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
             // If the MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env is set, we use that value
             // Mostly, it'll be used for testing purposes
