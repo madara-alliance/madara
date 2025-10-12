@@ -101,19 +101,19 @@ pub async fn declare_contract(
 ) -> anyhow::Result<Felt> {
     log::info!("sierra_path: {:?}", sierra_path);
     log::info!("casm_path: {:?}", casm_path);
-    let contract_artifact: SierraClass = serde_json::from_reader(
-        std::fs::File::open(sierra_path).context("Failed to open sierra file")?
-    ).context("Failed to parse sierra file")?;
+    let contract_artifact: SierraClass =
+        serde_json::from_reader(std::fs::File::open(sierra_path).context("Failed to open sierra file")?)
+            .context("Failed to parse sierra file")?;
 
     let contract_artifact_casm: CompiledClass =
-        serde_json::from_reader(
-            std::fs::File::open(casm_path).context("Failed to open casm file")?
-        ).context("Failed to parse casm file")?;
+        serde_json::from_reader(std::fs::File::open(casm_path).context("Failed to open casm file")?)
+            .context("Failed to parse casm file")?;
 
     let class_hash = contract_artifact.class_hash().context("Failed to get class hash from sierra artifact")?;
-    let compiled_class_hash = contract_artifact_casm.class_hash().context("Failed to get class hash from casm artifact")?;
+    let compiled_class_hash =
+        contract_artifact_casm.class_hash().context("Failed to get class hash from casm artifact")?;
 
-    if account.provider().get_class(BlockId::Tag(BlockTag::Pending), class_hash).await.is_ok() {
+    if account.provider().get_class(BlockId::Tag(BlockTag::PreConfirmed), class_hash).await.is_ok() {
         log::info!("Class already declared, skipping declaration.");
         return Ok(class_hash);
     }
@@ -122,11 +122,15 @@ pub async fn declare_contract(
 
     let txn = account
         .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-        .gas(0)
+        .l1_gas(0)
+        .l2_gas(0)
+        .l1_data_gas(0)
         .send()
         .await
         .expect("Error in declaring the contract using Cairo 1 declaration using the provided account");
-    wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await.context("Failed to wait for contract declaration transaction")?;
+    wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract")
+        .await
+        .context("Failed to wait for contract declaration transaction")?;
     Ok(class_hash)
 }
 
@@ -136,7 +140,9 @@ pub async fn execute_v3(
 ) -> anyhow::Result<InvokeTransactionResult, anyhow::Error> {
     let txn_res = account
         .execute_v3(calls.clone())
-        .gas(0)
+        .l1_gas(0)
+        .l2_gas(0)
+        .l1_data_gas(0)
         .send()
         .await
         .context("Error in making execute_v3 the contract for calls {:?}")?;
