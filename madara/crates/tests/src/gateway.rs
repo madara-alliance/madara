@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use mc_gateway_client::GatewayProvider;
-    use mp_block::BlockId;
+    use mc_gateway_client::{BlockId, GatewayProvider};
     use mp_convert::ToFelt;
     use rstest::{fixture, rstest};
     use starknet_api::core::ChainId;

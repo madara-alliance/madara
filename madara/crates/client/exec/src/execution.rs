@@ -68,12 +68,18 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     .map_err(make_reexec_error)?;
                 transactional_state.commit();
 
+                let gas_vector_computation_mode = match tx {
+                    Transaction::Account(tx) => tx.tx.resource_bounds().get_gas_vector_computation_mode(),
+                    Transaction::L1Handler(_) => GasVectorComputationMode::NoL2Gas,
+                };
+
                 Ok(ExecutionResult {
                     hash,
                     tx_type,
                     fee_type,
                     minimal_l1_gas,
                     execution_info,
+                    gas_vector_computation_mode,
                     state_diff: state_diff.state_maps.into(),
                 })
             })

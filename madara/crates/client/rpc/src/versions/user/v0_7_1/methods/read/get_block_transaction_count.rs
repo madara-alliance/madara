@@ -1,5 +1,5 @@
 use crate::{errors::StarknetRpcResult, Starknet};
-use mp_block::BlockId;
+use mp_rpc::v0_7_1::BlockId;
 
 /// Get the Number of Transactions in a Given Block
 ///
@@ -17,7 +17,7 @@ use mp_block::BlockId;
 /// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
 /// the blockchain.
 pub fn get_block_transaction_count(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<u128> {
-    let view = starknet.backend.block_view(block_id)?;
+    let view = starknet.resolve_block_view(block_id)?;
     Ok(view.get_block_info()?.tx_hashes().len() as u128)
 }
 
@@ -28,7 +28,7 @@ mod tests {
         errors::StarknetRpcApiError,
         test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
-    use mp_block::BlockTag;
+    use mp_rpc::v0_7_1::BlockTag;
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
 

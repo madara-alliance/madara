@@ -185,7 +185,7 @@ impl TryFrom<DeclareTransactionV3> for starknet_api::transaction::DeclareTransac
 
     fn try_from(tx: DeclareTransactionV3) -> Result<Self, Self::Error> {
         Ok(Self {
-            resource_bounds: (&tx.resource_bounds).into(),
+            resource_bounds: tx.resource_bounds.into(),
             tip: starknet_api::transaction::fields::Tip(tx.tip),
             signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
@@ -302,7 +302,7 @@ impl From<starknet_api::transaction::InvokeTransaction> for InvokeTransaction {
 impl From<DeployAccountTransactionV3> for starknet_api::transaction::DeployAccountTransactionV3 {
     fn from(tx: DeployAccountTransactionV3) -> Self {
         Self {
-            resource_bounds: (&tx.resource_bounds).into(),
+            resource_bounds: tx.resource_bounds.into(),
             tip: starknet_api::transaction::fields::Tip(tx.tip),
             signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
@@ -402,7 +402,7 @@ impl TryFrom<InvokeTransactionV3> for starknet_api::transaction::InvokeTransacti
 
     fn try_from(tx: InvokeTransactionV3) -> Result<Self, Self::Error> {
         Ok(Self {
-            resource_bounds: (&tx.resource_bounds).into(),
+            resource_bounds: tx.resource_bounds.into(),
             tip: starknet_api::transaction::fields::Tip(tx.tip),
             signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
@@ -464,25 +464,52 @@ impl From<DataAvailabilityMode> for starknet_api::data_availability::DataAvailab
 
 impl From<starknet_api::transaction::fields::ValidResourceBounds> for ResourceBoundsMapping {
     fn from(value: starknet_api::transaction::fields::ValidResourceBounds) -> Self {
-        ResourceBoundsMapping { l1_gas: value.get_l1_bounds().into(), l2_gas: value.get_l2_bounds().into() }
+        match value {
+            starknet_api::transaction::fields::ValidResourceBounds::AllResources(all_resource_bounds) => {
+                ResourceBoundsMapping {
+                    l1_gas: all_resource_bounds.l1_gas.into(),
+                    l2_gas: all_resource_bounds.l2_gas.into(),
+                    l1_data_gas: Some(all_resource_bounds.l1_data_gas.into()),
+                }
+            }
+            bounds => ResourceBoundsMapping {
+                l1_gas: bounds.get_l1_bounds().into(),
+                l2_gas: bounds.get_l2_bounds().into(),
+                l1_data_gas: None,
+            },
+        }
     }
 }
 
-impl From<&ResourceBoundsMapping> for starknet_api::transaction::fields::ValidResourceBounds {
-    fn from(resources: &ResourceBoundsMapping) -> Self {
-        // TODO(v0.13.3): We need to put AllResources instead of L1Gas here to support v0.13.3.
-        starknet_api::transaction::fields::ValidResourceBounds::L1Gas(
-            starknet_api::transaction::fields::ResourceBounds {
+impl From<ResourceBoundsMapping> for starknet_api::transaction::fields::ValidResourceBounds {
+    fn from(resources: ResourceBoundsMapping) -> Self {
+        if let Some(l1_data_gas) = resources.l1_data_gas {
+            Self::AllResources(starknet_api::transaction::fields::AllResourceBounds {
+                l1_gas: resources.l1_gas.into(),
+                l2_gas: resources.l2_gas.into(),
+                l1_data_gas: l1_data_gas.into(),
+            })
+        } else {
+            Self::L1Gas(starknet_api::transaction::fields::ResourceBounds {
                 max_amount: resources.l1_gas.max_amount.into(),
                 max_price_per_unit: resources.l1_gas.max_price_per_unit.into(),
-            },
-        )
+            })
+        }
     }
 }
 
 impl From<starknet_api::transaction::fields::ResourceBounds> for ResourceBounds {
     fn from(value: starknet_api::transaction::fields::ResourceBounds) -> Self {
-        ResourceBounds { max_amount: value.max_amount.0, max_price_per_unit: value.max_price_per_unit.0 }
+        Self { max_amount: value.max_amount.0, max_price_per_unit: value.max_price_per_unit.0 }
+    }
+}
+
+impl From<ResourceBounds> for starknet_api::transaction::fields::ResourceBounds {
+    fn from(value: ResourceBounds) -> Self {
+        Self {
+            max_amount: starknet_api::execution_resources::GasAmount(value.max_amount),
+            max_price_per_unit: starknet_api::block::GasPrice(value.max_price_per_unit),
+        }
     }
 }
 

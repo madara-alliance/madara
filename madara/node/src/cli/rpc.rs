@@ -65,6 +65,19 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_EXTERNAL", long, default_value_t = false)]
     pub rpc_external: bool,
 
+    /// By default, pre v0.9 RPCs versions (v0.8.1 and v0.7.1) will always have an empty pending block.
+    /// When this option is enabled, the pending block will instead reflect the content of the current
+    /// pre-confirmed block.
+    /// 
+    /// Note that the v0.9 pre-confirmed block has a different behavior than the v0.7/v0.8 pending block:
+    /// its status is `PRE_CONFIRMED` rather than `ACCEPTED_ON_L2`. This is because the v0.7/v0.8 pending block
+    /// is considered final, append-only and cannot be reverted - but the pre-confirmed block can be replaced
+    /// or deleted. By enabling this option, the pre-confirmed transactions will appear as `ACCEPTED_ON_L2`
+    /// in pre-v0.9 RPCs despite this fact.
+    #[arg(env = "MADARA_RPC_PRE_V0_9_PRECONFIRMED_AS_PENDING", long, default_value_t = false)]
+    #[serde(default)]
+    pub rpc_pre_v0_9_preconfirmed_as_pending: bool,
+
     /// Enables the admin RPC endpoint. This includes additional RPC methods
     /// which are not part of the official specs and can be used by node admins
     /// to control their node at a distance. By default, this is exposed on

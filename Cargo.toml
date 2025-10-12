@@ -110,18 +110,16 @@ cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.
   "extensive_hints",
   "mod_builtin",
 ] }
+starknet = "0.14.0"
 starknet-accounts = "0.13.0"
 starknet-contract = "0.13.0"
 starknet-core = "0.13"
 starknet-crypto = "0.7"
 starknet-providers = "0.13"
 starknet-signers = "0.11"
-starknet = "0.14.0"
-
 starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
 ] }
-
 blockifier = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain", features = [
   "testing",
   "concurrency",
@@ -138,6 +136,19 @@ alloy = { version = "0.8.3", features = [
   "signers",
   "signer-local",
 ] }
+ethers = { git = "https://github.com/gakonst/ethers-rs", rev = "6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588" }
+
+
+# Zaun Deps
+ethereum-instance = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "ethereum-instance" }
+starkgate-manager-client = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "starkgate-manager-client" }
+starkgate-registry-client = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "starkgate-registry-client" }
+starknet-core-contract-client = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "starknet-core-contract-client" }
+starknet-erc20-client = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "starknet-erc20-client" }
+starknet-eth-bridge-client = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "starknet-eth-bridge-client" }
+starknet-proxy-client = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "starknet-proxy-client" }
+starknet-token-bridge-client = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "starknet-token-bridge-client" }
+zaun-utils = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "utils" }
 
 # Instrumentation
 opentelemetry = { version = "0.25.0", features = ["metrics", "logs"] }
@@ -200,6 +211,12 @@ serde_with = { version = "3.11", default-features = false, features = [
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
 bincode = "1.3"
+parity-scale-codec = { version = "3.2.2", default-features = false, features = [
+  "std",
+] }
+scale-info = { version = "2.10.0", default-features = false, features = [
+  "std",
+] }
 
 # Numbers
 base64 = "0.22"
@@ -224,6 +241,8 @@ itertools = "0.13.0"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 bytes = "1.6.0"
 derive_more = { version = "2.0.1", features = ["from_str"] }
+indexmap = "2.2.6"
+
 
 # Error handling
 thiserror = "2.0"
@@ -258,6 +277,8 @@ flate2 = "1.0"
 regex = "1.10.5"
 sha3 = "0.10"
 tar = "0.4.44"
+inline_colorization = "0.1.6"
+subxt-lightclient = { version = "0.35.3", default-features = false }
 
 # Orchestrator
 num = { version = "0.4.1" }

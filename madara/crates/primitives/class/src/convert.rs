@@ -122,7 +122,7 @@ impl<R: Read> Read for ReadSizeLimiter<R> {
         if self.limit == 0 {
             // check if the inner read still has data for us
             if self.inner.read(&mut [0])? > 0 {
-                return Err(io::Error::new(io::ErrorKind::Other, InputTooLarge));
+                return Err(io::Error::other(InputTooLarge));
             }
         }
 
