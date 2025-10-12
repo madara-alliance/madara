@@ -43,12 +43,15 @@ where
             self.factory_contract.setup(core_contract_init_data, operator, governor).send().await?.watch().await?;
         log::info!("Factory setup transaction hash: {:?}", tx_hash);
 
-        // Wait for the BaseLayerContractsDeployed event
+        // Wait for the BaseLayerContractsDeployed event with 5-minute timeout
         let mut event_stream = contract_deployed_filter.into_stream().take(1);
-        let event = event_stream
-            .next()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("Failed to receive BaseLayerContractsDeployed event"))?;
+        let event = tokio::time::timeout(
+            std::time::Duration::from_secs(300), // 5 minutes
+            event_stream.next()
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("Timeout waiting for BaseLayerContractsDeployed event after 5 minutes"))?
+        .ok_or_else(|| anyhow::anyhow!("Failed to receive BaseLayerContractsDeployed event"))?;
 
         match event {
             Ok((event_data, log)) => {

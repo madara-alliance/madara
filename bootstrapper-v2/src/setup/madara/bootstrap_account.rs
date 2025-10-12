@@ -20,7 +20,9 @@ pub struct BootstrapAccount<'a> {
 
 impl<'a> BootstrapAccount<'a> {
     pub fn new(provider: &'a JsonRpcClient<HttpTransport>, chain_id: Felt) -> Self {
-        let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_hex("0x424f4f545354524150").unwrap()));
+        let signer = LocalWallet::from(SigningKey::from_secret_scalar(
+            Felt::from_hex("0x424f4f545354524150").context("Invalid bootstrap private key hex").unwrap()
+        ));
 
         let account = SingleOwnerAccount::new(
             provider.clone(),
@@ -41,7 +43,7 @@ impl<'a> BootstrapAccount<'a> {
     pub async fn bootstrap_declare(&self) -> anyhow::Result<()> {
         let contract_artifact: SierraClass = serde_json::from_reader(
             std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json")
-                .unwrap(),
+                .context("Failed to open OpenZeppelin Account sierra file")?,
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
 
@@ -49,14 +51,14 @@ impl<'a> BootstrapAccount<'a> {
             std::fs::File::open(
                 "contracts/madara/target/dev/madara_factory_contracts_Account.compiled_contract_class.json",
             )
-            .unwrap(),
+            .context("Failed to open OpenZeppelin Account casm file")?,
         )
         .context("Failed to read OpenZeppelin Account casm file")?;
 
         // Check if already declared
         if self
             .provider
-            .get_class(BlockId::Tag(starknet::core::types::BlockTag::PreConfirmed), contract_artifact.class_hash()?)
+            .get_class(BlockId::Tag(starknet::core::types::BlockTag::Pending), contract_artifact.class_hash()?)
             .await
             .is_ok()
         {
@@ -68,17 +70,12 @@ impl<'a> BootstrapAccount<'a> {
         let compiled_class_hash = contract_casm_artifact.class_hash()?;
 
         // We need to flatten the ABI into a string first
-        let flattened_class = contract_artifact.clone().flatten().unwrap();
+        let flattened_class = contract_artifact.clone().flatten().context("Failed to flatten contract artifact")?;
 
         let declaration = self
             .account
             .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-            .l1_gas_price(0)
-            .l2_gas_price(0)
-            .l1_data_gas_price(0)
-            .l1_gas(0)
-            .l2_gas(0)
-            .l1_data_gas(0)
+            .gas(0)
             .nonce(Felt::ZERO);
 
         let result = declaration.send().await?;
@@ -104,7 +101,7 @@ impl<'a> BootstrapAccount<'a> {
         // Read the OpenZeppelin Account contract artifacts to get the class hash
         let contract_artifact: SierraClass = serde_json::from_reader(
             std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json")
-                .unwrap(),
+                .context("Failed to open OpenZeppelin Account sierra file")?,
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
 
@@ -116,7 +113,8 @@ impl<'a> BootstrapAccount<'a> {
             Felt::from_hex(private_key).context("Invalid private key format")?,
         ));
 
-        let salt = Felt::from(123); // Salt for deployment
+
+        let salt = Felt::from(0u64); // Salt for deployment
 
         // Create an OpenZeppelin account factory for deployment
         let account_factory =
@@ -127,12 +125,8 @@ impl<'a> BootstrapAccount<'a> {
         // Deploy the account using the factory
         let deploy_result =
             account_factory.deploy_v3(salt)
-            .l1_gas_price(0)
-            .l2_gas_price(0)
-            .l1_data_gas_price(0)
-            .l1_gas(0)
-            .l2_gas(0)
-            .l1_data_gas(0).send().await.context("Failed deploying OpenZeppelin account")?;
+            .gas(0)
+            .send().await.context("Failed deploying OpenZeppelin account")?;
 
         wait_for_transaction(self.provider, deploy_result.transaction_hash, "OpenZeppelin Account Deployment").await?;
         log::info!("OpenZeppelin Account deployment successful!");
@@ -150,7 +144,7 @@ impl<'a> BootstrapAccount<'a> {
             ExecutionEncoding::New,
         );
 
-        new_account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
+        new_account.set_block_id(BlockId::Tag(BlockTag::Pending));
 
         Ok(new_account)
     }
