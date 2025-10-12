@@ -12,7 +12,7 @@ use crate::server::error::BlockRouteError;
 
 #[instrument(skip(config), fields(block_number = %block_number))]
 async fn handle_block_to_batch(Path(block_number): Path<u64>, State(config): State<Arc<Config>>) -> BlockRouteResult {
-    match config.database().get_batch_for_block(block_number).await {
+    match config.database().get_aggregator_batch_for_block(block_number).await {
         Ok(Some(batch)) => Ok(Json(ApiResponse::<BlockStatusResponse>::success_with_data(
             BlockStatusResponse { batch_number: batch.index },
             Some(format!("Successfully fetched batch for block {}", block_number)),

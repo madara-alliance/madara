@@ -225,7 +225,9 @@ impl BlockProductionTask {
             global_spawn_rayon_task(move || {
                 backend
                     .write_access()
-                    .close_preconfirmed(/* pre_v0_13_2_hash_override */ true)
+                    .close_preconfirmed(
+                        /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
+                    )
                     .context("Closing preconfirmed block on startup")
             })
             .await?;
@@ -275,7 +277,7 @@ impl BlockProductionTask {
 
                 self.send_state_notification(BlockProductionStateNotification::BatchExecuted);
             }
-            ExecutorMessage::EndBlock => {
+            ExecutorMessage::EndBlock(block_exec_summary) => {
                 tracing::debug!("Received ExecutorMessage::EndBlock");
                 let current_state = self.current_state.take().context("No current state")?;
                 let TaskState::Executing(state) = current_state else {
@@ -302,9 +304,14 @@ impl BlockProductionTask {
 
                     backend
                         .write_access()
-                        .close_preconfirmed(/* pre_v0_13_2_hash_override */ true)
-                        .context("Closing block")?;
+                        .write_bouncer_weights(state.block_number, &block_exec_summary.bouncer_weights)
+                        .context("Saving Bouncer Weights for SNOS")?;
 
+                    let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+                    backend
+                        .write_access()
+                        .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
+                        .context("Closing block")?;
                     anyhow::Ok(())
                 })
                 .await?;
@@ -482,7 +489,10 @@ pub(crate) mod tests {
 
             Arc::new(ChainConfig {
                 block_time,
-                bouncer_config: BouncerConfig { block_max_capacity: bouncer_weights, ..Default::default() },
+                bouncer_config: BouncerConfig {
+                    block_max_capacity: bouncer_weights,
+                    builtin_weights: Default::default(),
+                },
                 ..ChainConfig::madara_devnet()
             })
         } else {

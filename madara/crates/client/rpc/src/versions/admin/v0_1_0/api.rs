@@ -1,3 +1,4 @@
+use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
@@ -55,6 +56,14 @@ pub trait MadaraWriteRpcApi {
     /// Only works in block production mode.
     #[method(name = "closeBlock")]
     async fn close_block(&self) -> RpcResult<()>;
+}
+
+/// This is an admin method, so semver is different!
+#[versioned_rpc("V0_1_0", "madara")]
+pub trait MadaraReadRpcApi {
+    /// Get the builtins  for the given block number
+    #[method(name = "getBlockBuiltinWeights")]
+    async fn get_block_builtin_weights(&self, block_number: u64) -> RpcResult<BouncerWeights>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]

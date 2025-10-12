@@ -89,7 +89,7 @@ async fn l1_handler_setup(
     let (sender, recv) = oneshot::channel();
     commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
 
     // Deploy account using udc.
 
@@ -118,7 +118,7 @@ async fn l1_handler_setup(
     let (sender, recv) = oneshot::channel();
     commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
+    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
 
     L1HandlerSetup { backend: setup.backend.clone(), handle, commands_sender, contract_address }
 }
@@ -176,7 +176,7 @@ async fn test_duplicate_l1_handler_same_batch(#[future] l1_handler_setup: L1Hand
     let (sender, recv) = oneshot::channel();
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
+    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
 }
 
 #[rstest::rstest]
@@ -236,7 +236,7 @@ async fn test_duplicate_l1_handler_same_height_different_batch(#[future] l1_hand
     let (sender, recv) = oneshot::channel();
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
+    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
 }
 
 #[rstest::rstest]
@@ -276,7 +276,7 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
     let (sender, recv) = oneshot::channel();
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
+    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
 
     // Make another block.
 
@@ -321,5 +321,5 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
     let (sender, recv) = oneshot::channel();
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
+    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock(_)));
 }

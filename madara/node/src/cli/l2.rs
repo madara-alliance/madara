@@ -70,6 +70,10 @@ pub struct L2SyncParams {
     /// will mean that block hashes are trusted for these legacy blocks.
     #[clap(env = "MADARA_POST_V0_13_2_HASHES", long)]
     pub post_v0_13_2_hashes: bool,
+
+    /// Enable bouncer config syncing.
+    #[arg(env = "MADARA_ENABLE_BOUNCER_CONFIG_SYNCING", long, default_value_t = false)]
+    pub bouncer_config_sync_enable: bool,
 }
 
 impl L2SyncParams {

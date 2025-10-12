@@ -247,6 +247,7 @@ mod events_logic_tests {
             retdata: Default::default(),
             events,
             l2_to_l1_messages: vec![],
+            cairo_native: false,
             failed: false,
             gas_consumed: Default::default(),
             cairo_native: false,

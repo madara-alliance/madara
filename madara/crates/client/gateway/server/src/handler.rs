@@ -72,6 +72,31 @@ pub async fn handle_get_preconfirmed_block(
     Ok(create_json_response(hyper::StatusCode::OK, &block))
 }
 
+pub async fn handle_get_block_bouncer_config(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<String>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let block_number = params.get("blockNumber").ok_or_else(|| {
+        StarknetError::new(StarknetErrorCode::MalformedRequest, "Field blockNumber is required.".into())
+    })?;
+
+    let block_number: u64 = block_number
+        .parse()
+        .map_err(|e: std::num::ParseIntError| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
+
+    let block = backend.block_view_on_confirmed(block_number).ok_or_else(|| {
+        StarknetError::new(
+            StarknetErrorCode::BlockNotFound,
+            format!("Pre-confirmed block with number {block_number} was not found."),
+        )
+    })?;
+
+    let bouncer_weights = block.get_bouncer_weights()?;
+
+    Ok(create_json_response(hyper::StatusCode::OK, &bouncer_weights))
+}
+
 pub async fn handle_get_block(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,

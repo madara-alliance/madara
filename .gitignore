@@ -101,6 +101,8 @@ e2e_data/
 out
 cache
 s3
+
+# python virtual env
 .venv
 
 sequencer_venv/
