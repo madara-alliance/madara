@@ -1,6 +1,5 @@
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 use blockifier::bouncer::BouncerWeights;
-use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
 use mp_gateway::block::ProviderBlockPreConfirmed;
 use mp_gateway::error::{SequencerError, StarknetError};

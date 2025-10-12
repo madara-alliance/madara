@@ -1197,7 +1197,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 [[package]]
 name = "apollo_compile_to_native_types"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "apollo_config",
  "serde",
@@ -1207,7 +1207,7 @@ dependencies = [
 [[package]]
 name = "apollo_config"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "apollo_infra_utils",
  "clap",
@@ -1225,7 +1225,7 @@ dependencies = [
 [[package]]
 name = "apollo_infra_utils"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "apollo_proc_macros",
  "assert-json-diff",
@@ -1243,7 +1243,7 @@ dependencies = [
 [[package]]
 name = "apollo_metrics"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "indexmap 2.10.0",
  "metrics 0.24.2",
@@ -1255,7 +1255,7 @@ dependencies = [
 [[package]]
 name = "apollo_proc_macros"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -1266,7 +1266,7 @@ dependencies = [
 [[package]]
 name = "apollo_starknet_os_program"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "apollo_infra_utils",
  "cairo-vm",
@@ -2832,16 +2832,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blake2s"
-version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
-dependencies = [
- "blake2",
- "digest 0.10.7",
- "starknet-types-core 0.2.1",
-]
-
-[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2862,7 +2852,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "anyhow",
  "apollo_compile_to_native_types",
@@ -2910,7 +2900,7 @@ dependencies = [
 [[package]]
 name = "blockifier_test_utils"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-starknet-classes",
@@ -5230,8 +5220,8 @@ dependencies = [
 
 [[package]]
 name = "generate-pie"
-version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?rev=ff5a4b27cb60bba75b2abac4ce1316035e48df81#ff5a4b27cb60bba75b2abac4ce1316035e48df81"
+version = "0.2.0"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=9b89be64d0b89428c560d9e4d5cd365b3e345cfb#9b89be64d0b89428c560d9e4d5cd365b3e345cfb"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7926,7 +7916,7 @@ dependencies = [
 [[package]]
 name = "papyrus_common"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "cairo-lang-starknet-classes",
  "indexmap 2.10.0",
@@ -9090,8 +9080,8 @@ dependencies = [
 
 [[package]]
 name = "rpc-client"
-version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?rev=ff5a4b27cb60bba75b2abac4ce1316035e48df81#ff5a4b27cb60bba75b2abac4ce1316035e48df81"
+version = "0.2.0"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=9b89be64d0b89428c560d9e4d5cd365b3e345cfb#9b89be64d0b89428c560d9e4d5cd365b3e345cfb"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -9100,6 +9090,7 @@ dependencies = [
  "cairo-vm",
  "log",
  "num-bigint",
+ "rayon",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
@@ -10045,7 +10036,7 @@ dependencies = [
 [[package]]
 name = "shared_execution_objects"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "blockifier",
  "serde",
@@ -10122,19 +10113,32 @@ name = "size-of"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4e36eca171fddeda53901b0a436573b3f2391eaa9189d439b2bd8ea8cebd7e3"
+
+[[package]]
+name = "sizeof"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
- "size-of-derive",
+ "sizeof_internal",
+ "sizeof_macro",
 ]
 
 [[package]]
-name = "size-of-derive"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eefff4890f5308d477f3da563af8bdb8fbb6fabaec4c974bd211896fa7945e68"
+name = "sizeof_internal"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
+dependencies = [
+ "starknet-types-core 0.2.1",
+]
+
+[[package]]
+name = "sizeof_macro"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -10492,8 +10496,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-os-types"
-version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?rev=ff5a4b27cb60bba75b2abac4ce1316035e48df81#ff5a4b27cb60bba75b2abac4ce1316035e48df81"
+version = "0.2.0"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=9b89be64d0b89428c560d9e4d5cd365b3e345cfb#9b89be64d0b89428c560d9e4d5cd365b3e345cfb"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
@@ -10666,12 +10670,11 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "apollo_infra_utils",
  "base64 0.13.1",
  "bitvec",
- "blake2s",
  "cached",
  "cairo-lang-runner",
  "cairo-lang-starknet-classes",
@@ -10690,7 +10693,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha3",
- "size-of",
+ "sizeof",
  "starknet-crypto 0.8.1",
  "starknet-types-core 0.2.1",
  "strum 0.25.0",
@@ -10702,7 +10705,7 @@ dependencies = [
 [[package]]
 name = "starknet_os"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "apollo_starknet_os_program",
  "ark-bls12-381",
@@ -10710,7 +10713,7 @@ dependencies = [
  "ark-poly 0.4.2",
  "ark-secp256k1 0.4.0",
  "ark-secp256r1 0.4.0",
- "blake2s",
+ "blake2",
  "blockifier",
  "c-kzg",
  "cairo-lang-casm",
@@ -10718,6 +10721,7 @@ dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
  "derive_more 0.99.18",
+ "digest 0.10.7",
  "indexmap 2.10.0",
  "indoc",
  "log",
@@ -10745,7 +10749,7 @@ dependencies = [
 [[package]]
 name = "starknet_patricia"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "async-recursion",
  "derive_more 0.99.18",
@@ -10766,7 +10770,7 @@ dependencies = [
 [[package]]
 name = "starknet_patricia_storage"
 version = "0.16.0-rc.0"
-source = "git+https://github.com/karnotxyz/sequencer?rev=241bf0766f1f68f36e2c0e39e99c2222932dca9a#241bf0766f1f68f36e2c0e39e99c2222932dca9a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ca0bab2bd9324fb02becba51dd401c47a92569fe#ca0bab2bd9324fb02becba51dd401c47a92569fe"
 dependencies = [
  "hex",
  "serde",
