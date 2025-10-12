@@ -6,16 +6,16 @@ members = [
   "e2e-tests",
   "bootstrapper",
   "build-artifacts",
-  "bootstrapper-v2",
   "test_utils/crates/mock-atlantic-server",
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
   # "madara",
-  "orchestrator",
   "bootstrapper",
+  "orchestrator",
 ]
 resolver = "2"
+exclude = ["bootstrapper-v2"]
 
 [workspace.package]
 authors = ["Madara <https://github.com/madara-alliance>"]
