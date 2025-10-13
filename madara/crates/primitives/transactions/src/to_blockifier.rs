@@ -84,7 +84,7 @@ pub trait IntoStarknetApiExt: Sized {
         arrived_at: TxTimestamp,
     ) -> Result<ValidatedTransaction, ToBlockifierError> {
         let (btx, class) = self.into_starknet_api(chain_id, starknet_version)?;
-        Ok(ValidatedTransaction::from_starknet_api(btx, arrived_at, class))
+        Ok(ValidatedTransaction::from_starknet_api(btx, arrived_at, class, ExecutionFlags::default().charge_fee))
     }
 }
 

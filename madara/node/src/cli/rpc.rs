@@ -68,7 +68,7 @@ pub struct RpcParams {
     /// By default, pre v0.9 RPCs versions (v0.8.1 and v0.7.1) will always have an empty pending block.
     /// When this option is enabled, the pending block will instead reflect the content of the current
     /// pre-confirmed block.
-    /// 
+    ///
     /// Note that the v0.9 pre-confirmed block has a different behavior than the v0.7/v0.8 pending block:
     /// its status is `PRE_CONFIRMED` rather than `ACCEPTED_ON_L2`. This is because the v0.7/v0.8 pending block
     /// is considered final, append-only and cannot be reverted - but the pre-confirmed block can be replaced

@@ -42,14 +42,16 @@ impl<'a> BootstrapAccount<'a> {
     // A felt representation of the string 'BOOTSTRAP'.
     pub async fn bootstrap_declare(&self) -> anyhow::Result<()> {
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json")
-                .context("Failed to open OpenZeppelin Account sierra file")?,
+            std::fs::File::open(
+                "contracts/madara/target/dev/madara_factory_contracts_AccountUpgradeable.contract_class.json",
+            )
+            .context("Failed to open OpenZeppelin Account sierra file")?,
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
 
         let contract_casm_artifact: CompiledClass = serde_json::from_reader(
             std::fs::File::open(
-                "contracts/madara/target/dev/madara_factory_contracts_Account.compiled_contract_class.json",
+                "contracts/madara/target/dev/madara_factory_contracts_AccountUpgradeable.compiled_contract_class.json",
             )
             .context("Failed to open OpenZeppelin Account casm file")?,
         )
@@ -102,8 +104,10 @@ impl<'a> BootstrapAccount<'a> {
     ) -> anyhow::Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>> {
         // Read the OpenZeppelin Account contract artifacts to get the class hash
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json")
-                .context("Failed to open OpenZeppelin Account sierra file")?,
+            std::fs::File::open(
+                "contracts/madara/target/dev/madara_factory_contracts_AccountUpgradeable.contract_class.json",
+            )
+            .context("Failed to open OpenZeppelin Account sierra file")?,
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
 

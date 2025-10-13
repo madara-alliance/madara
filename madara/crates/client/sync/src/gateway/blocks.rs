@@ -258,6 +258,7 @@ pub fn gateway_preconfirmed_block_sync(
                             arrived_at,
                             declared_class: None, // Ditto.
                             hash: transaction.transaction.hash,
+                            charge_fee: true, // keeping the default value as true for now
                         }
                         .into()
                     })

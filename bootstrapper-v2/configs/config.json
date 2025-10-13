@@ -16,6 +16,6 @@
     }
   },
   "madara": {
-    "rpc_url": "http://localhost:9944"
+    "rpc_url": "http://localhost:9945"
   }
 }

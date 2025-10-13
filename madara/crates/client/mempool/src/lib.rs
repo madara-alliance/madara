@@ -127,7 +127,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             } else if removed_txs.len() == 1 {
                 tracing::info!("🔖 Replaced 1 transaction in the mempool [{summary}]");
             } else {
-                tracing::info!("🔖 Inserted 1 and removed {} transactions from the mempool [{summary}]", removed_txs.len());
+                tracing::info!(
+                    "🔖 Inserted 1 and removed {} transactions from the mempool [{summary}]",
+                    removed_txs.len()
+                );
             }
             self.on_tx_added(&tx, is_new_tx);
         }
@@ -185,7 +188,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         };
         self.on_txs_removed(&removed_txs);
         if !removed_txs.is_empty() {
-            tracing::info!("🔖 Removed {} transactions from the mempool due to TTL limit [{summary}]", removed_txs.len());
+            tracing::info!(
+                "🔖 Removed {} transactions from the mempool due to TTL limit [{summary}]",
+                removed_txs.len()
+            );
         }
 
         Ok(())

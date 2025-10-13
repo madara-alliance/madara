@@ -272,7 +272,7 @@ impl TransactionValidator {
             tx,
             execution_flags: ExecutionFlags {
                 only_query: false,
-                charge_fee: true,
+                charge_fee: !self.config.disable_fee,
                 validate,
                 strict_nonce_check: false,
             },
@@ -299,7 +299,12 @@ impl TransactionValidator {
         }
 
         // Forward the validated tx.
-        let tx = ValidatedTransaction::from_starknet_api(account_tx.tx, arrived_at, converted_class);
+        let tx = ValidatedTransaction::from_starknet_api(
+            account_tx.tx,
+            arrived_at,
+            converted_class,
+            account_tx.execution_flags.charge_fee,
+        );
         self.inner.submit_validated_transaction(tx).await?;
 
         Ok(())
