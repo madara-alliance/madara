@@ -1,3 +1,16 @@
+//! # Feeder Gateway Client
+//!
+//! ## Role and Purpose
+//!
+//! This crate provides the **client implementation** for interacting with feeder gateway and gateway
+//! endpoints. It is used by:
+//!
+//! - **Full nodes** during block synchronization to fetch blocks, state updates, and classes from sequencer
+//! - **Full nodes** to forward user transactions to sequencer nodes for block production
+//!
+//! If you're looking for the server-side implementation that **serves** these endpoints, see the
+//! gateway server crate under `gateway/server`.
+//!
 //! # Feeder Gateway
 //!
 //! The **Feeder Gateway**, which you will sometimes see referred to as _fgw_, is an unspecified
@@ -7,9 +20,10 @@
 //! Despite this, the fgw has never been properly specified. Parity with mainnet implementation is
 //! done on a best-effort basis and differences in edge cases are highly likely.
 //!
-//! This crate implements the methods and deserialization logic to connect to a fgw endpoint during
-//! block sync. For a local implementation of the fgw, check out the fgw server under
-//! `gateway/server`.
+//! This crate implements the **client-side** methods and deserialization logic to connect to and
+//! request data from a fgw endpoint during block sync. The client handles connection management,
+//! request building, and response deserialization. For the server implementation that serves these
+//! requests, check out the fgw server under `gateway/server`.
 //!
 //! ## Available endpoints
 //!
@@ -19,8 +33,9 @@
 //!
 //! ### `get_block`
 //!
-//! Returns the block at a given block id from the backend. This endpoint can also be called with
-//! an optional `headerOnly` field to retrieve only the header at the specified block.
+//! Fetches a block at a given block id from a remote feeder gateway node. Use this during block
+//! synchronization to retrieve block data. The optional `headerOnly` field allows you to retrieve
+//! only the block header, which can optimize bandwidth when you only need header information.
 //!
 //! ```json5
 //! {
@@ -28,7 +43,7 @@
 //!   "method": "get_block",
 //!   "params": {
 //!     "blockNumber": 123,
-//!     // Optional
+//!     // Optional - set to true to fetch only header
 //!     // "headerOnly": true,
 //!   },
 //!   "id": 1
@@ -37,20 +52,25 @@
 //!
 //! ### `get_state_update`
 //!
-//! Returns the state update at a given block id from the backend. This endpoint can also be
-//! called with an optional `includeBlock` field to retrieve the block at the same block height as
-//! the state update. Note that this requires the block id to be specified in terms of a block
-//! height to be able fetch both the state update and the block itself with the same id. This can be
-//! used to cut down on a request on each call since the state update and the block at a same block
-//! height are often used in combination during block sync.
+//! Fetches the state update at a given block id from a remote feeder gateway node. State updates
+//! contain storage diffs, deployed contracts, nonce updates, and declared classes. The optional
+//! `includeBlock` field allows you to retrieve both the state update and the block in a single
+//! request, which is an optimization commonly used during sync since these are typically needed
+//! together.
 //!
-//! ```json
+//! **Use case**: Called by full nodes during the sync process. Setting `includeBlock: true`
+//! reduces the number of round trips needed during synchronization.
+//!
+//! **Note**: When using `includeBlock`, the block id must be specified as a block number (height).
+//!
+//! **Example request**:
+//! ```json5
 //! {
 //!   "jsonrpc": "2.0",
 //!   "method": "get_state_update",
 //!   "params": {
 //!     "blockNumber": 123,
-//!     // Optional
+//!     // Optional - fetch block and state update together
 //!     // "includeBlock": true,
 //!   },
 //!   "id": 1
@@ -67,7 +87,7 @@
 //!   "jsonrpc": "2.0",
 //!   "method": "get_block_traces",
 //!   "params": {
-//!     "b": 123,
+//!     "blockNumber": 123,
 //!   },
 //!   "id": 1
 //! }
@@ -75,8 +95,8 @@
 //!
 //! ### `get_class_by_hash`
 //!
-//! Returns a serialized representation of either a compressed [`legacy`] class or a flattened
-//! [`sierra`] class at the given `classHash` and block id.
+//! Fetches a contract class definition at the given `classHash` and block id. Returns either a
+//! compressed [`legacy`] class or a flattened [`sierra`] class depending on the class type.
 //!
 //! ```json
 //! {
@@ -92,9 +112,9 @@
 //!
 //! ### `get_compiled_class_by_class_hash`
 //!
-//! Returns a serialized representation of a compiled [`sierra`] class at the given `classHash` and
-//! block id. Note that this method does not support [`legacy`] classes and so the given `classHash`
-//! _must_ point to a [`sierra`] class.
+//! Fetches a compiled (CASM) representation of a [`sierra`] class at the given `classHash` and
+//! block id. This endpoint does **not** support [`legacy`] classes - the given `classHash` must
+//! point to a [`sierra`] class.
 //!
 //! ```json
 //! {
@@ -110,10 +130,11 @@
 //!
 //! ### `get_contract_addresses`
 //!
-//! Returns the on-chain address of the `Starknet` core contract and the `GpsStatementVerifier`
-//! contract on the layer this node's state is settling on (most likely Ethereum). Note that even if
-//! the node is not _producing_ state and is only _synchronizing_ it then this refers to the layer
-//! to which that state is being finalized by the block producers the node in synchronizing from.
+//! Fetches the contract addresses of system contracts from the remote node. This includes:
+//! - **ETH token** (parent fee token)
+//! - **STRK token** (native fee token)
+//! - **Starknet core contract** address on L1 (e.g., Ethereum)
+//! - **GpsStatementVerifier** contract address on L1
 //!
 //! ```json
 //! {
@@ -125,11 +146,14 @@
 //!
 //! ### `get_signature`
 //!
-//! Returns a signed commitment to the block hash of a block at the given block id, using the
-//! node's unique identifying keypair. Note that a signature _cannot_ be obtained for the pending
-//! block.
+//! Fetches a signed commitment to the block hash at a given block id. The signature is created
+//! using the remote node's unique identifying keypair.
 //!
-//! ```json
+//! **Use case**: Called to verify the authenticity of blocks from the remote node. Note that
+//! signatures cannot be obtained for the pending block.
+//!
+//! **Example request**:
+//! ```json5
 //! {
 //!   "jsonrpc": "2.0",
 //!   "method": "get_signature",
@@ -142,9 +166,13 @@
 //!
 //! ### `get_public_key`
 //!
-//! Returns the public key associated to this node.
+//! Fetches the public key associated with the remote node's signing keypair.
 //!
-//! ```json
+//! **Use case**: Called to obtain the public key needed to verify block signatures obtained from
+//! `get_signature`.
+//!
+//! **Example request**:
+//! ```json5
 //! {
 //!   "jsonrpc": "2.0",
 //!   "method": "get_public_key",
@@ -152,24 +180,30 @@
 //! }
 //! ```
 //!
-//! # Gateway
+//! # Gateway Client
 //!
 //! The **Gateway**, which you will sometimes see referred to as _gw_ (but still most often as just
 //! _gateway_), is an unspecified endpoint of a Starknet node similar to the [fgw]. It is used by
-//! block producers to receive transactions which are forwarded to it from full nodes which are
-//! unable to produce state locally themselves.
+//! full nodes to forward transactions to sequencer nodes that are capable of producing blocks.
 //!
 //! Historically, this is due to the fact that Starknet used to have a single sequencer responsible
-//! for state production. In practice, this is still very handy for load balancing by having some
-//! ingress nodes receive user queries and validate them before sending them to a sequencer node for
-//! block production. This is because validation, along with block production, both incur a
-//! significant amount of computation and so having them take place on different machines can help
-//! with avoiding bottlenecks in the validation pipeline affecting block production and therefore the
-//! liveliness of the chain.
+//! for state production. In practice, this architecture is still useful for load balancing: ingress
+//! nodes can receive and validate user transactions before forwarding them to sequencer nodes. This
+//! separation allows validation and block production to occur on different machines, avoiding
+//! bottlenecks where validation workload affects block production and therefore chain liveness.
 //!
-//! This crate implements the methods and deserialization logic to connect to a gateway endpoint
-//! during block sync. For a local implementation of the gateway, check out the gateway server under
-//! `gateway/serve`.
+//! This crate implements the **client-side** methods for connecting to and submitting transactions
+//! to a gateway endpoint. The client handles transaction serialization, request building, and
+//! response handling. For the server implementation, check out the gateway server under
+//! `gateway/server`.
+//!
+//! ## Transaction Forwarding Workflow
+//!
+//! 1. User submits transaction to a full node (via RPC)
+//! 2. Full node validates the transaction
+//! 3. Full node uses this client to forward the transaction to a sequencer node
+//! 4. Sequencer node receives transaction via gateway server
+//! 5. Sequencer includes transaction in block production
 //!
 //! ## Available endpoints
 //!
@@ -181,9 +215,15 @@
 //!
 //! ### `add_transactions`
 //!
-//! An open endpoint for adding transactions forwarded from other full nodes. This includes
-//! [declare transactions], [deploy account transactions] and [invoke transactions].
+//! Submits user transactions to a sequencer node for inclusion in a block. This is the primary
+//! method for forwarding [declare transactions], [deploy account transactions], and
+//! [invoke transactions] from a full node to a sequencer.
 //!
+//! **Use case**: Called by full nodes after validating user-submitted transactions. The full node
+//! acts as an ingress point, validates the transaction, and then forwards it to a sequencer for
+//! block production.
+//!
+//! **Example request**:
 //! ```json5
 //! {
 //!   "jsonrpc": "2.0",
@@ -199,10 +239,19 @@
 //!
 //! > **This endpoint is unique to Madara.**
 //!
-//! A _trusted_ enpoint, **disabled by default**. This allows adding transactions to the state
-//! without verifying their validity. As discussed above, this can be useful when splitting up the
-//! tasks of validating transactions and adding them to the block production between two nodes.
+//! Submits pre-validated transactions directly to a sequencer, **skipping validation**. This is a
+//! trusted endpoint that should only be used in specific architectures where validation nodes and
+//! sequencer nodes are under the same operational control.
 //!
+//! **Use case**: In a split architecture where dedicated validator nodes verify transactions and
+//! forward them to sequencer nodes, this endpoint allows the sequencer to skip redundant validation
+//! work. The validator node calls this endpoint after performing full validation.
+//!
+//! **Security Note**: This endpoint requires the sequencer to trust the calling node completely.
+//! It should only be enabled when connecting to trusted validator nodes, as invalid transactions
+//! submitted through this endpoint will bypass all safety checks.
+//!
+//! **Example request**:
 //! ```json5
 //! {
 //!   "jsonrpc": "2.0",
@@ -214,8 +263,25 @@
 //! }
 //! ```
 //!
+//! **Configuration**: The sequencer must explicitly enable this endpoint via CLI flags. It is
+//! disabled by default for security reasons.
+//!
+//! # Error Handling
+//!
+//! The client handles various error conditions:
+//! - **Network errors**: Connection failures, timeouts
+//! - **Deserialization errors**: Invalid responses from server
+//! - **Protocol errors**: Server returns error codes
+//!
+//! Callers should implement appropriate retry logic for transient network errors.
+//!
+//! # Connection Management
+//!
+//! The client maintains HTTP(S) connections to the gateway endpoint. Connection pooling and
+//! timeout settings can be configured when building the `GatewayProvider`.
+//!
 //! [`legacy`]: mp_class::ContractClass::Legacy
-//! [`sierra`]: mp_class::ContractClass::Legacy
+//! [`sierra`]: mp_class::ContractClass::Sierra
 //! [fgw]: #feeder-gateway
 //! [declare transactions]: mp_gateway::user_transaction::UserTransaction::Declare
 //! [deploy account transactions]: mp_gateway::user_transaction::UserTransaction::DeployAccount

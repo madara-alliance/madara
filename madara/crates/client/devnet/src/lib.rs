@@ -2,6 +2,9 @@
 //! the Starknet mainnet. This allows you to produce your own local state and experiment on it. It
 //! is also very useful in setting up a sample chain for running tests.
 //!
+//! PS: Important point to note here that we are not updating the tries here, hence SNOS won't work
+//! as we won't have storage proofs of the declaration and other transactions here!!!
+//!
 //! Below is a list of the core responsibilities of the Madara devnet.
 //!
 //! ## UDC Deployment

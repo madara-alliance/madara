@@ -142,7 +142,7 @@
 //!
 //! [`versions::user::v0_7_1::StarknetReadRpcApiV0_7_1Server::get_storage_at`]
 //!
-//! Returns the value of a storage variable at a given address and key.
+//! Returns the value of a storage variable at a given block, address and key.
 //!
 //! ```json
 //! {
@@ -412,7 +412,7 @@
 //!
 //! [`versions::user::v0_7_1::StarknetReadRpcApiV0_7_1Server::get_nonce`]
 //!
-//! Returns the nonce of a contract account.
+//! Returns the nonce of a contract account at the given Block ID.
 //!
 //! ```json
 //! {

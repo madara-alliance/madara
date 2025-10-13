@@ -4,7 +4,7 @@
 //!
 //! # Overview
 //!
-//! The Sync module orchestrates is responsible for downloading, verifying, and applying blocks
+//! The Sync module is responsible for downloading, verifying, and applying blocks
 //! using a multi-stage pipeline architecture designed to maximize throughput. The module supports
 //! multiple sync sources with some additional metrics.
 //!

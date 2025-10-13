@@ -9,7 +9,7 @@
 //! production to lag behind on certain tasks (on large blocks for example) while still being able
 //! to make progress wherever it can.
 //!
-//! ## Aggregation Phase
+//! ## Batching Phase
 //!
 //! Because efficient block production is complicated (help my head hurts), transaction aggregation
 //! is handled by a [`Batcher`] which consumes three transaction streams (this has the disadvantage
@@ -63,6 +63,7 @@
 //! One important detail to note is that the [`PendingBlockState`] kept in the
 //! [`BlockProductionTask`] is stored in **RAM**. We periodically flush this value to db at an
 //! interval defined by the `pending tick` as set in the chain config.
+//! (TODO(mohit 13/10/2025): update this when 0.14.0 merges)
 //!
 //! [mempool]: mc_mempool
 //! [`StartNewBlock`]: ExecutorMessage::StartNewBlock
