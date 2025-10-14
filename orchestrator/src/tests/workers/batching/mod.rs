@@ -124,47 +124,48 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         then.status(200).body(serde_json::to_vec(&json!({ "id": 1, "jsonrpc": "2.0", "result": end_block })).unwrap());
     });
 
-    // Mock state update calls for each block
-    for block_num in start_block..end_block + 1 {
-        let state_update = get_dummy_state_update(block_num);
-        server.mock(|when, then| {
-            when.path("/").body_includes("starknet_getStateUpdate");
-            then.status(200)
-                .body(serde_json::to_vec(&json!({ "id": 1,"jsonrpc":"2.0","result": state_update })).unwrap());
-        });
+    // Mock generic starknet_getStateUpdate call (will match any block number)
+    server.mock(|when, then| {
+        when.path("/").body_includes("starknet_getStateUpdate");
+        then.status(200)
+            .body(serde_json::to_vec(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "result": get_dummy_state_update(0)
+            })).unwrap());
+    });
 
-        // Mock block header call for Starknet version fetching
-        server.mock(|when, then| {
-            when.path("/").body_includes("starknet_getBlockWithTxHashes");
-            then.status(200).body(
-                serde_json::to_vec(&json!({
-                    "id": 1,
-                    "jsonrpc": "2.0",
-                    "result": {
-                        "status": "ACCEPTED_ON_L1",
-                        "block_hash": format!("0x{:064x}", block_num),
-                        "parent_hash": format!("0x{:064x}", block_num.saturating_sub(1)),
-                        "block_number": block_num,
-                        "new_root": format!("0x{:064x}", block_num + 1),
-                        "timestamp": 1234567890,
-                        "sequencer_address": "0x0",
-                        "l1_gas_price": {
-                            "price_in_wei": "0x1",
-                            "price_in_fri": "0x1"
-                        },
-                        "l1_data_gas_price": {
-                            "price_in_wei": "0x1",
-                            "price_in_fri": "0x1"
-                        },
-                        "l1_da_mode": "CALLDATA",
-                        "starknet_version": "0.13.2",
-                        "transactions": []
-                    }
-                }))
-                .unwrap(),
-            );
-        });
-    }
+    // Mock generic starknet_getBlockWithTxHashes call (will match any block number)
+    server.mock(|when, then| {
+        when.path("/").body_includes("starknet_getBlockWithTxHashes");
+        then.status(200).body(
+            serde_json::to_vec(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "result": {
+                    "status": "ACCEPTED_ON_L1",
+                    "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    "parent_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    "block_number": 0,
+                    "new_root": "0x0000000000000000000000000000000000000000000000000000000000000001",
+                    "timestamp": 1234567890,
+                    "sequencer_address": "0x0",
+                    "l1_gas_price": {
+                        "price_in_wei": "0x1",
+                        "price_in_fri": "0x1"
+                    },
+                    "l1_data_gas_price": {
+                        "price_in_wei": "0x1",
+                        "price_in_fri": "0x1"
+                    },
+                    "l1_da_mode": "CALLDATA",
+                    "starknet_version": "0.13.2",
+                    "transactions": []
+                }
+            }))
+            .unwrap(),
+        );
+    });
 
     crate::worker::event_handler::triggers::batching::BatchingTrigger.run_worker(services.config).await?;
 
