@@ -550,6 +550,8 @@ impl BlockImporterCtx {
                 BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
             })?;
 
+        tracing::info!("Applied state diffs to global trie, got: {:?}", got);
+
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
         // Sanity check: verify state root.
@@ -565,6 +567,7 @@ impl BlockImporterCtx {
             if expected != got {
                 return Err(BlockImportError::GlobalStateRoot { got, expected });
             }
+            tracing::info!("State root matches for block {}", last_block_n);
         }
 
         Ok(())

@@ -27,12 +27,14 @@ use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::{env, path::Path};
 use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch};
+use dotenv::dotenv;
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenv().ok();
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 
