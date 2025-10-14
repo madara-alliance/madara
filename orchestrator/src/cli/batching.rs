@@ -12,6 +12,10 @@ pub struct BatchingCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_BATCH_SIZE", long)]
     pub max_batch_size: u64,
 
+    /// Max number of blobs to attach in a single state update transaction
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_NUM_BLOBS", long, default_value = "6")]
+    pub max_num_blobs: usize,
+
     /// Batching worker lock duration in seconds.
     /// This lock ensures that only one Batching Worker is running at a time.
     #[arg(env = "MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS", long, default_value = "3600")]

@@ -12,6 +12,7 @@ use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
+use crate::types::constant::BLOB_LEN;
 use crate::types::params::batching::BatchingParams;
 use crate::types::params::cloud_provider::AWSCredentials;
 use crate::types::params::da::DAConfig;
@@ -643,6 +644,8 @@ pub(crate) fn get_env_params() -> EnvParams {
         ),
     };
 
+    let max_num_blobs = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_NUM_BLOBS", "6").parse::<usize>().unwrap();
+
     let batching_config = BatchingParams {
         max_batch_time_seconds: get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BATCH_TIME_SECONDS")
             .parse::<u64>()
@@ -660,6 +663,8 @@ pub(crate) fn get_env_params() -> EnvParams {
         )
         .parse::<u64>()
         .unwrap(),
+        max_num_blobs,
+        max_blob_size: max_num_blobs * BLOB_LEN,
     };
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");

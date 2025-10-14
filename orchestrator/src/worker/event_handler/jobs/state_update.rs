@@ -17,7 +17,6 @@ use crate::worker::utils::{
 };
 use alloy::primitives::B256;
 use async_trait::async_trait;
-// use cairo_vm::Felt252; // Unused
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
