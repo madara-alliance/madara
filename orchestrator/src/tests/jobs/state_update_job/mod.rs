@@ -80,7 +80,14 @@ async fn test_process_job_works(
 
     // Mock the get batch by indexes method
     database_client.expect_get_batches_by_indexes().returning(move |_| {
-        Ok(vec![Batch::new(0, last_block_to_process + 1, String::from(""), String::from(""), String::from(""))])
+        Ok(vec![Batch::new(
+            0,
+            last_block_to_process + 1,
+            String::from(""),
+            String::from(""),
+            String::from(""),
+            "0.13.2".to_string(),
+        )])
     });
 
     // This must be the last block number and should be returned as an output from the process job.
@@ -237,9 +244,9 @@ async fn process_job_works_unit_test() {
     let mut database_client = MockDatabaseClient::new();
 
     // Mock the get batch by indexes method
-    database_client
-        .expect_get_batches_by_indexes()
-        .returning(|_| Ok(vec![Batch::new(0, 651057, String::from(""), String::from(""), String::from(""))]));
+    database_client.expect_get_batches_by_indexes().returning(|_| {
+        Ok(vec![Batch::new(0, 651057, String::from(""), String::from(""), String::from(""), "0.13.2".to_string())])
+    });
 
     // Mock the latest block settled
     settlement_client.expect_get_last_settled_block().returning(|| Ok(Some(651052_u64)));

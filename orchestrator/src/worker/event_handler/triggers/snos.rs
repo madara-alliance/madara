@@ -586,7 +586,7 @@ async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64
 /// - Network connectivity issues with the sequencer
 /// - Block not found
 /// - Missing starknet_version field in block header
-async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -> Result<String> {
+pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -> Result<String> {
     use starknet::core::types::BlockId;
     use starknet::providers::Provider;
 

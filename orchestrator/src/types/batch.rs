@@ -4,8 +4,6 @@ use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_b
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::constant::ORCHESTRATOR_VERSION;
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, strum_macros::Display, Eq, Default)]
 pub enum BatchStatus {
     /// Batch is open and new blocks can be added to it
@@ -69,9 +67,9 @@ pub struct Batch {
     pub bucket_id: String,
     /// Status of the batch
     pub status: BatchStatus,
-    /// Orchestrator version for all blocks in this batch
-    /// All blocks in a batch must have the same Orchestrator version to ensure proper proof aggregation
-    pub orchestrator_version: String,
+    /// Starknet protocol version for all blocks in this batch
+    /// All blocks in a batch must have the same Starknet version for prover compatibility
+    pub starknet_version: String,
 }
 
 impl Batch {
@@ -81,6 +79,7 @@ impl Batch {
         squashed_state_updates_path: String,
         blob_path: String,
         bucket_id: String,
+        starknet_version: String,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -94,8 +93,8 @@ impl Batch {
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
-            orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
-            ..Self::default()
+            starknet_version,
+            status: BatchStatus::default(),
         }
     }
 }
