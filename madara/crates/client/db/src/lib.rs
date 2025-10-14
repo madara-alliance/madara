@@ -222,16 +222,16 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     fn init(&mut self) -> Result<()> {
         // Check chain configuration
         if let Some(res) = self.db.get_stored_chain_info()? {
-            if res.chain_id != self.chain_config.chain_id {
-                bail!(
-                    "The database has been created on the network \"{}\" (chain id `{}`), \
-                            but the node is configured for network \"{}\" (chain id `{}`).",
-                    res.chain_name,
-                    res.chain_id,
-                    self.chain_config.chain_name,
-                    self.chain_config.chain_id
-                )
-            }
+            // if res.chain_id != self.chain_config.chain_id {
+            //     bail!(
+            //         "The database has been created on the network \"{}\" (chain id `{}`), \
+            //                 but the node is configured for network \"{}\" (chain id `{}`).",
+            //         res.chain_name,
+            //         res.chain_id,
+            //         self.chain_config.chain_name,
+            //         self.chain_config.chain_id
+            //     )
+            // }
         } else {
             self.db.write_chain_info(&StoredChainInfo {
                 chain_id: self.chain_config.chain_id.clone(),

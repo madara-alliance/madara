@@ -6508,6 +6508,7 @@ dependencies = [
  "blockifier",
  "clap",
  "derive_more 2.0.1",
+ "dotenv",
  "fdlimit",
  "figment",
  "futures",

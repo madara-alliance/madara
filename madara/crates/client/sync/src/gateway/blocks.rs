@@ -61,11 +61,11 @@ impl PipelineSteps for GatewaySyncSteps {
                     .await
                     .with_context(|| format!("Getting state update with block_n={block_n}"))?;
 
-                let bouncer_weights = self
-                    .client
-                    .get_block_bouncer_weights(block_n)
-                    .await
-                    .with_context(|| format!("Getting bouncer weights with block_n={block_n}"))?;
+                // let bouncer_weights = self
+                //     .client
+                //     .get_block_bouncer_weights(block_n)
+                //     .await
+                //     .with_context(|| format!("Getting bouncer weights with block_n={block_n}"))?;
 
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
 
@@ -114,7 +114,7 @@ impl PipelineSteps for GatewaySyncSteps {
                         importer.verify_header(block_n, &signed_header)?;
 
                         importer.save_header(block_n, signed_header)?;
-                        importer.save_bouncer_weights(block_n, bouncer_weights)?;
+                        // importer.save_bouncer_weights(block_n, bouncer_weights)?;
                         importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
                         importer.save_transactions(block_n, gateway_block.transactions)?;
                         importer.save_events(block_n, gateway_block.events)?;
