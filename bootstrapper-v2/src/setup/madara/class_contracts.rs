@@ -35,7 +35,8 @@ pub static MADARA_CLASSES_DATA: [MadaraClassInfo; 5] = [
     MadaraClassInfo {
         madara_class: MadaraClass::UniversalDeployer,
         sierra_path: "./contracts/madara/target/dev/madara_factory_contracts_UniversalDeployer.contract_class.json",
-        casm_path: "./contracts/madara/target/dev/madara_factory_contracts_UniversalDeployer.compiled_contract_class.json",
+        casm_path:
+            "./contracts/madara/target/dev/madara_factory_contracts_UniversalDeployer.compiled_contract_class.json",
     },
     MadaraClassInfo {
         madara_class: MadaraClass::MadaraFactory,

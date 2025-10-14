@@ -95,8 +95,7 @@ impl<'a> BootstrapAccount<'a> {
     ) -> anyhow::Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>> {
         // Read the OpenZeppelin Account contract artifacts to get the class hash
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open(BOOTSTRAP_ACCOUNT_SIERRA)
-                .context("Failed to open OpenZeppelin Account sierra file")?,
+            std::fs::File::open(BOOTSTRAP_ACCOUNT_SIERRA).context("Failed to open OpenZeppelin Account sierra file")?,
         )
         .context("Failed to read OpenZeppelin Account sierra file")?;
 
