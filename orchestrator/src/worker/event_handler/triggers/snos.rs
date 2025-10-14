@@ -1,7 +1,7 @@
 use crate::core::config::Config;
 use crate::types::batch::{SnosBatchStatus, SnosBatchUpdates};
 use crate::types::constant::{
-    StarknetVersion, CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+    CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::JobType;
@@ -91,7 +91,6 @@ impl JobTrigger for SnosJobTrigger {
     }
 }
 
-
 /// Fetches the Starknet protocol version for a specific block from the sequencer.
 ///
 /// This function queries the Madara client to retrieve the complete block header,
@@ -109,12 +108,13 @@ impl JobTrigger for SnosJobTrigger {
 /// - Network connectivity issues with the sequencer
 /// - Block not found
 /// - Missing starknet_version field in block header
-async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -> Result<String> {
+pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -> Result<String> {
+    use color_eyre::eyre::{eyre, WrapErr};
     use starknet::core::types::BlockId;
     use starknet::providers::Provider;
 
     let provider = config.madara_client();
-    debug!("Fetching block header for block {} to extract Starknet version", block_number);
+    tracing::debug!("Fetching block header for block {} to extract Starknet version", block_number);
 
     // Fetch block with transaction hashes (lighter than full txs)
     let block = provider
@@ -123,9 +123,12 @@ async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -
         .wrap_err(format!("Failed to fetch block {} from sequencer", block_number))?;
 
     let starknet_version = match block {
-        starknet::core::types::MaybePendingBlockWithTxHashes::Block(block) => block.starknet_version,
-        starknet::core::types::MaybePendingBlockWithTxHashes::PendingBlock(_) => {
-            return Err(eyre!("Block {} is still pending, cannot determine final Starknet version", block_number));
+        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,
+        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => {
+            return Err(eyre!(
+                "Block {} is still pending/pre-confirmed, cannot determine final Starknet version",
+                block_number
+            ));
         }
     };
 

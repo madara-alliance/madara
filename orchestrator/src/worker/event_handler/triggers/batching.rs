@@ -7,13 +7,12 @@ use crate::core::config::{Config, StarknetVersion};
 use crate::core::StorageClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
-use crate::types::constant::{ORCHESTRATOR_VERSION, STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::types::batch::{
     AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
 };
 use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::worker::event_handler::triggers::snos::fetch_block_starknet_version;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use blockifier::bouncer::BouncerWeights;
@@ -278,35 +277,58 @@ impl BatchingTrigger {
         // Get the provider
         let provider = config.madara_client();
 
-        // Check orchestrator version compatibility for batch integrity
-        // A batch/bucket can only contain blocks processed by the same orchestrator version
-        if current_batch.orchestrator_version != ORCHESTRATOR_VERSION {
+        // Fetch Starknet version for the current block
+        let current_block_starknet_version = fetch_block_starknet_version(config, block_number).await.map_err(|e| {
+            JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_number, e))
+        })?;
+
+        // Check Starknet version compatibility for batch integrity
+        // A batch/bucket can only contain blocks from the same Starknet protocol version
+        // This is a requirement from the prover - blocks with different Starknet versions cannot be in the same bucket
+        if current_aggregator_batch.starknet_version != current_block_starknet_version {
             info!(
                 block_number = %block_number,
-                current_orchestrator_version = %ORCHESTRATOR_VERSION,
-                batch_orchestrator_version = %current_batch.orchestrator_version,
-                "Orchestrator version mismatch detected, closing current batch to maintain version consistency"
+                current_block_starknet_version = %current_block_starknet_version,
+                batch_starknet_version = %current_aggregator_batch.starknet_version,
+                "Starknet version mismatch detected, closing current batches to maintain version consistency across the bucket"
             );
 
-            // Close the current batch with the previous state update
+            // Close the current batches (both aggregator and SNOS) with the previous state update
             if let Some(ref prev_update) = prev_state_update {
-                self.close_batch(&current_batch, prev_update, true, config, current_batch.end_block, provider).await?;
+                self.save_batch_state(
+                    BatchState {
+                        aggregator_batch: &current_aggregator_batch,
+                        snos_batch: &current_snos_batch,
+                        close_aggregator_batch: true, // Close the aggregator batch
+                        snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
+                        state_update: prev_update,
+                    },
+                    config,
+                    provider,
+                )
+                .await?;
             }
 
-            // Start a new batch with the current orchestrator version
-            let new_batch = self.start_batch(config, current_batch.index + 1, block_number).await?;
+            // Start new batches with the current block's Starknet version
+            let (new_snos_batch, new_aggregator_batch) = self
+                .start_new_batches(
+                    config,
+                    current_aggregator_batch.index + 1,
+                    current_snos_batch.snos_batch_id + 1,
+                    block_number,
+                )
+                .await?;
 
-            // Get state update for the current block
             let current_state_update = provider
                 .get_state_update(BlockId::Number(block_number))
                 .await
                 .map_err(|e| JobError::ProviderError(e.to_string()))?;
 
             return match current_state_update {
-                Update(state_update) => Ok((Some(state_update), new_batch)),
-                PendingUpdate(_) => {
+                Update(state_update) => Ok((Some(state_update), new_aggregator_batch, new_snos_batch)),
+                PreConfirmedUpdate(_) => {
                     info!("Skipping batching for block {} as it is still pending", block_number);
-                    Ok((None, new_batch))
+                    Ok((None, new_aggregator_batch, new_snos_batch))
                 }
             };
         }
@@ -445,6 +467,19 @@ impl BatchingTrigger {
         // Start timing batch creation
         let start_time = Instant::now();
 
+        // Fetch Starknet version for the start block
+        // All blocks in this batch must have the same Starknet version
+        let starknet_version = fetch_block_starknet_version(config, start_block).await.map_err(|e| {
+            JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", start_block, e))
+        })?;
+
+        info!(
+            index = %index,
+            start_block = %start_block,
+            starknet_version = %starknet_version,
+            "Fetched Starknet version for new batch"
+        );
+
         // Start a new bucket
         let bucket_id = config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
             error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
@@ -462,6 +497,7 @@ impl BatchingTrigger {
             self.get_state_update_file_path(index),
             self.get_blob_dir_path(index),
             bucket_id.clone(),
+            starknet_version.clone(),
         );
 
         // Record batch creation time
@@ -470,6 +506,7 @@ impl BatchingTrigger {
             KeyValue::new("batch_index", index.to_string()),
             KeyValue::new("start_block", start_block.to_string()),
             KeyValue::new("bucket_id", bucket_id.to_string()),
+            KeyValue::new("starknet_version", starknet_version),
         ];
         ORCHESTRATOR_METRICS.batch_creation_time.record(duration.as_secs_f64(), &attributes);
 

@@ -47,7 +47,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
             squashed_state_updates_path: "state_update/batch/1.json".to_string(),
             is_batch_ready: false,
             created_at: chrono::Utc::now(),
-            orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
+            starknet_version: "0.13.2".to_string(),
             ..Default::default()
         };
 

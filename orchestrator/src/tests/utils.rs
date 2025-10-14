@@ -104,7 +104,7 @@ pub fn build_batch(
         updated_at: Utc::now().round_subsecs(0),
         bucket_id: String::from("ABCD1234"),
         status: AggregatorBatchStatus::Open,
-        orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
+        starknet_version: String::from("0.13.2"),
     }
 }
 

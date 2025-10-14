@@ -3,7 +3,6 @@ use chrono::{DateTime, SubsecRound, Utc};
 use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use super::constant::ORCHESTRATOR_VERSION;
 
 /// Status enum for Aggregator batches
 ///
@@ -139,9 +138,9 @@ pub struct AggregatorBatch {
     /// Bucket ID for the batch, received from the prover client
     /// Used to track the batch in the proving system
     pub bucket_id: String,
-    /// Orchestrator version for all blocks in this batch
-    /// All blocks in a batch must have the same Orchestrator version to ensure proper proof aggregation
-    pub orchestrator_version: String,
+
+    /// Starknet protocol version for all blocks in this batch
+    pub starknet_version: String,
 
     /// Current status of the aggregator batch
     pub status: AggregatorBatchStatus,
@@ -156,6 +155,7 @@ impl AggregatorBatch {
     /// * `squashed_state_updates_path` - Path to store squashed state updates
     /// * `blob_path` - Path to store blob data
     /// * `bucket_id` - Identifier from the prover client
+    /// * `starknet_version` - Starknet protocol version for blocks in this batch
     ///
     /// # Returns
     /// A new `AggregatorBatch` instance with status `Open` and single block
@@ -166,6 +166,7 @@ impl AggregatorBatch {
         squashed_state_updates_path: String,
         blob_path: String,
         bucket_id: String,
+        starknet_version: String,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -182,9 +183,8 @@ impl AggregatorBatch {
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
-            orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
+            starknet_version,
             status: AggregatorBatchStatus::Open,
-            ..Self::default()
         }
     }
 }
