@@ -118,10 +118,10 @@ starknet-types-core = { version = "0.2.1", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "241bf0766f1f68f36e2c0e39e99c2222932dca9a", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "ca0bab2bd9324fb02becba51dd401c47a92569fe", features = [
   "testing",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "241bf0766f1f68f36e2c0e39e99c2222932dca9a", features = [
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "ca0bab2bd9324fb02becba51dd401c47a92569fe", features = [
   "testing",
 ] }
 cairo-lang-starknet-classes = "=2.12.3"
