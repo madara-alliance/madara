@@ -1,5 +1,6 @@
 pub mod bootstrap_account;
 pub mod class_contracts;
+pub mod constants;
 
 use crate::utils::declare_contract;
 use crate::{config::MadaraConfig, utils::{execute_v3, get_contract_address_from_deploy_tx, get_contracts_deployed_addresses}};
