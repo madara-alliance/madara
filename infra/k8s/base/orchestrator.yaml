@@ -35,7 +35,7 @@ spec:
             - l2
             - --mongodb
             - --madara-version
-            - 0.13.5
+            - 0.14.0
           envFrom:
             - configMapRef:
                 name: madara-orchestrator-config
