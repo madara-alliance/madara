@@ -8,7 +8,7 @@ data:
   ALERT: "sns"
   AWS_DEFAULT_PROFILE: "default-mfa"
   AWS_PROFILE: "default-mfa"
-  AWS_REGION: "us-west-1"
+  AWS_REGION: "ap-south-1"
   MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR: "2"
   JEMALLOC_SYS_WITH_MALLOC_CONF: "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true"
   LOG_FORMAT: "json"
