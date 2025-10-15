@@ -83,7 +83,10 @@ where
         .ok_or(FactorySetupError::EventNotEmitted)?;
 
         let (event_data, _log) = event?;
-        log::info!("Received BaseLayerContractsDeployed event, Base layer contracts: {:?}", event_data._baseLayerContracts);
+        log::info!(
+            "Received BaseLayerContractsDeployed event, Base layer contracts: {:?}",
+            event_data._baseLayerContracts
+        );
 
         // Extract the BaseLayerContracts data from the event
         Ok(event_data._baseLayerContracts)
