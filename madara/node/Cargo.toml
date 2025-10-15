@@ -88,33 +88,13 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 # Core
-mc-analytics = { workspace = true }
-mc-block-production = { workspace = true }
-mc-db = { workspace = true }
-mc-devnet = { workspace = true }
 mc-exec = { workspace = true }
-mc-gateway-client = { workspace = true }
-mc-gateway-server = { workspace = true }
-mc-mempool = { workspace = true }
-mc-rpc = { workspace = true }
-mc-settlement-client = { workspace = true }
-mc-submit-tx = { workspace = true }
-mc-sync = { workspace = true }
-mc-telemetry = { workspace = true }
 mc-e2e-tests = { workspace = true }
 # Primitives
-mp-block = { workspace = true }
 mp-bloom-filter = { workspace = true }
-mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
 mp-gateway = { workspace = true }
-mp-oracle = { workspace = true }
 mp-receipt = { workspace = true }
-mp-rpc = { workspace = true }
-mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
-# Helper
-m-cairo-test-contracts = { workspace = true }
-m-proc-macros = { workspace = true }
