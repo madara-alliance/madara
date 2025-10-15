@@ -16,15 +16,25 @@ use starknet::{
     providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError},
 };
 
-pub fn save_addresses_to_file(addresses_json: String, file_path: &str) -> anyhow::Result<()> {
+use std::io::Error as IoError;
+
+#[derive(thiserror::Error, Debug)]
+pub enum FileError {
+    #[error("Failed to create parent directories with path: {0} due to: {1}")]
+    FailedCreatingParentDirectory(String, #[source] IoError),
+
+    #[error("Failed to write to file: {0}")]
+    FailedToWriteFile(#[source] IoError),
+}
+
+pub fn save_addresses_to_file(addresses_json: String, file_path: &str) -> Result<(), FileError> {
     // Ensure parent directories exist before writing the file
     if let Some(parent_dir) = std::path::Path::new(&file_path).parent() {
         std::fs::create_dir_all(parent_dir)
-            .with_context(|| format!("Failed to create parent directories for: {}", &file_path))?;
+            .map_err(|e| FileError::FailedCreatingParentDirectory(file_path.to_string(), e))?;
     }
 
-    std::fs::write(file_path, &addresses_json)
-        .with_context(|| format!("Failed to write addresses to: {}", file_path))?;
+    std::fs::write(file_path, &addresses_json).map_err(|e| FileError::FailedToWriteFile(e))?;
 
     Ok(())
 }

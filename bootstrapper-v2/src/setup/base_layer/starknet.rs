@@ -1,7 +1,7 @@
-use crate::setup::base_layer::BaseLayerSetupTrait;
+use crate::setup::base_layer::{BaseLayerError, BaseLayerSetupTrait};
 use async_trait::async_trait;
-use starknet::core::types::Felt;
 use starknet::{
+    core::types::Felt,
     providers::{jsonrpc::HttpTransport, JsonRpcClient, Url},
     signers::{LocalWallet, SigningKey},
 };
@@ -23,19 +23,18 @@ impl StarknetSetup {
     }
 }
 
-#[allow(unused_variables)]
 #[async_trait]
 impl BaseLayerSetupTrait for StarknetSetup {
+    async fn init(&mut self) -> Result<(), BaseLayerError> {
+        unimplemented!("Starknet base layer is not implemented yet")
+    }
+
+    async fn setup(&mut self) -> Result<(), BaseLayerError> {
+        unimplemented!("Starknet base layer is not implemented yet")
+    }
+
     #[allow(unused_variables)]
-    async fn init(&mut self) -> anyhow::Result<()> {
-        unimplemented!("Starknet base layer is not implemented yet")
-    }
-
-    async fn setup(&mut self) -> anyhow::Result<()> {
-        unimplemented!("Starknet base layer is not implemented yet")
-    }
-
-    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> anyhow::Result<()> {
+    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<(), BaseLayerError> {
         unimplemented!("Starknet base layer is not implemented yet")
     }
 }

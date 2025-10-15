@@ -46,18 +46,18 @@ impl BaseConfigOuter {
         &self,
         private_key: String,
         addresses_output_path: &str,
-    ) -> anyhow::Result<Box<dyn BaseLayerSetupTrait>> {
+    ) -> Box<dyn BaseLayerSetupTrait> {
         match &self.base_layer {
             BaseLayerConfig::Ethereum { rpc_url, implementation_addresses, core_contract_init_data } => {
-                Ok(Box::new(EthereumSetup::new(
+                Box::new(EthereumSetup::new(
                     rpc_url.clone(),
                     private_key,
                     implementation_addresses.clone(),
                     *core_contract_init_data.clone(),
                     addresses_output_path,
-                )))
+                ))
             }
-            BaseLayerConfig::Starknet { rpc_url } => Ok(Box::new(StarknetSetup::new(rpc_url.clone(), private_key))),
+            BaseLayerConfig::Starknet { rpc_url } => Box::new(StarknetSetup::new(rpc_url.clone(), private_key)),
         }
     }
 }

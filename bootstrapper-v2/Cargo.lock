@@ -1201,6 +1201,7 @@ dependencies = [
  "env_logger",
  "fs_extra",
  "futures-util",
+ "hex",
  "log",
  "serde",
  "serde_json",

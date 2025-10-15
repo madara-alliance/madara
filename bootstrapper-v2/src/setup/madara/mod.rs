@@ -2,6 +2,7 @@ pub mod bootstrap_account;
 pub mod class_contracts;
 pub mod constants;
 
+use crate::error::madara::MadaraError;
 use crate::utils::declare_contract;
 use crate::{
     config::MadaraConfig,
@@ -28,39 +29,6 @@ use starknet::{
 use starknet::{providers::Provider, signers::LocalWallet};
 use std::collections::HashMap;
 use std::fs;
-use thiserror::Error;
-
-// Custom error types using thiserror - grouped into broader categories
-#[derive(Error, Debug)]
-pub enum MadaraSetupError {
-    // Network and provider errors
-    #[error("Network error: {0}")]
-    Network(String),
-
-    // Account and authentication errors
-    #[error("Account error: {0}")]
-    Account(String),
-
-    // Contract declaration errors
-    #[error("Contract declaration error: {0}")]
-    ContractDeclaration(String),
-
-    // Contract deployment and execution errors
-    #[error("Contract deployment error: {0}")]
-    ContractDeployment(String),
-
-    // Contract transaction and execution errors
-    #[error("Contract execution error: {0}")]
-    ContractExecution(String),
-
-    // Configuration and data errors
-    #[error("Configuration error: {0}")]
-    Configuration(String),
-
-    // File I/O and serialization errors
-    #[error("File I/O error: {0}")]
-    FileIo(String),
-}
 
 // Types for Map keys - using MadaraClass from class_contracts module
 
@@ -85,59 +53,34 @@ pub struct MadaraSetup {
 
 #[allow(dead_code)]
 impl MadaraSetup {
-    pub fn new(madara_config: MadaraConfig) -> Result<Self, MadaraSetupError> {
+    pub fn new(madara_config: MadaraConfig) -> Self {
         let provider = JsonRpcClient::new(HttpTransport::new(
-            Url::parse(&madara_config.rpc_url)
-                .map_err(|e| MadaraSetupError::Network(format!("Invalid RPC URL format: {}", e)))?,
+            Url::parse(&madara_config.rpc_url).expect("Failed to parse rpc Url"),
         ));
-        Ok(Self {
+        Self {
             rpc_url: madara_config.rpc_url,
             provider,
             account: None,
             classes: HashMap::new(),
             addresses: HashMap::new(),
-        })
+        }
     }
 
-    pub async fn init(&mut self, private_key: &str, madara_addresses_path: &str) -> Result<(), MadaraSetupError> {
+    pub async fn init(&mut self, private_key: &str, madara_addresses_path: &str) -> Result<(), MadaraError> {
         // Sierra class artifact. Output of the `starknet-compile` command
-        let chain_id = self
-            .provider
-            .chain_id()
-            .await
-            .map_err(|e| MadaraSetupError::Network(format!("Failed to get chain ID: {}", e)))?;
+        let chain_id = self.provider.chain_id().await?;
         let bootstrap_account = BootstrapAccount::new(&self.provider, chain_id);
 
-        bootstrap_account
-            .bootstrap_declare()
-            .await
-            .map_err(|e| MadaraSetupError::Account(format!("Bootstrap account error: {}", e)))?;
-        self.account = Some(
-            bootstrap_account
-                .deploy_account(private_key)
-                .await
-                .map_err(|e| MadaraSetupError::Account(format!("Account deployment error: {}", e)))?,
-        );
+        bootstrap_account.bootstrap_declare().await?;
+        let acc = bootstrap_account.deploy_account(private_key).await?;
+        self.account = Some(acc.clone());
 
         log::info!("Starting contract declarations...");
 
         // Declare all contracts using the data array
         for class_info in MADARA_CLASSES_DATA.iter() {
             log::info!("Declaring contract...");
-            let class_hash = declare_contract(
-                class_info.sierra_path,
-                class_info.casm_path,
-                self.account
-                    .as_ref()
-                    .ok_or(MadaraSetupError::Account("Account not initialized. Call init() first.".to_string()))?,
-            )
-            .await
-            .map_err(|e| {
-                MadaraSetupError::ContractDeclaration(format!(
-                    "Failed to declare contract {:?}: {}",
-                    class_info.madara_class, e
-                ))
-            })?;
+            let class_hash = declare_contract(class_info.sierra_path, class_info.casm_path, &acc).await?;
 
             log::info!("Contract declared successfully! Class Hash: 0x{:x}", class_hash);
 
@@ -153,26 +96,18 @@ impl MadaraSetup {
         Ok(())
     }
 
-    pub async fn setup(
-        &mut self,
-        base_addresses_path: &str,
-        madara_addresses_path: &str,
-    ) -> Result<(), MadaraSetupError> {
+    pub async fn setup(&mut self, base_addresses_path: &str, madara_addresses_path: &str) -> Result<(), MadaraError> {
         // Read base addresses to get L1 bridge addresses
-        let base_addresses_content = fs::read_to_string(base_addresses_path).map_err(|e| {
-            MadaraSetupError::FileIo(format!("Failed to read base addresses from {}: {}", base_addresses_path, e))
-        })?;
-
-        let base_addresses: serde_json::Value = serde_json::from_str(&base_addresses_content)
-            .map_err(|e| MadaraSetupError::Configuration(format!("Failed to parse base addresses JSON: {}", e)))?;
+        let base_addresses_content = fs::read_to_string(base_addresses_path)?;
+        let base_addresses: serde_json::Value = serde_json::from_str(&base_addresses_content)?;
 
         let l1_eth_bridge_address = base_addresses["addresses"]["ethTokenBridge"]
             .as_str()
-            .ok_or(MadaraSetupError::Configuration("ethTokenBridge address not found in base addresses".to_string()))?;
+            .ok_or_else(|| MadaraError::MissingBaseLayerAddress("ethTokenBridge".to_string()))?;
 
         let l1_erc20_bridge_address = base_addresses["addresses"]["tokenBridge"]
             .as_str()
-            .ok_or(MadaraSetupError::Configuration("tokenBridge address not found in base addresses".to_string()))?;
+            .ok_or_else(|| MadaraError::MissingBaseLayerAddress("tokenBridge".to_string()))?;
 
         log::info!("L1 ETH Bridge Address: {}", l1_eth_bridge_address);
         log::info!("L1 ERC20 Bridge Address: {}", l1_erc20_bridge_address);
@@ -195,31 +130,18 @@ impl MadaraSetup {
         Ok(())
     }
 
-    async fn deploy_universal_deployer(&mut self) -> Result<Felt, MadaraSetupError> {
-        let account = self
-            .account
-            .as_ref()
-            .ok_or(MadaraSetupError::Account("Account not initialized. Call init() first.".to_string()))?;
-
+    async fn deploy_universal_deployer(&mut self) -> Result<Felt, MadaraError> {
+        let account = self.require_account()?;
         let account_address = account.address();
         let account_provider = account.provider();
 
-        let universal_deployer_class = self
-            .get_class_hash(&MadaraClass::UniversalDeployer)
-            .ok_or(MadaraSetupError::ContractDeclaration("Universal deployer not declared".to_string()))?;
+        let universal_deployer_class = self.require_class_hash(&MadaraClass::UniversalDeployer)?;
 
         let calldata = Vec::from([*universal_deployer_class, Felt::ZERO, Felt::ONE, Felt::ZERO]);
         let calls = vec![Call { to: account_address, selector: selector!("deploy_contract"), calldata }];
-        let res = execute_v3(account, &calls)
-            .await
-            .map_err(|e| MadaraSetupError::ContractDeployment(format!("Failed to deploy universal deployer: {}", e)))?;
+        let res = execute_v3(account, &calls).await?;
 
-        let udc_address = get_contract_address_from_deploy_tx(account_provider, &res).await.map_err(|e| {
-            MadaraSetupError::ContractDeployment(format!(
-                "Failed to get contract address from deploy transaction: {}",
-                e
-            ))
-        })?;
+        let udc_address = get_contract_address_from_deploy_tx(account_provider, &res).await?;
 
         self.insert_address(DeployedContract::UniversalDeployer, udc_address);
         log::info!("Universal deployer deployed successfully at address: 0x{:x}", udc_address);
@@ -232,38 +154,21 @@ impl MadaraSetup {
         udc_address: Felt,
         l1_eth_bridge_address: &str,
         l1_erc20_bridge_address: &str,
-    ) -> Result<Felt, MadaraSetupError> {
-        let account = self
-            .account
-            .as_ref()
-            .ok_or(MadaraSetupError::Account("Account not initialized. Call init() first.".to_string()))?;
-
+    ) -> Result<Felt, MadaraError> {
+        let account = self.require_account()?;
         let account_address = account.address();
         let _account_provider = account.provider();
 
         log::info!("Deploying MadaraFactory contract...");
 
-        let madara_factory_class_hash = self
-            .get_class_hash(&MadaraClass::MadaraFactory)
-            .ok_or(MadaraSetupError::ContractDeclaration("MadaraFactory class not declared".to_string()))?;
-
-        let token_bridge_class = self
-            .get_class_hash(&MadaraClass::TokenBridge)
-            .ok_or(MadaraSetupError::ContractDeclaration("Token bridge class not declared".to_string()))?;
-
-        let eic_class = self
-            .get_class_hash(&MadaraClass::Eic)
-            .ok_or(MadaraSetupError::ContractDeclaration("EIC class not declared".to_string()))?;
-
-        let erc20_class = self
-            .get_class_hash(&MadaraClass::Erc20)
-            .ok_or(MadaraSetupError::ContractDeclaration("ERC20 class not declared".to_string()))?;
+        let madara_factory_class_hash = self.require_class_hash(&MadaraClass::MadaraFactory)?;
+        let token_bridge_class = self.require_class_hash(&MadaraClass::TokenBridge)?;
+        let eic_class = self.require_class_hash(&MadaraClass::Eic)?;
+        let erc20_class = self.require_class_hash(&MadaraClass::Erc20)?;
 
         // Convert L1 bridge addresses from string to EthAddress
-        let l1_eth_bridge_eth = EthAddress::from_hex(l1_eth_bridge_address)
-            .map_err(|e| MadaraSetupError::Configuration(format!("Invalid L1 ETH bridge address: {}", e)))?;
-        let l1_erc20_bridge_eth = EthAddress::from_hex(l1_erc20_bridge_address)
-            .map_err(|e| MadaraSetupError::Configuration(format!("Invalid L1 ERC20 bridge address: {}", e)))?;
+        let l1_eth_bridge_eth = EthAddress::from_hex(l1_eth_bridge_address)?;
+        let l1_erc20_bridge_eth = EthAddress::from_hex(l1_erc20_bridge_address)?;
 
         // Create constructor calldata for MadaraFactory
         let constructor_calldata = vec![
@@ -297,17 +202,10 @@ impl MadaraSetup {
         let madara_factory_calls =
             vec![Call { to: udc_address, selector: selector!("deploy_contract"), calldata: madara_factory_calldata }];
 
-        let madara_factory_res = execute_v3(account, &madara_factory_calls).await.map_err(|e| {
-            MadaraSetupError::ContractDeployment(format!("Failed to deploy MadaraFactory contract: {}", e))
-        })?;
+        let madara_factory_res = execute_v3(account, &madara_factory_calls).await?;
 
         let madara_factory_address =
-            get_contract_address_from_deploy_tx(account.provider(), &madara_factory_res).await.map_err(|e| {
-                MadaraSetupError::ContractDeployment(format!(
-                    "Failed to get contract address from deploy transaction: {}",
-                    e
-                ))
-            })?;
+            get_contract_address_from_deploy_tx(account.provider(), &madara_factory_res).await?;
         self.insert_address(DeployedContract::MadaraFactory, madara_factory_address);
 
         log::info!("MadaraFactory deployed successfully at address: 0x{:x}", madara_factory_address);
@@ -315,14 +213,8 @@ impl MadaraSetup {
         Ok(madara_factory_address)
     }
 
-    async fn deploy_bridges_via_madara_factory(
-        &mut self,
-        madara_factory_address: Felt,
-    ) -> Result<(), MadaraSetupError> {
-        let account = self
-            .account
-            .as_mut()
-            .ok_or(MadaraSetupError::Account("Account not initialized. Call init() first.".to_string()))?;
+    async fn deploy_bridges_via_madara_factory(&mut self, madara_factory_address: Felt) -> Result<(), MadaraError> {
+        let account = self.require_account_mut()?;
 
         log::info!("Calling MadaraFactory.deploy_bridges() to deploy bridge contracts...");
 
@@ -332,9 +224,7 @@ impl MadaraSetup {
             calldata: vec![], // deploy_bridges takes no parameters
         }];
 
-        let deploy_bridges_res = execute_v3(account, &deploy_bridges_calls).await.map_err(|e| {
-            MadaraSetupError::ContractExecution(format!("Failed to call MadaraFactory.deploy_bridges(): {}", e))
-        })?;
+        let deploy_bridges_res = execute_v3(account, &deploy_bridges_calls).await?;
 
         log::info!(
             "MadaraFactory.deploy_bridges() called successfully. Transaction hash: 0x{:x}",
@@ -343,9 +233,7 @@ impl MadaraSetup {
 
         // Note: The deploy_bridges function returns (l2_eth_token, l2_eth_bridge, l2_token_bridge)
         // but we need to extract these from events or transaction receipt
-        let deployed_addresses = get_contracts_deployed_addresses(account.provider(), &deploy_bridges_res)
-            .await
-            .map_err(|e| MadaraSetupError::ContractExecution(format!("Failed to get deployed addresses: {}", e)))?;
+        let deployed_addresses = get_contracts_deployed_addresses(account.provider(), &deploy_bridges_res).await?;
         self.insert_address(DeployedContract::L2EthToken, deployed_addresses.l2_eth_token);
         self.insert_address(DeployedContract::L2EthBridge, deployed_addresses.l2_eth_bridge);
         self.insert_address(DeployedContract::L2TokenBridge, deployed_addresses.l2_token_bridge);
@@ -358,6 +246,23 @@ impl MadaraSetup {
     /// Get a class hash by name
     pub fn get_class_hash(&self, name: &MadaraClass) -> Option<&Felt> {
         self.classes.get(name)
+    }
+
+    /// Get a class hash by name, returning an error if not found
+    fn require_class_hash(&self, name: &MadaraClass) -> Result<&Felt, MadaraError> {
+        self.classes.get(name).ok_or_else(|| MadaraError::ClassHashNotFound(format!("{:?}", name)))
+    }
+
+    /// Get the account, returning an error if not initialized
+    fn require_account(&self) -> Result<&SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>, MadaraError> {
+        self.account.as_ref().ok_or(MadaraError::AccountNotInitialized)
+    }
+
+    /// Get a mutable reference to the account, returning an error if not initialized
+    fn require_account_mut(
+        &mut self,
+    ) -> Result<&mut SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>, MadaraError> {
+        self.account.as_mut().ok_or(MadaraError::AccountNotInitialized)
     }
 
     /// Get an address by name
@@ -376,14 +281,14 @@ impl MadaraSetup {
     }
 
     /// Save the current class hashes and addresses to a JSON file
-    fn save_madara_addresses(&self, madara_addresses_path: &str) -> Result<(), MadaraSetupError> {
+    fn save_madara_addresses(&self, madara_addresses_path: &str) -> Result<(), MadaraError> {
         let madara_addresses = serde_json::json!({
             "classes": {
-                "token_bridge": format!("0x{:x}", self.get_class_hash(&MadaraClass::TokenBridge).ok_or(MadaraSetupError::Configuration("Token bridge class hash not found".to_string()))?),
-                "erc20": format!("0x{:x}", self.get_class_hash(&MadaraClass::Erc20).ok_or(MadaraSetupError::Configuration("ERC20 class hash not found".to_string()))?),
-                "eic": format!("0x{:x}", self.get_class_hash(&MadaraClass::Eic).ok_or(MadaraSetupError::Configuration("EIC class hash not found".to_string()))?),
-                "universal_deployer": format!("0x{:x}", self.get_class_hash(&MadaraClass::UniversalDeployer).ok_or(MadaraSetupError::Configuration("Universal deployer class hash not found".to_string()))?),
-                "madara_factory": format!("0x{:x}", self.get_class_hash(&MadaraClass::MadaraFactory).ok_or(MadaraSetupError::Configuration("Madara factory class hash not found".to_string()))?),
+                "token_bridge": format!("0x{:x}", self.require_class_hash(&MadaraClass::TokenBridge)?),
+                "erc20": format!("0x{:x}", self.require_class_hash(&MadaraClass::Erc20)?),
+                "eic": format!("0x{:x}", self.require_class_hash(&MadaraClass::Eic)?),
+                "universal_deployer": format!("0x{:x}", self.require_class_hash(&MadaraClass::UniversalDeployer)?),
+                "madara_factory": format!("0x{:x}", self.require_class_hash(&MadaraClass::MadaraFactory)?),
             },
             "addresses": {
                 "universal_deployer": format!("0x{:x}", self.addresses.get(&DeployedContract::UniversalDeployer).unwrap_or(&Felt::ZERO)),
@@ -394,12 +299,8 @@ impl MadaraSetup {
             }
         });
 
-        let json_string = serde_json::to_string_pretty(&madara_addresses)
-            .map_err(|e| MadaraSetupError::FileIo(format!("JSON serialization error: {}", e)))?;
-
-        crate::utils::save_addresses_to_file(json_string, madara_addresses_path).map_err(|e| {
-            MadaraSetupError::FileIo(format!("Failed to save madara addresses to {}: {}", madara_addresses_path, e))
-        })?;
+        let json_string = serde_json::to_string_pretty(&madara_addresses)?;
+        crate::utils::save_addresses_to_file(json_string, madara_addresses_path)?;
 
         log::info!("Madara addresses saved to: {}", madara_addresses_path);
 
