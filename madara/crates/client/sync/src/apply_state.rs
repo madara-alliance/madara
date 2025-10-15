@@ -27,7 +27,7 @@ use crate::sync_utils::compress_state_diff;
 ///
 /// Not exposed as a CLI option to maintain simplicity (KISS principle). If adjustment
 /// is needed for specific hardware constraints, modify this constant directly.
-const APPLY_STATE_SNAP_BATCH_SIZE: u64 = 10;
+const APPLY_STATE_SNAP_BATCH_SIZE: u64 = 1000;
 
 pub type ApplyStateSync = PipelineController<ApplyStateSteps>;
 pub fn apply_state_pipeline(
