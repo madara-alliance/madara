@@ -263,7 +263,6 @@ impl TestConfigBuilder {
 
         let prover_client = implement_client::init_prover_client(prover_client_type, &params.clone());
 
-        // Store whether we're using actual clients for infrastructure cleanup before consuming the types
         let using_actual_queue = matches!(queue_type, ConfigType::Actual);
         let using_actual_database = matches!(database_type, ConfigType::Actual);
         let using_actual_alerts = matches!(alerts_type, ConfigType::Actual);
@@ -283,22 +282,17 @@ impl TestConfigBuilder {
         let queue =
             implement_client::init_queue_client(queue_type, params.queue_params.clone(), provider_config.clone()).await;
 
-        // Only perform infrastructure cleanup when using actual clients, not mocks
-        // This prevents authentication errors when running tests with mocked dependencies
         if using_actual_queue {
-            // Deleting and Creating the queues in sqs.
             create_queues(provider_config.clone(), &params.queue_params)
                 .await
                 .expect("Not able to delete and create the queues.");
         }
 
         if using_actual_database {
-            // Deleting the database
             drop_database(&params.db_params).await.expect("Unable to drop the database.");
         }
 
         if using_actual_alerts {
-            // Creating the SNS ARN
             create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
         }
 

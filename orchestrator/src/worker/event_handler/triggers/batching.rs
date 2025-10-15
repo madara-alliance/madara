@@ -172,30 +172,12 @@ impl BatchingTrigger {
         current_batch: Batch,
         config: &Arc<Config>,
     ) -> Result<(Option<StateUpdate>, Batch), JobError> {
-        // Get the provider
         let provider = config.madara_client();
 
         // Fetch Starknet version for the current block
-        // In tests, if this fails, use the batch's existing version to avoid test infrastructure issues
-        let current_block_starknet_version = match fetch_block_starknet_version(config, block_number).await {
-            Ok(version) => version,
-            Err(e) => {
-                // In production, this is a fatal error. In tests with mocked HTTP, use batch version as fallback.
-                if cfg!(test) {
-                    tracing::warn!(
-                        block_number = %block_number,
-                        error = %e,
-                        "Failed to fetch Starknet version in test environment, using batch version as fallback"
-                    );
-                    current_batch.starknet_version.clone()
-                } else {
-                    return Err(JobError::ProviderError(format!(
-                        "Failed to fetch Starknet version for block {}: {}",
-                        block_number, e
-                    )));
-                }
-            }
-        };
+        let current_block_starknet_version = fetch_block_starknet_version(config, block_number).await.map_err(|e| {
+            JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_number, e))
+        })?;
 
         // Check Starknet version compatibility for batch integrity
         // A batch/bucket can only contain blocks from the same Starknet protocol version
