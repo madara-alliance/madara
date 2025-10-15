@@ -56,7 +56,8 @@ use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
-
+use std::sync::{Arc, Mutex};
+use mp_block::header::CustomHeader;
 mod db_version;
 mod prelude;
 pub mod storage;
@@ -190,6 +191,9 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// Keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
+
+    // only for testing impl, should not be used for production!
+    pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
 #[derive(Debug, Default)]
@@ -214,6 +218,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
+            custom_header: Mutex::new(None),
         };
         backend.init().context("Initializing madara backend")?;
         Ok(backend)
@@ -223,7 +228,8 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         // Check chain configuration
         if let Some(res) = self.db.get_stored_chain_info()? {
             if res.chain_id != self.chain_config.chain_id {
-                bail!(
+                // TODO: ensure to recreate the db with the correct chain !
+                tracing::info!(
                     "The database has been created on the network \"{}\" (chain id `{}`), \
                             but the node is configured for network \"{}\" (chain id `{}`).",
                     res.chain_name,
@@ -231,6 +237,14 @@ impl<D: MadaraStorage> MadaraBackend<D> {
                     self.chain_config.chain_name,
                     self.chain_config.chain_id
                 )
+                // bail!(
+                //     "The database has been created on the network \"{}\" (chain id `{}`), \
+                //             but the node is configured for network \"{}\" (chain id `{}`).",
+                //     res.chain_name,
+                //     res.chain_id,
+                //     self.chain_config.chain_name,
+                //     self.chain_config.chain_id
+                // )
             }
         } else {
             self.db.write_chain_info(&StoredChainInfo {
@@ -251,6 +265,14 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             chain_tip.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0),
         )?;
         self.chain_tip.send_replace(chain_tip);
+
+        let chain_tip_2 = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
+            StorageChainTip::Confirmed(starting_block)
+        } else {
+            self.db.get_chain_tip()?
+        });
+
+        tracing::info!("Last block : {:?}", chain_tip_2);
 
         // Init L1 head
         self.latest_l1_confirmed.send_replace(self.db.get_confirmed_on_l1_tip()?);
@@ -287,6 +309,20 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
         Ok(())
     }
+
+
+    /// Allows using custom headers for the next block, once used; the data is dumped
+    pub fn get_custom_header(&self) -> Option<CustomHeader> {
+        let guard = self.custom_header.lock().unwrap();
+        guard.clone()
+    }
+
+    pub fn set_custom_header(&self, custom_header: CustomHeader) {
+        println!("Custom header processed: {:?}", custom_header);
+        let mut guard = self.custom_header.lock().unwrap();
+        *guard = Some(custom_header);
+    }
+
 }
 
 impl MadaraBackend<RocksDBStorage> {
@@ -526,6 +562,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
+
+        let is_valid = self.inner.get_custom_header().unwrap().is_block_hash_correct(&block_hash);
+
+        println!("Is block hash valid ? {:?}", is_valid);
+
+        if !is_valid {
+            self.clear_preconfirmed().expect("Failed to clear preconfirmed blocks");
+            bail!("Block hash is invalid")
+        }
 
         // Save the block.
 

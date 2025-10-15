@@ -198,6 +198,7 @@ impl BlockImporterCtx {
             return Ok(());
         }
 
+        println!("Comes to verify_header to compute hash");
         // verify block_hash
         let block_hash = signed_header
             .header
