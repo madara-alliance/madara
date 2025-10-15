@@ -1,0 +1,4 @@
+pub const BOOTSTRAP_ACCOUNT_SIERRA: &str =
+    "contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json";
+pub const BOOTSTRAP_ACCOUNT_CASM: &str =
+    "contracts/madara/target/dev/madara_factory_contracts_Account.compiled_contract_class.json";

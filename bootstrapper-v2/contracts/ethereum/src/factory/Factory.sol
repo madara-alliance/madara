@@ -130,6 +130,7 @@ contract Factory is Ownable, Pausable, Implementations {
     IProxyRoles(address(coreContractProxy)).registerGovernanceAdmin(governor);
     IProxyRoles(address(coreContractProxy)).registerAppRoleAdmin(address(this));
     IOperator(address(coreContractProxy)).registerOperator(operator);
+    IRoles(address(coreContractProxy)).renounceRole(APP_ROLE_ADMIN, address(this));
 
     return address(coreContractProxy);
   }
