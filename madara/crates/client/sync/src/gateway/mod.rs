@@ -9,8 +9,7 @@ use anyhow::Context;
 use blocks::{gateway_preconfirmed_block_sync, GatewayBlockSync};
 use classes::ClassesSync;
 use mc_db::MadaraBackend;
-use mc_gateway_client::GatewayProvider;
-use mp_block::{BlockId, BlockTag};
+use mc_gateway_client::{BlockId, BlockTag, GatewayProvider};
 use mp_gateway::block::ProviderBlockHeader;
 use std::{iter, sync::Arc, time::Duration};
 
@@ -27,6 +26,7 @@ pub struct ForwardSyncConfig {
     pub disable_tries: bool,
     pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
+    pub enable_bouncer_config_sync: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -41,6 +41,7 @@ impl Default for ForwardSyncConfig {
             disable_tries: false,
             snap_sync: false,
             keep_pre_v0_13_2_hashes: false,
+            enable_bouncer_config_sync: false,
         }
     }
 }
@@ -54,6 +55,10 @@ impl ForwardSyncConfig {
     }
     pub fn snap_sync(self, val: bool) -> Self {
         Self { snap_sync: val, ..self }
+    }
+
+    pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
+        Self { enable_bouncer_config_sync: val, ..self }
     }
 }
 
@@ -101,6 +106,7 @@ impl GatewayForwardSync {
             config.block_parallelization,
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
+            config.enable_bouncer_config_sync,
         );
         let classes_pipeline = classes::classes_pipeline(
             backend.clone(),
@@ -110,7 +116,15 @@ impl GatewayForwardSync {
             config.classes_parallelization,
             config.classes_batch_size,
         );
-        let apply_state_pipeline = super::apply_state::apply_state_pipeline(backend.clone(), importer.clone(), starting_block_n, config.apply_state_parallelization, config.apply_state_batch_size, config.disable_tries, config.snap_sync);
+        let apply_state_pipeline = super::apply_state::apply_state_pipeline(
+            backend.clone(),
+            importer.clone(),
+            starting_block_n,
+            config.apply_state_parallelization,
+            config.apply_state_batch_size,
+            config.disable_tries,
+            config.snap_sync,
+        );
         Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
     }
 

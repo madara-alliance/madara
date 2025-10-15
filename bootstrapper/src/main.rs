@@ -3,6 +3,7 @@ pub mod helpers;
 mod setup_scripts;
 #[cfg(test)]
 pub mod tests;
+pub mod transport;
 pub mod utils;
 
 use std::fs::File;
@@ -72,6 +73,7 @@ pub enum CoreContractMode {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct ConfigBuilder {
     pub eth_rpc: Option<String>,
     pub eth_priv_key: Option<String>,
@@ -108,7 +110,7 @@ impl Default for ConfigBuilder {
             eth_rpc: Some("http://127.0.0.1:8545".to_string()),
             eth_priv_key: Some("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()),
             rollup_priv_key: Some("0xabcd".to_string()),
-            rollup_seq_url: Some("http://127.0.0.1:19944".to_string()),
+            rollup_seq_url: Some("http://127.0.0.1:19944/rpc/v0.8.1/".to_string()),
             rollup_declare_v0_seq_url: Some("http://127.0.0.1:19943".to_string()),
             eth_chain_id: 31337,
             l1_deployer_address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266".to_string(),
@@ -449,7 +451,7 @@ async fn upgrade_eth_bridge(
     };
     upgrade_eth_token_to_cairo_1(
         &account,
-        clients.provider_l2(),
+        clients,
         Felt::from_str(
             &config_file.l2_eth_token_proxy_address.clone().expect("l2_eth_token_proxy_address not in config."),
         )?,
@@ -457,7 +459,7 @@ async fn upgrade_eth_bridge(
     .await;
     upgrade_eth_bridge_to_cairo_1(
         &account,
-        clients.provider_l2(),
+        clients,
         Felt::from_str(
             &config_file.l2_eth_bridge_proxy_address.clone().expect("l2_eth_bridge_proxy_address not in config."),
         )?,
@@ -503,7 +505,7 @@ async fn setup_udc(account: Option<RpcAccount<'_>>, config_file: &ConfigFile, cl
         None => get_account(clients, config_file).await,
     };
     log::info!("⏳ Starting UDC (Universal Deployer Contract) deployment");
-    let udc = UdcSetup::new(account.clone(), account.address(), config_file, clients);
+    let udc = UdcSetup::new(account.clone(), account.address(), clients);
     let udc_setup_outputs = udc.setup().await;
     log::info!(
         "*️⃣ UDC setup completed. [UDC Address : {:?}, UDC class hash : {:?}]",
@@ -524,7 +526,7 @@ async fn setup_argent(
         None => get_account(clients, config_file).await,
     };
     log::info!("⏳ Starting Argent Account deployment");
-    let argent = ArgentSetup::new(account.clone());
+    let argent = ArgentSetup::new(account.clone(), clients);
     let argent_setup_outputs = argent.setup().await;
     log::info!("*️⃣ Argent setup completed. [Argent account class hash : {:?}]", argent_setup_outputs.argent_class_hash);
     log::info!("✅ Argent Account deployment complete.");
@@ -542,7 +544,7 @@ async fn setup_braavos(
         None => get_account(clients, config_file).await,
     };
     log::info!("⏳ Starting Braavos Account deployment");
-    let braavos = BraavosSetup::new(account.clone(), config_file, clients, udc_address);
+    let braavos = BraavosSetup::new(account.clone(), clients, udc_address);
     let braavos_setup_outputs = braavos.setup().await;
     log::info!(
         "*️⃣ Braavos setup completed. [Braavos account class hash : {:?}]",

@@ -17,6 +17,8 @@ use crate::{
     },
 };
 use bincode::Options;
+use blockifier::bouncer::BouncerWeights;
+
 use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
@@ -229,6 +231,12 @@ impl MadaraStorageRead for RocksDBStorage {
             .get_block_state_diff(block_n)
             .with_context(|| format!("Getting block state diff for block_n={block_n}"))
     }
+
+    fn get_block_bouncer_weights(&self, block_n: u64) -> Result<Option<BouncerWeights>> {
+        self.inner
+            .get_block_bouncer_weight(block_n)
+            .with_context(|| format!("Getting block bouncer weights for block_n={block_n}"))
+    }
     fn get_transaction(&self, block_n: u64, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
         self.inner
             .get_transaction(block_n, tx_index)
@@ -340,7 +348,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
 
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()> {
-        tracing::debug!("Writing transactions {block_n} {txs:?}");
+        tracing::debug!("Writing transactions {block_n}");
         // Save l1 core contract nonce to tx mapping.
         self.inner
             .messages_to_l2_write_trasactions(
@@ -361,6 +369,13 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .state_apply_state_diff(block_n, value)
             .with_context(|| format!("Applying state from state diff for block_n={block_n}"))
+    }
+
+    fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()> {
+        tracing::debug!("Writing bouncer weights for block_n={block_n}");
+        self.inner
+            .blocks_store_bouncer_weights(block_n, value)
+            .with_context(|| format!("Storing bouncer weights for block_n={block_n}"))
     }
 
     fn write_events(&self, block_n: u64, events: &[mp_receipt::EventWithTransactionHash]) -> Result<()> {

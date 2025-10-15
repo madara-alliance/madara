@@ -3,6 +3,7 @@ use crate::{
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
     storage::StorageTxIndex,
 };
+use blockifier::bouncer::BouncerWeights;
 use itertools::{Either, Itertools};
 use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
 use mp_convert::Felt;
@@ -22,6 +23,10 @@ pub const BLOCK_STATE_DIFF_COLUMN: Column = Column::new("block_state_diff").set_
 /// prefix [<block_n 4 bytes>] | <tx_index 2 bytes> => bincode(tx and receipt)
 pub const BLOCK_TRANSACTIONS_COLUMN: Column =
     Column::new("block_transactions").with_prefix_extractor_len(size_of::<u32>()).use_blocks_mem_budget();
+
+/// prefix [<block_n 4 bytes>] => bincode(bouncer_weights)
+pub const BLOCK_BOUNCER_WEIGHT_COLUMN: Column =
+    Column::new("block_bouncer_weight").with_prefix_extractor_len(size_of::<u32>()).use_blocks_mem_budget();
 
 const TRANSACTIONS_KEY_LEN: usize = size_of::<u32>() + size_of::<u16>();
 fn make_transaction_column_key(block_n: u32, tx_index: u16) -> [u8; TRANSACTIONS_KEY_LEN] {
@@ -64,6 +69,16 @@ impl RocksDBStorageInner {
     pub(super) fn get_block_state_diff(&self, block_n: u64) -> Result<Option<StateDiff>> {
         let Some(block_n) = u32::try_from(block_n).ok() else { return Ok(None) }; // Every OOB block_n returns not found.
         let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_STATE_DIFF_COLUMN), block_n.to_be_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(super::deserialize(&res)?))
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn get_block_bouncer_weight(&self, block_n: u64) -> Result<Option<BouncerWeights>> {
+        let Some(block_n) = u32::try_from(block_n).ok() else { return Ok(None) }; // Every OOB block_n returns not found.
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_BOUNCER_WEIGHT_COLUMN), block_n.to_be_bytes())?
+        else {
             return Ok(None);
         };
         Ok(Some(super::deserialize(&res)?))
@@ -193,6 +208,18 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self, value))]
+    pub(super) fn blocks_store_bouncer_weights(&self, block_number: u64, value: &BouncerWeights) -> Result<()> {
+        let mut batch = WriteBatchWithTransaction::default();
+        let block_n_u32 = u32::try_from(block_number).context("Converting block_n to u32")?;
+
+        let block_n_to_bouncer_weights = self.get_column(BLOCK_BOUNCER_WEIGHT_COLUMN);
+        batch.put_cf(&block_n_to_bouncer_weights, block_n_u32.to_be_bytes(), &super::serialize(value)?);
+        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, value))]
     pub(super) fn blocks_store_events_to_receipts(
         &self,
         block_n: u64,
@@ -204,7 +231,7 @@ impl RocksDBStorageInner {
         let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
 
         for (tx_index, transaction) in self.get_block_transactions(block_n, /* from_tx_index */ 0).enumerate() {
-            let mut transaction = transaction?;
+            let mut transaction = transaction.with_context(|| format!("Parsing transaction {tx_index}"))?;
             let transaction_hash = *transaction.receipt.transaction_hash();
 
             transaction.receipt.events_mut().clear();

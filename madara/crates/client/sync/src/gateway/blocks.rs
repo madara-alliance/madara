@@ -8,8 +8,8 @@ use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
     MadaraBackend,
 };
-use mc_gateway_client::GatewayProvider;
-use mp_block::{BlockHeaderWithSignatures, BlockId, FullBlock, Header};
+use mc_gateway_client::{BlockId, GatewayProvider};
+use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use mp_state_update::StateDiff;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
@@ -25,9 +25,10 @@ pub fn block_with_state_update_pipeline(
     parallelization: usize,
     batch_size: usize,
     keep_pre_v0_13_2_hashes: bool,
+    sync_bouncer_config: bool,
 ) -> GatewayBlockSync {
     PipelineController::new(
-        GatewaySyncSteps { _backend: backend, importer, client, keep_pre_v0_13_2_hashes },
+        GatewaySyncSteps { _backend: backend, importer, client, keep_pre_v0_13_2_hashes, sync_bouncer_config },
         parallelization,
         batch_size,
         starting_block_n,
@@ -40,6 +41,7 @@ pub struct GatewaySyncSteps {
     importer: Arc<BlockImporter>,
     client: Arc<GatewayProvider>,
     keep_pre_v0_13_2_hashes: bool,
+    sync_bouncer_config: bool,
 }
 impl PipelineSteps for GatewaySyncSteps {
     type InputItem = ();
@@ -60,6 +62,17 @@ impl PipelineSteps for GatewaySyncSteps {
                     .get_state_update_with_block(BlockId::Number(block_n))
                     .await
                     .with_context(|| format!("Getting state update with block_n={block_n}"))?;
+
+                let bouncer_weights = if self.sync_bouncer_config {
+                    Some(
+                        self.client
+                            .get_block_bouncer_weights(block_n)
+                            .await
+                            .with_context(|| format!("Getting bouncer weights with block_n={block_n}"))?,
+                    )
+                } else {
+                    None
+                };
 
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
 
@@ -108,6 +121,9 @@ impl PipelineSteps for GatewaySyncSteps {
                         importer.verify_header(block_n, &signed_header)?;
 
                         importer.save_header(block_n, signed_header)?;
+                        if let Some(bouncer_weights) = bouncer_weights {
+                            importer.save_bouncer_weights(block_n, bouncer_weights)?;
+                        }
                         importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
                         importer.save_transactions(block_n, gateway_block.transactions)?;
                         importer.save_events(block_n, gateway_block.events)?;
@@ -197,7 +213,7 @@ pub fn gateway_preconfirmed_block_sync(
                         // TODO: should we compute these hashes? probably not?
                         Iterator::ne(
                             in_backend.borrow_content().executed_transactions().map(|tx| tx.transaction.receipt.transaction_hash()),
-                            block.transactions[..n_executed].iter().map(|tx| tx.transaction_hash())
+                            block.transactions[..n_executed].iter().map(|tx| tx.transaction_hash()),
                         );
 
                     if !new_preconfirmed {
@@ -209,9 +225,9 @@ pub fn gateway_preconfirmed_block_sync(
                         && in_backend.num_executed_transactions() == n_executed
                         // Compare candidate hashes.
                         && Iterator::eq(
-                            in_backend.candidate_transactions().iter().map(|tx| &tx.hash),
-                            block.transactions[n_executed..].iter().map(|tx| tx.transaction_hash()),
-                        );
+                        in_backend.candidate_transactions().iter().map(|tx| &tx.hash),
+                        block.transactions[n_executed..].iter().map(|tx| tx.transaction_hash()),
+                    );
                     if has_not_changed {
                         return Ok(None);
                     }
@@ -242,6 +258,7 @@ pub fn gateway_preconfirmed_block_sync(
                             arrived_at,
                             declared_class: None, // Ditto.
                             hash: transaction.transaction.hash,
+                            charge_fee: true, // keeping the default value as true for now
                         }
                         .into()
                     })

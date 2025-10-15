@@ -1,7 +1,7 @@
 use super::handler::{
-    handle_add_transaction, handle_get_block, handle_get_block_traces, handle_get_class_by_hash,
-    handle_get_compiled_class_by_class_hash, handle_get_contract_addresses, handle_get_public_key,
-    handle_get_signature, handle_get_state_update,
+    handle_add_transaction, handle_get_block, handle_get_block_bouncer_config, handle_get_block_traces,
+    handle_get_class_by_hash, handle_get_compiled_class_by_class_hash, handle_get_contract_addresses,
+    handle_get_public_key, handle_get_signature, handle_get_state_update,
 };
 use super::helpers::{not_found_response, service_unavailable_response};
 use crate::handler::{handle_add_validated_transaction, handle_get_preconfirmed_block};
@@ -9,7 +9,6 @@ use crate::service::GatewayServerConfig;
 use hyper::{body::Incoming, Method, Request, Response};
 use mc_db::MadaraBackend;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
-use mp_utils::service::ServiceContext;
 use std::{convert::Infallible, sync::Arc};
 
 // Main router to redirect to the appropriate sub-router
@@ -19,7 +18,6 @@ pub(crate) async fn main_router(
     backend: Arc<MadaraBackend>,
     add_transaction_provider: Arc<dyn SubmitTransaction>,
     submit_validated: Option<Arc<dyn SubmitValidatedTransaction>>,
-    ctx: ServiceContext,
     config: GatewayServerConfig,
 ) -> Result<Response<String>, Infallible> {
     match (path, config.feeder_gateway_enable, config.gateway_enable) {
@@ -27,9 +25,7 @@ pub(crate) async fn main_router(
         (path, true, _) if path.starts_with("gateway/") => {
             Ok(gateway_router(req, path, add_transaction_provider).await?)
         }
-        (path, true, _) if path.starts_with("feeder_gateway/") => {
-            Ok(feeder_gateway_router(req, path, backend, add_transaction_provider, ctx).await?)
-        }
+        (path, true, _) if path.starts_with("feeder_gateway/") => Ok(feeder_gateway_router(req, path, backend).await?),
         (path, _, true)
             if path.starts_with("madara/trusted_add_validated_transaction")
                 && config.enable_trusted_add_validated_transaction =>
@@ -50,8 +46,6 @@ async fn feeder_gateway_router(
     req: Request<Incoming>,
     path: &str,
     backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
-    ctx: ServiceContext,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::GET, "feeder_gateway/get_preconfirmed_block") => {
@@ -67,7 +61,7 @@ async fn feeder_gateway_router(
             Ok(handle_get_state_update(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_block_traces") => {
-            Ok(handle_get_block_traces(req, backend, add_transaction_provider, ctx).await.unwrap_or_else(Into::into))
+            Ok(handle_get_block_traces(req, backend).await.unwrap_or_else(Into::into))
         }
         (&Method::GET, "feeder_gateway/get_class_by_hash") => {
             Ok(handle_get_class_by_hash(req, backend).await.unwrap_or_else(Into::into))
@@ -80,6 +74,9 @@ async fn feeder_gateway_router(
         }
         (&Method::GET, "feeder_gateway/get_public_key") => {
             Ok(handle_get_public_key(backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_block_bouncer_weights") => {
+            Ok(handle_get_block_bouncer_config(req, backend).await.unwrap_or_else(Into::into))
         }
         _ => {
             tracing::debug!(target: "feeder_gateway", "Feeder gateway received invalid request: {path}");

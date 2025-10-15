@@ -123,7 +123,7 @@ impl JobHandlerService {
             JobType::StateTransition => {
                 let batch_number = parse_string(&internal_id)?;
 
-                match config.database().get_batches_by_indexes(vec![batch_number as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![batch_number as u64]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
                     _ => batch_number,
                 }
@@ -132,7 +132,16 @@ impl JobHandlerService {
                 let batch_number = parse_string(&internal_id)?;
 
                 // Fetch the batch from the database
-                match config.database().get_batches_by_indexes(vec![batch_number as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![batch_number as u64]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    _ => batch_number,
+                }
+            }
+            JobType::SnosRun => {
+                let batch_number = parse_string(&internal_id)?;
+
+                // Fetch the batch from the database
+                match config.database().get_snos_batches_by_indices(vec![batch_number as u64]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
                     _ => batch_number,
                 }

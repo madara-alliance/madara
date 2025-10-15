@@ -20,7 +20,9 @@ interface IRoles {
 
   function revokeAppGovernor(address account) external;
 
-  function revokeAppRoleAdmin(address account) external;
-
   function revokeOperator(address account) external;
+
+  function renounceRole(bytes32 role, address account) external;
+
+  function revokeUpgradeGovernor(address account) external;
 }
