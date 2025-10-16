@@ -220,13 +220,13 @@ impl BlockProductionTask {
     /// This avoids re-executing transaction by re-adding them to the [Mempool].
     async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
         if self.backend.has_preconfirmed_block() {
-            tracing::debug!("Close pending block on startup.");
+            tracing::info!("Close pending block on startup.");
             let backend = self.backend.clone();
             global_spawn_rayon_task(move || {
                 backend
                     .write_access()
-                    .close_preconfirmed(
-                        /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
+                    .clear_preconfirmed(
+                        // /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
                     )
                     .context("Closing preconfirmed block on startup")
             })

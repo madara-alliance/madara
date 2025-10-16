@@ -297,6 +297,9 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
         // Normalize, remove redundant entries & sort.
 
         let view_on_parent_block = self.state_view_on_parent();
+        
+        // TODO: in the previous version of madara, we had to add the classes to declared_classes that were not available in state diff. 
+        // Check if that needs to be handled ?
 
         // Map storage diffs, keeping only changed entries, and sort the result.
         let storage_diffs: Vec<ContractStorageDiffItem> = sorted_by_key(

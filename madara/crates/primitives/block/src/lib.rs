@@ -355,6 +355,7 @@ impl FullBlockWithoutCommitments {
         new_global_state_root: Felt,
         pre_v0_13_2_override: bool,
     ) -> FullBlock {
+        println!("Comes to FullBlockWithoutCommitments to compute hash");
         let commitments = BlockCommitments::compute(ctx, &self.transactions, &self.state_diff, &self.events);
         let header = self.header.into_confirmed_header(parent_block_hash, commitments, new_global_state_root);
         FullBlock {
