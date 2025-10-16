@@ -45,6 +45,7 @@ use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
+use mp_block::header::CustomHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
 use mp_block::TransactionWithReceipt;
@@ -57,7 +58,6 @@ use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use mp_block::header::CustomHeader;
 mod db_version;
 mod prelude;
 pub mod storage;
@@ -310,7 +310,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         Ok(())
     }
 
-
     /// Allows using custom headers for the next block, once used; the data is dumped
     pub fn get_custom_header(&self) -> Option<CustomHeader> {
         let guard = self.custom_header.lock().unwrap();
@@ -322,7 +321,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         let mut guard = self.custom_header.lock().unwrap();
         *guard = Some(custom_header);
     }
-
 }
 
 impl MadaraBackend<RocksDBStorage> {

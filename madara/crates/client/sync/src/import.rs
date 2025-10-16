@@ -567,6 +567,7 @@ impl BlockImporterCtx {
                 return Err(BlockImportError::GlobalStateRoot { got, expected });
             }
         }
+        tracing::info!("Validated state root till {} is {:?}", last_block_n, got);
 
         Ok(())
     }

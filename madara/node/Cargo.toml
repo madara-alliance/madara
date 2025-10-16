@@ -19,6 +19,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 name = "madara"
 
 [dependencies]
+dotenv = "0.15.0"
 
 # Madara
 mc-analytics = { workspace = true }
