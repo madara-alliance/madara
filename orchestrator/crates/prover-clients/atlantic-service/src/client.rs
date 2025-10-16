@@ -56,21 +56,28 @@ pub struct AtlanticBucketInfo {
     pub bucket_job_index: Option<u64>,
 }
 
+struct CustomizationParams {
+    /// Layout to be used
+    layout: LayoutName,
+}
+
 trait ProvingLayer: Send + Sync {
-    fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a>;
+    fn customize_request<'a>(&self, request: RequestBuilder<'a>, params: CustomizationParams) -> RequestBuilder<'a>;
 }
 
 struct EthereumLayer;
 impl ProvingLayer for EthereumLayer {
-    fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
+    fn customize_request<'a>(&self, request: RequestBuilder<'a>, _params: CustomizationParams) -> RequestBuilder<'a> {
         request
     }
 }
 
 struct StarknetLayer;
 impl ProvingLayer for StarknetLayer {
-    fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", &AtlanticQueryStep::ProofGeneration.to_string())
+    fn customize_request<'a>(&self, request: RequestBuilder<'a>, params: CustomizationParams) -> RequestBuilder<'a> {
+        request
+            .form_text("result", &AtlanticQueryStep::ProofGeneration.to_string())
+            .form_text("layout", params.layout.to_str())
     }
 }
 
@@ -260,14 +267,9 @@ impl AtlanticClient {
         bucket_info: AtlanticBucketInfo,
         api_key: impl AsRef<str>,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-        let proof_layout = match job_config.proof_layout {
-            LayoutName::dynamic => "dynamic",
-            _ => job_config.proof_layout.to_str(),
-        };
-
         debug!(
             "Submitting job with layout: {}, n_steps: {}, network: {}, ",
-            proof_layout,
+            job_config.proof_layout,
             Self::n_steps_to_job_size(job_info.n_steps),
             &job_config.network
         );
@@ -285,6 +287,7 @@ impl AtlanticClient {
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                 .form_text("cairoVm", &job_config.cairo_vm.as_str())
                 .form_file("pieFile", job_info.pie_file.as_ref(), "pie.zip", Some("application/zip"))?,
+            CustomizationParams { layout: job_config.proof_layout },
         );
 
         if let Some(bucket_id) = bucket_info.bucket_id {

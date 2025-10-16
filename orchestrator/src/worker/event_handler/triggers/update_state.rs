@@ -113,22 +113,10 @@ impl JobTrigger for UpdateStateJobTrigger {
                 }
             }
             None => {
-                match config.layer() {
-                    Layer::L2 => {
-                        // if the last processed batch is not there, (i.e., this is the first StateTransition job), check if the batch being processed is equal to 1
-                        if to_process[0] != 1 {
-                            warn!("Aggregator job for the first batch is not yet completed. Can't proceed with batch {}, Returning safely...", to_process[0]);
-                            return Ok(());
-                        }
-                    }
-                    Layer::L3 => {
-                        // If the last processed block is not there, check if the first being processed is equal to min_block_to_process (default=0)
-                        let min_block_to_process = config.service_config().min_block_to_process;
-                        if to_process[0] != min_block_to_process {
-                            warn!("DA job for the first block is not yet completed. Returning safely...");
-                            return Ok(());
-                        }
-                    }
+                // if the last processed batch is not there, (i.e., this is the first StateTransition job), check if the batch being processed is equal to 1
+                if to_process[0] != 1 {
+                    warn!("Parent job (Aggregator/DA) for the first batch is not yet completed. Can't proceed with batch {}, Returning safely...", to_process[0]);
+                    return Ok(());
                 }
             }
         }
@@ -138,14 +126,8 @@ impl JobTrigger for UpdateStateJobTrigger {
             find_successive_items_in_vector(to_process, Some(self.max_items_to_process_in_single_job(config.layer())));
 
         // Getting settlement context
-        let settlement_context = match config.layer() {
-            Layer::L2 => {
-                SettlementContext::Batch(SettlementContextData { to_settle: to_process.clone(), last_failed: None })
-            }
-            Layer::L3 => {
-                SettlementContext::Block(SettlementContextData { to_settle: to_process.clone(), last_failed: None })
-            }
-        };
+        let settlement_context =
+            SettlementContext::Batch(SettlementContextData { to_settle: to_process.clone(), last_failed: None });
 
         // Prepare state transition metadata
         let mut state_update_metadata = StateUpdateMetadata { context: settlement_context, ..Default::default() };
@@ -287,8 +269,10 @@ mod test_update_state_worker_utils {
     #[rstest]
     #[case(vec![], Some(3), vec![])]
     #[case(vec![1], None, vec![1])]
-    #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], None, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])]
-    #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], Some(10), vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])]
+    #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], None, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    )]
+    #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], Some(10), vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    )]
     #[case(vec![1, 2, 3, 4, 5], Some(3), vec![1, 2, 3])] // limit smaller than available
     #[case(vec![1, 2, 3], Some(5), vec![1, 2, 3])] // limit larger than available
     fn test_find_successive_items(#[case] input: Vec<u64>, #[case] limit: Option<usize>, #[case] expected: Vec<u64>) {

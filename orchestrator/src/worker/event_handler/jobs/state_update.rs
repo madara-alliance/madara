@@ -2,7 +2,7 @@ use crate::core::config::Config;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::batch::AggregatorBatchStatus;
+use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
 use crate::types::constant::{ON_CHAIN_DATA_FILE_NAME, PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
@@ -224,7 +224,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let settlement_client = config.settlement_client();
 
         for (tx_hash, num_settled) in tx_hashes.iter().zip(nums_settled.iter()) {
-            trace!(
+            debug!(
                 tx_hash = %tx_hash,
                 num = %num_settled,
                 "Verifying transaction inclusion"
@@ -322,7 +322,7 @@ impl StateUpdateJobHandler {
     ) -> Result<JobVerificationStatus, JobError> {
         // verify that the last settled block is indeed the one we expect to be
         let last_settled = nums_settled.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;
-        let (expected_last_block_number, batch) = match config.layer() {
+        let (expected_last_block_number, batch_index) = match config.layer() {
             Layer::L2 => {
                 // Get the batch details for the last-settled batch
                 let batch = config.database().get_aggregator_batches_by_indexes(vec![*last_settled]).await?;
@@ -330,10 +330,21 @@ impl StateUpdateJobHandler {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
                 } else {
                     // Return the end block of the last batch
-                    Ok((batch[0].end_block, batch.first().cloned()))
+                    // unwrap is safe since we checked that it's not empty
+                    Ok((batch[0].end_block, batch.first().unwrap().index))
                 }
             }
-            Layer::L3 => Ok((*last_settled, None)),
+            Layer::L3 => {
+                // Get the batch details for the last-settled batch
+                let batch = config.database().get_snos_batches_by_indices(vec![*last_settled]).await?;
+                if batch.is_empty() {
+                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
+                } else {
+                    // Return the end block of the last batch
+                    // unwrap is safe since we checked that it's not empty
+                    Ok((batch[0].end_block, batch.first().unwrap().snos_batch_id))
+                }
+            }
         }?;
 
         let last_settled_block_number =
@@ -352,11 +363,19 @@ impl StateUpdateJobHandler {
                     ))
                 };
                 // Update batch status
-                if let Some(batch) = batch {
-                    config
-                        .database()
-                        .update_aggregator_batch_status_by_index(batch.index, AggregatorBatchStatus::Completed)
-                        .await?;
+                match config.layer() {
+                    Layer::L2 => {
+                        config
+                            .database()
+                            .update_aggregator_batch_status_by_index(batch_index, AggregatorBatchStatus::Completed)
+                            .await?;
+                    }
+                    Layer::L3 => {
+                        config
+                            .database()
+                            .update_snos_batch_status_by_index(batch_index, SnosBatchStatus::Completed)
+                            .await?;
+                    }
                 }
                 Ok(block_status.into())
             }

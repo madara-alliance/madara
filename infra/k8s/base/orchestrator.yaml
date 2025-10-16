@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+    spec:
+      containers:
+        - name: madara-orchestrator
+          image: ghcr.io/madara-alliance/orchestrator:nightly
+          imagePullPolicy: Always
+          args:
+            - run
+            - --atlantic
+            - --aws
+            - --settle-on-ethereum
+            - --aws-s3
+            - --aws-sqs
+            - --aws-sns
+            - --da-on-ethereum
+            - --layer
+            - l2
+            - --mongodb
+            - --madara-version
+            - 0.14.0
+          envFrom:
+            - configMapRef:
+                name: madara-orchestrator-config
+            - secretRef:
+                name: madara-orchestrator-secrets
+          ports:
+            - containerPort: 3000
+              name: rpc
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+              memory: 8Gi
+            requests:
+              cpu: "4"
+              memory: 8Gi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
