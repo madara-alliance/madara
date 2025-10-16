@@ -2,6 +2,8 @@ pub mod error;
 pub mod factory;
 pub mod implementation_contracts;
 
+use std::collections::HashMap;
+
 use crate::setup::base_layer::BaseLayerError;
 use crate::setup::base_layer::{ethereum::error::EthereumError, BaseLayerSetupTrait};
 use crate::utils::save_addresses_to_file;
@@ -17,7 +19,6 @@ use async_trait::async_trait;
 use factory::BaseLayerContracts;
 use factory::{Factory, FactoryDeploy};
 use implementation_contracts::{ImplementationContract, IMPLEMENTATION_CONTRACTS_DATA};
-
 
 #[allow(dead_code)]
 pub struct EthereumSetup {

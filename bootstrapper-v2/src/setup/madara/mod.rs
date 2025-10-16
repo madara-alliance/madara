@@ -30,7 +30,6 @@ use starknet::{providers::Provider, signers::LocalWallet};
 use std::collections::HashMap;
 use std::fs;
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum DeployedContract {
     UniversalDeployer,
