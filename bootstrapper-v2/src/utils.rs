@@ -18,6 +18,8 @@ use starknet::{
 
 use std::io::Error as IoError;
 
+use crate::error::madara::MadaraError;
+
 #[derive(thiserror::Error, Debug)]
 pub enum FileError {
     #[error("Failed to create parent directories with path: {0} due to: {1}")]
@@ -73,10 +75,10 @@ pub async fn wait_for_transaction(
     provider_l2: &JsonRpcClient<HttpTransport>,
     transaction_hash: Felt,
     tag: &str,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), MadaraError> {
     let transaction_receipt = get_transaction_receipt(provider_l2, transaction_hash).await;
 
-    let transaction_status = transaction_receipt.context("Failed to get transaction receipt")?;
+    let transaction_status = transaction_receipt?;
 
     log::trace!("txn : {:?} : {:?}", tag, transaction_status);
     let exec_result: ExecutionResult = match transaction_status.receipt {
@@ -95,47 +97,42 @@ pub async fn wait_for_transaction(
     };
 
     match exec_result {
-        ExecutionResult::Succeeded => {}
+        ExecutionResult::Succeeded => Ok(()),
         ExecutionResult::Reverted { reason } => {
-            panic!("Transaction failed with {:?}", reason);
+            return Err(MadaraError::FailedToWaitForTransaction(reason, tag.to_string()));
         }
     }
-
-    Ok(())
 }
 
 pub async fn declare_contract(
     sierra_path: &str,
     casm_path: &str,
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
-) -> anyhow::Result<Felt> {
-    log::info!("sierra_path: {:?}", sierra_path);
-    log::info!("casm_path: {:?}", casm_path);
-    let contract_artifact: SierraClass =
-        serde_json::from_reader(std::fs::File::open(sierra_path).context("Failed to open sierra file")?)
-            .context("Failed to parse sierra file")?;
+) -> Result<Felt, MadaraError> {
+    log::info!("Declaring contract from sierra file: {:?}", sierra_path);
+    log::info!("Declaring contract from casm file: {:?}", casm_path);
+    let contract_artifact: SierraClass = serde_json::from_reader(
+        std::fs::File::open(sierra_path).map_err(|e| MadaraError::FailedToOpenFile(e, sierra_path.to_string()))?,
+    )
+    .map_err(|e| MadaraError::FailedToParseFile(e, sierra_path.to_string()))?;
 
-    let contract_artifact_casm: CompiledClass =
-        serde_json::from_reader(std::fs::File::open(casm_path).context("Failed to open casm file")?)
-            .context("Failed to parse casm file")?;
+    let contract_artifact_casm: CompiledClass = serde_json::from_reader(
+        std::fs::File::open(casm_path).map_err(|e| MadaraError::FailedToOpenFile(e, casm_path.to_string()))?,
+    )
+    .map_err(|e| MadaraError::FailedToParseFile(e, casm_path.to_string()))?;
 
-    let class_hash = contract_artifact.class_hash().context("Failed to get class hash from sierra artifact")?;
-    let compiled_class_hash =
-        contract_artifact_casm.class_hash().context("Failed to get class hash from casm artifact")?;
+    let class_hash = contract_artifact.class_hash()?;
+    let compiled_class_hash = contract_artifact_casm.class_hash()?;
 
     if account.provider().get_class(BlockId::Tag(BlockTag::Pending), class_hash).await.is_ok() {
         log::info!("Class already declared, skipping declaration.");
         return Ok(class_hash);
     }
 
-    let flattened_class = contract_artifact.flatten().context("Failed to flatten contract artifact")?;
+    let flattened_class = contract_artifact.flatten()?;
 
-    let txn = account
-        .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-        .gas(0)
-        .send()
-        .await
-        .expect("Error in declaring the contract using Cairo 1 declaration using the provided account");
+    let txn = account.declare_v3(Arc::new(flattened_class), compiled_class_hash).gas(0).send().await?;
+
     wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract")
         .await
         .context("Failed to wait for contract declaration transaction")?;
@@ -145,21 +142,15 @@ pub async fn declare_contract(
 pub async fn execute_v3(
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     calls: &Vec<Call>,
-) -> anyhow::Result<InvokeTransactionResult, anyhow::Error> {
-    let txn_res = account
-        .execute_v3(calls.clone())
-        .gas(0)
-        .send()
-        .await
-        .context("Error in making execute_v3 the contract for calls {:?}")?;
+) -> Result<InvokeTransactionResult, MadaraError> {
+    let txn_res = account.execute_v3(calls.clone()).gas(0).send().await?;
 
     wait_for_transaction(
         account.provider(),
         txn_res.transaction_hash,
         &format!("invoking_contract for calls {:?}", calls),
     )
-    .await
-    .context("Failed to wait for transaction execution")?;
+    .await?;
 
     Ok(txn_res)
 }
@@ -175,7 +166,7 @@ pub struct ContractsDeployedAddresses {
 pub async fn get_contract_address_from_deploy_tx(
     rpc: &JsonRpcClient<HttpTransport>,
     tx: &InvokeTransactionResult,
-) -> anyhow::Result<Felt> {
+) -> Result<Felt, MadaraError> {
     let deploy_tx_hash = tx.transaction_hash;
 
     wait_for_transaction(rpc, deploy_tx_hash, "get_contract_address_from_deploy_tx").await?;
@@ -188,10 +179,10 @@ pub async fn get_contract_address_from_deploy_tx(
                 .events
                 .iter()
                 .find(|e| e.keys[0] == get_selector_from_name("ContractDeployed").unwrap())
-                .context("ContractDeployed event not found")?
+                .ok_or(MadaraError::FailedToGetEventFromTransactionReceipt("ContractDeployed".to_string()))?
                 .data[0]
         }
-        _ => return Err(anyhow!("Expected invoke transaction receipt")),
+        _ => return Err(MadaraError::ExpectedInvokeTransactionReceipt),
     };
     Ok(contract_address)
 }
