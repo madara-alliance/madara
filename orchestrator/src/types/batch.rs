@@ -196,6 +196,8 @@ pub enum SnosBatchStatus {
     Closed,
     /// A SNOS job has been created for this batch
     SnosJobCreated,
+    /// A SNOS job has beed Completed
+    Completed,
 }
 
 /// SNOS Batch
