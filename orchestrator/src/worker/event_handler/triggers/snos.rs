@@ -54,6 +54,7 @@ impl JobTrigger for SnosJobTrigger {
         for snos_batch in config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed).await? {
             // Create SNOS job metadata
             let snos_metadata = create_job_metadata(
+                snos_batch.snos_batch_id,
                 snos_batch.start_block,
                 snos_batch.end_block,
                 config.snos_config().snos_full_output,
@@ -94,7 +95,7 @@ impl JobTrigger for SnosJobTrigger {
 
 // create_job_metadata is a helper function to create job metadata for a given block number and layer
 // set full_output to true if layer is L3, false otherwise
-fn create_job_metadata(start_block: u64, end_block: u64, full_output: bool) -> JobMetadata {
+fn create_job_metadata(snos_batch_id: u64, start_block: u64, end_block: u64, full_output: bool) -> JobMetadata {
     JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
@@ -102,10 +103,10 @@ fn create_job_metadata(start_block: u64, end_block: u64, full_output: bool) -> J
             end_block,
             num_blocks: end_block - start_block + 1,
             full_output,
-            cairo_pie_path: Some(format!("{}/{}", start_block, CAIRO_PIE_FILE_NAME)),
-            on_chain_data_path: Some(format!("{}/{}", start_block, ON_CHAIN_DATA_FILE_NAME)),
-            snos_output_path: Some(format!("{}/{}", start_block, SNOS_OUTPUT_FILE_NAME)),
-            program_output_path: Some(format!("{}/{}", start_block, PROGRAM_OUTPUT_FILE_NAME)),
+            cairo_pie_path: Some(format!("{}/{}", snos_batch_id, CAIRO_PIE_FILE_NAME)),
+            on_chain_data_path: Some(format!("{}/{}", snos_batch_id, ON_CHAIN_DATA_FILE_NAME)),
+            snos_output_path: Some(format!("{}/{}", snos_batch_id, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", snos_batch_id, PROGRAM_OUTPUT_FILE_NAME)),
             ..Default::default()
         }),
     }
