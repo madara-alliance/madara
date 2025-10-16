@@ -172,6 +172,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     /// Remove all blocks in the database from this block_n inclusive. This includes partially imported blocks as well.
     fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()>;
+    fn get_state_root_hash(&self) -> Result<Felt>;
 }
 
 /// Trait alias for `MadaraStorageRead + MadaraStorageWrite`.

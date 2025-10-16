@@ -9,6 +9,7 @@ use crate::{
         options::rocksdb_global_options,
         snapshots::Snapshots,
         update_global_trie::apply_to_global_trie,
+        update_global_trie::get_state_root
     },
     storage::{
         ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
@@ -457,6 +458,11 @@ impl MadaraStorageWrite for RocksDBStorage {
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
     }
 
+    fn get_state_root_hash(&self) -> Result<Felt> {
+        tracing::debug!("Read state root hash from db");
+        get_state_root(self)
+    }
+    
     fn apply_to_global_trie<'a>(
         &self,
         start_block_n: u64,
