@@ -1,6 +1,6 @@
 use crate::{
     error::madara::MadaraError,
-    setup::madara::constants::{BOOTSTRAP_ACCOUNT_CASM, BOOTSTRAP_ACCOUNT_SIERRA},
+    setup::madara::constants::{BOOTSTRAP_ACCOUNT_CASM, BOOTSTRAP_ACCOUNT_SIERRA, BOOTSTRAP_PRIVATE_KEY},
 };
 use starknet::{
     accounts::{Account, AccountFactory, ExecutionEncoding, OpenZeppelinAccountFactory, SingleOwnerAccount},
@@ -24,7 +24,7 @@ pub struct BootstrapAccount<'a> {
 impl<'a> BootstrapAccount<'a> {
     pub fn new(provider: &'a JsonRpcClient<HttpTransport>, chain_id: Felt) -> Self {
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(
-            Felt::from_hex("0x424f4f545354524150").expect("Invalid bootstrap private key hex"),
+            Felt::from_hex(BOOTSTRAP_PRIVATE_KEY).expect("Invalid bootstrap private key hex"),
         ));
 
         let account = SingleOwnerAccount::new(

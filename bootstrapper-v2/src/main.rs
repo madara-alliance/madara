@@ -26,6 +26,9 @@ async fn main() -> BootstrapperResult<()> {
         }
 
         Commands::SetupMadara(setup_madara) => {
+            // Notice the same config path is used for both madara and base layer
+            // This is because `serialization` can be done to both the types, ignoring the unknown fields.
+            // This is useful as we can use the same config file for both madara and base layer.
             let madara_config: MadaraConfigOuter = serde_json::from_reader(File::open(&setup_madara.config_path)?)?;
             let base_layer_config: BaseConfigOuter = serde_json::from_reader(File::open(setup_madara.config_path)?)?;
 
