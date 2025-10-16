@@ -25,11 +25,10 @@ use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService, WarpUpdateConfig};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
-use dotenv::dotenv;
 
+use dotenv::dotenv;
 use std::{env, path::Path};
 use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch};
-use dotenv::dotenv;
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
