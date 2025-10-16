@@ -165,9 +165,7 @@ impl BatchingTrigger {
                 )))?;
 
                 // Check if there is a status conflict between the latest snos and aggregator batch
-                if (aggregator_batch.is_batch_ready && snos_batch.status != SnosBatchStatus::Closed)
-                    || (!aggregator_batch.is_batch_ready && snos_batch.status == SnosBatchStatus::Closed)
-                {
+                if aggregator_batch.is_batch_ready && snos_batch.status != SnosBatchStatus::Closed {
                     return Err(JobError::BatchingNotInSync(format!(
                         "Latest SNOS batch {} is {} but Latest Aggregator batch {} is {}",
                         snos_batch.snos_batch_id, snos_batch.status, aggregator_batch.index, aggregator_batch.status
@@ -197,10 +195,20 @@ impl BatchingTrigger {
                         .await?;
                     (new_aggregator_batch, new_snos_batch, None)
                 } else {
-                    // Previous batch is not full, continue with the previous batch
+                    // Previous aggregator batch is not full, continue with the previous batch
+                    // Check if the previous SNOS batch is full or not
+                    let latest_snos_batch = if snos_batch.status != SnosBatchStatus::Closed {
+                        snos_batch
+                    } else {
+                        self.start_snos_batch(
+                            snos_batch.snos_batch_id + 1,
+                            Some(aggregator_batch.index),
+                            start_block_number,
+                        )?
+                    };
                     let state_update_bytes = storage.get_data(&aggregator_batch.squashed_state_updates_path).await?;
                     let state_update: StateUpdate = serde_json::from_slice(&state_update_bytes)?;
-                    (aggregator_batch, snos_batch, Some(state_update))
+                    (aggregator_batch, latest_snos_batch, Some(state_update))
                 }
             }
             None => {
