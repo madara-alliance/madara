@@ -1,6 +1,6 @@
 use crate::{
     error::madara::MadaraError,
-    setup::madara::constants::{BOOTSTRAP_ACCOUNT_CASM, BOOTSTRAP_ACCOUNT_SIERRA},
+    setup::madara::constants::{BOOTSTRAP_ACCOUNT_CASM, BOOTSTRAP_ACCOUNT_SIERRA, BOOTSTRAP_PRIVATE_KEY},
 };
 use starknet::{
     accounts::{Account, AccountFactory, ExecutionEncoding, OpenZeppelinAccountFactory, SingleOwnerAccount},
@@ -24,7 +24,7 @@ pub struct BootstrapAccount<'a> {
 impl<'a> BootstrapAccount<'a> {
     pub fn new(provider: &'a JsonRpcClient<HttpTransport>, chain_id: Felt) -> Self {
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(
-            Felt::from_hex("0x424f4f545354524150").expect("Invalid bootstrap private key hex"),
+            Felt::from_hex(BOOTSTRAP_PRIVATE_KEY).expect("Invalid bootstrap private key hex"),
         ));
 
         let account = SingleOwnerAccount::new(
@@ -108,9 +108,7 @@ impl<'a> BootstrapAccount<'a> {
         let class_hash = contract_artifact.class_hash()?;
 
         // Create a signer from the private key
-        let signer = LocalWallet::from(SigningKey::from_secret_scalar(
-            Felt::from_hex(private_key)?,
-        ));
+        let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_hex(private_key)?));
 
         // String representation of `bootstrap_salt`
         // Safe to have unwrap() here
@@ -121,8 +119,7 @@ impl<'a> BootstrapAccount<'a> {
             OpenZeppelinAccountFactory::new(class_hash, self.account.chain_id(), &signer, self.provider).await?;
 
         // Deploy the account using the factory
-        let deploy_result =
-            account_factory.deploy_v3(salt).gas(0).send().await?;
+        let deploy_result = account_factory.deploy_v3(salt).gas(0).send().await?;
 
         wait_for_transaction(self.provider, deploy_result.transaction_hash, "OpenZeppelin Account Deployment").await?;
         log::info!("OpenZeppelin Account deployment successful!");

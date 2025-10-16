@@ -6,7 +6,7 @@ use starknet::signers::local_wallet::SignError as LocalWalletSignError;
 use thiserror::Error;
 
 pub type RevertReason = String;
-pub type EvnentName = String;
+pub type EventName = String;
 pub type FilePath = String;
 
 #[derive(Error, Debug)]
@@ -42,7 +42,7 @@ pub enum MadaraError {
     FailedToWaitForTransaction(RevertReason, String),
 
     #[error("Failed to get event from transaction receipt: {0}")]
-    FailedToGetEventFromTransactionReceipt(EvnentName),
+    FailedToGetEventFromTransactionReceipt(EventName),
 
     #[error("Account not initialized - must call init() first")]
     AccountNotInitialized,
