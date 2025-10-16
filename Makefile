@@ -260,12 +260,12 @@ git-hook:
 .PHONY: setup-l2
 setup-l2:
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
-	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
+	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: setup-l3
 setup-l3:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
-	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: run-orchestrator-l2
 run-orchestrator-l2:
@@ -276,7 +276,7 @@ run-orchestrator-l2:
 .PHONY: run-orchestrator-l3
 run-orchestrator-l3:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --mock-atlantic-server --da-on-starknet 2>&1
+	@cargo run --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --mock-atlantic-server --da-on-starknet --madara-version 0.14.0 2>&1
 
 .PHONY: watch-orchestrator
 watch-orchestrator:
