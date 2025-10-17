@@ -93,31 +93,24 @@ impl ApplyStateSteps {
         block_range: Range<u64>,
         input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput
     ) -> anyhow::Result<ApplyOutcome<()>> {
-        println!("block_range={:?}", block_range);
 
         let current_first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
         let latest_block = block_range.end;
-        println!("length of  state_diffs = {:?}", input.len());
 
         // Lock the mutex and apply state diffs
         {
             let already_imported_count = current_first_block.saturating_sub(block_range.start);
             let state_diffs = input.iter().skip(already_imported_count as _);
 
-            println!("length of  state_diffs = {:?}", state_diffs.len());
             let mut state_diff_map = self.state_diff_map.lock().await;
             for single_contract_state_diff in state_diffs {
                 state_diff_map.apply_state_diff(&single_contract_state_diff);
             }
         }
 
-        println!("Current first block: {}", current_first_block);
-        println!("Latest block: {}", latest_block);
-
         let target_block = self.target_block.load(std::sync::atomic::Ordering::Relaxed);
 
         if latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE) || latest_block >= target_block {
-            println!("End of state triggered, applying state diff");
 
             // Lock to read and prepare state_diff
             let state_diff = {
@@ -150,8 +143,6 @@ impl ApplyStateSteps {
                         .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
 
                     backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
-
-                    println!("Global State Root till block {:?} is {:?}", latest_block.checked_sub(1), global_state_root);
 
                     Ok::<(), anyhow::Error>(())
                 })
@@ -192,7 +183,6 @@ impl ApplyStateSteps {
                 let has_accumulated_diffs = {
                     let state_diff_map = self.state_diff_map.lock().await;
                     let diff_count = state_diff_map.to_raw_state_diff().len();
-                    println!("   📊 Checking for accumulated diffs: {} entries found", diff_count);
                     diff_count > 0
                 };
 
@@ -215,8 +205,6 @@ impl ApplyStateSteps {
     ) -> anyhow::Result<()> {
         let current_first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
         let latest_block = up_to_block;
-
-        println!("Flushing accumulated state diffs up to block {}", latest_block.saturating_sub(1));
 
         // Lock to read and prepare state_diff
         let state_diff = {
@@ -249,8 +237,6 @@ impl ApplyStateSteps {
                     .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
 
                 backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
-
-                println!("Flushed Global State Root till block {:?} is {:?}", latest_block.checked_sub(1), global_state_root);
 
                 Ok::<(), anyhow::Error>(())
             })

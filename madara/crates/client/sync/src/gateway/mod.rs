@@ -92,7 +92,6 @@ impl GatewayForwardSync {
         config: ForwardSyncConfig,
     ) -> Self {
         let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
-
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),

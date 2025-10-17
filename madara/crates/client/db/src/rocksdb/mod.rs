@@ -444,10 +444,9 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
 
     fn get_state_root_hash(&self) -> Result<Felt> {
-        tracing::debug!("Read state root hash from db");
         get_state_root(self)
     }
-    
+
     fn apply_to_global_trie<'a>(
         &self,
         start_block_n: u64,

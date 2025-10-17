@@ -138,7 +138,6 @@ impl<P: ForwardPipeline> SyncController<P> {
         }
         self.show_status();
 
-        // Handle shutdown based on configuration
         if self.config.global_stop_on_sync {
             tracing::info!("🌐 Reached stop-on-sync condition, shutting down node...");
             ctx.cancel_global();

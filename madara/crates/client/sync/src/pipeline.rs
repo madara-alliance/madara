@@ -201,7 +201,6 @@ impl<S: PipelineSteps> PipelineController<S> {
     }
 }
 
-
 impl fmt::Display for PipelineStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::util::fmt_option;
