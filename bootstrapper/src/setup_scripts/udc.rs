@@ -1,3 +1,5 @@
+use std::thread::sleep;
+use std::time::Duration;
 use serde::Serialize;
 use starknet::accounts::ConnectedAccount;
 use starknet::core::types::Felt;
@@ -29,8 +31,9 @@ impl<'a> UdcSetup<'a> {
         let udc_class_hash =
             declare_contract(self.clients, DeclarationInput::LegacyDeclarationInputs(String::from(UDC_PATH))).await;
         log::info!("📣 UDC Class Hash Declared.");
+        // TODO (mohit 17/10/2025): remove this once we have wait for txn maybe
+        sleep(Duration::from_secs(15));
         save_to_json("udc_class_hash", &JsonValueType::StringType(udc_class_hash.to_string())).unwrap();
-
         let txn = self
             .account
             .invoke_contract(

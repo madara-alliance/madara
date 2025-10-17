@@ -34,7 +34,7 @@ pub mod get_transaction_status;
 #[async_trait]
 impl StarknetReadRpcApiV0_9_0Server for Starknet {
     fn spec_version(&self) -> RpcResult<String> {
-        Ok(RpcVersion::RPC_VERSION_0_9_0.to_string())
+        Ok(RpcVersion::RPC_VERSION_0_8_1.to_string())
     }
 
     fn block_number(&self) -> RpcResult<u64> {

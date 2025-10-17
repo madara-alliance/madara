@@ -10,6 +10,8 @@ use starknet::core::types::{ExecutionResult, Felt, InvokeTransactionResult, Tran
 use std::path::Path;
 use std::str::FromStr;
 use std::{fs, io};
+use std::time::Duration;
+use std::thread::sleep;
 
 pub mod banner;
 pub mod constants;
@@ -71,6 +73,8 @@ pub async fn wait_for_transaction(
         }
         TransactionReceipt::L1Handler(receipt) => receipt.execution_result,
     };
+    // TODO (mohit 17/10/2025): Need this mainly for declare and deploy in the same block
+    sleep(Duration::from_secs(12));
 
     match exec_result {
         ExecutionResult::Succeeded => {}

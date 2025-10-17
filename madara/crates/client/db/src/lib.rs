@@ -458,9 +458,10 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .get_full_block_with_classes()?;
 
         if let Some(state_diff) = state_diff {
+            let temp_old = block.state_diff.old_declared_contracts;
             block.state_diff = state_diff;
+            block.state_diff.old_declared_contracts = temp_old;
         }
-
         // Write the block & apply to global trie
 
         let result = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;

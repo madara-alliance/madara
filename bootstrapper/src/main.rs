@@ -66,13 +66,13 @@ pub struct CliArgs {
     output_file: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum CoreContractMode {
     Production,
     Dev,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct ConfigBuilder {
     pub eth_rpc: Option<String>,
@@ -224,7 +224,7 @@ impl ConfigBuilder {
         })
     }
 }
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ConfigFile {
     pub eth_rpc: String,
     pub eth_priv_key: String,

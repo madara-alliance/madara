@@ -272,7 +272,7 @@ impl TransactionValidator {
             tx,
             execution_flags: ExecutionFlags {
                 only_query: false,
-                charge_fee: !self.config.disable_fee,
+                charge_fee: false, // !self.config.disable_fee,
                 validate,
                 strict_nonce_check: false,
             },

@@ -66,6 +66,7 @@ impl StarknetClient {
                 StarknetClientError::Conversion(format!("Invalid core contract address: {e}")).into()
             })?;
         // Check if l2 contract exists
+        tracing::info!("core contract here is: {:?} and we are asking for: {:?}", config.core_contract_address, core_contract_address);
         provider.get_class_at(BlockId::Tag(BlockTag::Latest), core_contract_address).await.map_err(
             |e| -> SettlementClientError {
                 StarknetClientError::NetworkConnection { message: format!("Failed to connect to L2 contract: {}", e) }
