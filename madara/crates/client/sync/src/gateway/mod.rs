@@ -39,7 +39,7 @@ impl Default for ForwardSyncConfig {
             apply_state_parallelization: 64,
             apply_state_batch_size: 16,
             disable_tries: false,
-            snap_sync: false,
+            snap_sync: true,
             keep_pre_v0_13_2_hashes: false,
         }
     }
