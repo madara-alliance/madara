@@ -102,12 +102,9 @@ jobs:
           cargo llvm-cov nextest \
               --manifest-path madara/Cargo.toml \
               --release \
-              --features testing \
               --lcov \
               --output-path lcov.info \
-              --package "mc-*" \
-              --package "mp-*" \
-              --package "m-proc-*" \
+              --package "mc-sync" \
               --no-fail-fast
 
       - name: Kill Anvil
