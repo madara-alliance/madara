@@ -7,7 +7,7 @@ name: Workflow - Pull Request Main
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches: [main, release/0.14.0]
     types: [opened, synchronize, reopened, ready_for_review]
 
 # Use concurrency to prevent multiple workflows running on the same PR
