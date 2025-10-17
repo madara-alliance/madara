@@ -172,6 +172,7 @@ jobs:
 
   # Deprecating bootstrapper V1
   test-bootstrapper:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-test-bootstrapper.yml
 
   # ========================================================================= #
@@ -179,16 +180,20 @@ jobs:
   # ========================================================================= #
 
   build-nightly-and-publish-madara:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   # test-hive:
   #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
 
   build-nightly-and-publish-orchestrator:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   build-nightly-and-publish-bootstrapper:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   test-end-to-end:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml
