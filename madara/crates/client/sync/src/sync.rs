@@ -195,6 +195,13 @@ impl<P: ForwardPipeline> SyncController<P> {
                 self.set_status(ServiceEvent::Idle);
             }
 
+            if self.config.stop_at_block_n.is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at) {
+                if self.get_pending_block.is_some() {
+                    tracing::debug!("Cancelling pending block task as stop_at reached");
+                    self.get_pending_block = None;
+                }
+            }
+
             if self.forward_pipeline.is_empty()
                 && self
                     .config
