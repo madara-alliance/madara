@@ -245,29 +245,45 @@ test-e2e: check-e2e-env check-e2e-mac check-e2e-dependencies pull-e2e-docker-ima
 
 .PHONY: check-e2e-env
 check-e2e-env:
-		@echo -e "$(DIM)Checking for MADARA_ORCHESTRATOR_ATLANTIC_API_KEY in .env.e2e...$(RESET)"
-		@if [ ! -f .env.e2e ]; then \
-			echo -e "$(WARN)⚠️  WARNING: .env.e2e file not found!$(RESET)"; \
-			echo -e "$(WARN)⚠️  Please create .env.e2e and add MADARA_ORCHESTRATOR_ATLANTIC_API_KEY$(RESET)"; \
-			echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
-			read -r; \
-		elif ! grep -v "^[[:space:]]*#" .env.e2e | grep -q "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"; then \
-			echo -e "$(WARN)⚠️  WARNING: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY not found in .env.e2e$(RESET)"; \
-			echo -e "$(WARN)⚠️  Please add MADARA_ORCHESTRATOR_ATLANTIC_API_KEY to .env.e2e$(RESET)"; \
+	@echo -e "$(DIM)Checking for MADARA_ORCHESTRATOR_ATLANTIC_API_KEY in .env.e2e...$(RESET)"
+	@if [ ! -f .env.e2e ]; then \
+		echo -e "$(WARN)⚠️  WARNING: .env.e2e file not found!$(RESET)"; \
+		echo -e "$(WARN)⚠️  Please create .env.e2e and add MADARA_ORCHESTRATOR_ATLANTIC_API_KEY$(RESET)"; \
+		echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
+		read -r; \
+	elif ! grep -v "^[[:space:]]*#" .env.e2e | grep -q "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"; then \
+		echo -e "$(WARN)⚠️  WARNING: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY not found in .env.e2e$(RESET)"; \
+		echo -e "$(WARN)⚠️  Please add MADARA_ORCHESTRATOR_ATLANTIC_API_KEY to .env.e2e$(RESET)"; \
+		echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
+		read -r; \
+	else \
+		API_KEY=$$(grep -v "^[[:space:]]*#" .env.e2e | grep "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY" | cut -d '=' -f 2 | tr -d ' "'); \
+		if [ -z "$$API_KEY" ]; then \
+			echo -e "$(WARN)⚠️  WARNING: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY is empty in .env.e2e$(RESET)"; \
 			echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
 			read -r; \
 		else \
-			API_KEY=$$(grep -v "^[[:space:]]*#" .env.e2e | grep "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY" | cut -d '=' -f 2 | tr -d ' "'); \
-			if [ -z "$$API_KEY" ]; then \
-				echo -e "$(WARN)⚠️  WARNING: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY is empty in .env.e2e$(RESET)"; \
-				echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
-				read -r; \
+			MASKED_KEY=$$(echo $$API_KEY | sed 's/\(.\{4\}\).*/\1****/'); \
+			echo -e "$(PASS)✅ Found MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: $$MASKED_KEY$(RESET)"; \
+		fi; \
+	fi
+	@# Check for CARGO_TARGET_DIR in .env.e2e
+	@if [ -f .env.e2e ]; then \
+		if grep -v "^[[:space:]]*#" .env.e2e | grep -q "CARGO_TARGET_DIR"; then \
+			ENV_TARGET_DIR=$$(grep -v "^[[:space:]]*#" .env.e2e | grep "CARGO_TARGET_DIR" | cut -d '=' -f 2 | tr -d ' "'); \
+			if [ "$$ENV_TARGET_DIR" != "$(CARGO_TARGET_DIR)" ]; then \
+				echo -e "$(WARN)⚠️  WARNING: CARGO_TARGET_DIR in .env.e2e ($$ENV_TARGET_DIR) differs from Makefile value$(RESET)"; \
+				echo -e "$(INFO)Updating .env.e2e to use: $(CARGO_TARGET_DIR)$(RESET)"; \
+				sed -i.bak '/^[[:space:]]*CARGO_TARGET_DIR/d' .env.e2e && rm -f .env.e2e.bak; \
+				echo "CARGO_TARGET_DIR=$(CARGO_TARGET_DIR)" >> .env.e2e; \
 			else \
-				MASKED_KEY=$$(echo $$API_KEY | sed 's/\(.\{4\}\).*/\1****/'); \
-				echo -e "$(PASS)✅ Found MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: $$MASKED_KEY$(RESET)"; \
+				echo -e "$(PASS)✅ CARGO_TARGET_DIR already set correctly: $(CARGO_TARGET_DIR)$(RESET)"; \
 			fi; \
-		fi
-
+		else \
+			echo -e "$(INFO)Adding CARGO_TARGET_DIR to .env.e2e: $(CARGO_TARGET_DIR)$(RESET)"; \
+			echo "CARGO_TARGET_DIR=$(CARGO_TARGET_DIR)" >> .env.e2e; \
+		fi; \
+	fi
 
 .PHONY: check-e2e-mac
 check-e2e-mac:
