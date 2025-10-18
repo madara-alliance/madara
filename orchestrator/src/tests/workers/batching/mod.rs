@@ -80,21 +80,29 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         .withf(move |key, owner| key == "BatchingWorker" && owner.is_none())
         .returning(|_, _| Ok(LockResult::Released));
 
-    // Since body matching doesn't work in httpmock alpha, create ONE unlimited wildcard mock
-    // that returns a valid block header response for ALL calls
-    // This will work for starknet_getBlockWithTxHashes but will cause starknet_blockNumber to fail
-    // So we need to either:
-    // 1. Not test the full flow, OR
-    // 2. Skip the version validation in tests
-
-    // For now, let's just create block number and state update mocks and skip version fetching
     let rpc_block_call_mock = server.mock(|when, then| {
         when.path("/").body_includes("starknet_blockNumber");
         then.status(200).body(serde_json::to_vec(&json!({ "id": 1, "jsonrpc": "2.0", "result": end_block })).unwrap());
     });
 
+    // Mock starknet_getBlockWithTxHashes for version fetching
+    for block_num in start_block..=end_block {
+        let pattern = format!(r#".*"block_number"\s*:\s*{}[,\}}].*"#, block_num);
+        server.mock(move |when, then| {
+            when.path("/").body_includes("starknet_getBlockWithTxHashes").body_matches(pattern.as_str());
+            then.status(200).body(
+                serde_json::to_vec(&json!({
+                    "jsonrpc":"2.0",
+                    "result": get_dummy_block_with_tx_hashes(block_num, "0.13.2"),
+                    "id":1
+                }))
+                .unwrap(),
+            );
+        });
+    }
+
     // Mock state update calls for each block
-    for block_num in start_block..end_block + 1 {
+    for block_num in start_block..=end_block {
         let state_update = get_dummy_state_update(block_num);
         server.mock(|when, then| {
             when.path("/").body_includes("starknet_getStateUpdate");

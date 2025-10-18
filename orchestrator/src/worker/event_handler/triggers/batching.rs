@@ -284,19 +284,10 @@ impl BatchingTrigger {
 
         // Fetch Starknet version for the start block
         // In tests, use a default version if fetch fails due to HTTP mocking limitations
-        let starknet_version = fetch_block_starknet_version(config, start_block).await.unwrap_or_else(|e| {
-            if cfg!(test) {
-                tracing::warn!(
-                    start_block = %start_block,
-                    error = %e,
-                    "Failed to fetch Starknet version in test environment, using default 0.13.2"
-                );
-                "0.13.2".to_string()
-            } else {
-                panic!("Failed to fetch Starknet version for block {}: {}", start_block, e);
-            }
-        });
-
+        let starknet_version = fetch_block_starknet_version(config, start_block).await.map_err(|e| {
+            error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+            JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", start_block, e)))
+        })?;
         info!(
             index = %index,
             start_block = %start_block,
