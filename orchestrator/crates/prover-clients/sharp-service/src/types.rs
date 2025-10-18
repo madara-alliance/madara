@@ -1,5 +1,25 @@
 use serde::{Deserialize, Serialize};
-use starknet_os::sharp::{CairoJobStatus, InvalidReason};
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CairoJobStatus {
+    #[default]
+    Unknown,
+    InProgress,
+    Processed,
+    Invalid,
+    Failed,
+    NotCreated,
+    Onchain,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum InvalidReason {
+    #[default]
+    Unknown,
+    InvalidCairoPieFileFormat,
+}
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SharpAddJobResponse {

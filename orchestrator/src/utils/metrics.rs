@@ -2,8 +2,8 @@ use crate::core::client::database::constant::JOBS_COLLECTION;
 use crate::utils::job_status_metrics::JobStatusTracker;
 use once_cell;
 use once_cell::sync::Lazy;
+use opentelemetry::global;
 use opentelemetry::metrics::{Counter, Gauge};
-use opentelemetry::{global, KeyValue};
 use orchestrator_utils::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
 use orchestrator_utils::register_metric;
 
@@ -51,13 +51,7 @@ pub struct OrchestratorMetrics {
 impl Metrics for OrchestratorMetrics {
     fn register() -> Self {
         // Register meter
-        let common_scope_attributes = vec![KeyValue::new("crate", "orchestrator")];
-        let orchestrator_meter = global::meter_with_version(
-            "crates.orchestrator.opentelemetry",
-            Some("0.17"),
-            Some("https://opentelemetry.io/schemas/1.2.0"),
-            Some(common_scope_attributes.clone()),
-        );
+        let orchestrator_meter = global::meter("crates.orchestrator.opentelemetry");
 
         // Register all instruments
         let block_gauge = register_gauge_metric_instrument(

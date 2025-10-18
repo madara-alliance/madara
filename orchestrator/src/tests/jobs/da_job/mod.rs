@@ -5,7 +5,7 @@ use mockall::predicate::always;
 use orchestrator_da_client_interface::MockDaClient;
 use rstest::rstest;
 use serde_json::json;
-use starknet::core::types::{Felt, MaybePendingStateUpdate, PendingStateUpdate, StateDiff};
+use starknet::core::types::{Felt, MaybePreConfirmedStateUpdate, PreConfirmedStateUpdate, StateDiff};
 use uuid::Uuid;
 
 use crate::error::job::da_error::DaError;
@@ -50,7 +50,7 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
         .build()
         .await;
     let state_update = read_state_update_from_file(state_update_file.as_str()).expect("issue while reading");
-    let state_update = MaybePendingStateUpdate::Update(state_update);
+    let state_update = MaybePreConfirmedStateUpdate::Update(state_update);
     let state_update = serde_json::to_value(&state_update).unwrap();
     let response = json!({ "id": 640641,"jsonrpc":"2.0","result": state_update });
     let server = services.starknet_server.unwrap();
@@ -117,7 +117,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
     let server = services.starknet_server.unwrap();
     let internal_id = "1";
 
-    let pending_state_update = MaybePendingStateUpdate::PendingUpdate(PendingStateUpdate {
+    let pending_state_update = MaybePreConfirmedStateUpdate::PreConfirmedUpdate(PreConfirmedStateUpdate {
         old_root: Felt::default(),
         state_diff: StateDiff {
             storage_diffs: vec![],

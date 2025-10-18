@@ -33,8 +33,8 @@ pub enum AtlanticError {
     #[error("Failed to split task id into job key and fact")]
     TaskIdSplit,
 
-    #[error("Failed to encode PIE")]
-    PieEncode(#[source] starknet_os::error::SnOsError),
+    #[error("Failed to encode PIE: {0}")]
+    PieEncode(String),
 
     #[error("Failed to get url as path segment mut. URL is cannot-be-a-base.")]
     PathSegmentMutFailOnUrl,

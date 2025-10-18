@@ -1,7 +1,7 @@
 use super::super::common::default_job_item;
 use crate::core::client::database::MockDatabaseClient;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::types::batch::{Batch, BatchStatus};
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, STORAGE_ARTIFACTS_DIR};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
@@ -88,10 +88,14 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     // Mocking database client
     let mut database_client = MockDatabaseClient::new();
     database_client
-        .expect_update_batch_status_by_index()
-        .with(eq(1), eq(BatchStatus::ReadyForStateUpdate))
+        .expect_update_aggregator_batch_status_by_index()
+        .with(eq(1), eq(AggregatorBatchStatus::ReadyForStateUpdate))
         .returning(|_, _| {
-            Ok(Batch { id: Uuid::default(), status: BatchStatus::ReadyForStateUpdate, ..Default::default() })
+            Ok(AggregatorBatch {
+                id: Uuid::default(),
+                status: AggregatorBatchStatus::ReadyForStateUpdate,
+                ..Default::default()
+            })
         })
         .times(1);
 
@@ -129,10 +133,14 @@ async fn test_process_job() {
     // Mocking database client
     let mut database_client = MockDatabaseClient::new();
     database_client
-        .expect_update_batch_status_by_index()
-        .with(eq(1), eq(BatchStatus::PendingAggregatorVerification))
+        .expect_update_aggregator_batch_status_by_index()
+        .with(eq(1), eq(AggregatorBatchStatus::PendingAggregatorVerification))
         .returning(|_, _| {
-            Ok(Batch { id: Uuid::default(), status: BatchStatus::PendingAggregatorVerification, ..Default::default() })
+            Ok(AggregatorBatch {
+                id: Uuid::default(),
+                status: AggregatorBatchStatus::PendingAggregatorVerification,
+                ..Default::default()
+            })
         })
         .times(1);
 

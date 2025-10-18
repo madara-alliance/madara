@@ -99,6 +99,11 @@ jobs:
       - name: Run make artifacts
         run: yes | make artifacts
 
+      - name: Python Cairo setup (before orchestrator tests)
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
       - name: Run llvm-cov tests
         continue-on-error: false
         env:

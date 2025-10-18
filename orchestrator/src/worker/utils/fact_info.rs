@@ -16,9 +16,9 @@ use num_traits::ToPrimitive;
 use orchestrator_ethereum_settlement_client::N_BLOBS_OFFSET;
 use serde::{Deserialize, Serialize};
 use starknet::core::types::Felt;
-use starknet_os::crypto::poseidon::poseidon_hash_many_bytes;
+use starknet_crypto::poseidon_hash_many;
 use std::ops::Add;
-use std::str::FromStr;
+// use std::str::FromStr; // Unused
 
 /// Default bootloader program version.
 ///
@@ -83,18 +83,16 @@ pub fn get_fact_l2(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> color_ey
         program_hash,
         program_output,
     };
-    let boot_loader_output_slice_vec = boot_loader_output.to_byte_nested_vec();
-    let boot_loader_output_hash_vec =
-        poseidon_hash_many_bytes(&boot_loader_output_slice_vec.iter().map(|v| v.as_slice()).collect::<Vec<_>>())?
-            .to_vec();
-    let boot_loader_output_hash = boot_loader_output_hash_vec.as_slice();
+    // Convert boot loader output to Felt values for poseidon hash
+    let boot_loader_output_vec = boot_loader_output.program_output.to_vec(); // Get the program output Vec<Felt>
+    let boot_loader_output_hash = poseidon_hash_many(&boot_loader_output_vec);
 
-    let boot_loader_program_hash_bytes = Felt::from_str(BOOT_LOADER_PROGRAM_CONTRACT)?.to_bytes_be();
-    let boot_loader_program_hash = boot_loader_program_hash_bytes.as_slice();
+    let boot_loader_program_hash = Felt::from_hex(BOOT_LOADER_PROGRAM_CONTRACT)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse boot loader program hash: {}", e))?;
 
-    let fact_hash = poseidon_hash_many_bytes(vec![boot_loader_program_hash, boot_loader_output_hash].as_slice())?;
+    let fact_hash = poseidon_hash_many(&[boot_loader_program_hash, boot_loader_output_hash]);
 
-    Ok(B256::from_slice(fact_hash.to_vec().as_slice()))
+    Ok(B256::from_slice(&fact_hash.to_bytes_be()))
 }
 
 pub fn build_on_chain_data(cairo_pie: &CairoPie) -> color_eyre::Result<OnChainData> {
@@ -297,7 +295,7 @@ mod tests {
 
     #[rstest]
     #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782")]
-    #[case("238996-SN.zip", "0xec8fa9cdfe069ed59b8f17aeecfd95c6abd616379269d2fa16a80955b6e0f068")]
+    #[case("sepolia_924016.zip", "0x033144ad6b132b1012f15e50aa53de1ed91b3b1af729014c3f1c00b702f972ea")]
     async fn test_fact_info(#[case] cairo_pie_path: &str, #[case] expected_fact: &str) {
         // TODO: Add a test for the aggregator program
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
