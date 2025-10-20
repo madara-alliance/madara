@@ -127,8 +127,8 @@ pub enum SubscribeNewBlocksTag {
     Confirmed,
 }
 
-/// Subscribe to new blocks. When used with [`WatchBlockTag::Confirmed`], this will return a new notification
-/// everytime a new block is confirmed. When used with [`WatchBlockTag::Preconfirmed`], this will return a new
+/// Subscribe to new blocks. When used with [`SubscribeNewBlocksTag::Confirmed`], this will return a new notification
+/// everytime a new block is confirmed. When used with [`SubscribeNewBlocksTag::Preconfirmed`], this will return a new
 /// notification everytime a new block is confirmed, and everytime a new preconfirmed block is added or replaced.
 /// If a preconfirmed block is replaced (consensus failure, etc.) a new notification will be sent.
 ///
