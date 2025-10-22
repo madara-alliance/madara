@@ -16,13 +16,8 @@ pub enum MadaraClass {
     MadaraFactory,
 }
 
-pub trait GetMadaraArtifacts {
-    fn get_sierra_path(self) -> &'static str;
-    fn get_casm_path(self) -> &'static str;
-}
-
-impl GetMadaraArtifacts for MadaraClass {
-    fn get_casm_path(self) -> &'static str {
+impl MadaraClass {
+    pub fn get_casm_path(self) -> &'static str {
         match self {
             MadaraClass::TokenBridge => TOKEN_BRIDGE_CASM,
             MadaraClass::Erc20 => ERC20_CASM,
@@ -32,7 +27,7 @@ impl GetMadaraArtifacts for MadaraClass {
         }
     }
 
-    fn get_sierra_path(self) -> &'static str {
+    pub fn get_sierra_path(self) -> &'static str {
         match self {
             MadaraClass::TokenBridge => TOKEN_BRIDGE_SIERRA,
             MadaraClass::Erc20 => ERC20_SIERRA,

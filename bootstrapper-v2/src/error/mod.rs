@@ -32,9 +32,6 @@ pub enum BootstrapperError {
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
 
-    #[error("Anyhow error: {0}")]
-    AnyhowError(#[from] anyhow::Error),
-
     // Additional external error conversions
     #[error("Provider error: {0}")]
     ProviderError(#[from] starknet::providers::ProviderError),

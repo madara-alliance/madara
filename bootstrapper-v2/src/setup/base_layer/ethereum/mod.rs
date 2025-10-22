@@ -17,7 +17,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use factory::BaseLayerContracts;
 use factory::{DeployedFactory, Factory};
-use implementation_contracts::GetArtifacts;
 use implementation_contracts::ImplementationContract;
 use log;
 use serde_json;

@@ -17,12 +17,8 @@ pub enum ImplementationContract {
     EthBridgeEIC,
 }
 
-pub trait GetArtifacts {
-    fn get_artifact_path(&self) -> &'static str;
-}
-
-impl GetArtifacts for ImplementationContract {
-    fn get_artifact_path(&self) -> &'static str {
+impl ImplementationContract {
+    pub fn get_artifact_path(self) -> &'static str {
         match self {
             ImplementationContract::CoreContract => CORE_CONTRACT_ARTIFACT,
             ImplementationContract::Manager => MANAGER_ARTIFACT,

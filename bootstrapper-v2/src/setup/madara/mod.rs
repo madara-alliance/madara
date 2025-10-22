@@ -3,7 +3,6 @@ pub mod class_contracts;
 pub mod constants;
 
 use crate::error::madara::MadaraError;
-use crate::setup::madara::class_contracts::GetMadaraArtifacts;
 use crate::utils::declare_contract;
 use crate::{
     config::MadaraConfig,
@@ -83,7 +82,7 @@ impl MadaraSetup {
         // Declare all contracts using the data array
         for class_enum in MadaraClass::iter() {
             log::info!("Declaring contract...");
-            let class_hash = declare_contract(class_enum.get_casm_path(), class_enum.get_casm_path(), &acc).await?;
+            let class_hash = declare_contract(class_enum.get_sierra_path(), class_enum.get_casm_path(), &acc).await?;
 
             log::info!("Contract declared successfully! Class Hash: 0x{:x}", class_hash);
 
