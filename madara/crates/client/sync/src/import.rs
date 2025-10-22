@@ -531,7 +531,7 @@ impl BlockImporterCtx {
             return Ok(()); // range is empty
         };
 
-        tracing::info!("🔄 Applying state diff for blocks {:?} to global trie", block_range);
+        tracing::debug!("🔄 Applying state diff for blocks {:?} to global trie", block_range);
 
         let got =
             self.backend.write_access().apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
@@ -540,7 +540,7 @@ impl BlockImporterCtx {
 
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
-        tracing::info!(
+        tracing::debug!(
             "✅ State diff applied successfully for blocks {:?}, latest_applied_trie_update set to {}",
             block_range,
             last_block_n

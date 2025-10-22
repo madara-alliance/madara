@@ -83,25 +83,14 @@ pub struct GatewayForwardSync {
 }
 
 impl GatewayForwardSync {
-    pub fn new(
+    /// Helper function to create all three pipelines from a starting block number
+    fn create_pipelines(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
         client: Arc<GatewayProvider>,
-        config: ForwardSyncConfig,
-    ) -> Self {
-        tracing::info!("🌐 Initializing sync from gateway");
-        // Ensure we flush any pending writes before reading head status
-        if let Err(e) = backend.db.flush() {
-            tracing::warn!("Failed to flush database before reading head status: {}", e);
-        }
-
-        let latest_full_block = backend.latest_block_n().unwrap_or(0);
-        let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
-        tracing::info!(
-            "📊 Database head status: latest_full_block={:?}, starting sync from block #{}",
-            latest_full_block,
-            starting_block_n
-        );
+        starting_block_n: u64,
+        config: &ForwardSyncConfig,
+    ) -> (GatewayBlockSync, ClassesSync, ApplyStateSync) {
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
@@ -127,6 +116,28 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
         );
+        (blocks_pipeline, classes_pipeline, apply_state_pipeline)
+    }
+
+    pub fn new(
+        backend: Arc<MadaraBackend>,
+        importer: Arc<BlockImporter>,
+        client: Arc<GatewayProvider>,
+        config: ForwardSyncConfig,
+    ) -> Self {
+        tracing::info!("🌐 Initializing sync from gateway");
+
+        let latest_full_block = backend.latest_block_n().unwrap_or(0);
+        let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
+        tracing::info!(
+            "📊 Database head status: latest_full_block={:?}, starting sync from block #{}",
+            latest_full_block,
+            starting_block_n
+        );
+
+        let (blocks_pipeline, classes_pipeline, apply_state_pipeline) =
+            Self::create_pipelines(backend.clone(), importer.clone(), client.clone(), starting_block_n, &config);
+
         Self {
             blocks_pipeline,
             classes_pipeline,
@@ -160,31 +171,17 @@ impl GatewayForwardSync {
         };
         tracing::info!("📊 Restarting sync from block #{} (chain_tip={:?})", starting_block_n, chain_tip);
 
-        self.blocks_pipeline = blocks::block_with_state_update_pipeline(
+        let (blocks_pipeline, classes_pipeline, apply_state_pipeline) = Self::create_pipelines(
             self.backend.clone(),
             self.importer.clone(),
             self.client.clone(),
             starting_block_n,
-            self.config.block_parallelization,
-            self.config.block_batch_size,
-            self.config.keep_pre_v0_13_2_hashes,
+            &self.config,
         );
-        self.classes_pipeline = classes::classes_pipeline(
-            self.backend.clone(),
-            self.importer.clone(),
-            self.client.clone(),
-            starting_block_n,
-            self.config.classes_parallelization,
-            self.config.classes_batch_size,
-        );
-        self.apply_state_pipeline = super::apply_state::apply_state_pipeline(
-            self.backend.clone(),
-            self.importer.clone(),
-            starting_block_n,
-            self.config.apply_state_parallelization,
-            self.config.apply_state_batch_size,
-            self.config.disable_tries,
-        );
+
+        self.blocks_pipeline = blocks_pipeline;
+        self.classes_pipeline = classes_pipeline;
+        self.apply_state_pipeline = apply_state_pipeline;
     }
 
     fn pipeline_status(&self) -> PipelineStatus {
