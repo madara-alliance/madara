@@ -14,7 +14,7 @@ sol!(
     "contracts/ethereum/out/Factory.sol/Factory.json"
 );
 
-pub struct FactoryDeploy<P> {
+pub struct DeployedFactory<P> {
     pub factory_contract: FactoryInstance<P>,
 }
 
@@ -45,11 +45,11 @@ impl From<FactorySetupError> for BaseLayerError {
     }
 }
 
-impl<P> FactoryDeploy<P>
+impl<P> DeployedFactory<P>
 where
     P: alloy::providers::Provider,
 {
-    pub async fn new(
+    pub async fn deploy_new(
         provider: P,
         owner: Address,
         implementation_contracts: ImplementationContracts,

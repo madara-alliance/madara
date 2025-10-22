@@ -9,10 +9,12 @@ use crate::{
     utils::{execute_v3, get_contract_address_from_deploy_tx, get_contracts_deployed_addresses},
 };
 use bootstrap_account::BootstrapAccount;
-use class_contracts::{MadaraClass, MADARA_CLASSES_DATA};
+use class_contracts::MadaraClass;
 use log;
 use starknet::core::types::Call;
 use starknet::macros::selector;
+use strum::IntoEnumIterator;
+
 #[allow(unused_imports)]
 use starknet::{
     accounts::{Account, ConnectedAccount, DeclarationV3, ExecutionEncoding, SingleOwnerAccount},
@@ -76,14 +78,14 @@ impl MadaraSetup {
         log::info!("Starting contract declarations...");
 
         // Declare all contracts using the data array
-        for class_info in MADARA_CLASSES_DATA.iter() {
+        for class_enum in MadaraClass::iter() {
             log::info!("Declaring contract...");
-            let class_hash = declare_contract(class_info.sierra_path, class_info.casm_path, &acc).await?;
+            let class_hash = declare_contract(class_enum.get_sierra_path(), class_enum.get_casm_path(), &acc).await?;
 
             log::info!("Contract declared successfully! Class Hash: 0x{:x}", class_hash);
 
             // Store the class hash immediately
-            self.insert_class_hash(class_info.madara_class, class_hash);
+            self.insert_class_hash(class_enum, class_hash);
         }
 
         log::info!("All contract declarations completed successfully!");
