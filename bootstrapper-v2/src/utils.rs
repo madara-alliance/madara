@@ -1,6 +1,5 @@
 use std::{future::Future, sync::Arc};
 
-use anyhow::{anyhow, Context};
 use starknet::{
     accounts::{Account, ConnectedAccount, SingleOwnerAccount},
     core::types::{
@@ -133,9 +132,8 @@ pub async fn declare_contract(
 
     let txn = account.declare_v3(Arc::new(flattened_class), compiled_class_hash).gas(0).send().await?;
 
-    wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract")
-        .await
-        .context("Failed to wait for contract declaration transaction")?;
+    wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await?;
+
     Ok(class_hash)
 }
 
@@ -191,7 +189,7 @@ pub async fn get_contract_address_from_deploy_tx(
 pub async fn get_contracts_deployed_addresses(
     rpc: &JsonRpcClient<HttpTransport>,
     tx: &InvokeTransactionResult,
-) -> anyhow::Result<ContractsDeployedAddresses> {
+) -> Result<ContractsDeployedAddresses, MadaraError> {
     let tx_hash = tx.transaction_hash;
 
     wait_for_transaction(rpc, tx_hash, "get_contracts_deployed_addresses").await?;
@@ -203,14 +201,14 @@ pub async fn get_contracts_deployed_addresses(
             .events
             .iter()
             .find(|e| e.keys[0] == get_selector_from_name("ContractsDeployed").unwrap())
-            .ok_or_else(|| anyhow!("ContractsDeployed event not found"))?
+            .ok_or_else(|| MadaraError::FailedToGetEventFromTransactionReceipt("ContractsDeployed".to_string()))?
             .clone(),
-        _ => return Err(anyhow!("Expected invoke transaction receipt")),
+        _ => return Err(MadaraError::ExpectedInvokeTransactionReceipt),
     };
 
     // The event data contains 3 addresses in order: l2_eth_token, l2_eth_bridge, l2_token_bridge
     if contracts_deployed_event.data.len() < 3 {
-        return Err(anyhow!("ContractsDeployed event data too short, expected 3 addresses"));
+        return Err(MadaraError::ContractsDeployedEventDataTooShort);
     }
 
     let addresses = ContractsDeployedAddresses {

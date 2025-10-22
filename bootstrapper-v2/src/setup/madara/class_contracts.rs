@@ -1,5 +1,12 @@
+use strum::EnumIter;
+
+use super::constants::{
+    EIC_CASM, EIC_SIERRA, ERC20_CASM, ERC20_SIERRA, MADARA_FACTORY_CASM, MADARA_FACTORY_SIERRA, TOKEN_BRIDGE_CASM,
+    TOKEN_BRIDGE_SIERRA, UNIVERSAL_DEPLOYER_CASM, UNIVERSAL_DEPLOYER_SIERRA,
+};
+
 // Types for Map keys
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(EnumIter, Debug, Copy, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MadaraClass {
     TokenBridge,
@@ -9,38 +16,36 @@ pub enum MadaraClass {
     MadaraFactory,
 }
 
+pub trait GetMadaraArtifacts {
+    fn get_sierra_path(self) -> &'static str;
+    fn get_casm_path(self) -> &'static str;
+}
+
+impl GetMadaraArtifacts for MadaraClass {
+    fn get_casm_path(self) -> &'static str {
+        match self {
+            MadaraClass::TokenBridge => TOKEN_BRIDGE_CASM,
+            MadaraClass::Erc20 => ERC20_CASM,
+            MadaraClass::Eic => EIC_CASM,
+            MadaraClass::UniversalDeployer => UNIVERSAL_DEPLOYER_CASM,
+            MadaraClass::MadaraFactory => MADARA_FACTORY_CASM,
+        }
+    }
+
+    fn get_sierra_path(self) -> &'static str {
+        match self {
+            MadaraClass::TokenBridge => TOKEN_BRIDGE_SIERRA,
+            MadaraClass::Erc20 => ERC20_SIERRA,
+            MadaraClass::Eic => EIC_SIERRA,
+            MadaraClass::UniversalDeployer => UNIVERSAL_DEPLOYER_SIERRA,
+            MadaraClass::MadaraFactory => MADARA_FACTORY_SIERRA,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MadaraClassInfo {
     pub madara_class: MadaraClass,
     pub sierra_path: &'static str,
     pub casm_path: &'static str,
 }
-
-pub static MADARA_CLASSES_DATA: [MadaraClassInfo; 5] = [
-    MadaraClassInfo {
-        madara_class: MadaraClass::TokenBridge,
-        sierra_path: "../build-artifacts/starkgate_latest/cairo/token_bridge.sierra.json",
-        casm_path: "../build-artifacts/starkgate_latest/cairo/token_bridge.casm.json",
-    },
-    MadaraClassInfo {
-        madara_class: MadaraClass::Erc20,
-        sierra_path: "../build-artifacts/starkgate_latest/cairo/ERC20_070.sierra.json",
-        casm_path: "../build-artifacts/starkgate_latest/cairo/ERC20_070.casm.json",
-    },
-    MadaraClassInfo {
-        madara_class: MadaraClass::Eic,
-        sierra_path: "./contracts/madara/target/dev/madara_factory_contracts_EIC.contract_class.json",
-        casm_path: "./contracts/madara/target/dev/madara_factory_contracts_EIC.compiled_contract_class.json",
-    },
-    MadaraClassInfo {
-        madara_class: MadaraClass::UniversalDeployer,
-        sierra_path: "./contracts/madara/target/dev/madara_factory_contracts_UniversalDeployer.contract_class.json",
-        casm_path:
-            "./contracts/madara/target/dev/madara_factory_contracts_UniversalDeployer.compiled_contract_class.json",
-    },
-    MadaraClassInfo {
-        madara_class: MadaraClass::MadaraFactory,
-        sierra_path: "./contracts/madara/target/dev/madara_factory_contracts_MadaraFactory.contract_class.json",
-        casm_path: "./contracts/madara/target/dev/madara_factory_contracts_MadaraFactory.compiled_contract_class.json",
-    },
-];

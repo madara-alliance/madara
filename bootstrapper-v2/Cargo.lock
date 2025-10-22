@@ -1206,6 +1206,8 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet",
+ "strum",
+ "strum_macros",
  "thiserror 2.0.16",
  "tokio",
 ]

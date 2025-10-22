@@ -1,3 +1,4 @@
+pub mod constants;
 pub mod error;
 pub mod factory;
 pub mod implementation_contracts;
@@ -15,11 +16,13 @@ use alloy::{
 use anyhow::Result;
 use async_trait::async_trait;
 use factory::BaseLayerContracts;
-use factory::{Factory, FactoryDeploy};
-use implementation_contracts::{ImplementationContract, IMPLEMENTATION_CONTRACTS_DATA};
+use factory::{DeployedFactory, Factory};
+use implementation_contracts::GetArtifacts;
+use implementation_contracts::ImplementationContract;
 use log;
 use serde_json;
 use std::collections::HashMap;
+use strum::IntoEnumIterator;
 
 #[allow(dead_code)]
 pub struct EthereumSetup {
@@ -29,6 +32,7 @@ pub struct EthereumSetup {
     // keys in ImplementationContracts struct.
     // This might be done using a alloy::sol macro.
     implementation_address: HashMap<ImplementationContract, String>,
+    base_layer_factory_address: Option<String>,
     core_contract_init_data: Factory::CoreContractInitData,
     addresses_output_path: String,
     base_layer_contracts: Option<BaseLayerContracts>,
@@ -47,6 +51,7 @@ impl EthereumSetup {
             rpc_url,
             signer,
             implementation_address,
+            base_layer_factory_address: None,
             core_contract_init_data,
             addresses_output_path: addresses_output_path.to_string(),
             base_layer_contracts: None,
@@ -90,7 +95,8 @@ impl EthereumSetup {
                 "multiBridge": self.implementation_address.get(&ImplementationContract::MultiBridge),
                 "ethBridge": self.implementation_address.get(&ImplementationContract::EthBridge),
                 "ethBridgeEIC": self.implementation_address.get(&ImplementationContract::EthBridgeEIC),
-                "baseLayerFactory": self.implementation_address.get(&ImplementationContract::BaseLayerFactory),
+                // TODO: Handle the None case
+                "baseLayerFactory": self.base_layer_factory_address,
             },
             "addresses": self.base_layer_contracts.as_ref().map(|contracts| {
                 serde_json::to_value(contracts).unwrap_or(serde_json::Value::Null)
@@ -154,22 +160,22 @@ impl EthereumSetup {
 #[async_trait]
 impl BaseLayerSetupTrait for EthereumSetup {
     async fn init(&mut self) -> Result<(), BaseLayerError> {
-        for contract_info in IMPLEMENTATION_CONTRACTS_DATA {
-            if self.implementation_address.contains_key(&contract_info.implementation_contract) {
+        for contract in ImplementationContract::iter() {
+            if self.implementation_address.contains_key(&contract) {
                 log::info!(
                     "Skipping deployment of {:?} as it already exists with address: {}",
-                    contract_info,
-                    self.implementation_address.get(&contract_info.implementation_contract).ok_or(
-                        EthereumError::KeyDoesNotExist(format!("{:?}", contract_info.implementation_contract))
-                    )?
+                    contract,
+                    self.implementation_address
+                        .get(&contract)
+                        .ok_or(EthereumError::KeyDoesNotExist(format!("{:?}", contract)))?
                 );
                 continue;
             }
 
-            let address = self.deploy_contract_from_artifact(contract_info.artifact_path).await?;
+            let address = self.deploy_contract_from_artifact(contract.get_artifact_path()).await?;
 
-            log::info!("Deployed {:?} at address: {:?}", contract_info.implementation_contract, address);
-            self.implementation_address.insert(contract_info.implementation_contract, address.to_string());
+            log::info!("Deployed {:?} at address: {:?}", contract, address);
+            self.implementation_address.insert(contract, address.to_string());
         }
 
         // Write the addresses to a JSON file
@@ -193,13 +199,12 @@ impl BaseLayerSetupTrait for EthereumSetup {
         log::info!("Implementation contracts: {:?}", implementation_contracts);
 
         // Deploy the factory contract
-        let factory_deploy = FactoryDeploy::new(provider, self.signer.address(), implementation_contracts)
+        let factory_deploy = DeployedFactory::deploy_new(provider, self.signer.address(), implementation_contracts)
             .await
             .map_err(|e| BaseLayerError::FailedToDeployFactory(e))?;
         log::info!("Deployed factory at {:?}", factory_deploy.address());
 
-        self.implementation_address
-            .insert(ImplementationContract::BaseLayerFactory, factory_deploy.address().to_string());
+        self.base_layer_factory_address = Some(factory_deploy.address().to_string());
 
         save_addresses_to_file(
             serde_json::to_string_pretty(&self.implementation_address)?,

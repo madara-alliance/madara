@@ -56,8 +56,8 @@ pub enum MadaraError {
     #[error("Provider error: {0}")]
     ProviderError(#[from] starknet::providers::ProviderError),
 
-    #[error("Anyhow error: {0}")]
-    AnyhowError(#[from] anyhow::Error),
+    #[error("ContractsDeployed event data too short, expected 3 addresses")]
+    ContractsDeployedEventDataTooShort,
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
