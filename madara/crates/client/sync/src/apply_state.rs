@@ -138,7 +138,7 @@ impl ApplyStateSteps {
             self.importer
                 .run_in_rayon_pool_global(move |_| {
                     // Apply the accumulated state diff to calculate the global state root
-                    let global_state_root = backend
+                    let _global_state_root = backend
                         .write_access()
                         .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
 
@@ -232,7 +232,7 @@ impl ApplyStateSteps {
         self.importer
             .run_in_rayon_pool_global(move |_| {
                 // Apply the accumulated state diff to calculate the global state root
-                let global_state_root = backend
+                let _global_state_root = backend
                     .write_access()
                     .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
 

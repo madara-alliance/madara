@@ -55,7 +55,7 @@ pub struct PipelineController<S: PipelineSteps> {
     /// Inputs to be scheduled next into the parallel step.
     next_inputs: VecDeque<S::InputItem>,
     next_block_n_to_batch: u64,
-    pub(crate) last_applied_block_n: Option<u64>,
+    last_applied_block_n: Option<u64>,
 }
 
 type ParallelStepFuture<S> = BoxFuture<

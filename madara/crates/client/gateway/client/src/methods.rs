@@ -19,8 +19,13 @@ use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
-// TODO: Should be env driven
-const MAX_RETRIES: usize = 30;
+/// Maximum number of retry attempts for failed API requests.
+/// When an API request fails due to transient errors (such as network issues, 
+/// rate limits, or temporary service unavailability), the client will 
+/// automatically retry the request up to this many times before raising an 
+/// exception.
+/// Retries use exponential backoff to avoid overwhelming the service
+const MAX_RETRIES: usize = 5;
 
 impl GatewayProvider {
     /// Generic retry mechanism for GET requests
