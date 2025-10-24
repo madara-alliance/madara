@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: madara-orchestrator-svc
+  namespace: default
+spec:
+  selector:
+    app: orchestrator
+  ports:
+    - name: rpc
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+  type: ClusterIP

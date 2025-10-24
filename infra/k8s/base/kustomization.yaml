@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - orchestrator.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - svc.yaml
+
+commonLabels:
+  app: orchestrator
