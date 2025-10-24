@@ -158,7 +158,7 @@ impl ChainTip {
             },
         }
     }
-    fn from_storage(tip: StorageChainTip) -> Self {
+    pub fn from_storage(tip: StorageChainTip) -> Self {
         match tip {
             StorageChainTip::Empty => Self::Empty,
             StorageChainTip::Confirmed(block_n) => Self::Confirmed(block_n),
@@ -181,7 +181,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     sync_status: SyncStatusCell,
     starting_block: Option<u64>,
 
-    chain_tip: tokio::sync::watch::Sender<ChainTip>,
+    pub chain_tip: tokio::sync::watch::Sender<ChainTip>,
 
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
@@ -599,6 +599,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
     /// parts.
     pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
+        // Also flush based on the configured interval if set
         if self
             .inner
             .config
@@ -606,7 +607,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .is_some_and(|flush_every_n_blocks| block_number.checked_rem(flush_every_n_blocks) == Some(0))
         {
             tracing::debug!("Flushing.");
-            self.inner.db.flush()?;
+            self.inner.db.flush().context("Periodic database flush")?;
         }
 
         self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
@@ -672,5 +673,10 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_latest_applied_trie_update(block_n)
+    }
+
+    /// Revert the blockchain to a specific block hash.
+    pub fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
+        self.db.revert_to(new_tip_block_hash)
     }
 }
