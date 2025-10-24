@@ -1,4 +1,5 @@
 use crate::core::client::queue::QueueError;
+use crate::types::constant::{ORCHESTRATOR_VERSION, ORCHESTRATOR_VERSION_ATTRIBUTE};
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::ARN;
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
 use async_trait::async_trait;
 use aws_config::Region;
 use aws_config::SdkConfig;
-use aws_sdk_sqs::types::QueueAttributeName;
+use aws_sdk_sqs::types::{MessageAttributeValue, QueueAttributeName};
 use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
@@ -166,15 +167,36 @@ impl SQS {
 
 #[async_trait]
 impl QueueClient for SQS {
-    /// **send_message** - Send a message to the queue
-    /// This function sends a message to the queue.
-    /// It returns a Result<(), OrchestratorError> indicating whether the operation was successful or not
+    /// **send_message** - Send a message to the queue with version metadata
+    /// This function sends a message to standard SQS queues with version information
+    /// stored in message attributes for version-based filtering on the consumer side.
+    /// It returns a Result<(), QueueError> indicating whether the operation was successful or not
     async fn send_message(&self, queue: QueueType, payload: String, delay: Option<Duration>) -> Result<(), QueueError> {
-        let producer = self.get_producer(queue).await?;
-        match delay {
-            Some(d) => producer.send_raw_scheduled(payload.as_str(), d).await?,
-            None => producer.send_raw(payload.as_str()).await?,
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        let version_attribute = MessageAttributeValue::builder()
+            .data_type("String")
+            .string_value(ORCHESTRATOR_VERSION)
+            .build()
+            .map_err(|e| QueueError::MessageAttributeError(format!("Failed to build message attribute: {}", e)))?;
+
+        let mut send_message_request = self
+            .inner
+            .client()
+            .send_message()
+            .queue_url(&queue_url)
+            .message_body(&payload)
+            .message_attributes(ORCHESTRATOR_VERSION_ATTRIBUTE, version_attribute);
+
+        if let Some(delay_duration) = delay {
+            send_message_request = send_message_request.delay_seconds(delay_duration.as_secs() as i32);
         }
+
+        send_message_request.send().await?;
+
+        tracing::debug!("Sent message to queue {} with version {}", queue_name, ORCHESTRATOR_VERSION);
+
         Ok(())
     }
 
@@ -185,6 +207,7 @@ impl QueueClient for SQS {
     async fn get_producer(&self, queue: QueueType) -> Result<SqsProducer, QueueError> {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
         let producer =
             SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_producer().await?;
         Ok(producer)
@@ -198,13 +221,195 @@ impl QueueClient for SQS {
         tracing::debug!("Getting queue url for queue name {}", queue_name);
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
         tracing::debug!("Found queue url {}", queue_url);
+
         let consumer =
             SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
         Ok(consumer)
     }
-    /// TODO: this should not be need remove this after reviewing the code access for usage
+    /// Consume a message from the queue with client-side version filtering.
+    ///
+    /// # Implementation Strategy
+    ///
+    /// This function implements **client-side version filtering** because AWS SQS does not support
+    /// server-side filtering based on message attribute values. The process is:
+    ///
+    /// 1. **Receive Message**: Fetch a message from SQS with all message attributes (line 265-274)
+    /// 2. **Extract Version**: Read the `OrchestratorVersion` attribute from message metadata (line 284-292)
+    /// 3. **Version Check**: Compare message version against current orchestrator version (line 294)
+    /// 4. **Handle Mismatch**: If versions don't match, delete the original message and re-enqueue
+    ///    it with the same attributes, allowing other orchestrator instances to process it (line 309-389)
+    /// 5. **Process or Retry**: If compatible, wrap and return for processing; if incompatible, return NoData
+    ///
+    /// # Why Not Use OmniQueue Consumer
+    ///
+    /// OmniQueue's consumer abstraction doesn't provide access to message attributes before
+    /// acknowledging receipt, which is required for our version-based routing. We need to:
+    /// - Inspect message attributes before deciding whether to process
+    /// - Re-enqueue messages with different versions (delete + send pattern)
+    /// - Maintain message attributes when re-enqueueing for other consumers
+    ///
+    /// # Version Filtering Logic
+    ///
+    /// - **Matching version**: Returns message wrapped in OmniQueue Delivery for processing
+    /// - **No version attribute**: Accepts message (backward compatibility with pre-versioning messages)
+    /// - **Mismatched version**: Deletes and re-enqueues message, then returns NoData to continue polling
+    ///
+    /// # Re-enqueue Pattern (Delete + Send)
+    ///
+    /// We use delete-then-send instead of ChangeMessageVisibility(0) because:
+    /// 1. Preserves message attributes across the re-enqueue operation
+    /// 2. Resets the receive count (prevents premature DLQ routing for version mismatches)
+    /// 3. Creates a fresh message that other version consumers can immediately receive
+    ///
+    /// Trade-off: This pattern bypasses receive count tracking, so messages with version
+    /// mismatches won't be automatically sent to DLQ even after max retries. This is
+    /// intentional - version mismatches are not processing failures.
+    ///
+    /// # Performance Implications
+    ///
+    /// This creates additional SQS API calls (ReceiveMessage -> DeleteMessage -> SendMessage)
+    /// for incompatible messages. In environments with multiple orchestrator versions processing
+    /// the same queue, this can increase costs and latency. Consider using separate queues
+    /// per version for high-throughput scenarios.
+    ///
+    /// # Error Handling
+    ///
+    /// - If re-enqueue send fails: Returns error, message remains hidden until visibility timeout
+    /// - If re-enqueue send succeeds but delete fails: Message is duplicated (better than loss)
+    /// - If message is malformed (missing body/receipt_handle): Logs critical error and returns NoData
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
-        let mut consumer = self.get_consumer(queue).await?;
-        Ok(consumer.receive().await?)
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        let messages = self
+            .inner
+            .client()
+            .receive_message()
+            .queue_url(&queue_url)
+            .max_number_of_messages(1)
+            .message_attribute_names("All")
+            .visibility_timeout(30)
+            .send()
+            .await?;
+
+        let Some(messages_vec) = messages.messages else {
+            return Err(omniqueue::QueueError::NoData.into());
+        };
+
+        let Some(message) = messages_vec.first() else {
+            return Err(omniqueue::QueueError::NoData.into());
+        };
+
+        let version_match = if let Some(attributes) = message.message_attributes() {
+            if let Some(version_attr) = attributes.get(ORCHESTRATOR_VERSION_ATTRIBUTE) {
+                version_attr.string_value() == Some(ORCHESTRATOR_VERSION)
+            } else {
+                true
+            }
+        } else {
+            true
+        };
+
+        if !version_match {
+            let message_version = message
+                .message_attributes()
+                .and_then(|attrs| attrs.get(ORCHESTRATOR_VERSION_ATTRIBUTE))
+                .and_then(|v| v.string_value())
+                .unwrap_or("none");
+
+            tracing::info!(
+                queue = %queue_name,
+                expected_version = %ORCHESTRATOR_VERSION,
+                message_version = %message_version,
+                message_id = ?message.message_id(),
+                "Skipping message with incompatible version - will re-enqueue for compatible orchestrator"
+            );
+
+            match (message.body(), message.receipt_handle()) {
+                (Some(body), Some(receipt_handle)) => {
+                    // Re-enqueue incompatible message with proper error handling
+                    // Note: We use delete+send instead of ChangeMessageVisibility(0) because:
+                    // 1. Preserves message attributes across the re-enqueue operation
+                    // 2. Resets the receive count (prevents premature DLQ routing)
+                    // 3. Creates a fresh message that other version consumers can immediately receive
+                    let mut send_request = self.inner.client().send_message().queue_url(&queue_url).message_body(body);
+
+                    if let Some(attributes) = message.message_attributes() {
+                        for (key, value) in attributes {
+                            send_request = send_request.message_attributes(key.clone(), value.clone());
+                        }
+                    }
+
+                    // Send first - if this fails, delete won't be attempted (message preserved)
+                    match send_request.send().await {
+                        Ok(_) => {
+                            tracing::debug!(
+                                queue = %queue_name,
+                                message_version = %message_version,
+                                "Successfully re-enqueued incompatible message"
+                            );
+
+                            // Only delete if re-enqueue succeeded
+                            if let Err(e) = self
+                                .inner
+                                .client()
+                                .delete_message()
+                                .queue_url(&queue_url)
+                                .receipt_handle(receipt_handle)
+                                .send()
+                                .await
+                            {
+                                tracing::error!(
+                                    queue = %queue_name,
+                                    error = %e,
+                                    message_version = %message_version,
+                                    "Failed to delete message after successful re-enqueue - message will be duplicated"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                queue = %queue_name,
+                                error = %e,
+                                message_version = %message_version,
+                                message_id = ?message.message_id(),
+                                "CRITICAL: Failed to re-enqueue incompatible message - message may be lost after visibility timeout"
+                            );
+                            return Err(e.into());
+                        }
+                    }
+                }
+                (None, Some(_)) => {
+                    tracing::error!(
+                        queue = %queue_name,
+                        message_id = ?message.message_id(),
+                        message_version = %message_version,
+                        "CRITICAL: Incompatible message missing body - cannot re-enqueue, message will be lost"
+                    );
+                }
+                (Some(_), None) => {
+                    tracing::error!(
+                        queue = %queue_name,
+                        message_id = ?message.message_id(),
+                        message_version = %message_version,
+                        "CRITICAL: Incompatible message missing receipt handle - cannot re-enqueue, message will be lost"
+                    );
+                }
+                (None, None) => {
+                    tracing::error!(
+                        queue = %queue_name,
+                        message_id = ?message.message_id(),
+                        message_version = %message_version,
+                        "CRITICAL: Incompatible message missing both body and receipt handle - malformed SQS message"
+                    );
+                }
+            }
+
+            return Err(omniqueue::QueueError::NoData.into());
+        }
+        let consumer = self.get_consumer(queue.clone()).await?;
+        let delivery = consumer.wrap_message(messages_vec.first().unwrap());
+
+        Ok(delivery)
     }
 }

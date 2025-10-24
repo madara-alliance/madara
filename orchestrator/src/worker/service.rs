@@ -48,6 +48,7 @@ impl JobService {
     ) -> Result<(), JobError> {
         let message = JobQueueMessage { id };
         config.queue().send_message(queue.clone(), serde_json::to_string(&message)?, delay).await?;
+
         tracing::info!(
             log_type = "JobQueue",
             category = "add_job_to_queue",

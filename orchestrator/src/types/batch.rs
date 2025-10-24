@@ -67,6 +67,9 @@ pub struct Batch {
     pub bucket_id: String,
     /// Status of the batch
     pub status: BatchStatus,
+    /// Starknet protocol version for all blocks in this batch
+    /// All blocks in a batch must have the same Starknet version for prover compatibility
+    pub starknet_version: String,
 }
 
 impl Batch {
@@ -76,6 +79,7 @@ impl Batch {
         squashed_state_updates_path: String,
         blob_path: String,
         bucket_id: String,
+        starknet_version: String,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -89,7 +93,8 @@ impl Batch {
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
-            ..Self::default()
+            starknet_version,
+            status: BatchStatus::default(),
         }
     }
 }
