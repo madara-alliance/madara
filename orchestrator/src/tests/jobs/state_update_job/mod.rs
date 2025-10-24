@@ -87,6 +87,7 @@ async fn test_process_job_works(
             String::from(""),
             String::from(""),
             String::from(""),
+            "0.13.2".to_string(),
         )])
     });
 
@@ -245,7 +246,7 @@ async fn process_job_works_unit_test() {
 
     // Mock the get batch by indexes method
     database_client.expect_get_aggregator_batches_by_indexes().returning(|_| {
-        Ok(vec![AggregatorBatch::new(0, 1, 651057, String::from(""), String::from(""), String::from(""))])
+        Ok(vec![AggregatorBatch::new(0, 1, 651057, String::from(""), String::from(""), String::from(""), "0.13.2".to_string())])
     });
 
     // Mock the latest block settled

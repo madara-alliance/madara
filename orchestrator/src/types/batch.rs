@@ -141,6 +141,9 @@ pub struct AggregatorBatch {
 
     /// Current status of the aggregator batch
     pub status: AggregatorBatchStatus,
+    /// Starknet protocol version for all blocks in this batch
+    /// All blocks in a batch must have the same Starknet version for prover compatibility
+    pub starknet_version: String,
 }
 
 impl AggregatorBatch {
@@ -162,6 +165,7 @@ impl AggregatorBatch {
         squashed_state_updates_path: String,
         blob_path: String,
         bucket_id: String,
+        starknet_version: String,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -178,6 +182,7 @@ impl AggregatorBatch {
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
+            starknet_version,
             status: AggregatorBatchStatus::Open,
         }
     }
