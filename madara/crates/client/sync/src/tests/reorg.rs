@@ -6,7 +6,6 @@ use crate::{
 };
 use anyhow::Context;
 use mc_db::{MadaraBackend, MadaraStorageRead};
-use mp_block::BlockId;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::ServiceContext;
 use rstest::{fixture, rstest};
@@ -34,10 +33,9 @@ impl ReorgTestContext {
 
     fn get_block_hash(&self, block_n: u64) -> Option<mp_convert::Felt> {
         self.backend
-            .block_view(&BlockId::Number(block_n))
-            .ok()
+            .block_view_on_confirmed(block_n)
             .and_then(|view| view.get_block_info().ok())
-            .and_then(|info| info.as_closed().map(|closed| closed.block_hash))
+            .map(|info| info.block_hash)
     }
 
     fn revert_to(&self, block_hash: &mp_convert::Felt) -> anyhow::Result<(u64, mp_convert::Felt)> {
@@ -146,14 +144,14 @@ async fn test_reorg(reorg_ctx: ReorgTestContext, #[case] args: ReorgTestArgs) {
 
         // Verify blocks beyond matching_blocks are removed
         for block_n in (args.matching_blocks + 1)..=args.total_blocks {
-            let result = reorg_ctx.backend.block_view(&BlockId::Number(block_n));
-            assert!(result.is_err(), "Block {} should be removed after reorg", block_n);
+            let result = reorg_ctx.backend.block_view_on_confirmed(block_n);
+            assert!(result.is_none(), "Block {} should be removed after reorg", block_n);
         }
 
         // Verify blocks up to matching_blocks still exist
         for block_n in 0..=args.matching_blocks {
-            let result = reorg_ctx.backend.block_view(&BlockId::Number(block_n));
-            assert!(result.is_ok(), "Block {} should still exist after reorg", block_n);
+            let result = reorg_ctx.backend.block_view_on_confirmed(block_n);
+            assert!(result.is_some(), "Block {} should still exist after reorg", block_n);
         }
 
         tracing::info!("✅ Pass {}/{} completed - reverted to block {}", pass + 1, args.passes, args.matching_blocks);
@@ -187,10 +185,10 @@ async fn test_reorg_detection_during_sync(reorg_ctx: ReorgTestContext) {
     assert_eq!(latest_block, Some(1), "Latest block should be 1");
 
     // Verify blocks are accessible
-    let view_0 = reorg_ctx.backend.block_view(&BlockId::Number(0)).unwrap();
+    let view_0 = reorg_ctx.backend.block_view_on_confirmed(0).unwrap();
     assert_eq!(view_0.block_number(), 0);
 
-    let view_1 = reorg_ctx.backend.block_view(&BlockId::Number(1)).unwrap();
+    let view_1 = reorg_ctx.backend.block_view_on_confirmed(1).unwrap();
     assert_eq!(view_1.block_number(), 1);
 
     // Simulate a reorg by reverting to block 0
@@ -213,13 +211,13 @@ async fn test_reorg_detection_during_sync(reorg_ctx: ReorgTestContext) {
     assert_eq!(new_latest, Some(0), "Latest block should be 0 after reorg");
 
     // Verify we can still access block 0
-    let view_after_reorg = reorg_ctx.backend.block_view(&BlockId::Number(0)).unwrap();
+    let view_after_reorg = reorg_ctx.backend.block_view_on_confirmed(0).unwrap();
     assert_eq!(view_after_reorg.block_number(), 0);
-    assert_eq!(*view_after_reorg.get_block_info().unwrap().block_hash().unwrap(), block_0_hash);
+    assert_eq!(view_after_reorg.get_block_info().unwrap().block_hash, block_0_hash);
 
     // Verify block 1 is no longer accessible
-    let block_1_after_reorg = reorg_ctx.backend.block_view(&BlockId::Number(1));
-    assert!(block_1_after_reorg.is_err(), "Block 1 should not exist after reorg");
+    let block_1_after_reorg = reorg_ctx.backend.block_view_on_confirmed(1);
+    assert!(block_1_after_reorg.is_none(), "Block 1 should not exist after reorg");
 
     tracing::info!("✅ Reorg detection test passed");
 }
@@ -234,7 +232,7 @@ async fn test_revert_contract_state(reorg_ctx: ReorgTestContext) {
     reorg_ctx.sync_to(2).await;
 
     // Capture state at block 2 (will be reverted)
-    let block_2_view = reorg_ctx.backend.block_view(&BlockId::Number(2)).unwrap();
+    let block_2_view = reorg_ctx.backend.block_view_on_confirmed(2).unwrap();
     let block_2_state_diff = block_2_view.get_state_diff().unwrap();
 
     tracing::info!(
@@ -246,8 +244,8 @@ async fn test_revert_contract_state(reorg_ctx: ReorgTestContext) {
     );
 
     // Capture state at block 1 (revert target)
-    let block_1_view = reorg_ctx.backend.block_view(&BlockId::Number(1)).unwrap();
-    let block_1_hash = *block_1_view.get_block_info().unwrap().block_hash().unwrap();
+    let block_1_view = reorg_ctx.backend.block_view_on_confirmed(1).unwrap();
+    let block_1_hash = block_1_view.get_block_info().unwrap().block_hash;
     let block_1_state_diff = block_1_view.get_state_diff().unwrap();
 
     tracing::info!(
@@ -267,11 +265,11 @@ async fn test_revert_contract_state(reorg_ctx: ReorgTestContext) {
     assert_eq!(latest, Some(1), "Chain should be at block 1 after reorg");
 
     // Verify block 2 no longer exists
-    let block_2_after = reorg_ctx.backend.block_view(&BlockId::Number(2));
-    assert!(block_2_after.is_err(), "Block 2 should not exist after reorg");
+    let block_2_after = reorg_ctx.backend.block_view_on_confirmed(2);
+    assert!(block_2_after.is_none(), "Block 2 should not exist after reorg");
 
     // Verify state matches block 1 (all block 2 changes reverted)
-    let view_after_reorg = reorg_ctx.backend.block_view(&BlockId::Number(1)).unwrap();
+    let view_after_reorg = reorg_ctx.backend.block_view_on_confirmed(1).unwrap();
     let state_after_reorg = view_after_reorg.get_state_diff().unwrap();
 
     // Validate state component counts match block 1
@@ -304,7 +302,7 @@ async fn test_revert_declared_class(reorg_ctx: ReorgTestContext) {
     reorg_ctx.sync_to(2).await;
 
     // Get state diff at block 2 to see declared classes
-    let block_2_view = reorg_ctx.backend.block_view(&BlockId::Number(2)).unwrap();
+    let block_2_view = reorg_ctx.backend.block_view_on_confirmed(2).unwrap();
     let block_2_state_diff = block_2_view.get_state_diff().unwrap();
 
     tracing::info!(
@@ -314,8 +312,8 @@ async fn test_revert_declared_class(reorg_ctx: ReorgTestContext) {
     );
 
     // Get state diff at block 1 (our revert target)
-    let block_1_view = reorg_ctx.backend.block_view(&BlockId::Number(1)).unwrap();
-    let block_1_hash = *block_1_view.get_block_info().unwrap().block_hash().unwrap();
+    let block_1_view = reorg_ctx.backend.block_view_on_confirmed(1).unwrap();
+    let block_1_hash = block_1_view.get_block_info().unwrap().block_hash;
     let block_1_state_diff = block_1_view.get_state_diff().unwrap();
 
     tracing::info!(
@@ -329,7 +327,7 @@ async fn test_revert_declared_class(reorg_ctx: ReorgTestContext) {
     reorg_ctx.revert_to(&block_1_hash).expect("Reorg should succeed");
 
     // Verify state matches block 1 (block 2 classes removed)
-    let view_after_reorg = reorg_ctx.backend.block_view(&BlockId::Number(1)).unwrap();
+    let view_after_reorg = reorg_ctx.backend.block_view_on_confirmed(1).unwrap();
     let state_after_reorg = view_after_reorg.get_state_diff().unwrap();
 
     // Validate declared classes match block 1 (block 2 classes reverted)
@@ -345,8 +343,8 @@ async fn test_revert_declared_class(reorg_ctx: ReorgTestContext) {
     );
 
     // Verify block 2 no longer exists
-    let block_2_after = reorg_ctx.backend.block_view(&BlockId::Number(2));
-    assert!(block_2_after.is_err(), "Block 2 should not exist after reorg");
+    let block_2_after = reorg_ctx.backend.block_view_on_confirmed(2);
+    assert!(block_2_after.is_none(), "Block 2 should not exist after reorg");
 
     tracing::info!("✅ Declared class revert validated: all block 2 classes removed");
 }

@@ -167,7 +167,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
 
-    let existing_batch = crate::types::batch::AggregatorBatch {
+    let existing_aggregator_batch = crate::types::batch::AggregatorBatch {
         index: 1,
         start_block: 0,
         end_block: 3,
@@ -179,7 +179,19 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         ..Default::default()
     };
 
-    database.expect_get_latest_aggregator_batch().returning(move || Ok(Some(existing_batch.clone())));
+    let existing_snos_batch = crate::types::batch::SnosBatch {
+        snos_batch_id: 1,
+        aggregator_batch_index: 1,
+        start_block: 0,
+        end_block: 3,
+        num_blocks: 4,
+        status: crate::types::batch::SnosBatchStatus::Closed,
+        created_at: chrono::Utc::now(),
+        ..Default::default()
+    };
+
+    database.expect_get_latest_aggregator_batch().returning(move || Ok(Some(existing_aggregator_batch.clone())));
+    database.expect_get_latest_snos_batch().returning(move || Ok(Some(existing_snos_batch.clone())));
 
     storage.expect_get_data().returning(|_| Ok(Bytes::from(get_dummy_state_update(1).to_string())));
 
@@ -193,6 +205,13 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     });
 
     database.expect_create_aggregator_batch().returning(Ok);
+
+    // Mock SNOS batch operations
+    database.expect_create_snos_batch().returning(Ok);
+    database.expect_update_or_create_snos_batch().returning(|batch, _| Ok(batch.clone()));
+    database.expect_get_next_snos_batch_id().returning(|| Ok(2));
+    database.expect_get_open_snos_batches_by_aggregator_index().returning(|_| Ok(vec![]));
+    database.expect_close_all_snos_batches_for_aggregator().returning(|_| Ok(vec![]));
 
     lock.expect_acquire_lock()
         .withf(move |key, value, expiry_seconds, owner| {
