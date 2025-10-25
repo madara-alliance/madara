@@ -10,11 +10,11 @@ use mc_db::{
 };
 use mc_gateway_client::{BlockId, GatewayProvider};
 use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
+use mp_convert::Felt;
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use mp_state_update::StateDiff;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use mp_utils::AbortOnDrop;
-use mp_convert::Felt;
 use std::{ops::Range, sync::Arc, time::Duration};
 
 pub type GatewayBlockSync = PipelineController<GatewaySyncSteps>;
@@ -86,7 +86,9 @@ impl GatewaySyncSteps {
                 // At genesis - VERIFY it matches upstream to detect network misconfiguration
                 tracing::warn!("🔍 Reached genesis block, verifying against upstream...");
 
-                let local_genesis_view = self._backend.block_view_on_confirmed(0)
+                let local_genesis_view = self
+                    ._backend
+                    .block_view_on_confirmed(0)
                     .ok_or_else(|| anyhow::anyhow!("Genesis block not found"))?;
                 let local_genesis_info = local_genesis_view.get_block_info()?;
                 let local_genesis_hash = local_genesis_info.block_hash;
@@ -94,9 +96,8 @@ impl GatewaySyncSteps {
                 // Fetch upstream genesis to compare
                 match self.client.get_state_update_with_block(BlockId::Number(0)).await {
                     Ok(gateway_response) => {
-                        let upstream_genesis = gateway_response
-                            .into_full_block()
-                            .context("Parsing upstream genesis block")?;
+                        let upstream_genesis =
+                            gateway_response.into_full_block().context("Parsing upstream genesis block")?;
                         let upstream_genesis_hash = upstream_genesis.block_hash;
 
                         if local_genesis_hash != upstream_genesis_hash {
@@ -105,7 +106,10 @@ impl GatewaySyncSteps {
                             return Ok(Felt::ZERO);
                         }
 
-                        tracing::info!("✅ Genesis blocks match (hash={:#x}), using as common ancestor", local_genesis_hash);
+                        tracing::info!(
+                            "✅ Genesis blocks match (hash={:#x}), using as common ancestor",
+                            local_genesis_hash
+                        );
                         return Ok(local_genesis_hash);
                     }
                     Err(e) => {
@@ -198,8 +202,8 @@ impl GatewaySyncSteps {
 
         // Step 4: Refresh backend cache
         tracing::info!("🔄 Refreshing backend cache...");
-        let fresh_chain_tip = self._backend.db.get_chain_tip()
-            .context("Getting fresh chain tip after database wipe")?;
+        let fresh_chain_tip =
+            self._backend.db.get_chain_tip().context("Getting fresh chain tip after database wipe")?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
         self._backend.chain_tip.send_replace(backend_chain_tip);
         tracing::info!("✅ Backend cache refreshed");

@@ -115,7 +115,6 @@ fn reorg_ctx(gateway_mock: GatewayMock) -> ReorgTestContext {
 /// 1. Reorg from genesis - Tests reverting back to block 0
 /// 2. Empty orphan chain - Tests reorg when no blocks need to be orphaned
 async fn test_reorg(reorg_ctx: ReorgTestContext, #[case] args: ReorgTestArgs) {
-
     tracing::info!("📦 Syncing {} blocks from gateway", args.total_blocks);
     reorg_ctx.sync_to(args.total_blocks).await;
 
@@ -123,8 +122,7 @@ async fn test_reorg(reorg_ctx: ReorgTestContext, #[case] args: ReorgTestArgs) {
     assert_eq!(latest, Some(args.total_blocks), "Chain should be synced to block {}", args.total_blocks);
     tracing::info!("✅ Chain synced to block {}", args.total_blocks);
 
-    let reorg_target_hash = reorg_ctx.get_block_hash(args.matching_blocks)
-        .expect("Reorg target block should exist");
+    let reorg_target_hash = reorg_ctx.get_block_hash(args.matching_blocks).expect("Reorg target block should exist");
     tracing::info!("🎯 Reorg target: block {} with hash {:#x}", args.matching_blocks, reorg_target_hash);
 
     for pass in 0..args.passes {
@@ -132,16 +130,19 @@ async fn test_reorg(reorg_ctx: ReorgTestContext, #[case] args: ReorgTestArgs) {
 
         // Revert to the common ancestor
         tracing::info!("🔄 Reverting to block {} (hash={:#x})", args.matching_blocks, reorg_target_hash);
-        let (reverted_block_n, reverted_hash) = reorg_ctx.revert_to(&reorg_target_hash)
-            .expect("Reorg should succeed");
+        let (reverted_block_n, reverted_hash) = reorg_ctx.revert_to(&reorg_target_hash).expect("Reorg should succeed");
 
         assert_eq!(reverted_hash, reorg_target_hash, "Reverted hash should match target");
         assert_eq!(reverted_block_n, args.matching_blocks, "Reverted block number should match target");
 
         // Verify database state after reorg
         let latest_after = reorg_ctx.backend.latest_confirmed_block_n();
-        assert_eq!(latest_after, Some(args.matching_blocks),
-            "Latest block should be {} after reorg", args.matching_blocks);
+        assert_eq!(
+            latest_after,
+            Some(args.matching_blocks),
+            "Latest block should be {} after reorg",
+            args.matching_blocks
+        );
 
         // Verify blocks beyond matching_blocks are removed
         for block_n in (args.matching_blocks + 1)..=args.total_blocks {
@@ -274,11 +275,7 @@ async fn test_revert_contract_state(reorg_ctx: ReorgTestContext) {
     let state_after_reorg = view_after_reorg.get_state_diff().unwrap();
 
     // Validate state component counts match block 1
-    assert_eq!(
-        state_after_reorg.nonces.len(),
-        block_1_state_diff.nonces.len(),
-        "Nonce count should match block 1"
-    );
+    assert_eq!(state_after_reorg.nonces.len(), block_1_state_diff.nonces.len(), "Nonce count should match block 1");
     assert_eq!(
         state_after_reorg.deployed_contracts.len(),
         block_1_state_diff.deployed_contracts.len(),

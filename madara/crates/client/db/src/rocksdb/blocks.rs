@@ -323,9 +323,8 @@ impl RocksDBStorageInner {
             let block_n_u32 = u32::try_from(block_n).context("Converting block_n to u32")?;
             let mut batch = WriteBatchWithTransaction::default();
 
-            let block_info = self
-                .get_block_info(block_n)?
-                .with_context(|| format!("Block info not found for block_n={block_n}"))?;
+            let block_info =
+                self.get_block_info(block_n)?.with_context(|| format!("Block info not found for block_n={block_n}"))?;
 
             tracing::debug!(
                 "📦 REORG [block_db_revert]: Block {} hash={:#x} has {} transactions",
@@ -347,17 +346,19 @@ impl RocksDBStorageInner {
             }
 
             // Get transactions for this block to handle L1 handler removal
-            let transactions: Vec<_> = self
-                .get_block_transactions(block_n, 0)
-                .take(block_info.tx_hashes.len())
-                .collect::<Result<_>>()?;
+            let transactions: Vec<_> =
+                self.get_block_transactions(block_n, 0).take(block_info.tx_hashes.len()).collect::<Result<_>>()?;
 
             // Remove events for this block
             self.events_remove_block(block_n, &mut batch)?;
 
             let l1_handler_count = transactions.iter().filter(|v| v.transaction.as_l1_handler().is_some()).count();
             if l1_handler_count > 0 {
-                tracing::debug!("📦 REORG [block_db_revert]: Removing {} L1->L2 messages from block {}", l1_handler_count, block_n);
+                tracing::debug!(
+                    "📦 REORG [block_db_revert]: Removing {} L1->L2 messages from block {}",
+                    l1_handler_count,
+                    block_n
+                );
             }
 
             // TODO: No sure how to implement the same for the L2 Network
@@ -366,7 +367,11 @@ impl RocksDBStorageInner {
             //     &mut batch,
             // )?;
 
-            tracing::debug!("📦 REORG [block_db_revert]: Removing {} transactions from block {}", block_info.tx_hashes.len(), block_n);
+            tracing::debug!(
+                "📦 REORG [block_db_revert]: Removing {} transactions from block {}",
+                block_info.tx_hashes.len(),
+                block_n
+            );
             for (tx_index, tx_hash) in block_info.tx_hashes.iter().enumerate() {
                 let tx_index_u16 = u16::try_from(tx_index).context("Converting tx_index to u16")?;
                 batch.delete_cf(&block_txs_col, make_transaction_column_key(block_n_u32, tx_index_u16));

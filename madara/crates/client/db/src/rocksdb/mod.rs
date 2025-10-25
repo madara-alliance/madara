@@ -16,9 +16,9 @@ use crate::{
     },
 };
 
-use bonsai_trie::id::BasicId;
 use bincode::Options;
 use blockifier::bouncer::BouncerWeights;
+use bonsai_trie::id::BasicId;
 
 use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
 use mp_class::ConvertedClass;
@@ -532,12 +532,14 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
         tracing::info!("Reverting blockchain to block_hash={new_tip_block_hash:#x}");
 
-        let target_block_n = self.inner
+        let target_block_n = self
+            .inner
             .find_block_hash(new_tip_block_hash)
             .context("Finding target block for reorg")?
             .ok_or_else(|| anyhow::anyhow!("Target block hash {new_tip_block_hash:#x} not found"))?;
 
-        let target_block_info = self.inner
+        let target_block_info = self
+            .inner
             .get_block_info(target_block_n)
             .context("Getting target block info")?
             .ok_or_else(|| anyhow::anyhow!("Target block info not found for block_n={target_block_n}"))?;
@@ -546,20 +548,18 @@ impl MadaraStorageWrite for RocksDBStorage {
             StorageChainTip::Empty => anyhow::bail!("Cannot revert when chain is empty"),
             StorageChainTip::Confirmed(block_n) => block_n,
             StorageChainTip::Preconfirmed { header, .. } => {
-                header.block_number.checked_sub(1)
-                    .ok_or_else(|| anyhow::anyhow!("Preconfirmed block is at genesis"))?
+                header.block_number.checked_sub(1).ok_or_else(|| anyhow::anyhow!("Preconfirmed block is at genesis"))?
             }
         };
 
-        let current_tip_info = self.inner
+        let current_tip_info = self
+            .inner
             .get_block_info(current_tip)
             .context("Getting current tip block info")?
             .ok_or_else(|| anyhow::anyhow!("Current tip block info not found"))?;
 
         if target_block_n == current_tip {
-            tracing::info!(
-                "🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed"
-            );
+            tracing::info!("🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed");
             return Ok((target_block_n, *new_tip_block_hash));
         }
 
@@ -576,15 +576,10 @@ impl MadaraStorageWrite for RocksDBStorage {
             current_tip_info.block_hash
         );
 
-
         let target_id = BasicId::new(target_block_n);
         let current_id = BasicId::new(current_tip);
 
-        tracing::info!(
-            "🌳 REORG: Reverting bonsai tries from current={} to target={}",
-            current_tip,
-            target_block_n
-        );
+        tracing::info!("🌳 REORG: Reverting bonsai tries from current={} to target={}", current_tip, target_block_n);
 
         tracing::debug!("🌳 REORG: Reverting contract trie...");
         self.contract_trie()
@@ -605,36 +600,31 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::info!("✅ REORG: Class trie reverted successfully");
 
         tracing::info!("💾 REORG: Committing tries after revert...");
-        self.contract_trie().commit(target_id)
+        self.contract_trie()
+            .commit(target_id)
             .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {e:?}"))?;
-        self.contract_storage_trie().commit(target_id)
+        self.contract_storage_trie()
+            .commit(target_id)
             .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {e:?}"))?;
-        self.class_trie().commit(target_id)
+        self.class_trie()
+            .commit(target_id)
             .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {e:?}"))?;
         tracing::info!("✅ REORG: All tries committed successfully");
 
         // Revert database state using the three revert functions
         // First, revert blocks and collect state diffs
         tracing::info!("📦 REORG: Starting block database revert...");
-        let state_diffs = self.inner
-            .block_db_revert(target_block_n, current_tip)
-            .context("Reverting blocks database")?;
-        tracing::info!(
-            "✅ REORG: Block database reverted, collected {} state diffs",
-            state_diffs.len()
-        );
+        let state_diffs =
+            self.inner.block_db_revert(target_block_n, current_tip).context("Reverting blocks database")?;
+        tracing::info!("✅ REORG: Block database reverted, collected {} state diffs", state_diffs.len());
 
         // Then use those state diffs to revert contract and class state
         tracing::info!("📝 REORG: Starting contract database revert...");
-        self.inner
-            .contract_db_revert(&state_diffs)
-            .context("Reverting contract database")?;
+        self.inner.contract_db_revert(&state_diffs).context("Reverting contract database")?;
         tracing::info!("✅ REORG: Contract database reverted successfully");
 
         tracing::info!("🎓 REORG: Starting class database revert...");
-        self.inner
-            .class_db_revert(&state_diffs)
-            .context("Reverting class database")?;
+        self.inner.class_db_revert(&state_diffs).context("Reverting class database")?;
         tracing::info!("✅ REORG: Class database reverted successfully");
 
         tracing::info!("🔗 REORG: Updating chain tip to block_n={}", target_block_n);
