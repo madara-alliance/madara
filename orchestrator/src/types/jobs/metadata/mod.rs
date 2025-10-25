@@ -163,7 +163,7 @@ pub struct ProvingMetadata {
 /// # Field Management
 /// - Worker-initialized fields: start_block, end_block, num_blocks, full_output, starknet_version, and path configurations
 /// - Job-populated fields: snos_fact (during processing)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SnosMetadata {
     // Worker-initialized fields
     /// index of the batch
