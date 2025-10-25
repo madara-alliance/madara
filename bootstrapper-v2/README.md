@@ -12,10 +12,12 @@ A CLI application for bootstrapping complete Madara networks with Ethereum as th
 ## Architecture
 
 **Deployment Flow:**
+
 1. **Base Layer Setup**: Deploy Ethereum implementation contracts → Deploy factory → Deploy core contracts
 2. **Madara Setup**: Deploy Cairo contracts → Deploy Madara factory → Deploy L2 bridges → Connect L1↔L2
 
 **Contracts:**
+
 - **Base Layer**: CoreContract, Manager, Registry, MultiBridge, EthBridge, EthBridgeEIC + Factory
 - **Madara Setup**: TokenBridge, ERC20, EIC, UniversalDeployer, MadaraFactory + L2 Bridges
 
@@ -45,8 +47,8 @@ cargo build --release
 ### Compatibility
 
 ⚠️ **Important**: This bootstrapper is **not backwards compatible** and requires:
-- **Madara node** running **StarkNet protocol version 0.14.0** (fully compatible)
 
+- **Madara node** running **StarkNet protocol version 0.14.0** (fully compatible)
 
 ## Usage
 
@@ -62,6 +64,7 @@ export MADARA_PRIVATE_KEY="your_madara_private_key"
 ### Setup Workflow
 
 **Step 1: Setup Base Layer**
+
 ```bash
 RUST_LOG=debug && cargo run --bin bootstrapper-v2 -- \
   setup-base --config-path configs/config.json \
@@ -69,6 +72,7 @@ RUST_LOG=debug && cargo run --bin bootstrapper-v2 -- \
 ```
 
 **Step 2: Setup Madara**
+
 ```bash
 RUST_LOG=debug cargo run -- \
   setup-madara --config-path configs/config.json \
@@ -88,7 +92,9 @@ Update `configs/config.json` with your RPC URLs:
     "layer": "ETHEREUM",
     "rpc_url": "http://localhost:8545",
     "implementation_addresses": {},
-    "core_contract_init_data": { /* ... */ }
+    "core_contract_init_data": {
+      /* ... */
+    }
   },
   "madara": {
     "rpc_url": "http://localhost:9944"
@@ -101,5 +107,6 @@ Update `configs/config.json` with your RPC URLs:
 ## Troubleshooting
 
 **Common Issues:**
+
 - **RPC Connection Failed**: Ensure Madara/Ethereum nodes are running
 - **Missing L1 Addresses**: Ensure `setup-base` completed successfully
