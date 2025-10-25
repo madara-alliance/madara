@@ -1,6 +1,7 @@
 # Madara Bootstrapper v2
 
-A CLI application for bootstrapping complete Madara networks with Ethereum as the base layer. Deploys both base layer and Madara contracts using factory patterns for efficient, atomic deployments.
+A CLI application for bootstrapping complete Madara networks with Ethereum as the base layer.
+Deploys both base layer and Madara contracts using factory patterns for efficient, atomic deployments.
 
 ## Features
 
@@ -23,7 +24,7 @@ A CLI application for bootstrapping complete Madara networks with Ethereum as th
 
 ## Project Structure
 
-```
+```text
 bootstrapper-v2/
 ├── src/
 │   ├── cli/                    # CLI commands
@@ -63,7 +64,7 @@ export MADARA_PRIVATE_KEY="your_madara_private_key"
 
 ### Setup Workflow
 
-**Step 1: Setup Base Layer**
+#### Step 1: Setup Base Layer
 
 ```bash
 RUST_LOG=debug && cargo run --bin bootstrapper-v2 -- \
@@ -71,7 +72,7 @@ RUST_LOG=debug && cargo run --bin bootstrapper-v2 -- \
   --addresses-output-path output/addresses.json
 ```
 
-**Step 2: Setup Madara**
+#### Step 2: Setup Madara
 
 ```bash
 RUST_LOG=debug cargo run -- \
