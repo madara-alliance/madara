@@ -75,13 +75,15 @@ impl SubmitTransaction for TestTransactionProvider {
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
     let chain_config = Arc::new(ChainConfig::madara_test());
     let backend = MadaraBackend::open_for_testing(chain_config.clone());
-    let rpc = Starknet::new(
+    let mut rpc = Starknet::new(
         backend.clone(),
         Arc::new(TestTransactionProvider),
         Default::default(),
         None,
         ServiceContext::new_for_testing(),
     );
+    // Enable showing preconfirmed transactions in v0.7/v0.8 pending blocks for tests
+    rpc.pre_v0_9_preconfirmed_as_pending = true;
     (backend, rpc)
 }
 

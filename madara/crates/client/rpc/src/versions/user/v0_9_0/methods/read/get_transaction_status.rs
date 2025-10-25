@@ -75,12 +75,21 @@ mod tests {
 
     #[rstest::fixture]
     fn tx() -> mp_rpc::v0_9_0::BroadcastedInvokeTxn {
-        mp_rpc::v0_9_0::BroadcastedInvokeTxn::V0(mp_rpc::v0_9_0::InvokeTxnV0 {
+        mp_rpc::v0_9_0::BroadcastedInvokeTxn::V3(mp_rpc::v0_9_0::InvokeTxnV3 {
             calldata: Default::default(),
-            contract_address: Default::default(),
-            entry_point_selector: Default::default(),
-            max_fee: Default::default(),
+            sender_address: Default::default(),
             signature: Default::default(),
+            nonce: Default::default(),
+            resource_bounds: mp_rpc::v0_9_0::ResourceBoundsMapping {
+                l1_gas: mp_rpc::v0_9_0::ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                l2_gas: mp_rpc::v0_9_0::ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                l1_data_gas: mp_rpc::v0_9_0::ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+            },
+            tip: Default::default(),
+            paymaster_data: Default::default(),
+            account_deployment_data: Default::default(),
+            nonce_data_availability_mode: mp_rpc::v0_9_0::DaMode::L1,
+            fee_data_availability_mode: mp_rpc::v0_9_0::DaMode::L1,
         })
     }
 
@@ -129,9 +138,10 @@ mod tests {
     #[rstest::rstest]
     async fn get_transaction_status_received(_logs: (), starknet: Starknet, tx: mp_rpc::v0_9_0::BroadcastedInvokeTxn) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
-        provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        let result = provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        let tx_hash = result.transaction_hash;
 
-        let status = get_transaction_status(&starknet, TX_HASH).await.expect("Failed to retrieve transaction status");
+        let status = get_transaction_status(&starknet, tx_hash).await.expect("Failed to retrieve transaction status");
 
         assert_eq!(
             status,
