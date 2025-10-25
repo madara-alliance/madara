@@ -349,7 +349,7 @@ async fn test_create_snos_batch() {
     let database_client = config.database();
 
     // Create a SNOS batch
-    let snos_batch = SnosBatch::new(1, 100, 200, "0.13.2".to_string());
+    let snos_batch = SnosBatch::new(1, 100, 200);
 
     // Create the batch in the database
     let created_batch = database_client.create_snos_batch(snos_batch.clone()).await.unwrap();
@@ -566,11 +566,7 @@ async fn test_get_snos_batches_by_indices() {
     let config = services.config;
     let database_client = config.database();
 
-    let batches = [
-        SnosBatch::new(1, 100, 200, "0.13.2".to_string()),
-        SnosBatch::new(2, 100, 300, "0.13.2".to_string()),
-        SnosBatch::new(3, 100, 400, "0.13.2".to_string()),
-    ];
+    let batches = [SnosBatch::new(1, 100, 200), SnosBatch::new(2, 100, 300), SnosBatch::new(3, 100, 400)];
 
     for batch in &batches {
         database_client.create_snos_batch(batch.clone()).await.unwrap();
@@ -594,7 +590,7 @@ async fn test_update_snos_batch_status_by_index() {
     let config = services.config;
     let database_client = config.database();
 
-    let batch = SnosBatch::new(1, 100, 200, "0.13.2".to_string());
+    let batch = SnosBatch::new(1, 100, 200);
     database_client.create_snos_batch(batch.clone()).await.unwrap();
 
     let updated_batch = database_client.update_snos_batch_status_by_index(1, SnosBatchStatus::Closed).await.unwrap();
@@ -612,9 +608,9 @@ async fn test_get_snos_batches_by_status() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, 100, 200, "0.13.2".to_string());
-    let batch2 = SnosBatch::new(2, 100, 300, "0.13.2".to_string());
-    let mut batch3 = SnosBatch::new(3, 100, 400, "0.13.2".to_string());
+    let mut batch1 = SnosBatch::new(1, 100, 200);
+    let batch2 = SnosBatch::new(2, 100, 300);
+    let mut batch3 = SnosBatch::new(3, 100, 400);
 
     batch1.status = SnosBatchStatus::Closed;
     batch3.status = SnosBatchStatus::Closed;
@@ -644,8 +640,8 @@ async fn test_get_snos_batches_without_jobs() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, 100, 200, "0.13.2".to_string());
-    let mut batch2 = SnosBatch::new(2, 100, 300, "0.13.2".to_string());
+    let mut batch1 = SnosBatch::new(1, 100, 200);
+    let mut batch2 = SnosBatch::new(2, 100, 300);
     batch1.status = SnosBatchStatus::Closed;
     batch2.status = SnosBatchStatus::Closed;
 
@@ -793,9 +789,9 @@ async fn test_get_snos_batches_by_aggregator_index() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, 1, 200, "0.13.2".to_string());
-    let mut batch2 = SnosBatch::new(2, 1, 300, "0.13.2".to_string());
-    let mut batch3 = SnosBatch::new(3, 2, 400, "0.13.2".to_string());
+    let mut batch1 = SnosBatch::new(1, 1, 200);
+    let mut batch2 = SnosBatch::new(2, 1, 300);
+    let mut batch3 = SnosBatch::new(3, 2, 400);
 
     batch1.aggregator_batch_index = 1;
     batch2.aggregator_batch_index = 1;
@@ -821,9 +817,9 @@ async fn test_get_open_snos_batches_by_aggregator_index() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, 1, 200, "0.13.2".to_string());
-    let mut batch2 = SnosBatch::new(2, 1, 300, "0.13.2".to_string());
-    let mut batch3 = SnosBatch::new(3, 1, 400, "0.13.2".to_string());
+    let mut batch1 = SnosBatch::new(1, 1, 200);
+    let mut batch2 = SnosBatch::new(2, 1, 300);
+    let mut batch3 = SnosBatch::new(3, 1, 400);
 
     batch1.aggregator_batch_index = 1;
     batch2.aggregator_batch_index = 1;
@@ -855,8 +851,8 @@ async fn test_get_next_snos_batch_id() {
     assert_eq!(next_id, 1);
 
     // Create some batches
-    database_client.create_snos_batch(SnosBatch::new(1, 100, 200, "0.13.2".to_string())).await.unwrap();
-    database_client.create_snos_batch(SnosBatch::new(2, 100, 300, "0.13.2".to_string())).await.unwrap();
+    database_client.create_snos_batch(SnosBatch::new(1, 100, 200)).await.unwrap();
+    database_client.create_snos_batch(SnosBatch::new(2, 100, 300)).await.unwrap();
 
     // Should now return 3
     let next_id = database_client.get_next_snos_batch_id().await.unwrap();
@@ -872,9 +868,9 @@ async fn test_close_all_snos_batches_for_aggregator() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, 1, 200, "0.13.2".to_string());
-    let mut batch2 = SnosBatch::new(2, 1, 300, "0.13.2".to_string());
-    let mut batch3 = SnosBatch::new(3, 2, 400, "0.13.2".to_string());
+    let mut batch1 = SnosBatch::new(1, 1, 200);
+    let mut batch2 = SnosBatch::new(2, 1, 300);
+    let mut batch3 = SnosBatch::new(3, 2, 400);
 
     batch1.aggregator_batch_index = 1;
     batch2.aggregator_batch_index = 1;

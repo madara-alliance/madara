@@ -161,7 +161,7 @@ pub struct ProvingMetadata {
 /// Metadata specific to SNOS (Starknet OS) jobs.
 ///
 /// # Field Management
-/// - Worker-initialized fields: start_block, end_block, num_blocks, full_output, starknet_version, and path configurations
+/// - Worker-initialized fields: start_block, end_block, num_blocks, full_output, and path configurations
 /// - Job-populated fields: snos_fact (during processing)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SnosMetadata {
@@ -176,9 +176,6 @@ pub struct SnosMetadata {
     pub num_blocks: u64,
     /// Whether to generate full SNOS output
     pub full_output: bool,
-    /// Starknet protocol version for this batch
-    /// Determines which SNOS/prover version to use
-    pub starknet_version: String,
     /// Path to the Cairo PIE file
     pub cairo_pie_path: Option<String>,
     /// Path to the on-chain data file

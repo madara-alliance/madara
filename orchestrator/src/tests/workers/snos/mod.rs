@@ -38,17 +38,12 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
 
     db.expect_get_snos_batches_without_jobs().with(eq(SnosBatchStatus::Closed)).returning({
         let completed_snos_batches = completed_snos_batches.clone();
-        move |_| {
-            Ok(completed_snos_batches
-                .iter()
-                .map(|&index| SnosBatch::new(index, 1, index, "0.13.2".to_string()))
-                .collect())
-        }
+        move |_| Ok(completed_snos_batches.iter().map(|&index| SnosBatch::new(index, 1, index)).collect())
     });
 
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
 
-    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, 1, 1, "0.13.2".to_string())));
+    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, 1, 1)));
 
     // Mock job creation
     for &block_num in &completed_snos_batches {
@@ -146,12 +141,7 @@ async fn test_create_snos_job_for_existing_batch(
     // Getting the list of snos batches without jobs should return the completed snos batches
     db.expect_get_snos_batches_without_jobs().times(1).with(eq(SnosBatchStatus::Closed)).returning({
         let completed_snos_batches = completed_snos_batches.clone();
-        move |_| {
-            Ok(completed_snos_batches
-                .iter()
-                .map(|&index| SnosBatch::new(index, 1, index, "0.13.2".to_string()))
-                .collect())
-        }
+        move |_| Ok(completed_snos_batches.iter().map(|&index| SnosBatch::new(index, 1, index)).collect())
     });
 
     // This is called to check if we have a job with the same internal_id and type
@@ -159,7 +149,7 @@ async fn test_create_snos_job_for_existing_batch(
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
 
     // Doesn't matter what we return here
-    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, 1, 1, "0.13.2".to_string())));
+    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, 1, 1)));
 
     // Mock job creation for our test batch
     for snos_batch_num in completed_snos_batches {

@@ -57,7 +57,6 @@ impl JobTrigger for SnosJobTrigger {
                 snos_batch.start_block,
                 snos_batch.end_block,
                 config.snos_config().snos_full_output,
-                snos_batch.starknet_version.clone(),
             );
 
             match JobHandlerService::create_job(
@@ -138,11 +137,10 @@ pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u6
 /// * `start_block` - The starting block number of the batch
 /// * `end_block` - The ending block number of the batch
 /// * `full_output` - Set to true if layer is L3, false otherwise
-/// * `starknet_version` - The Starknet protocol version for this batch
 ///
 /// # Returns
 /// * `JobMetadata` - Complete job metadata with common and SNOS-specific fields
-fn create_job_metadata(start_block: u64, end_block: u64, full_output: bool, starknet_version: String) -> JobMetadata {
+fn create_job_metadata(start_block: u64, end_block: u64, full_output: bool) -> JobMetadata {
     JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
@@ -151,13 +149,11 @@ fn create_job_metadata(start_block: u64, end_block: u64, full_output: bool, star
             end_block,
             num_blocks: end_block - start_block + 1,
             full_output,
-            starknet_version,
             cairo_pie_path: Some(format!("{}/{}", start_block, CAIRO_PIE_FILE_NAME)),
             on_chain_data_path: Some(format!("{}/{}", start_block, ON_CHAIN_DATA_FILE_NAME)),
             snos_output_path: Some(format!("{}/{}", start_block, SNOS_OUTPUT_FILE_NAME)),
             program_output_path: Some(format!("{}/{}", start_block, PROGRAM_OUTPUT_FILE_NAME)),
-            snos_fact: None,
-            snos_n_steps: None,
+            ..Default::default()
         }),
     }
 }
