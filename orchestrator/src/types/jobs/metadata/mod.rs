@@ -163,7 +163,7 @@ pub struct ProvingMetadata {
 /// # Field Management
 /// - Worker-initialized fields: start_block, end_block, num_blocks, full_output, starknet_version, and path configurations
 /// - Job-populated fields: snos_fact (during processing)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SnosMetadata {
     // Worker-initialized fields
     /// index of the batch
@@ -193,25 +193,6 @@ pub struct SnosMetadata {
     pub snos_fact: Option<String>,
     /// SNOS total steps taken
     pub snos_n_steps: Option<usize>,
-}
-
-impl Default for SnosMetadata {
-    fn default() -> Self {
-        Self {
-            snos_batch_index: 0,
-            start_block: 0,
-            end_block: 0,
-            num_blocks: 0,
-            full_output: false,
-            starknet_version: String::new(),
-            cairo_pie_path: None,
-            on_chain_data_path: None,
-            snos_output_path: None,
-            program_output_path: None,
-            snos_fact: None,
-            snos_n_steps: None,
-        }
-    }
 }
 
 /// Metadata specific to state update jobs.
