@@ -86,12 +86,10 @@ impl GatewaySyncSteps {
                 // At genesis - VERIFY it matches upstream to detect network misconfiguration
                 tracing::warn!("🔍 Reached genesis block, verifying against upstream...");
 
-                let local_genesis_view = self._backend.block_view(&BlockId::Number(0))?;
+                let local_genesis_view = self._backend.block_view_on_confirmed(0)
+                    .ok_or_else(|| anyhow::anyhow!("Genesis block not found"))?;
                 let local_genesis_info = local_genesis_view.get_block_info()?;
-                let local_genesis_hash = local_genesis_info
-                    .as_closed()
-                    .ok_or_else(|| anyhow::anyhow!("Genesis must be confirmed"))?
-                    .block_hash;
+                let local_genesis_hash = local_genesis_info.block_hash;
 
                 // Fetch upstream genesis to compare
                 match self.client.get_state_update_with_block(BlockId::Number(0)).await {
@@ -120,32 +118,30 @@ impl GatewaySyncSteps {
             tracing::debug!("🔍 Probing block {} for common ancestor", probe_block_n);
 
             // Get what we have stored for this block
-            if let Ok(block_view) = self._backend.block_view(&BlockId::Number(probe_block_n)) {
+            if let Some(block_view) = self._backend.block_view_on_confirmed(probe_block_n) {
                 let block_info = block_view.get_block_info()?;
-                if let Some(closed_info) = block_info.as_closed() {
-                    let local_block_hash = closed_info.block_hash;
-                    tracing::debug!("🔍 Our block {} hash: {:#x}", probe_block_n, local_block_hash);
+                let local_block_hash = block_info.block_hash;
+                tracing::debug!("🔍 Our block {} hash: {:#x}", probe_block_n, local_block_hash);
 
-                    // Fetch the same block from gateway to compare
-                    match self.client.get_state_update_with_block(BlockId::Number(probe_block_n)).await {
-                        Ok(gateway_response) => {
-                            let gateway_block = gateway_response
-                                .into_full_block()
-                                .with_context(|| format!("Parsing gateway block {}", probe_block_n))?;
-                            let gateway_hash = gateway_block.block_hash;
-                            tracing::debug!("🔍 Gateway block {} hash: {:#x}", probe_block_n, gateway_hash);
+                // Fetch the same block from gateway to compare
+                match self.client.get_state_update_with_block(BlockId::Number(probe_block_n)).await {
+                    Ok(gateway_response) => {
+                        let gateway_block = gateway_response
+                            .into_full_block()
+                            .with_context(|| format!("Parsing gateway block {}", probe_block_n))?;
+                        let gateway_hash = gateway_block.block_hash;
+                        tracing::debug!("🔍 Gateway block {} hash: {:#x}", probe_block_n, gateway_hash);
 
-                            if local_block_hash == gateway_hash {
-                                // Found common ancestor!
-                                tracing::info!("✅ Found common ancestor at block {}", probe_block_n);
-                                return Ok(local_block_hash);
-                            } else {
-                                tracing::debug!("❌ Block {} hash mismatch, continuing search", probe_block_n);
-                            }
+                        if local_block_hash == gateway_hash {
+                            // Found common ancestor!
+                            tracing::info!("✅ Found common ancestor at block {}", probe_block_n);
+                            return Ok(local_block_hash);
+                        } else {
+                            tracing::debug!("❌ Block {} hash mismatch, continuing search", probe_block_n);
                         }
-                        Err(e) => {
-                            tracing::warn!("⚠️ Failed to fetch block {} from gateway: {}", probe_block_n, e);
-                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("⚠️ Failed to fetch block {} from gateway: {}", probe_block_n, e);
                     }
                 }
             }
@@ -253,84 +249,78 @@ impl PipelineSteps for GatewaySyncSteps {
 
                 if block_n == 0 {
                     // Check if we already have a genesis block
-                    if let Ok(local_genesis_view) = self._backend.block_view(&BlockId::Number(0)) {
+                    if let Some(local_genesis_view) = self._backend.block_view_on_confirmed(0) {
                         let local_genesis_info = local_genesis_view.get_block_info()?;
-                        if let Some(closed_genesis_info) = local_genesis_info.as_closed() {
-                            let local_genesis_hash = closed_genesis_info.block_hash;
-                            let upstream_genesis_hash = gateway_block.block_hash;
+                        let local_genesis_hash = local_genesis_info.block_hash;
+                        let upstream_genesis_hash = gateway_block.block_hash;
 
-                            if local_genesis_hash != upstream_genesis_hash {
-                                tracing::warn!(
-                                    "🔄 GENESIS MISMATCH DETECTED: local_genesis={:#x}, upstream_genesis={:#x}",
-                                    local_genesis_hash, upstream_genesis_hash
-                                );
-                                tracing::warn!("🔄 Cannot sync chains with different genesis blocks");
-                                tracing::warn!("🔄 Wiping database and preparing to resync from upstream...");
+                        if local_genesis_hash != upstream_genesis_hash {
+                            tracing::warn!(
+                                "🔄 GENESIS MISMATCH DETECTED: local_genesis={:#x}, upstream_genesis={:#x}",
+                                local_genesis_hash, upstream_genesis_hash
+                            );
+                            tracing::warn!("🔄 Cannot sync chains with different genesis blocks");
+                            tracing::warn!("🔄 Wiping database and preparing to resync from upstream...");
 
-                                self.handle_genesis_mismatch().await?;
-                                anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
-                            }
-
-                            tracing::debug!("✅ Genesis block already exists and matches upstream, skipping block 0");
-                            continue;
+                            self.handle_genesis_mismatch().await?;
+                            anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
                         }
+
+                        tracing::debug!("✅ Genesis block already exists and matches upstream, skipping block 0");
+                        continue;
                     }
                 }
 
                 // Check for parent hash mismatch (reorg detection) BEFORE processing the block
                 if block_n > 0 {
                     // Try to get the parent block's info (only confirmed blocks during gateway sync)
-                    match self._backend.block_view(&BlockId::Number(block_n - 1)) {
-                        Ok(parent_view) => {
+                    match self._backend.block_view_on_confirmed(block_n - 1) {
+                        Some(parent_view) => {
                             let parent_info = parent_view.get_block_info()?;
                             let incoming_parent_hash = gateway_block.header.parent_block_hash;
+                            let local_parent_hash = parent_info.block_hash;
 
-                            // For gateway sync, we only deal with confirmed blocks, so use as_closed()
-                            if let Some(closed_parent_info) = parent_info.as_closed() {
-                                let local_parent_hash = closed_parent_info.block_hash;
+                            if incoming_parent_hash != local_parent_hash {
+                                tracing::warn!(
+                                    "🔄 REORG DETECTED: Parent hash mismatch at block_n={}! incoming_parent={:#x}, our_parent={:#x}",
+                                    block_n, incoming_parent_hash, local_parent_hash
+                                );
 
-                                if incoming_parent_hash != local_parent_hash {
-                                    tracing::warn!(
-                                        "🔄 REORG DETECTED: Parent hash mismatch at block_n={}! incoming_parent={:#x}, our_parent={:#x}",
-                                        block_n, incoming_parent_hash, local_parent_hash
-                                    );
+                                // Try to find common ancestor
+                                match self.find_common_ancestor(block_n - 1).await {
+                                    Ok(common_ancestor_hash) => {
+                                        if common_ancestor_hash == Felt::ZERO {
+                                            // Genesis mismatch - no common ancestor found
+                                            tracing::warn!("🔄 Genesis mismatch detected - starting automatic recovery");
+                                            tracing::warn!("🔄 Wiping database and preparing to resync from upstream...");
+                                            tracing::error!("❌ Genesis mismatch detected, aborting sync");
+                                            self.handle_genesis_mismatch().await?;
 
-                                    // Try to find common ancestor
-                                    match self.find_common_ancestor(block_n - 1).await {
-                                        Ok(common_ancestor_hash) => {
-                                            if common_ancestor_hash == Felt::ZERO {
-                                                // Genesis mismatch - no common ancestor found
-                                                tracing::warn!("🔄 Genesis mismatch detected - starting automatic recovery");
-                                                tracing::warn!("🔄 Wiping database and preparing to resync from upstream...");
-                                                tracing::error!("❌ Genesis mismatch detected, aborting sync");
-                                                self.handle_genesis_mismatch().await?;
+                                            anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
+                                        } else {
+                                            // Normal reorg - found common ancestor
+                                            tracing::info!("🔄 Triggering reorg to common ancestor hash={:#x}", common_ancestor_hash);
+                                            self._backend.revert_to(&common_ancestor_hash)?;
 
-                                                anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
-                                            } else {
-                                                // Normal reorg - found common ancestor
-                                                tracing::info!("🔄 Triggering reorg to common ancestor hash={:#x}", common_ancestor_hash);
-                                                self._backend.revert_to(&common_ancestor_hash)?;
+                                            self._backend.db.flush()?;
 
-                                                self._backend.db.flush()?;
+                                            let fresh_chain_tip = self._backend.db.get_chain_tip()
+                                                .context("Getting fresh chain tip after reorg")?;
+                                            let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
+                                            self._backend.chain_tip.send_replace(backend_chain_tip);
+                                            tracing::info!("✅ Reorg completed successfully, chain tip cache refreshed, aborting pipeline to restart from new chain tip");
 
-                                                let fresh_chain_tip = self._backend.db.get_chain_tip()
-                                                    .context("Getting fresh chain tip after reorg")?;
-                                                let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-                                                self._backend.chain_tip.send_replace(backend_chain_tip);
-                                                tracing::info!("✅ Reorg completed successfully, chain tip cache refreshed, aborting pipeline to restart from new chain tip");
-
-                                                anyhow::bail!("Reorg detected and processed, restarting sync from new chain tip");
-                                            }
+                                            anyhow::bail!("Reorg detected and processed, restarting sync from new chain tip");
                                         }
-                                        Err(e) => {
-                                            tracing::error!("Failed to find common ancestor: {}", e);
-                                            return Err(e);
-                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to find common ancestor: {}", e);
+                                        return Err(e);
                                     }
                                 }
                             }
                         }
-                        Err(_) => {
+                        None => {
                             // Parent block not found via block_view() - could be written but not confirmed yet
                             // This is normal during parallel fetching, but we need to be careful on sync resume
 

@@ -8,7 +8,7 @@ use crate::{
 use anyhow::Context;
 use blocks::{gateway_preconfirmed_block_sync, GatewayBlockSync};
 use classes::ClassesSync;
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
 use mc_gateway_client::{BlockId, BlockTag, GatewayProvider};
 use mp_gateway::block::ProviderBlockHeader;
 use std::{iter, sync::Arc, time::Duration};
