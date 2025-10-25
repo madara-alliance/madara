@@ -20,7 +20,6 @@ use crate::types::{
 };
 use crate::AtlanticValidatedArgs;
 
-
 /// Struct to store job info
 pub struct AtlanticJobInfo {
     /// Path of the Cairo PIE file
