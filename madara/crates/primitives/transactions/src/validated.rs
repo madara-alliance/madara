@@ -74,6 +74,8 @@ pub struct ValidatedTransaction {
     pub declared_class: Option<ConvertedClass>,
     /// Computed transaction hash.
     pub hash: Felt,
+    /// Charge Fee Execution flag
+    pub charge_fee: bool,
 }
 
 impl ValidatedTransaction {
@@ -81,6 +83,7 @@ impl ValidatedTransaction {
         tx: ApiAccountTransaction,
         arrived_at: TxTimestamp,
         converted_class: Option<ConvertedClass>,
+        charge_fee: bool,
     ) -> Self {
         Self {
             contract_address: tx.contract_address().to_felt(),
@@ -89,6 +92,7 @@ impl ValidatedTransaction {
             paid_fee_on_l1: None,
             arrived_at,
             declared_class: converted_class,
+            charge_fee,
         }
     }
 
@@ -143,6 +147,13 @@ impl ValidatedTransaction {
         };
 
         let tx = BTransaction::new_for_sequencing(tx);
+        let tx = match tx {
+            BTransaction::Account(mut txn) => {
+                txn.execution_flags.charge_fee = self.charge_fee;
+                BTransaction::Account(txn)
+            }
+            _ => tx,
+        };
         Ok((tx, self.arrived_at, self.declared_class))
     }
 }

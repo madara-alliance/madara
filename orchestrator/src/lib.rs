@@ -1,3 +1,7 @@
+// TODO(mohit): Remove this once large error variants are refactored.
+// See main.rs for full explanation.
+#![allow(clippy::result_large_err)]
+
 pub mod cli;
 pub mod compression;
 pub mod core;

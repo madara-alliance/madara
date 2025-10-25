@@ -207,7 +207,7 @@ impl Accounts {
         &mut self,
         tx: &MempoolTransaction,
         account_nonce: Nonce,
-    ) -> Result<TxEntryForInsertion, TxInsertionError> {
+    ) -> Result<TxEntryForInsertion<'_>, TxInsertionError> {
         let (inner, update_data) = match self.accounts.entry(tx.contract_address()) {
             // Existing mempool account.
             hash_map::Entry::Occupied(entry) => {
@@ -400,5 +400,8 @@ impl Accounts {
 
     pub fn is_empty(&self) -> bool {
         self.accounts.is_empty()
+    }
+    pub fn num_accounts(&self) -> usize {
+        self.accounts.len()
     }
 }

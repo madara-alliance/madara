@@ -15,6 +15,11 @@ on:
         required: false
         type: string
         default: ""
+      is-standalone:
+        description: "Whether the binary is a standalone project (not part of workspace)"
+        required: false
+        type: boolean
+        default: false
     outputs:
       binary-hash:
         description: "Hash of the built binary"
@@ -39,10 +44,32 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: ${{ inputs.binary-name }}-${{ runner.os }}-rust-1.86${{ inputs.cache-key-suffix }}
 
+      - name: Python Cairo setup (for apollo_starknet_os_program dependencies)
+        if: inputs.is-standalone == false
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
       # Build the specified binary
-      - name: Cargo build ${{ inputs.binary-name }}
+      - name: Cargo build ${{ inputs.binary-name }} (workspace)
+        if: inputs.is-standalone == false
         run: |
           cargo build --release --bin ${{ inputs.binary-name }}
+
+      # Build standalone binary
+      - name: Cargo build ${{ inputs.binary-name }} (standalone)
+        if: inputs.is-standalone == true
+        run: |
+          export GIT_COMMIT_HASH=$GITHUB_SHA
+          cd ${{ inputs.binary-name }}
+          cargo build --release
+
+      # Copy standalone binary to expected location
+      - name: Copy standalone binary
+        if: inputs.is-standalone == true
+        run: |
+          mkdir -p target/release
+          cp ${{ inputs.binary-name }}/target/release/${{ inputs.binary-name }} target/release/
 
       # Generate hash for the binary
       - name: Generate binary hash

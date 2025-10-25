@@ -18,7 +18,7 @@ use mc_mempool::{MempoolInsertionError, TxInsertionError};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
-use mp_rpc::v0_7_1::{
+use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
@@ -102,19 +102,21 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             err @ (E::ExecutionError { .. }
             | E::ValidateTransactionError { .. }
             | E::ContractConstructorExecutionFailed { .. }
-            | E::PanicInValidate { .. }) => rejected(ValidateFailure, format!("{err:#}")),
+            | E::PanicInValidate { .. }
+            | E::DeclareTransactionCasmHashMissMatch { .. }
+            | E::ValidateCairo0Error(_)) => rejected(ValidateFailure, format!("{err:#}")),
             err @ (E::FeeCheckError(_)
             | E::FromStr(_)
             | E::InvalidValidateReturnData { .. }
             | E::StarknetApiError(_)
             | E::TransactionFeeError(_)
-            | E::TransactionPreValidationError(_)
             | E::TryFromIntError(_)
             | E::TransactionTooLarge { .. }) => rejected(ValidateFailure, format!("{err:#}")),
             err @ E::InvalidVersion { .. } => rejected(InvalidTransactionVersion, format!("{err:#}")),
             err @ (E::InvalidSegmentStructure(_, _) | E::ProgramError { .. }) => {
                 rejected(InvalidProgram, format!("{err:#}"))
             }
+            E::TransactionPreValidationError(err) => (*err).into(),
             E::StateError(err) => err.into(),
         }
     }
@@ -127,6 +129,7 @@ impl From<ToBlockifierError> for SubmitTransactionError {
 
         // These are not always precise or accurate.
         match value {
+            E::UnsupportedTransactionVersion => rejected(InvalidTransactionVersion, "Unsupported transaction version"),
             E::CompilationFailed(class_compilation_error) => {
                 rejected(CompilationFailed, format!("{class_compilation_error:#}"))
             }
@@ -254,7 +257,7 @@ impl TransactionValidator {
         let tx_hash = tx.tx_hash().to_felt();
 
         if tx.tx_type() == TransactionType::L1Handler {
-            // L1HandlerTransactions don't have nonces.
+            // L1HandlerTransactions don't have nonces. They can't be added to the mempool.
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::ValidateFailure,
                 "Cannot submit l1 handler transactions",
@@ -265,14 +268,14 @@ impl TransactionValidator {
         // the account is not deployed yet but the tx should be accepted.
         let validate = !(tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE);
 
-        // No charge_fee for Admin DeclareV0
-        let charge_fee = !((tx.tx_type() == TransactionType::Declare
-            && tx.version() == TransactionVersion(Felt::ZERO))
-            || self.config.disable_fee);
-
         let account_tx = AccountTransaction {
             tx,
-            execution_flags: ExecutionFlags { only_query: false, charge_fee, validate, strict_nonce_check: false },
+            execution_flags: ExecutionFlags {
+                only_query: false,
+                charge_fee: !self.config.disable_fee,
+                validate,
+                strict_nonce_check: false,
+            },
         };
 
         if !self.config.disable_validation {
@@ -287,14 +290,21 @@ impl TransactionValidator {
 
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
+            let account_tx = account_tx.clone();
             let mut validator = MadaraBlockView::from(self.backend.block_view_on_preconfirmed_or_fake()?)
                 .new_execution_context()?
                 .into_transaction_validator();
-            validator.perform_validations(account_tx.clone())?
+            // spawn_blocking: avoid starving the tokio workers during execution.
+            mp_utils::spawn_blocking(move || validator.perform_validations(account_tx)).await?;
         }
 
         // Forward the validated tx.
-        let tx = ValidatedTransaction::from_starknet_api(account_tx.tx, arrived_at, converted_class);
+        let tx = ValidatedTransaction::from_starknet_api(
+            account_tx.tx,
+            arrived_at,
+            converted_class,
+            account_tx.execution_flags.charge_fee,
+        );
         self.inner.submit_validated_transaction(tx).await?;
 
         Ok(())

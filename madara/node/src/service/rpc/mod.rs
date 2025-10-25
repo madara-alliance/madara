@@ -5,6 +5,7 @@ use mc_block_production::BlockProductionHandle;
 use mc_db::MadaraBackend;
 use mc_rpc::{rpc_api_admin, rpc_api_user, Starknet};
 use metrics::RpcMetrics;
+use mp_chain_config::RpcVersion;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use server::{start_server, ServerConfig};
 use std::sync::Arc;
@@ -74,31 +75,41 @@ impl Service for RpcService {
         self.server_handle = Some(server_handle);
         let block_prod_handle = self.block_prod_handle.clone();
 
+        let pre_v0_9_preconfirmed_as_pending = self.config.rpc_pre_v0_9_preconfirmed_as_pending;
+
         runner.service_loop(move |ctx| async move {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
 
-            let starknet = Starknet::new(
+            let mut starknet = Starknet::new(
                 backend.clone(),
                 submit_tx,
                 config.storage_proof_config(),
                 block_prod_handle,
                 ctx.clone(),
             );
+            starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
+
             let metrics = RpcMetrics::register()?;
 
             let server_config = {
-                let (name, addr, api_rpc, rpc_version_default) = match rpc_type {
+                let (name, addr, api_rpc, rpc_version_default, supported_versions) = match rpc_type {
                     RpcType::User => (
                         "JSON-RPC".to_string(),
                         config.addr_user(),
                         rpc_api_user(&starknet)?,
                         mp_chain_config::RpcVersion::RPC_VERSION_LATEST,
+                        vec![
+                            RpcVersion::RPC_VERSION_0_7_1,
+                            RpcVersion::RPC_VERSION_0_8_1,
+                            RpcVersion::RPC_VERSION_0_9_0,
+                        ],
                     ),
                     RpcType::Admin => (
                         "JSON-RPC (Admin)".to_string(),
                         config.addr_admin(),
                         rpc_api_admin(&starknet)?,
                         mp_chain_config::RpcVersion::RPC_VERSION_LATEST_ADMIN,
+                        vec![RpcVersion::RPC_VERSION_ADMIN_0_1_0],
                     ),
                 };
                 let methods = rpc_api_build("rpc", api_rpc).into();
@@ -116,6 +127,7 @@ impl Service for RpcService {
                     metrics,
                     cors: config.cors(),
                     rpc_version_default,
+                    supported_versions,
                 }
             };
 

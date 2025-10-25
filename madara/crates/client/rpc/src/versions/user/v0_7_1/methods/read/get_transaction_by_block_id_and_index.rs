@@ -1,7 +1,6 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
-use mp_block::BlockId;
-use mp_rpc::v0_7_1::TxnWithHash;
+use mp_rpc::v0_7_1::{BlockId, TxnWithHash};
 
 /// Get the details of a transaction by a given block id and index.
 ///
@@ -28,59 +27,59 @@ pub fn get_transaction_by_block_id_and_index(
     block_id: BlockId,
     index: u64,
 ) -> StarknetRpcResult<TxnWithHash> {
-    let view = starknet.backend.block_view(block_id)?;
+    let view = starknet.resolve_block_view(block_id)?;
     let tx = view.get_executed_transaction(index)?.ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
 
-    Ok(TxnWithHash { transaction: tx.transaction.into(), transaction_hash: *tx.receipt.transaction_hash() })
+    Ok(TxnWithHash { transaction: tx.transaction.to_rpc_v0_7(), transaction_hash: *tx.receipt.transaction_hash() })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters};
-    use mp_block::BlockTag;
+    use mp_rpc::v0_7_1::BlockTag;
     use rstest::rstest;
 
     #[rstest]
     fn test_get_transaction_by_block_id_and_index(
         sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet),
     ) {
-        let (SampleChainForBlockGetters { block_hashes, expected_txs, .. }, rpc) = sample_chain_for_block_getters;
+        let (SampleChainForBlockGetters { block_hashes, expected_txs_v0_7, .. }, rpc) = sample_chain_for_block_getters;
 
         // Block 0
-        assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(0), 0).unwrap(), expected_txs[0]);
+        assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(0), 0).unwrap(), expected_txs_v0_7[0]);
         assert_eq!(
             get_transaction_by_block_id_and_index(&rpc, BlockId::Hash(block_hashes[0]), 0).unwrap(),
-            expected_txs[0]
+            expected_txs_v0_7[0]
         );
 
         // Block 1
 
         // Block 2
-        assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(2), 0).unwrap(), expected_txs[1]);
+        assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(2), 0).unwrap(), expected_txs_v0_7[1]);
         assert_eq!(
             get_transaction_by_block_id_and_index(&rpc, BlockId::Hash(block_hashes[2]), 0).unwrap(),
-            expected_txs[1]
+            expected_txs_v0_7[1]
         );
         assert_eq!(
             get_transaction_by_block_id_and_index(&rpc, BlockId::Tag(BlockTag::Latest), 0).unwrap(),
-            expected_txs[1]
+            expected_txs_v0_7[1]
         );
 
-        assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(2), 1).unwrap(), expected_txs[2]);
+        assert_eq!(get_transaction_by_block_id_and_index(&rpc, BlockId::Number(2), 1).unwrap(), expected_txs_v0_7[2]);
         assert_eq!(
             get_transaction_by_block_id_and_index(&rpc, BlockId::Hash(block_hashes[2]), 1).unwrap(),
-            expected_txs[2]
+            expected_txs_v0_7[2]
         );
         assert_eq!(
             get_transaction_by_block_id_and_index(&rpc, BlockId::Tag(BlockTag::Latest), 1).unwrap(),
-            expected_txs[2]
+            expected_txs_v0_7[2]
         );
 
         // Pending
         assert_eq!(
             get_transaction_by_block_id_and_index(&rpc, BlockId::Tag(BlockTag::Pending), 0).unwrap(),
-            expected_txs[3]
+            expected_txs_v0_7[3]
         );
     }
 

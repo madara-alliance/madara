@@ -7,12 +7,10 @@ use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAcco
 use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, AccountActions};
 use crate::utils::constants::UDC_PATH;
 use crate::utils::{save_to_json, wait_for_transaction, JsonValueType};
-use crate::ConfigFile;
 
 pub struct UdcSetup<'a> {
     account: RpcAccount<'a>,
     account_address: Felt,
-    arg_config: &'a ConfigFile,
     clients: &'a Clients,
 }
 
@@ -23,22 +21,13 @@ pub struct UdcSetupOutput {
 }
 
 impl<'a> UdcSetup<'a> {
-    pub fn new(
-        account: RpcAccount<'a>,
-        account_address: Felt,
-        arg_config: &'a ConfigFile,
-        clients: &'a Clients,
-    ) -> Self {
-        Self { account, account_address, arg_config, clients }
+    pub fn new(account: RpcAccount<'a>, account_address: Felt, clients: &'a Clients) -> Self {
+        Self { account, account_address, clients }
     }
 
     pub async fn setup(&self) -> UdcSetupOutput {
-        let udc_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
-            String::from(UDC_PATH),
-            self.arg_config.rollup_declare_v0_seq_url.clone(),
-            self.clients.provider_l2(),
-        ))
-        .await;
+        let udc_class_hash =
+            declare_contract(self.clients, DeclarationInput::LegacyDeclarationInputs(String::from(UDC_PATH))).await;
         log::info!("📣 UDC Class Hash Declared.");
         save_to_json("udc_class_hash", &JsonValueType::StringType(udc_class_hash.to_string())).unwrap();
 

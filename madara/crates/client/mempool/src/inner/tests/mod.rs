@@ -80,6 +80,7 @@ impl From<TestTx> for ValidatedTransaction {
             arrived_at: TxTimestamp(value.arrived_at),
             declared_class: None,
             hash: value.tx_hash,
+            charge_fee: true,
         }
     }
 }

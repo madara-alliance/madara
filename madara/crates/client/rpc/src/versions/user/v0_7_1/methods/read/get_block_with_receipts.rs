@@ -1,17 +1,17 @@
 use crate::errors::StarknetRpcResult;
 use crate::Starknet;
-use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
+use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_convert::Felt;
 use mp_rpc::v0_7_1::{
-    BlockHeader, BlockStatus, BlockWithReceipts, PendingBlockHeader, PendingBlockWithReceipts,
-    StarknetGetBlockWithTxsAndReceiptsResult, TransactionAndReceipt, TxnFinalityStatus,
+    BlockId, BlockStatus, BlockWithReceipts, PendingBlockWithReceipts, StarknetGetBlockWithTxsAndReceiptsResult,
+    TransactionAndReceipt, TxnFinalityStatus,
 };
 
 pub fn get_block_with_receipts(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
-    let view = starknet.backend.block_view(block_id)?;
+    let view = starknet.resolve_block_view(block_id)?;
     let block_info = view.get_block_info()?;
     let is_on_l1 = view.is_on_l1();
     let finality_status = if is_on_l1 { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
@@ -20,30 +20,21 @@ pub fn get_block_with_receipts(
         .get_executed_transactions(..)?
         .into_iter()
         .map(|tx| TransactionAndReceipt {
-            receipt: tx.receipt.to_starknet_types(finality_status),
-            transaction: tx.transaction.into(),
+            receipt: tx.receipt.to_rpc_v0_7(finality_status),
+            transaction: tx.transaction.to_rpc_v0_7(),
         })
         .collect();
 
-    let parent_hash = if let Some(b) = view.parent_block() {
-        b.get_block_info()?.block_hash
-    } else {
-        Felt::ZERO // genesis
-    };
-
     match block_info {
         MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
+            let parent_hash = if let Some(b) = view.parent_block() {
+                b.get_block_info()?.block_hash
+            } else {
+                Felt::ZERO // genesis
+            };
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
                 transactions: transactions_with_receipts,
-                pending_block_header: PendingBlockHeader {
-                    parent_hash,
-                    timestamp: block.header.block_timestamp.0,
-                    sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
-                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
-                    l1_da_mode: block.header.l1_da_mode.into(),
-                    starknet_version: block.header.protocol_version.to_string(),
-                },
+                pending_block_header: block.header.to_rpc_v0_7(parent_hash),
             }))
         }
         MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
@@ -51,18 +42,7 @@ pub fn get_block_with_receipts(
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Block(BlockWithReceipts {
                 transactions: transactions_with_receipts,
                 status,
-                block_header: BlockHeader {
-                    block_hash: block.block_hash,
-                    parent_hash,
-                    block_number: block.header.block_number,
-                    new_root: block.header.global_state_root,
-                    timestamp: block.header.block_timestamp.0,
-                    sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
-                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
-                    l1_da_mode: block.header.l1_da_mode.into(),
-                    starknet_version: block.header.protocol_version.to_string(),
-                },
+                block_header: block.to_rpc_v0_7(),
             }))
         }
     }
@@ -79,13 +59,13 @@ mod tests {
     use mc_db::MadaraBackend;
     use mp_block::{
         header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
-        BlockTag, FullBlockWithoutCommitments, TransactionWithReceipt,
+        FullBlockWithoutCommitments, TransactionWithReceipt,
     };
     use mp_chain_config::StarknetVersion;
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
     };
-    use mp_rpc::v0_7_1::{L1DaMode, ResourcePrice};
+    use mp_rpc::v0_7_1::{BlockHeader, BlockTag, L1DaMode, PendingBlockHeader, ResourcePrice};
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
@@ -93,15 +73,15 @@ mod tests {
 
     #[rstest]
     fn test_get_block_with_receipts(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
-        let (SampleChainForBlockGetters { block_hashes, expected_txs, expected_receipts, .. }, rpc) =
+        let (SampleChainForBlockGetters { block_hashes, expected_txs_v0_7, expected_receipts_v0_7, .. }, rpc) =
             sample_chain_for_block_getters;
 
         // Block 0
         let res = StarknetGetBlockWithTxsAndReceiptsResult::Block(BlockWithReceipts {
             status: BlockStatus::AcceptedOnL1,
             transactions: vec![TransactionAndReceipt {
-                transaction: expected_txs[0].transaction.clone(),
-                receipt: expected_receipts[0].clone(),
+                transaction: expected_txs_v0_7[0].transaction.clone(),
+                receipt: expected_receipts_v0_7[0].clone(),
             }],
             block_header: BlockHeader {
                 block_hash: block_hashes[0],
@@ -144,12 +124,12 @@ mod tests {
             status: BlockStatus::AcceptedOnL2,
             transactions: vec![
                 TransactionAndReceipt {
-                    transaction: expected_txs[1].transaction.clone(),
-                    receipt: expected_receipts[1].clone(),
+                    transaction: expected_txs_v0_7[1].transaction.clone(),
+                    receipt: expected_receipts_v0_7[1].clone(),
                 },
                 TransactionAndReceipt {
-                    transaction: expected_txs[2].transaction.clone(),
-                    receipt: expected_receipts[2].clone(),
+                    transaction: expected_txs_v0_7[2].transaction.clone(),
+                    receipt: expected_receipts_v0_7[2].clone(),
                 },
             ],
             block_header: BlockHeader {
@@ -172,8 +152,8 @@ mod tests {
         // Pending
         let res = StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
             transactions: vec![TransactionAndReceipt {
-                transaction: expected_txs[3].transaction.clone(),
-                receipt: expected_receipts[3].clone(),
+                transaction: expected_txs_v0_7[3].transaction.clone(),
+                receipt: expected_receipts_v0_7[3].clone(),
             }],
             pending_block_header: PendingBlockHeader {
                 parent_hash: block_hashes[2],

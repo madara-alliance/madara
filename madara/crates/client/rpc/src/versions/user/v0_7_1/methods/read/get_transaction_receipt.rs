@@ -38,15 +38,14 @@ pub fn get_transaction_receipt(
         let finality_status = if res.block.is_on_l1() { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
         let block_hash = confirmed.get_block_info()?.block_hash;
 
-        let transaction_receipt = transaction.receipt.clone().to_starknet_types(finality_status);
+        let transaction_receipt = transaction.receipt.clone().to_rpc_v0_7(finality_status);
         Ok(TxnReceiptWithBlockInfo {
             transaction_receipt,
             block_hash: Some(block_hash),
             block_number: Some(confirmed.block_number()),
         })
     } else {
-        // TODO: block_number should not be an Option in rpc v0.9, and new finality status.
-        let transaction_receipt = transaction.receipt.clone().to_starknet_types(TxnFinalityStatus::L2);
+        let transaction_receipt = transaction.receipt.clone().to_rpc_v0_7(TxnFinalityStatus::L2);
         Ok(TxnReceiptWithBlockInfo { transaction_receipt, block_hash: None, block_number: None })
     }
 }
@@ -59,12 +58,12 @@ mod tests {
 
     #[rstest]
     fn test_get_transaction_receipt(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
-        let (SampleChainForBlockGetters { block_hashes, tx_hashes, expected_receipts, .. }, rpc) =
+        let (SampleChainForBlockGetters { block_hashes, tx_hashes, expected_receipts_v0_7, .. }, rpc) =
             sample_chain_for_block_getters;
 
         // Block 0
         let res = TxnReceiptWithBlockInfo {
-            transaction_receipt: expected_receipts[0].clone(),
+            transaction_receipt: expected_receipts_v0_7[0].clone(),
             block_hash: Some(block_hashes[0]),
             block_number: Some(0),
         };
@@ -74,13 +73,13 @@ mod tests {
 
         // Block 2
         let res = TxnReceiptWithBlockInfo {
-            transaction_receipt: expected_receipts[1].clone(),
+            transaction_receipt: expected_receipts_v0_7[1].clone(),
             block_hash: Some(block_hashes[2]),
             block_number: Some(2),
         };
         assert_eq!(get_transaction_receipt(&rpc, tx_hashes[1]).unwrap(), res);
         let res = TxnReceiptWithBlockInfo {
-            transaction_receipt: expected_receipts[2].clone(),
+            transaction_receipt: expected_receipts_v0_7[2].clone(),
             block_hash: Some(block_hashes[2]),
             block_number: Some(2),
         };
@@ -88,7 +87,7 @@ mod tests {
 
         // Pending
         let res = TxnReceiptWithBlockInfo {
-            transaction_receipt: expected_receipts[3].clone(),
+            transaction_receipt: expected_receipts_v0_7[3].clone(),
             block_hash: None,
             block_number: None,
         };

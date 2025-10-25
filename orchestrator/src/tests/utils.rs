@@ -1,4 +1,4 @@
-use crate::types::batch::{Batch, BatchStatus};
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use chrono::{SubsecRound, Utc};
 use rstest::fixture;
 use uuid::Uuid;
@@ -39,7 +39,11 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
         JobType::SnosRun => JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Snos(SnosMetadata {
-                block_number: internal_id,
+                snos_batch_index: 1,
+                start_block: internal_id,
+                end_block: internal_id,
+                num_blocks: 1,
+                full_output: true,
                 cairo_pie_path: Some(format!("{}/{}", internal_id, CAIRO_PIE_FILE_NAME)),
                 snos_output_path: Some(format!("{}/{}", internal_id, SNOS_OUTPUT_FILE_NAME)),
                 program_output_path: Some(format!("{}/{}", internal_id, PROGRAM_OUTPUT_FILE_NAME)),
@@ -83,10 +87,13 @@ pub fn build_batch(
     #[default(1)] index: u64,
     #[default(100)] start_block: u64,
     #[default(200)] end_block: u64,
-) -> Batch {
-    Batch {
+) -> AggregatorBatch {
+    AggregatorBatch {
         id: Uuid::new_v4(),
         index,
+        num_snos_batches: 5,
+        start_snos_batch: 10,
+        end_snos_batch: 15,
         num_blocks: end_block - start_block + 1,
         start_block,
         end_block,
@@ -96,7 +103,7 @@ pub fn build_batch(
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
         bucket_id: String::from("ABCD1234"),
-        status: BatchStatus::Open,
+        status: AggregatorBatchStatus::Open,
         starknet_version: "0.13.2".to_string(),
     }
 }

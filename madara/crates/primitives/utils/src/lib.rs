@@ -20,6 +20,7 @@ where
 
 #[track_caller]
 pub fn spawn_blocking<F: FnOnce() -> R + Send + 'static, R: Send + 'static>(f: F) -> AbortOnDrop<R> {
+    // AbortOnDrop is kind of useless on blocking tasks, but, we still use it here for its panic bubble-up logic.
     AbortOnDrop::spawn_blocking(f)
 }
 

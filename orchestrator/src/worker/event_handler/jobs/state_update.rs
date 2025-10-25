@@ -2,7 +2,7 @@ use crate::core::config::Config;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::batch::BatchStatus;
+use crate::types::batch::AggregatorBatchStatus;
 use crate::types::constant::{ON_CHAIN_DATA_FILE_NAME, PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
@@ -17,13 +17,11 @@ use crate::worker::utils::{
 };
 use alloy::primitives::B256;
 use async_trait::async_trait;
-use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
 use orchestrator_utils::layer::Layer;
 use starknet_core::types::Felt;
-use starknet_os::io::output::StarknetOsOutput;
 use std::str::FromStr;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
@@ -31,7 +29,7 @@ use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
 struct StateUpdateArtifacts {
-    snos_output: Option<StarknetOsOutput>,
+    snos_output: Option<Vec<Felt>>,
     program_output: Vec<[u8; 32]>,
     blob_data: Vec<Vec<u8>>,
 }
@@ -327,7 +325,7 @@ impl StateUpdateJobHandler {
         let (expected_last_block_number, batch) = match config.layer() {
             Layer::L2 => {
                 // Get the batch details for the last-settled batch
-                let batch = config.database().get_batches_by_indexes(vec![*last_settled]).await?;
+                let batch = config.database().get_aggregator_batches_by_indexes(vec![*last_settled]).await?;
                 if batch.is_empty() {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
                 } else {
@@ -355,7 +353,10 @@ impl StateUpdateJobHandler {
                 };
                 // Update batch status
                 if let Some(batch) = batch {
-                    config.database().update_batch_status_by_index(batch.index, BatchStatus::Completed).await?;
+                    config
+                        .database()
+                        .update_aggregator_batch_status_by_index(batch.index, AggregatorBatchStatus::Completed)
+                        .await?;
                 }
                 Ok(block_status.into())
             }
@@ -379,7 +380,7 @@ impl StateUpdateJobHandler {
         }
 
         // Get the batch details for the batch to settle
-        let batches = config.database().get_batches_by_indexes(vec![to_batch_num]).await?;
+        let batches = config.database().get_aggregator_batches_by_indexes(vec![to_batch_num]).await?;
         if batches.is_empty() {
             return Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", to_batch_num))));
         }
@@ -462,7 +463,20 @@ impl StateUpdateJobHandler {
     ) -> Result<String, JobError> {
         match config.layer() {
             Layer::L2 => self.update_state_for_batch(config, nonce, artifacts).await,
-            Layer::L3 => self.update_state_for_block(config, to_settle_num, artifacts).await,
+            Layer::L3 => {
+                self.update_state_for_block(
+                    config,
+                    to_settle_num,
+                    artifacts.snos_output.ok_or(JobError::Other(OtherError(eyre!(
+                        "SNOS output not found for state update for block {}",
+                        to_settle_num
+                    ))))?,
+                    nonce,
+                    artifacts.program_output,
+                    artifacts.blob_data,
+                )
+                .await
+            }
         }
     }
 
@@ -487,23 +501,13 @@ impl StateUpdateJobHandler {
         &self,
         config: Arc<Config>,
         block_no: u64,
-        artifacts: StateUpdateArtifacts,
+        snos: Vec<Felt>,
+        nonce: u64,
+        program_output: Vec<[u8; 32]>,
+        blob_data: Vec<Vec<u8>>,
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
-
-        // Trying to get snos output
-        let snos_output = match artifacts.snos_output {
-            Some(snos_output) => snos_output,
-            None => {
-                error!("SnosOutput not found during state update for block. Cannot proceed without it!");
-                return Err(JobError::Other(OtherError(eyre!(
-                    "SnosOutput not found during state update for block. Cannot proceed without it!"
-                ))));
-            }
-        };
-
-        // Check for the correctness of the use_kzg_da flag in snos_output
-        let last_tx_hash_executed = if snos_output.use_kzg_da == Felt252::ZERO {
+        let last_tx_hash_executed = if snos.get(8) == Some(&Felt::ZERO) {
             let proof_key = format!("{block_no}/{PROOF_FILE_NAME}");
             debug!(%proof_key, "Fetching snos proof file");
 
@@ -545,6 +549,11 @@ impl StateUpdateJobHandler {
                     onchain_data.on_chain_data_hash.0,
                     usize_to_bytes(onchain_data.on_chain_data_size),
                 )
+                .await
+                .map_err(|e| JobError::Other(OtherError(e)))?
+        } else if snos.get(8) == Some(&Felt::ONE) {
+            settlement_client
+                .update_state_with_blobs(program_output, blob_data, nonce)
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
         } else {

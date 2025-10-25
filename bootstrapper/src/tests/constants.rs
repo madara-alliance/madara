@@ -1,6 +1,6 @@
 pub const ETH_RPC: &str = "http://127.0.0.1:8545";
 pub const ETH_PRIV_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-pub const ROLLUP_SEQ_URL: &str = "http://127.0.0.1:19944";
+pub const ROLLUP_SEQ_URL: &str = "http://127.0.0.1:19944/rpc/v0.8.1/";
 pub const ROLLUP_DECLARE_V0_SEQ_URL: &str = "http://127.0.0.1:19943";
 pub const ROLLUP_PRIV_KEY: &str = "0xabcd";
 pub const ETH_CHAIN_ID: &str = "31337";

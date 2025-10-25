@@ -183,7 +183,7 @@ mod starknet_event_stream_tests {
             self.server.base_url()
         }
 
-        fn mock_get_events(&self, events: Vec<EmittedEvent>, continuation_token: Option<&str>) -> Mock {
+        fn mock_get_events(&self, events: Vec<EmittedEvent>, continuation_token: Option<&str>) -> Mock<'_> {
             self.server.mock(|when, then| {
                 when.method(POST).path("/").header("Content-Type", "application/json").matches(|req| {
                     let body = req.body.clone().unwrap();
@@ -203,7 +203,7 @@ mod starknet_event_stream_tests {
             })
         }
 
-        fn mock_block_number(&self, block_number: u64) -> Mock {
+        fn mock_block_number(&self, block_number: u64) -> Mock<'_> {
             self.server.mock(|when, then| {
                 when.method(POST).path("/").matches(|req| {
                     let body = req.body.clone().unwrap();
@@ -219,7 +219,7 @@ mod starknet_event_stream_tests {
             })
         }
 
-        fn mock_error_response(&self, error_code: i64, error_message: &str) -> Mock {
+        fn mock_error_response(&self, error_code: i64, error_message: &str) -> Mock<'_> {
             self.server.mock(|when, then| {
                 when.method(POST).path("/");
 

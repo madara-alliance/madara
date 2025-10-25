@@ -3,7 +3,6 @@ use std::sync::Arc;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
 use rstest::*;
-use starknet_os::io::output::StarknetOsOutput;
 use url::Url;
 use uuid::Uuid;
 
@@ -82,11 +81,15 @@ async fn test_process_job() -> color_eyre::Result<()> {
     let storage_client = services.config.storage();
 
     // Create proper metadata structure
-    let block_number = 76793;
+    let block_number = 2671680; // starknet sepolia block
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
-            block_number,
+            snos_batch_index: 1,
+            start_block: block_number,
+            end_block: block_number,
+            num_blocks: 1,
+            full_output: true,
             cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
             snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
             program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
@@ -108,17 +111,17 @@ async fn test_process_job() -> color_eyre::Result<()> {
 
     let result = SnosJobHandler.process_job(Arc::clone(&services.config), &mut job_item).await?;
 
-    assert_eq!(result, "76793");
+    assert_eq!(result, "1"); // expecting "1" because it's the first batch
 
-    let cairo_pie_key = format!("76793/{}", CAIRO_PIE_FILE_NAME);
-    let snos_output_key = format!("76793/{}", SNOS_OUTPUT_FILE_NAME);
+    let cairo_pie_key = format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME);
+    let snos_output_key = format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME);
 
     let cairo_pie_data = storage_client.get_data(&cairo_pie_key).await?;
     let snos_output_data = storage_client.get_data(&snos_output_key).await?;
 
     // assert that we can build back the Pie & the Snos output
     let _ = CairoPie::from_bytes(&cairo_pie_data)?;
-    let _: StarknetOsOutput = serde_json::from_slice(&snos_output_data)?;
+    let _: serde_json::Value = serde_json::from_slice(&snos_output_data)?;
 
     Ok(())
 }

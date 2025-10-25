@@ -20,14 +20,6 @@ use crate::types::{
 };
 use crate::AtlanticValidatedArgs;
 
-#[derive(Debug, strum_macros::EnumString)]
-enum ProverType {
-    #[strum(serialize = "starkware")]
-    Starkware,
-    #[strum(serialize = "herodotus")]
-    HeroDotus,
-}
-
 /// Struct to store job info
 pub struct AtlanticJobInfo {
     /// Path of the Cairo PIE file

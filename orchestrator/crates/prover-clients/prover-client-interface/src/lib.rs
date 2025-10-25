@@ -74,7 +74,7 @@ pub enum ProverClientError {
     #[error("Fact checker error: {0}")]
     FactChecker(#[from] FactCheckerError),
     #[error("Failed to encode Cairo PIE: {0}")]
-    PieEncoding(#[source] starknet_os::error::SnOsError),
+    PieEncoding(String),
     #[error("Failed to convert job key to UUID: {0}")]
     InvalidJobKey(String),
     #[error("Failed to convert fact to B256: {0}")]

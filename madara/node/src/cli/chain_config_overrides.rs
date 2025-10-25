@@ -1,20 +1,18 @@
-use std::time::Duration;
-
 use anyhow::{bail, Context};
 use blockifier::bouncer::BouncerConfig;
 use clap::Parser;
-use serde::{Deserialize, Serialize};
-use serde_yaml::Value;
-use starknet_api::core::{ChainId, ContractAddress};
-
 use mp_chain_config::{
     deserialize_starknet_version, serialize_starknet_version, BlockProductionConfig, ChainConfig,
-    L1DataAvailabilityMode, MempoolMode, StarknetVersion,
+    L1DataAvailabilityMode, MempoolMode, SettlementChainKind, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
     deserialize_duration, deserialize_optional_duration, serialize_duration, serialize_optional_duration,
 };
+use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
+use starknet_api::core::{ChainId, ContractAddress};
+use std::time::Duration;
 use url::Url;
 
 /// Override chain config parameters.
@@ -80,6 +78,7 @@ pub struct ChainConfigOverrideParams {
 pub struct ChainConfigOverridesInner {
     pub chain_name: String,
     pub chain_id: ChainId,
+    pub settlement_chain_kind: SettlementChainKind,
     pub l1_da_mode: L1DataAvailabilityMode,
     pub feeder_gateway_url: Url,
     pub gateway_url: Url,
@@ -118,6 +117,7 @@ impl ChainConfigOverrideParams {
             chain_name: chain_config.chain_name,
             chain_id: chain_config.chain_id,
             l1_da_mode: chain_config.l1_da_mode,
+            settlement_chain_kind: chain_config.settlement_chain_kind,
             native_fee_token_address: chain_config.native_fee_token_address,
             parent_fee_token_address: chain_config.parent_fee_token_address,
             latest_protocol_version: chain_config.latest_protocol_version,
@@ -174,6 +174,7 @@ impl ChainConfigOverrideParams {
         Ok(ChainConfig {
             chain_name: chain_config_overrides.chain_name,
             chain_id: chain_config_overrides.chain_id,
+            settlement_chain_kind: chain_config_overrides.settlement_chain_kind,
             l1_da_mode: chain_config_overrides.l1_da_mode,
             feeder_gateway_url: chain_config_overrides.feeder_gateway_url,
             gateway_url: chain_config_overrides.gateway_url,

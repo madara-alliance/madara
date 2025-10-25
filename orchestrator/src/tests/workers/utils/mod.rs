@@ -25,7 +25,11 @@ pub fn get_job_item_mock_by_id(id: String, uuid: Uuid) -> JobItem {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
-            block_number,
+            snos_batch_index: 1,
+            start_block: block_number,
+            end_block: block_number,
+            num_blocks: 1,
+            full_output: true,
             cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
             snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
             program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
@@ -93,7 +97,11 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
         JobType::SnosRun => JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Snos(SnosMetadata {
-                block_number,
+                snos_batch_index: 1,
+                start_block: block_number,
+                end_block: block_number,
+                num_blocks: 1,
+                full_output: true,
                 cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
                 snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
                 program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
@@ -141,7 +149,14 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
         // For any other job types, use a default metadata structure
         _ => JobMetadata {
             common: CommonMetadata::default(),
-            specific: JobSpecificMetadata::Snos(SnosMetadata { block_number, ..Default::default() }),
+            specific: JobSpecificMetadata::Snos(SnosMetadata {
+                snos_batch_index: 1,
+                start_block: block_number,
+                end_block: block_number,
+                num_blocks: 1,
+                full_output: true,
+                ..Default::default()
+            }),
         },
     }
 }

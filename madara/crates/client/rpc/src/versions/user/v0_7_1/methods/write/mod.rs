@@ -19,7 +19,7 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
     async fn add_declare_transaction(&self, declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash> {
         Ok(self
             .add_transaction_provider
-            .submit_declare_transaction(declare_transaction)
+            .submit_declare_transaction(declare_transaction.into())
             .await
             .map_err(StarknetRpcApiError::from)?)
     }
@@ -40,7 +40,7 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
     ) -> RpcResult<ContractAndTxnHash> {
         Ok(self
             .add_transaction_provider
-            .submit_deploy_account_transaction(deploy_account_transaction)
+            .submit_deploy_account_transaction(deploy_account_transaction.into())
             .await
             .map_err(StarknetRpcApiError::from)?)
     }
@@ -60,7 +60,7 @@ impl StarknetWriteRpcApiV0_7_1Server for Starknet {
     ) -> RpcResult<AddInvokeTransactionResult> {
         Ok(self
             .add_transaction_provider
-            .submit_invoke_transaction(invoke_transaction)
+            .submit_invoke_transaction(invoke_transaction.into())
             .await
             .map_err(StarknetRpcApiError::from)?)
     }

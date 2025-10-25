@@ -67,7 +67,7 @@ impl SnapshotWithDBArc {
     /// Return the value associated with a key using RocksDB's PinnableSlice
     /// so as to avoid unnecessary memory copy. Similar to get_pinned_opt but
     /// leverages default options.
-    pub fn get_pinned<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<DBPinnableSlice>, Error> {
+    pub fn get_pinned<K: AsRef<[u8]>>(&self, key: K) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         let readopts = ReadOptions::default();
         self.get_pinned_opt(key, readopts)
     }
@@ -79,7 +79,7 @@ impl SnapshotWithDBArc {
         &self,
         cf: &impl AsColumnFamilyRef,
         key: K,
-    ) -> Result<Option<DBPinnableSlice>, Error> {
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         let readopts = ReadOptions::default();
         self.get_pinned_cf_opt(cf, key.as_ref(), readopts)
     }
@@ -90,7 +90,7 @@ impl SnapshotWithDBArc {
         &self,
         key: K,
         readopts: ReadOptions,
-    ) -> Result<Option<DBPinnableSlice>, Error> {
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         self.readopts_with_raw_snapshot(readopts, |readopts| self.db.db.get_pinned_opt(key.as_ref(), readopts))
     }
 
@@ -102,7 +102,7 @@ impl SnapshotWithDBArc {
         cf: &impl AsColumnFamilyRef,
         key: K,
         readopts: ReadOptions,
-    ) -> Result<Option<DBPinnableSlice>, Error> {
+    ) -> Result<Option<DBPinnableSlice<'_>>, Error> {
         self.readopts_with_raw_snapshot(readopts, |readopts| self.db.db.get_pinned_cf_opt(cf, key.as_ref(), readopts))
     }
 
