@@ -252,6 +252,10 @@ pub struct SnosBatch {
 
     /// Current status of the SNOS batch
     pub status: SnosBatchStatus,
+
+    /// Starknet protocol version for all blocks in this batch
+    /// Must match the parent aggregator batch's starknet_version
+    pub starknet_version: String,
 }
 
 impl SnosBatch {
@@ -261,14 +265,11 @@ impl SnosBatch {
     /// * `snos_batch_id` - Unique sequential ID for this SNOS batch
     /// * `aggregator_batch_index` - Index of the parent aggregator batch
     /// * `start_block` - The start block number of the batch
-    /// * `end_block` - The end block number of the batch
+    /// * `starknet_version` - Starknet protocol version for this batch
     ///
     /// # Returns
     /// A new `SnosBatch` instance with status `Open`
-    ///
-    /// # Panics
-    /// Panics if `end_block` < `start_block`
-    pub fn new(snos_batch_id: u64, aggregator_batch_index: u64, start_block: u64) -> Self {
+    pub fn new(snos_batch_id: u64, aggregator_batch_index: u64, start_block: u64, starknet_version: String) -> Self {
         Self {
             id: Uuid::new_v4(),
             snos_batch_id,
@@ -279,6 +280,7 @@ impl SnosBatch {
             status: SnosBatchStatus::Open,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
+            starknet_version,
         }
     }
 

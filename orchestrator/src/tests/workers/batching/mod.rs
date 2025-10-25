@@ -167,7 +167,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
 
-    let existing_batch = crate::types::batch::Batch {
+    let existing_batch = crate::types::batch::AggregatorBatch {
         index: 1,
         start_block: 0,
         end_block: 3,
@@ -179,7 +179,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         ..Default::default()
     };
 
-    database.expect_get_latest_batch().returning(move || Ok(Some(existing_batch.clone())));
+    database.expect_get_latest_aggregator_batch().returning(move || Ok(Some(existing_batch.clone())));
 
     storage.expect_get_data().returning(|_| Ok(Bytes::from(get_dummy_state_update(1).to_string())));
 
@@ -187,12 +187,12 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
 
     let batches_updated = Arc::new(Mutex::new(Vec::new()));
     let batches_updated_clone = batches_updated.clone();
-    database.expect_update_or_create_batch().returning(move |batch, _| {
+    database.expect_update_or_create_aggregator_batch().returning(move |batch, _| {
         batches_updated_clone.lock().unwrap().push(batch.clone());
         Ok(batch.clone())
     });
 
-    database.expect_create_batch().returning(Ok);
+    database.expect_create_aggregator_batch().returning(Ok);
 
     lock.expect_acquire_lock()
         .withf(move |key, value, expiry_seconds, owner| {

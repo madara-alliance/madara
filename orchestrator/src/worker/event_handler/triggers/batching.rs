@@ -277,31 +277,58 @@ impl BatchingTrigger {
         // Get the provider
         let provider = config.madara_client();
 
-        if
+        // First, validate that aggregator and snos batches have matching Starknet versions
+        // This ensures batch integrity - both must always be in sync
+        if current_aggregator_batch.starknet_version != current_snos_batch.starknet_version {
+            return Err(JobError::BatchingNotInSync(format!(
+                "Starknet version mismatch between batches: Aggregator batch {} has version '{}' but SNOS batch {} has version '{}'",
+                current_aggregator_batch.index,
+                current_aggregator_batch.starknet_version,
+                current_snos_batch.snos_batch_id,
+                current_snos_batch.starknet_version
+            )));
+        }
 
         // Fetch Starknet version for the current block
         let current_block_starknet_version = fetch_block_starknet_version(config, block_number).await.map_err(|e| {
             JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_number, e))
         })?;
 
-        // Check Starknet version compatibility for batch integrity
-        // A batch/bucket can only contain blocks from the same Starknet protocol version
-        // This is a requirement from the prover - blocks with different Starknet versions cannot be in the same bucket
-        if current_aggregator_batch.starknet_version != current_block_starknet_version ||  current_snos_batch.starknet_version != current_block_starknet_version {
+        // Check if current block's Starknet version differs from the batch version
+        // A batch can only contain blocks from the same Starknet protocol version (prover requirement)
+        if current_aggregator_batch.starknet_version != current_block_starknet_version {
             info!(
                 block_number = %block_number,
                 current_block_starknet_version = %current_block_starknet_version,
-                batch_starknet_version = %current_batch.starknet_version,
-                "Starknet version mismatch detected, closing current batch to maintain version consistency across the bucket"
+                batch_starknet_version = %current_aggregator_batch.starknet_version,
+                "Starknet version mismatch detected, closing current batches to maintain version consistency across the bucket"
             );
 
-            // Close the current batch with the previous state update
+            // Close both current batches if there's a previous state update
             if let Some(ref prev_update) = prev_state_update {
-                self.close_batch(&current_batch, prev_update, true, config, current_batch.end_block, provider).await?;
+                self.save_batch_state(
+                    BatchState {
+                        aggregator_batch: &current_aggregator_batch,
+                        snos_batch: &current_snos_batch,
+                        close_aggregator_batch: true,
+                        snos_batch_status: SnosBatchStatus::Closed,
+                        state_update: prev_update,
+                    },
+                    config,
+                    provider,
+                )
+                .await?;
             }
 
-            // Start a new batch with the current block's Starknet version
-            let new_batch = self.start_batch(config, current_batch.index + 1, block_number).await?;
+            // Start new batches with the current block's Starknet version
+            let (new_snos_batch, new_aggregator_batch) = self
+                .start_new_batches(
+                    config,
+                    current_aggregator_batch.index + 1,
+                    current_snos_batch.snos_batch_id + 1,
+                    block_number,
+                )
+                .await?;
 
             // Get state update for the current block
             let current_state_update = provider
@@ -310,10 +337,10 @@ impl BatchingTrigger {
                 .map_err(|e| JobError::ProviderError(e.to_string()))?;
 
             return match current_state_update {
-                Update(state_update) => Ok((Some(state_update), new_batch)),
-                PendingUpdate(_) => {
+                Update(state_update) => Ok((Some(state_update), new_aggregator_batch, new_snos_batch)),
+                PreConfirmedUpdate(_) => {
                     info!("Skipping batching for block {} as it is still pending", block_number);
-                    Ok((None, new_batch))
+                    Ok((None, new_aggregator_batch, new_snos_batch))
                 }
             };
         }
@@ -399,6 +426,7 @@ impl BatchingTrigger {
                                 current_snos_batch.snos_batch_id + 1,
                                 current_aggregator_batch.index,
                                 block_number,
+                                current_aggregator_batch.starknet_version.clone(),
                             )?;
 
                             Ok((
@@ -516,8 +544,9 @@ impl BatchingTrigger {
         snos_batch_id: u64,
         aggregator_batch_index: u64,
         start_block: u64,
+        starknet_version: String,
     ) -> Result<SnosBatch, JobError> {
-        Ok(SnosBatch::new(snos_batch_id, aggregator_batch_index, start_block))
+        Ok(SnosBatch::new(snos_batch_id, aggregator_batch_index, start_block, starknet_version))
     }
 
     /// Creates and returns new SNOS and Aggregator batches
@@ -528,8 +557,24 @@ impl BatchingTrigger {
         snos_index: u64,
         start_block: u64,
     ) -> Result<(SnosBatch, AggregatorBatch), JobError> {
-        let snos_batch = self.start_snos_batch(snos_index, aggregator_index, start_block)?;
+        // Fetch the starknet_version once for both batches to ensure consistency
+        let starknet_version = fetch_block_starknet_version(config, start_block).await.map_err(|e| {
+            JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", start_block, e)))
+        })?;
+
+        // Create both batches with the same starknet_version
+        let snos_batch = self.start_snos_batch(snos_index, aggregator_index, start_block, starknet_version.clone())?;
         let aggregator_batch = self.start_aggregator_batch(config, aggregator_index, snos_index, start_block).await?;
+
+        // Sanity check: both batches must have the same version
+        if aggregator_batch.starknet_version != snos_batch.starknet_version {
+            return Err(JobError::Other(OtherError(eyre!(
+                "Internal error: newly created batches have mismatched Starknet versions (Aggregator: {}, SNOS: {})",
+                aggregator_batch.starknet_version,
+                snos_batch.starknet_version
+            ))));
+        }
+
         Ok((snos_batch, aggregator_batch))
     }
 

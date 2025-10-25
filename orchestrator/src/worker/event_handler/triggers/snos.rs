@@ -1,7 +1,7 @@
 use crate::core::config::Config;
 use crate::types::batch::{SnosBatchStatus, SnosBatchUpdates};
 use crate::types::constant::{
-    StarknetVersion, CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+    CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::JobType;
@@ -9,10 +9,10 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{eyre, Result, WrapErr};
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{error, info, trace, warn, debug};
+use tracing::{debug, error, info, trace, warn};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -57,6 +57,7 @@ impl JobTrigger for SnosJobTrigger {
                 snos_batch.start_block,
                 snos_batch.end_block,
                 config.snos_config().snos_full_output,
+                snos_batch.starknet_version.clone(),
             );
 
             match JobHandlerService::create_job(
@@ -91,72 +92,72 @@ impl JobTrigger for SnosJobTrigger {
     }
 }
 
-    /// Fetches the Starknet protocol version for a specific block from the sequencer.
-    ///
-    /// This function queries the Madara client to retrieve the complete block header,
-    /// which contains the `starknet_version` field indicating which Starknet protocol
-    /// version was used when the block was created.
-    ///
-    /// # Arguments
-    /// * `config` - Application configuration containing the Madara client
-    /// * `block_number` - The block number to query
-    ///
-    /// # Returns
-    /// * `Result<String>` - The Starknet version string (e.g., "0.13.2") or error
-    ///
-    /// # Errors
-    /// - Network connectivity issues with the sequencer
-    /// - Block not found
-    /// - Missing starknet_version field in block header
-    pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -> Result<String> {
-        use starknet::core::types::BlockId;
-        use starknet::providers::Provider;
+/// Fetches the Starknet protocol version for a specific block from the sequencer.
+///
+/// This function queries the Madara client to retrieve the complete block header,
+/// which contains the `starknet_version` field indicating which Starknet protocol
+/// version was used when the block was created.
+///
+/// # Arguments
+/// * `config` - Application configuration containing the Madara client
+/// * `block_number` - The block number to query
+///
+/// # Returns
+/// * `Result<String>` - The Starknet version string (e.g., "0.13.2") or error
+///
+/// # Errors
+/// - Network connectivity issues with the sequencer
+/// - Block not found
+/// - Missing starknet_version field in block header
+pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -> Result<String> {
+    use starknet::core::types::BlockId;
+    use starknet::providers::Provider;
 
-        let provider = config.madara_client();
-        debug!("Fetching block header for block {} to extract Starknet version", block_number);
+    let provider = config.madara_client();
+    debug!("Fetching block header for block {} to extract Starknet version", block_number);
 
-        // Fetch block with transaction hashes (lighter than full txs)
-        let block = provider
-            .get_block_with_tx_hashes(BlockId::Number(block_number))
-            .await
-            .wrap_err(format!("Failed to fetch block {} from sequencer", block_number))?;
+    // Fetch block with transaction hashes (lighter than full txs)
+    let block = provider
+        .get_block_with_tx_hashes(BlockId::Number(block_number))
+        .await
+        .wrap_err(format!("Failed to fetch block {} from sequencer", block_number))?;
 
-        let starknet_version = match block {
-            starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,
-            starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => {
-                return Err(eyre!("Block {} is still pending, cannot determine final Starknet version", block_number));
-            }
-        };
-
-        Ok(starknet_version)
-    }
-
-    /// create_job_metadata is a helper function to create job metadata for a given block number and layer.
-    ///
-    /// # Arguments
-    /// * `block_number` - The block number to process
-    /// * `full_output` - Set to true if layer is L3, false otherwise
-    /// * `starknet_version` - The Starknet protocol version for this block (from block header) - validated but not stored
-    ///
-    /// # Returns
-    /// * `JobMetadata` - Complete job metadata with common and SNOS-specific fields
-    fn create_job_metadata(
-        block_number: u64,
-        full_output: bool,
-        _starknet_version: Option<StarknetVersion>,
-    ) -> JobMetadata {
-        JobMetadata {
-            common: CommonMetadata::default(),
-            specific: JobSpecificMetadata::Snos(SnosMetadata {
-                start_block,
-                end_block,
-                num_blocks: end_block - start_block + 1,
-                full_output,
-                cairo_pie_path: Some(format!("{}/{}", start_block, CAIRO_PIE_FILE_NAME)),
-                on_chain_data_path: Some(format!("{}/{}", start_block, ON_CHAIN_DATA_FILE_NAME)),
-                snos_output_path: Some(format!("{}/{}", start_block, SNOS_OUTPUT_FILE_NAME)),
-                program_output_path: Some(format!("{}/{}", start_block, PROGRAM_OUTPUT_FILE_NAME)),
-                ..Default::default()
-            }),
+    let starknet_version = match block {
+        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,
+        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => {
+            return Err(eyre!("Block {} is still pending, cannot determine final Starknet version", block_number));
         }
+    };
+
+    Ok(starknet_version)
+}
+
+/// create_job_metadata is a helper function to create job metadata for a given block range and configuration.
+///
+/// # Arguments
+/// * `start_block` - The starting block number of the batch
+/// * `end_block` - The ending block number of the batch
+/// * `full_output` - Set to true if layer is L3, false otherwise
+/// * `starknet_version` - The Starknet protocol version for this batch
+///
+/// # Returns
+/// * `JobMetadata` - Complete job metadata with common and SNOS-specific fields
+fn create_job_metadata(start_block: u64, end_block: u64, full_output: bool, starknet_version: String) -> JobMetadata {
+    JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::Snos(SnosMetadata {
+            snos_batch_index: 0,
+            start_block,
+            end_block,
+            num_blocks: end_block - start_block + 1,
+            full_output,
+            starknet_version,
+            cairo_pie_path: Some(format!("{}/{}", start_block, CAIRO_PIE_FILE_NAME)),
+            on_chain_data_path: Some(format!("{}/{}", start_block, ON_CHAIN_DATA_FILE_NAME)),
+            snos_output_path: Some(format!("{}/{}", start_block, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", start_block, PROGRAM_OUTPUT_FILE_NAME)),
+            snos_fact: None,
+            snos_n_steps: None,
+        }),
     }
+}
