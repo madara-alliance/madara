@@ -14,6 +14,7 @@ Targets:
 
   [ SETUP ]
 
+  - setup-cairo             Setup Cairo 0 environment for building
   - setup-l2                Setup orchestrator with L2 layer (default)
   - setup-l3                Setup orchestrator with L3 layer
   - run-orchestrator-l2     Run the orchestrator with AWS services and Ethereum settlement
@@ -67,6 +68,10 @@ Targets:
   - clean-db           Perform clean and remove local database
   - fclean             Perform clean-db and remove local images
 
+  [ BUILDING ]
+
+  - build                   Build Madara with Cairo 0 environment setup
+
   [ CODE QUALITY ]
 
   Runs various code quality checks including formatting and linting.
@@ -101,6 +106,8 @@ DOCKER_TAG     := madara:latest
 DOCKER_IMAGE   := ghcr.io/madara-alliance/$(DOCKER_TAG)
 DOCKER_GZ      := image.tar.gz
 ARTIFACTS      := ./build-artifacts
+VENV           := sequencer_venv
+VENV_ACTIVATE  := . $(VENV)/bin/activate
 
 # Configuration for E2E bridge tests
 CARGO_TARGET_DIR ?= target
@@ -192,6 +199,35 @@ frestart: fclean
 artifacts:
 	@git submodule update --init --recursive
 	./scripts/artifacts.sh
+
+.PHONY: setup-cairo
+setup-cairo:
+	@echo -e "$(DIM)Setting up Cairo 0 environment...$(RESET)"
+	@if [ ! -d "$(VENV)" ]; then \
+		echo -e "$(INFO)Creating Python virtual environment...$(RESET)"; \
+		python3 -m venv $(VENV); \
+	else \
+		echo -e "$(PASS)✅ Virtual environment already exists$(RESET)"; \
+	fi
+	@echo -e "$(INFO)Installing Cairo 0 dependencies...$(RESET)"
+	@if [ ! -f sequencer_requirements.txt ]; then \
+		if [ -f /Volumes/External/rust-builds/git/checkouts/sequencer-be896281adc16bee/e04617e/scripts/requirements.txt ]; then \
+			sed 's/numpy==2.0.2/numpy<2.0/' /Volumes/External/rust-builds/git/checkouts/sequencer-be896281adc16bee/e04617e/scripts/requirements.txt > sequencer_requirements.txt; \
+		else \
+			echo -e "$(WARN)⚠️  WARNING: Could not find requirements.txt from sequencer checkout$(RESET)"; \
+			echo -e "$(INFO)Creating basic requirements with cairo-lang...$(RESET)"; \
+			echo "cairo-lang==0.14.0.1" > sequencer_requirements.txt; \
+			echo "numpy<2.0" >> sequencer_requirements.txt; \
+		fi; \
+	fi
+	@$(VENV_ACTIVATE) && pip install --upgrade pip > /dev/null 2>&1 && pip install -r sequencer_requirements.txt > /dev/null 2>&1
+	@$(VENV_ACTIVATE) && cairo-compile --version > /dev/null 2>&1 && echo -e "$(PASS)✅ Cairo 0 environment ready (cairo-compile $$($(VENV_ACTIVATE) && cairo-compile --version 2>&1))$(RESET)" || (echo -e "$(WARN)❌ Cairo setup failed$(RESET)" && exit 1)
+
+.PHONY: build-madara
+build-madara: setup-cairo
+	@echo -e "$(DIM)Building Madara with Cairo 0 environment...$(RESET)"
+	@$(VENV_ACTIVATE) && cargo build --manifest-path madara/Cargo.toml  --bin madara --release
+	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 
 .PHONY: check
@@ -419,10 +455,10 @@ test: test-e2e test-orchestrator
 	@echo -e "$(PASS)All tests completed!$(RESET)"
 
 .PHONY: pre-push
-pre-push:
+pre-push: setup-cairo
 	@echo -e "$(DIM)Running pre-push checks...$(RESET)"
 	@echo -e "$(INFO)Running code quality checks...$(RESET)"
-	@$(MAKE) --silent check
+	@$(VENV_ACTIVATE) && $(MAKE) --silent check
 	@echo -e "$(PASS)Pre-push checks completed successfully!$(RESET)"
 
 .PHONY: git-hook
