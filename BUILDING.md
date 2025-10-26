@@ -7,7 +7,7 @@ This guide explains how to build Madara with the required Cairo 0 environment.
 The easiest way to build Madara is using the provided Makefile target:
 
 ```bash
-make build
+make build-madara
 ```
 
 This command will:
@@ -74,7 +74,7 @@ the setup will automatically create a minimal requirements file with just `cairo
 
 ## Available Make Targets
 
-- `make build` - Build Madara (automatically sets up Cairo 0)
+- `make build-madara` - Build Madara (automatically sets up Cairo 0)
 - `make setup-cairo` - Set up Cairo 0 environment only
 - `make pre-push` - Run all pre-push checks (automatically sets up Cairo 0)
 - `make help` - Show all available commands

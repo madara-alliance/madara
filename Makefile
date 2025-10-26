@@ -70,7 +70,7 @@ Targets:
 
   [ BUILDING ]
 
-  - build                   Build Madara with Cairo 0 environment setup
+  - build-madara                  Build Madara with Cairo 0 environment setup
 
   [ CODE QUALITY ]
 
