@@ -106,4 +106,4 @@ s3
 .venv
 
 sequencer_venv/
-./sequencer_requirements.txt
+sequencer_requirements.txt
