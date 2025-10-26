@@ -8,9 +8,8 @@ use crate::{
 use anyhow::Context;
 use blocks::{gateway_preconfirmed_block_sync, GatewayBlockSync};
 use classes::ClassesSync;
-use mc_db::MadaraBackend;
-use mc_gateway_client::GatewayProvider;
-use mp_block::{BlockId, BlockTag};
+use mc_db::{MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
+use mc_gateway_client::{BlockId, BlockTag, GatewayProvider};
 use mp_gateway::block::ProviderBlockHeader;
 use std::{iter, sync::Arc, time::Duration};
 
@@ -27,6 +26,7 @@ pub struct ForwardSyncConfig {
     pub disable_tries: bool,
     pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
+    pub enable_bouncer_config_sync: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -41,6 +41,7 @@ impl Default for ForwardSyncConfig {
             disable_tries: false,
             snap_sync: true,
             keep_pre_v0_13_2_hashes: false,
+            enable_bouncer_config_sync: false,
         }
     }
 }
@@ -54,6 +55,9 @@ impl ForwardSyncConfig {
     }
     pub fn snap_sync(self, val: bool) -> Self {
         Self { snap_sync: val, ..self }
+
+    pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
+        Self { enable_bouncer_config_sync: val, ..self }
     }
 }
 
@@ -82,16 +86,20 @@ pub struct GatewayForwardSync {
     classes_pipeline: ClassesSync,
     apply_state_pipeline: ApplyStateSync,
     backend: Arc<MadaraBackend>,
+    importer: Arc<BlockImporter>,
+    client: Arc<GatewayProvider>,
+    config: ForwardSyncConfig,
 }
 
 impl GatewayForwardSync {
-    pub fn new(
+    /// Helper function to create all three pipelines from a starting block number
+    fn create_pipelines(
         backend: Arc<MadaraBackend>,
         importer: Arc<BlockImporter>,
         client: Arc<GatewayProvider>,
-        config: ForwardSyncConfig,
-    ) -> Self {
-        let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
+        starting_block_n: u64,
+        config: &ForwardSyncConfig,
+    ) -> (GatewayBlockSync, ClassesSync, ApplyStateSync) {
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
@@ -100,6 +108,7 @@ impl GatewayForwardSync {
             config.block_parallelization,
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
+            config.enable_bouncer_config_sync,
         );
         let classes_pipeline = classes::classes_pipeline(
             backend.clone(),
@@ -109,8 +118,81 @@ impl GatewayForwardSync {
             config.classes_parallelization,
             config.classes_batch_size,
         );
-        let apply_state_pipeline = super::apply_state::apply_state_pipeline(backend.clone(), importer.clone(), starting_block_n, config.apply_state_parallelization, config.apply_state_batch_size, config.disable_tries, config.snap_sync);
-        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
+        let apply_state_pipeline = super::apply_state::apply_state_pipeline(
+            backend.clone(),
+            importer.clone(),
+            starting_block_n,
+            config.apply_state_parallelization,
+            config.apply_state_batch_size,
+            config.disable_tries,
+            config.snap_sync
+        );
+        (blocks_pipeline, classes_pipeline, apply_state_pipeline)
+    }
+
+    pub fn new(
+        backend: Arc<MadaraBackend>,
+        importer: Arc<BlockImporter>,
+        client: Arc<GatewayProvider>,
+        config: ForwardSyncConfig,
+    ) -> Self {
+        tracing::info!("🌐 Initializing sync from gateway");
+
+        let latest_full_block = backend.latest_block_n().unwrap_or(0);
+        let starting_block_n = backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
+        tracing::info!(
+            "📊 Database head status: latest_full_block={:?}, starting sync from block #{}",
+            latest_full_block,
+            starting_block_n
+        );
+
+        let (blocks_pipeline, classes_pipeline, apply_state_pipeline) =
+            Self::create_pipelines(backend.clone(), importer.clone(), client.clone(), starting_block_n, &config);
+
+        Self {
+            blocks_pipeline,
+            classes_pipeline,
+            apply_state_pipeline,
+            backend,
+            importer: importer.clone(),
+            client: client.clone(),
+            config,
+        }
+    }
+
+    /// Reinitialize pipelines from the database's current tip
+    /// This is used after a reorg to restart from the new chain head
+    pub fn reinit_pipelines(&mut self) {
+        tracing::info!("🔄 Reinitializing pipelines after reorg");
+        // Ensure we flush any pending writes before reading head status
+        if let Err(e) = self.backend.db.flush() {
+            tracing::warn!("Failed to flush database before reading head status: {}", e);
+        }
+
+        // After reorg, read chain tip directly from database to get fresh value
+        // (the cached chain_tip may be stale after revert_to)
+        let chain_tip = self.backend.db.get_chain_tip().expect("Failed to get chain tip after reorg");
+        let starting_block_n = match chain_tip {
+            mc_db::storage::StorageChainTip::Confirmed(block_n) => block_n + 1,
+            mc_db::storage::StorageChainTip::Preconfirmed { .. } => {
+                tracing::warn!("Unexpected preconfirmed block after reorg");
+                0
+            }
+            mc_db::storage::StorageChainTip::Empty => 0,
+        };
+        tracing::info!("📊 Restarting sync from block #{} (chain_tip={:?})", starting_block_n, chain_tip);
+
+        let (blocks_pipeline, classes_pipeline, apply_state_pipeline) = Self::create_pipelines(
+            self.backend.clone(),
+            self.importer.clone(),
+            self.client.clone(),
+            starting_block_n,
+            &self.config,
+        );
+
+        self.blocks_pipeline = blocks_pipeline;
+        self.classes_pipeline = classes_pipeline;
+        self.apply_state_pipeline = apply_state_pipeline;
     }
 
     fn pipeline_status(&self) -> PipelineStatus {
@@ -151,6 +233,7 @@ impl ForwardPipeline for GatewayForwardSync {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
             {
                 let next_input_block_n = self.blocks_pipeline.next_input_block_n();
+
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
 
@@ -164,9 +247,32 @@ impl ForwardPipeline for GatewayForwardSync {
                     res?;
                 }
                 Some(res) = self.blocks_pipeline.next(), if self.classes_pipeline.can_schedule_more() && self.apply_state_pipeline.can_schedule_more() => {
-                    let (range, state_diffs) = res?;
-                    self.classes_pipeline.push(range.clone(), state_diffs.iter().map(|s| s.all_declared_classes()));
-                    self.apply_state_pipeline.push(range, state_diffs);
+                    match res {
+                        Ok((range, state_diffs)) => {
+                            self.classes_pipeline.push(range.clone(), state_diffs.iter().map(|s| s.all_declared_classes()));
+                            self.apply_state_pipeline.push(range, state_diffs);
+                        }
+                        Err(e) => {
+                            // Check if this is a reorg error or genesis mismatch recovery
+                            let error_msg = e.to_string();
+                            if error_msg.contains("Reorg detected and processed") {
+                                tracing::info!("🔄 Handling reorg: reinitializing all pipelines from new chain tip");
+                                self.reinit_pipelines();
+                                // Break inner loop to restart with fresh pipeline instances
+                                // Returning Ok() causes the outer run loop to call us again with new pipelines
+                                break;
+                            } else if error_msg.contains("Genesis mismatch resolved - database cleared") {
+                                tracing::info!("🔄 Handling genesis mismatch recovery: reinitializing all pipelines from empty database");
+                                self.reinit_pipelines();
+                                // Pipeline will now start from block 0 (empty database)
+                                // Will fetch correct genesis from upstream
+                                break;
+                            } else {
+                                // Propagate other errors
+                                return Err(e);
+                            }
+                        }
+                    }
                 }
                 // all pipelines are empty, we're done :)
                 else => done = true,

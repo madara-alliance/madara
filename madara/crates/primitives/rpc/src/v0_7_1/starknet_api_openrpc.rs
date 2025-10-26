@@ -1,10 +1,9 @@
-use std::sync::Arc;
-
-use super::{BlockId, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn};
+use super::*;
 use crate::custom_serde::NumAsHex;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
 pub type Address = Felt;
 
@@ -166,9 +165,121 @@ pub enum BroadcastedTxn {
 impl BroadcastedTxn {
     pub fn is_query(&self) -> bool {
         match self {
-            BroadcastedTxn::Invoke(txn) => txn.is_query(),
-            BroadcastedTxn::Declare(txn) => txn.is_query(),
-            BroadcastedTxn::DeployAccount(txn) => txn.is_query(),
+            Self::Invoke(txn) => txn.is_query(),
+            Self::Declare(txn) => txn.is_query(),
+            Self::DeployAccount(txn) => txn.is_query(),
+        }
+    }
+    pub fn version(&self) -> Felt {
+        match self {
+            Self::Invoke(txn) => txn.version(),
+            Self::Declare(txn) => txn.version(),
+            Self::DeployAccount(txn) => txn.version(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version")]
+pub enum BroadcastedInvokeTxn {
+    #[serde(rename = "0x0")]
+    V0(InvokeTxnV0),
+    #[serde(rename = "0x1")]
+    V1(InvokeTxnV1),
+    #[serde(rename = "0x3")]
+    V3(InvokeTxnV3),
+
+    /// Query-only broadcasted invoke transaction.
+    #[serde(rename = "0x100000000000000000000000000000000")]
+    QueryV0(InvokeTxnV0),
+    /// Query-only broadcasted invoke transaction.
+    #[serde(rename = "0x100000000000000000000000000000001")]
+    QueryV1(InvokeTxnV1),
+    /// Query-only broadcasted invoke transaction.
+    #[serde(rename = "0x100000000000000000000000000000003")]
+    QueryV3(InvokeTxnV3),
+}
+
+impl BroadcastedInvokeTxn {
+    pub fn is_query(&self) -> bool {
+        match self {
+            Self::QueryV0(_) | Self::QueryV1(_) | Self::QueryV3(_) => true,
+            Self::V0(_) | Self::V1(_) | Self::V3(_) => false,
+        }
+    }
+    pub fn version(&self) -> Felt {
+        match self {
+            Self::V0(_) | Self::QueryV0(_) => Felt::ZERO,
+            Self::V1(_) | Self::QueryV1(_) => Felt::ONE,
+            Self::V3(_) | Self::QueryV3(_) => Felt::THREE,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version")]
+pub enum BroadcastedDeclareTxn {
+    #[serde(rename = "0x1")]
+    V1(BroadcastedDeclareTxnV1),
+    #[serde(rename = "0x2")]
+    V2(BroadcastedDeclareTxnV2),
+    #[serde(rename = "0x3")]
+    V3(BroadcastedDeclareTxnV3),
+
+    /// Query-only broadcasted declare transaction.
+    #[serde(rename = "0x100000000000000000000000000000001")]
+    QueryV1(BroadcastedDeclareTxnV1),
+    /// Query-only broadcasted declare transaction.
+    #[serde(rename = "0x100000000000000000000000000000002")]
+    QueryV2(BroadcastedDeclareTxnV2),
+    /// Query-only broadcasted declare transaction.
+    #[serde(rename = "0x100000000000000000000000000000003")]
+    QueryV3(BroadcastedDeclareTxnV3),
+}
+
+impl BroadcastedDeclareTxn {
+    pub fn is_query(&self) -> bool {
+        match self {
+            Self::QueryV1(_) | Self::QueryV2(_) | Self::QueryV3(_) => true,
+            Self::V1(_) | Self::V2(_) | Self::V3(_) => false,
+        }
+    }
+    pub fn version(&self) -> Felt {
+        match self {
+            Self::V1(_) | Self::QueryV1(_) => Felt::ONE,
+            Self::V2(_) | Self::QueryV2(_) => Felt::TWO,
+            Self::V3(_) | Self::QueryV3(_) => Felt::THREE,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version")]
+pub enum BroadcastedDeployAccountTxn {
+    #[serde(rename = "0x1")]
+    V1(DeployAccountTxnV1),
+    #[serde(rename = "0x3")]
+    V3(DeployAccountTxnV3),
+
+    /// Query-only broadcasted deploy account transaction.
+    #[serde(rename = "0x100000000000000000000000000000001")]
+    QueryV1(DeployAccountTxnV1),
+    /// Query-only broadcasted deploy account transaction.
+    #[serde(rename = "0x100000000000000000000000000000003")]
+    QueryV3(DeployAccountTxnV3),
+}
+
+impl BroadcastedDeployAccountTxn {
+    pub fn is_query(&self) -> bool {
+        match self {
+            Self::QueryV1(_) | Self::QueryV3(_) => true,
+            Self::V1(_) | Self::V3(_) => false,
+        }
+    }
+    pub fn version(&self) -> Felt {
+        match self {
+            Self::V1(_) | Self::QueryV1(_) => Felt::ONE,
+            Self::V3(_) | Self::QueryV3(_) => Felt::THREE,
         }
     }
 }
@@ -204,7 +315,7 @@ pub enum ExecutionStatus {
 }
 
 /// The resources consumed by the VM
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, Default)]
 pub struct ComputationResources {
     /// the number of BITWISE builtin instances
     #[serde(default)]
@@ -827,7 +938,7 @@ pub enum PriceUnit {
     Wei,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, Default)]
 pub struct ResourceBounds {
     /// the max amount of the resource that can be used in the tx
     #[serde(with = "NumAsHex")]

@@ -10,16 +10,12 @@ use crate::ConfigFile;
 pub async fn account_init<'a>(clients: &'a Clients, arg_config: &'a ConfigFile) -> RpcAccount<'a> {
     // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     // Making temp account for declaration of OZ account Cairo 1 contract
-    let oz_account_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
-        String::from(OZ_ACCOUNT_PATH),
-        arg_config.rollup_declare_v0_seq_url.clone(),
-        clients.provider_l2(),
-    ))
-    .await;
+    let oz_account_class_hash =
+        declare_contract(clients, DeclarationInput::LegacyDeclarationInputs(String::from(OZ_ACCOUNT_PATH))).await;
     log::info!("OZ Account Class Hash Declared");
     save_to_json("oz_account_class_hash", &JsonValueType::StringType(oz_account_class_hash.to_string())).unwrap();
 
-    log::info!("Waiting for block to be mined [/]");
+    log::info!("Waiting for block to be produced [/]");
 
     let account_address_temp =
         deploy_account_using_priv_key(TEMP_ACCOUNT_PRIV_KEY.to_string(), clients.provider_l2(), oz_account_class_hash)
@@ -32,11 +28,14 @@ pub async fn account_init<'a>(clients: &'a Clients, arg_config: &'a ConfigFile) 
         false,
     )
     .await;
-    let oz_account_caio_1_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
-        OZ_ACCOUNT_SIERRA_PATH.to_string(),
-        OZ_ACCOUNT_CASM_PATH.to_string(),
-        user_account_temp.clone(),
-    ))
+    let oz_account_caio_1_class_hash = declare_contract(
+        clients,
+        DeclarationInput::DeclarationInputs(
+            OZ_ACCOUNT_SIERRA_PATH.to_string(),
+            OZ_ACCOUNT_CASM_PATH.to_string(),
+            user_account_temp.clone(),
+        ),
+    )
     .await;
     save_to_json("oz_account_caio_1_class_hash", &JsonValueType::StringType(oz_account_caio_1_class_hash.to_string()))
         .unwrap();

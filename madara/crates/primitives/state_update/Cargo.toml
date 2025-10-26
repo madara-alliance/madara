@@ -16,14 +16,17 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 # Madara
+mp-convert = { workspace = true }
 mp-rpc = { workspace = true }
 
 # Starknet
 starknet-types-core = { workspace = true }
+
+# Blockifier for state diff conversion
+blockifier = { workspace = true }
 
 # Other
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 bincode = { workspace = true }
-mp-convert = { workspace = true }

@@ -1,8 +1,12 @@
 use std::hash::Hash;
 use std::str::FromStr;
 
-const SUPPORTED_RPC_VERSIONS: [RpcVersion; 3] =
-    [RpcVersion::RPC_VERSION_0_7_1, RpcVersion::RPC_VERSION_0_8_1, RpcVersion::RPC_VERSION_ADMIN_0_1_0];
+const SUPPORTED_RPC_VERSIONS: [RpcVersion; 4] = [
+    RpcVersion::RPC_VERSION_0_7_1,
+    RpcVersion::RPC_VERSION_0_8_1,
+    RpcVersion::RPC_VERSION_0_9_0,
+    RpcVersion::RPC_VERSION_ADMIN_0_1_0,
+];
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, Hash)]
 pub struct RpcVersion([u8; 3]);
@@ -81,7 +85,8 @@ impl RpcVersion {
 
     pub const RPC_VERSION_0_7_1: RpcVersion = RpcVersion([0, 7, 1]);
     pub const RPC_VERSION_0_8_1: RpcVersion = RpcVersion([0, 8, 1]);
-    pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_8_1;
+    pub const RPC_VERSION_0_9_0: RpcVersion = RpcVersion([0, 9, 0]);
+    pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_9_0;
 
     pub const RPC_VERSION_ADMIN_0_1_0: RpcVersion = RpcVersion([0, 1, 0]);
     pub const RPC_VERSION_LATEST_ADMIN: RpcVersion = Self::RPC_VERSION_ADMIN_0_1_0;
@@ -105,7 +110,7 @@ impl FromStr for RpcVersion {
     type Err = RpcVersionError;
 
     fn from_str(version_str: &str) -> Result<Self, Self::Err> {
-        let mut parts = version_str.split('_');
+        let mut parts = version_str.split(['_', '.']);
 
         let mut version = [0u8; 3];
         for (i, part) in parts.by_ref().take(3).enumerate() {

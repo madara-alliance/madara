@@ -18,6 +18,17 @@ impl From<mp_rpc::v0_7_1::Txn> for Transaction {
         }
     }
 }
+impl From<mp_rpc::v0_8_1::Txn> for Transaction {
+    fn from(tx: mp_rpc::v0_8_1::Txn) -> Self {
+        match tx {
+            mp_rpc::v0_8_1::Txn::Invoke(tx) => Self::Invoke(tx.into()),
+            mp_rpc::v0_8_1::Txn::L1Handler(tx) => Self::L1Handler(tx.into()),
+            mp_rpc::v0_8_1::Txn::Declare(tx) => Self::Declare(tx.into()),
+            mp_rpc::v0_8_1::Txn::Deploy(tx) => Self::Deploy(tx.into()),
+            mp_rpc::v0_8_1::Txn::DeployAccount(tx) => Self::DeployAccount(tx.into()),
+        }
+    }
+}
 
 impl From<mp_rpc::v0_7_1::InvokeTxn> for InvokeTransaction {
     fn from(tx: mp_rpc::v0_7_1::InvokeTxn) -> Self {
@@ -25,6 +36,15 @@ impl From<mp_rpc::v0_7_1::InvokeTxn> for InvokeTransaction {
             mp_rpc::v0_7_1::InvokeTxn::V0(tx) => Self::V0(tx.into()),
             mp_rpc::v0_7_1::InvokeTxn::V1(tx) => Self::V1(tx.into()),
             mp_rpc::v0_7_1::InvokeTxn::V3(tx) => Self::V3(tx.into()),
+        }
+    }
+}
+impl From<mp_rpc::v0_8_1::InvokeTxn> for InvokeTransaction {
+    fn from(tx: mp_rpc::v0_8_1::InvokeTxn) -> Self {
+        match tx {
+            mp_rpc::v0_8_1::InvokeTxn::V0(tx) => Self::V0(tx.into()),
+            mp_rpc::v0_8_1::InvokeTxn::V1(tx) => Self::V1(tx.into()),
+            mp_rpc::v0_8_1::InvokeTxn::V3(tx) => Self::V3(tx.into()),
         }
     }
 }
@@ -69,6 +89,22 @@ impl From<mp_rpc::v0_7_1::InvokeTxnV3> for InvokeTransactionV3 {
         }
     }
 }
+impl From<mp_rpc::v0_8_1::InvokeTxnV3> for InvokeTransactionV3 {
+    fn from(tx: mp_rpc::v0_8_1::InvokeTxnV3) -> Self {
+        Self {
+            sender_address: tx.sender_address,
+            calldata: tx.calldata,
+            signature: tx.signature,
+            nonce: tx.nonce,
+            resource_bounds: tx.resource_bounds.into(),
+            tip: tx.tip,
+            paymaster_data: tx.paymaster_data,
+            account_deployment_data: tx.account_deployment_data,
+            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+        }
+    }
+}
 
 impl From<mp_rpc::v0_7_1::L1HandlerTxn> for L1HandlerTransaction {
     fn from(tx: mp_rpc::v0_7_1::L1HandlerTxn) -> Self {
@@ -89,6 +125,16 @@ impl From<mp_rpc::v0_7_1::DeclareTxn> for DeclareTransaction {
             mp_rpc::v0_7_1::DeclareTxn::V1(tx) => Self::V1(tx.into()),
             mp_rpc::v0_7_1::DeclareTxn::V2(tx) => Self::V2(tx.into()),
             mp_rpc::v0_7_1::DeclareTxn::V3(tx) => Self::V3(tx.into()),
+        }
+    }
+}
+impl From<mp_rpc::v0_8_1::DeclareTxn> for DeclareTransaction {
+    fn from(tx: mp_rpc::v0_8_1::DeclareTxn) -> Self {
+        match tx {
+            mp_rpc::v0_8_1::DeclareTxn::V0(tx) => Self::V0(tx.into()),
+            mp_rpc::v0_8_1::DeclareTxn::V1(tx) => Self::V1(tx.into()),
+            mp_rpc::v0_8_1::DeclareTxn::V2(tx) => Self::V2(tx.into()),
+            mp_rpc::v0_8_1::DeclareTxn::V3(tx) => Self::V3(tx.into()),
         }
     }
 }
@@ -146,6 +192,23 @@ impl From<mp_rpc::v0_7_1::DeclareTxnV3> for DeclareTransactionV3 {
         }
     }
 }
+impl From<mp_rpc::v0_8_1::DeclareTxnV3> for DeclareTransactionV3 {
+    fn from(tx: mp_rpc::v0_8_1::DeclareTxnV3) -> Self {
+        Self {
+            sender_address: tx.sender_address,
+            compiled_class_hash: tx.compiled_class_hash,
+            signature: tx.signature,
+            nonce: tx.nonce,
+            class_hash: tx.class_hash,
+            resource_bounds: tx.resource_bounds.into(),
+            tip: tx.tip,
+            paymaster_data: tx.paymaster_data,
+            account_deployment_data: tx.account_deployment_data,
+            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+        }
+    }
+}
 
 impl From<mp_rpc::v0_7_1::DeployTxn> for DeployTransaction {
     fn from(tx: mp_rpc::v0_7_1::DeployTxn) -> Self {
@@ -166,6 +229,14 @@ impl From<mp_rpc::v0_7_1::DeployAccountTxn> for DeployAccountTransaction {
         }
     }
 }
+impl From<mp_rpc::v0_8_1::DeployAccountTxn> for DeployAccountTransaction {
+    fn from(tx: mp_rpc::v0_8_1::DeployAccountTxn) -> Self {
+        match tx {
+            mp_rpc::v0_8_1::DeployAccountTxn::V1(tx) => Self::V1(tx.into()),
+            mp_rpc::v0_8_1::DeployAccountTxn::V3(tx) => Self::V3(tx.into()),
+        }
+    }
+}
 
 impl From<mp_rpc::v0_7_1::DeployAccountTxnV1> for DeployAccountTransactionV1 {
     fn from(tx: mp_rpc::v0_7_1::DeployAccountTxnV1) -> Self {
@@ -181,6 +252,22 @@ impl From<mp_rpc::v0_7_1::DeployAccountTxnV1> for DeployAccountTransactionV1 {
 }
 impl From<mp_rpc::v0_7_1::DeployAccountTxnV3> for DeployAccountTransactionV3 {
     fn from(tx: mp_rpc::v0_7_1::DeployAccountTxnV3) -> Self {
+        Self {
+            signature: tx.signature,
+            nonce: tx.nonce,
+            contract_address_salt: tx.contract_address_salt,
+            constructor_calldata: tx.constructor_calldata,
+            class_hash: tx.class_hash,
+            resource_bounds: tx.resource_bounds.into(),
+            tip: tx.tip,
+            paymaster_data: tx.paymaster_data,
+            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
+            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+        }
+    }
+}
+impl From<mp_rpc::v0_8_1::DeployAccountTxnV3> for DeployAccountTransactionV3 {
+    fn from(tx: mp_rpc::v0_8_1::DeployAccountTxnV3) -> Self {
         Self {
             signature: tx.signature,
             nonce: tx.nonce,

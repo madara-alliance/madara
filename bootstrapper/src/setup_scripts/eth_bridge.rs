@@ -1,13 +1,4 @@
-use std::str::FromStr;
-
-use ethers::abi::Address;
-use serde::Serialize;
-use starknet::accounts::{Account, ConnectedAccount};
-use starknet::core::types::Felt;
-use starknet_providers::jsonrpc::HttpTransport;
-use starknet_providers::JsonRpcClient;
-
-use crate::contract_clients::config::Clients;
+use crate::contract_clients::config::{Clients, RpcClientProvider};
 use crate::contract_clients::core_contract::CoreContract;
 use crate::contract_clients::eth_bridge::{BridgeDeployable, StarknetLegacyEthBridge};
 use crate::contract_clients::utils::{
@@ -20,6 +11,11 @@ use crate::utils::{
     convert_to_hex, hexstring_to_address, invoke_contract, save_to_json, wait_for_transaction, JsonValueType,
 };
 use crate::ConfigFile;
+use ethers::abi::Address;
+use serde::Serialize;
+use starknet::accounts::{Account, ConnectedAccount};
+use starknet::core::types::Felt;
+use std::str::FromStr;
 
 pub struct EthBridge<'a> {
     account: RpcAccount<'a>,
@@ -55,44 +51,34 @@ impl<'a> EthBridge<'a> {
 
     pub async fn setup(&self) -> EthBridgeSetupOutput {
         // Declare a proxy
-        let legacy_proxy_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
-            String::from(PROXY_LEGACY_PATH),
-            self.arg_config.rollup_declare_v0_seq_url.clone(),
-            self.clients.provider_l2(),
-        ))
-        .await;
+        let legacy_proxy_class_hash =
+            declare_contract(self.clients, DeclarationInput::LegacyDeclarationInputs(String::from(PROXY_LEGACY_PATH)))
+                .await;
         log::info!("🎡 Legacy proxy class hash declared.");
         save_to_json("legacy_proxy_class_hash", &JsonValueType::StringType(legacy_proxy_class_hash.to_string()))
             .unwrap();
 
         // Starkgate proxy declaration
-        let starkgate_proxy_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
-            String::from(STARKGATE_PROXY_PATH),
-            self.arg_config.rollup_declare_v0_seq_url.clone(),
-            self.clients.provider_l2(),
-        ))
+        let starkgate_proxy_class_hash = declare_contract(
+            self.clients,
+            DeclarationInput::LegacyDeclarationInputs(String::from(STARKGATE_PROXY_PATH)),
+        )
         .await;
         log::info!("🎡 Starkgate proxy class hash declared.");
         save_to_json("starkgate_proxy_class_hash", &JsonValueType::StringType(starkgate_proxy_class_hash.to_string()))
             .unwrap();
 
         // Erc20 legacy class declaration
-        let erc20_legacy_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
-            String::from(ERC20_LEGACY_PATH),
-            self.arg_config.rollup_declare_v0_seq_url.clone(),
-            self.clients.provider_l2(),
-        ))
-        .await;
+        let erc20_legacy_class_hash =
+            declare_contract(self.clients, DeclarationInput::LegacyDeclarationInputs(String::from(ERC20_LEGACY_PATH)))
+                .await;
         log::info!("🎡 ERC20 legacy class hash declared.");
         save_to_json("erc20_legacy_class_hash", &JsonValueType::StringType(erc20_legacy_class_hash.to_string()))
             .unwrap();
 
-        let legacy_eth_bridge_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
-            String::from(LEGACY_BRIDGE_PATH),
-            self.arg_config.rollup_declare_v0_seq_url.clone(),
-            self.clients.provider_l2(),
-        ))
-        .await;
+        let legacy_eth_bridge_class_hash =
+            declare_contract(self.clients, DeclarationInput::LegacyDeclarationInputs(String::from(LEGACY_BRIDGE_PATH)))
+                .await;
         log::info!("🎡 Legacy ETH Bridge class hash declared");
         save_to_json(
             "legacy_eth_bridge_class_hash",
@@ -215,7 +201,7 @@ impl<'a> EthBridge<'a> {
 }
 
 pub async fn deploy_eth_token_on_l2(
-    rpc_provider_l2: &JsonRpcClient<HttpTransport>,
+    rpc_provider_l2: &RpcClientProvider,
     eth_proxy_address: Felt,
     _eth_erc20_class_hash: Felt,
     account: &RpcAccount<'_>,

@@ -5,6 +5,7 @@ pub enum Layer {
     L2,
     L3,
 }
+
 impl FromStr for Layer {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -15,5 +16,11 @@ impl FromStr for Layer {
             "layer3" => Ok(Layer::L3),
             other => Err(format!("Unknown layer: {}", other)),
         }
+    }
+}
+
+impl Layer {
+    pub fn is_l3(&self) -> bool {
+        *self == Layer::L3
     }
 }

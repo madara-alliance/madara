@@ -59,13 +59,23 @@ impl Resource for InnerSQS {
                 AWSResourceIdentifier::Name(name) => {
                     let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
 
-                    // Create the queue
-                    let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
-                        OrchestratorError::ResourceSetupError(format!(
-                            "Failed to create SQS queue '{}': {}",
-                            queue_name, e
-                        ))
-                    })?;
+                    let mut creation_attributes = HashMap::new();
+                    creation_attributes
+                        .insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
+
+                    let res = self
+                        .client()
+                        .create_queue()
+                        .queue_name(&queue_name)
+                        .set_attributes(Some(creation_attributes))
+                        .send()
+                        .await
+                        .map_err(|e| {
+                            OrchestratorError::ResourceSetupError(format!(
+                                "Failed to create SQS queue '{}': {}",
+                                queue_name, e
+                            ))
+                        })?;
 
                     let queue_url = res
                         .queue_url()
@@ -87,6 +97,8 @@ impl Resource for InnerSQS {
 
                         // Create the dl queue
                         let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
+
+                        // Standard DLQ creation (no FIFO attributes)
                         let dlq_res = self.client().create_queue().queue_name(&dlq_name).send().await.map_err(|e| {
                             OrchestratorError::ResourceSetupError(format!("Failed to create DLQ '{}': {}", dlq_name, e))
                         })?;

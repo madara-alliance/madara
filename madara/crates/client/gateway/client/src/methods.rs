@@ -1,6 +1,6 @@
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
-use mp_block::{BlockId, BlockTag};
-use mp_class::{ContractClass, FlattenedSierraClass};
+use blockifier::bouncer::BouncerWeights;
+use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
 use mp_gateway::block::ProviderBlockPreConfirmed;
 use mp_gateway::error::{SequencerError, StarknetError};
 use mp_gateway::user_transaction::{
@@ -13,16 +13,16 @@ use mp_gateway::{
         UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
     },
 };
+use mp_rpc::v0_8_1::{BlockId, BlockTag};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
 /// Maximum number of retry attempts for failed API requests.
-/// When an API request fails due to transient errors (such as network issues, 
-/// rate limits, or temporary service unavailability), the client will 
-/// automatically retry the request up to this many times before raising an 
+/// When an API request fails due to transient errors (such as network issues,
+/// rate limits, or temporary service unavailability), the client will
+/// automatically retry the request up to this many times before raising an
 /// exception.
 /// Retries use exponential backoff to avoid overwhelming the service
 const MAX_RETRIES: usize = 5;
@@ -100,6 +100,15 @@ impl GatewayProvider {
         }).await
     }
 
+    pub async fn get_block_bouncer_weights(&self, block_number: u64) -> Result<BouncerWeights, SequencerError> {
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_block_bouncer_weights")
+            .expect("Failed to add URI segment. This should not fail in prod")
+            .with_block_id(&BlockId::Number(block_number));
+
+        request.send_get::<BouncerWeights>().await
+    }
+
     pub async fn get_state_update_with_block(
         &self,
         block_id: BlockId,
@@ -148,8 +157,8 @@ impl GatewayProvider {
                 let sierra: FlattenedSierraClass = serde_json::from_value(value)?;
                 Ok(ContractClass::Sierra(Arc::new(sierra)))
             } else if value.get("program").is_some() {
-                let legacy: LegacyContractClass = serde_json::from_value(value)?;
-                Ok(ContractClass::Legacy(Arc::new(legacy.compress()?.into())))
+                let legacy: mp_gateway::class::LegacyContractClass = serde_json::from_value(value)?;
+                Ok(ContractClass::Legacy(Arc::new(LegacyContractClass::from(legacy).compress()?.into())))
             } else {
                 let err = serde::de::Error::custom("Unknown contract type".to_string());
                 Err(SequencerError::DeserializeBody { serde_error: err })
@@ -524,7 +533,7 @@ mod tests {
         let _ = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_NO_ABI), BlockId::Number(20734))
             .await
-            .unwrap_or_else(|_| panic!("Getting class {CLASS_NO_ABI} at block number 0"));
+            .expect("Getting class CLASS_NO_ABI at block number 0");
     }
 
     #[rstest]

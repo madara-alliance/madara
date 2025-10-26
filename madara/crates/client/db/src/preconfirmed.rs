@@ -26,6 +26,7 @@ impl PreconfirmedExecutedTransaction {
             arrived_at: self.arrived_at,
             declared_class: self.declared_class.clone(),
             hash: *self.transaction.receipt.transaction_hash(),
+            charge_fee: true, // keeping default value for now!!
         }
     }
 }

@@ -1,4 +1,4 @@
-use mp_block::BlockId;
+use mp_rpc::v0_8_1::BlockId;
 use starknet_types_core::felt::Felt;
 
 use crate::{versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server, StarknetRpcApiError};

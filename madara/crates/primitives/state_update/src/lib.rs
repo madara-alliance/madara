@@ -1,3 +1,4 @@
+use mp_convert::ToFelt;
 use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
@@ -309,6 +310,57 @@ impl StateDiff {
                 self.old_declared_contracts.iter().map(|class_hash| (*class_hash, DeclaredClassCompiledClass::Legacy)),
             )
             .collect()
+    }
+}
+
+// Add conversion from blockifier::state::cached_state::CommitmentStateDiff
+impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {
+    fn from(commitment_state_diff: blockifier::state::cached_state::CommitmentStateDiff) -> Self {
+        let mut storage_diffs = Vec::new();
+        let mut deployed_contracts = Vec::new();
+        let replaced_classes = Vec::new();
+        let mut declared_classes = Vec::new();
+        let mut nonces = Vec::new();
+
+        // Convert storage updates
+        for (address, updates) in commitment_state_diff.storage_updates {
+            let storage_entries: Vec<StorageEntry> =
+                updates.into_iter().map(|(key, value)| StorageEntry { key: key.to_felt(), value }).collect();
+
+            if !storage_entries.is_empty() {
+                storage_diffs.push(ContractStorageDiffItem { address: address.to_felt(), storage_entries });
+            }
+        }
+
+        // Convert deployed contracts and replaced classes
+        for (address, class_hash) in commitment_state_diff.address_to_class_hash {
+            // Check if this is a new deployment or class replacement
+            // For simplicity, we'll treat all as deployed contracts
+            deployed_contracts
+                .push(DeployedContractItem { address: address.to_felt(), class_hash: class_hash.to_felt() });
+        }
+
+        // Convert declared classes
+        for (class_hash, compiled_class_hash) in commitment_state_diff.class_hash_to_compiled_class_hash {
+            declared_classes.push(DeclaredClassItem {
+                class_hash: class_hash.to_felt(),
+                compiled_class_hash: compiled_class_hash.to_felt(),
+            });
+        }
+
+        // Convert nonces
+        for (address, nonce) in commitment_state_diff.address_to_nonce {
+            nonces.push(NonceUpdate { contract_address: address.to_felt(), nonce: nonce.to_felt() });
+        }
+
+        StateDiff {
+            storage_diffs,
+            old_declared_contracts: Vec::new(), // This would need to be determined from context
+            declared_classes,
+            deployed_contracts,
+            replaced_classes,
+            nonces,
+        }
     }
 }
 

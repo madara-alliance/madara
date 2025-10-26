@@ -102,6 +102,12 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
         this
     }
 
+    /// Mark all of the transactions of the pre-confirmed block as not visible from this view.
+    pub fn trim_view_to_start(&mut self) {
+        self.n_txs_visible = 0;
+        self.candidates = Default::default();
+    }
+
     pub fn backend(&self) -> &Arc<MadaraBackend<D>> {
         &self.backend
     }

@@ -73,7 +73,9 @@ impl Service for SyncService {
         let importer = Arc::new(BlockImporter::new(
             this.db_backend.clone(),
             // TODO: all_verifications_disabled should be configured from the env
-            BlockValidationConfig::default().trust_parent_hash(this.unsafe_starting_block_enabled),
+            BlockValidationConfig::default()
+                .trust_parent_hash(this.unsafe_starting_block_enabled)
+                .trust_state_root(this.unsafe_starting_block_enabled),
         ));
 
         let config = SyncControllerConfig::default()
@@ -121,7 +123,8 @@ impl Service for SyncService {
                     mc_sync::gateway::ForwardSyncConfig::default()
                         .disable_tries(this.params.disable_tries)
                         .snap_sync(this.params.snap_sync)
-                        .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
+                        .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
+                        .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable),
                 )
                 .run(ctx.clone())
                 .await?;
@@ -156,7 +159,8 @@ impl Service for SyncService {
                 mc_sync::gateway::ForwardSyncConfig::default()
                     .disable_tries(this.params.disable_tries)
                     .snap_sync(this.params.snap_sync)
-                    .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
+                    .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
+                    .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable),
             )
             .run(ctx)
             .await
