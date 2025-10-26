@@ -3,7 +3,7 @@ use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::TransactionalState;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::errors::TransactionExecutionError;
-use blockifier::transaction::objects::HasRelatedFeeType;
+use blockifier::transaction::objects::{HasRelatedFeeType, TransactionInfoCreatorInner};
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::ExecutableTransaction;
 use mc_db::MadaraStorageRead;
@@ -68,12 +68,18 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     .map_err(make_reexec_error)?;
                 transactional_state.commit();
 
+                let gas_vector_computation_mode = match tx {
+                    Transaction::Account(tx) => tx.tx.create_tx_info(tx.execution_flags.only_query).gas_mode(),
+                    Transaction::L1Handler(_) => GasVectorComputationMode::NoL2Gas,
+                };
+
                 Ok(ExecutionResult {
                     hash,
                     tx_type,
                     fee_type,
                     minimal_l1_gas,
                     execution_info,
+                    gas_vector_computation_mode,
                     state_diff: state_diff.state_maps.into(),
                 })
             })

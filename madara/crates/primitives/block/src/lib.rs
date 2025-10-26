@@ -2,7 +2,7 @@
 
 use crate::header::GasPrices;
 use commitments::{BlockCommitments, CommitmentComputationContext};
-use header::{BlockTimestamp, PreconfirmedHeader};
+use header::BlockTimestamp;
 use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::StarknetVersion;
 use mp_convert::FixedPoint;
@@ -16,12 +16,9 @@ pub mod header;
 pub mod to_rpc;
 
 pub use event_with_info::EventWithInfo;
-pub use header::Header;
+pub use header::{Header, PreconfirmedHeader};
 pub use mp_transactions::Transaction;
 pub use primitive_types::{H160, U256};
-
-pub type BlockId = mp_rpc::v0_7_1::BlockId;
-pub type BlockTag = mp_rpc::v0_7_1::BlockTag;
 
 // TODO: where should we put that?
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -96,13 +93,6 @@ impl MadaraMaybePreconfirmedBlockInfo {
         match self {
             Self::Preconfirmed(v) => Some(v),
             Self::Confirmed(_) => None,
-        }
-    }
-
-    pub fn block_id(&self) -> BlockId {
-        match self {
-            Self::Preconfirmed(_) => BlockId::Tag(BlockTag::Pending),
-            Self::Confirmed(info) => BlockId::Number(info.header.block_number),
         }
     }
 
@@ -404,9 +394,6 @@ mod tests {
 
         assert_eq!(pending_as_maybe_pending.as_pending(), Some(&pending));
         assert!(not_pending_as_maybe_pending.as_pending().is_none());
-
-        assert_eq!(pending_as_maybe_pending.block_id(), BlockId::Tag(BlockTag::Pending));
-        assert_eq!(not_pending_as_maybe_pending.block_id(), BlockId::Number(0));
 
         assert_eq!(pending_as_maybe_pending.block_number(), 0);
         assert_eq!(not_pending_as_maybe_pending.block_number(), 0);

@@ -1,10 +1,9 @@
 use crate::errors::StarknetRpcResult;
 use crate::Starknet;
-use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
+use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_convert::Felt;
 use mp_rpc::v0_7_1::{
-    BlockHeader, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockHeader,
-    PendingBlockWithTxHashes,
+    BlockId, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockWithTxHashes,
 };
 
 /// Get block information with transaction hashes given the block id.
@@ -23,48 +22,28 @@ pub fn get_block_with_tx_hashes(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<MaybePendingBlockWithTxHashes> {
-    let view = starknet.backend.block_view(block_id)?;
+    let view = starknet.resolve_block_view(block_id)?;
     let block_info = view.get_block_info()?;
     let is_on_l1 = view.is_on_l1();
 
-    let parent_hash = if let Some(b) = view.parent_block() {
-        b.get_block_info()?.block_hash
-    } else {
-        Felt::ZERO // genesis
-    };
-
     match block_info {
         MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
+            let parent_hash = if let Some(b) = view.parent_block() {
+                b.get_block_info()?.block_hash
+            } else {
+                Felt::ZERO // genesis
+            };
             Ok(MaybePendingBlockWithTxHashes::Pending(PendingBlockWithTxHashes {
                 transactions: block.tx_hashes,
-                pending_block_header: PendingBlockHeader {
-                    parent_hash,
-                    timestamp: block.header.block_timestamp.0,
-                    sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
-                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
-                    l1_da_mode: block.header.l1_da_mode.into(),
-                    starknet_version: block.header.protocol_version.to_string(),
-                },
+                pending_block_header: block.header.to_rpc_v0_7(parent_hash),
             }))
         }
         MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithTxHashes::Block(BlockWithTxHashes {
-                transactions: block.tx_hashes,
+                transactions: block.tx_hashes.clone(),
                 status,
-                block_header: BlockHeader {
-                    block_hash: block.block_hash,
-                    parent_hash: block.header.parent_block_hash,
-                    block_number: block.header.block_number,
-                    new_root: block.header.global_state_root,
-                    timestamp: block.header.block_timestamp.0,
-                    sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
-                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
-                    l1_da_mode: block.header.l1_da_mode.into(),
-                    starknet_version: block.header.protocol_version.to_string(),
-                },
+                block_header: block.to_rpc_v0_7(),
             }))
         }
     }
@@ -77,8 +56,7 @@ mod tests {
         errors::StarknetRpcApiError,
         test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
-    use mp_block::BlockTag;
-    use mp_rpc::v0_7_1::{BlockHeader, L1DaMode, ResourcePrice};
+    use mp_rpc::v0_7_1::{BlockHeader, BlockTag, L1DaMode, PendingBlockHeader, ResourcePrice};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
 

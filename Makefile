@@ -190,6 +190,7 @@ frestart: fclean
 
 .PHONY: artifacts
 artifacts:
+	@git submodule update --init --recursive
 	./scripts/artifacts.sh
 
 
@@ -441,7 +442,7 @@ setup-l3:
 .PHONY: run-orchestrator-l2
 run-orchestrator-l2:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --release --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum --madara-version 0.13.2 2>&1
+	@cargo run --package orchestrator -- run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum --madara-version 0.14.0 2>&1
 
 
 .PHONY: run-orchestrator-l3

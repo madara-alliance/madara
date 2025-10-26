@@ -1,11 +1,13 @@
+#![allow(clippy::result_large_err)]
+
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
     transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
 use mp_chain_config::StarknetVersion;
-use starknet_api::execution_resources::GasVector;
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
+use starknet_api::{execution_resources::GasVector, transaction::fields::GasVectorComputationMode};
 use starknet_types_core::felt::Felt;
 
 mod block_context;
@@ -13,13 +15,12 @@ mod blockifier_state_adapter;
 mod call;
 mod fee;
 mod layered_state_adapter;
-mod trace;
+pub mod trace;
 
 pub mod execution;
 pub use block_context::*;
 pub use blockifier_state_adapter::BlockifierStateAdapter;
 pub use layered_state_adapter::LayeredStateAdapter;
-pub use trace::execution_result_to_tx_trace;
 
 /// Blockifier does not support execution for versions earlier than that.
 pub const EXECUTION_UNSUPPORTED_BELOW_VERSION: StarknetVersion = StarknetVersion::V0_13_0;
@@ -85,4 +86,5 @@ pub struct ExecutionResult {
     pub minimal_l1_gas: Option<GasVector>,
     pub execution_info: TransactionExecutionInfo,
     pub state_diff: CommitmentStateDiff,
+    pub gas_vector_computation_mode: GasVectorComputationMode,
 }

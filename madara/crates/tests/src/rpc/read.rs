@@ -9,17 +9,14 @@ mod test_rpc_read_calls {
     use starknet::macros::felt;
     use starknet_core::types::{
         BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
-        ComputationResources, ContractClass, ContractStorageDiffItem, DataAvailabilityResources, DataResources,
-        DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, EmittedEvent, EventFilter, EventsPage,
-        ExecutionResources, ExecutionResult, FeePayment, FunctionCall, L1DataAvailabilityMode, L1HandlerTransaction,
-        MaybePendingBlockWithReceipts, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,
-        MaybePendingStateUpdate, PriceUnit, ReceiptBlock, ResourcePrice, StateDiff, StateUpdate, StorageEntry,
-        Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
-        TransactionReceiptWithBlockInfo, TransactionStatus, TransactionWithReceipt,
-    };
-    use starknet_core::types::{
-        BroadcastedDeployAccountTransaction, BroadcastedDeployAccountTransactionV1, BroadcastedTransaction, EthAddress,
-        FeeEstimate, MsgFromL1, SimulationFlagForEstimateFee,
+        BroadcastedDeployAccountTransactionV3, BroadcastedTransaction, ContractClass, ContractStorageDiffItem,
+        DataAvailabilityMode, DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, EmittedEvent,
+        EthAddress, EventFilter, EventsPage, ExecutionResources, ExecutionResult, FeeEstimate, FeePayment,
+        FunctionCall, L1DataAvailabilityMode, L1HandlerTransaction, MaybePreConfirmedBlockWithReceipts,
+        MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate,
+        MessageFeeEstimate, MsgFromL1, PriceUnit, ReceiptBlock, ResourceBounds, ResourceBoundsMapping, ResourcePrice,
+        SimulationFlagForEstimateFee, StateDiff, StateUpdate, StorageEntry, Transaction, TransactionFinalityStatus,
+        TransactionReceipt, TransactionReceiptWithBlockInfo, TransactionStatus, TransactionWithReceipt,
     };
     use starknet_providers::Provider;
     use std::any::Any;
@@ -214,7 +211,7 @@ mod test_rpc_read_calls {
             .await
             .expect("Failed to get block with receipts for block number 2");
 
-        let expected_block = MaybePendingBlockWithReceipts::Block(BlockWithReceipts {
+        let expected_block = MaybePreConfirmedBlockWithReceipts::Block(BlockWithReceipts {
             status: BlockStatus::AcceptedOnL2,
             block_hash: felt!("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d"),
             parent_hash: felt!("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6"),
@@ -224,6 +221,7 @@ mod test_rpc_read_calls {
             sequencer_address: felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
             l1_gas_price: ResourcePrice { price_in_fri: felt!("0x0"), price_in_wei: felt!("0x3b9ad016") },
             l1_data_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
+            l2_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
             transactions: vec![TransactionWithReceipt {
@@ -233,7 +231,8 @@ mod test_rpc_read_calls {
                     max_fee: felt!("0x0"),
                     signature: vec![],
                     class_hash: felt!("0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1"),
-                })),
+                }))
+                .into(),
                 receipt: {
                     TransactionReceipt::Declare(DeclareTransactionReceipt {
                         transaction_hash: felt!("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"),
@@ -242,21 +241,9 @@ mod test_rpc_read_calls {
                         messages_sent: vec![],
                         events: vec![],
                         execution_resources: ExecutionResources {
-                            computation_resources: ComputationResources {
-                                steps: 2711,
-                                memory_holes: None,
-                                range_check_builtin_applications: Some(63),
-                                pedersen_builtin_applications: Some(15),
-                                poseidon_builtin_applications: None,
-                                ec_op_builtin_applications: None,
-                                ecdsa_builtin_applications: None,
-                                bitwise_builtin_applications: None,
-                                keccak_builtin_applications: None,
-                                segment_arena_builtin: None,
-                            },
-                            data_resources: DataResources {
-                                data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 0 },
-                            },
+                            l1_gas: Default::default(),
+                            l1_data_gas: Default::default(),
+                            l2_gas: Default::default(),
                         },
                         execution_result: ExecutionResult::Succeeded,
                     })
@@ -291,7 +278,7 @@ mod test_rpc_read_calls {
         let json_client = madara.json_rpc();
         let block = { json_client.get_block_with_tx_hashes(BlockId::Number(2)).await.unwrap() };
 
-        let expected_block = MaybePendingBlockWithTxHashes::Block(BlockWithTxHashes {
+        let expected_block = MaybePreConfirmedBlockWithTxHashes::Block(BlockWithTxHashes {
             status: BlockStatus::AcceptedOnL2,
             block_hash: felt!("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d"),
             parent_hash: felt!("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6"),
@@ -301,6 +288,7 @@ mod test_rpc_read_calls {
             sequencer_address: felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
             l1_gas_price: ResourcePrice { price_in_fri: felt!("0x0"), price_in_wei: felt!("0x3b9ad016") },
             l1_data_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
+            l2_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
             transactions: vec![felt!("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772")],
@@ -333,7 +321,7 @@ mod test_rpc_read_calls {
         let json_client = madara.json_rpc();
         let block = json_client.get_block_with_txs(BlockId::Number(2)).await.unwrap();
 
-        let expected_block = MaybePendingBlockWithTxs::Block(BlockWithTxs {
+        let expected_block = MaybePreConfirmedBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL2,
             block_hash: felt!("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d"),
             parent_hash: felt!("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6"),
@@ -343,6 +331,7 @@ mod test_rpc_read_calls {
             sequencer_address: felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
             l1_gas_price: ResourcePrice { price_in_fri: felt!("0x0"), price_in_wei: felt!("0x3b9ad016") },
             l1_data_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
+            l2_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
             transactions: vec![Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
@@ -553,23 +542,7 @@ mod test_rpc_read_calls {
                 finality_status: TransactionFinalityStatus::AcceptedOnL2,
                 messages_sent: vec![],
                 events: vec![],
-                execution_resources: ExecutionResources {
-                    computation_resources: ComputationResources {
-                        steps: 2711,
-                        memory_holes: None,
-                        range_check_builtin_applications: Some(63),
-                        pedersen_builtin_applications: Some(15),
-                        poseidon_builtin_applications: None,
-                        ec_op_builtin_applications: None,
-                        ecdsa_builtin_applications: None,
-                        bitwise_builtin_applications: None,
-                        keccak_builtin_applications: None,
-                        segment_arena_builtin: None,
-                    },
-                    data_resources: DataResources {
-                        data_availability: DataAvailabilityResources { l1_gas: 0, l1_data_gas: 0 },
-                    },
-                },
+                execution_resources: ExecutionResources { l1_gas: 0, l2_gas: 0, l1_data_gas: 0 },
                 execution_result: ExecutionResult::Succeeded,
             }),
             block: ReceiptBlock::Block {
@@ -615,7 +588,7 @@ mod test_rpc_read_calls {
                 .await
                 .unwrap()
         };
-        let expected_txn_status = TransactionStatus::AcceptedOnL2(TransactionExecutionStatus::Succeeded);
+        let expected_txn_status = TransactionStatus::AcceptedOnL2(ExecutionResult::Succeeded);
 
         // TODO: The shared madara state needs a rework as we only run these
         // tests with `--test-threads=1`. These tests
@@ -692,14 +665,14 @@ mod test_rpc_read_calls {
             .await
             .expect("Failed to get state update for block number 13");
         let state_update = match state_update {
-            MaybePendingStateUpdate::Update(mut state_update) => {
+            MaybePreConfirmedStateUpdate::Update(mut state_update) => {
                 state_update.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
-                MaybePendingStateUpdate::Update(state_update)
+                MaybePreConfirmedStateUpdate::Update(state_update)
             }
             _ => unreachable!("State update at block 13 should not be pending"),
         };
 
-        let expected_state_update = MaybePendingStateUpdate::Update(StateUpdate {
+        let expected_state_update = MaybePreConfirmedStateUpdate::Update(StateUpdate {
             block_hash: felt!("0x12e2fe9e5273b777341a372edc56ca0327dc2237232cf2fed6cecc7398ffe9d"),
             old_root: felt!("0x7b6d0a312a1304bc1f99396c227a3bf062ff390258d2341309b4f60e6520bc9"),
             new_root: felt!("0x73ef61c78f5bda0bd3ef54d360484d06d32032e3b9287a71e0798526654a733"),
@@ -1183,30 +1156,36 @@ mod test_rpc_read_calls {
         let call_response = {
             json_client
                 .estimate_fee(
-                    vec![BroadcastedTransaction::DeployAccount(BroadcastedDeployAccountTransaction::V1(
-                        BroadcastedDeployAccountTransactionV1 {
-                            max_fee: felt!("0x0"),
-                            signature: vec![
-                                felt!("0x73d0a8a69f0ebf44b1c2bb2a9e85bf998883eb2008ca7b9c57b6f28dacb6dd8"),
-                                felt!("0x4a43711cd08f55ef73603f1e7b880c7f438fb68934f0823a736f9f577ab040a"),
-                                felt!("0x0"),
-                                felt!("0x0"),
-                                felt!("0x0"),
-                                felt!("0x0"),
-                                felt!("0x0"),
-                                felt!("0x0"),
-                                felt!("0x0"),
-                                felt!("0x0"),
-                            ],
-                            nonce: felt!("0x0"),
-                            contract_address_salt: felt!("0x0"),
-                            constructor_calldata: vec![felt!(
-                                "0x2e23f1647b018bfb3fe107e2ebd4412f0a0ed41bd60c10d842a76f8cdbbe1ba"
-                            )],
-                            class_hash: felt!("0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"),
-                            is_query: true,
+                    vec![BroadcastedTransaction::DeployAccount(BroadcastedDeployAccountTransactionV3 {
+                        signature: vec![
+                            felt!("0x73d0a8a69f0ebf44b1c2bb2a9e85bf998883eb2008ca7b9c57b6f28dacb6dd8"),
+                            felt!("0x4a43711cd08f55ef73603f1e7b880c7f438fb68934f0823a736f9f577ab040a"),
+                            felt!("0x0"),
+                            felt!("0x0"),
+                            felt!("0x0"),
+                            felt!("0x0"),
+                            felt!("0x0"),
+                            felt!("0x0"),
+                            felt!("0x0"),
+                            felt!("0x0"),
+                        ],
+                        nonce: felt!("0x0"),
+                        contract_address_salt: felt!("0x0"),
+                        constructor_calldata: vec![felt!(
+                            "0x2e23f1647b018bfb3fe107e2ebd4412f0a0ed41bd60c10d842a76f8cdbbe1ba"
+                        )],
+                        class_hash: felt!("0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"),
+                        is_query: true,
+                        resource_bounds: ResourceBoundsMapping {
+                            l1_gas: ResourceBounds { max_amount: 10000, max_price_per_unit: 10000 },
+                            l1_data_gas: ResourceBounds { max_amount: 10000, max_price_per_unit: 10000 },
+                            l2_gas: ResourceBounds { max_amount: 10000, max_price_per_unit: 10000 },
                         },
-                    ))],
+                        tip: Default::default(),
+                        paymaster_data: Default::default(),
+                        nonce_data_availability_mode: DataAvailabilityMode::L1,
+                        fee_data_availability_mode: DataAvailabilityMode::L1,
+                    })],
                     vec![SimulationFlagForEstimateFee::SkipValidate],
                     BlockId::Number(1),
                 )
@@ -1215,12 +1194,13 @@ mod test_rpc_read_calls {
         };
 
         let expected_call_response: Vec<FeeEstimate> = vec![FeeEstimate {
-            gas_consumed: felt!("0xcfc"),
-            gas_price: felt!("0x3b9ada0f"),
-            data_gas_consumed: felt!("0x0"),
-            data_gas_price: felt!("0x1"),
-            overall_fee: felt!("0x305eea75ac4"),
-            unit: PriceUnit::Wei,
+            l1_gas_consumed: 0,
+            l1_gas_price: 0,
+            l2_gas_consumed: 0,
+            l2_gas_price: 0,
+            l1_data_gas_consumed: 0,
+            l1_data_gas_price: 0,
+            overall_fee: 0,
         }];
         assert_eq!(call_response, expected_call_response);
     }
@@ -1275,13 +1255,14 @@ mod test_rpc_read_calls {
                 .unwrap()
         };
 
-        let expected_call_response: FeeEstimate = FeeEstimate {
-            gas_consumed: felt!("0x4424"),
-            gas_price: felt!("0x33dda9da0"),
-            data_gas_consumed: felt!("0x0"),
-            data_gas_price: felt!("0x1"),
-            overall_fee: felt!("0xdce2c49caa80"),
-            unit: PriceUnit::Wei,
+        let expected_call_response: MessageFeeEstimate = MessageFeeEstimate {
+            l1_gas_consumed: 0,
+            l1_gas_price: 0,
+            l2_gas_consumed: 0,
+            l2_gas_price: 0,
+            l1_data_gas_consumed: 0,
+            l1_data_gas_price: 0,
+            overall_fee: 0,
         };
         assert_eq!(call_response, expected_call_response);
     }

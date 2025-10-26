@@ -26,6 +26,7 @@ use crate::types::Layer;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
+use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STRK_FEE_TOKEN};
 use httpmock::MockServer;
 use orchestrator_da_client_interface::{DaClient, MockDaClient};
 use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
@@ -309,7 +310,8 @@ impl TestConfigBuilder {
         let config = Arc::new(Config::new(
             Layer::L2,
             params.orchestrator_params,
-            starknet_client,
+            starknet_client.clone(),
+            starknet_client, // Using the same client for admin operations in tests
             database,
             storage,
             lock,
@@ -609,6 +611,14 @@ pub(crate) fn get_env_params() -> EnvParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
         snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
+        strk_fee_token_address: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_STRK_NATIVE_FEE_TOKEN_ADDRESS",
+            DEFAULT_SEPOLIA_STRK_FEE_TOKEN,
+        ),
+        eth_fee_token_address: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_ETH_NATIVE_FEE_TOKEN_ADDRESS",
+            DEFAULT_SEPOLIA_ETH_FEE_TOKEN,
+        ),
     };
 
     let max_num_blobs = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_NUM_BLOBS", "6").parse::<usize>().unwrap();
@@ -621,6 +631,15 @@ pub(crate) fn get_env_params() -> EnvParams {
         batching_worker_lock_duration: get_env_var_or_panic("MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS")
             .parse::<u64>()
             .unwrap(),
+        max_blocks_per_snos_batch: get_env_var_optional("MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH")
+            .unwrap()
+            .map(|s| s.parse::<u64>().unwrap()),
+        max_snos_batches_per_aggregator_batch: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH",
+            "50",
+        )
+        .parse::<u64>()
+        .unwrap(),
         max_num_blobs,
         max_blob_size: max_num_blobs * BLOB_LEN,
     };
@@ -664,6 +683,11 @@ pub(crate) fn get_env_params() -> EnvParams {
     let orchestrator_params = ConfigParam {
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
+        madara_admin_rpc_url: Url::parse(&get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL",
+            &get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"), // Use same URL as fallback for tests
+        ))
+        .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL"),
         madara_version: StarknetVersion::from_str(&get_env_var_or_default(
             "MADARA_ORCHESTRATOR_MADARA_VERSION",
             "0.13.4",
@@ -678,6 +702,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         store_audit_artifacts: get_env_var_or_default("MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", "false")
             .parse::<bool>()
             .unwrap_or(false),
+        bouncer_weights_limit: Default::default(), // Use default bouncer weights for tests
     };
 
     let instrumentation_params = OTELConfig {

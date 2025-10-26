@@ -1,3 +1,7 @@
+use crate::contract_clients::config::RpcClientProvider;
+use crate::contract_clients::utils::{field_element_to_u256, RpcAccount};
+use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, AccountActions};
+use crate::utils::{invoke_contract, wait_for_transaction};
 use async_trait::async_trait;
 use ethers::addressbook::Address;
 use ethers::providers::Middleware;
@@ -9,15 +13,9 @@ use starknet_eth_bridge_client::interfaces::eth_bridge::StarknetEthBridgeTrait;
 use starknet_eth_bridge_client::{
     deploy_starknet_eth_bridge_behind_safe_proxy, deploy_starknet_eth_bridge_behind_unsafe_proxy,
 };
-use starknet_providers::jsonrpc::HttpTransport;
-use starknet_providers::JsonRpcClient;
 use starknet_proxy_client::interfaces::proxy::ProxySupport3_0_2Trait;
 use std::sync::Arc;
 use zaun_utils::{LocalWalletSignerMiddleware, StarknetContractClient};
-
-use crate::contract_clients::utils::{field_element_to_u256, RpcAccount};
-use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, AccountActions};
-use crate::utils::{invoke_contract, wait_for_transaction};
 
 #[async_trait]
 pub trait BridgeDeployable {
@@ -59,7 +57,7 @@ impl StarknetLegacyEthBridge {
     }
 
     pub async fn deploy_l2_contracts(
-        rpc_provider_l2: &JsonRpcClient<HttpTransport>,
+        rpc_provider_l2: &RpcClientProvider,
         _legacy_eth_bridge_class_hash: Felt,
         legacy_eth_bridge_proxy_address: Felt,
         account: &RpcAccount<'_>,
@@ -219,7 +217,7 @@ impl StarknetLegacyEthBridge {
 
     pub async fn setup_l2_bridge(
         &self,
-        rpc_provider: &JsonRpcClient<HttpTransport>,
+        rpc_provider: &RpcClientProvider,
         l2_bridge_address: Felt,
         erc20_address: Felt,
         _l2_deployer_address: &str,

@@ -12,7 +12,6 @@ use mp_class::{
     LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
 };
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
-use mp_rpc::v0_7_1::{BroadcastedDeclareTxn, BroadcastedTxn};
 use starknet_api::contract_class::ClassInfo as ApiClassInfo;
 use starknet_api::core::ContractAddress;
 use starknet_api::executable_transaction::{
@@ -85,25 +84,29 @@ pub trait IntoStarknetApiExt: Sized {
         arrived_at: TxTimestamp,
     ) -> Result<ValidatedTransaction, ToBlockifierError> {
         let (btx, class) = self.into_starknet_api(chain_id, starknet_version)?;
-        Ok(ValidatedTransaction::from_starknet_api(btx, arrived_at, class))
+        Ok(ValidatedTransaction::from_starknet_api(btx, arrived_at, class, ExecutionFlags::default().charge_fee))
     }
 }
 
-impl IntoStarknetApiExt for BroadcastedTxn {
+impl IntoStarknetApiExt for mp_rpc::v0_8_1::BroadcastedTxn {
     fn into_starknet_api(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
     ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
+        if starknet_version >= StarknetVersion::V0_14_0 && self.version() != Felt::THREE {
+            return Err(ToBlockifierError::UnsupportedTransactionVersion);
+        }
+
         let (class_info, converted_class, class_hash) = match &self {
-            BroadcastedTxn::Declare(tx) => match tx {
-                BroadcastedDeclareTxn::V1(tx) | BroadcastedDeclareTxn::QueryV1(tx) => {
+            mp_rpc::v0_8_1::BroadcastedTxn::Declare(tx) => match tx {
+                mp_rpc::v0_8_1::BroadcastedDeclareTxn::V1(tx) | mp_rpc::v0_8_1::BroadcastedDeclareTxn::QueryV1(tx) => {
                     handle_class_legacy(Arc::new((tx.contract_class).clone().try_into()?))?
                 }
-                BroadcastedDeclareTxn::V2(tx) | BroadcastedDeclareTxn::QueryV2(tx) => {
+                mp_rpc::v0_8_1::BroadcastedDeclareTxn::V2(tx) | mp_rpc::v0_8_1::BroadcastedDeclareTxn::QueryV2(tx) => {
                     handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash)?
                 }
-                BroadcastedDeclareTxn::V3(tx) | BroadcastedDeclareTxn::QueryV3(tx) => {
+                mp_rpc::v0_8_1::BroadcastedDeclareTxn::V3(tx) | mp_rpc::v0_8_1::BroadcastedDeclareTxn::QueryV3(tx) => {
                     handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash)?
                 }
             },
@@ -111,7 +114,67 @@ impl IntoStarknetApiExt for BroadcastedTxn {
         };
 
         let TransactionWithHash { transaction, hash } =
-            TransactionWithHash::from_broadcasted(self, chain_id, starknet_version, class_hash);
+            TransactionWithHash::from_broadcasted_v0_8(self, chain_id, starknet_version, class_hash);
+        let deployed_address = match &transaction {
+            Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
+            _ => None,
+        };
+        let transaction = match transaction {
+            Transaction::Declare(tx) => ApiAccountTransaction::Declare(ApiDeclareTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+                class_info: class_info.expect("BroadcastedDeclareTxn generate a ClassInfo"),
+            }),
+            Transaction::DeployAccount(tx) => ApiAccountTransaction::DeployAccount(ApiDeployAccountTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+                contract_address: ContractAddress(
+                    deployed_address
+                        .expect("BroadcastedDeployAccount generate a DeployedAddress")
+                        .try_into()
+                        .expect("Calculated deployed_address is in bound"),
+                ),
+            }),
+            Transaction::Invoke(tx) => ApiAccountTransaction::Invoke(ApiInvokeTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+            }),
+            Transaction::L1Handler(_) | Transaction::Deploy(_) => {
+                unreachable!("BroadcastedTxn can't be L1Handler or Deploy")
+            }
+        };
+
+        Ok((transaction, converted_class))
+    }
+}
+
+impl IntoStarknetApiExt for mp_rpc::v0_7_1::BroadcastedTxn {
+    fn into_starknet_api(
+        self,
+        chain_id: Felt,
+        starknet_version: StarknetVersion,
+    ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
+        if starknet_version >= StarknetVersion::V0_14_0 && self.version() != Felt::THREE {
+            return Err(ToBlockifierError::UnsupportedTransactionVersion);
+        }
+
+        let (class_info, converted_class, class_hash) = match &self {
+            mp_rpc::v0_7_1::BroadcastedTxn::Declare(tx) => match tx {
+                mp_rpc::v0_7_1::BroadcastedDeclareTxn::V1(tx) | mp_rpc::v0_7_1::BroadcastedDeclareTxn::QueryV1(tx) => {
+                    handle_class_legacy(Arc::new((tx.contract_class).clone().try_into()?))?
+                }
+                mp_rpc::v0_7_1::BroadcastedDeclareTxn::V2(tx) | mp_rpc::v0_7_1::BroadcastedDeclareTxn::QueryV2(tx) => {
+                    handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash)?
+                }
+                mp_rpc::v0_7_1::BroadcastedDeclareTxn::V3(tx) | mp_rpc::v0_7_1::BroadcastedDeclareTxn::QueryV3(tx) => {
+                    handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash)?
+                }
+            },
+            _ => (None, None, None),
+        };
+
+        let TransactionWithHash { transaction, hash } =
+            TransactionWithHash::from_broadcasted_v0_7(self, chain_id, starknet_version, class_hash);
         let deployed_address = match &transaction {
             Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
             _ => None,
@@ -197,6 +260,8 @@ impl IntoStarknetApiExt for BroadcastedDeclareTxnV0 {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ToBlockifierError {
+    #[error("Unsupported transaction version")]
+    UnsupportedTransactionVersion,
     #[error("Failed to compile contract class: {0}")]
     CompilationFailed(#[from] ClassCompilationError),
     #[error("Failed to convert program: {0}")]

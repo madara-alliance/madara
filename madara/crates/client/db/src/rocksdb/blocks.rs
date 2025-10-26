@@ -3,6 +3,7 @@ use crate::{
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
     storage::StorageTxIndex,
 };
+use blockifier::bouncer::BouncerWeights;
 use itertools::{Either, Itertools};
 use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
 use mp_convert::Felt;
@@ -22,6 +23,10 @@ pub const BLOCK_STATE_DIFF_COLUMN: Column = Column::new("block_state_diff").set_
 /// prefix [<block_n 4 bytes>] | <tx_index 2 bytes> => bincode(tx and receipt)
 pub const BLOCK_TRANSACTIONS_COLUMN: Column =
     Column::new("block_transactions").with_prefix_extractor_len(size_of::<u32>()).use_blocks_mem_budget();
+
+/// prefix [<block_n 4 bytes>] => bincode(bouncer_weights)
+pub const BLOCK_BOUNCER_WEIGHT_COLUMN: Column =
+    Column::new("block_bouncer_weight").with_prefix_extractor_len(size_of::<u32>()).use_blocks_mem_budget();
 
 const TRANSACTIONS_KEY_LEN: usize = size_of::<u32>() + size_of::<u16>();
 fn make_transaction_column_key(block_n: u32, tx_index: u16) -> [u8; TRANSACTIONS_KEY_LEN] {
@@ -64,6 +69,16 @@ impl RocksDBStorageInner {
     pub(super) fn get_block_state_diff(&self, block_n: u64) -> Result<Option<StateDiff>> {
         let Some(block_n) = u32::try_from(block_n).ok() else { return Ok(None) }; // Every OOB block_n returns not found.
         let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_STATE_DIFF_COLUMN), block_n.to_be_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(super::deserialize(&res)?))
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn get_block_bouncer_weight(&self, block_n: u64) -> Result<Option<BouncerWeights>> {
+        let Some(block_n) = u32::try_from(block_n).ok() else { return Ok(None) }; // Every OOB block_n returns not found.
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_BOUNCER_WEIGHT_COLUMN), block_n.to_be_bytes())?
+        else {
             return Ok(None);
         };
         Ok(Some(super::deserialize(&res)?))
@@ -193,6 +208,18 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self, value))]
+    pub(super) fn blocks_store_bouncer_weights(&self, block_number: u64, value: &BouncerWeights) -> Result<()> {
+        let mut batch = WriteBatchWithTransaction::default();
+        let block_n_u32 = u32::try_from(block_number).context("Converting block_n to u32")?;
+
+        let block_n_to_bouncer_weights = self.get_column(BLOCK_BOUNCER_WEIGHT_COLUMN);
+        batch.put_cf(&block_n_to_bouncer_weights, block_n_u32.to_be_bytes(), &super::serialize(value)?);
+        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, value))]
     pub(super) fn blocks_store_events_to_receipts(
         &self,
         block_n: u64,
@@ -204,7 +231,7 @@ impl RocksDBStorageInner {
         let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
 
         for (tx_index, transaction) in self.get_block_transactions(block_n, /* from_tx_index */ 0).enumerate() {
-            let mut transaction = transaction?;
+            let mut transaction = transaction.with_context(|| format!("Parsing transaction {tx_index}"))?;
             let transaction_hash = *transaction.receipt.transaction_hash();
 
             transaction.receipt.events_mut().clear();
@@ -296,9 +323,8 @@ impl RocksDBStorageInner {
             let block_n_u32 = u32::try_from(block_n).context("Converting block_n to u32")?;
             let mut batch = WriteBatchWithTransaction::default();
 
-            let block_info = self
-                .get_block_info(block_n)?
-                .with_context(|| format!("Block info not found for block_n={block_n}"))?;
+            let block_info =
+                self.get_block_info(block_n)?.with_context(|| format!("Block info not found for block_n={block_n}"))?;
 
             tracing::debug!(
                 "📦 REORG [block_db_revert]: Block {} hash={:#x} has {} transactions",
@@ -320,17 +346,19 @@ impl RocksDBStorageInner {
             }
 
             // Get transactions for this block to handle L1 handler removal
-            let transactions: Vec<_> = self
-                .get_block_transactions(block_n, 0)
-                .take(block_info.tx_hashes.len())
-                .collect::<Result<_>>()?;
+            let transactions: Vec<_> =
+                self.get_block_transactions(block_n, 0).take(block_info.tx_hashes.len()).collect::<Result<_>>()?;
 
             // Remove events for this block
             self.events_remove_block(block_n, &mut batch)?;
 
             let l1_handler_count = transactions.iter().filter(|v| v.transaction.as_l1_handler().is_some()).count();
             if l1_handler_count > 0 {
-                tracing::debug!("📦 REORG [block_db_revert]: Removing {} L1->L2 messages from block {}", l1_handler_count, block_n);
+                tracing::debug!(
+                    "📦 REORG [block_db_revert]: Removing {} L1->L2 messages from block {}",
+                    l1_handler_count,
+                    block_n
+                );
             }
 
             // TODO: No sure how to implement the same for the L2 Network
@@ -339,7 +367,11 @@ impl RocksDBStorageInner {
             //     &mut batch,
             // )?;
 
-            tracing::debug!("📦 REORG [block_db_revert]: Removing {} transactions from block {}", block_info.tx_hashes.len(), block_n);
+            tracing::debug!(
+                "📦 REORG [block_db_revert]: Removing {} transactions from block {}",
+                block_info.tx_hashes.len(),
+                block_n
+            );
             for (tx_index, tx_hash) in block_info.tx_hashes.iter().enumerate() {
                 let tx_index_u16 = u16::try_from(tx_index).context("Converting tx_index to u16")?;
                 batch.delete_cf(&block_txs_col, make_transaction_column_key(block_n_u32, tx_index_u16));

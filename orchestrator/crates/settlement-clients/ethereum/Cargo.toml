@@ -27,7 +27,6 @@ orchestrator-utils = { workspace = true }
 reqwest = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-starknet-os = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
 

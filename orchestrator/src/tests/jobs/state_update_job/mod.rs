@@ -7,7 +7,7 @@ use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::tests::common::default_job_item;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::types::batch::Batch;
+use crate::types::batch::AggregatorBatch;
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
 };
@@ -79,10 +79,11 @@ async fn test_process_job_works(
     let last_block_to_process = *blocks_to_process.last().unwrap();
 
     // Mock the get batch by indexes method
-    database_client.expect_get_batches_by_indexes().returning(move |_| {
-        Ok(vec![Batch::new(
+    database_client.expect_get_aggregator_batches_by_indexes().returning(move |_| {
+        Ok(vec![AggregatorBatch::new(
             0,
             last_block_to_process + 1,
+            1,
             String::from(""),
             String::from(""),
             String::from(""),
@@ -244,8 +245,16 @@ async fn process_job_works_unit_test() {
     let mut database_client = MockDatabaseClient::new();
 
     // Mock the get batch by indexes method
-    database_client.expect_get_batches_by_indexes().returning(|_| {
-        Ok(vec![Batch::new(0, 651057, String::from(""), String::from(""), String::from(""), "0.13.2".to_string())])
+    database_client.expect_get_aggregator_batches_by_indexes().returning(|_| {
+        Ok(vec![AggregatorBatch::new(
+            0,
+            1,
+            651057,
+            String::from(""),
+            String::from(""),
+            String::from(""),
+            "0.13.2".to_string(),
+        )])
     });
 
     // Mock the latest block settled

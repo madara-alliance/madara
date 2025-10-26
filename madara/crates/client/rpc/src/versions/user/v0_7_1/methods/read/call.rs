@@ -3,8 +3,7 @@ use crate::errors::StarknetRpcResult;
 use crate::Starknet;
 use mc_exec::MadaraBlockViewExecutionExt;
 use mc_exec::EXECUTION_UNSUPPORTED_BELOW_VERSION;
-use mp_block::BlockId;
-use mp_rpc::v0_7_1::FunctionCall;
+use mp_rpc::v0_7_1::{BlockId, FunctionCall};
 use starknet_types_core::felt::Felt;
 
 /// Call a Function in a Contract Without Creating a Transaction
@@ -28,7 +27,7 @@ use starknet_types_core::felt::Felt;
 /// * `CONTRACT_ERROR` - If there is an error with the contract or the function call.
 /// * `BLOCK_NOT_FOUND` - If the specified block does not exist in the blockchain.
 pub async fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> StarknetRpcResult<Vec<Felt>> {
-    let view = starknet.backend.block_view(block_id)?;
+    let view = starknet.resolve_block_view(block_id)?;
 
     let mut exec_context = view.new_execution_context()?;
 

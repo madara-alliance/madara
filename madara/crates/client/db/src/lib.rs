@@ -69,6 +69,7 @@ pub mod sync_status;
 pub mod tests;
 pub mod view;
 
+use blockifier::bouncer::BouncerWeights;
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
     MadaraStorageWrite, StorageTxIndex,
@@ -445,12 +446,20 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     }
 
     /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
-    pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool) -> Result<AddFullBlockResult> {
-        let (block, classes) = self
+    pub fn close_preconfirmed(
+        &self,
+        pre_v0_13_2_hash_override: bool,
+        state_diff: Option<StateDiff>,
+    ) -> Result<AddFullBlockResult> {
+        let (mut block, classes) = self
             .inner
             .block_view_on_preconfirmed()
             .context("There is no current preconfirmed block")?
             .get_full_block_with_classes()?;
+
+        if let Some(state_diff) = state_diff {
+            block.state_diff = state_diff;
+        }
 
         // Write the block & apply to global trie
 
@@ -554,6 +563,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// You are only allowed to write block parts past the latest confirmed block.
     pub fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()> {
         self.inner.db.write_state_diff(block_n, value)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()> {
+        self.inner.db.write_bouncer_weights(block_n, value)
     }
 
     /// Lower level access to writing primitives. This is only used by the sync process, which

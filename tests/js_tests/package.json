@@ -9,7 +9,7 @@
   "license": "MIT",
   "description": "starknet js test for the madara",
   "dependencies": {
-    "starknet": "^6.11.0"
+    "starknet": "^7.6.4"
   },
   "devDependencies": {
     "@types/jest": "^29.5.13",
