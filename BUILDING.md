@@ -64,11 +64,13 @@ make setup-cairo
 
 ### NumPy Build Errors
 
-The setup automatically handles NumPy compatibility issues by using `numpy<2.0` instead of the pinned `numpy==2.0.2` which has build issues on some systems.
+The setup automatically handles NumPy compatibility issues by using `numpy<2.0`
+instead of the pinned `numpy==2.0.2` which has build issues on some systems.
 
 ### Sequencer Requirements Not Found
 
-If the sequencer requirements file cannot be found at the expected path, the setup will automatically create a minimal requirements file with just `cairo-lang==0.14.0.1` and `numpy<2.0`.
+If the sequencer requirements file cannot be found at the expected path,
+the setup will automatically create a minimal requirements file with just `cairo-lang==0.14.0.1` and `numpy<2.0`.
 
 ## Available Make Targets
 
