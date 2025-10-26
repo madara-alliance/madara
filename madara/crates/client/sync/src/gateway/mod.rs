@@ -55,6 +55,7 @@ impl ForwardSyncConfig {
     }
     pub fn snap_sync(self, val: bool) -> Self {
         Self { snap_sync: val, ..self }
+    }
 
     pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
         Self { enable_bouncer_config_sync: val, ..self }
@@ -319,6 +320,7 @@ impl GatewayLatestProbe {
     pub fn new(client: Arc<GatewayProvider>) -> Self {
         Self { client }
     }
+    
     async fn probe(
         self: Arc<Self>,
         _highest_known_block: Option<ProviderBlockHeader>,

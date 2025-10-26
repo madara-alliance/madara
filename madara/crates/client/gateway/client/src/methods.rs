@@ -26,6 +26,8 @@ use std::{borrow::Cow, sync::Arc};
 /// exception.
 /// Retries use exponential backoff to avoid overwhelming the service
 const MAX_RETRIES: usize = 5;
+const BASE_DELAY_MS: u64 = 100;
+const BACKOFF_BASE: u32 = 2;
 
 impl GatewayProvider {
     /// Generic retry mechanism for GET requests
@@ -43,16 +45,16 @@ impl GatewayProvider {
                 Err(e) => {
                     if attempt < MAX_RETRIES - 1 {
                         tracing::warn!("Failed to get with {:?}, retrying", e);
-                        // Exponential backoff: 100ms * 2^attempt
+                        // Exponential backoff: BASE_DELAY_MS * BACKOFF_BASE^attempt
                         // attempt 0: 100ms, attempt 1: 200ms, attempt 2: 400ms, attempt 3: 800ms, attempt 4: 1600ms
-                        let delay_ms = 100u64 * 2u64.pow(attempt as u32);
+                        let delay_ms = BASE_DELAY_MS * (BACKOFF_BASE as u64).pow(attempt as u32);
                         tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
                     }
                     last_error = Some(e);
                 }
             }
         }
-        Err(last_error.unwrap())
+        Err(last_error.expect("last_error should be Some after retry loop"))
     }
 
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlock, SequencerError> {

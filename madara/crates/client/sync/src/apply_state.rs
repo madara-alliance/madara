@@ -14,8 +14,8 @@ use crate::sync_utils::compress_state_diff;
 ///
 /// During snap sync, state diffs are accumulated in memory rather than computing
 /// the trie after every block. After this many blocks have been processed, the
-/// accumulated state diffs are compressed and applied to the global trie in a
-/// single operation, then the in-memory accumulator is cleared.
+/// accumulated state diffs are squashed and applied to the global trie in a
+/// single operation; then the in-memory accumulator is cleared.
 ///
 /// This represents a memory-performance trade-off:
 /// - Larger values: Fewer trie computations (better performance), higher memory usage
