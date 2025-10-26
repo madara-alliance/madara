@@ -536,8 +536,17 @@ impl BlockImporterCtx {
         mut block_range: Range<u64>,
         state_diffs: Vec<StateDiff>,
     ) -> Result<(), BlockImportError> {
-        // don't re-import the blocks we've already imported.
         let next_to_import = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
+
+        if next_to_import >= block_range.end {
+            tracing::warn!(
+                "⚠️ Aborting apply_to_global_trie for block_range={:?}: already imported up to {}, indicating reorg occurred. Skipping stale work.",
+                block_range,
+                next_to_import - 1
+            );
+            // Return Ok to avoid propagating error - this is expected behavior after reorg
+            return Ok(());
+        }
         let already_imported_count = next_to_import.saturating_sub(block_range.start);
         let state_diffs = state_diffs.iter().skip(already_imported_count as _);
         block_range.start += already_imported_count;
@@ -546,12 +555,20 @@ impl BlockImporterCtx {
             return Ok(()); // range is empty
         };
 
+        tracing::debug!("🔄 Applying state diff for blocks {:?} to global trie", block_range);
+
         let got =
             self.backend.write_access().apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
                 BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
             })?;
 
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
+
+        tracing::debug!(
+            "✅ State diff applied successfully for blocks {:?}, latest_applied_trie_update set to {}",
+            block_range,
+            last_block_n
+        );
 
         // Sanity check: verify state root.
         if !self.config.no_check && !self.config.trust_state_root {

@@ -11,7 +11,7 @@
 /// - Added a deploy_contract function for contract deployment functionality
 /// - Removed the upgrade component as it was not needed for our use case
 #[starknet::contract(account)]
-pub mod AccountUpgradeable {
+pub mod Account {
     use core::hash::{HashStateExTrait, HashStateTrait};
     use core::poseidon::PoseidonTrait;
     use openzeppelin_account::AccountComponent;

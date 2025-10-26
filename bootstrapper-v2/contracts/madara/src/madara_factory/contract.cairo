@@ -152,6 +152,9 @@ mod MadaraFactory {
         fn deploy_eth_token(
             ref self: ContractState, l2_eth_bridge: ContractAddress,
         ) -> ContractAddress {
+
+            // The Erc20 contract being deployed here is
+            // [this](https://github.com/starknet-io/starkgate-contracts/blob/45941888479663ac93e898cd7f8504fa9066c54c/src/openzeppelin/token/erc20_v070/erc20.cairo#L110)
             // Deploy Eth Token
             let initial_supply: u256 = 0;
             let mut calldata = ArrayTrait::new();

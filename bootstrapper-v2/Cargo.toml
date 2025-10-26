@@ -11,6 +11,10 @@ license = "Apache-2.0"
 [[bin]]
 name = "bootstrapper-v2"
 
+[lib]
+name = "bootstrapper_v2"
+path = "src/lib.rs"
+
 [dependencies]
 alloy = { version = "1.0.25", features = [
   "signers",
@@ -25,10 +29,13 @@ clap = { version = "4.5.45", features = ["derive", "env"] }
 dotenvy = "0.15.7"
 env_logger = "0.11.8"
 futures-util = "0.3.31"
+hex = "0.4"
 log = "0.4.27"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.135"
 starknet = "0.17.0"
+strum = "0.27"
+strum_macros = "0.27"
 thiserror = "2.0.10"
 tokio = { version = "1.40.0", features = ["full"] }
 

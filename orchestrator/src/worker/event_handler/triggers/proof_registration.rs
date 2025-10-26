@@ -2,6 +2,7 @@ use crate::core::config::Config;
 use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::metadata::{JobSpecificMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -28,6 +29,8 @@ impl JobTrigger for ProofRegistrationJobTrigger {
         let successful_proving_jobs = db
             .get_jobs_without_successor(JobType::ProofCreation, JobStatus::Completed, JobType::ProofRegistration)
             .await?;
+
+        let successful_proving_jobs = filter_jobs_by_orchestrator_version(successful_proving_jobs);
 
         info!("Found {} successful proving jobs without proof registration jobs", successful_proving_jobs.len());
 

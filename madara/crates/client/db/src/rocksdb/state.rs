@@ -222,4 +222,65 @@ impl RocksDBStorageInner {
 
         Ok(())
     }
+
+    /// Revert items in the contract db.
+    ///
+    /// `state_diffs` should be a Vec of tuples containing the block number and the entire StateDiff
+    /// to be reverted in that block.
+    ///
+    /// **Warning:** While not enforced, the following should be true:
+    ///  * Each `StateDiff` should include the entire state for its block
+    ///  * `state_diffs` should form a contiguous range of blocks
+    ///  * that range should end with the current blockchain tip
+    ///
+    /// If this isn't the case, the db could end up storing inconsistent state for some blocks.
+    #[tracing::instrument(skip(self, state_diffs))]
+    pub(super) fn contract_db_revert(&self, state_diffs: &[(u64, StateDiff)]) -> Result<()> {
+        tracing::info!("📝 REORG [contract_db_revert]: Starting with {} state diffs", state_diffs.len());
+
+        if state_diffs.is_empty() {
+            tracing::info!("📝 REORG [contract_db_revert]: No state diffs to process, skipping");
+            return Ok(());
+        }
+
+        let mut batch = WriteBatchWithTransaction::default();
+        let mut total_deployed = 0;
+        let mut total_replaced = 0;
+        let mut total_nonces = 0;
+        let mut total_storage_entries = 0;
+
+        for (block_n, diff) in state_diffs {
+            tracing::debug!(
+                "📝 REORG [contract_db_revert]: Processing block {} with {} deployed, {} replaced, {} nonces, {} storage diffs",
+                block_n,
+                diff.deployed_contracts.len(),
+                diff.replaced_classes.len(),
+                diff.nonces.len(),
+                diff.storage_diffs.len()
+            );
+
+            // Reuse existing state_remove logic
+            self.state_remove(*block_n, diff, &mut batch)?;
+
+            // Track totals for logging
+            total_deployed += diff.deployed_contracts.len();
+            total_replaced += diff.replaced_classes.len();
+            total_nonces += diff.nonces.len();
+            total_storage_entries += diff.storage_diffs.iter().map(|sd| sd.storage_entries.len()).sum::<usize>();
+        }
+
+        tracing::info!(
+            "📝 REORG [contract_db_revert]: Removing {} deployed contracts, {} replaced classes, {} nonces, {} storage entries",
+            total_deployed,
+            total_replaced,
+            total_nonces,
+            total_storage_entries
+        );
+
+        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+
+        tracing::info!("✅ REORG [contract_db_revert]: Successfully removed all contract state");
+
+        Ok(())
+    }
 }

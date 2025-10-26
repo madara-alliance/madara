@@ -310,6 +310,7 @@ pub(crate) mod tests {
             ),
             TxTimestamp::now(),
             None,
+            true,
         )
     }
 

@@ -492,6 +492,7 @@ pub(crate) mod tests {
                 bouncer_config: BouncerConfig {
                     block_max_capacity: bouncer_weights,
                     builtin_weights: Default::default(),
+                    blake_weight: Default::default(),
                 },
                 ..ChainConfig::madara_devnet()
             })

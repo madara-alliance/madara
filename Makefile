@@ -79,9 +79,10 @@ Targets:
 
   Runs various types of tests for the codebase.
 
-  - test-e2e          Run end-to-end tests
-  - test-orchestrator Run unit tests with coverage report
-  - test              Run all tests (e2e and unit)
+  - test-orchestrator-e2e   Run end-to-end orchestrator workflow tests
+  - test-e2e                Run end-to-end test
+  - test-orchestrator       Run unit tests with coverage report
+  - test                    Run all tests (e2e and unit)
 
   [ OTHER COMMANDS ]
 
@@ -100,6 +101,11 @@ DOCKER_TAG     := madara:latest
 DOCKER_IMAGE   := ghcr.io/madara-alliance/$(DOCKER_TAG)
 DOCKER_GZ      := image.tar.gz
 ARTIFACTS      := ./build-artifacts
+
+# Configuration for E2E bridge tests
+CARGO_TARGET_DIR ?= target
+AWS_REGION ?= us-east-1
+PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.13.2.1-no-charge-fee/pathfinder-aarch64-apple-darwin.tar.gz
 
 # dim white italic
 DIM            := \033[2;3;37m
@@ -224,11 +230,176 @@ fmt:
 	@cargo fmt
 	@echo -e "$(PASS)Code formatting complete!$(RESET)"
 
-.PHONY: test-e2e
-test-e2e:
+.PHONY: test-orchestrator-e2e
+test-orchestrator-e2e:
 	@echo -e "$(DIM)Running E2E tests...$(RESET)"
 	@RUST_LOG=info cargo nextest run --release --features testing --workspace test_orchestrator_workflow -E 'test(test_orchestrator_workflow)' --no-fail-fast
 	@echo -e "$(PASS)E2E tests completed!$(RESET)"
+
+# ============================================================================ #
+#                          E2E BRIDGE TESTS (MAC)                              #
+# ============================================================================ #
+
+.PHONY: test-e2e
+test-e2e: check-e2e-env check-e2e-mac check-e2e-dependencies pull-e2e-docker-images build-e2e-binaries download-pathfinder-mac make-e2e-binaries-executable run-e2e clean-up-after-e2e
+	@echo -e "$(PASS)E2E test completed!$(RESET)"
+
+.PHONY: check-e2e-env
+check-e2e-env:
+	@echo -e "$(DIM)Checking for MADARA_ORCHESTRATOR_ATLANTIC_API_KEY in .env.e2e...$(RESET)"
+	@if [ ! -f .env.e2e ]; then \
+		echo -e "$(WARN)⚠️  WARNING: .env.e2e file not found!$(RESET)"; \
+		echo -e "$(WARN)⚠️  Please create .env.e2e and add MADARA_ORCHESTRATOR_ATLANTIC_API_KEY$(RESET)"; \
+		echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
+		read -r; \
+	elif ! grep -v "^[[:space:]]*#" .env.e2e | grep -q "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"; then \
+		echo -e "$(WARN)⚠️  WARNING: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY not found in .env.e2e$(RESET)"; \
+		echo -e "$(WARN)⚠️  Please add MADARA_ORCHESTRATOR_ATLANTIC_API_KEY to .env.e2e$(RESET)"; \
+		echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
+		read -r; \
+	else \
+		API_KEY=$$(grep -v "^[[:space:]]*#" .env.e2e | grep "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY" | cut -d '=' -f 2 | tr -d ' "'); \
+		if [ -z "$$API_KEY" ]; then \
+			echo -e "$(WARN)⚠️  WARNING: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY is empty in .env.e2e$(RESET)"; \
+			echo -e "$(DIM)Press Enter to continue or Ctrl+C to cancel...$(RESET)"; \
+			read -r; \
+		else \
+			MASKED_KEY=$$(echo $$API_KEY | sed 's/\(.\{4\}\).*/\1****/'); \
+			echo -e "$(PASS)✅ Found MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: $$MASKED_KEY$(RESET)"; \
+		fi; \
+	fi
+	@# Check for CARGO_TARGET_DIR in .env.e2e
+	@if [ -f .env.e2e ]; then \
+		if grep -v "^[[:space:]]*#" .env.e2e | grep -q "CARGO_TARGET_DIR"; then \
+			ENV_TARGET_DIR=$$(grep -v "^[[:space:]]*#" .env.e2e | grep "CARGO_TARGET_DIR" | cut -d '=' -f 2 | tr -d ' "'); \
+			if [ "$$ENV_TARGET_DIR" != "$(CARGO_TARGET_DIR)" ]; then \
+				echo -e "$(WARN)⚠️  WARNING: CARGO_TARGET_DIR in .env.e2e ($$ENV_TARGET_DIR) differs from Makefile value$(RESET)"; \
+				echo -e "$(INFO)Updating .env.e2e to use: $(CARGO_TARGET_DIR)$(RESET)"; \
+				sed -i.bak '/^[[:space:]]*CARGO_TARGET_DIR/d' .env.e2e && rm -f .env.e2e.bak; \
+				echo "CARGO_TARGET_DIR=$(CARGO_TARGET_DIR)" >> .env.e2e; \
+			else \
+				echo -e "$(PASS)✅ CARGO_TARGET_DIR already set correctly: $(CARGO_TARGET_DIR)$(RESET)"; \
+			fi; \
+		else \
+			echo -e "$(INFO)Adding CARGO_TARGET_DIR to .env.e2e: $(CARGO_TARGET_DIR)$(RESET)"; \
+			echo "CARGO_TARGET_DIR=$(CARGO_TARGET_DIR)" >> .env.e2e; \
+		fi; \
+	fi
+
+.PHONY: check-e2e-mac
+check-e2e-mac:
+	@echo -e "$(DIM)Checking if running on Mac...$(RESET)"
+	@if [ "$$(uname)" != "Darwin" ]; then \
+		echo -e "$(WARN)❌ This test must be run on macOS$(RESET)"; \
+		echo -e "$(INFO)Detected OS: $$(uname)$(RESET)"; \
+		exit 1; \
+	fi
+	@echo -e "$(PASS)✅ Running on macOS$(RESET)"
+
+.PHONY: check-e2e-dependencies
+check-e2e-dependencies:
+	@echo -e "$(DIM)Checking E2E dependencies...$(RESET)"
+	@# Check Docker installation
+	@if ! command -v docker &> /dev/null; then \
+		echo -e "$(WARN)❌ Docker is not installed or not in PATH$(RESET)"; \
+		exit 1; \
+	fi
+	@echo -e "$(PASS)✅ Docker is installed$(RESET)"
+	@# Check if Docker daemon is running
+	@if ! docker info &> /dev/null 2>&1; then \
+		echo -e "$(WARN)❌ Docker daemon is not running. Please start Docker.$(RESET)"; \
+		exit 1; \
+	fi
+	@echo -e "$(PASS)✅ Docker daemon is running$(RESET)"
+	@# Check Anvil installation
+	@if ! command -v anvil &> /dev/null; then \
+		echo -e "$(WARN)❌ Anvil is not installed or not in PATH$(RESET)"; \
+		exit 1; \
+	fi
+	@echo -e "$(PASS)✅ Anvil is installed$(RESET)"
+	@# Check Forge installation
+	@if ! command -v forge &> /dev/null; then \
+		echo -e "$(WARN)❌ Forge is not installed or not in PATH$(RESET)"; \
+		exit 1; \
+	fi
+	@echo -e "$(PASS)✅ Forge is installed$(RESET)"
+
+.PHONY: pull-e2e-docker-images
+pull-e2e-docker-images:
+	@echo -e "$(DIM)Checking Docker images for E2E tests...$(RESET)"
+	@if ! docker image inspect localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314 > /dev/null 2>&1; then \
+		echo -e "$(INFO)Pulling localstack image...$(RESET)"; \
+		docker pull localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314; \
+	else \
+		echo -e "$(PASS)✅ LocalStack image already exists$(RESET)"; \
+	fi
+	@if ! docker image inspect mongo:latest > /dev/null 2>&1; then \
+		echo -e "$(INFO)Pulling mongo image...$(RESET)"; \
+		docker pull mongo:latest; \
+	else \
+		echo -e "$(PASS)✅ Mongo image already exists$(RESET)"; \
+	fi
+	@echo -e "$(PASS)✅ All Docker images ready$(RESET)"
+
+
+.PHONY: build-e2e-binaries
+build-e2e-binaries:
+	@echo -e "$(DIM)Building E2E binaries...$(RESET)"
+	@mkdir -p $(CARGO_TARGET_DIR)/release
+	@# Build Madara
+	@echo -e "$(INFO)Building Madara...$(RESET)"
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path madara/Cargo.toml --bin madara --release
+	@# Build Orchestrator
+	@echo -e "$(INFO)Building Orchestrator...$(RESET)"
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator --release
+	@# Build Bootstrapper
+	@echo -e "$(INFO)Building Bootstrapper...$(RESET)"
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package bootstrapper --bin bootstrapper --release
+	@# Build E2E test package
+	@echo -e "$(INFO)Building E2E test package...$(RESET)"
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p e2e
+	@echo -e "$(PASS)✅ All binaries built$(RESET)"
+
+.PHONY: download-pathfinder-mac
+download-pathfinder-mac:
+	@echo -e "$(DIM)Downloading Pathfinder binary for Mac...$(RESET)"
+	@mkdir -p $(CARGO_TARGET_DIR)/release
+	@if [ ! -f $(CARGO_TARGET_DIR)/release/pathfinder ]; then \
+		curl -L -o pathfinder.tar.gz $(PATHFINDER_URL_MAC); \
+		tar -xf pathfinder.tar.gz -C $(CARGO_TARGET_DIR)/release/; \
+		rm pathfinder.tar.gz; \
+		echo -e "$(PASS)✅ Pathfinder downloaded$(RESET)"; \
+	else \
+		echo -e "$(INFO)Pathfinder binary already exists, skipping download.$(RESET)"; \
+	fi
+
+.PHONY: make-e2e-binaries-executable
+make-e2e-binaries-executable:
+	@echo -e "$(DIM)Making binaries executable...$(RESET)"
+	@chmod +x $(CARGO_TARGET_DIR)/release/madara
+	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper
+	@chmod +x $(CARGO_TARGET_DIR)/release/pathfinder
+	@chmod +x $(CARGO_TARGET_DIR)/release/orchestrator
+	@chmod +x test_utils/scripts/deploy_dummy_verifier.sh
+	@echo -e "$(PASS)✅ Binaries are executable$(RESET)"
+
+.PHONY: run-e2e
+run-e2e:
+	@echo -e "$(DIM)Running E2E bridge tests...$(RESET)"
+	@AWS_REGION=$(AWS_REGION) \
+	CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) \
+	RUST_LOG=info cargo test \
+		--package e2e test_bridge_deposit_and_withdraw \
+		-- --test-threads=10 --nocapture
+	@echo -e "$(PASS)✅ E2E bridge tests completed$(RESET)"
+
+.PHONY: clean-up-after-e2e
+clean-up-after-e2e:
+	@echo -e "$(DIM)Cleaning up e2e_data directory...$(RESET)"
+	@rm -rf e2e_data
+	@echo -e "$(PASS)✅ e2e_data directory cleaned$(RESET)"
+
+# ============================================================================ #
 
 .PHONY: test-orchestrator
 test-orchestrator:

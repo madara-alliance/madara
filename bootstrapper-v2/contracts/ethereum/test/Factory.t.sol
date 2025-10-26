@@ -6,6 +6,15 @@ import {Factory} from "src/factory/Factory.sol";
 import "src/factory/libraries/DataTypes.sol";
 import {ConfigureSingleBridgeEIC} from "src/eic/ConfigureSingleBridgeEIC.sol";
 
+// Currently to use this test, 
+// 1. Run anvil. 
+// 2. Run the setup-base layer command from the rust cli 
+// 3. Run the test by using forge test (the hardcoded addresses are what will be deployed on anvil). 
+// Ideally it would have been better that we could do implementation contract deployment too in foundry test, 
+// but anyways we are not writing the test for the implementation contract but for the factory, so this works somehow.
+// 
+// One otherway to skip running anvil and setup-base command is to test using sepolia fork too, 
+// where we can have the implementations pre-deployed
 contract FactoryTest is Test {
   Factory public factory;
 

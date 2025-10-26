@@ -12,6 +12,7 @@ use crate::types::batch::{
 };
 use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::worker::event_handler::triggers::snos::fetch_block_starknet_version;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use blockifier::bouncer::BouncerWeights;
@@ -276,6 +277,63 @@ impl BatchingTrigger {
         // Get the provider
         let provider = config.madara_client();
 
+        // Fetch Starknet version for the current block
+        let current_block_starknet_version = fetch_block_starknet_version(config, block_number).await.map_err(|e| {
+            JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_number, e))
+        })?;
+
+        // Check if current block's Starknet version differs from the aggregator batch version
+        // A batch can only contain blocks from the same Starknet protocol version (prover requirement)
+        // Since SNOS batches belong to aggregator batches, they automatically inherit version consistency
+        if current_aggregator_batch.starknet_version != current_block_starknet_version {
+            info!(
+                block_number = %block_number,
+                current_block_starknet_version = %current_block_starknet_version,
+                batch_starknet_version = %current_aggregator_batch.starknet_version,
+                "Starknet version mismatch detected, closing current batches to maintain version consistency across the bucket"
+            );
+
+            // Close both current batches if there's a previous state update
+            if let Some(ref prev_update) = prev_state_update {
+                self.save_batch_state(
+                    BatchState {
+                        aggregator_batch: &current_aggregator_batch,
+                        snos_batch: &current_snos_batch,
+                        close_aggregator_batch: true,
+                        snos_batch_status: SnosBatchStatus::Closed,
+                        state_update: prev_update,
+                    },
+                    config,
+                    provider,
+                )
+                .await?;
+            }
+
+            // Start new batches with the current block's Starknet version
+            let (new_snos_batch, new_aggregator_batch) = self
+                .start_new_batches(
+                    config,
+                    current_aggregator_batch.index + 1,
+                    current_snos_batch.snos_batch_id + 1,
+                    block_number,
+                )
+                .await?;
+
+            // Get state update for the current block
+            let current_state_update = provider
+                .get_state_update(BlockId::Number(block_number))
+                .await
+                .map_err(|e| JobError::ProviderError(e.to_string()))?;
+
+            return match current_state_update {
+                Update(state_update) => Ok((Some(state_update), new_aggregator_batch, new_snos_batch)),
+                PreConfirmedUpdate(_) => {
+                    info!("Skipping batching for block {} as it is still pending", block_number);
+                    Ok((None, new_aggregator_batch, new_snos_batch))
+                }
+            };
+        }
+
         // Get the state update for the block
         let current_state_update = provider
             .get_state_update(BlockId::Number(block_number))
@@ -410,6 +468,19 @@ impl BatchingTrigger {
         // Start timing batch creation
         let start_time = Instant::now();
 
+        // Fetch Starknet version for the start block
+        // In tests, use a default version if fetch fails due to HTTP mocking limitations
+        let starknet_version = fetch_block_starknet_version(config, start_block).await.map_err(|e| {
+            error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+            JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", start_block, e)))
+        })?;
+        info!(
+            index = %index,
+            start_block = %start_block,
+            starknet_version = %starknet_version,
+            "Fetched Starknet version for new batch"
+        );
+
         // Start a new bucket
         let bucket_id = config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
             error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
@@ -427,14 +498,16 @@ impl BatchingTrigger {
             self.get_state_update_file_path(index),
             self.get_blob_dir_path(index),
             bucket_id.clone(),
+            starknet_version.clone(),
         );
 
-        // Record batch creation time
+        // Record batch creation time with starknet_version in metrics
         let duration = start_time.elapsed();
         let attributes = [
             KeyValue::new("batch_index", index.to_string()),
             KeyValue::new("start_block", start_block.to_string()),
             KeyValue::new("bucket_id", bucket_id.to_string()),
+            KeyValue::new("starknet_version", starknet_version),
         ];
         ORCHESTRATOR_METRICS.batch_creation_time.record(duration.as_secs_f64(), &attributes);
 
@@ -467,12 +540,13 @@ impl BatchingTrigger {
     async fn start_new_batches(
         &self,
         config: &Arc<Config>,
-        aggregator_index: u64,
+        aggregator_batch_index: u64,
         snos_index: u64,
         start_block: u64,
     ) -> Result<(SnosBatch, AggregatorBatch), JobError> {
-        let snos_batch = self.start_snos_batch(snos_index, aggregator_index, start_block)?;
-        let aggregator_batch = self.start_aggregator_batch(config, aggregator_index, snos_index, start_block).await?;
+        let snos_batch = self.start_snos_batch(snos_index, aggregator_batch_index, start_block)?;
+        let aggregator_batch =
+            self.start_aggregator_batch(config, aggregator_batch_index, snos_index, start_block).await?;
         Ok((snos_batch, aggregator_batch))
     }
 
@@ -675,7 +749,7 @@ impl BatchingTrigger {
     }
 
     fn max_blocks_to_process_at_once(&self) -> u64 {
-        25
+        25 // TODO: should be taken from the config?
     }
 
     /// Determines whether a new batch should be started based on the size of the compressed

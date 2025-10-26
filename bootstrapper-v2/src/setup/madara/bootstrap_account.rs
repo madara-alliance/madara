@@ -1,4 +1,7 @@
-use anyhow::Context;
+use crate::{
+    error::madara::MadaraError,
+    setup::madara::constants::{BOOTSTRAP_ACCOUNT_CASM, BOOTSTRAP_ACCOUNT_SIERRA, BOOTSTRAP_PRIVATE_KEY},
+};
 use starknet::{
     accounts::{Account, AccountFactory, ExecutionEncoding, OpenZeppelinAccountFactory, SingleOwnerAccount},
     core::types::{
@@ -21,7 +24,7 @@ pub struct BootstrapAccount<'a> {
 impl<'a> BootstrapAccount<'a> {
     pub fn new(provider: &'a JsonRpcClient<HttpTransport>, chain_id: Felt) -> Self {
         let signer = LocalWallet::from(SigningKey::from_secret_scalar(
-            Felt::from_hex("0x424f4f545354524150").context("Invalid bootstrap private key hex").unwrap(),
+            Felt::from_hex(BOOTSTRAP_PRIVATE_KEY).expect("Invalid bootstrap private key hex"),
         ));
 
         let account = SingleOwnerAccount::new(
@@ -36,26 +39,23 @@ impl<'a> BootstrapAccount<'a> {
     }
 
     pub fn bootstrap_address() -> Felt {
+        // Hex value of `BOOTSTRAP`
         Felt::from_hex("0x424f4f545354524150").unwrap()
     }
 
     // A felt representation of the string 'BOOTSTRAP'.
-    pub async fn bootstrap_declare(&self) -> anyhow::Result<()> {
+    pub async fn bootstrap_declare(&self) -> Result<(), MadaraError> {
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open(
-                "contracts/madara/target/dev/madara_factory_contracts_AccountUpgradeable.contract_class.json",
-            )
-            .context("Failed to open OpenZeppelin Account sierra file")?,
+            std::fs::File::open(BOOTSTRAP_ACCOUNT_SIERRA)
+                .map_err(|e| MadaraError::FailedToOpenFile(e, BOOTSTRAP_ACCOUNT_SIERRA.to_string()))?,
         )
-        .context("Failed to read OpenZeppelin Account sierra file")?;
+        .map_err(|e| MadaraError::FailedToParseFile(e, BOOTSTRAP_ACCOUNT_SIERRA.to_string()))?;
 
         let contract_casm_artifact: CompiledClass = serde_json::from_reader(
-            std::fs::File::open(
-                "contracts/madara/target/dev/madara_factory_contracts_AccountUpgradeable.compiled_contract_class.json",
-            )
-            .context("Failed to open OpenZeppelin Account casm file")?,
+            std::fs::File::open(BOOTSTRAP_ACCOUNT_CASM)
+                .map_err(|e| MadaraError::FailedToOpenFile(e, BOOTSTRAP_ACCOUNT_CASM.to_string()))?,
         )
-        .context("Failed to read OpenZeppelin Account casm file")?;
+        .map_err(|e| MadaraError::FailedToParseFile(e, BOOTSTRAP_ACCOUNT_CASM.to_string()))?;
 
         // Check if already declared
         if self
@@ -72,7 +72,7 @@ impl<'a> BootstrapAccount<'a> {
         let compiled_class_hash = contract_casm_artifact.class_hash()?;
 
         // We need to flatten the ABI into a string first
-        let flattened_class = contract_artifact.clone().flatten().context("Failed to flatten contract artifact")?;
+        let flattened_class = contract_artifact.clone().flatten()?;
 
         let declaration = self
             .account
@@ -101,41 +101,30 @@ impl<'a> BootstrapAccount<'a> {
     pub async fn deploy_account(
         &self,
         private_key: &str,
-    ) -> anyhow::Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>> {
+    ) -> Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>, MadaraError> {
         // Read the OpenZeppelin Account contract artifacts to get the class hash
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open(
-                "contracts/madara/target/dev/madara_factory_contracts_AccountUpgradeable.contract_class.json",
-            )
-            .context("Failed to open OpenZeppelin Account sierra file")?,
+            std::fs::File::open(BOOTSTRAP_ACCOUNT_SIERRA)
+                .map_err(|e| MadaraError::FailedToOpenFile(e, BOOTSTRAP_ACCOUNT_SIERRA.to_string()))?,
         )
-        .context("Failed to read OpenZeppelin Account sierra file")?;
+        .map_err(|e| MadaraError::FailedToParseFile(e, BOOTSTRAP_ACCOUNT_SIERRA.to_string()))?;
 
         // Get the class hash
         let class_hash = contract_artifact.class_hash()?;
 
         // Create a signer from the private key
-        let signer = LocalWallet::from(SigningKey::from_secret_scalar(
-            Felt::from_hex(private_key).context("Invalid private key format")?,
-        ));
+        let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from_hex(private_key)?));
 
-        let salt = Felt::from(0u64); // Salt for deployment
+        // String representation of `bootstrap_salt`
+        // Safe to have unwrap() here
+        let salt = Felt::from_hex("0x626f6f7473747261705f73616c74").unwrap(); // Salt for deployment
 
         // Create an OpenZeppelin account factory for deployment
         let account_factory =
-            OpenZeppelinAccountFactory::new(class_hash, self.account.chain_id(), &signer, self.provider)
-                .await
-                .context("Failed to create OpenZeppelin account factory")?;
+            OpenZeppelinAccountFactory::new(class_hash, self.account.chain_id(), &signer, self.provider).await?;
 
         // Deploy the account using the factory
-        let deploy_result = account_factory
-            .deploy_v3(salt)
-            .l1_gas(0)
-            .l2_gas(0)
-            .l1_data_gas(0)
-            .send()
-            .await
-            .context("Failed deploying OpenZeppelin account")?;
+        let deploy_result = account_factory.deploy_v3(salt).l1_gas(0).l2_gas(0).l1_data_gas(0).send().await?;
 
         wait_for_transaction(self.provider, deploy_result.transaction_hash, "OpenZeppelin Account Deployment").await?;
         log::info!("OpenZeppelin Account deployment successful!");
