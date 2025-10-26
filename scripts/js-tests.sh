@@ -12,7 +12,8 @@ CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin mad
   --l1-gas-price 0         \
   --blob-gas-price 0       \
   --strk-per-eth 1         \
-  --no-l1-sync &
+  --no-l1-sync             \
+  --rpc-pre-v0-9-preconfirmed-as-pending &
 
 MADARA_PID=$!
 

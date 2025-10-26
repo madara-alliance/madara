@@ -4,8 +4,7 @@ use crate::{
 };
 use anyhow::Context;
 use mc_db::MadaraBackend;
-use mc_gateway_client::GatewayProvider;
-use mp_block::BlockId;
+use mc_gateway_client::{BlockId, GatewayProvider};
 use mp_class::{ClassInfo, ClassInfoWithHash, ConvertedClass, LegacyClassInfo, SierraClassInfo, MISSED_CLASS_HASHES};
 use mp_state_update::DeclaredClassCompiledClass;
 use mp_utils::AbortOnDrop;

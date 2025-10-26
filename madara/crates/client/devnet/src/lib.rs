@@ -223,8 +223,8 @@ impl ChainGenesisDescription {
                         strk_l1_gas_price: 128,
                         eth_l1_data_gas_price: 128,
                         strk_l1_data_gas_price: 128,
-                        eth_l2_gas_price: 128,
-                        strk_l2_gas_price: 128,
+                        eth_l2_gas_price: 100000,
+                        strk_l2_gas_price: 100000,
                     },
                     l1_da_mode: chain_config.l1_da_mode,
                 },
@@ -269,7 +269,7 @@ mod tests {
     };
     use mp_class::{ClassInfo, FlattenedSierraClass};
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
-    use mp_rpc::v0_7_1::{
+    use mp_rpc::v0_9_0::{
         AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn,
         BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, DaMode, DeployAccountTxnV3,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
@@ -440,7 +440,8 @@ mod tests {
             contract_class: flattened_class.into(),
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 220000, max_price_per_unit: 10000 },
-                l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
+                l1_data_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
             },
             tip: 0,
             paymaster_data: vec![],
@@ -535,7 +536,8 @@ mod tests {
                         nonce: Felt::ZERO,
                         resource_bounds: ResourceBoundsMapping {
                             l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                            l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                            l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
+                            l1_data_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                         },
                         tip: 0,
                         paymaster_data: vec![],
@@ -580,7 +582,8 @@ mod tests {
             class_hash: account_class_hash,
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
+                l1_data_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
             },
             tip: 0,
             paymaster_data: vec![],
@@ -598,7 +601,8 @@ mod tests {
                     ..
                 }))
             );
-            assert!(format!("{:#}", res.unwrap_err()).contains("exceed balance"));
+            let error = res.unwrap_err();
+            assert!(format!("{error:#}").contains("exceed balance"), "{error:#}");
             return;
         }
 
@@ -666,7 +670,8 @@ mod tests {
                     nonce: Felt::ZERO,
                     resource_bounds: ResourceBoundsMapping {
                         l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
-                        l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                        l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
+                        l1_data_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                     },
                     tip: 0,
                     paymaster_data: vec![],

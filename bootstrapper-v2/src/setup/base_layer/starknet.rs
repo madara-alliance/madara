@@ -1,6 +1,7 @@
-use crate::setup::base_layer::BaseLayerSetupTrait;
-use starknet::core::types::Felt;
+use crate::setup::base_layer::{BaseLayerError, BaseLayerSetupTrait};
+use async_trait::async_trait;
 use starknet::{
+    core::types::Felt,
     providers::{jsonrpc::HttpTransport, JsonRpcClient, Url},
     signers::{LocalWallet, SigningKey},
 };
@@ -14,7 +15,7 @@ pub struct StarknetSetup {
 
 impl StarknetSetup {
     pub fn new(rpc_url: String, private_key: String) -> Self {
-        let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&rpc_url).unwrap()));
+        let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&rpc_url).expect("Failed to parse RPC URL")));
         let client = LocalWallet::from(SigningKey::from_secret_scalar(
             Felt::from_hex(&private_key).expect("Failed to convert BASE_LAYER_PRIVATE_KEY to Felt"),
         ));
@@ -22,16 +23,18 @@ impl StarknetSetup {
     }
 }
 
+#[async_trait]
 impl BaseLayerSetupTrait for StarknetSetup {
-    fn init(&self) -> anyhow::Result<()> {
-        Ok(())
+    async fn init(&mut self) -> Result<(), BaseLayerError> {
+        unimplemented!("Starknet base layer is not implemented yet")
     }
 
-    fn setup(&self) -> anyhow::Result<()> {
-        Ok(())
+    async fn setup(&mut self) -> Result<(), BaseLayerError> {
+        unimplemented!("Starknet base layer is not implemented yet")
     }
 
-    fn post_madara_setup(&self) -> anyhow::Result<()> {
-        Ok(())
+    #[allow(unused_variables)]
+    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<(), BaseLayerError> {
+        unimplemented!("Starknet base layer is not implemented yet")
     }
 }

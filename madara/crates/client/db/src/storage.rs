@@ -1,5 +1,6 @@
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::prelude::*;
+use blockifier::bouncer::BouncerWeights;
 use mp_block::{
     header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
 };
@@ -85,6 +86,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<StorageTxIndex>>;
     fn get_block_info(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>>;
     fn get_block_state_diff(&self, block_n: u64) -> Result<Option<StateDiff>>;
+    fn get_block_bouncer_weights(&self, block_n: u64) -> Result<Option<BouncerWeights>>;
     fn get_transaction(&self, block_n: u64, tx_index: u64) -> Result<Option<TransactionWithReceipt>>;
     fn get_block_transactions(
         &self,
@@ -133,6 +135,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
     fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()>;
+    fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()>;
     fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()>;
     fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()>;
 
@@ -169,6 +172,9 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     /// Remove all blocks in the database from this block_n inclusive. This includes partially imported blocks as well.
     fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()>;
+
+    /// Revert the blockchain state to a specific block hash.
+    fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)>;
 }
 
 /// Trait alias for `MadaraStorageRead + MadaraStorageWrite`.

@@ -111,7 +111,7 @@ use async_trait::async_trait;
 use mc_db::MadaraStorage;
 use mc_mempool::Mempool;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
-use mp_rpc::v0_7_1::{
+use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };

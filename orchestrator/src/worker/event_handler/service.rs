@@ -57,7 +57,7 @@ impl JobHandlerService {
     pub async fn create_job(
         job_type: JobType,
         internal_id: String,
-        metadata: JobMetadata,
+        mut metadata: JobMetadata,
         config: Arc<Config>,
     ) -> Result<(), JobError> {
         let start = Instant::now();
@@ -83,6 +83,9 @@ impl JobHandlerService {
             warn!("{}", JobError::JobAlreadyExists { internal_id, job_type });
             return Ok(());
         }
+
+        // Set orchestrator version on job creation
+        metadata.common.orchestrator_version = Some(crate::types::constant::ORCHESTRATOR_VERSION.to_string());
 
         let job_handler = factory::get_job_handler(&job_type).await;
         let job_item = job_handler.create_job(internal_id.clone(), metadata).await?;
@@ -123,7 +126,7 @@ impl JobHandlerService {
             JobType::StateTransition => {
                 let batch_number = parse_string(&internal_id)?;
 
-                match config.database().get_batches_by_indexes(vec![batch_number as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![batch_number as u64]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
                     _ => batch_number,
                 }
@@ -132,7 +135,16 @@ impl JobHandlerService {
                 let batch_number = parse_string(&internal_id)?;
 
                 // Fetch the batch from the database
-                match config.database().get_batches_by_indexes(vec![batch_number as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![batch_number as u64]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    _ => batch_number,
+                }
+            }
+            JobType::SnosRun => {
+                let batch_number = parse_string(&internal_id)?;
+
+                // Fetch the batch from the database
+                match config.database().get_snos_batches_by_indices(vec![batch_number as u64]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
                     _ => batch_number,
                 }

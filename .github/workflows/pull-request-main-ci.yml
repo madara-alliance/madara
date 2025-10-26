@@ -158,42 +158,42 @@ jobs:
   #                                BOOTSTRAPPER                               #
   # ========================================================================= #
 
-  # Check Bootstrapper binary
-  # (We don't re-use the Bootstrapper binary in other tests)
+  # Deprecating bootstrapper V1
   check-bootstrapper:
     needs: lint-code-style
-    uses: ./.github/workflows/task-check-bootstrapper.yml
+    uses: ./.github/workflows/task-do-nothing-check-bootstrapper.yml
     secrets: inherit
 
-  # Build Bootstrapper binary
-  # build-bootstrapper:
-  #   needs: lint-code-style
-  #   uses: ./.github/workflows/task-build-bootstrapper.yml
-  #   secrets: inherit
+  # Deprecating bootstrapper V1
+  #  build-bootstrapper:
+  #    needs: lint-code-style
+  #    uses: ./.github/workflows/task-build-bootstrapper.yml
+  #    secrets: inherit
 
-  # Run coverage tests
+  # Deprecating bootstrapper V1
   test-bootstrapper:
-    needs: [build-madara, check-bootstrapper]
-    uses: ./.github/workflows/task-test-bootstrapper.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-    secrets: inherit
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-do-nothing-test-bootstrapper.yml
 
   # ========================================================================= #
   #                                MERGE QUEUE                                #
   # ========================================================================= #
 
   build-nightly-and-publish-madara:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   # test-hive:
   #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
 
   build-nightly-and-publish-orchestrator:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   build-nightly-and-publish-bootstrapper:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   test-end-to-end:
+    if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml

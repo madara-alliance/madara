@@ -785,13 +785,15 @@
 //!
 //! [Starknet RPC Specs]: https://github.com/starkware-libs/starknet-specs
 
-mod constants;
-mod errors;
 #[cfg(test)]
 pub mod test_utils;
-mod types;
 pub mod utils;
 pub mod versions;
+
+mod block_id;
+mod constants;
+mod errors;
+mod types;
 
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
@@ -823,6 +825,7 @@ impl Default for StorageProofConfig {
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
     ws_handles: Arc<WsSubscribeHandles>,
+    pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
@@ -838,7 +841,19 @@ impl Starknet {
         ctx: ServiceContext,
     ) -> Self {
         let ws_handles = Arc::new(WsSubscribeHandles::new());
-        Self { backend, ws_handles, add_transaction_provider, storage_proof_config, block_prod_handle, ctx }
+        Self {
+            backend,
+            ws_handles,
+            add_transaction_provider,
+            storage_proof_config,
+            block_prod_handle,
+            ctx,
+            pre_v0_9_preconfirmed_as_pending: false,
+        }
+    }
+
+    pub fn set_pre_v0_9_preconfirmed_as_pending(&mut self, value: bool) {
+        self.pre_v0_9_preconfirmed_as_pending = value;
     }
 }
 
@@ -847,10 +862,18 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     let mut rpc_api = RpcModule::new(());
 
     rpc_api.merge(versions::user::v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
-    rpc_api.merge(versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
+
+    rpc_api.merge(versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_8_1::StarknetWriteRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_8_1::StarknetTraceRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
+
+    rpc_api.merge(versions::user::v0_9_0::StarknetReadRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_9_0::StarknetWriteRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_9_0::StarknetTraceRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }
@@ -861,6 +884,7 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::admin::v0_1_0::MadaraReadRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }
