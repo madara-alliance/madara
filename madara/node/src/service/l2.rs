@@ -72,7 +72,7 @@ impl Service for SyncService {
         let this = self.start_args.take().expect("Service already started");
         let importer = Arc::new(BlockImporter::new(
             this.db_backend.clone(),
-            // TODO: all_verifications_disabled should be configured from the env
+            // TODO(heemankv, 2025-10-26): all_verifications_disabled should be configured from the env
             BlockValidationConfig::default()
                 .trust_parent_hash(this.unsafe_starting_block_enabled)
                 .trust_state_root(this.unsafe_starting_block_enabled),

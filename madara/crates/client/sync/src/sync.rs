@@ -199,18 +199,12 @@ impl<P: ForwardPipeline> SyncController<P> {
                     tracing::debug!("Cancelling pending block task as stop_at reached");
                     self.get_pending_block = None;
                 }
-            }
 
-            if self.forward_pipeline.is_empty()
-                && self
-                    .config
-                    .stop_at_block_n
-                    .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
-                && !self.pending_block_task_is_running()
-            {
-                // End condition for stop_at_block_n.
-                tracing::debug!("End condition for stop_at");
-                break Ok(());
+                if self.forward_pipeline.is_empty() && !self.pending_block_task_is_running() {
+                    // End condition for stop_at_block_n.
+                    tracing::debug!("End condition for stop_at");
+                    break Ok(());
+                }
             }
 
             tokio::select! {

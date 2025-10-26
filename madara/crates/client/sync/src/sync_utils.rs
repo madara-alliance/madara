@@ -1,20 +1,21 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
 use anyhow::Context;
 use futures::{stream, StreamExt, TryStreamExt};
 use mp_convert::Felt;
 use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry};
 use mc_db::{MadaraBackend, MadaraStorageRead};
 
-/// New function: Compress a raw accumulated state diff by checking against pre_range_block
+const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 400;
+const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 10000;
+
+/// Compress a raw accumulated state diff by checking against pre_range_block
 /// This should be called ONCE after all accumulation is complete
 pub async fn compress_state_diff(
     raw_state_diff: StateDiff,
     pre_range_block: Option<u64>,
     backend: Arc<MadaraBackend>,
 ) -> anyhow::Result<StateDiff> {
-    // tracing::info!("Snap_Sync: Starting compression with pre_range_block={}", pre_range_block);
 
     // Process storage diffs with pre_range checks
     let storage_diffs = stream::iter(raw_state_diff.storage_diffs.into_iter().enumerate())
@@ -68,10 +69,7 @@ pub async fn compress_state_diff(
     Ok(compressed_diff)
 }
 
-const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 400;
-const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 10000;
-const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
-const MAX_GET_CLASS_HASH_AT_CALL_RETRY: u64 = 3;
+
 
 #[derive(Default)]
 pub struct StateDiffMap {
@@ -88,7 +86,6 @@ impl StateDiffMap {
 
     /// Apply a single state diff to the existing StateDiffMap
     pub fn apply_state_diff(&mut self, state_diff: &StateDiff) {
-        // tracing::info!("Snap_Sync: Applying state diff to existing StateDiffMap");
 
         // Process storage diffs
         for contract_diff in &state_diff.storage_diffs {
@@ -130,8 +127,6 @@ impl StateDiffMap {
     /// NEW: Convert to raw StateDiff without any pre_range filtering
     /// This is MUCH faster as it does no DB lookups
     pub fn to_raw_state_diff(&self) -> StateDiff {
-
-        // tracing::info!("Snap_Sync: Converting to raw state diff with {} touched contracts", self.touched_contracts.len());
 
         // Convert storage diffs - only include touched contracts
         let storage_diffs: Vec<ContractStorageDiffItem> = self.touched_contracts.clone()
@@ -343,50 +338,20 @@ pub async fn check_contract_existed_at_block(
 /// This function returns the class hash of a contract at a given block number
 /// If it exists, it returns the class hash along with `exists=true`
 /// If it doesn't exist, it returns the zero-class hash along with `exists=false`
-/// It retries up to [MAX_GET_CLASS_HASH_AT_CALL_RETRY] times
 /// This function does not return error when the contract does not exist
 pub async fn get_class_hash_at(
     backend: Arc<MadaraBackend>,
     block_number: u64,
     contract_address: Felt,
 ) -> anyhow::Result<Option<Felt>> {
-    let class_hash = retry_sync(
-        || backend.db.get_contract_class_hash_at(block_number, &contract_address),
-        MAX_GET_CLASS_HASH_AT_CALL_RETRY,
-        Some(Duration::from_secs(5)),
-    )
+    backend.db.get_contract_class_hash_at(block_number, &contract_address)
         .with_context(|| {
             format!(
                 "Failed to get class hash for contract: {} at block {}",
                 contract_address, block_number
             )
-        })?;
-
-    Ok(class_hash)
+        })
 }
-
-
-pub fn retry_sync<F, T, E>(mut func: F, max_retries: u64, delay: Option<Duration>) -> Result<T, E>
-where
-    F: FnMut() -> Result<T, E>,
-{
-    let mut attempts = 0;
-    loop {
-        match func() {
-            Ok(val) => return Ok(val),
-            Err(e) => {
-                attempts += 1;
-                if attempts >= max_retries {
-                    return Err(e);
-                }
-                if let Some(d) = delay {
-                    std::thread::sleep(d);
-                }
-            }
-        }
-    }
-}
-
 
 pub async fn check_pre_range_storage_value(
     backend: Arc<MadaraBackend>,
@@ -395,15 +360,9 @@ pub async fn check_pre_range_storage_value(
     pre_range_block: u64,
 ) -> Option<Felt> {
     tokio::task::spawn_blocking(move || {
-        retry_sync(
-            || backend.db.get_storage_at(pre_range_block, &contract_address, &key),
-            MAX_GET_STORAGE_AT_CALL_RETRY,
-            Some(Duration::from_secs(5)),
-        )
+        backend.db.get_storage_at(pre_range_block, &contract_address, &key).ok().flatten()
+    })
+        .await
         .ok()
         .flatten()
-    })
-    .await
-    .ok()
-    .flatten()
 }

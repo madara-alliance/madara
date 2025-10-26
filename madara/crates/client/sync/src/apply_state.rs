@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use crate::pipeline::PipelineStatus;
 use crate::sync_utils::compress_state_diff;
 
+// TODO(heemankv, 2025-10-26): Should be driven from env for hardware based customisations
 /// Batch size for snap sync state accumulation before flushing to the global trie.
 ///
 /// During snap sync, state diffs are accumulated in memory rather than computing
@@ -93,11 +94,10 @@ impl ApplyStateSteps {
         block_range: Range<u64>,
         input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput
     ) -> anyhow::Result<ApplyOutcome<()>> {
-
         let current_first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
         let latest_block = block_range.end;
 
-        // Lock the mutex and apply state diffs
+        // Accumulate state diffs
         {
             let already_imported_count = current_first_block.saturating_sub(block_range.start);
             let state_diffs = input.iter().skip(already_imported_count as _);
@@ -110,54 +110,28 @@ impl ApplyStateSteps {
 
         let target_block = self.target_block.load(std::sync::atomic::Ordering::Relaxed);
 
+        // Apply if we've accumulated enough or reached target
         if latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE) || latest_block >= target_block {
-
-            // Lock to read and prepare state_diff
-            let state_diff = {
-                let state_diff_map = self.state_diff_map.lock().await;
-                let mut state_diff = state_diff_map.to_raw_state_diff();
-                state_diff.sort();
-                state_diff
-            };
-
-            let pre_range_block_check = if current_first_block == 0 {
-                None
-            } else {
-                Some(current_first_block.saturating_sub(1))
-            };
-
-            let accumulated_state_diff = compress_state_diff(
-                state_diff,
-                pre_range_block_check,
-                self.backend.clone()
-            ).await?;
-
-            // Move the trie computation to rayon pool
-            let backend = self.backend.clone();
-
-            self.importer
-                .run_in_rayon_pool_global(move |_| {
-                    // Apply the accumulated state diff to calculate the global state root
-                    let _global_state_root = backend
-                        .write_access()
-                        .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
-
-                    backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
-
-                    Ok::<(), anyhow::Error>(())
-                })
+            self.clone()
+                .apply_accumulated_diffs(current_first_block, latest_block)
                 .await
                 .with_context(|| format!("Applying snap sync trie for block_range={block_range:?}"))?;
-
-            // Clear the in-memory state_diff_map
-            let mut state_diff_map = self.state_diff_map.lock().await;
-            *state_diff_map = crate::sync_utils::StateDiffMap::default();
         }
+
         Ok(ApplyOutcome::Success(()))
     }
 
-    /// Main sync function that decides whether to use snap sync or block-by-block sync
-    /// based on the distance to the target block.
+
+    /// Flushes accumulated state diffs to the global trie when transitioning from snap sync
+    /// to block-by-block sync mode.
+    async fn flush_accumulated_state_diffs(
+        self: Arc<Self>,
+        up_to_block: u64,
+    ) -> anyhow::Result<()> {
+        let current_first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
+        self.apply_accumulated_diffs(current_first_block, up_to_block).await
+    }
+
     /// Main sync function that decides whether to use snap sync or block-by-block sync
     /// based on the distance to the target block.
     pub async fn sync(
@@ -167,12 +141,10 @@ impl ApplyStateSteps {
     ) -> anyhow::Result<ApplyOutcome<()>> {
         let target_block = self.target_block.load(std::sync::atomic::Ordering::Relaxed);
         let distance_to_target = target_block.saturating_sub(block_range.end);
-
         // Use snap sync if:
         // 1. Snap sync is enabled, AND
         // 2. We're far enough from the target (distance >= APPLY_STATE_SNAP_BATCH_SIZE)
         let should_use_snap_sync = self.snap_sync && distance_to_target >= APPLY_STATE_SNAP_BATCH_SIZE;
-
         if should_use_snap_sync {
             tracing::info!("⚡ Using snap sync (accumulating state diffs)");
             self.sync_snap(block_range, input).await
@@ -180,32 +152,24 @@ impl ApplyStateSteps {
             // Before switching to block-by-block sync, we need to flush any accumulated state diffs
             // from snap sync to avoid losing data or computing incorrect state roots
             if self.snap_sync {
-                let has_accumulated_diffs = {
-                    let state_diff_map = self.state_diff_map.lock().await;
-                    let diff_count = state_diff_map.to_raw_state_diff().len();
-                    diff_count > 0
-                };
+                let has_accumulated_diffs = !self.state_diff_map.lock().await
+                    .to_raw_state_diff()
+                    .is_empty();
 
                 if has_accumulated_diffs {
                     self.clone().flush_accumulated_state_diffs(block_range.start).await?;
-                } else {
                 }
             }
-
             tracing::info!("🔨 Using block-by-block sync");
             self.sync_each_block(block_range, input).await
         }
     }
 
-    /// Flushes accumulated state diffs to the global trie when transitioning from snap sync
-    /// to block-by-block sync mode.
-    async fn flush_accumulated_state_diffs(
+    async fn apply_accumulated_diffs(
         self: Arc<Self>,
-        up_to_block: u64,
+        current_first_block: u64,
+        latest_block: u64,
     ) -> anyhow::Result<()> {
-        let current_first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
-        let latest_block = up_to_block;
-
         // Lock to read and prepare state_diff
         let state_diff = {
             let state_diff_map = self.state_diff_map.lock().await;
@@ -231,7 +195,6 @@ impl ApplyStateSteps {
 
         self.importer
             .run_in_rayon_pool_global(move |_| {
-                // Apply the accumulated state diff to calculate the global state root
                 let _global_state_root = backend
                     .write_access()
                     .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
