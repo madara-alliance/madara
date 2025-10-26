@@ -11,6 +11,7 @@ make build
 ```
 
 This command will:
+
 1. Automatically set up a Python virtual environment (`sequencer_venv`)
 2. Install Cairo 0 and all required dependencies
 3. Build Madara in release mode with the Cairo environment activated
