@@ -2,6 +2,7 @@ use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, St
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_submit_tx::SubmitTransaction;
+use mp_convert::Felt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
@@ -81,5 +82,27 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .await
             .context("Force-closing block")
             .map_err(StarknetRpcApiError::from)?)
+    }
+
+    async fn submit_trie_result(&self, block_number: u64, state_root: String) -> RpcResult<bool> {
+        // Parse hex string to Felt
+        let state_root_felt = Felt::from_hex(&state_root)
+            .map_err(|_| StarknetRpcApiError::ErrUnexpectedError { 
+                error: "Invalid state root hex string".into() 
+            })?;
+        
+        tracing::info!(
+            "📡 RPC received trie result: block={} state_root={}",
+            block_number,
+            state_root
+        );
+        
+        // Queue the result and trigger processing
+        // The backend will process sequential blocks from the queue automatically
+        self.backend
+            .queue_trie_result(block_number, state_root_felt)
+            .map_err(StarknetRpcApiError::from)?;
+        
+        Ok(true)
     }
 }

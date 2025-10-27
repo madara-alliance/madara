@@ -158,6 +158,13 @@ impl BlockImporterCtx {
         block_n: u64,
         signed_header: &BlockHeaderWithSignatures,
     ) -> Result<(), BlockImportError> {
+        // POC: Skip all validation on worker nodes
+        const SKIP_VALIDATION_FOR_WORKER: bool = false;  // Set to true on worker nodes
+        if SKIP_VALIDATION_FOR_WORKER {
+            tracing::debug!("Skipping header validation for block {} (worker mode)", block_n);
+            return Ok(());
+        }
+
         // TODO: verify signatures
 
         // verify block_number

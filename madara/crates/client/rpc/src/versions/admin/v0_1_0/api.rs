@@ -56,6 +56,11 @@ pub trait MadaraWriteRpcApi {
     /// Only works in block production mode.
     #[method(name = "closeBlock")]
     async fn close_block(&self) -> RpcResult<()>;
+
+    /// Submit computed trie root for a block (from worker nodes)
+    /// POC: Used by distributed trie computation workers
+    #[method(name = "submitTrieResult")]
+    async fn submit_trie_result(&self, block_number: u64, state_root: String) -> RpcResult<bool>;
 }
 
 /// This is an admin method, so semver is different!

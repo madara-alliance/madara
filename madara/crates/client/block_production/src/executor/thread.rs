@@ -160,7 +160,7 @@ impl ExecutorThread {
     ///
     /// https://docs.starknet.io/architecture-and-concepts/network-architecture/starknet-state/#address_0x1
     fn wait_for_hash_of_block_min_10(&self, block_n: u64) -> anyhow::Result<Option<(u64, Felt)>> {
-        let Some(block_n_min_10) = block_n.checked_sub(10) else { return Ok(None) };
+        let Some(block_n_min_10) = block_n.checked_sub(10000) else { return Ok(None) };
 
         let get_hash_from_db = || {
             if let Some(view) = self.backend.block_view_on_confirmed(block_n_min_10) {

@@ -86,6 +86,22 @@ impl Service for SyncService {
             .no_pending_block(this.params.no_pending_sync);
 
         runner.service_loop(move |ctx| async move {
+            // POC: Start trie worker task if enabled
+            let _worker_handle = if mc_sync::trie_worker::TrieWorkerTask::is_enabled() {
+                let worker = mc_sync::trie_worker::TrieWorkerTask::new(
+                    this.db_backend.clone(),
+                    importer.clone(),
+                );
+                let ctx_clone = ctx.clone();
+                Some(tokio::spawn(async move {
+                    if let Err(e) = worker.run(ctx_clone).await {
+                        tracing::error!("Trie worker error: {:?}", e);
+                    }
+                }))
+            } else {
+                None
+            };
+
             // Warp update
             if let Some(WarpUpdateConfig {
                 warp_update_port_rpc,

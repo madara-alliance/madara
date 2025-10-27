@@ -7086,6 +7086,7 @@ dependencies = [
  "opentelemetry_sdk",
  "rayon",
  "regex",
+ "reqwest",
  "rstest 0.18.2",
  "serde_json",
  "starknet-core",

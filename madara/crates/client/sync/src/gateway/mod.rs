@@ -200,7 +200,12 @@ impl GatewayForwardSync {
         PipelineStatus {
             blocks: self.blocks_pipeline.last_applied_block_n(),
             classes: self.classes_pipeline.last_applied_block_n(),
-            apply_state: self.backend.get_latest_applied_trie_update().ok().flatten(),
+            // When disable_tries is true, don't wait for trie computation
+            apply_state: if self.config.disable_tries {
+                None  // Ignore trie pipeline status
+            } else {
+                self.backend.get_latest_applied_trie_update().ok().flatten()
+            },
         }
     }
 }
@@ -214,7 +219,11 @@ struct PipelineStatus {
 
 impl PipelineStatus {
     pub fn min(&self) -> Option<u64> {
-        self.blocks.min(self.classes).min(self.apply_state)
+        // When apply_state is None (disable_tries=true), only consider blocks and classes
+        match self.apply_state {
+            Some(apply_state) => self.blocks.min(self.classes).min(Some(apply_state)),
+            None => self.blocks.min(self.classes),  // Ignore trie pipeline
+        }
     }
 }
 
@@ -237,8 +246,6 @@ impl ForwardPipeline for GatewayForwardSync {
 
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
-
-            let start_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
 
             tokio::select! {
                 Some(res) = self.apply_state_pipeline.next() => {
@@ -279,9 +286,26 @@ impl ForwardPipeline for GatewayForwardSync {
                 else => done = true,
             }
 
-            let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
-            for block_n in start_next_block..new_next_block {
+            let pipeline_status = self.pipeline_status();
+            let new_next_block = pipeline_status.min().map(|n| n + 1).unwrap_or(0);
+            
+            // Only confirm blocks that haven't been confirmed yet
+            let current_tip = self.backend.latest_confirmed_block_n();
+            let actual_start = current_tip.map(|tip| tip + 1).unwrap_or(0);
+            
+            tracing::debug!(
+                "Pipeline status before confirm: blocks={:?}, classes={:?}, apply_state={:?}, new_next={}, current_tip={:?}, actual_start={}",
+                pipeline_status.blocks,
+                pipeline_status.classes,
+                pipeline_status.apply_state,
+                new_next_block,
+                current_tip,
+                actual_start
+            );
+            
+            for block_n in actual_start..new_next_block {
                 // Mark the block as fully imported.
+                tracing::debug!("Confirming block {}", block_n);
                 self.backend.write_access().new_confirmed_block(block_n)?;
                 metrics.update(block_n, &self.backend).context("Updating metrics")?;
             }

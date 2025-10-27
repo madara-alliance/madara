@@ -68,6 +68,7 @@ anyhow.workspace = true
 futures = { workspace = true, default-features = true }
 num-traits.workspace = true
 rayon.workspace = true
+reqwest = { workspace = true, features = ["json"] }  # POC: For trie worker HTTP calls
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = [

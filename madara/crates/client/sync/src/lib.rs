@@ -12,3 +12,4 @@ pub use sync::SyncControllerConfig;
 pub mod gateway;
 pub mod import;
 mod sync_utils;
+pub mod trie_worker;  // POC: Distributed trie computation worker

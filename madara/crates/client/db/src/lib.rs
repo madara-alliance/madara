@@ -187,6 +187,11 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
 
+    /// Queue for pending trie results from worker nodes (POC: distributed trie computation)
+    /// Maps block_number -> computed_state_root
+    /// Workers submit results here, and they're applied sequentially when a continuous sequence is available
+    trie_result_queue: std::sync::Mutex<std::collections::HashMap<u64, Felt>>,
+
     /// Keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
@@ -214,6 +219,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
+            trie_result_queue: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
         backend.init().context("Initializing madara backend")?;
         Ok(backend)
@@ -285,6 +291,167 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn set_latest_l1_confirmed(&self, latest_l1_confirmed: Option<u64>) -> Result<()> {
         self.db.write_confirmed_on_l1_tip(latest_l1_confirmed)?;
         self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
+        Ok(())
+    }
+
+    /// Queue a trie result from a worker node (POC: distributed trie computation).
+    /// This adds the result to an in-memory queue and triggers processing if a sequential chain is available.
+    pub fn queue_trie_result(&self, block_n: u64, state_root: Felt) -> Result<()> {
+        tracing::info!("📥 Queueing trie result for block {} with state_root 0x{:x}", block_n, state_root);
+        
+        // Add to queue
+        {
+            let mut queue = self.trie_result_queue.lock()
+                .map_err(|e| anyhow::anyhow!("Failed to acquire queue lock: {}", e))?;
+            queue.insert(block_n, state_root);
+            tracing::debug!("Queue now contains {} pending results", queue.len());
+        }
+        
+        // Trigger processing
+        self.process_trie_queue()?;
+        
+        Ok(())
+    }
+    
+    /// Process the trie result queue (POC: distributed trie computation).
+    /// 
+    /// This is the trigger function that:
+    /// 1. Checks the last applied trie update
+    /// 2. Looks for the next sequential block (last_trie + 1) in the queue
+    /// 3. If found, applies it with cascading updates
+    /// 4. Continues until it finds a gap (missing block)
+    /// 
+    /// This ensures blocks are applied in order even if workers submit out of order.
+    pub fn process_trie_queue(&self) -> Result<()> {
+        let mut queue = self.trie_result_queue.lock()
+            .map_err(|e| anyhow::anyhow!("Failed to acquire queue lock: {}", e))?;
+        
+        let latest_chain_block = self.latest_block_n()
+            .ok_or_else(|| anyhow::anyhow!("No blocks in database"))?;
+        
+        loop {
+            // Check what's the next block we need
+            // If None (nothing applied yet), start from block 0
+            // If Some(n), next block is n+1
+            let next_block_needed = self.get_latest_applied_trie_update()?
+                .map(|n| n + 1)
+                .unwrap_or(0);
+            
+            // Do we have it in the queue?
+            let Some(state_root) = queue.remove(&next_block_needed) else {
+                // No sequential block available, stop processing
+                if !queue.is_empty() {
+                    tracing::debug!(
+                        "⏸️  Pausing queue processing: waiting for block {} (have {} non-sequential results in queue)",
+                        next_block_needed,
+                        queue.len()
+                    );
+                }
+                break;
+            };
+            
+            let last_trie_display = if next_block_needed == 0 { "None".to_string() } else { (next_block_needed - 1).to_string() };
+            tracing::info!(
+                "🔧 Processing block {} from queue (last_trie={}, {} remaining in queue)",
+                next_block_needed,
+                last_trie_display,
+                queue.len()
+            );
+            
+            // Release lock during the actual update (which might take time)
+            drop(queue);
+            
+            // Apply this block with cascading updates
+            self.apply_single_trie_update(next_block_needed, state_root, latest_chain_block)?;
+            
+            // Re-acquire lock for next iteration
+            queue = self.trie_result_queue.lock()
+                .map_err(|e| anyhow::anyhow!("Failed to acquire queue lock: {}", e))?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Apply a single trie update with cascading hash updates.
+    /// Updates block N's state root, then cascades to update parent hashes of N+1, N+2, etc.
+    fn apply_single_trie_update(&self, block_n: u64, new_state_root: Felt, latest_chain_block: u64) -> Result<()> {
+        use crate::BlockHeaderWithSignatures;
+        
+        tracing::info!(
+            "🔄 Applying trie update for block {} (will cascade to blocks {} through {})",
+            block_n,
+            block_n,
+            latest_chain_block
+        );
+        
+        let mut current_block = block_n;
+        let mut new_hash = Felt::ZERO;
+        let mut is_first_block = true;
+        
+        // Cascade through all blocks from block_n to latest_chain_block
+        while current_block <= latest_chain_block {
+            let existing_block_info = self.db.get_block_info(current_block)?
+                .context(format!("Block {} not found", current_block))?;
+            
+            let old_hash = existing_block_info.block_hash;
+            let mut updated_header = existing_block_info.header.clone();
+            
+            if is_first_block {
+                // First block: update state root
+                tracing::info!(
+                    "  📝 Block {}: state_root 0x{:x} → 0x{:x}",
+                    current_block,
+                    updated_header.global_state_root,
+                    new_state_root
+                );
+                updated_header.global_state_root = new_state_root;
+                is_first_block = false;
+            } else {
+                // Subsequent blocks: update parent_hash
+                tracing::debug!(
+                    "  🔗 Block {}: parent_hash 0x{:x} → 0x{:x}",
+                    current_block,
+                    updated_header.parent_block_hash,
+                    new_hash
+                );
+                updated_header.parent_block_hash = new_hash;
+            }
+            
+            // Recompute block hash
+            new_hash = updated_header.compute_hash(
+                self.chain_config.chain_id.to_felt(),
+                true  // pre_v0_13_2_hash_override
+            );
+            
+            if current_block % 10 == 0 || current_block == block_n || current_block == latest_chain_block {
+                tracing::debug!(
+                    "  ✏️  Block {}: hash 0x{:x} → 0x{:x}",
+                    current_block,
+                    old_hash,
+                    new_hash
+                );
+            }
+            
+            // Write updated header
+            self.db.write_header(BlockHeaderWithSignatures {
+                header: updated_header,
+                block_hash: new_hash,
+                consensus_signatures: vec![],
+            })?;
+            
+            current_block += 1;
+        }
+        
+        // Update the trie marker
+        self.write_latest_applied_trie_update(&Some(block_n))?;
+        
+        tracing::info!(
+            "✅ Applied block {} trie update, cascaded through {} blocks, trie_marker={}",
+            block_n,
+            latest_chain_block - block_n + 1,
+            block_n
+        );
+        
         Ok(())
     }
 }
@@ -521,7 +688,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         );
 
         // Global state root and block hash.
-        let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
+        // TODO(POC): Hardcoded flag to skip trie computation for distributed trie POC
+        const SKIP_TRIE_FOR_POC: bool = false;  // Set to true on coordinator node
+        let global_state_root = if SKIP_TRIE_FOR_POC {
+            tracing::warn!("⚠️ Using placeholder state root for block {} (distributed trie POC mode)", block.header.block_number);
+            Felt::ZERO  // Placeholder - will be updated by worker nodes via admin RPC
+        } else {
+            self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?
+        };
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);

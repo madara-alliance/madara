@@ -275,8 +275,12 @@ impl PipelineSteps for GatewaySyncSteps {
                     }
                 }
 
+                // TODO(POC): Hardcoded flag to skip reorg detection for distributed trie POC
+                const SKIP_REORG_DETECTION: bool = true;  // Set to true on worker nodes
+
                 // Check for parent hash mismatch (reorg detection) BEFORE processing the block
-                if block_n > 0 {
+                // POC: Skip this when worker nodes are syncing from coordinator with changing hashes
+                if block_n > 0 && !SKIP_REORG_DETECTION {
                     // Try to get the parent block's info (only confirmed blocks during gateway sync)
                     match self._backend.block_view_on_confirmed(block_n - 1) {
                         Some(parent_view) => {
