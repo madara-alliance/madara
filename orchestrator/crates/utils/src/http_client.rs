@@ -85,7 +85,7 @@ impl HttpClient {
     ///
     /// # Returns
     /// A RequestBuilder instance that can be used to construct and send an HTTP request
-    pub fn request(&self) -> RequestBuilder {
+    pub fn request(&self) -> RequestBuilder<'_> {
         RequestBuilder::new(self)
     }
 

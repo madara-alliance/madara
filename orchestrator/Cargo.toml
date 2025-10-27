@@ -1,6 +1,6 @@
 [package]
 name = "orchestrator"
-version = "0.8.0"
+version = "0.1.0"
 edition.workspace = true
 
 [lib]
@@ -135,6 +135,7 @@ testing = ["orchestrator-ethereum-settlement-client/testing"]
 hyper = { version = "0.14", features = ["full"] }
 rstest = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
+mockito = "1.6.1"
 
 [build-dependencies]
 build-version.workspace = true

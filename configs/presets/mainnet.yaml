@@ -10,24 +10,26 @@ pending_block_update_time: "2s"
 execution_batch_size: 16
 bouncer_config:
   block_max_capacity:
-    sierra_gas: 500000000
-    message_segment_length: 18446744073709551615
-    n_events: 18446744073709551615
-    state_diff_size: 131072
-    l1_gas: 5000000
-    n_txs: 18446744073709551615
-    proving_gas: 500000000
+    sierra_gas: 5000000000
+    message_segment_length: 3700
+    n_events: 5000
+    state_diff_size: 4000
+    l1_gas: 2500000
+    n_txs: 600
+    proving_gas: 5500000000
+  blake_weight: 5263
   builtin_weights:
-    pedersen: 4050
-    range_check: 70
-    ecdsa: 10561
-    bitwise: 583
-    poseidon: 491
-    keccak: 136189
-    ec_op: 4085
-    mul_mod: 604
-    add_mod: 230
-    range_check96: 56
+    gas_costs:
+      pedersen: 4769
+      range_check: 70
+      ecdsa: 1666666
+      ecop: 714875
+      bitwise: 583
+      keccak: 510707
+      poseidon: 10000
+      add_mod: 312
+      mul_mod: 604
+      range_check96: 56
 sequencer_address: "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"
 eth_core_contract_address: "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4"
 eth_gps_statement_verifier: "0x47312450B3Ac8b5b8e247a6bB6d523e7605bDb60"

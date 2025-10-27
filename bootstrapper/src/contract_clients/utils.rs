@@ -3,14 +3,12 @@ use std::sync::Arc;
 use ethers::types::U256;
 use hex::encode;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use starknet::accounts::{
     Account, AccountFactory, ConnectedAccount, ExecutionEncoding, OpenZeppelinAccountFactory, SingleOwnerAccount,
 };
 use starknet::core::types::contract::legacy::LegacyContractClass;
-use starknet::core::types::{BlockId, BlockTag, DeclareTransactionResult, Felt, FunctionCall};
+use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall};
 use starknet::core::utils::get_selector_from_name;
-use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet::providers::Provider;
 use starknet::signers::{LocalWallet, SigningKey};
 use starknet_core::types::contract::{CompiledClass, SierraClass};
@@ -18,14 +16,15 @@ use starknet_core::types::BlockTag::Pending;
 use starknet_core::types::CompressedLegacyContractClass;
 use starknet_types_core::hash::{Pedersen, StarkHash};
 
+use crate::contract_clients::config::{Clients, RpcClientProvider};
 use crate::contract_clients::utils::DeclarationInput::{DeclarationInputs, LegacyDeclarationInputs};
 use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, AccountActions};
 use crate::utils::{invoke_contract, save_to_json, wait_for_transaction, JsonValueType};
 use crate::ConfigFile;
 
-pub type RpcAccount<'a> = SingleOwnerAccount<&'a JsonRpcClient<HttpTransport>, LocalWallet>;
+pub type RpcAccount<'a> = SingleOwnerAccount<&'a RpcClientProvider, LocalWallet>;
 pub async fn build_single_owner_account<'a>(
-    rpc: &'a JsonRpcClient<HttpTransport>,
+    rpc: &'a RpcClientProvider,
     private_key: &str,
     account_address: &str,
     is_legacy: bool,
@@ -36,20 +35,16 @@ pub async fn build_single_owner_account<'a>(
 
     let chain_id = rpc.chain_id().await.unwrap();
 
+    let mut singer_with_pending_id =
+        SingleOwnerAccount::new(rpc, signer, account_address, chain_id, execution_encoding);
     // Note: it's a fix for the starknet rs issue, by default, starknet.rs asks for nonce at the latest
     // block which causes the issues hence setting the block id to pending so that we get nonce in
     // right order
-    let mut singer_with_pending_id =
-        SingleOwnerAccount::new(rpc, signer, account_address, chain_id, execution_encoding);
     singer_with_pending_id.set_block_id(BlockId::Tag(Pending));
     singer_with_pending_id
 }
 
-pub async fn read_erc20_balance(
-    rpc: &JsonRpcClient<HttpTransport>,
-    contract_address: Felt,
-    account_address: Felt,
-) -> Vec<Felt> {
+pub async fn read_erc20_balance(rpc: &RpcClientProvider, contract_address: Felt, account_address: Felt) -> Vec<Felt> {
     rpc.call(
         FunctionCall {
             contract_address,
@@ -88,7 +83,7 @@ pub fn get_bridge_init_configs(config: &ConfigFile) -> (Felt, Felt) {
 }
 
 /// Broadcasted declare contract transaction v0.
-#[derive(Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BroadcastedDeclareTransactionV0 {
     /// The address of the account contract sending the declaration transaction
     pub sender_address: Felt,
@@ -115,11 +110,11 @@ pub(crate) enum DeclarationInput<'a> {
     // inputs : sierra_path, casm_path
     DeclarationInputs(String, String, RpcAccount<'a>),
     // input : artifact_path
-    LegacyDeclarationInputs(String, String, &'a JsonRpcClient<HttpTransport>),
+    LegacyDeclarationInputs(String),
 }
 
 #[allow(private_interfaces)]
-pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
+pub async fn declare_contract(clients: &Clients, input: DeclarationInput<'_>) -> Felt {
     match input {
         DeclarationInputs(sierra_path, casm_path, account) => {
             log::info!("sierra_path: {:?}", sierra_path);
@@ -145,14 +140,16 @@ pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
 
             let txn = account
                 .declare_v3(Arc::new(flattened_class), class_hash)
-                .gas(0)
+                .l1_gas(0)
+                .l2_gas(0)
+                .l1_data_gas(0)
                 .send()
                 .await
                 .expect("Error in declaring the contract using Cairo 1 declaration using the provided account");
             wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await.unwrap();
             sierra_class_hash
         }
-        LegacyDeclarationInputs(artifact_path, url, provider) => {
+        LegacyDeclarationInputs(artifact_path) => {
             let path = env!("CARGO_MANIFEST_DIR").to_owned() + "/" + &artifact_path;
             let contract_abi_artifact: LegacyContractClass = serde_json::from_reader(
                 std::fs::File::open(&path)
@@ -161,7 +158,7 @@ pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
             .unwrap();
 
             let class_hash = contract_abi_artifact.class_hash().expect("Failed to get class hash");
-            if provider.get_class(BlockId::Tag(Pending), class_hash).await.is_ok() {
+            if clients.provider_l2().get_class(BlockId::Tag(Pending), class_hash).await.is_ok() {
                 return class_hash;
             }
 
@@ -176,21 +173,12 @@ pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
                 is_query: false,
             };
 
-            // TODO: method can be updated based on the madara PR
-            let json_body = &json!({
-                "jsonrpc": "2.0",
-                "method": "madara_addDeclareV0Transaction",
-                "params": [params],
-                "id": 4
-            });
-
-            let req_client = reqwest::Client::new();
-            let raw_txn_rpc = req_client.post(url).json(json_body).send().await;
-            match raw_txn_rpc {
-                Ok(val) => {
-                    let result = val.json::<RpcResult<DeclareTransactionResult>>().await.unwrap().result;
+            match clients.l2_admin_rpc().add_declare_v0_transaction(params).await {
+                Ok(result) => {
                     log::info!("🚧 Txn Sent Successfully : {:?}", result);
-                    wait_for_transaction(provider, result.transaction_hash, "declare_contract").await.unwrap();
+                    wait_for_transaction(clients.provider_l2(), result.transaction_hash, "declare_contract")
+                        .await
+                        .unwrap();
                 }
                 Err(err) => {
                     log::error!("Error : Error sending the transaction using RPC: {:?}", err);
@@ -204,7 +192,7 @@ pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
 
 pub(crate) async fn deploy_account_using_priv_key(
     priv_key: String,
-    provider: &JsonRpcClient<HttpTransport>,
+    provider: &RpcClientProvider,
     oz_account_class_hash: Felt,
 ) -> Felt {
     let chain_id = provider.chain_id().await.unwrap();
@@ -215,7 +203,7 @@ pub(crate) async fn deploy_account_using_priv_key(
         OpenZeppelinAccountFactory::new(oz_account_class_hash, chain_id, signer, provider).await.unwrap();
     oz_account_factory.set_block_id(BlockId::Tag(BlockTag::Pending));
 
-    let deploy_txn = oz_account_factory.deploy_v1(Felt::ZERO).max_fee(Felt::ZERO);
+    let deploy_txn = oz_account_factory.deploy_v3(Felt::ZERO).l1_gas(0).l2_gas(0).l1_data_gas(0);
     let account_address = deploy_txn.address();
     log::debug!("OZ Account will be deployed at the address: {:?}", account_address);
     save_to_json("account_address", &JsonValueType::StringType(account_address.to_string())).unwrap();

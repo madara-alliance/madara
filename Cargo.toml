@@ -6,7 +6,6 @@ members = [
   "e2e-tests",
   # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
   "build-artifacts",
-  "bootstrapper-v2",
   "test_utils/crates/mock-atlantic-server",
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -16,6 +15,7 @@ default-members = [
   # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
 ]
 resolver = "2"
+exclude = ["bootstrapper-v2"]
 
 [workspace.package]
 authors = ["Madara <https://github.com/madara-alliance>"]
@@ -118,10 +118,10 @@ starknet-types-core = { version = "0.2.1", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "ca0bab2bd9324fb02becba51dd401c47a92569fe", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "e04617e0581d5ec93a035ec0e15419b4c201b629", features = [
   "testing",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "ca0bab2bd9324fb02becba51dd401c47a92569fe", features = [
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "e04617e0581d5ec93a035ec0e15419b4c201b629", features = [
   "testing",
 ] }
 cairo-lang-starknet-classes = "=2.12.3"
@@ -197,6 +197,12 @@ serde_with = { version = "3.11", default-features = false, features = [
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 serde_yaml = { version = "0.9.34" }
 bincode = "1.3"
+parity-scale-codec = { version = "3.2.2", default-features = false, features = [
+  "std",
+] }
+scale-info = { version = "2.10.0", default-features = false, features = [
+  "std",
+] }
 
 # Numbers
 base64 = "0.22"
@@ -221,6 +227,8 @@ itertools = "0.13.0"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 bytes = "1.6.0"
 derive_more = { version = "2.0.1", features = ["from_str"] }
+indexmap = "2.2.6"
+
 
 # Error handling
 thiserror = "2.0"
@@ -255,6 +263,8 @@ flate2 = "1.0"
 regex = "1.10.5"
 sha3 = "0.10"
 tar = "0.4.44"
+inline_colorization = "0.1.6"
+subxt-lightclient = { version = "0.35.3", default-features = false }
 
 # Orchestrator
 num = { version = "0.4.1" }
@@ -279,7 +289,7 @@ c-kzg = "1.0.3"
 dotenvy = "0.15.7"
 log = "0.4.21"
 mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
-omniqueue = { version = "0.2.0" }
+omniqueue = { git = "https://github.com/itsparser/omniqueue-rs", branch = "branch-from-0.2.0" }
 tokio-stream = "0.1.15"
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
 swiftness_proof_parser = "0.1.0"
@@ -292,7 +302,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "b9f442d134a1a57b22fbe4796bed467b60bb7c4a" }
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "861101a022f87b01b231ed8fb198dd50afab47eb" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }

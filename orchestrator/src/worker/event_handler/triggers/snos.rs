@@ -99,6 +99,7 @@ fn create_job_metadata(snos_batch_id: u64, start_block: u64, end_block: u64, ful
     JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
+            snos_batch_index: snos_batch_id,
             start_block,
             end_block,
             num_blocks: end_block - start_block + 1,

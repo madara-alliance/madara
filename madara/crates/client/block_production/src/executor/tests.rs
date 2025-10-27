@@ -8,7 +8,7 @@ use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
 use mp_chain_config::StarknetVersion;
 use mp_convert::{Felt, ToFelt};
-use mp_rpc::v0_7_1::BroadcastedTxn;
+use mp_rpc::v0_9_0::BroadcastedTxn;
 use mp_transactions::IntoStarknetApiExt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use rstest::fixture;
@@ -111,6 +111,7 @@ async fn l1_handler_setup(
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
         assert_eq!(res.executed_txs.len(), 1);
+        tracing::debug!("res = {:?}", res.blockifier_results[0].as_ref().unwrap());
         assert!(!res.blockifier_results[0].as_ref().unwrap().0.is_reverted());
     });
     // Close block.

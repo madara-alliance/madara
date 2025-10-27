@@ -32,5 +32,6 @@ mp-class.workspace = true
 mp-convert.workspace = true
 mp-rpc.workspace = true
 mp-transactions.workspace = true
+mp-utils.workspace = true
 
 tokio.workspace = true

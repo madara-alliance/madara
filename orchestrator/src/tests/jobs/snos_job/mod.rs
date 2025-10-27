@@ -81,7 +81,7 @@ async fn test_process_job() -> color_eyre::Result<()> {
     let storage_client = services.config.storage();
 
     // Create proper metadata structure
-    let block_number = 2244464;
+    let block_number = 2671680; // starknet sepolia block
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {

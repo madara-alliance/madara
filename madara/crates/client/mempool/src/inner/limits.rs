@@ -123,4 +123,8 @@ impl MempoolLimiter {
             self.state.transactions += 1
         }
     }
+
+    pub fn num_transactions(&self) -> usize {
+        self.state.transactions
+    }
 }

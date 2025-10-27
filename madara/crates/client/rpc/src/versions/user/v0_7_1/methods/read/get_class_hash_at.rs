@@ -1,6 +1,6 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
-use mp_block::BlockId;
+use mp_rpc::v0_7_1::BlockId;
 use starknet_types_core::felt::Felt;
 
 /// Get the contract class hash in the given block for the contract deployed at the given
@@ -16,7 +16,7 @@ use starknet_types_core::felt::Felt;
 ///
 /// * `class_hash` - The class hash of the given contract
 pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
-    let view = starknet.backend.view_on(&block_id)?;
+    let view = starknet.resolve_view_on(block_id)?;
     tracing::debug!("{view:?}");
     view.get_contract_class_hash(&contract_address)?.ok_or(StarknetRpcApiError::contract_not_found())
 }
@@ -25,7 +25,7 @@ pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_addres
 mod tests {
     use super::*;
     use crate::test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates};
-    use mp_block::BlockTag;
+    use mp_rpc::v0_7_1::BlockTag;
     use rstest::rstest;
 
     #[rstest]

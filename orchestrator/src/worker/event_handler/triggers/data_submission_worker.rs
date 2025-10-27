@@ -3,6 +3,7 @@ use crate::types::constant::BLOB_DATA_FILE_NAME;
 use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::Layer;
+use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -35,6 +36,8 @@ impl JobTrigger for DataSubmissionJobTrigger {
             .database()
             .get_jobs_without_successor(previous_job_type, JobStatus::Completed, JobType::DataSubmission)
             .await?;
+
+        let successful_proving_jobs = filter_jobs_by_orchestrator_version(successful_proving_jobs);
 
         for proving_job in successful_proving_jobs {
             // Extract proving metadata

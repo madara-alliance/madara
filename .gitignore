@@ -1,4 +1,3 @@
-
 .env*
 !.env.test
 !.envrc
@@ -43,6 +42,7 @@ rustc-ice-*.txt
 
 # direnv cache
 .direnv
+.cairo
 
 # Javascript dependencies
 **/node_modules/
@@ -104,3 +104,5 @@ s3
 
 # python virtual env
 .venv
+
+sequencer_venv/

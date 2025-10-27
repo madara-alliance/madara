@@ -2,7 +2,7 @@ use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
-use mp_rpc::v0_7_1::{
+use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };

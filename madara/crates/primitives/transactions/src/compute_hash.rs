@@ -8,7 +8,7 @@ use crate::{
     DataAvailabilityMode, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,
     DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3,
     DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
-    L1HandlerTransaction, ResourceBoundsMapping, Transaction,
+    L1HandlerTransaction, ResourceBounds, ResourceBoundsMapping, Transaction,
 };
 
 use super::SIMULATE_TX_VERSION_OFFSET;
@@ -20,8 +20,6 @@ const DEPLOY_PREFIX: Felt = Felt::from_hex_unchecked("0x6465706c6f79"); // b"dep
 const INVOKE_PREFIX: Felt = Felt::from_hex_unchecked("0x696e766f6b65"); // b"invoke"
 const L1_HANDLER_PREFIX: Felt = Felt::from_hex_unchecked("0x6c315f68616e646c6572"); // b"l1_handler"
 
-const L1_GAS: &[u8] = b"L1_GAS";
-const L2_GAS: &[u8] = b"L2_GAS";
 const PEDERSEN_EMPTY: Felt =
     Felt::from_hex_unchecked("0x49ee3eba8c1600700ee1b87eb599f16716b0b1022947733551fde4050ca6804");
 
@@ -64,6 +62,8 @@ impl Transaction {
             self.compute_hash_with_signature_pre_v0_11_1(tx_hash)
         } else if starknet_version < StarknetVersion::V0_13_2 {
             self.compute_hash_with_signature_pre_v0_13_2(tx_hash)
+        } else if starknet_version < StarknetVersion::V0_13_4 {
+            self.compute_hash_with_signature_pre_v0_13_4(tx_hash)
         } else {
             self.compute_hash_with_signature_latest(tx_hash)
         }
@@ -92,7 +92,7 @@ impl Transaction {
         Pedersen::hash(&tx_hash, &signature_hash)
     }
 
-    fn compute_hash_with_signature_latest(&self, tx_hash: Felt) -> Felt {
+    fn compute_hash_with_signature_pre_v0_13_4(&self, tx_hash: Felt) -> Felt {
         let signature = match self {
             Transaction::Invoke(tx) => tx.signature(),
             Transaction::Declare(tx) => tx.signature(),
@@ -107,6 +107,17 @@ impl Transaction {
         };
 
         Poseidon::hash_array(&elements)
+    }
+
+    fn compute_hash_with_signature_latest(&self, tx_hash: Felt) -> Felt {
+        let signature = match self {
+            Transaction::Invoke(tx) => tx.signature(),
+            Transaction::Declare(tx) => tx.signature(),
+            Transaction::DeployAccount(tx) => tx.signature(),
+            Transaction::Deploy(_) | Transaction::L1Handler(_) => &[],
+        };
+
+        Poseidon::hash_array(&std::iter::once(tx_hash).chain(signature.iter().copied()).collect::<Vec<_>>())
     }
 }
 
@@ -483,30 +494,34 @@ pub fn compute_hash_given_contract_address(
 
 #[inline]
 fn compute_gas_hash(tip: u64, resource_bounds: &ResourceBoundsMapping) -> Felt {
-    let gas_as_felt = &[
-        Felt::from(tip),
-        prepare_resource_bound_value(resource_bounds, DataAvailabilityMode::L1),
-        prepare_resource_bound_value(resource_bounds, DataAvailabilityMode::L2),
-    ];
-    Poseidon::hash_array(gas_as_felt)
+    const PREFIX_L1_GAS: &[u8; 8] = b"\0\0L1_GAS";
+    const PREFIX_L2_GAS: &[u8; 8] = b"\0\0L2_GAS";
+    const PREFIX_L1_DATA: &[u8; 8] = b"\0L1_DATA";
+
+    if let Some(l1_data_gas) = &resource_bounds.l1_data_gas {
+        let gas_as_felt = &[
+            Felt::from(tip),
+            prepare_resource_bound_value(&resource_bounds.l1_gas, PREFIX_L1_GAS),
+            prepare_resource_bound_value(&resource_bounds.l2_gas, PREFIX_L2_GAS),
+            prepare_resource_bound_value(l1_data_gas, PREFIX_L1_DATA),
+        ];
+        Poseidon::hash_array(gas_as_felt)
+    } else {
+        let gas_as_felt = &[
+            Felt::from(tip),
+            prepare_resource_bound_value(&resource_bounds.l1_gas, PREFIX_L1_GAS),
+            prepare_resource_bound_value(&resource_bounds.l2_gas, PREFIX_L2_GAS),
+        ];
+        Poseidon::hash_array(gas_as_felt)
+    }
 }
 
 // Use a mapping from execution resources to get corresponding fee bounds
 // Encodes this information into 32-byte buffer then converts it into Felt
-fn prepare_resource_bound_value(
-    resource_bounds_mapping: &ResourceBoundsMapping,
-    da_mode: DataAvailabilityMode,
-) -> Felt {
+fn prepare_resource_bound_value(resource_bounds: &ResourceBounds, prefix: &[u8; 8]) -> Felt {
     let mut buffer = [0u8; 32];
 
-    buffer[2..8].copy_from_slice(match da_mode {
-        DataAvailabilityMode::L1 => L1_GAS,
-        DataAvailabilityMode::L2 => L2_GAS,
-    });
-    let resource_bounds = match da_mode {
-        DataAvailabilityMode::L1 => resource_bounds_mapping.l1_gas.clone(),
-        DataAvailabilityMode::L2 => resource_bounds_mapping.l2_gas.clone(),
-    };
+    buffer[0..8].copy_from_slice(prefix);
     buffer[8..16].copy_from_slice(&resource_bounds.max_amount.to_be_bytes());
     buffer[16..].copy_from_slice(&resource_bounds.max_price_per_unit.to_be_bytes());
 
@@ -565,6 +580,7 @@ mod tests {
         let resource_bounds = ResourceBoundsMapping {
             l1_gas: ResourceBounds { max_amount: 2, max_price_per_unit: 3 },
             l2_gas: ResourceBounds { max_amount: 4, max_price_per_unit: 5 },
+            l1_data_gas: None,
         };
         let gas_hash = compute_gas_hash(tip, &resource_bounds);
         assert_eq!(
