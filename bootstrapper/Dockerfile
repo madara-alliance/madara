@@ -21,6 +21,21 @@ ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega
 
 RUN apt-get update -y && apt-get install -y wget clang
 
+# Install Python 3.9
+RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
+    && tar xzf Python-3.9.16.tgz \
+    && cd Python-3.9.16 \
+    && ./configure --enable-optimizations \
+    && make altinstall \
+    && cd .. \
+    && rm -rf Python-3.9.16 Python-3.9.16.tgz
+
+# Install pip and venv for Python 3.9
+RUN wget https://bootstrap.pypa.io/get-pip.py \
+    && python3.9 get-pip.py \
+    && rm get-pip.py \
+    && python3.9 -m pip install virtualenv
+
 RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
 RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
 
@@ -32,13 +47,40 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
 
+# Fetch cargo dependencies and extract sequencer requirements.txt
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo fetch && \
+    REQUIREMENTS_FILE=$(find /usr/local/cargo/git/checkouts -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | grep -i sequencer | head -1) && \
+    if [ -z "$REQUIREMENTS_FILE" ]; then \
+        echo "Searching more broadly for requirements.txt..."; \
+        REQUIREMENTS_FILE=$(find /usr/local/cargo/git/checkouts -name "requirements.txt" 2>/dev/null | head -1); \
+    fi && \
+    if [ -n "$REQUIREMENTS_FILE" ] && [ -f "$REQUIREMENTS_FILE" ]; then \
+        echo "✓ Found requirements.txt at: $REQUIREMENTS_FILE"; \
+        cp "$REQUIREMENTS_FILE" /app/sequencer-requirements.txt; \
+        cat /app/sequencer-requirements.txt; \
+    else \
+        echo "ERROR: Could not find requirements.txt in cargo checkouts"; \
+        exit 1; \
+    fi
+
 # Step 2: Build crate
 FROM base-rust AS builder-rust
 
 COPY --from=planner /app/recipe.json recipe.json
+COPY --from=planner /app/sequencer-requirements.txt /app/sequencer-requirements.txt
+
+# Setup Python virtual environment with sequencer requirements
+RUN python3.9 -m venv /app/sequencer_venv && \
+    . /app/sequencer_venv/bin/activate && \
+    pip install --upgrade pip && \
+    echo "Installing dependencies from sequencer requirements.txt:" && \
+    cat /app/sequencer-requirements.txt && \
+    pip install -r /app/sequencer-requirements.txt
 
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
+    . /app/sequencer_venv/bin/activate && \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
 
 COPY Cargo.toml Cargo.lock ./
@@ -47,6 +89,7 @@ COPY build-artifacts build-artifacts
 
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
+    . /app/sequencer_venv/bin/activate && \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path bootstrapper/Cargo.toml --release
 
 # Step 3: runner
