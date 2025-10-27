@@ -11,7 +11,7 @@ use std::{
     collections::VecDeque,
     ops::{Add, AddAssign},
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 // TODO: add these to metrics
@@ -170,14 +170,31 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u128,
 ) -> anyhow::Result<BlockExecutionContext> {
-    let l1_gas_quote = backend
-        .get_last_l1_gas_quote()
-        .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+    let mut block_timestamp = 0;
+    let mut gas_prices = GasPrices::default();
+
+    if let Some(custom_header) = backend.get_custom_header() {
+        if custom_header.block_n == block_n {
+            println!("Custom header matches block number");
+            block_timestamp = custom_header.timestamp;
+            gas_prices = custom_header.gas_prices;
+        }
+        println!("Custom header processed: {:?}", gas_prices);
+    } else {
+        println!("No custom header found");
+        let l1_gas_quote = backend
+            .get_last_l1_gas_quote()
+            .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+        gas_prices = backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?;
+    }
+
     Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
-        block_timestamp: SystemTime::now(),
+        // block_timestamp: SystemTime::now(),
+        block_timestamp: UNIX_EPOCH + Duration::from_secs(block_timestamp),
         protocol_version: backend.chain_config().latest_protocol_version,
-        gas_prices: backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?,
+        // gas_prices: backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?,
+        gas_prices,
         l1_da_mode: backend.chain_config().l1_da_mode,
         block_number: block_n,
     })

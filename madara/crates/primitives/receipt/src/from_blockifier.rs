@@ -98,16 +98,75 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
             })
         })
         .collect();
-    let events = recursive_call_info_iter(res)
+
+    // get all validate_calls
+    let validate_calls = res.validate_call_info.iter().flat_map(|call_info| call_info.iter());
+
+    let validate_events = validate_calls
         .flat_map(|call| {
-            call.execution.events.iter().map(|event| Event {
-                // See above for why we use storage address.
-                from_address: call.call.storage_address.into(),
-                keys: event.event.keys.iter().map(|k| k.0).collect(),
-                data: event.event.data.0.clone(),
+            call.execution.events.iter().map(|event| {
+                let ordered_event = Event {
+                    // See above for why we use storage address.
+                    from_address: call.call.storage_address.into(),
+                    keys: event.event.keys.iter().map(|k| k.0).collect(),
+                    data: event.event.data.0.clone(),
+                };
+                (ordered_event, event.order)
             })
-        })
-        .collect();
+        }).collect::<Vec<(Event, usize)>>();
+
+    // Sort by order and extract just the Events
+    let mut validate_events_with_order = validate_events;
+    validate_events_with_order.sort_by_key(|(_, order)| *order);
+    let final_validate_events: Vec<Event> = validate_events_with_order.into_iter().map(|(event, _)| event).collect();
+
+    // get all execute_calls
+    let execute_calls = res.execute_call_info.iter().flat_map(|call_info| call_info.iter());
+
+    let execute_events = execute_calls
+        .flat_map(|call| {
+            call.execution.events.iter().map(|event| {
+                let ordered_event = Event {
+                    // See above for why we use storage address.
+                    from_address: call.call.storage_address.into(),
+                    keys: event.event.keys.iter().map(|k| k.0).collect(),
+                    data: event.event.data.0.clone(),
+                };
+                (ordered_event, event.order)
+            })
+        }).collect::<Vec<(Event, usize)>>();
+
+    // Sort by order and extract just the Events
+    let mut execute_events_with_order = execute_events;
+    execute_events_with_order.sort_by_key(|(_, order)| *order);
+    let final_execute_events: Vec<Event> = execute_events_with_order.into_iter().map(|(event, _)| event).collect();
+
+
+    // get all fee_transfer_calls
+    let fee_transfer_calls = res.fee_transfer_call_info.iter().flat_map(|call_info| call_info.iter());
+
+    let fee_transfer_events = fee_transfer_calls
+        .flat_map(|call| {
+            call.execution.events.iter().map(|event| {
+                let ordered_event = Event {
+                    // See above for why we use storage address.
+                    from_address: call.call.storage_address.into(),
+                    keys: event.event.keys.iter().map(|k| k.0).collect(),
+                    data: event.event.data.0.clone(),
+                };
+                (ordered_event, event.order)
+            })
+        }).collect::<Vec<(Event, usize)>>();
+
+    // Sort by order and extract just the Events
+    let mut fee_transfer_events_with_order = fee_transfer_events;
+    fee_transfer_events_with_order.sort_by_key(|(_, order)| *order);
+    let final_fee_transfer_events: Vec<Event> = fee_transfer_events_with_order.into_iter().map(|(event, _)| event).collect();
+
+
+    let mut events = final_validate_events.clone();
+    events.extend(final_execute_events);
+    events.extend(final_fee_transfer_events);
 
     // Note: these should not be iterated over recursively because they include the inner calls
     // We only add up the root calls here without recursing into the inner calls.

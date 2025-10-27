@@ -76,6 +76,8 @@ pub fn start_executor_thread(
     let (stop_sender, stop_recv) = oneshot::channel();
 
     let executor = thread::ExecutorThread::new(backend, incoming_batches, replies_sender, commands)?;
+    // TODO: we should not use std thread builder over a tokio mpsc context, might not be stable
+    // And might only be working since we are not heaving using it!
     std::thread::Builder::new()
         .name("executor".into())
         .spawn(move || stop_sender.send(std::panic::catch_unwind(AssertUnwindSafe(move || executor.run()))))

@@ -6,7 +6,7 @@ use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::validated::ValidatedTransaction;
+use mp_transactions::{validated::ValidatedTransaction,  L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 mod error;
 mod validation;
@@ -46,6 +46,15 @@ pub trait SubmitTransaction: Send + Sync {
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
 
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
+}
+
+/// Submit an L1HandlerTransaction.
+#[async_trait]
+pub trait SubmitL1HandlerTransaction: Send + Sync {
+    async fn submit_l1_handler_transaction(
+        &self,
+        tx: L1HandlerTransactionWithFee,
+    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError>;
 }
 
 /// Submit a validated transaction. Note: No validation will be performed on the transaction.
