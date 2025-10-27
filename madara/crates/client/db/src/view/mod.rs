@@ -12,6 +12,7 @@ use mp_block::{
     header::{BlockTimestamp, PreconfirmedHeader},
     TransactionWithReceipt,
 };
+use mp_block::header::GasPrices;
 pub use state::MadaraStateView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,20 +69,28 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                     .block_view_on_confirmed(*parent_block_number)
                     .context("Parent block should be found")?
                     .get_block_info()?;
+
+                let mut block_timestamp = 0;
+                let mut gas_prices = GasPrices::default();
+
+                if let Some(custom_header) = self.custom_header.lock().unwrap().clone() {
+                    if custom_header.block_n == parent_block_number+1 {
+                        block_timestamp = custom_header.timestamp;
+                        gas_prices = custom_header.gas_prices;
+                    }
+                } else {
+                    let l1_gas_quote = self
+                        .get_last_l1_gas_quote()
+                        .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+                    gas_prices = self.calculate_gas_prices(&l1_gas_quote,  parent_block_info.header.gas_prices.strk_l2_gas_price, parent_block_info.total_l2_gas_used)?;
+                }
+
                 PreconfirmedBlock::new(PreconfirmedHeader {
                     block_number: *parent_block_number + 1,
                     sequencer_address: parent_block_info.header.sequencer_address,
-                    block_timestamp: BlockTimestamp::now(),
+                    block_timestamp: block_timestamp.into(),
                     protocol_version: parent_block_info.header.protocol_version,
-                    gas_prices: if let Some(quote) = self.get_last_l1_gas_quote() {
-                        self.calculate_gas_prices(
-                            &quote,
-                            parent_block_info.header.gas_prices.strk_l2_gas_price,
-                            parent_block_info.total_l2_gas_used,
-                        )?
-                    } else {
-                        parent_block_info.header.gas_prices
-                    },
+                    gas_prices,
                     l1_da_mode: parent_block_info.header.l1_da_mode,
                 })
                 .into()
