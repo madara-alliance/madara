@@ -186,14 +186,14 @@ spec:
 
 Before deploying, update these values in your overlay:
 
-### Required Secrets (via `secretGenerator`):
+### Required Secrets (via `secretGenerator`)
 
 - `AWS_ACCESS_KEY_ID` - AWS access key for S3/SQS/SNS
 - `AWS_SECRET_ACCESS_KEY` - AWS secret key
 - `MADARA_ORCHESTRATOR_ATLANTIC_API_KEY` - Atlantic service API key
 - `MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL` - MongoDB connection string
 
-### Required ConfigMap Values (via `configMapGenerator`):
+### Required ConfigMap Values (via `configMapGenerator`)
 
 - `MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL` - RPC node URL
 - `MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS` - Verifier contract address
@@ -261,6 +261,7 @@ kubectl get secret <secret-name> -n <namespace> -o jsonpath='{.data}' | jq -r 't
    ```
 
 5. Verify:
+
    ```bash
    kubectl get all -n dev
    ```
