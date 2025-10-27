@@ -598,7 +598,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// Write a state diff to the global tries.
     /// Returns the new state root.
     ///
-    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// **Warning**: The caller must ensure no block parts are saved on top of an existing confirmed block.
     /// You are only allowed to write block parts past the latest confirmed block.
     pub fn apply_to_global_trie<'a>(
         &self,

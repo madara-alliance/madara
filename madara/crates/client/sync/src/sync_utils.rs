@@ -124,7 +124,7 @@ impl StateDiffMap {
         }
     }
 
-    /// NEW: Convert to raw StateDiff without any pre_range filtering
+    /// Convert to raw StateDiff without any pre_range filtering
     /// This is MUCH faster as it does no DB lookups
     pub fn to_raw_state_diff(&self) -> StateDiff {
 
@@ -185,7 +185,7 @@ impl StateDiffMap {
     }
 }
 
-/// NEW: Compress a single contract's storage entries by checking against pre_range_block
+/// Compress a single contract's storage entries by checking against pre_range_block
 async fn compress_single_contract(
     contract_addr: Felt,
     storage_entries: Vec<StorageEntry>,

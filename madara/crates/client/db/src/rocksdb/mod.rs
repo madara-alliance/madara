@@ -8,8 +8,8 @@ use crate::{
         metrics::DbMetrics,
         options::rocksdb_global_options,
         snapshots::Snapshots,
-        update_global_trie::apply_to_global_trie,
-        update_global_trie::get_state_root
+        global_trie::apply_to_global_trie,
+        global_trie::get_state_root
     },
     storage::{
         ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
@@ -48,7 +48,7 @@ mod state;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
 pub mod trie;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
-pub mod update_global_trie;
+pub mod global_trie;
 
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;

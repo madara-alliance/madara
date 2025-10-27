@@ -10,7 +10,7 @@ use tokio::sync::Mutex;
 use crate::pipeline::PipelineStatus;
 use crate::sync_utils::compress_state_diff;
 
-// TODO(heemankv, 2025-10-26): Should be driven from env for hardware based customisations
+// TODO(heemankv, 2025-10-26): Should be driven from env for hardware-based customisations
 /// Batch size for snap sync state accumulation before flushing to the global trie.
 ///
 /// During snap sync, state diffs are accumulated in memory rather than computing
@@ -110,7 +110,7 @@ impl ApplyStateSteps {
 
         let target_block = self.target_block.load(std::sync::atomic::Ordering::Relaxed);
 
-        // Apply if we've accumulated enough or reached target
+        // Apply if we've accumulated enough blocks or reached target
         if latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE) || latest_block >= target_block {
             self.clone()
                 .apply_accumulated_diffs(current_first_block, latest_block)
@@ -140,7 +140,7 @@ impl ApplyStateSteps {
         input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput
     ) -> anyhow::Result<ApplyOutcome<()>> {
         let target_block = self.target_block.load(std::sync::atomic::Ordering::Relaxed);
-        let distance_to_target = target_block.saturating_sub(block_range.end);
+        let distance_to_target = target_block.saturating_sub(block_range.start);
         // Use snap sync if:
         // 1. Snap sync is enabled, AND
         // 2. We're far enough from the target (distance >= APPLY_STATE_SNAP_BATCH_SIZE)
@@ -195,12 +195,13 @@ impl ApplyStateSteps {
 
         self.importer
             .run_in_rayon_pool_global(move |_| {
-                let _global_state_root = backend
+                let global_state_root = backend
                     .write_access()
                     .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
 
                 backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
 
+                tracing::info!("Global State Root till block {:?} is {:?}", &latest_block.checked_sub(1), global_state_root);
                 Ok::<(), anyhow::Error>(())
             })
             .await?;
