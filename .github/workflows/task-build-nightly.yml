@@ -51,7 +51,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: madara-${{ runner.os }}-rust-1.86
+          cache-key: madara-${{ runner.os }}-rust-1.89
 
       - name: Build artifacts
         run: yes | make artifacts

@@ -1,5 +1,5 @@
  # Step 0: setup tooling (rust)
-FROM rust:1.86 AS base-rust
+FROM rust:1.89 AS base-rust
 WORKDIR /app
 
 # Note that we do not install cargo chef and sccache through docker to avoid
