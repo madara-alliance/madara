@@ -24,7 +24,7 @@ use url::Url;
 #[case(false)]
 #[case(true)]
 #[tokio::test]
-async fn test_batching_worker_l2(#[case] has_existing_batch: bool) -> Result<(), Box<dyn Error>> {
+async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Box<dyn Error>> {
     let server = MockServer::start();
     let mut database = MockDatabaseClient::new();
     let mut storage = MockStorageClient::new();
@@ -185,7 +185,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
 
     let existing_snos_batch = crate::types::batch::SnosBatch {
         snos_batch_id: 1,
-        aggregator_batch_index: 1,
+        aggregator_batch_index: Some(1),
         start_block: 0,
         end_block: 3,
         num_blocks: 4,
@@ -319,7 +319,26 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
 
     crate::worker::event_handler::triggers::batching::BatchingTrigger.run_worker(services.config).await?;
 
-    rpc_block_call_mock.assert();
+    let updated_batches = batches_updated.lock().unwrap();
+
+    assert!(!updated_batches.is_empty(), "Expected at least one batch to be updated when processing blocks");
+
+    assert_eq!(
+        updated_batches.len(),
+        2,
+        "Expected exactly 2 batches to be created (one for each version), but found {}",
+        updated_batches.len()
+    );
+
+    let batch_2 = updated_batches.iter().find(|b| b.index == 2).expect("Batch 2 should exist");
+    assert_eq!(batch_2.start_block, 4, "Batch 2 should start at block 4");
+    assert_eq!(batch_2.end_block, 5, "Batch 2 should end at block 5");
+    assert_eq!(batch_2.starknet_version, "0.13.2", "Batch 2 should have version 0.13.2");
+
+    let batch_3 = updated_batches.iter().find(|b| b.index == 3).expect("Batch 3 should exist");
+    assert_eq!(batch_3.start_block, 6, "Batch 3 should start at block 6");
+    assert_eq!(batch_3.end_block, 7, "Batch 3 should end at block 7");
+    assert_eq!(batch_3.starknet_version, "0.13.3", "Batch 3 should have version 0.13.3");
 
     Ok(())
 }
