@@ -334,7 +334,7 @@ impl SubmitL1HandlerTransaction for TransactionValidator {
             paid_fee_on_l1: Some(tx.paid_fee_on_l1),
             contract_address: tx.tx.contract_address,
             arrived_at: TxTimestamp::now(),
-            declared_class: None,
+            declared_class: class,
             hash: api_tx.tx_hash().to_felt(),
             // TODO: check what works?
             charge_fee: true
