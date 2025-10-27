@@ -4,7 +4,7 @@ This directory contains Kubernetes manifests for deploying the Madara Orchestrat
 
 ## Directory Structure
 
-```
+```text
 infra/k8s/
 ├── base/                           # Base manifests
 │   ├── orchestrator.yaml          # Deployment manifest
@@ -128,7 +128,8 @@ configMapGenerator:
 
 ### Managing Secrets
 
-Sensitive data like API keys, passwords, and credentials are stored in Kubernetes Secrets. Edit the overlay's `kustomization.yaml` to update secret values:
+Sensitive data like API keys, passwords, and credentials are stored in Kubernetes Secrets.
+Edit the overlay's `kustomization.yaml` to update secret values:
 
 ```yaml
 secretGenerator:
@@ -168,7 +169,7 @@ spec:
 
 ## Important Notes
 
-1. **Secrets Management**: Sensitive data is separated into Kubernetes Secrets (`secrets.yaml`). The following values are stored as secrets:
+1. **Secrets Management**: Sensitive data is separated into Kubernetes Secrets (`secrets.yaml`)
    - `AWS_ACCESS_KEY_ID`
    - `AWS_SECRET_ACCESS_KEY`
    - `MADARA_ORCHESTRATOR_ATLANTIC_API_KEY`
