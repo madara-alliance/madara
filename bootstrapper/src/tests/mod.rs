@@ -207,7 +207,7 @@ fn ensure_toolchain() -> color_eyre::Result<()> {
     let output = Command::new("rustup").arg("toolchain").arg("list").output()?;
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    if !output_str.contains("1.86") {
+    if !output_str.contains("1.89") {
         Command::new("rustup").arg("install").arg("1.81").status()?;
     }
     Ok(())
