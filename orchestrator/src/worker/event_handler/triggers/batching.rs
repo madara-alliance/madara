@@ -223,7 +223,7 @@ impl BatchingTrigger {
                     None => {
                         // No batch in DB. Start a new batch
                         let (new_snos_batch, new_aggregator_batch) =
-                            self.start_new_batches(&config, 1, 1, start_block_number).await?;
+                            self.start_new_batches(config, 1, 1, start_block_number).await?;
                         (new_aggregator_batch, new_snos_batch, None)
                     }
                 }
@@ -233,7 +233,7 @@ impl BatchingTrigger {
         // Assign batches to all the blocks
         for block_number in start_block_number..=end_block_number {
             (state_update, latest_aggregator_batch, latest_snos_batch) = self
-                .assign_batch(block_number, state_update, latest_aggregator_batch, latest_snos_batch, &config)
+                .assign_batch(block_number, state_update, latest_aggregator_batch, latest_snos_batch, config)
                 .await?;
             tracing::Span::current().record("batch_id", latest_aggregator_batch.index);
         }
@@ -248,7 +248,7 @@ impl BatchingTrigger {
                     snos_batch_status: SnosBatchStatus::Open, // Open the SNOS batch
                     state_update: &state_update,
                 },
-                &config,
+                config,
                 config.madara_client(),
             )
             .await?;

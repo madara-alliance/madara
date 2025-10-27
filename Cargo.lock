@@ -5231,7 +5231,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?rev=861101a022f87b01b231ed8fb198dd50afab47eb#861101a022f87b01b231ed8fb198dd50afab47eb"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=44e82ff35277fdc102a5613975e02975a2b111e4#44e82ff35277fdc102a5613975e02975a2b111e4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5241,13 +5241,16 @@ dependencies = [
  "chrono",
  "clap",
  "env_logger",
+ "futures",
  "log",
  "num-traits",
+ "rayon",
  "rpc-client",
  "serde",
  "serde_json",
  "shared_execution_objects",
  "starknet 0.17.0",
+ "starknet-core 0.16.0",
  "starknet-os-types",
  "starknet-types-core 0.2.4",
  "starknet_api",
@@ -9106,13 +9109,14 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?rev=861101a022f87b01b231ed8fb198dd50afab47eb#861101a022f87b01b231ed8fb198dd50afab47eb"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=44e82ff35277fdc102a5613975e02975a2b111e4#44e82ff35277fdc102a5613975e02975a2b111e4"
 dependencies = [
  "anyhow",
  "bitvec",
  "blockifier",
  "cairo-lang-starknet-classes",
  "cairo-vm",
+ "futures",
  "log",
  "num-bigint",
  "rayon",
@@ -10522,7 +10526,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?rev=861101a022f87b01b231ed8fb198dd50afab47eb#861101a022f87b01b231ed8fb198dd50afab47eb"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=44e82ff35277fdc102a5613975e02975a2b111e4#44e82ff35277fdc102a5613975e02975a2b111e4"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",

@@ -25,7 +25,7 @@ use starknet_core::types::Felt;
 use std::str::FromStr;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 struct StateUpdateArtifacts {

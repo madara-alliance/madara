@@ -9,10 +9,10 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result, WrapErr};
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -91,6 +91,46 @@ impl JobTrigger for SnosJobTrigger {
         trace!(log_type = "completed", category = "SnosWorker", "SnosWorker completed.");
         Ok(())
     }
+}
+
+/// Fetches the Starknet protocol version for a specific block from the sequencer.
+///
+/// This function queries the Madara client to retrieve the complete block header,
+/// which contains the `starknet_version` field indicating which Starknet protocol
+/// version was used when the block was created.
+///
+/// # Arguments
+/// * `config` - Application configuration containing the Madara client
+/// * `block_number` - The block number to query
+///
+/// # Returns
+/// * `Result<String>` - The Starknet version string (e.g., "0.13.2") or error
+///
+/// # Errors
+/// - Network connectivity issues with the sequencer
+/// - Block not found
+/// - Missing starknet_version field in block header
+pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -> Result<String> {
+    use starknet::core::types::BlockId;
+    use starknet::providers::Provider;
+
+    let provider = config.madara_client();
+    debug!("Fetching block header for block {} to extract Starknet version", block_number);
+
+    // Fetch block with transaction hashes (lighter than full txs)
+    let block = provider
+        .get_block_with_tx_hashes(BlockId::Number(block_number))
+        .await
+        .wrap_err(format!("Failed to fetch block {} from sequencer", block_number))?;
+
+    let starknet_version = match block {
+        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,
+        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => {
+            return Err(eyre!("Block {} is still pending, cannot determine final Starknet version", block_number));
+        }
+    };
+
+    Ok(starknet_version)
 }
 
 // create_job_metadata is a helper function to create job metadata for a given block number and layer
