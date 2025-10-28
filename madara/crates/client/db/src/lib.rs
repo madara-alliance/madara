@@ -196,8 +196,13 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     ///
     /// When replaying a block, we must match the exact timestamp and gas configuration
     /// from the original block to reproduce the expected block hash. This field stores
-    /// header overrides that are applied during transaction validation and execution.
+    /// header overrides that are applied during transaction validation and execution,
     /// along with the expected block hash to validate against after block creation.
+    /// # Important Notes
+    /// - Custom header is different for each block and must be set per block
+    /// - **Must verify** that the block number matches before use
+    /// - **Must clear** after use to prevent reuse across different blocks
+    /// - Access is thread-safe via Mutex to allow concurrent operations
     pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
@@ -299,8 +304,18 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     }
 
     pub fn get_custom_header(&self) -> Option<CustomHeader> {
-        let guard = self.custom_header.lock().expect("Poisoned lock");
-        guard.clone()
+        self.get_custom_header_with_clear(false)
+    }
+
+    pub fn get_custom_header_with_clear(&self, clear: bool) -> Option<CustomHeader> {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        let result = guard.clone();
+
+        if clear {
+            *guard = None;
+        }
+
+        result
     }
 
     pub fn set_custom_header(&self, custom_header: CustomHeader) {
@@ -548,7 +563,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        match self.inner.get_custom_header() {
+        match self.inner.get_custom_header_with_clear(true) {
             Some(header) => {
                 let is_valid = header.is_block_hash_as_expected(&block_hash);
                 if !is_valid {
