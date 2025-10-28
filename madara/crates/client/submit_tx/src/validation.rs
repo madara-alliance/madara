@@ -318,7 +318,6 @@ impl SubmitL1HandlerTransaction for TransactionValidator {
         &self,
         tx: L1HandlerTransactionWithFee,
     ) -> Result<L1HandlerTransactionResult, SubmitTransactionError> {
-        let arrived_at = TxTimestamp::now();
 
         let (api_tx, class) = tx.clone().into_blockifier(
             self.backend.chain_config().chain_id.to_felt(),
@@ -336,7 +335,6 @@ impl SubmitL1HandlerTransaction for TransactionValidator {
             arrived_at: TxTimestamp::now(),
             declared_class: class,
             hash: api_tx.tx_hash().to_felt(),
-            // TODO: check what works?
             charge_fee: true
         };
 

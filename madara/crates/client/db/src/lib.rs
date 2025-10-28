@@ -542,8 +542,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        let custom_headers = self.inner.get_custom_header();
-
         match self.inner.get_custom_header() {
             Some(header) => {
                 let is_valid = header.is_block_hash_correct(&block_hash);

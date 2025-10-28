@@ -13,7 +13,6 @@ use mp_block::{
     header::{BlockTimestamp, PreconfirmedHeader},
     TransactionWithReceipt,
 };
-use mp_block::header::GasPrices;
 pub use state::MadaraStateView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
