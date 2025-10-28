@@ -298,7 +298,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     }
 
     pub fn set_custom_header(&self, custom_header: CustomHeader) {
-        let mut guard = self.custom_header.lock().unwrap();
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
         *guard = Some(custom_header);
     }
 
