@@ -76,10 +76,15 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                     let gas_prices = custom_header.gas_prices;
                     (block_timestamp, gas_prices)
                 } else {
-                    let l1_gas_quote = self
-                        .get_last_l1_gas_quote()
-                        .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
-                    let gas_prices = self.calculate_gas_prices(&l1_gas_quote, parent_block_info.header.gas_prices.strk_l2_gas_price, parent_block_info.total_l2_gas_used)?;
+                    let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
+                        self.calculate_gas_prices(
+                            &quote,
+                            parent_block_info.header.gas_prices.strk_l2_gas_price,
+                            parent_block_info.total_l2_gas_used,
+                        )?
+                    } else {
+                        parent_block_info.header.gas_prices
+                    };
                     (SystemTime::now(), gas_prices)
                 };
 
