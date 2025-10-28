@@ -192,7 +192,6 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 
-    // only for testing impl, should not be used for production!
     pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
@@ -257,14 +256,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         )?;
         self.chain_tip.send_replace(chain_tip);
 
-        let chain_tip_2 = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
-            StorageChainTip::Confirmed(starting_block)
-        } else {
-            self.db.get_chain_tip()?
-        });
-
-        tracing::info!("Latest block : {:?}", chain_tip_2);
-
         // Init L1 head
         self.latest_l1_confirmed.send_replace(self.db.get_confirmed_on_l1_tip()?);
 
@@ -301,7 +292,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         Ok(())
     }
 
-    /// Allows using custom headers for the next block, once used; the data is dumped
     pub fn get_custom_header(&self) -> Option<CustomHeader> {
         let guard = self.custom_header.lock().unwrap();
         guard.clone()
@@ -552,11 +542,16 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        let is_valid = self.inner.get_custom_header().unwrap().is_block_hash_correct(&block_hash);
+        let custom_headers = self.inner.get_custom_header();
 
-        if !is_valid {
-            self.clear_preconfirmed().expect("Failed to clear preconfirmed blocks");
-            bail!("Block hash is invalid")
+        match self.inner.get_custom_header() {
+            Some(header) => {
+                let is_valid = header.is_block_hash_correct(&block_hash);
+                if !is_valid {
+                    tracing::warn!("Block hash not as expected for {}", block.header.block_number);
+                }
+            }
+            None => {}
         }
 
         // Save the block.

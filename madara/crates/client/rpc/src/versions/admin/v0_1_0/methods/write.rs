@@ -85,8 +85,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?)
     }
 
-    /// Adds a L1 Handler message to the db for l1_txns_stream to pick
-    /// Only works in block production mode.
     async fn add_l1_handler_message(
         &self,
         l1_handler_message: L1HandlerTransactionWithFee,

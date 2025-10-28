@@ -8,7 +8,6 @@ use mp_block::TransactionWithReceipt;
 use mp_convert::ToFelt;
 use mp_rpc::v0_9_0::{BlockId, TraceBlockTransactionsResult};
 use mp_transactions::TransactionWithHash;
-use tracing::log;
 
 pub(super) fn prepare_tx_for_reexecution(
     view: &MadaraStateView,

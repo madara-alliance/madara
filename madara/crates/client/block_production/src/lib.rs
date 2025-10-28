@@ -225,8 +225,8 @@ impl BlockProductionTask {
             global_spawn_rayon_task(move || {
                 backend
                     .write_access()
-                    .clear_preconfirmed(
-                        // /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
+                    .close_preconfirmed(
+                        /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
                     )
                     .context("Closing preconfirmed block on startup")
             })

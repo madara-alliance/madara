@@ -48,7 +48,7 @@ pub trait SubmitTransaction: Send + Sync {
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
 }
 
-/// Submit an L1HandlerTransaction.
+/// Submit a L1HandlerTransaction.
 #[async_trait]
 pub trait SubmitL1HandlerTransaction: Send + Sync {
     async fn submit_l1_handler_transaction(

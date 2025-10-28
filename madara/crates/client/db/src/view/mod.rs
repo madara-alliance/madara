@@ -1,3 +1,4 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::{preconfirmed::PreconfirmedBlock, prelude::*, ChainTip};
 
 mod block;
@@ -70,19 +71,18 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                     .context("Parent block should be found")?
                     .get_block_info()?;
 
-                let mut block_timestamp = 0;
-                let mut gas_prices = GasPrices::default();
+                let mut block_timestamp = SystemTime::now();
+                let l1_gas_quote = self
+                    .get_last_l1_gas_quote()
+                    .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+
+                let mut gas_prices = self.calculate_gas_prices(&l1_gas_quote,  parent_block_info.header.gas_prices.strk_l2_gas_price, parent_block_info.total_l2_gas_used)?;
 
                 if let Some(custom_header) = self.custom_header.lock().unwrap().clone() {
                     if custom_header.block_n == parent_block_number+1 {
-                        block_timestamp = custom_header.timestamp;
+                        block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
                         gas_prices = custom_header.gas_prices;
                     }
-                } else {
-                    let l1_gas_quote = self
-                        .get_last_l1_gas_quote()
-                        .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
-                    gas_prices = self.calculate_gas_prices(&l1_gas_quote,  parent_block_info.header.gas_prices.strk_l2_gas_price, parent_block_info.total_l2_gas_used)?;
                 }
 
                 PreconfirmedBlock::new(PreconfirmedHeader {
