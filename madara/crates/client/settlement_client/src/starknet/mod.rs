@@ -362,8 +362,9 @@ impl SettlementLayerProvider for StarknetClient {
     async fn messages_to_l2_stream(
         &self,
         from_l1_block_n: u64,
+        min_settlement_blocks: u64
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
-        Ok(watch_events(
+        let base_stream = watch_events(
             self.provider.clone(),
             Some(from_l1_block_n),
             WatchEventFilter {
@@ -382,7 +383,15 @@ impl SettlementLayerProvider for StarknetClient {
         )
         .map_err(|e| SettlementClientError::from(StarknetClientError::Provider(format!("Provider error: {e:#}"))))
         .map(|r| r.and_then(MessageToL2WithMetadata::try_from))
-        .boxed())
+        .boxed();  // Box it to make it Unpin
+        
+        let filtered_stream = event::ConfirmationDepthFilteredStream::new(
+            base_stream,
+            self.provider.clone(),
+            min_settlement_blocks,
+        );
+        
+        Ok(filtered_stream.boxed())
     }
 }
 
@@ -745,7 +754,7 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing())
+                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing(), 0)
                     .await
                     .unwrap();
                 tracing::debug!("messaging worker stopped");
@@ -779,7 +788,7 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing())
+                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing(), 0)
                     .await
             })
         };

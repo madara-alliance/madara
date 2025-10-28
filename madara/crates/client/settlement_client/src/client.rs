@@ -125,9 +125,10 @@ pub trait SettlementLayerProvider: Send + Sync {
     ///
     /// # Arguments
     /// * `from_l1_block_n` - Start returning events from this block_n.
-    /// * `end_l1_block_n` - Stop returning events at this block_n. None to keep continuing.
+    /// * `min_settlement_blocks` - Min no of settlement blocks after which to return messages. 
     async fn messages_to_l2_stream(
         &self,
         from_l1_block_n: u64,
+        min_settlement_blocks: u64
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError>;
 }
