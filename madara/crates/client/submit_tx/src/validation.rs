@@ -328,10 +328,12 @@ impl SubmitL1HandlerTransaction for TransactionValidator {
             transaction_hash : api_tx.tx_hash().to_felt(),
         };
 
+        let contract_address = tx.tx.contract_address.clone();
+
         let validated_txn = ValidatedTransaction {
-            transaction: mp_transactions::Transaction::L1Handler(tx.tx.clone()),
+            transaction: mp_transactions::Transaction::L1Handler(tx.tx),
             paid_fee_on_l1: Some(tx.paid_fee_on_l1),
-            contract_address: tx.tx.contract_address,
+            contract_address,
             arrived_at: TxTimestamp::now(),
             declared_class: class,
             hash: api_tx.tx_hash().to_felt(),

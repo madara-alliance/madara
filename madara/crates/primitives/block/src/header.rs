@@ -132,7 +132,7 @@ pub struct CustomHeader {
 }
 
 impl CustomHeader {
-    pub fn is_block_hash_correct(&self, block_hash: &Felt) -> bool {
+    pub fn is_block_hash_as_expected(&self, block_hash: &Felt) -> bool {
         self.expected_block_hash == *block_hash
     }
 }

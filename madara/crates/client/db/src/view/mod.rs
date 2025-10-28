@@ -74,14 +74,12 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                 let l1_gas_quote = self
                     .get_last_l1_gas_quote()
                     .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
-
                 let mut gas_prices = self.calculate_gas_prices(&l1_gas_quote,  parent_block_info.header.gas_prices.strk_l2_gas_price, parent_block_info.total_l2_gas_used)?;
 
-                if let Some(custom_header) = self.custom_header.lock().expect("Poisoned lock").clone() {
-                    if custom_header.block_n == parent_block_number+1 {
-                        block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
-                        gas_prices = custom_header.gas_prices;
-                    }
+                if let Some(custom_header) = self.custom_header.lock().expect("Poisoned lock").clone().filter(|h| h.block_n == parent_block_number + 1) {
+                    // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
+                    block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
+                    gas_prices = custom_header.gas_prices;
                 }
 
                 PreconfirmedBlock::new(PreconfirmedHeader {

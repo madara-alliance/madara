@@ -59,9 +59,11 @@ pub trait MadaraWriteRpcApi {
     #[method(name = "closeBlock")]
     async fn close_block(&self) -> RpcResult<()>;
 
+    /// Submit a L1 message into the bypass input stream
     #[method(name = "addL1HandlerMessage")]
     async fn add_l1_handler_message(&self, l1_handler_message: L1HandlerTransactionWithFee) -> RpcResult<L1HandlerTransactionResult>;
 
+    /// Sets custom headers to be used for the upcoming block
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
 

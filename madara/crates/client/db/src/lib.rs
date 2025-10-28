@@ -192,6 +192,12 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 
+    /// Custom header used during block replay to ensure deterministic execution.
+    ///
+    /// When replaying a block, we must match the exact timestamp and gas configuration
+    /// from the original block to reproduce the expected block hash. This field stores
+    /// header overrides that are applied during transaction validation and execution.
+    /// along with the expected block hash to validate against after block creation.
     pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
@@ -544,7 +550,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         match self.inner.get_custom_header() {
             Some(header) => {
-                let is_valid = header.is_block_hash_correct(&block_hash);
+                let is_valid = header.is_block_hash_as_expected(&block_hash);
                 if !is_valid {
                     tracing::warn!("Block hash not as expected for {}", block.header.block_number);
                 }

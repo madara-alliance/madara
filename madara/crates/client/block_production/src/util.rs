@@ -178,11 +178,10 @@ pub(crate) fn create_execution_context(
 
     let mut gas_prices = backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?;
 
-    if let Some(custom_header) = backend.get_custom_header() {
-        if custom_header.block_n == block_n {
-            block_timestamp =  UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
-            gas_prices = custom_header.gas_prices;
-        }
+    if let Some(custom_header) = backend.get_custom_header().filter(|h| h.block_n == block_n) {
+        // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
+        block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
+        gas_prices = custom_header.gas_prices;
     }
 
     Ok(BlockExecutionContext {
