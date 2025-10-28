@@ -29,12 +29,12 @@ pub trait AccountActions {
         method: &str,
         calldata: Vec<Felt>,
         nonce: Option<u64>,
-    ) -> TransactionExecution;
+    ) -> TransactionExecution<'_>;
 
     fn declare_contract_params_sierra(&self, path_to_sierra: &str, path_to_casm: &str) -> (Felt, FlattenedSierraClass);
     fn declare_contract_params_legacy(&self, path_to_compiled_contract: &str) -> LegacyContractClass;
 
-    fn transfer(&self, erc20_addr: Felt, receiver: Felt, amount: u128) -> TransactionExecution;
+    fn transfer(&self, erc20_addr: Felt, receiver: Felt, amount: u128) -> TransactionExecution<'_>;
 }
 
 impl AccountActions for SingleOwnerAccount<&RpcClientProvider, LocalWallet> {
@@ -44,7 +44,7 @@ impl AccountActions for SingleOwnerAccount<&RpcClientProvider, LocalWallet> {
         method: &str,
         calldata: Vec<Felt>,
         nonce: Option<u64>,
-    ) -> TransactionExecution {
+    ) -> TransactionExecution<'_> {
         let calls = vec![Call { to: address, selector: get_selector_from_name(method).unwrap(), calldata }];
         match nonce {
             Some(nonce) => self.execute_v3(calls).nonce(nonce.into()),
@@ -77,7 +77,7 @@ impl AccountActions for SingleOwnerAccount<&RpcClientProvider, LocalWallet> {
         contract_artifact
     }
 
-    fn transfer(&self, erc20_addr: Felt, receiver: Felt, amount: u128) -> TransactionExecution {
+    fn transfer(&self, erc20_addr: Felt, receiver: Felt, amount: u128) -> TransactionExecution<'_> {
         self.execute_v3(vec![Call {
             to: erc20_addr,
             selector: starknet_keccak(b"transfer"),
