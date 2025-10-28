@@ -11,8 +11,9 @@ NC='\033[0m' # No Color
 # Binary path - use the madara binary from cargo build
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-MADARA="$HOME/cache/rust-targets/release/madara"
-MADARA_DB="$HOME/cache/madara/db"
+# MADARA="$HOME/cache/rust-targets/release/madara"
+MADARA="./target/release/madara"
+MADARA_DB="./cache/madara/db"
 
 # Database directories
 SEQ1_DB="$MADARA_DB/seq1_db"
