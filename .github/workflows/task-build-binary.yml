@@ -50,12 +50,6 @@ jobs:
         with:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
-      - name: Python Cairo setup (for apollo_starknet_os_program dependencies)
-        if: inputs.is-standalone == false
-        uses: ./.github/actions/setup-python-cairo
-        with:
-          python-version: ${{ env.BUILD_PYTHON_VERSION }}
-
       # Build the specified binary
       - name: Cargo build ${{ inputs.binary-name }} (workspace)
         if: inputs.is-standalone == false
