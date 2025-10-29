@@ -134,7 +134,7 @@ pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u6
 }
 
 // create_job_metadata is a helper function to create job metadata for a given block number and layer
-// set full_output to true if layer is L3, false otherwise
+// set full_output to true if layer is L2, false otherwise
 fn create_job_metadata(snos_batch_id: u64, start_block: u64, end_block: u64, full_output: bool) -> JobMetadata {
     JobMetadata {
         common: CommonMetadata::default(),

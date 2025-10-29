@@ -326,23 +326,23 @@ impl StateUpdateJobHandler {
             Layer::L2 => {
                 // Get the batch details for the last-settled batch
                 let batch = config.database().get_aggregator_batches_by_indexes(vec![*last_settled]).await?;
-                if batch.is_empty() {
-                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
-                } else {
+                if !batch.is_empty() {
                     // Return the end block of the last batch
                     // unwrap is safe since we checked that it's not empty
-                    Ok((batch[0].end_block, batch.first().unwrap().index))
+                    Ok((batch[0].end_block, batch[0].index))
+                } else {
+                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
                 }
             }
             Layer::L3 => {
                 // Get the batch details for the last-settled batch
                 let batch = config.database().get_snos_batches_by_indices(vec![*last_settled]).await?;
-                if batch.is_empty() {
-                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
-                } else {
+                if !batch.is_empty() {
                     // Return the end block of the last batch
                     // unwrap is safe since we checked that it's not empty
-                    Ok((batch[0].end_block, batch.first().unwrap().snos_batch_id))
+                    Ok((batch[0].end_block, batch[0].snos_batch_id))
+                } else {
+                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
                 }
             }
         }?;

@@ -48,25 +48,25 @@ pub struct AtlanticBucketInfo {
     pub bucket_job_index: Option<u64>,
 }
 
-struct CustomizationParams {
+struct ProvingParams {
     /// Layout to be used
     layout: LayoutName,
 }
 
 trait ProvingLayer: Send + Sync {
-    fn customize_request<'a>(&self, request: RequestBuilder<'a>, params: CustomizationParams) -> RequestBuilder<'a>;
+    fn add_proving_params<'a>(&self, request: RequestBuilder<'a>, params: ProvingParams) -> RequestBuilder<'a>;
 }
 
 struct EthereumLayer;
 impl ProvingLayer for EthereumLayer {
-    fn customize_request<'a>(&self, request: RequestBuilder<'a>, _params: CustomizationParams) -> RequestBuilder<'a> {
+    fn add_proving_params<'a>(&self, request: RequestBuilder<'a>, _params: ProvingParams) -> RequestBuilder<'a> {
         request
     }
 }
 
 struct StarknetLayer;
 impl ProvingLayer for StarknetLayer {
-    fn customize_request<'a>(&self, request: RequestBuilder<'a>, params: CustomizationParams) -> RequestBuilder<'a> {
+    fn add_proving_params<'a>(&self, request: RequestBuilder<'a>, params: ProvingParams) -> RequestBuilder<'a> {
         request
             .form_text("result", &AtlanticQueryStep::ProofGeneration.to_string())
             .form_text("layout", params.layout.to_str())
@@ -266,7 +266,7 @@ impl AtlanticClient {
             &job_config.network
         );
 
-        let mut request = self.proving_layer.customize_request(
+        let mut request = self.proving_layer.add_proving_params(
             // NOTE: Removing layout from the query params as it is unnecessary now (as conveyed by the Atlantic team)
             self.client
                 .request()
@@ -279,7 +279,7 @@ impl AtlanticClient {
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                 .form_text("cairoVm", &job_config.cairo_vm.as_str())
                 .form_file("pieFile", job_info.pie_file.as_ref(), "pie.zip", Some("application/zip"))?,
-            CustomizationParams { layout: job_config.proof_layout },
+            ProvingParams { layout: job_config.proof_layout },
         );
 
         if let Some(bucket_id) = bucket_info.bucket_id {
