@@ -120,7 +120,7 @@ impl JobTrigger for BatchingTrigger {
 }
 
 impl BatchingTrigger {
-    // ------ Methods to assign batches to a block range ------
+    // ------ Methods to assign batches for an L2  ------
 
     /// Assigns a batch to all the blocks from `start_block_number` to `end_block_number` and
     /// updates the state in DB and stores the output in storage.
@@ -457,7 +457,7 @@ impl BatchingTrigger {
         }
     }
 
-    // ------ Methods to assign batch to a single block ------
+    // ------ Methods to assign batch for an L3 ------
 
     /// Method to assign only SNOS batches to blocks.
     /// This method is intended to be used in case of L3s since for them, we only need SNOS batches.
