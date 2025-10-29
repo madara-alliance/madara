@@ -182,6 +182,7 @@ impl BlockProductionTask {
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
+        no_charge_fee: bool
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -190,7 +191,7 @@ impl BlockProductionTask {
             mempool,
             current_state: None,
             metrics,
-            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender),
+            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender, no_charge_fee),
             state_notifications: None,
             executor_commands_recv: Some(recv),
             l1_client,
@@ -468,6 +469,7 @@ pub(crate) mod tests {
                 self.mempool.clone(),
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
+                true,
             )
         }
     }

@@ -165,7 +165,7 @@ async fn get_l2_token_address(
                 entry_point_selector: get_selector_from_name("get_l2_token").unwrap(),
                 calldata: vec![Felt::from_bytes_be_slice(l1_erc_20_address.as_bytes())],
             },
-            BlockId::Tag(BlockTag::Pending),
+            BlockId::Tag(BlockTag::PreConfirmed),
         )
         .await
         .unwrap()[0]
