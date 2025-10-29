@@ -25,6 +25,8 @@ use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService, WarpUpdateConfig};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
+use dotenv::dotenv;
+
 use std::{env, path::Path};
 use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch};
 
@@ -33,6 +35,7 @@ const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issue
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenv().ok();
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 

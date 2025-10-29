@@ -11,7 +11,7 @@ use std::{
     collections::VecDeque,
     ops::{Add, AddAssign},
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 // TODO: add these to metrics
@@ -170,14 +170,26 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u128,
 ) -> anyhow::Result<BlockExecutionContext> {
-    let l1_gas_quote = backend
-        .get_last_l1_gas_quote()
-        .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+
+    let (block_timestamp, gas_prices) = if let Some(custom_header) = backend.get_custom_header().filter(|h| h.block_n == block_n) {
+        // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
+        let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
+        let gas_prices = custom_header.gas_prices;
+        (block_timestamp, gas_prices)
+    } else {
+        let l1_gas_quote = backend
+            .get_last_l1_gas_quote()
+            .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+
+        let gas_prices = backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?;
+        (SystemTime::now(), gas_prices)
+    };
+
     Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
-        block_timestamp: SystemTime::now(),
+        block_timestamp,
         protocol_version: backend.chain_config().latest_protocol_version,
-        gas_prices: backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?,
+        gas_prices,
         l1_da_mode: backend.chain_config().l1_da_mode,
         block_number: block_n,
     })
