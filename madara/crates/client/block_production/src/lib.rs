@@ -469,6 +469,7 @@ pub(crate) mod tests {
                 self.mempool.clone(),
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
+                true,
             )
         }
     }
