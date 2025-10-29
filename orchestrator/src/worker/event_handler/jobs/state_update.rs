@@ -15,14 +15,12 @@ use crate::worker::utils::fact_info::OnChainData;
 use crate::worker::utils::{
     fetch_blob_data_for_batch, fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block,
 };
-use alloy::primitives::B256;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
 use orchestrator_utils::layer::Layer;
 use starknet_core::types::Felt;
-use std::str::FromStr;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 use tracing::{debug, error, info, warn};
