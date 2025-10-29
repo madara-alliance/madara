@@ -124,7 +124,9 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             debug!(job_id = %job.internal_id, num = %to_settle_num, "Processing block/batch");
 
             if !self.should_send_state_update_txn(&config, to_settle_num).await? {
-                sent_tx_hashes.push(format!("0x{:x}", B256::from_str("0").unwrap()));
+                sent_tx_hashes.push(format!("0x{:0>64}", ""));
+                state_metadata.tx_hashes = sent_tx_hashes.clone();
+                job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
                 continue;
             }
 
@@ -214,9 +216,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         //       verification rather than the txn status) for both L2s and L3s
         if config.layer() == &Layer::L2 {
             // Get the status from the settlement contract
-            let settlement_contract_status =
-                Self::verify_through_contract(&config, &nums_settled, &job.id, &internal_id).await;
-            return settlement_contract_status;
+            return Self::verify_through_contract(&config, &nums_settled, &job.id, &internal_id).await;
         }
 
         // Check the transaction status if the layer is not L2
@@ -325,22 +325,20 @@ impl StateUpdateJobHandler {
         let (expected_last_block_number, batch_index) = match config.layer() {
             Layer::L2 => {
                 // Get the batch details for the last-settled batch
-                let batch = config.database().get_aggregator_batches_by_indexes(vec![*last_settled]).await?;
-                if !batch.is_empty() {
+                let batches = config.database().get_aggregator_batches_by_indexes(vec![*last_settled]).await?;
+                if let Some(batch) = batches.first() {
                     // Return the end block of the last batch
-                    // unwrap is safe since we checked that it's not empty
-                    Ok((batch[0].end_block, batch[0].index))
+                    Ok((batch.end_block, batch.index))
                 } else {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
                 }
             }
             Layer::L3 => {
                 // Get the batch details for the last-settled batch
-                let batch = config.database().get_snos_batches_by_indices(vec![*last_settled]).await?;
-                if !batch.is_empty() {
+                let batches = config.database().get_snos_batches_by_indices(vec![*last_settled]).await?;
+                if let Some(batch) = batches.first() {
                     // Return the end block of the last batch
-                    // unwrap is safe since we checked that it's not empty
-                    Ok((batch[0].end_block, batch[0].snos_batch_id))
+                    Ok((batch.end_block, batch.snos_batch_id))
                 } else {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
                 }
@@ -392,20 +390,30 @@ impl StateUpdateJobHandler {
 
     #[cfg(not(feature = "testing"))]
     async fn should_send_state_update_txn(&self, config: &Arc<Config>, to_batch_num: u64) -> Result<bool, JobError> {
-        // Always send state update for L3s
-        // TODO: Update the L3 code as well to check for the contract state before making a txn
-        if config.layer() == &Layer::L3 {
-            return Ok(true);
-        }
-
         // Get the batch details for the batch to settle
-        let batches = config.database().get_aggregator_batches_by_indexes(vec![to_batch_num]).await?;
-        if batches.is_empty() {
-            return Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", to_batch_num))));
-        }
-        // Unwrap is safe here as we checked for the batch existence above
-        let batch = batches.first().unwrap();
-        let to_block_num = batch.end_block;
+        let to_block_num = match config.layer() {
+            Layer::L2 => {
+                let batches = config.database().get_aggregator_batches_by_indexes(vec![to_batch_num]).await?;
+                batches
+                    .first()
+                    .ok_or_else(|| {
+                        JobError::Other(OtherError(eyre!(
+                            "Failed to fetch aggregator batch {} from database",
+                            to_batch_num
+                        )))
+                    })?
+                    .end_block
+            }
+            Layer::L3 => {
+                let batches = config.database().get_snos_batches_by_indices(vec![to_batch_num]).await?;
+                batches
+                    .first()
+                    .ok_or_else(|| {
+                        JobError::Other(OtherError(eyre!("Failed to fetch snos batch {} from database", to_batch_num)))
+                    })?
+                    .end_block
+            }
+        };
 
         if let Some(last_settled_block) =
             config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?
@@ -481,9 +489,9 @@ impl StateUpdateJobHandler {
         artifacts: StateUpdateArtifacts,
     ) -> Result<String, JobError> {
         match config.layer() {
-            Layer::L2 => self.update_state_for_batch(config, nonce, artifacts).await,
+            Layer::L2 => self.update_state_for_l2s(config, nonce, artifacts).await,
             Layer::L3 => {
-                self.update_state_for_block(
+                self.update_state_for_l3s(
                     config,
                     to_settle_num,
                     artifacts.snos_output.ok_or(JobError::Other(OtherError(eyre!(
@@ -499,7 +507,7 @@ impl StateUpdateJobHandler {
         }
     }
 
-    async fn update_state_for_batch(
+    async fn update_state_for_l2s(
         &self,
         config: Arc<Config>,
         nonce: u64,
@@ -516,7 +524,7 @@ impl StateUpdateJobHandler {
     }
 
     /// Update the state for the corresponding block using the settlement layer.
-    async fn update_state_for_block(
+    async fn update_state_for_l3s(
         &self,
         config: Arc<Config>,
         block_no: u64,
