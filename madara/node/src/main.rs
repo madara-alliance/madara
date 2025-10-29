@@ -228,6 +228,7 @@ async fn main() -> anyhow::Result<()> {
         &backend,
         service_mempool.mempool(),
         service_l1_sync.client(),
+        run_cmd.validator_params.no_charge_fee,
     )?;
 
     // Add transaction provider

@@ -47,6 +47,7 @@ impl BlockProductionHandle {
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
+        no_charge_fee: bool
     ) -> Self {
         Self {
             executor_commands,
@@ -54,7 +55,7 @@ impl BlockProductionHandle {
             tx_converter: TransactionValidator::new(
                 Arc::new(BypassInput(bypass_input)),
                 backend,
-                TransactionValidatorConfig::default().with_disable_validation(true),
+                TransactionValidatorConfig { disable_validation: true, disable_fee: no_charge_fee },
             )
             .into(),
         }
