@@ -111,6 +111,7 @@ COPY orchestrator orchestrator
 COPY test_utils test_utils
 COPY build-artifacts build-artifacts
 
+# Run cargo build with venv activateed
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     . /app/sequencer_venv/bin/activate && \

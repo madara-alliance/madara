@@ -36,12 +36,22 @@ pub struct SnosJobHandler;
 
 #[async_trait]
 pub trait ChainConfigFromExt {
-    async fn get_chain_config(rpc_url: &str, layer: &Layer, strk_fee_token_address: &str) -> Result<ChainConfig>;
+    async fn get_chain_config(
+        rpc_url: &str,
+        layer: &Layer,
+        strk_fee_token_address: &str,
+        eth_fee_token_address: &str,
+    ) -> Result<ChainConfig>;
 }
 
 #[async_trait]
 impl ChainConfigFromExt for ChainConfig {
-    async fn get_chain_config(rpc_url: &str, layer: &Layer, strk_fee_token_address: &str) -> Result<ChainConfig> {
+    async fn get_chain_config(
+        rpc_url: &str,
+        layer: &Layer,
+        strk_fee_token_address: &str,
+        eth_fee_token_address: &str,
+    ) -> Result<ChainConfig> {
         let rpc_url = Url::parse(rpc_url)?;
         let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
         let chain_id_in_hex = provider.chain_id().await?.to_fixed_hex_string();
@@ -52,6 +62,7 @@ impl ChainConfigFromExt for ChainConfig {
         Ok(ChainConfig {
             chain_id,
             strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(strk_fee_token_address))?,
+            eth_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(eth_fee_token_address))?,
             is_l3: layer.is_l3(),
         })
     }
@@ -107,14 +118,13 @@ impl JobHandlerTrait for SnosJobHandler {
                 snos_url,
                 config.layer(),
                 &config.params.snos_config.strk_fee_token_address,
+                &config.params.snos_config.eth_fee_token_address,
             )
             .await
             .map_err(|e| JobError::Other(OtherError(eyre!("Failed to get chain config: {}", e))))?,
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
-            strk_fee_token_address: config.params.snos_config.strk_fee_token_address.clone(),
-            eth_fee_token_address: config.params.snos_config.eth_fee_token_address.clone(),
         };
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {

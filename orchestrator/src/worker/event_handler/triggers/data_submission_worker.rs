@@ -56,7 +56,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
                 specific: JobSpecificMetadata::Da(DaMetadata {
                     block_number: proving_metadata.block_number,
                     // Set the blob data path using block number
-                    blob_data_path: Some(format!("{}/{BLOB_DATA_FILE_NAME}", proving_metadata.block_number)),
+                    blob_data_path: Some(format!("{}/{BLOB_DATA_FILE_NAME}", proving_job.internal_id)),
                     // These will be populated during processing
                     tx_hash: None,
                 }),

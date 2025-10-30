@@ -52,13 +52,15 @@ impl JobTrigger for SnosJobTrigger {
 
         // Get all snos batches that are closed but don't have a SnosRun job created yet
         for snos_batch in config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed).await? {
-            // Create DA metadata
+            // Create SNOS job metadata
             let snos_metadata = create_job_metadata(
+                snos_batch.snos_batch_id,
                 snos_batch.start_block,
                 snos_batch.end_block,
                 config.snos_config().snos_full_output,
             );
 
+            // Create a new job and add it to the queue
             match JobHandlerService::create_job(
                 JobType::SnosRun,
                 snos_batch.snos_batch_id.clone().to_string(), /* changing mapping here snos_batch_id => internal_id for snos and then eventually proving jobs*/
@@ -131,28 +133,21 @@ pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u6
     Ok(starknet_version)
 }
 
-/// create_job_metadata is a helper function to create job metadata for a given block range and configuration.
-///
-/// # Arguments
-/// * `start_block` - The starting block number of the batch
-/// * `end_block` - The ending block number of the batch
-/// * `full_output` - Set to true if layer is L3, false otherwise
-///
-/// # Returns
-/// * `JobMetadata` - Complete job metadata with common and SNOS-specific fields
-fn create_job_metadata(start_block: u64, end_block: u64, full_output: bool) -> JobMetadata {
+// create_job_metadata is a helper function to create job metadata for a given block number and layer
+// set full_output to true if layer is L2, false otherwise
+fn create_job_metadata(snos_batch_id: u64, start_block: u64, end_block: u64, full_output: bool) -> JobMetadata {
     JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
-            snos_batch_index: 0,
+            snos_batch_index: snos_batch_id,
             start_block,
             end_block,
             num_blocks: end_block - start_block + 1,
             full_output,
-            cairo_pie_path: Some(format!("{}/{}", start_block, CAIRO_PIE_FILE_NAME)),
-            on_chain_data_path: Some(format!("{}/{}", start_block, ON_CHAIN_DATA_FILE_NAME)),
-            snos_output_path: Some(format!("{}/{}", start_block, SNOS_OUTPUT_FILE_NAME)),
-            program_output_path: Some(format!("{}/{}", start_block, PROGRAM_OUTPUT_FILE_NAME)),
+            cairo_pie_path: Some(format!("{}/{}", snos_batch_id, CAIRO_PIE_FILE_NAME)),
+            on_chain_data_path: Some(format!("{}/{}", snos_batch_id, ON_CHAIN_DATA_FILE_NAME)),
+            snos_output_path: Some(format!("{}/{}", snos_batch_id, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", snos_batch_id, PROGRAM_OUTPUT_FILE_NAME)),
             ..Default::default()
         }),
     }
