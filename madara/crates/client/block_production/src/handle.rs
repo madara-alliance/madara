@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{
     SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction, TransactionValidator,
-    TransactionValidatorConfig,
+    TransactionValidatorConfig, SubmitL1HandlerTransaction
 };
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
@@ -13,6 +13,7 @@ use mp_rpc::v0_9_0::{
 use mp_transactions::validated::ValidatedTransaction;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
+use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
@@ -46,6 +47,7 @@ impl BlockProductionHandle {
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
+        no_charge_fee: bool
     ) -> Self {
         Self {
             executor_commands,
@@ -53,7 +55,7 @@ impl BlockProductionHandle {
             tx_converter: TransactionValidator::new(
                 Arc::new(BypassInput(bypass_input)),
                 backend,
-                TransactionValidatorConfig::default().with_disable_validation(true),
+                TransactionValidatorConfig { disable_validation: true, disable_fee: no_charge_fee },
             )
             .into(),
         }
@@ -109,6 +111,16 @@ impl SubmitTransaction for BlockProductionHandle {
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
         None
+    }
+}
+
+#[async_trait]
+impl SubmitL1HandlerTransaction for BlockProductionHandle {
+    async fn submit_l1_handler_transaction(
+        &self,
+        tx: L1HandlerTransactionWithFee,
+    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError>{
+        self.tx_converter.submit_l1_handler_transaction(tx).await
     }
 }
 

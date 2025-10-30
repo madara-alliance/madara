@@ -132,7 +132,8 @@ use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
-
+use std::sync::{Arc, Mutex};
+use mp_block::header::CustomHeader;
 mod db_version;
 mod prelude;
 pub mod storage;
@@ -266,6 +267,19 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// Keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
+
+    /// Custom header used during block replay to ensure deterministic execution.
+    ///
+    /// When replaying a block, we must match the exact timestamp and gas configuration
+    /// from the original block to reproduce the expected block hash. This field stores
+    /// header overrides that are applied during transaction validation and execution,
+    /// along with the expected block hash to validate against after block creation.
+    /// # Important Notes
+    /// - Custom header is different for each block and must be set per block
+    /// - **Must verify** that the block number matches before use
+    /// - **Must clear** after use to prevent reuse across different blocks
+    /// - Access is thread-safe via Mutex to allow concurrent operations
+    pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
 #[derive(Debug, Default)]
@@ -290,6 +304,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
+            custom_header: Mutex::new(None),
         };
         backend.init().context("Initializing madara backend")?;
         Ok(backend)
@@ -363,6 +378,27 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
         Ok(())
     }
+
+    pub fn get_custom_header(&self) -> Option<CustomHeader> {
+        self.get_custom_header_with_clear(false)
+    }
+
+    pub fn get_custom_header_with_clear(&self, clear: bool) -> Option<CustomHeader> {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        let result = guard.clone();
+
+        if clear {
+            *guard = None;
+        }
+
+        result
+    }
+
+    pub fn set_custom_header(&self, custom_header: CustomHeader) {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        *guard = Some(custom_header);
+    }
+
 }
 
 impl MadaraBackend<RocksDBStorage> {
@@ -602,6 +638,16 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
+
+        match self.inner.get_custom_header_with_clear(true) {
+            Some(header) => {
+                let is_valid = header.is_block_hash_as_expected(&block_hash);
+                if !is_valid {
+                    tracing::warn!("Block hash not as expected for {}", block.header.block_number);
+                }
+            }
+            None => {}
+        }
 
         // Save the block.
 

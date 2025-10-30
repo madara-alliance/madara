@@ -29,6 +29,7 @@ m-proc-macros = { workspace = true }
 mc-block-production = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
+mc-settlement-client = { workspace = true }
 mc-submit-tx = { workspace = true }
 mp-block = { workspace = true, default-features = true }
 mp-chain-config = { workspace = true }
