@@ -17,7 +17,6 @@
 //!
 //! [services]: mp_utils::service::Service
 
-use ::time::UtcOffset;
 use formatter::CustomFormatter;
 use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceRunner};
 use opentelemetry::global;

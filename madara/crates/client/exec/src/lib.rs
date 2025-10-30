@@ -146,7 +146,6 @@
 //! [`MadaraBackendExecutionExt`]: crate::MadaraBackendExecutionExt
 //! [`execution_result_to_fee_estimate`]: crate::ExecutionContext::execution_result_to_fee_estimate
 //! [`create_normalized_state_diff`]: crate::state_diff::create_normalized_state_diff
-use core::fmt;
 #![allow(clippy::result_large_err)]
 
 use blockifier::{
