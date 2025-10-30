@@ -75,9 +75,10 @@ pub async fn sync(
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
     mut ctx: ServiceContext,
+    min_settlement_blocks: u64,
 ) -> Result<(), SettlementClientError> {
     // sync inner is cancellation safe.
-    ctx.run_until_cancelled(sync_inner(settlement_client, backend, notify_consumer)).await.transpose()?;
+    ctx.run_until_cancelled(sync_inner(settlement_client, backend, notify_consumer, min_settlement_blocks)).await.transpose()?;
     Ok(())
 }
 
@@ -85,6 +86,7 @@ async fn sync_inner(
     settlement_client: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
+    min_settlement_blocks: u64
 ) -> Result<(), SettlementClientError> {
     // Note: Reprocessing events.
     // It's really important to make sure we don't mess up, we really want a strong guarantee we can't, in any circumstance, include an
@@ -93,7 +95,7 @@ async fn sync_inner(
     // We can't make this guarantee here though. As such, we allow ourselves to reprocess events here, re-include them as pending & cie.
     // We still do *some* checks, but we can't make the full guarantee here. Instead, block production is responsible to make sure
     // it filters out any messages that are duplicated.
-    // Thus, it's fine to reprocess some events :) there are caught during process message AND during block production.
+    // Thus, it's fine to reprocess some events :) they are caught during process message AND during block production.
     // In fact, we rely on that to restart sequencing on a clean database, or switch from full-node to sequencing.
 
     let replay_max_duration = backend.chain_config().l1_messages_replay_max_duration;
@@ -115,7 +117,7 @@ async fn sync_inner(
     tracing::info!("⟠  Starting L1 Messages Syncing from block #{from_l1_block_n}...");
 
     settlement_client
-        .messages_to_l2_stream(from_l1_block_n)
+        .messages_to_l2_stream(from_l1_block_n, min_settlement_blocks)
         .await
         .map_err(|e| SettlementClientError::StreamProcessing(format!("Failed to create messaging stream: {}", e)))?
         .map(|message| {
@@ -263,7 +265,7 @@ mod messaging_module_tests {
         client
             .expect_messages_to_l2_stream()
             .times(1)
-            .returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
+            .returning(move |_, _| Ok(stream::iter(events.clone()).map(Ok).boxed()));
 
         // nonce 1, is pending, not being cancelled, not consumed in db. => OK
         mock_l1_handler_tx(&mut client, 1, true, false);
@@ -280,7 +282,7 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, 0).await });
 
         // Wait sufficient time for event to be processed
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -329,9 +331,9 @@ mod messaging_module_tests {
         let events = vec![mock_event1.clone()];
         client
             .expect_messages_to_l2_stream()
-            .with(predicate::eq(from_l1_block_n))
+            .with(predicate::eq(from_l1_block_n), predicate::always())
             .times(1)
-            .returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
+            .returning(move |_, _| Ok(stream::iter(events.clone()).map(Ok).boxed()));
 
         // nonce 1, is pending, not being cancelled, not consumed in db. => OK
         mock_l1_handler_tx(&mut client, 1, true, false);
@@ -347,7 +349,7 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, 0).await });
 
         // Wait sufficient time for event to be processed
         tokio::time::sleep(Duration::from_secs(5)).await;

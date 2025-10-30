@@ -327,10 +327,11 @@ impl SettlementLayerProvider for EthereumClient {
     async fn messages_to_l2_stream(
         &self,
         from_l1_block_n: u64,
+        min_settlement_blocks: u64
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
         let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
         let event_stream =
-            filter.from_block(from_l1_block_n).to_block(BlockNumberOrTag::Finalized).watch().await.map_err(
+            filter.from_block(from_l1_block_n).to_block(BlockNumberOrTag::Latest).watch().await.map_err(
                 |e| -> SettlementClientError {
                     EthereumClientError::ArchiveRequired(format!(
                         "Could not fetch events, archive node may be required: {}",
@@ -340,7 +341,14 @@ impl SettlementLayerProvider for EthereumClient {
                 },
             )?;
 
-        Ok(EthereumEventStream::new(event_stream).boxed())
+        let base_stream = EthereumEventStream::new(event_stream);
+        let filtered_stream = event::ConfirmationDepthFilteredStream::new(
+            base_stream,
+            Arc::clone(&self.provider),
+            min_settlement_blocks,
+        );
+        
+        Ok(filtered_stream.boxed())
     }
 }
 
@@ -652,7 +660,7 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(Arc::new(eth_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing()).await
+                sync(Arc::new(eth_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing(), 0).await
             })
         };
 
