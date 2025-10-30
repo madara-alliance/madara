@@ -8,7 +8,8 @@ use crate::{
         metrics::DbMetrics,
         options::rocksdb_global_options,
         snapshots::Snapshots,
-        update_global_trie::apply_to_global_trie,
+        global_trie::apply_to_global_trie,
+        global_trie::get_state_root
     },
     storage::{
         ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
@@ -47,7 +48,7 @@ mod state;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
 pub mod trie;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
-pub mod update_global_trie;
+pub mod global_trie;
 
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
@@ -457,6 +458,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .write_mempool_transaction(tx)
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
+    }
+
+    fn get_state_root_hash(&self) -> Result<Felt> {
+        get_state_root(self)
     }
 
     fn apply_to_global_trie<'a>(

@@ -24,6 +24,7 @@ pub struct ForwardSyncConfig {
     pub apply_state_parallelization: usize,
     pub apply_state_batch_size: usize,
     pub disable_tries: bool,
+    pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
     pub enable_bouncer_config_sync: bool,
 }
@@ -38,6 +39,7 @@ impl Default for ForwardSyncConfig {
             apply_state_parallelization: 16,
             apply_state_batch_size: 4,
             disable_tries: false,
+            snap_sync: true,
             keep_pre_v0_13_2_hashes: false,
             enable_bouncer_config_sync: false,
         }
@@ -51,6 +53,10 @@ impl ForwardSyncConfig {
     pub fn keep_pre_v0_13_2_hashes(self, val: bool) -> Self {
         Self { keep_pre_v0_13_2_hashes: val, ..self }
     }
+    pub fn snap_sync(self, val: bool) -> Self {
+        Self { snap_sync: val, ..self }
+    }
+
     pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
         Self { enable_bouncer_config_sync: val, ..self }
     }
@@ -120,6 +126,7 @@ impl GatewayForwardSync {
             config.apply_state_parallelization,
             config.apply_state_batch_size,
             config.disable_tries,
+            config.snap_sync
         );
         (blocks_pipeline, classes_pipeline, apply_state_pipeline)
     }
@@ -193,7 +200,7 @@ impl GatewayForwardSync {
         PipelineStatus {
             blocks: self.blocks_pipeline.last_applied_block_n(),
             classes: self.classes_pipeline.last_applied_block_n(),
-            apply_state: self.apply_state_pipeline.last_applied_block_n(),
+            apply_state: self.backend.get_latest_applied_trie_update().ok().flatten(),
         }
     }
 }
@@ -219,6 +226,8 @@ impl ForwardPipeline for GatewayForwardSync {
         metrics: &mut SyncMetrics,
     ) -> anyhow::Result<()> {
         tracing::debug!("Run pipeline to height={target_height:?}");
+
+        self.apply_state_pipeline.steps.set_target_block(target_height);
 
         let mut done = false;
         while !done {
@@ -294,7 +303,7 @@ impl ForwardPipeline for GatewayForwardSync {
             "📥 Blocks: {} | Classes: {} | State: {}",
             self.blocks_pipeline.status(),
             self.classes_pipeline.status(),
-            self.apply_state_pipeline.status(),
+            self.apply_state_pipeline.trie_state_status(),
         );
     }
 
@@ -311,6 +320,7 @@ impl GatewayLatestProbe {
     pub fn new(client: Arc<GatewayProvider>) -> Self {
         Self { client }
     }
+    
     async fn probe(
         self: Arc<Self>,
         _highest_known_block: Option<ProviderBlockHeader>,

@@ -136,7 +136,7 @@ fn contract_state_leaf_hash(
 #[cfg(test)]
 mod contract_trie_root_tests {
     use super::*;
-    use crate::{rocksdb::update_global_trie::tests::setup_test_backend, MadaraBackend};
+    use crate::{rocksdb::global_trie::tests::setup_test_backend, MadaraBackend};
     use mp_chain_config::ChainConfig;
     use rstest::*;
     use std::sync::Arc;
