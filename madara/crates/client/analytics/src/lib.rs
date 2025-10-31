@@ -1,3 +1,22 @@
+//! Metrics utilities for the Madara node.
+//!
+//! This file contains wrappers around [opentelemetry] to make it easy for other [services] to use
+//! and register their own metrics. Metrics are exported to the OTEL format at an enpoint which is
+//! specified by the `analytics_collection_endpoint` cli argument. Note that this defaults to
+//! [None], in which case metrics will not be exported!
+//!
+//! Supported metrics (along with their trait extensions) are:
+//!
+//! - [`Gauge`] (_[`GaugeType`]_)
+//! - [`Counter`] (_[`CounterType`]_)
+//! - [`Histogram`] (_[`HistogramType`]_)
+//!
+//! Each of which is made accessible over `u64` and `f64` by their respective trait extensions.
+//!
+//! **Metrics are initialized through the [`Analytics`] struct and [`Analytics::setup`].**
+//!
+//! [services]: mp_utils::service::Service
+
 use formatter::CustomFormatter;
 use mp_utils::service::{MadaraServiceId, Service, ServiceId, ServiceRunner};
 use opentelemetry::global;
@@ -64,6 +83,8 @@ impl AnalyticsService {
         Ok(Self { providers: None, config, prometheus_endpoint })
     }
 
+    /// Initializes metrics, along with the [opentelemetry] collector endpoint should it have been
+    /// set via the `analytics_collection_endpoint` cli argument.
     pub fn setup(&mut self) -> anyhow::Result<()> {
         let tracing_subscriber = tracing_subscriber::registry()
             .with(tracing_subscriber::fmt::layer().event_format(CustomFormatter::new()))
@@ -186,6 +207,9 @@ impl ServiceId for AnalyticsService {
 }
 
 pub trait GaugeType<T> {
+    /// Registers a new OTEL [Gauge] to the node [metrics].
+    ///
+    /// [metrics]: self
     fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<T>;
 }
 
@@ -210,6 +234,9 @@ pub fn register_gauge_metric_instrument<T: GaugeType<T> + Display>(
 }
 
 pub trait CounterType<T> {
+    /// Registers a new OTEL [Counter] to the node [metrics].
+    ///
+    /// [metrics]: self
     fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> Counter<T>;
 }
 
@@ -234,6 +261,9 @@ pub fn register_counter_metric_instrument<T: CounterType<T> + Display>(
 }
 
 pub trait HistogramType<T> {
+    /// Registers a new OTEL [Histogram] to the node [metrics].
+    ///
+    /// [metrics]: self
     fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<T>;
 }
 

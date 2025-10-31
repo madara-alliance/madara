@@ -1,3 +1,4 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::{preconfirmed::PreconfirmedBlock, prelude::*, ChainTip};
 
 mod block;
@@ -68,12 +69,14 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                     .block_view_on_confirmed(*parent_block_number)
                     .context("Parent block should be found")?
                     .get_block_info()?;
-                PreconfirmedBlock::new(PreconfirmedHeader {
-                    block_number: *parent_block_number + 1,
-                    sequencer_address: parent_block_info.header.sequencer_address,
-                    block_timestamp: BlockTimestamp::now(),
-                    protocol_version: parent_block_info.header.protocol_version,
-                    gas_prices: if let Some(quote) = self.get_last_l1_gas_quote() {
+
+                let (block_timestamp, gas_prices) = if let Some(custom_header) = self.custom_header.lock().expect("Poisoned lock").clone().filter(|h| h.block_n == parent_block_number + 1) {
+                    // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
+                    let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
+                    let gas_prices = custom_header.gas_prices;
+                    (block_timestamp, gas_prices)
+                } else {
+                    let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
                         self.calculate_gas_prices(
                             &quote,
                             parent_block_info.header.gas_prices.strk_l2_gas_price,
@@ -81,7 +84,16 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                         )?
                     } else {
                         parent_block_info.header.gas_prices
-                    },
+                    };
+                    (SystemTime::now(), gas_prices)
+                };
+
+                PreconfirmedBlock::new(PreconfirmedHeader {
+                    block_number: *parent_block_number + 1,
+                    sequencer_address: parent_block_info.header.sequencer_address,
+                    block_timestamp: block_timestamp.into(),
+                    protocol_version: parent_block_info.header.protocol_version,
+                    gas_prices,
                     l1_da_mode: parent_block_info.header.l1_da_mode,
                 })
                 .into()

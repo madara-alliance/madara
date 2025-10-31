@@ -143,7 +143,7 @@ impl AdminRPCProvider {
 impl JsonRpcTransport for AdminRPCBypassTransport {
     type Error = HttpTransportError;
 
-    async fn send_request<P: Serialize + Send + Sync, R: DeserializeOwned>(
+    async fn send_request<P: Serialize + Send + Sync, R: DeserializeOwned + Send>(
         &self,
         method: JsonRpcMethod,
         params: P,

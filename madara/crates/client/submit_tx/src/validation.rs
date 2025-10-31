@@ -1,7 +1,8 @@
 use crate::{
-    RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError,
+    RejectedTransactionError, RejectedTransactionErrorKind, SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError,
     SubmitValidatedTransaction,
 };
+use mc_exec::execution::TxInfo;
 use async_trait::async_trait;
 use blockifier::{
     blockifier::{stateful_validator::StatefulValidatorError, transaction_executor::TransactionExecutorError},
@@ -24,7 +25,7 @@ use mp_rpc::v0_9_0::{
 };
 use mp_transactions::{
     validated::{TxTimestamp, ValidatedTransaction},
-    IntoStarknetApiExt, ToBlockifierError,
+    IntoStarknetApiExt, ToBlockifierError, L1HandlerTransactionResult, L1HandlerTransactionWithFee
 };
 use starknet_api::{
     executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
@@ -308,6 +309,39 @@ impl TransactionValidator {
         self.inner.submit_validated_transaction(tx).await?;
 
         Ok(())
+    }
+}
+
+#[async_trait]
+impl SubmitL1HandlerTransaction for TransactionValidator {
+    async fn submit_l1_handler_transaction(
+        &self,
+        tx: L1HandlerTransactionWithFee,
+    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError> {
+
+        let (api_tx, class) = tx.clone().into_blockifier(
+            self.backend.chain_config().chain_id.to_felt(),
+            self.backend.chain_config().latest_protocol_version,
+        )?;
+
+        let response = L1HandlerTransactionResult {
+            transaction_hash : api_tx.tx_hash().to_felt(),
+        };
+
+        let contract_address = tx.tx.contract_address.clone();
+
+        let validated_txn = ValidatedTransaction {
+            transaction: mp_transactions::Transaction::L1Handler(tx.tx),
+            paid_fee_on_l1: Some(tx.paid_fee_on_l1),
+            contract_address,
+            arrived_at: TxTimestamp::now(),
+            declared_class: class,
+            hash: api_tx.tx_hash().to_felt(),
+            charge_fee: true
+        };
+
+        self.inner.submit_validated_transaction(validated_txn).await?;
+        Ok(response)
     }
 }
 
