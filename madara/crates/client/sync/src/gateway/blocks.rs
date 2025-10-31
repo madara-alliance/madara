@@ -27,9 +27,10 @@ pub fn block_with_state_update_pipeline(
     batch_size: usize,
     keep_pre_v0_13_2_hashes: bool,
     sync_bouncer_config: bool,
+    no_reorg: bool,
 ) -> GatewayBlockSync {
     PipelineController::new(
-        GatewaySyncSteps { _backend: backend, importer, client, keep_pre_v0_13_2_hashes, sync_bouncer_config },
+        GatewaySyncSteps { _backend: backend, importer, client, keep_pre_v0_13_2_hashes, sync_bouncer_config, no_reorg },
         parallelization,
         batch_size,
         starting_block_n,
@@ -43,6 +44,7 @@ pub struct GatewaySyncSteps {
     client: Arc<GatewayProvider>,
     keep_pre_v0_13_2_hashes: bool,
     sync_bouncer_config: bool,
+    no_reorg: bool,
 }
 
 impl GatewaySyncSteps {
@@ -289,6 +291,25 @@ impl PipelineSteps for GatewaySyncSteps {
                                     "🔄 REORG DETECTED: Parent hash mismatch at block_n={}! incoming_parent={:#x}, our_parent={:#x}",
                                     block_n, incoming_parent_hash, local_parent_hash
                                 );
+
+                                // Check if reorg is disabled
+                                if self.no_reorg {
+                                    tracing::error!("❌ REORG DETECTED but --no-reorg flag is enabled!");
+                                    tracing::error!("   Block number: {}", block_n);
+                                    tracing::error!("   Expected parent hash: {:#x}", local_parent_hash);
+                                    tracing::error!("   Incoming parent hash: {:#x}", incoming_parent_hash);
+                                    tracing::error!("");
+                                    tracing::error!("⚠️  Divergent state detected - the local chain has diverged from the upstream chain.");
+                                    tracing::error!("⚠️  Blockchain reorganization is required but disabled by --no-reorg flag.");
+                                    tracing::error!("");
+                                    tracing::error!("To resolve this issue, you can:");
+                                    tracing::error!("  1. Remove the --no-reorg flag to allow automatic reorganization");
+                                    tracing::error!("  2. Manually investigate the divergence and wipe the database if needed");
+                                    anyhow::bail!(
+                                        "Reorg required but disabled by --no-reorg flag. Parent hash mismatch at block {}: expected {:#x}, got {:#x}",
+                                        block_n, local_parent_hash, incoming_parent_hash
+                                    );
+                                }
 
                                 // Try to find common ancestor
                                 match self.find_common_ancestor(block_n - 1).await {
