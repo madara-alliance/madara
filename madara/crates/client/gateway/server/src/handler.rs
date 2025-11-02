@@ -267,7 +267,9 @@ pub async fn handle_get_contract_addresses(backend: Arc<MadaraBackend>) -> Resul
         hyper::StatusCode::OK,
         &json!({
             "Starknet": chain_config.eth_core_contract_address,
-            "GpsStatementVerifier": chain_config.eth_gps_statement_verifier
+            "GpsStatementVerifier": chain_config.eth_gps_statement_verifier,
+            "eth_l2_token_address": chain_config.parent_fee_token_address,
+            "strk_l2_token_address": chain_config.native_fee_token_address,
         }),
     ))
 }
