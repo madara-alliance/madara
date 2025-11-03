@@ -45,7 +45,7 @@ jobs:
     with:
       image-name: madara
       image-file: ./madara/Dockerfile
-    needs: [check-merged-today]
+    needs: [check-merged-today, test-end-to-end]
     if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
     permissions:
       contents: read
@@ -66,7 +66,7 @@ jobs:
     with:
       image-name: orchestrator
       image-file: ./orchestrator/Dockerfile
-    needs: [check-merged-today]
+    needs: [check-merged-today, test-end-to-end]
     if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
     permissions:
       contents: read
@@ -81,7 +81,7 @@ jobs:
     with:
       image-name: bootstrapper
       image-file: ./bootstrapper/Dockerfile
-    needs: [check-merged-today]
+    needs: [check-merged-today, test-end-to-end]
     if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
     permissions:
       contents: read
