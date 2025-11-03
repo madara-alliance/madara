@@ -97,36 +97,22 @@ jobs:
   # Run coverage tests (Madara)
   test-madara:
     uses: ./.github/workflows/task-do-nothing-test-madara.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
 
   # Run coverage tests (Orchestrator)
   test-orchestrator:
     uses: ./.github/workflows/task-do-nothing-test-orchestrator.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-
-  # Run e2e tests (Orchestrator)
-  # e2e-orchestrator:
-  #   uses: ./.github/workflows/task-do-nothing-e2e-orchestrator.yml
 
   # Run coverage tests (Bootstrapper)
   test-bootstrapper:
     uses: ./.github/workflows/task-do-nothing-test-bootstrapper.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
 
   # Run JavaScript tests
   test-js:
     uses: ./.github/workflows/task-do-nothing-test-js.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
 
   # Run CLI tests
   test-cli:
     uses: ./.github/workflows/task-do-nothing-test-cli.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
 
   # ========================================================================= #
   #                                E2E Test                                   #
