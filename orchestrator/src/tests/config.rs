@@ -23,6 +23,7 @@ use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
 use crate::types::params::{AWSResourceIdentifier, AlertArgs, OTELConfig, QueueArgs, StorageArgs};
 use crate::types::Layer;
+use crate::utils::rest_client::RestClient;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
@@ -307,11 +308,14 @@ impl TestConfigBuilder {
             params.orchestrator_params.madara_version = madara_version;
         }
 
+        // It's fine to use dummy for tests as it's not being used.
+        let rest_client = RestClient::new(Url::parse("http://localhost:9944").unwrap());
+
         let config = Arc::new(Config::new(
             Layer::L2,
             params.orchestrator_params,
             starknet_client.clone(),
-            starknet_client, // Using the same client for admin operations in tests
+            Arc::new(rest_client),
             database,
             storage,
             lock,
@@ -683,11 +687,11 @@ pub(crate) fn get_env_params() -> EnvParams {
     let orchestrator_params = ConfigParam {
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
-        madara_admin_rpc_url: Url::parse(&get_env_var_or_default(
-            "MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL",
-            &get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"), // Use same URL as fallback for tests
+        madara_feeder_gateway_url: Url::parse(&get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL",
+            &get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL"), // Use same URL as fallback for tests
         ))
-        .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL"),
+        .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL"),
         madara_version: StarknetVersion::from_str(&get_env_var_or_default(
             "MADARA_ORCHESTRATOR_MADARA_VERSION",
             "0.13.4",

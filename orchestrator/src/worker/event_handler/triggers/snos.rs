@@ -112,7 +112,7 @@ pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u6
     use starknet::core::types::BlockId;
     use starknet::providers::Provider;
 
-    let provider = config.madara_client();
+    let provider = config.madara_rpc_client();
     debug!("Fetching block header for block {} to extract Starknet version", block_number);
 
     // Fetch block with transaction hashes (lighter than full txs)
