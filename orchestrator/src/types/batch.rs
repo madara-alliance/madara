@@ -201,6 +201,8 @@ pub enum SnosBatchStatus {
     Closed,
     /// A SNOS job has been created for this batch
     SnosJobCreated,
+    /// A SNOS job has beed Completed
+    Completed,
 }
 
 /// SNOS Batch
@@ -231,7 +233,8 @@ pub struct SnosBatch {
 
     /// Reference to the parent aggregator batch index
     /// This establishes the hierarchical relationship between SNOS and aggregator batches
-    pub aggregator_batch_index: u64,
+    /// This is Optional since for L3s, we don't have aggregator batches
+    pub aggregator_batch_index: Option<u64>,
 
     /// Number of blocks in this SNOS batch
     pub num_blocks: u64,
@@ -261,10 +264,15 @@ impl SnosBatch {
     /// * `snos_batch_id` - Unique sequential ID for this SNOS batch
     /// * `aggregator_batch_index` - Index of the parent aggregator batch
     /// * `start_block` - The start block number of the batch
+    /// * `end_block` - The end block number of the batch
     ///
     /// # Returns
     /// A new `SnosBatch` instance with status `Open`
-    pub fn new(snos_batch_id: u64, aggregator_batch_index: u64, start_block: u64) -> Self {
+    ///
+    /// # Panics
+    ///
+    /// Panics if `end_block` < `start_block`
+    pub fn new(snos_batch_id: u64, aggregator_batch_index: Option<u64>, start_block: u64) -> Self {
         Self {
             id: Uuid::new_v4(),
             snos_batch_id,

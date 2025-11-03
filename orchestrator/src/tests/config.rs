@@ -128,6 +128,12 @@ pub struct TestConfigBuilder {
     max_block_to_process: Option<Option<u64>>,
     /// Madara version
     madara_version: Option<StarknetVersion>,
+    /// Layer
+    layer: Option<Layer>,
+    /// Madara Admin RPC URL
+    madara_admin_rpc_url: Option<String>,
+    /// Max blocks to keep per SNOS batch
+    max_blocks_per_snos_batch: Option<Option<u64>>,
 }
 
 impl Default for TestConfigBuilder {
@@ -161,6 +167,9 @@ impl TestConfigBuilder {
             min_block_to_process: None,
             max_block_to_process: None,
             madara_version: None,
+            layer: None,
+            madara_admin_rpc_url: None,
+            max_blocks_per_snos_batch: None,
         }
     }
 
@@ -234,6 +243,21 @@ impl TestConfigBuilder {
         self
     }
 
+    pub fn configure_layer(mut self, layer: Layer) -> TestConfigBuilder {
+        self.layer = Some(layer);
+        self
+    }
+
+    pub fn configure_madara_admin_rpc_url(mut self, madara_admin_rpc_url: &str) -> TestConfigBuilder {
+        self.madara_admin_rpc_url = Some(String::from(madara_admin_rpc_url));
+        self
+    }
+
+    pub fn configure_max_blocks_per_snos_batch(mut self, max_blocks_per_snos: Option<u64>) -> TestConfigBuilder {
+        self.max_blocks_per_snos_batch = Some(max_blocks_per_snos);
+        self
+    }
+
     pub async fn build(self) -> TestConfigBuilderReturns {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
@@ -257,6 +281,9 @@ impl TestConfigBuilder {
             min_block_to_process,
             max_block_to_process,
             madara_version,
+            layer,
+            madara_admin_rpc_url,
+            max_blocks_per_snos_batch,
         } = self;
 
         let (_starknet_rpc_url, starknet_client, starknet_server) =
@@ -306,9 +333,15 @@ impl TestConfigBuilder {
         if let Some(madara_version) = madara_version {
             params.orchestrator_params.madara_version = madara_version;
         }
+        if let Some(madara_admin_rpc_url) = madara_admin_rpc_url {
+            params.orchestrator_params.madara_admin_rpc_url = Url::parse(&madara_admin_rpc_url).unwrap();
+        }
+        if let Some(max_blocks_per_snos_batch) = max_blocks_per_snos_batch {
+            params.orchestrator_params.batching_config.max_blocks_per_snos_batch = max_blocks_per_snos_batch;
+        }
 
         let config = Arc::new(Config::new(
-            Layer::L2,
+            layer.unwrap_or(Layer::L2),
             params.orchestrator_params,
             starknet_client.clone(),
             starknet_client, // Using the same client for admin operations in tests
