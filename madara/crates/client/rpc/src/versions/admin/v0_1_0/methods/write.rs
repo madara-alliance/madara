@@ -2,6 +2,7 @@ use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, St
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
+use mp_convert::Felt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
@@ -85,6 +86,13 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?)
     }
 
+    /// Force close a block.
+    /// Only works in block production mode.
+    async fn revert_to(&self, block_hash: Felt) -> RpcResult<()> {
+        self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
+        Ok(())
+    }
+    
     async fn add_l1_handler_message(
         &self,
         l1_handler_message: L1HandlerTransactionWithFee,
