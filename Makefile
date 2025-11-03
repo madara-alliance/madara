@@ -229,6 +229,11 @@ build-madara: setup-cairo
 	@$(VENV_ACTIVATE) && cargo build --manifest-path madara/Cargo.toml  --bin madara --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
+.PHONY: build-orchestrator
+build-orchestrator: setup-cairo
+	@echo -e "$(DIM)Building Orchestrator with Cairo 0 environment...$(RESET)"
+	@$(VENV_ACTIVATE) && cargo build --bin orchestrator --release
+	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: check
 check:
