@@ -3,7 +3,6 @@ use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
 use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
 use serde::{Deserialize, Serialize};
-use starknet_api::execution_resources::GasAmount;
 use uuid::Uuid;
 
 /// Status enum for Aggregator batches
@@ -70,7 +69,7 @@ pub struct SnosBatchUpdates {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AggregatorBatchWeights {
-    pub gas: GasAmount,
+    pub gas: usize,
     pub message_segment_length: usize,
 }
 
@@ -158,7 +157,7 @@ pub struct AggregatorBatch {
 }
 
 impl AggregatorBatchWeights {
-    pub fn new(gas: GasAmount, message_segment_length: usize) -> Self {
+    pub fn new(gas: usize, message_segment_length: usize) -> Self {
         Self { gas, message_segment_length }
     }
 
@@ -179,8 +178,7 @@ impl AggregatorBatchWeights {
 
 impl From<&BouncerWeights> for AggregatorBatchWeights {
     fn from(weights: &BouncerWeights) -> Self {
-        // TODO: Check from Starkware team which gas we need to use here
-        Self { gas: weights.sierra_gas, message_segment_length: weights.message_segment_length }
+        Self { gas: weights.l1_gas, message_segment_length: weights.message_segment_length }
     }
 }
 
