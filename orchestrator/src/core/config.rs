@@ -41,6 +41,7 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
+use crate::types::batch::AggregatorBatchWeights;
 use blockifier::bouncer::BouncerWeights;
 
 /// Starknet versions supported by the service
@@ -118,6 +119,7 @@ pub struct ConfigParam {
     /// * Aggregator Proof
     pub store_audit_artifacts: bool,
     pub bouncer_weights_limit: BouncerWeights,
+    pub aggregator_batch_weights_limit: AggregatorBatchWeights,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -202,6 +204,8 @@ impl Config {
         let settlement_config = SettlementConfig::try_from(run_cmd.clone())
             .context("Failed to create settlement config from run command")?;
 
+        let bouncer_weights_limit = Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?;
+
         let layer = run_cmd.layer.clone();
 
         let params = ConfigParam {
@@ -220,7 +224,8 @@ impl Config {
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())
                 .context("Failed to get prover layout name")?,
             store_audit_artifacts: run_cmd.store_audit_artifacts,
-            bouncer_weights_limit: Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?,
+            aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
+            bouncer_weights_limit,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let admin_rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_admin_rpc_url.clone()));

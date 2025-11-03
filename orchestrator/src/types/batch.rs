@@ -1,7 +1,9 @@
+use blockifier::bouncer::BouncerWeights;
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
 use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
 use serde::{Deserialize, Serialize};
+use starknet_api::execution_resources::GasAmount;
 use uuid::Uuid;
 
 /// Status enum for Aggregator batches
@@ -64,6 +66,12 @@ pub struct SnosBatchUpdates {
     pub end_block: Option<u64>,
     /// Updated batch status
     pub status: Option<SnosBatchStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct AggregatorBatchWeights {
+    pub gas: GasAmount,
+    pub message_segment_length: usize,
 }
 
 /// Aggregator Batch
@@ -139,11 +147,41 @@ pub struct AggregatorBatch {
     /// Used to track the batch in the proving system
     pub bucket_id: String,
 
+    /// Builtin weights for the batch. We decide when to close a batch based on this.
+    pub builtin_weights: AggregatorBatchWeights,
+
     /// Current status of the aggregator batch
     pub status: AggregatorBatchStatus,
     /// Starknet protocol version for all blocks in this batch
     /// All blocks in a batch must have the same Starknet version for prover compatibility
     pub starknet_version: String,
+}
+
+impl AggregatorBatchWeights {
+    pub fn new(gas: GasAmount, message_segment_length: usize) -> Self {
+        Self { gas, message_segment_length }
+    }
+
+    pub fn checked_add(&self, other: &AggregatorBatchWeights) -> Option<AggregatorBatchWeights> {
+        Some(Self {
+            gas: self.gas.checked_add(other.gas)?,
+            message_segment_length: self.message_segment_length.checked_add(other.message_segment_length)?,
+        })
+    }
+
+    pub fn checked_sub(&self, other: &AggregatorBatchWeights) -> Option<AggregatorBatchWeights> {
+        Some(Self {
+            gas: self.gas.checked_sub(other.gas)?,
+            message_segment_length: self.message_segment_length.checked_sub(other.message_segment_length)?,
+        })
+    }
+}
+
+impl From<&BouncerWeights> for AggregatorBatchWeights {
+    fn from(weights: &BouncerWeights) -> Self {
+        // TODO: Check from Starkware team which gas we need to use here
+        Self { gas: weights.sierra_gas, message_segment_length: weights.message_segment_length }
+    }
 }
 
 impl AggregatorBatch {
@@ -158,6 +196,7 @@ impl AggregatorBatch {
     ///
     /// # Returns
     /// A new `AggregatorBatch` instance with status `Open` and single block
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         index: u64,
         start_snos_batch: u64,
@@ -165,6 +204,7 @@ impl AggregatorBatch {
         squashed_state_updates_path: String,
         blob_path: String,
         bucket_id: String,
+        builtin_weights: AggregatorBatchWeights,
         starknet_version: String,
     ) -> Self {
         Self {
@@ -184,6 +224,7 @@ impl AggregatorBatch {
             bucket_id,
             starknet_version,
             status: AggregatorBatchStatus::Open,
+            builtin_weights,
         }
     }
 }
