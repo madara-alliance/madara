@@ -1,0 +1,174 @@
+/// Configuration for Cairo Native compilation and caching
+#[cfg(feature = "cairo_native")]
+use std::path::PathBuf;
+#[cfg(feature = "cairo_native")]
+use std::time::Duration;
+
+#[cfg(feature = "cairo_native")]
+#[derive(Debug, Clone)]
+pub struct NativeConfig {
+    /// Directory path for storing compiled native classes
+    pub cache_dir: PathBuf,
+
+    /// Maximum number of classes to keep in memory cache (0 = unlimited)
+    pub max_memory_cache_size: usize,
+
+    /// Maximum disk cache size in bytes (0 = unlimited)
+    pub max_disk_cache_size: u64,
+
+    /// Maximum number of concurrent compilations
+    pub max_concurrent_compilations: usize,
+
+    /// Maximum time to wait for a single compilation
+    pub compilation_timeout: Duration,
+
+    /// Whether to enable async compilation (fallback to VM)
+    pub enable_async_compilation: bool,
+}
+
+#[cfg(feature = "cairo_native")]
+impl Default for NativeConfig {
+    fn default() -> Self {
+        Self {
+            cache_dir: std::env::var("MADARA_NATIVE_CLASSES_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("/usr/share/madara/data/classes")),
+            max_memory_cache_size: 1000,                  // Keep up to 1000 classes in memory
+            max_disk_cache_size: 10 * 1024 * 1024 * 1024, // 10 GB
+            max_concurrent_compilations: 4,
+            compilation_timeout: Duration::from_secs(300), // 5 minutes
+            enable_async_compilation: true,
+        }
+    }
+}
+
+#[cfg(feature = "cairo_native")]
+impl NativeConfig {
+    /// Create a new configuration with custom values
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the cache directory
+    pub fn with_cache_dir(mut self, path: PathBuf) -> Self {
+        self.cache_dir = path;
+        self
+    }
+
+    /// Set the maximum memory cache size
+    pub fn with_max_memory_cache_size(mut self, size: usize) -> Self {
+        self.max_memory_cache_size = size;
+        self
+    }
+
+    /// Set the maximum disk cache size in bytes
+    pub fn with_max_disk_cache_size(mut self, size: u64) -> Self {
+        self.max_disk_cache_size = size;
+        self
+    }
+
+    /// Set the maximum number of concurrent compilations
+    pub fn with_max_concurrent_compilations(mut self, max: usize) -> Self {
+        self.max_concurrent_compilations = max;
+        self
+    }
+
+    /// Set the compilation timeout
+    pub fn with_compilation_timeout(mut self, timeout: Duration) -> Self {
+        self.compilation_timeout = timeout;
+        self
+    }
+
+    /// Enable or disable async compilation
+    pub fn with_async_compilation(mut self, enabled: bool) -> Self {
+        self.enable_async_compilation = enabled;
+        self
+    }
+
+    /// Validate the configuration
+    pub fn validate(&self) -> Result<(), String> {
+        if self.max_concurrent_compilations == 0 {
+            return Err("max_concurrent_compilations must be greater than 0".to_string());
+        }
+
+        if self.compilation_timeout.as_secs() == 0 {
+            return Err("compilation_timeout must be greater than 0".to_string());
+        }
+
+        // Try to create cache directory if it doesn't exist
+        if !self.cache_dir.exists() {
+            std::fs::create_dir_all(&self.cache_dir)
+                .map_err(|e| format!("Failed to create cache directory {:?}: {}", self.cache_dir, e))?;
+        }
+
+        // Check if directory is writable
+        if !self.cache_dir.is_dir() {
+            return Err(format!("Cache path {:?} is not a directory", self.cache_dir));
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "cairo_native")]
+/// Global configuration instance
+static CONFIG: std::sync::OnceLock<NativeConfig> = std::sync::OnceLock::new();
+
+#[cfg(feature = "cairo_native")]
+/// Initialize the global configuration (call once at startup)
+pub fn init_config(config: NativeConfig) -> Result<(), String> {
+    config.validate()?;
+    CONFIG.set(config).map_err(|_| "Configuration already initialized".to_string())?;
+
+    let cfg = get_config();
+    tracing::info!(
+        "🚀 Cairo Native configuration initialized: cache_dir={:?}, max_memory_cache={}, max_concurrent={}",
+        cfg.cache_dir,
+        cfg.max_memory_cache_size,
+        cfg.max_concurrent_compilations
+    );
+
+    Ok(())
+}
+
+#[cfg(feature = "cairo_native")]
+/// Get the global configuration (or default if not initialized)
+pub fn get_config() -> &'static NativeConfig {
+    CONFIG.get_or_init(|| {
+        tracing::warn!("Cairo Native config not initialized, using defaults");
+        NativeConfig::default()
+    })
+}
+
+#[cfg(test)]
+#[cfg(feature = "cairo_native")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = NativeConfig::default();
+        assert!(config.max_concurrent_compilations > 0);
+        assert!(config.compilation_timeout.as_secs() > 0);
+    }
+
+    #[test]
+    fn test_config_builder() {
+        let config =
+            NativeConfig::new().with_max_concurrent_compilations(8).with_compilation_timeout(Duration::from_secs(600));
+
+        assert_eq!(config.max_concurrent_compilations, 8);
+        assert_eq!(config.compilation_timeout.as_secs(), 600);
+    }
+
+    #[test]
+    fn test_config_validation() {
+        let mut config = NativeConfig::default();
+        config.max_concurrent_compilations = 0;
+        assert!(config.validate().is_err());
+
+        config.max_concurrent_compilations = 4;
+        config.compilation_timeout = Duration::from_secs(0);
+        assert!(config.validate().is_err());
+    }
+}

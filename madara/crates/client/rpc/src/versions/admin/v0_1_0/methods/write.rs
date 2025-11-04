@@ -2,13 +2,13 @@ use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, St
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
+use mp_block::header::CustomHeader;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use mp_block::header::CustomHeader;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -89,13 +89,13 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         l1_handler_message: L1HandlerTransactionWithFee,
     ) -> RpcResult<L1HandlerTransactionResult> {
-            Ok(self
-                .block_prod_handle
-                .as_ref()
-                .unwrap()
-                .submit_l1_handler_transaction(l1_handler_message)
-                .await
-                .map_err(StarknetRpcApiError::from)?)
+        Ok(self
+            .block_prod_handle
+            .as_ref()
+            .unwrap()
+            .submit_l1_handler_transaction(l1_handler_message)
+            .await
+            .map_err(StarknetRpcApiError::from)?)
     }
 
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()> {

@@ -143,7 +143,9 @@ impl FlattenedSierraClass {
             patch: sierra_version.2 as _,
         };
         let sierra = v2::to_cairo_lang(self);
-        let program = sierra.extract_sierra_program().unwrap();
+        let program = sierra.extract_sierra_program().map_err(|e| {
+            ClassCompilationError::ExtractSierraProgramFailed(format!("Failed to extract Sierra program: {}", e))
+        })?;
 
         let executor = AotContractExecutor::new_into(
             &program,
@@ -153,8 +155,10 @@ impl FlattenedSierraClass {
             cairo_native::OptLevel::Default,
             None, // Statistics
         )
-        .unwrap()
-        .unwrap();
+        .map_err(ClassCompilationError::NativeCompilationFailed)?
+        .ok_or(ClassCompilationError::ExtractSierraProgramFailed(
+            "Cairo native compilation returned None (file lock held by another process)".into(),
+        ))?;
 
         Ok(executor)
     }

@@ -1,15 +1,15 @@
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
+use mp_block::header::CustomHeader;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
+use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
-use mp_block::header::CustomHeader;
-use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -61,12 +61,14 @@ pub trait MadaraWriteRpcApi {
 
     /// Submit a L1 message into the bypass input stream
     #[method(name = "addL1HandlerMessage")]
-    async fn add_l1_handler_message(&self, l1_handler_message: L1HandlerTransactionWithFee) -> RpcResult<L1HandlerTransactionResult>;
+    async fn add_l1_handler_message(
+        &self,
+        l1_handler_message: L1HandlerTransactionWithFee,
+    ) -> RpcResult<L1HandlerTransactionResult>;
 
     /// Sets custom headers to be used for the upcoming block
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
-
 }
 
 /// This is an admin method, so semver is different!
