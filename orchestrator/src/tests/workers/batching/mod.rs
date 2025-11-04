@@ -29,6 +29,9 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     let mut database = MockDatabaseClient::new();
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
+
+    let provider_url = format!("http://localhost:{}", server.port());
+
     let start_block;
     let end_block;
 
@@ -143,15 +146,24 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
 
     let mut prover_client = MockProverClient::new();
     if !has_existing_batch {
-        prover_client.expect_submit_task().times(1).returning(|_| Ok("bucket_id".to_string()));
+        prover_client.expect_submit_task().times(2).returning(|_| Ok("bucket_id".to_string()));
     }
+
+    // Mock builtin weights calls for each block
+    let builtin_weights = get_dummy_builtin_weights();
+    server.mock(|when, then| {
+        when.path("/").body_includes("madara_V0_1_0_getBlockBuiltinWeights");
+        then.status(200)
+            .body(serde_json::to_vec(&json!({ "id": 1,"jsonrpc":"2.0","result": builtin_weights })).unwrap());
+    });
 
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
-        .configure_database(database.into())
-        .configure_storage_client(storage.into())
         .configure_prover_client(prover_client.into())
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
         .configure_lock_client(lock.into())
+        .configure_madara_admin_rpc_url(&provider_url)
         .build()
         .await;
 
@@ -170,6 +182,8 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let mut database = MockDatabaseClient::new();
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
+
+    let provider_url = format!("http://localhost:{}", server.port());
 
     let existing_aggregator_batch = crate::types::batch::AggregatorBatch {
         index: 1,
@@ -306,6 +320,14 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let mut prover_client = MockProverClient::new();
     prover_client.expect_submit_task().times(2).returning(|_| Ok("new_bucket_id".to_string()));
 
+    // Mock builtin weights calls for each block
+    let builtin_weights = get_dummy_builtin_weights();
+    server.mock(|when, then| {
+        when.path("/").body_includes("madara_V0_1_0_getBlockBuiltinWeights");
+        then.status(200)
+            .body(serde_json::to_vec(&json!({ "id": 1,"jsonrpc":"2.0","result": builtin_weights })).unwrap());
+    });
+
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
         .configure_database(database.into())
@@ -314,6 +336,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         .configure_lock_client(lock.into())
         .configure_min_block_to_process(0)
         .configure_max_block_to_process(Some(10))
+        .configure_madara_admin_rpc_url(&provider_url)
         .build()
         .await;
 
