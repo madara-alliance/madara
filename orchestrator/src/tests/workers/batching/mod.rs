@@ -399,8 +399,7 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
     // Mock builtin weights calls for each block
     let builtin_weights = get_dummy_builtin_weights();
     server.mock(|when, then| {
-        when.method(httpmock::Method::GET)
-            .path("/feeder_gateway/get_block_bouncer_weights");
+        when.method(httpmock::Method::GET).path("/feeder_gateway/get_block_bouncer_weights");
         then.status(200)
             .header("Content-Type", "application/json")
             .body(serde_json::to_vec(&json!({ "bouncer_weights": builtin_weights })).unwrap());

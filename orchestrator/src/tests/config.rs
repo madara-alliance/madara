@@ -341,7 +341,7 @@ impl TestConfigBuilder {
             params.orchestrator_params.batching_config.max_blocks_per_snos_batch = max_blocks_per_snos_batch;
         }
 
-        let rest_client = RestClient::new( params.orchestrator_params.madara_feeder_gateway_url.clone());
+        let rest_client = RestClient::new(params.orchestrator_params.madara_feeder_gateway_url.clone());
 
         let config = Arc::new(Config::new(
             layer.unwrap_or(Layer::L2),
