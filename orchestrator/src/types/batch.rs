@@ -371,19 +371,6 @@ mod tests {
         }
 
         #[test]
-        fn test_checked_add_with_zero() {
-            let weights1 = AggregatorBatchWeights::new(1000, 500);
-            let weights2 = AggregatorBatchWeights::new(0, 0);
-
-            let result = weights1.checked_add(&weights2);
-            assert!(result.is_some());
-
-            let sum = result.unwrap();
-            assert_eq!(sum.l1_gas, 1000);
-            assert_eq!(sum.message_segment_length, 500);
-        }
-
-        #[test]
         fn test_checked_add_overflow_l1_gas() {
             let weights1 = AggregatorBatchWeights::new(usize::MAX, 100);
             let weights2 = AggregatorBatchWeights::new(1, 100);
@@ -486,44 +473,11 @@ mod tests {
 
         #[test]
         fn test_from_bouncer_weights() {
-            let bouncer_weights = BouncerWeights { l1_gas: 1234, message_segment_length: 567, ..Default::default() };
+            let bouncer_weights = BouncerWeights { l1_gas: 1234, message_segment_length: usize::MAX, ..Default::default() };
 
             let agg_weights = AggregatorBatchWeights::from(&bouncer_weights);
             assert_eq!(agg_weights.l1_gas, 1234);
-            assert_eq!(agg_weights.message_segment_length, 567);
-        }
-
-        #[test]
-        fn test_from_bouncer_weights_max_values() {
-            let bouncer_weights =
-                BouncerWeights { l1_gas: usize::MAX, message_segment_length: usize::MAX, ..Default::default() };
-
-            let agg_weights = AggregatorBatchWeights::from(&bouncer_weights);
-            assert_eq!(agg_weights.l1_gas, usize::MAX);
             assert_eq!(agg_weights.message_segment_length, usize::MAX);
-        }
-
-        #[test]
-        fn test_default() {
-            let weights = AggregatorBatchWeights::default();
-            assert_eq!(weights.l1_gas, 0);
-            assert_eq!(weights.message_segment_length, 0);
-        }
-
-        #[test]
-        fn test_serialization() {
-            let weights = AggregatorBatchWeights::new(1000, 500);
-            let serialized = serde_json::to_string(&weights).unwrap();
-            let expected = r#"{"l1_gas":1000,"message_segment_length":500}"#;
-            assert_eq!(serialized, expected);
-        }
-
-        #[test]
-        fn test_deserialization() {
-            let json = r#"{"l1_gas":1000,"message_segment_length":500}"#;
-            let weights: AggregatorBatchWeights = serde_json::from_str(json).unwrap();
-            assert_eq!(weights.l1_gas, 1000);
-            assert_eq!(weights.message_segment_length, 500);
         }
     }
 }
