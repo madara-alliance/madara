@@ -1,6 +1,7 @@
 #[cfg(feature = "testing")]
 use alloy::providers::RootProvider;
 
+use crate::utils::rest_client::RestClient;
 use anyhow::Context;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_atlantic_service::AtlanticProverService;
@@ -101,7 +102,7 @@ versions!((V0_13_2, "0.13.2"), (V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
-    pub madara_admin_rpc_url: Url,
+    pub madara_feeder_gateway_url: Url,
     pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
     pub batching_config: BatchingParams,
@@ -127,9 +128,9 @@ pub struct Config {
     /// The orchestrator config
     pub params: ConfigParam,
     /// The Madara client to get data from the node
-    madara_client: Arc<JsonRpcClient<HttpTransport>>,
-    /// The Madara admin client for admin operations
-    madara_admin_client: Arc<JsonRpcClient<HttpTransport>>,
+    madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
+    /// The Madara feeder gateway client for fetching builtins
+    madara_feeder_gateway_client: Arc<RestClient>,
     /// The DA client to interact with the DA layer
     da_client: Box<dyn DaClient>,
     /// The service that produces proof and registers it onchain
@@ -154,8 +155,8 @@ impl Config {
     pub(crate) fn new(
         layer: Layer,
         params: ConfigParam,
-        madara_client: Arc<JsonRpcClient<HttpTransport>>,
-        madara_admin_client: Arc<JsonRpcClient<HttpTransport>>,
+        madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
+        madara_feeder_gateway_client: Arc<RestClient>,
         database: Box<dyn DatabaseClient>,
         storage: Box<dyn StorageClient>,
         lock: Box<dyn LockClient>,
@@ -168,8 +169,8 @@ impl Config {
         Self {
             layer,
             params,
-            madara_client,
-            madara_admin_client,
+            madara_rpc_client,
+            madara_feeder_gateway_client,
             database,
             lock,
             storage,
@@ -206,8 +207,8 @@ impl Config {
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
-            madara_admin_rpc_url: run_cmd
-                .madara_admin_rpc_url
+            madara_feeder_gateway_url: run_cmd
+                .madara_feeder_gateway_url
                 .clone()
                 .unwrap_or_else(|| run_cmd.madara_rpc_url.clone()),
             madara_version: run_cmd.madara_version,
@@ -223,7 +224,7 @@ impl Config {
             bouncer_weights_limit: Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
-        let admin_rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_admin_rpc_url.clone()));
+        let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
 
         let database = Self::build_database_client(&db).await?;
         let lock = Self::build_lock_client(&db).await?;
@@ -244,8 +245,8 @@ impl Config {
         Ok(Self {
             layer,
             params,
-            madara_client: Arc::new(rpc_client),
-            madara_admin_client: Arc::new(admin_rpc_client),
+            madara_rpc_client: Arc::new(rpc_client),
+            madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
             database,
             lock,
             storage,
@@ -410,13 +411,13 @@ impl Config {
     }
 
     /// Returns the Madara client
-    pub fn madara_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
-        &self.madara_client
+    pub fn madara_rpc_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
+        &self.madara_rpc_client
     }
 
-    /// Returns the Madara admin client
-    pub fn madara_admin_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
-        &self.madara_admin_client
+    /// Returns the Madara feeder gateway client
+    pub fn madara_feeder_gateway_client(&self) -> &Arc<RestClient> {
+        &self.madara_feeder_gateway_client
     }
 
     /// Returns the server config
