@@ -415,7 +415,7 @@ impl Config {
         &self.madara_rpc_client
     }
 
-    /// Returns the Madara admin client
+    /// Returns the Madara feeder gateway client
     pub fn madara_feeder_gateway_client(&self) -> &Arc<RestClient> {
         &self.madara_feeder_gateway_client
     }

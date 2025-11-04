@@ -95,7 +95,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         // Only allow revert when in full node mode
         if self.ctx.service_status(MadaraServiceId::BlockProduction).is_off() {
             self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
-            // TODO(heemankv, 04-11-25): We should spend time in ruling out the two sources of truth problem for CHainTip
+            // TODO(heemankv, 04-11-25): We should spend time in ruling out the two sources of truth problem for ChainTip
             // For now, we have to manually fetch Chain Tip from DB and update this in backend
             let fresh_chain_tip = self.backend.db.get_chain_tip().unwrap();
             let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
