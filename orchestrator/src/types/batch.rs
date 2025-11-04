@@ -69,7 +69,7 @@ pub struct SnosBatchUpdates {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AggregatorBatchWeights {
-    pub gas: usize,
+    pub l1_gas: usize,
     pub message_segment_length: usize,
 }
 
@@ -157,20 +157,20 @@ pub struct AggregatorBatch {
 }
 
 impl AggregatorBatchWeights {
-    pub fn new(gas: usize, message_segment_length: usize) -> Self {
-        Self { gas, message_segment_length }
+    pub fn new(l1_gas: usize, message_segment_length: usize) -> Self {
+        Self { l1_gas, message_segment_length }
     }
 
     pub fn checked_add(&self, other: &AggregatorBatchWeights) -> Option<AggregatorBatchWeights> {
         Some(Self {
-            gas: self.gas.checked_add(other.gas)?,
+            l1_gas: self.l1_gas.checked_add(other.l1_gas)?,
             message_segment_length: self.message_segment_length.checked_add(other.message_segment_length)?,
         })
     }
 
     pub fn checked_sub(&self, other: &AggregatorBatchWeights) -> Option<AggregatorBatchWeights> {
         Some(Self {
-            gas: self.gas.checked_sub(other.gas)?,
+            l1_gas: self.l1_gas.checked_sub(other.l1_gas)?,
             message_segment_length: self.message_segment_length.checked_sub(other.message_segment_length)?,
         })
     }
@@ -178,7 +178,7 @@ impl AggregatorBatchWeights {
 
 impl From<&BouncerWeights> for AggregatorBatchWeights {
     fn from(weights: &BouncerWeights) -> Self {
-        Self { gas: weights.l1_gas, message_segment_length: weights.message_segment_length }
+        Self { l1_gas: weights.l1_gas, message_segment_length: weights.message_segment_length }
     }
 }
 
