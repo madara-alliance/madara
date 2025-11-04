@@ -118,7 +118,7 @@ impl DAJobHandler {
 
             if nonce.is_none() && !storage_entries.is_empty() && address != Felt::ONE {
                 let get_current_nonce_result = config
-                    .madara_client()
+                    .madara_rpc_client()
                     .get_nonce(BlockId::Number(block_no), address)
                     .await
                     .map_err(|e| JobError::ProviderError(format!("Failed to get nonce : {}", e)))?;
@@ -218,7 +218,7 @@ impl JobHandlerTrait for DAJobHandler {
         let block_no = job.internal_id.parse::<u64>()?;
 
         let state_update = config
-            .madara_client()
+            .madara_rpc_client()
             .get_state_update(BlockId::Number(block_no))
             .await
             .map_err(|e| JobError::ProviderError(e.to_string()))?;
