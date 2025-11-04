@@ -135,7 +135,7 @@ impl FlattenedSierraClass {
     }
 
     #[cfg(feature = "cairo_native")]
-    pub fn compile_to_native(&self) -> Result<AotContractExecutor, ClassCompilationError> {
+    pub fn compile_to_native(&self, path: &std::path::Path) -> Result<AotContractExecutor, ClassCompilationError> {
         let sierra_version = parse_sierra_version(&self.sierra_program)?;
         let sierra_version = casm_classes_v2::compiler_version::VersionId {
             major: sierra_version.0 as _,
@@ -143,17 +143,18 @@ impl FlattenedSierraClass {
             patch: sierra_version.2 as _,
         };
         let sierra = v2::to_cairo_lang(self);
-        let program = sierra
-            .extract_sierra_program()
-            .map_err(|e| ClassCompilationError::ExtractSierraProgramFailed(e.to_string()))?;
+        let program = sierra.extract_sierra_program().unwrap();
 
-        let executor = AotContractExecutor::new(
+        let executor = AotContractExecutor::new_into(
             &program,
             &sierra.entry_points_by_type,
             sierra_version,
+            path,
             cairo_native::OptLevel::Default,
+            None, // Statistics
         )
-        .map_err(ClassCompilationError::NativeCompilationFailed)?;
+        .unwrap()
+        .unwrap();
 
         Ok(executor)
     }
