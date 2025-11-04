@@ -30,6 +30,12 @@ fn get_native_cache_path(class_hash: &starknet_types_core::felt::Felt) -> PathBu
     // Try environment variable first, fall back to default
     let base_path = std::env::var("MADARA_NATIVE_CLASSES_PATH")
         .unwrap_or_else(|_| "/usr/share/madara/data/classes".to_string());
+    
+    static LOGGED_PATH: std::sync::Once = std::sync::Once::new();
+    LOGGED_PATH.call_once(|| {
+        tracing::info!("🚀 Cairo Native feature enabled - native classes cache directory: {}", base_path);
+    });
+    
     Path::new(&base_path).join(format!("{:#x}.so", class_hash))
 }
 
@@ -60,7 +66,11 @@ fn spawn_native_compilation(
         }
 
         let start = std::time::Instant::now();
-        tracing::info!("Starting async native compilation for class {:#x}", class_hash);
+        tracing::info!(
+            "🔧 [Cairo Native] Starting background compilation for class {:#x} -> {}",
+            class_hash,
+            path.display()
+        );
 
         let sierra_clone = sierra.clone();
         let path_clone = path.clone();
@@ -72,7 +82,7 @@ fn spawn_native_compilation(
             Ok(Ok(executor)) => {
                 let elapsed = start.elapsed();
                 tracing::info!(
-                    "Native compilation completed for class {:#x} in {:?}",
+                    "✅ [Cairo Native] Compilation successful for class {:#x} in {:?} - saved to disk",
                     class_hash,
                     elapsed
                 );
@@ -86,20 +96,25 @@ fn spawn_native_compilation(
                     if let Ok(blockifier_compiled_class) = (casm, sierra_version).try_into() {
                         let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
                         NATIVE_CACHE.insert(class_hash, Arc::new(native_class));
-                        tracing::debug!("Cached native class {:#x}", class_hash);
+                        let cache_size = NATIVE_CACHE.len();
+                        tracing::info!(
+                            "💾 [Cairo Native] Cached native class {:#x} in memory (cache size: {})",
+                            class_hash,
+                            cache_size
+                        );
                     }
                 }
             }
             Ok(Err(e)) => {
                 tracing::warn!(
-                    "Failed to compile class {:#x} to native: {:#}",
+                    "⚠️  [Cairo Native] Compilation failed for class {:#x}: {:#}",
                     class_hash,
                     e
                 );
             }
             Err(e) => {
                 tracing::error!(
-                    "Native compilation task panicked for class {:#x}: {:#}",
+                    "❌ [Cairo Native] Compilation task panicked for class {:#x}: {:#}",
                     class_hash,
                     e
                 );
@@ -131,14 +146,23 @@ impl TryFrom<&ConvertedClass> for RunnableCompiledClass {
                 {
                     // Check in-memory cache first
                     if let Some(cached) = NATIVE_CACHE.get(class_hash) {
-                        tracing::debug!("Using cached native class {:#x}", class_hash);
+                        let cache_size = NATIVE_CACHE.len();
+                        tracing::info!(
+                            "⚡ [Cairo Native] Using in-memory cached native class {:#x} (cache size: {})",
+                            class_hash,
+                            cache_size
+                        );
                         return Ok(RunnableCompiledClass::from(cached.value().as_ref().clone()));
                     }
 
                     // Try to load from disk synchronously (fast path)
                     let path = get_native_cache_path(class_hash);
                     if let Ok(Some(executor)) = AotContractExecutor::from_path(&path) {
-                        tracing::debug!("Loaded native class {:#x} from disk (sync)", class_hash);
+                        tracing::info!(
+                            "📁 [Cairo Native] Loaded native class {:#x} from disk: {}",
+                            class_hash,
+                            path.display()
+                        );
                         
                         let sierra_version = info.contract_class.sierra_version().map_err(|_| {
                             ProgramError::Parse(serde_json::Error::custom("Failed to get sierra version from program"))
@@ -153,21 +177,27 @@ impl TryFrom<&ConvertedClass> for RunnableCompiledClass {
                         let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
                         
                         NATIVE_CACHE.insert(*class_hash, Arc::new(native_class.clone()));
+                        tracing::debug!("[Cairo Native] Added class {:#x} to in-memory cache", class_hash);
                         return Ok(RunnableCompiledClass::from(native_class));
                     }
 
                     // Not in cache and not on disk - spawn async compilation and fall back to VM
-                    tracing::info!(
-                        "Native class {:#x} not cached, falling back to VM and compiling in background",
-                        class_hash
-                    );
-
-                    // Only spawn if not already compiling
-                    if !COMPILATION_IN_PROGRESS.contains_key(class_hash) {
+                    let is_already_compiling = COMPILATION_IN_PROGRESS.contains_key(class_hash);
+                    if is_already_compiling {
+                        tracing::info!(
+                            "🔄 [Cairo Native] Class {:#x} already compiling, using VM for now",
+                            class_hash
+                        );
+                    } else {
+                        tracing::info!(
+                            "🔄 [Cairo Native] Class {:#x} not cached - spawning background compilation, using VM for now",
+                            class_hash
+                        );
                         spawn_native_compilation(*class_hash, Arc::new(sierra.clone()));
                     }
 
                     // Fall back to cairo-vm (CASM execution)
+                    tracing::debug!("🐪 [Cairo VM] Executing class {:#x} with Cairo VM", class_hash);
                     let sierra_version = info.contract_class.sierra_version().map_err(|_| {
                         ProgramError::Parse(serde_json::Error::custom("Failed to get sierra version from program"))
                     })?;
