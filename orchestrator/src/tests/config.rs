@@ -131,8 +131,8 @@ pub struct TestConfigBuilder {
     madara_version: Option<StarknetVersion>,
     /// Layer
     layer: Option<Layer>,
-    /// Madara Admin RPC URL
-    madara_admin_rpc_url: Option<String>,
+    /// Madara Feeder Gateway URL
+    madara_feeder_gateway_url: Option<String>,
     /// Max blocks to keep per SNOS batch
     max_blocks_per_snos_batch: Option<Option<u64>>,
 }
@@ -169,7 +169,7 @@ impl TestConfigBuilder {
             max_block_to_process: None,
             madara_version: None,
             layer: None,
-            madara_admin_rpc_url: None,
+            madara_feeder_gateway_url: None,
             max_blocks_per_snos_batch: None,
         }
     }
@@ -249,8 +249,8 @@ impl TestConfigBuilder {
         self
     }
 
-    pub fn configure_madara_admin_rpc_url(mut self, madara_admin_rpc_url: &str) -> TestConfigBuilder {
-        self.madara_admin_rpc_url = Some(String::from(madara_admin_rpc_url));
+    pub fn configure_madara_feeder_gateway_url(mut self, madara_feeder_gateway_url: &str) -> TestConfigBuilder {
+        self.madara_feeder_gateway_url = Some(String::from(madara_feeder_gateway_url));
         self
     }
 
@@ -283,7 +283,7 @@ impl TestConfigBuilder {
             max_block_to_process,
             madara_version,
             layer,
-            madara_admin_rpc_url,
+            madara_feeder_gateway_url,
             max_blocks_per_snos_batch,
         } = self;
 
@@ -334,15 +334,14 @@ impl TestConfigBuilder {
         if let Some(madara_version) = madara_version {
             params.orchestrator_params.madara_version = madara_version;
         }
-        if let Some(madara_admin_rpc_url) = madara_admin_rpc_url {
-            params.orchestrator_params.madara_feeder_gateway_url = Url::parse(&madara_admin_rpc_url).unwrap();
+        if let Some(madara_feeder_gateway_url) = madara_feeder_gateway_url {
+            params.orchestrator_params.madara_feeder_gateway_url = Url::parse(&madara_feeder_gateway_url).unwrap();
         }
         if let Some(max_blocks_per_snos_batch) = max_blocks_per_snos_batch {
             params.orchestrator_params.batching_config.max_blocks_per_snos_batch = max_blocks_per_snos_batch;
         }
 
-        // It's fine to use dummy for tests as it's not being used.
-        let rest_client = RestClient::new(Url::parse("http://localhost:9944").unwrap());
+        let rest_client = RestClient::new( params.orchestrator_params.madara_feeder_gateway_url.clone());
 
         let config = Arc::new(Config::new(
             layer.unwrap_or(Layer::L2),
