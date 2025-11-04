@@ -243,7 +243,7 @@ async fn main() -> anyhow::Result<()> {
     .context("Starting madara backend")?;
 
     let chain_tip = backend.db.get_chain_tip().expect("Chain tip should have been fetched.");
-    tracing::info!("💼 Chain is at {:?}", chain_tip);
+    tracing::info!("💼 Starting chain with block: {:?}", chain_tip);
 
     let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 

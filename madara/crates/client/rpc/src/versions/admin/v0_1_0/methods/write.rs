@@ -102,7 +102,9 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             self.backend.chain_tip.send_replace(backend_chain_tip);
             Ok(())
         } else {
-            Err(StarknetRpcApiError::UnimplementedMethod.into())
+            Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method is only available in full node mode".to_string().into()
+            })?
         }
     }
     
