@@ -342,3 +342,188 @@ impl SnosBatch {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod aggregator_batch_weights_tests {
+        use super::*;
+
+        #[test]
+        fn test_new() {
+            let weights = AggregatorBatchWeights::new(1000, 500);
+            assert_eq!(weights.l1_gas, 1000);
+            assert_eq!(weights.message_segment_length, 500);
+        }
+
+        #[test]
+        fn test_checked_add_success() {
+            let weights1 = AggregatorBatchWeights::new(1000, 500);
+            let weights2 = AggregatorBatchWeights::new(2000, 300);
+
+            let result = weights1.checked_add(&weights2);
+            assert!(result.is_some());
+
+            let sum = result.unwrap();
+            assert_eq!(sum.l1_gas, 3000);
+            assert_eq!(sum.message_segment_length, 800);
+        }
+
+        #[test]
+        fn test_checked_add_with_zero() {
+            let weights1 = AggregatorBatchWeights::new(1000, 500);
+            let weights2 = AggregatorBatchWeights::new(0, 0);
+
+            let result = weights1.checked_add(&weights2);
+            assert!(result.is_some());
+
+            let sum = result.unwrap();
+            assert_eq!(sum.l1_gas, 1000);
+            assert_eq!(sum.message_segment_length, 500);
+        }
+
+        #[test]
+        fn test_checked_add_overflow_l1_gas() {
+            let weights1 = AggregatorBatchWeights::new(usize::MAX, 100);
+            let weights2 = AggregatorBatchWeights::new(1, 100);
+
+            let result = weights1.checked_add(&weights2);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_checked_add_overflow_message_segment_length() {
+            let weights1 = AggregatorBatchWeights::new(100, usize::MAX);
+            let weights2 = AggregatorBatchWeights::new(100, 1);
+
+            let result = weights1.checked_add(&weights2);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_checked_add_max_values() {
+            let weights1 = AggregatorBatchWeights::new(usize::MAX / 2, usize::MAX / 2);
+            let weights2 = AggregatorBatchWeights::new(usize::MAX / 2, usize::MAX / 2);
+
+            let result = weights1.checked_add(&weights2);
+            assert!(result.is_some());
+
+            let sum = result.unwrap();
+            assert_eq!(sum.l1_gas, usize::MAX - 1);
+            assert_eq!(sum.message_segment_length, usize::MAX - 1);
+        }
+
+        #[test]
+        fn test_checked_sub_success() {
+            let weights1 = AggregatorBatchWeights::new(2000, 500);
+            let weights2 = AggregatorBatchWeights::new(1000, 300);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_some());
+
+            let diff = result.unwrap();
+            assert_eq!(diff.l1_gas, 1000);
+            assert_eq!(diff.message_segment_length, 200);
+        }
+
+        #[test]
+        fn test_checked_sub_with_zero() {
+            let weights1 = AggregatorBatchWeights::new(1000, 500);
+            let weights2 = AggregatorBatchWeights::new(0, 0);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_some());
+
+            let diff = result.unwrap();
+            assert_eq!(diff.l1_gas, 1000);
+            assert_eq!(diff.message_segment_length, 500);
+        }
+
+        #[test]
+        fn test_checked_sub_equal_values() {
+            let weights1 = AggregatorBatchWeights::new(1000, 500);
+            let weights2 = AggregatorBatchWeights::new(1000, 500);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_some());
+
+            let diff = result.unwrap();
+            assert_eq!(diff.l1_gas, 0);
+            assert_eq!(diff.message_segment_length, 0);
+        }
+
+        #[test]
+        fn test_checked_sub_underflow_l1_gas() {
+            let weights1 = AggregatorBatchWeights::new(100, 500);
+            let weights2 = AggregatorBatchWeights::new(200, 300);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_checked_sub_underflow_message_segment_length() {
+            let weights1 = AggregatorBatchWeights::new(500, 100);
+            let weights2 = AggregatorBatchWeights::new(300, 200);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_checked_sub_from_max() {
+            let weights1 = AggregatorBatchWeights::new(usize::MAX, usize::MAX);
+            let weights2 = AggregatorBatchWeights::new(1, 1);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_some());
+
+            let diff = result.unwrap();
+            assert_eq!(diff.l1_gas, usize::MAX - 1);
+            assert_eq!(diff.message_segment_length, usize::MAX - 1);
+        }
+
+        #[test]
+        fn test_from_bouncer_weights() {
+            let bouncer_weights = BouncerWeights { l1_gas: 1234, message_segment_length: 567, ..Default::default() };
+
+            let agg_weights = AggregatorBatchWeights::from(&bouncer_weights);
+            assert_eq!(agg_weights.l1_gas, 1234);
+            assert_eq!(agg_weights.message_segment_length, 567);
+        }
+
+        #[test]
+        fn test_from_bouncer_weights_max_values() {
+            let bouncer_weights =
+                BouncerWeights { l1_gas: usize::MAX, message_segment_length: usize::MAX, ..Default::default() };
+
+            let agg_weights = AggregatorBatchWeights::from(&bouncer_weights);
+            assert_eq!(agg_weights.l1_gas, usize::MAX);
+            assert_eq!(agg_weights.message_segment_length, usize::MAX);
+        }
+
+        #[test]
+        fn test_default() {
+            let weights = AggregatorBatchWeights::default();
+            assert_eq!(weights.l1_gas, 0);
+            assert_eq!(weights.message_segment_length, 0);
+        }
+
+        #[test]
+        fn test_serialization() {
+            let weights = AggregatorBatchWeights::new(1000, 500);
+            let serialized = serde_json::to_string(&weights).unwrap();
+            let expected = r#"{"l1_gas":1000,"message_segment_length":500}"#;
+            assert_eq!(serialized, expected);
+        }
+
+        #[test]
+        fn test_deserialization() {
+            let json = r#"{"l1_gas":1000,"message_segment_length":500}"#;
+            let weights: AggregatorBatchWeights = serde_json::from_str(json).unwrap();
+            assert_eq!(weights.l1_gas, 1000);
+            assert_eq!(weights.message_segment_length, 500);
+        }
+    }
+}
