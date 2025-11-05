@@ -139,13 +139,19 @@ pub fn init_config(config: NativeConfig) -> Result<(), String> {
     CONFIG.set(config).map_err(|_| "Configuration already initialized".to_string())?;
 
     let cfg = get_config();
-    tracing::info!(
-        "🚀 Cairo Native configuration initialized: cache_dir={:?}, max_memory_cache={}, max_concurrent={}, mode={:?}",
-        cfg.cache_dir,
-        cfg.max_memory_cache_size,
-        cfg.max_concurrent_compilations,
-        cfg.compilation_mode
-    );
+    if cfg.enable_native_execution {
+        tracing::info!(
+            "🚀 Cairo Native ENABLED: cache_dir={:?}, max_memory_cache={}, max_concurrent={}, mode={:?}",
+            cfg.cache_dir,
+            cfg.max_memory_cache_size,
+            cfg.max_concurrent_compilations,
+            cfg.compilation_mode
+        );
+    } else {
+        tracing::info!(
+            "🐪 Cairo Native DISABLED: All contracts will use Cairo VM execution"
+        );
+    }
 
     Ok(())
 }

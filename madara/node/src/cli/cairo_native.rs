@@ -7,7 +7,13 @@ use std::time::Duration;
 pub struct CairoNativeParams {
     /// Enable Cairo Native execution.
     /// When disabled, all contracts will use Cairo VM execution regardless of cache.
-    #[clap(env = "MADARA_ENABLE_NATIVE_EXECUTION", long, default_value = "true")]
+    #[clap(
+        env = "MADARA_ENABLE_NATIVE_EXECUTION",
+        long,
+        default_value = "true",
+        action = clap::ArgAction::Set,
+        value_name = "BOOL"
+    )]
     pub enable_native_execution: bool,
 
     /// Directory path for storing compiled native classes.
