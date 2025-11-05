@@ -32,7 +32,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         l1_gas_quote: &L1GasQuote,
         previous_strk_l2_gas_price: u128,
         previous_l2_gas_used: u128,
-    ) -> anyhow::Result<GasPrices> {
+    ) -> Result<GasPrices> {
         let eth_l1_gas_price = l1_gas_quote.l1_gas_price;
         let eth_l1_data_gas_price = l1_gas_quote.l1_data_gas_price;
         let strk_per_eth = {
@@ -46,17 +46,26 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
             .to_u128()
             .context("Failed to convert STRK L1 data gas price to u128")?;
 
-        let l2_gas_target = self.chain_config().l2_gas_target;
-        let max_change_denominator = self.chain_config().l2_gas_price_max_change_denominator;
-        let strk_l2_gas_price = calculate_gas_price(
-            previous_strk_l2_gas_price,
-            previous_l2_gas_used,
-            l2_gas_target,
-            max_change_denominator,
-        )?
-        .max(self.chain_config().min_l2_gas_price);
+        let strk_l2_gas_price = match self.chain_config.override_strk_l2_gas_price {
+            Some(l2_gas_price) => {
+                tracing::info!("Override override_strk_l2_gas_price to {}", l2_gas_price);
+                l2_gas_price
+            },
+            None => {
+                let l2_gas_target = self.chain_config().l2_gas_target;
+                let max_change_denominator = self.chain_config().l2_gas_price_max_change_denominator;
+                calculate_gas_price(
+                    previous_strk_l2_gas_price,
+                    previous_l2_gas_used,
+                    l2_gas_target,
+                    max_change_denominator,
+                )?
+                .max(self.chain_config().min_l2_gas_price)
+            }
+        };
+
         if strk_per_eth.is_zero() {
-            anyhow::bail!("STRK per ETH is zero, cannot calculate gas prices")
+            bail!("STRK per ETH is zero, cannot calculate gas prices")
         }
         let eth_l2_gas_price = (&bigdecimal::BigDecimal::from(strk_l2_gas_price) / &strk_per_eth)
             .to_u128()
@@ -82,8 +91,9 @@ fn calculate_gas_price(
     ensure!(max_change_denominator > 0, "max_change_denominator must be greater than 0");
     ensure!(target_gas_used > 0, "target_gas_used must be greater than 0");
     let delta = previous_gas_used.abs_diff(target_gas_used);
-    let price_change = ((U256::from(previous_gas_price)).saturating_mul(U256::from(delta)))
-        .checked_div(U256::from((target_gas_used).saturating_mul(max_change_denominator)))
+    let price_change = U256::from(previous_gas_price)
+        .saturating_mul(U256::from(delta))
+        .checked_div(U256::from(target_gas_used.saturating_mul(max_change_denominator)))
         .context("Failed to calculate price change")?
         .try_into()
         .map_err(|err: &str| anyhow::anyhow!(err))

@@ -189,6 +189,9 @@ pub struct ChainConfig {
     /// The maximum change in l2 gas price per block. This is used to ensure that the l2 gas price does not change too much between blocks.
     /// EIP-1559
     pub l2_gas_price_max_change_denominator: u128,
+    /// Fixed L2 gas price.
+    /// L2 gas price calculations will not be made if this is set.
+    pub override_strk_l2_gas_price: Option<u128>,
 
     /// Configuration for parallel execution in Blockifier. Only used for block production.
     #[serde(default)]
@@ -200,7 +203,7 @@ pub struct ChainConfig {
 }
 
 impl ChainConfig {
-    pub fn from_yaml(path: &Path) -> anyhow::Result<Self> {
+    pub fn from_yaml(path: &Path) -> Result<Self> {
         let config_str = fs::read_to_string(path)?;
         let config_value: serde_yaml::Value =
             serde_yaml::from_str(&config_str).context("While deserializing chain config")?;
@@ -223,7 +226,7 @@ impl ChainConfig {
     }
 
     /// Verify that the chain config is valid for block production.
-    pub fn precheck_block_production(&self) -> anyhow::Result<()> {
+    pub fn precheck_block_production(&self) -> Result<()> {
         if self.sequencer_address == ContractAddress::default() {
             bail!("Sequencer address cannot be 0x0 for block production.")
         }
@@ -290,6 +293,7 @@ impl ChainConfig {
             l2_gas_target: 2_000_000_000,
             min_l2_gas_price: 100000,
             l2_gas_price_max_change_denominator: 48,
+            override_strk_l2_gas_price: None,
 
             block_production_concurrency: BlockProductionConfig::default(),
 
