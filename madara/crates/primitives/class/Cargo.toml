@@ -14,9 +14,6 @@ workspace = true
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
-[features]
-cairo_native = ["dep:cairo-native"]
-
 [dependencies]
 
 # Madara
@@ -25,7 +22,7 @@ mp-rpc = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
-cairo-native = { workspace = true, optional = true }
+cairo-native = { workspace = true }
 cairo-vm = { workspace = true }
 casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "2.12.0-dev.1" }
 casm-compiler-v1_0_0-alpha6 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
@@ -53,5 +50,13 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 starknet-providers = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 mp-convert = { workspace = true }
+rstest = { workspace = true }
+assert_matches = { workspace = true }
+tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "native_vs_vm"
+harness = false

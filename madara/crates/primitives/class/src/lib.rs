@@ -10,9 +10,7 @@ pub mod convert;
 mod into_starknet_core;
 mod into_starknet_types;
 pub mod mainnet_legacy_class_hashes;
-#[cfg(feature = "cairo_native")]
 pub mod native_config;
-#[cfg(feature = "cairo_native")]
 pub mod native_metrics;
 mod to_blockifier;
 mod to_starknet_api;

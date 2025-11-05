@@ -1,10 +1,7 @@
 /// Metrics for Cairo Native compilation and caching
-#[cfg(feature = "cairo_native")]
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-#[cfg(feature = "cairo_native")]
 use std::time::Instant;
 
-#[cfg(feature = "cairo_native")]
 #[derive(Debug, Clone, Copy)]
 pub struct CompilationTimeStats {
     pub average_ms: u64,
@@ -13,7 +10,6 @@ pub struct CompilationTimeStats {
     pub total_count: u64,
 }
 
-#[cfg(feature = "cairo_native")]
 #[derive(Debug)]
 pub struct NativeMetrics {
     // Cache metrics
@@ -39,7 +35,6 @@ pub struct NativeMetrics {
     pub cache_evictions: AtomicU64,
 }
 
-#[cfg(feature = "cairo_native")]
 impl NativeMetrics {
     pub const fn new() -> Self {
         Self {
@@ -307,30 +302,25 @@ impl NativeMetrics {
     }
 }
 
-#[cfg(feature = "cairo_native")]
 impl Default for NativeMetrics {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(feature = "cairo_native")]
 /// Global metrics instance
 static METRICS: std::sync::LazyLock<NativeMetrics> = std::sync::LazyLock::new(NativeMetrics::new);
 
-#[cfg(feature = "cairo_native")]
 /// Get the global metrics instance
 pub fn metrics() -> &'static NativeMetrics {
     &METRICS
 }
 
-#[cfg(feature = "cairo_native")]
 /// Helper to time compilation
 pub struct CompilationTimer {
     start: Instant,
 }
 
-#[cfg(feature = "cairo_native")]
 impl CompilationTimer {
     pub fn new() -> Self {
         metrics().record_compilation_start();
@@ -344,7 +334,6 @@ impl CompilationTimer {
 }
 
 #[cfg(test)]
-#[cfg(feature = "cairo_native")]
 mod tests {
     use super::*;
 

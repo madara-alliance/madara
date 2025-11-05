@@ -1,12 +1,22 @@
 /// Configuration for Cairo Native compilation and caching
-#[cfg(feature = "cairo_native")]
 use std::path::PathBuf;
-#[cfg(feature = "cairo_native")]
 use std::time::Duration;
 
-#[cfg(feature = "cairo_native")]
+/// Native compilation mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeCompilationMode {
+    /// Compile in background, use Cairo VM as fallback (production)
+    Async,
+    /// Wait for compilation, fail if compilation fails (testing/debugging)
+    Blocking,
+}
+
 #[derive(Debug, Clone)]
 pub struct NativeConfig {
+    /// Enable Cairo Native execution (runtime control)
+    /// When false, all contracts use Cairo VM regardless of cache/compilation
+    pub enable_native_execution: bool,
+
     /// Directory path for storing compiled native classes
     pub cache_dir: PathBuf,
 
@@ -22,31 +32,36 @@ pub struct NativeConfig {
     /// Maximum time to wait for a single compilation
     pub compilation_timeout: Duration,
 
-    /// Whether to enable async compilation (fallback to VM)
-    pub enable_async_compilation: bool,
+    /// Compilation mode (async or blocking)
+    pub compilation_mode: NativeCompilationMode,
 }
 
-#[cfg(feature = "cairo_native")]
 impl Default for NativeConfig {
     fn default() -> Self {
         Self {
+            enable_native_execution: true, // Native enabled by default
             cache_dir: std::env::var("MADARA_NATIVE_CLASSES_PATH")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("/usr/share/madara/data/classes")),
             max_memory_cache_size: 1000,                  // Keep up to 1000 classes in memory
             max_disk_cache_size: 10 * 1024 * 1024 * 1024, // 10 GB
             max_concurrent_compilations: 4,
-            compilation_timeout: Duration::from_secs(300), // 5 minutes
-            enable_async_compilation: true,
+            compilation_timeout: Duration::from_secs(300),  // 5 minutes
+            compilation_mode: NativeCompilationMode::Async, // Default to async
         }
     }
 }
 
-#[cfg(feature = "cairo_native")]
 impl NativeConfig {
     /// Create a new configuration with custom values
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Enable or disable native execution (runtime control)
+    pub fn with_native_execution(mut self, enabled: bool) -> Self {
+        self.enable_native_execution = enabled;
+        self
     }
 
     /// Set the cache directory
@@ -79,10 +94,15 @@ impl NativeConfig {
         self
     }
 
-    /// Enable or disable async compilation
-    pub fn with_async_compilation(mut self, enabled: bool) -> Self {
-        self.enable_async_compilation = enabled;
+    /// Set the compilation mode
+    pub fn with_compilation_mode(mut self, mode: NativeCompilationMode) -> Self {
+        self.compilation_mode = mode;
         self
+    }
+
+    /// Check if blocking mode is enabled
+    pub fn is_blocking_mode(&self) -> bool {
+        matches!(self.compilation_mode, NativeCompilationMode::Blocking)
     }
 
     /// Validate the configuration
@@ -110,11 +130,9 @@ impl NativeConfig {
     }
 }
 
-#[cfg(feature = "cairo_native")]
 /// Global configuration instance
 static CONFIG: std::sync::OnceLock<NativeConfig> = std::sync::OnceLock::new();
 
-#[cfg(feature = "cairo_native")]
 /// Initialize the global configuration (call once at startup)
 pub fn init_config(config: NativeConfig) -> Result<(), String> {
     config.validate()?;
@@ -122,16 +140,16 @@ pub fn init_config(config: NativeConfig) -> Result<(), String> {
 
     let cfg = get_config();
     tracing::info!(
-        "🚀 Cairo Native configuration initialized: cache_dir={:?}, max_memory_cache={}, max_concurrent={}",
+        "🚀 Cairo Native configuration initialized: cache_dir={:?}, max_memory_cache={}, max_concurrent={}, mode={:?}",
         cfg.cache_dir,
         cfg.max_memory_cache_size,
-        cfg.max_concurrent_compilations
+        cfg.max_concurrent_compilations,
+        cfg.compilation_mode
     );
 
     Ok(())
 }
 
-#[cfg(feature = "cairo_native")]
 /// Get the global configuration (or default if not initialized)
 pub fn get_config() -> &'static NativeConfig {
     CONFIG.get_or_init(|| {
@@ -141,7 +159,6 @@ pub fn get_config() -> &'static NativeConfig {
 }
 
 #[cfg(test)]
-#[cfg(feature = "cairo_native")]
 mod tests {
     use super::*;
 

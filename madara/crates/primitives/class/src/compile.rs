@@ -3,7 +3,6 @@ use casm_classes_v2::casm_contract_class::CasmContractClass;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_types_core::felt::Felt;
 
-#[cfg(feature = "cairo_native")]
 use cairo_native::executor::AotContractExecutor;
 
 #[derive(Debug, thiserror::Error)]
@@ -22,10 +21,8 @@ pub enum ClassCompilationError {
     BlockifierClassConstructionFailed(#[from] cairo_vm::types::errors::program_errors::ProgramError),
     #[error("Compiled class hash mismatch, expected {expected:#x} got {got:#x}")]
     CompiledClassHashMismatch { expected: Felt, got: Felt },
-    #[cfg(feature = "cairo_native")]
     #[error("Failed to compile sierra to cairo native: {0}")]
     NativeCompilationFailed(cairo_native::error::Error),
-    #[cfg(feature = "cairo_native")]
     #[error("Failed to extract sierra program")]
     ExtractSierraProgramFailed(String), // use String due to original error type Felt252SerdeError not being available publicly
 }
@@ -134,7 +131,6 @@ impl FlattenedSierraClass {
         Ok((compiled_class_hash, compiled_class))
     }
 
-    #[cfg(feature = "cairo_native")]
     pub fn compile_to_native(&self, path: &std::path::Path) -> Result<AotContractExecutor, ClassCompilationError> {
         let sierra_version = parse_sierra_version(&self.sierra_program)?;
         let sierra_version = casm_classes_v2::compiler_version::VersionId {

@@ -35,6 +35,7 @@ mc-sync = { workspace = true }
 mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
+mp-class = { workspace = true }
 mp-oracle = { workspace = true }
 mp-rpc = { workspace = true }
 mp-transactions = { workspace = true }

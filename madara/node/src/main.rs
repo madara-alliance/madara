@@ -220,6 +220,15 @@ async fn main() -> anyhow::Result<()> {
     let sys_info = SysInfo::probe();
     sys_info.show();
 
+    // Initialize Cairo Native configuration
+    run_cmd
+        .cairo_native_params
+        .validate()
+        .map_err(|e| anyhow::anyhow!("Cairo Native configuration validation failed: {}", e))?;
+    let native_config = run_cmd.cairo_native_params.to_runtime_config();
+    mp_class::native_config::init_config(native_config)
+        .map_err(|e| anyhow::anyhow!("Failed to initialize Cairo Native config: {}", e))?;
+
     // ===================================================================== //
     //                             SERVICES (SETUP)                          //
     // ===================================================================== //
