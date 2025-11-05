@@ -253,14 +253,14 @@ impl CustomFormatter {
 
         // Darker cyan for CAIRO_NATIVE prefix (more subtle)
         let cairo_native_prefix = Style::new().cyan().dim().apply_to("CAIRO_NATIVE");
-        // More muted color for class_hash (less bright than CAIRO_NATIVE) - use dim white/gray
+        // Muted color for class_hash (less prominent than CAIRO_NATIVE)
         let class_hash_style = Style::new().dim();
         let error_style = Style::new().red();
 
         // Format: timestamp + CAIRO_NATIVE + [WARN/ERROR] + message + class_hash + (optional error) + (optional timing)
         write!(writer, "{} {}", self.timestamp_fmt(ts), cairo_native_prefix)?;
 
-        // Add level prefix for WARN and ERROR only
+        // Level prefix shown for WARN and ERROR only
         match level {
             &Level::WARN => {
                 write!(writer, " {}", Style::new().yellow().apply_to("WARN"))?;
@@ -271,13 +271,13 @@ impl CustomFormatter {
             _ => {} // INFO and DEBUG don't show level prefix
         }
 
-        // Improve message clarity - add context if needed
+        // Message formatting improves clarity by capitalizing and replacing underscores
         let formatted_message = Self::format_message(message);
         write!(writer, " {}", formatted_message)?;
 
         if let Some(hash) = class_hash {
-            // Format class_hash - keep full hash but make it less prominent
-            // Remove quotes if present from Debug formatting
+            // class_hash displayed with full hash value, less prominent styling
+            // Quotes removed if present from Debug formatting
             let hash_clean = hash.trim_matches('"');
             write!(writer, " {}", class_hash_style.apply_to(format!("class_hash={}", hash_clean)))?;
         }

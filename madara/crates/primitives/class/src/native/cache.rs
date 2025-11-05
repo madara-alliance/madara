@@ -14,6 +14,13 @@ use std::time::{Duration, Instant};
 use super::config;
 use crate::SierraConvertedClass;
 
+/// Timeout for loading compiled classes from disk.
+///
+/// 2-second timeout prevents indefinite blocking when loading .so files.
+/// Important when called from blocking contexts like transaction validation.
+/// Shorter timeout ensures fast failure and fallback to VM if disk load hangs.
+const DISK_LOAD_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// In-memory cache for compiled native classes.
 ///
 /// Uses DashMap for concurrent access without locking.
@@ -52,13 +59,13 @@ pub(crate) fn get_native_cache_path(
 /// Enforce disk cache size limit by removing oldest files.
 ///
 /// Sorts all `.so` files by modification time and removes the oldest ones until
-/// the total size is below `max_size`. If `max_size` is 0, no limit is enforced.
+/// the total size is below `max_size`. If `max_size` is `None`, no limit is enforced.
 ///
-/// This should be called after each successful disk write to prevent unbounded growth.
-pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: u64) -> Result<(), std::io::Error> {
-    if max_size == 0 {
+/// Called after each successful disk write to prevent unbounded growth.
+pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64>) -> Result<(), std::io::Error> {
+    let Some(max_size) = max_size else {
         return Ok(()); // No limit
-    }
+    };
 
     let mut entries: Vec<(PathBuf, std::time::SystemTime, u64)> = Vec::new();
 
@@ -109,33 +116,35 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: u64) -> Re
 /// To minimize lock contention, we collect keys first, then remove them in a separate step.
 /// This prevents holding DashMap locks while doing expensive operations.
 ///
-/// If `max_memory_cache_size` is 0, no eviction is performed (unlimited cache).
+/// If `max_memory_cache_size` is `None`, no eviction is performed (unlimited cache).
 pub(crate) fn evict_cache_if_needed() {
     let config = config::get_config();
 
-    if config.max_memory_cache_size == 0 {
+    let Some(max_size) = config.max_memory_cache_size else {
+        // Update cache size metric only, no eviction
+        super::metrics::metrics().set_cache_size(NATIVE_CACHE.len());
         return; // No limit
-    }
+    };
 
     // Quick size check first (fast operation)
     let current_size = NATIVE_CACHE.len();
-    if current_size <= config.max_memory_cache_size {
+    if current_size <= max_size {
         // Update cache size metric only
         super::metrics::metrics().set_cache_size(current_size);
         return;
     }
 
-    let to_remove = current_size - config.max_memory_cache_size;
+    let to_remove = current_size - max_size;
     tracing::info!(
-        target: "madara.cairo_native",
-        current_size = current_size,
-        max_size = config.max_memory_cache_size,
+    target: "madara.cairo_native",
+    current_size = current_size,
+    max_size = max_size,
         evicting_count = to_remove,
-        "memory_eviction"
+    "memory_eviction"
     );
 
-    // Collect keys and access times quickly (minimize lock hold time)
-    // Clone the access times to avoid holding references during iteration
+    // Keys and access times collected quickly to minimize lock hold time
+    // Access times cloned to avoid holding references during iteration
     let mut entries: Vec<_> = {
         NATIVE_CACHE
             .iter()
@@ -147,17 +156,17 @@ pub(crate) fn evict_cache_if_needed() {
             .collect()
     };
 
-    // Sort by access time (oldest first) - this is fast, no locks held
+    // Sorted by access time (oldest first) - fast operation, no locks held
     entries.sort_by_key(|(_, access_time)| *access_time);
 
-    // Remove oldest entries (fast removals, no expensive cloning)
+    // Oldest entries removed (fast removals, no expensive cloning)
     for (key, _) in entries.into_iter().take(to_remove) {
         if NATIVE_CACHE.remove(&key).is_some() {
             super::metrics::metrics().record_cache_eviction();
         }
     }
 
-    // Update cache size metric
+    // Cache size metric updated
     super::metrics::metrics().set_cache_size(NATIVE_CACHE.len());
 }
 
@@ -171,11 +180,11 @@ pub(crate) fn try_get_from_memory_cache(class_hash: &starknet_types_core::felt::
     if let Some(cached_entry) = NATIVE_CACHE.get(class_hash) {
         let (cached_class, _) = cached_entry.value();
 
-        // Clone before dropping the reference
+        // Clone before dropping the reference to avoid holding lock during insert
         let cloned_class = cached_class.clone();
-        drop(cached_entry); // Explicitly drop the reference before insert
+        drop(cached_entry); // Reference dropped before insert to minimize lock hold time
 
-        // Update access time for LRU
+        // Access time updated for LRU eviction tracking
         NATIVE_CACHE.insert(*class_hash, (cloned_class.clone(), Instant::now()));
 
         let elapsed = start.elapsed();
@@ -290,17 +299,12 @@ pub(crate) fn try_get_from_disk_cache(
         return Ok(None);
     }
 
-    // Use a 2-second timeout to prevent indefinite blocking
-    // This is especially important when called from blocking contexts like validation
-    // Shorter timeout ensures we fail fast and fall back to VM if disk load hangs
-    const DISK_LOAD_TIMEOUT: Duration = Duration::from_secs(2);
-
     match try_load_executor_with_timeout(&path, DISK_LOAD_TIMEOUT)? {
         Some(executor) => {
             let load_elapsed = start.elapsed();
             super::metrics::metrics().record_cache_hit_disk();
 
-            // Convert to blockifier class using common logic
+            // Converted to blockifier class using common logic
             let convert_start = Instant::now();
             let blockifier_compiled_class = match crate::native::compilation::convert_sierra_to_blockifier_class(sierra)
             {
@@ -312,7 +316,7 @@ pub(crate) fn try_get_from_disk_cache(
                         error = %e,
                         "disk_hit_conversion_failed"
                     );
-                    // Try to remove corrupted file
+                    // Corrupted file removal attempted
                     let _ = std::fs::remove_file(&path);
                     return Err(ProgramError::Parse(serde::de::Error::custom(format!(
                         "Failed to convert cached class: {}",

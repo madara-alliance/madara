@@ -1,12 +1,38 @@
 //! Cairo Native execution CLI parameters
 //!
-//! This module defines the CLI arguments for configuring Cairo Native execution.
-//! These parameters are parsed from command-line arguments and environment variables,
-//! then converted to `NativeConfig` for runtime use.
+//! This module provides command-line arguments and environment variable support for
+//! configuring Cairo Native execution. Cairo Native compiles Cairo contracts to native
+//! machine code for faster execution compared to the Cairo VM.
 //!
-//! # Usage
+//! # Quick Start
 //!
-//! Add `#[clap(flatten)]` to your CLI struct to include these parameters:
+//! To enable Cairo Native execution, you must set `--enable-native-execution true`.
+//! All other parameters have sensible defaults and are optional.
+//!
+//! ```bash
+//! # Enable native execution with default settings
+//! madara --enable-native-execution true
+//!
+//! # Customize cache limits
+//! madara --enable-native-execution true \
+//!        --native-max-memory-cache 2000 \
+//!        --native-max-disk-cache-bytes 21474836480  # 20 GB
+//!
+//! # Use unlimited cache
+//! madara --enable-native-execution true \
+//!        --native-max-memory-cache unlimited
+//! ```
+//!
+//! # Configuration Methods
+//!
+//! Parameters can be set via:
+//! - Command-line arguments: `--native-max-memory-cache 2000`
+//! - Environment variables: `MADARA_NATIVE_MAX_MEMORY_CACHE=2000`
+//! - Configuration files: Serialize `CairoNativeParams` to JSON/TOML
+//!
+//! # Integration
+//!
+//! To include these parameters in your CLI application:
 //!
 //! ```rust
 //! #[derive(clap::Parser)]
@@ -15,13 +41,6 @@
 //!     pub cairo_native_params: CairoNativeParams,
 //! }
 //! ```
-//!
-//! # Important Flags
-//!
-//! - `--enable-native-execution`: Must be set to `true` to enable native execution.
-//!   Default is `false` for backward compatibility.
-//! - `--native-compilation-mode`: Choose between `async` (default) or `blocking`
-//! - `--native-cache-dir`: Override the default cache directory location
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -33,7 +52,10 @@ use mp_class::native_config::{
     DEFAULT_MEMORY_CACHE_SIZE,
 };
 
-/// Parse compilation mode string, validating it's either "async" or "blocking" (case-insensitive)
+/// Validates and normalizes compilation mode input.
+///
+/// Accepts "async" or "blocking" (case-insensitive) and returns the lowercase version.
+/// Returns an error for any other value.
 fn parse_compilation_mode(s: &str) -> Result<String, String> {
     let lower = s.to_lowercase();
     match lower.as_str() {
@@ -42,18 +64,87 @@ fn parse_compilation_mode(s: &str) -> Result<String, String> {
     }
 }
 
-/// Cairo Native execution parameters for CLI configuration.
+/// Parses a memory cache size value from user input.
 ///
-/// These parameters control Cairo Native execution behavior and can be set via:
-/// - Command-line arguments (e.g., `--enable-native-execution true`)
-/// - Environment variables (e.g., `MADARA_ENABLE_NATIVE_EXECUTION=true`)
-/// - Configuration files (via serde deserialization)
+/// Accepts:
+/// - A positive integer: the maximum number of classes to cache
+/// - "unlimited": removes the cache limit (no eviction)
 ///
-/// See module documentation for usage examples.
+/// Returns an error if the value is invalid or zero (zero is not allowed as a limit).
+fn parse_cache_size(s: &str) -> Result<usize, String> {
+    let lower = s.to_lowercase();
+    match lower.as_str() {
+        "unlimited" => Ok(usize::MAX), // Use sentinel value for unlimited
+        _ => {
+            let value = s.parse::<usize>().map_err(|e| format!("Invalid cache size '{}': {}", s, e))?;
+            if value == 0 {
+                return Err("Cache size must be greater than 0. Use 'unlimited' for unlimited cache.".to_string());
+            }
+            if value == usize::MAX {
+                return Err(format!(
+                    "Cache size cannot be {} (reserved for unlimited). Use 'unlimited' instead.",
+                    usize::MAX
+                ));
+            }
+            Ok(value)
+        }
+    }
+}
+
+/// Parses a disk cache size value from user input.
+///
+/// Accepts:
+/// - A positive integer (in bytes): the maximum disk space for cached classes
+/// - "unlimited": removes the disk cache limit (no cleanup)
+///
+/// Returns an error if the value is invalid or zero (zero is not allowed as a limit).
+fn parse_disk_cache_size(s: &str) -> Result<u64, String> {
+    let lower = s.to_lowercase();
+    match lower.as_str() {
+        "unlimited" => Ok(u64::MAX), // Use sentinel value for unlimited
+        _ => {
+            let value = s.parse::<u64>().map_err(|e| format!("Invalid disk cache size '{}': {}", s, e))?;
+            if value == 0 {
+                return Err("Disk cache size must be greater than 0. Use 'unlimited' for unlimited cache.".to_string());
+            }
+            if value == u64::MAX {
+                return Err(format!(
+                    "Disk cache size cannot be {} (reserved for unlimited). Use 'unlimited' instead.",
+                    u64::MAX
+                ));
+            }
+            Ok(value)
+        }
+    }
+}
+
+/// Configuration parameters for Cairo Native execution.
+///
+/// These parameters control how contracts are compiled and executed using Cairo Native,
+/// which provides faster execution than the Cairo VM by compiling contracts to native
+/// machine code.
+///
+/// # When to Use
+///
+/// - **Production**: Enable for better performance, use `async` mode for reliability
+/// - **Development**: Can use `blocking` mode for immediate feedback on compilation errors
+/// - **Memory-constrained**: Reduce cache sizes or use unlimited to trade memory for speed
+///
+/// # Performance Considerations
+///
+/// - Native execution is significantly faster than VM execution
+/// - Compiled classes are cached on disk and reused across restarts
+/// - Memory cache provides instant access to frequently-used classes
+/// - Larger caches improve performance but use more RAM and disk space
 #[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
 pub struct CairoNativeParams {
-    /// Enable Cairo Native execution.
-    /// When disabled, all contracts will use Cairo VM execution regardless of cache.
+    /// Enable or disable Cairo Native execution.
+    ///
+    /// When `false` (default), all contracts execute using the Cairo VM regardless of
+    /// whether native compiled versions are available. This ensures backward compatibility.
+    ///
+    /// When `true`, native-compiled contracts are used when available, falling back to
+    /// VM execution only if compilation hasn't completed yet (in async mode).
     #[clap(
         env = "MADARA_ENABLE_NATIVE_EXECUTION",
         long,
@@ -63,30 +154,69 @@ pub struct CairoNativeParams {
     )]
     pub enable_native_execution: bool,
 
-    /// Directory path for storing compiled native classes (.so files).
-    /// These files can be reused across node restarts.
-    /// Default: /usr/share/madara/data/classes
+    /// Directory where compiled native classes are stored.
+    ///
+    /// Compiled classes are saved as `.so` files (shared libraries) and persist across
+    /// node restarts, avoiding recompilation. The directory is created automatically if
+    /// it doesn't exist.
+    ///
+    /// Default: `/usr/share/madara/data/classes`
+    ///
+    /// Can also be set via the `MADARA_NATIVE_CLASSES_PATH` environment variable.
     #[clap(env = "MADARA_NATIVE_CACHE_DIR", long, value_name = "PATH")]
     pub native_cache_dir: Option<PathBuf>,
 
-    /// Maximum number of native classes to keep in memory cache.
-    /// Set to 0 for unlimited (not recommended for production).
-    /// Higher values improve performance but use more RAM.
+    /// Maximum number of compiled classes to keep in memory.
+    ///
+    /// Frequently-used classes are kept in memory for instant access. When the limit is
+    /// reached, the least recently used classes are evicted to make room for new ones.
+    ///
+    /// - **Default**: 1000 classes
+    /// - **Unlimited**: Set to `"unlimited"` to disable eviction (keeps all classes in memory)
+    /// - **Custom**: Provide any positive integer (e.g., `2000`)
+    ///
+    /// Higher values improve performance for frequently-used contracts but consume more RAM.
+    /// A class uses approximately 1-10 MB in memory depending on its size.
     #[clap(
         env = "MADARA_NATIVE_MAX_MEMORY_CACHE",
         long,
         default_value_t = DEFAULT_MEMORY_CACHE_SIZE,
+        value_parser = parse_cache_size,
         value_name = "SIZE"
     )]
     pub native_max_memory_cache_size: usize,
 
-    /// Maximum disk cache size in bytes for compiled native classes.
-    /// Set to 0 for unlimited. Old files will be cleaned up when limit is reached.
-    #[clap(env = "MADARA_NATIVE_MAX_DISK_CACHE_BYTES", long, value_name = "BYTES")]
-    pub native_max_disk_cache_size: Option<u64>,
+    /// Maximum disk space (in bytes) for storing compiled classes.
+    ///
+    /// Compiled classes are saved to disk and reused across restarts. When the limit is
+    /// reached, the oldest files are automatically deleted to make room for new compilations.
+    ///
+    /// - **Default**: 10 GB (10,737,418,240 bytes)
+    /// - **Unlimited**: Set to `"unlimited"` to disable disk space limits (no cleanup)
+    /// - **Custom**: Provide size in bytes (e.g., `21474836480` for 20 GB)
+    ///
+    /// Use larger values if you work with many contracts or want to preserve compilations
+    /// across long periods. A typical compiled class is 100 KB - 10 MB.
+    #[clap(
+        env = "MADARA_NATIVE_MAX_DISK_CACHE_BYTES",
+        long,
+        default_value_t = DEFAULT_DISK_CACHE_SIZE_BYTES,
+        value_parser = parse_disk_cache_size,
+        value_name = "BYTES"
+    )]
+    pub native_max_disk_cache_size: u64,
 
-    /// Maximum number of concurrent native compilations.
-    /// Lower values reduce CPU usage during sync, higher values speed up initial compilation.
+    /// Maximum number of contracts that can be compiled simultaneously.
+    ///
+    /// During initial sync or when encountering new contracts, multiple compilations can
+    /// run in parallel. This setting controls how many run at once.
+    ///
+    /// - **Default**: 4 concurrent compilations
+    /// - **Lower values** (1-2): Reduce CPU usage, slower initial compilation
+    /// - **Higher values** (8-16): Faster compilation, higher CPU usage
+    ///
+    /// Increase this if you have many CPU cores and want faster initial sync.
+    /// Decrease if you want to reserve CPU for other processes.
     #[clap(
         env = "MADARA_NATIVE_MAX_CONCURRENT_COMPILATIONS",
         long,
@@ -95,8 +225,16 @@ pub struct CairoNativeParams {
     )]
     pub native_max_concurrent_compilations: usize,
 
-    /// Maximum time to wait for a single native compilation (in seconds).
-    /// Compilation will be aborted after this timeout.
+    /// Maximum time to wait for a single contract compilation to complete.
+    ///
+    /// If a compilation takes longer than this timeout, it's aborted and the contract
+    /// falls back to VM execution (in async mode) or the transaction fails (in blocking mode).
+    ///
+    /// - **Default**: 300 seconds (5 minutes)
+    /// - **Recommended**: 60-600 seconds depending on contract complexity
+    ///
+    /// Increase this timeout for very large or complex contracts that take longer to compile.
+    /// Most contracts compile in under 30 seconds.
     #[clap(
         env = "MADARA_NATIVE_COMPILATION_TIMEOUT_SECS",
         long,
@@ -105,9 +243,13 @@ pub struct CairoNativeParams {
     )]
     pub native_compilation_timeout_secs: u64,
 
-    /// Native compilation mode: 'async' (default) or 'blocking'.
-    /// - async: Compile in background, use Cairo VM as fallback (production)
-    /// - blocking: Wait for compilation, fail if it fails (testing/debugging)
+    /// How compilation failures are handled.
+    ///
+    /// - **`async`** (default): Compilations run in the background. Contracts use VM execution
+    ///   immediately while compilation happens. Best for production where availability is critical.
+    ///
+    /// - **`blocking`**: Waits for compilation to complete before executing. If compilation fails,
+    ///   the transaction fails. Useful for testing or when you need strict native execution.
     #[clap(
         env = "MADARA_NATIVE_COMPILATION_MODE",
         long,
@@ -125,7 +267,7 @@ impl Default for CairoNativeParams {
             enable_native_execution: false, // Native disabled by default
             native_cache_dir: None,
             native_max_memory_cache_size: DEFAULT_MEMORY_CACHE_SIZE,
-            native_max_disk_cache_size: Some(DEFAULT_DISK_CACHE_SIZE_BYTES),
+            native_max_disk_cache_size: DEFAULT_DISK_CACHE_SIZE_BYTES,
             native_max_concurrent_compilations: DEFAULT_MAX_CONCURRENT_COMPILATIONS,
             native_compilation_timeout_secs: DEFAULT_COMPILATION_TIMEOUT_SECS,
             native_compilation_mode: "async".to_string(),
@@ -134,12 +276,12 @@ impl Default for CairoNativeParams {
 }
 
 impl CairoNativeParams {
-    /// Get the cache directory, using default if not specified.
+    /// Returns the directory path where compiled classes are stored.
     ///
-    /// Priority order:
-    /// 1. `native_cache_dir` CLI parameter
-    /// 2. `MADARA_NATIVE_CLASSES_PATH` environment variable
-    /// 3. Default: `/usr/share/madara/data/classes`
+    /// The path is determined by checking (in order):
+    /// 1. The `native_cache_dir` CLI parameter if set
+    /// 2. The `MADARA_NATIVE_CLASSES_PATH` environment variable if set
+    /// 3. The default path: `/usr/share/madara/data/classes`
     pub fn cache_dir(&self) -> PathBuf {
         self.native_cache_dir
             .clone()
@@ -147,17 +289,19 @@ impl CairoNativeParams {
             .unwrap_or_else(|| PathBuf::from("/usr/share/madara/data/classes"))
     }
 
-    /// Get the compilation timeout as a Duration
+    /// Returns the compilation timeout as a `Duration` for use with async timers.
     pub fn compilation_timeout(&self) -> Duration {
         Duration::from_secs(self.native_compilation_timeout_secs)
     }
 
-    /// Get the max disk cache size in bytes
-    pub fn max_disk_cache_size(&self) -> u64 {
-        self.native_max_disk_cache_size.unwrap_or(DEFAULT_DISK_CACHE_SIZE_BYTES)
-    }
-
-    /// Validate the configuration
+    /// Validates all configuration parameters and ensures the cache directory exists.
+    ///
+    /// Returns an error if:
+    /// - Any numeric parameter is set to zero
+    /// - The cache directory cannot be created or is not writable
+    /// - The cache path exists but is not a directory
+    ///
+    /// This should be called before `to_runtime_config()` to catch configuration errors early.
     pub fn validate(&self) -> Result<(), String> {
         // Skip all validation if native execution is disabled
         if !self.enable_native_execution {
@@ -171,6 +315,18 @@ impl CairoNativeParams {
 
         if self.native_compilation_timeout_secs == 0 {
             return Err("native_compilation_timeout_secs must be greater than 0".to_string());
+        }
+
+        // Validate cache limits (must be > 0, or usize::MAX/u64::MAX for unlimited)
+        if self.native_max_memory_cache_size == 0 {
+            return Err(
+                "native_max_memory_cache_size must be greater than 0. Use 'unlimited' for unlimited cache.".to_string()
+            );
+        }
+        if self.native_max_disk_cache_size == 0 {
+            return Err(
+                "native_max_disk_cache_size must be greater than 0. Use 'unlimited' for unlimited cache.".to_string()
+            );
         }
 
         // Try to create cache directory if it doesn't exist
@@ -188,28 +344,47 @@ impl CairoNativeParams {
         Ok(())
     }
 
-    /// Convert CLI parameters to runtime configuration for mp-class.
+    /// Converts CLI parameters into the runtime configuration used by the compilation system.
     ///
-    /// This converts the CLI representation to the internal `NativeConfig` used
-    /// by the compilation system. Should be called once at startup after parameter
-    /// validation.
+    /// This performs the final transformation from user-facing CLI parameters to the internal
+    /// configuration format. Call this once at startup after calling `validate()`.
     ///
-    /// The compilation mode string is parsed (case-insensitive) and defaults to
-    /// `Async` if an unrecognized value is provided.
+    /// # Transformations
+    ///
+    /// - Compilation mode strings are normalized and converted to enum variants
+    /// - Cache size values of "unlimited" are converted to `None` (no limit)
+    /// - Default values are already applied, so this just handles format conversion
+    ///
+    /// # Panics
+    ///
+    /// This function does not validate inputs. Always call `validate()` first.
     pub fn to_runtime_config(&self) -> mp_class::native_config::NativeConfig {
         use mp_class::native_config::NativeCompilationMode;
 
-        // Parse compilation mode from string
+        // Normalize compilation mode: parse string and convert to enum
         let mode = match self.native_compilation_mode.to_lowercase().as_str() {
             "blocking" => NativeCompilationMode::Blocking,
-            _ => NativeCompilationMode::Async, // Default to async for any other value
+            _ => NativeCompilationMode::Async, // Default to async for any unrecognized value
+        };
+
+        // Convert cache sizes: "unlimited" becomes None, numeric values become Some(n)
+        let max_memory_cache_size = if self.native_max_memory_cache_size == usize::MAX {
+            None // User requested unlimited cache
+        } else {
+            Some(self.native_max_memory_cache_size) // User specified a numeric limit
+        };
+
+        let max_disk_cache_size = if self.native_max_disk_cache_size == u64::MAX {
+            None // User requested unlimited disk cache
+        } else {
+            Some(self.native_max_disk_cache_size) // User specified a numeric limit in bytes
         };
 
         mp_class::native_config::NativeConfig::new()
             .with_native_execution(self.enable_native_execution)
             .with_cache_dir(self.cache_dir())
-            .with_max_memory_cache_size(self.native_max_memory_cache_size)
-            .with_max_disk_cache_size(self.max_disk_cache_size())
+            .with_max_memory_cache_size(max_memory_cache_size)
+            .with_max_disk_cache_size(max_disk_cache_size)
             .with_max_concurrent_compilations(self.native_max_concurrent_compilations)
             .with_compilation_timeout(self.compilation_timeout())
             .with_compilation_mode(mode)

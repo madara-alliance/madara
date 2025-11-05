@@ -13,18 +13,8 @@ use std::{collections::HashMap, sync::Arc};
 
 impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     fn set_transaction_status(&self, tx_hash: Felt, value: Option<TransactionStatus>) {
-        // Update preconfirmed_transactions_statuses:
-        // - Remove if value is None (transaction removed) or value is Confirmed (no longer preconfirmed)
-        // - Insert/update if value is a preconfirmed status
-        match value.as_ref().and_then(|status| status.as_preconfirmed()) {
-            Some(preconfirmed_status) => {
-                // Insert or update preconfirmed status
-                self.preconfirmed_transactions_statuses.insert(tx_hash, preconfirmed_status.clone());
-            }
-            None => {
-                // Transaction is confirmed or removed - clean up from preconfirmed map
-                self.preconfirmed_transactions_statuses.remove(&tx_hash);
-            }
+        if let Some(value) = value.as_ref().and_then(|status| status.as_preconfirmed()) {
+            self.preconfirmed_transactions_statuses.insert(tx_hash, value.clone());
         }
         self.watch_transaction_status.publish(&tx_hash, value);
     }

@@ -46,6 +46,9 @@ pub const DEFAULT_MEMORY_CACHE_SIZE: usize = 1000;
 /// Default maximum concurrent compilations
 pub const DEFAULT_MAX_CONCURRENT_COMPILATIONS: usize = 4;
 
+/// Default cache directory path for compiled native classes
+pub const DEFAULT_CACHE_DIR: &str = "/usr/share/madara/data/classes";
+
 /// Native compilation mode determines how compilation failures are handled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeCompilationMode {
@@ -85,11 +88,11 @@ pub struct NativeConfig {
     /// Directory path for storing compiled native classes
     pub cache_dir: PathBuf,
 
-    /// Maximum number of classes to keep in memory cache (0 = unlimited)
-    pub max_memory_cache_size: usize,
+    /// Maximum number of classes to keep in memory cache (None = unlimited)
+    pub max_memory_cache_size: Option<usize>,
 
-    /// Maximum disk cache size in bytes (0 = unlimited)
-    pub max_disk_cache_size: u64,
+    /// Maximum disk cache size in bytes (None = unlimited)
+    pub max_disk_cache_size: Option<u64>,
 
     /// Maximum number of concurrent compilations
     pub max_concurrent_compilations: usize,
@@ -107,9 +110,9 @@ impl Default for NativeConfig {
             enable_native_execution: false, // Native disabled by default
             cache_dir: std::env::var("MADARA_NATIVE_CLASSES_PATH")
                 .map(PathBuf::from)
-                .unwrap_or_else(|_| PathBuf::from("/usr/share/madara/data/classes")),
-            max_memory_cache_size: DEFAULT_MEMORY_CACHE_SIZE,
-            max_disk_cache_size: DEFAULT_DISK_CACHE_SIZE_BYTES,
+                .unwrap_or_else(|_| PathBuf::from(DEFAULT_CACHE_DIR)),
+            max_memory_cache_size: Some(DEFAULT_MEMORY_CACHE_SIZE),
+            max_disk_cache_size: Some(DEFAULT_DISK_CACHE_SIZE_BYTES),
             max_concurrent_compilations: DEFAULT_MAX_CONCURRENT_COMPILATIONS,
             compilation_timeout: Duration::from_secs(DEFAULT_COMPILATION_TIMEOUT_SECS),
             compilation_mode: NativeCompilationMode::Async, // Default to async
@@ -123,8 +126,8 @@ impl NativeConfig {
     /// Default values:
     /// - `enable_native_execution`: `false` (disabled)
     /// - `cache_dir`: `/usr/share/madara/data/classes` (or `MADARA_NATIVE_CLASSES_PATH` env var)
-    /// - `max_memory_cache_size`: 1000 classes
-    /// - `max_disk_cache_size`: 10 GB
+    /// - `max_memory_cache_size`: Some(1000) classes (None = unlimited)
+    /// - `max_disk_cache_size`: Some(10 GB) (None = unlimited)
     /// - `max_concurrent_compilations`: 4
     /// - `compilation_timeout`: 5 minutes
     /// - `compilation_mode`: `Async`
@@ -144,14 +147,14 @@ impl NativeConfig {
         self
     }
 
-    /// Set the maximum memory cache size
-    pub fn with_max_memory_cache_size(mut self, size: usize) -> Self {
+    /// Set the maximum memory cache size (None = unlimited)
+    pub fn with_max_memory_cache_size(mut self, size: Option<usize>) -> Self {
         self.max_memory_cache_size = size;
         self
     }
 
-    /// Set the maximum disk cache size in bytes
-    pub fn with_max_disk_cache_size(mut self, size: u64) -> Self {
+    /// Set the maximum disk cache size in bytes (None = unlimited)
+    pub fn with_max_disk_cache_size(mut self, size: Option<u64>) -> Self {
         self.max_disk_cache_size = size;
         self
     }
@@ -189,6 +192,18 @@ impl NativeConfig {
         // Native execution is enabled - validate all parameters
         if self.max_concurrent_compilations == 0 {
             return Err("max_concurrent_compilations must be greater than 0".to_string());
+        }
+
+        // Validate cache limits if set (must be > 0 if Some)
+        if let Some(size) = self.max_memory_cache_size {
+            if size == 0 {
+                return Err("max_memory_cache_size must be greater than 0 if set".to_string());
+            }
+        }
+        if let Some(size) = self.max_disk_cache_size {
+            if size == 0 {
+                return Err("max_disk_cache_size must be greater than 0 if set".to_string());
+            }
         }
 
         if self.compilation_timeout.as_secs() == 0 {
@@ -242,11 +257,23 @@ pub fn init_config(config: NativeConfig) -> Result<(), String> {
             NativeCompilationMode::Async => "Async (VM fallback enabled)",
             NativeCompilationMode::Blocking => "Blocking (strictly native, no VM fallback)",
         };
+        let memory_cache_desc = match cfg.max_memory_cache_size {
+            Some(size) => format!("{} classes", size),
+            None => "unlimited".to_string(),
+        };
+        let disk_cache_desc = match cfg.max_disk_cache_size {
+            Some(size) => {
+                let gb = size as f64 / (1024.0 * 1024.0 * 1024.0);
+                format!("{:.1} GB", gb)
+            }
+            None => "unlimited".to_string(),
+        };
         tracing::info!(
-            "🚀 Cairo Native ENABLED: cache_dir={:?}, mode={}, max_memory_cache={}, max_concurrent={}",
+            "🚀 Cairo Native ENABLED: cache_dir={:?}, mode={}, memory_cache={}, disk_cache={}, max_concurrent={}",
             cfg.cache_dir,
             mode_description,
-            cfg.max_memory_cache_size,
+            memory_cache_desc,
+            disk_cache_desc,
             cfg.max_concurrent_compilations
         );
     } else {
@@ -299,12 +326,32 @@ mod tests {
 
     #[test]
     fn test_config_validation() {
-        let mut config = NativeConfig { max_concurrent_compilations: 0, ..Default::default() };
-        assert!(config.validate().is_err());
+        use std::env::temp_dir;
+
+        // Validation is skipped when native execution is disabled, so enable it first
+        // Use a temporary directory that we can actually create in tests
+        let temp_cache_dir = temp_dir().join("madara_test_cache");
+
+        let mut config = NativeConfig {
+            enable_native_execution: true,
+            max_concurrent_compilations: 0,
+            cache_dir: temp_cache_dir.clone(),
+            ..Default::default()
+        };
+        assert!(config.validate().is_err(), "Should fail validation with max_concurrent_compilations = 0");
 
         config.max_concurrent_compilations = 4;
         config.compilation_timeout = Duration::from_secs(0);
-        assert!(config.validate().is_err());
+        config.cache_dir = temp_cache_dir.clone(); // Ensure cache_dir is still set
+        assert!(config.validate().is_err(), "Should fail validation with compilation_timeout = 0");
+
+        // Test that validation passes with valid config
+        config.compilation_timeout = Duration::from_secs(300);
+        config.cache_dir = temp_cache_dir.clone(); // Ensure cache_dir is still set
+        assert!(config.validate().is_ok(), "Should pass validation with valid config");
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&temp_cache_dir);
     }
 
     #[test]

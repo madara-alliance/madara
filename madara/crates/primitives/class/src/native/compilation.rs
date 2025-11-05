@@ -124,7 +124,7 @@ fn execute_native_compilation(
     timer: super::metrics::CompilationTimer,
 ) -> Result<AotContractExecutor, NativeCompilationError> {
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        // We're in an async context - use spawn_blocking with timeout
+        // Async context detected - spawn_blocking used with timeout
         let sierra_clone = Arc::new(sierra.clone());
         let path_clone = path.clone();
         let compilation_future =
@@ -147,7 +147,7 @@ fn execute_native_compilation(
             }
         }
     } else {
-        // We're in a blocking context - compile directly with timeout using std::thread
+        // Blocking context detected - compilation executed directly with timeout using std::thread
         let sierra_clone = Arc::new(sierra.clone());
         let path_clone = path.clone();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -193,13 +193,13 @@ fn cache_compiled_native_class(
     let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
 
     let arc_native = Arc::new(native_class);
-    // Insert first, then evict if needed (reduces lock contention)
+    // Inserted first, then evicted if needed (reduces lock contention)
     cache::NATIVE_CACHE.insert(class_hash, (arc_native.clone(), Instant::now()));
 
-    // Evict if cache is full (after insert to reduce contention window)
+    // Eviction performed if cache is full (after insert to reduce contention window)
     cache::evict_cache_if_needed();
 
-    // Enforce disk cache limit after successful compilation
+    // Disk cache limit enforced after successful compilation
     let config = override_config.unwrap_or_else(|| config::get_config());
     if let Err(e) = cache::enforce_disk_cache_limit(&config.cache_dir, config.max_disk_cache_size) {
         tracing::warn!(
@@ -256,16 +256,16 @@ pub(crate) fn compile_native_blocking(
         "compilation_blocking_start"
     );
 
-    // Execute compilation - timer will be consumed by execute_native_compilation
+    // Compilation executed - timer consumed by execute_native_compilation
     let executor = match execute_native_compilation(sierra, &path, config.compilation_timeout, timer) {
         Ok(executor) => executor,
         Err(e) => {
-            // Timer was consumed in execute_native_compilation, metrics already recorded
+            // Timer consumed in execute_native_compilation, metrics already recorded
             return Err(e);
         }
     };
 
-    // Convert to blockifier class using common logic
+    // Converted to blockifier class using common logic
     let blockifier_compiled_class = convert_sierra_to_blockifier_class(sierra)?;
 
     let elapsed = start.elapsed();
@@ -276,10 +276,10 @@ pub(crate) fn compile_native_blocking(
         "compilation_blocking_success"
     );
 
-    // Cache the compiled class
+    // Compiled class cached
     let arc_native = cache_compiled_native_class(class_hash, executor, blockifier_compiled_class, override_config);
 
-    // Record success with actual compilation duration (timer was consumed in execute_native_compilation)
+    // Success recorded with actual compilation duration (timer was consumed in execute_native_compilation)
     let duration_ms = elapsed.as_millis() as u64;
     super::metrics::metrics().record_compilation_end(duration_ms, true, false);
     Ok(arc_native)
@@ -322,7 +322,7 @@ fn handle_async_compilation_success(
     // Evict if cache is full (after insert to reduce contention window)
     cache::evict_cache_if_needed();
 
-    // Remove from failed compilations if it was there (successful retry)
+    // Removed from failed compilations if present (successful retry)
     FAILED_COMPILATIONS.remove(&class_hash);
     let cache_size = cache::NATIVE_CACHE.len();
 
@@ -334,7 +334,7 @@ fn handle_async_compilation_success(
         "compilation_async_success"
     );
 
-    // Enforce disk cache limit after successful compilation
+    // Disk cache limit enforced after successful compilation
     if let Err(e) = cache::enforce_disk_cache_limit(&config.cache_dir, config.max_disk_cache_size) {
         tracing::warn!(
             target: "madara.cairo_native",
@@ -365,7 +365,7 @@ fn handle_async_compilation_failure(
             error_kind = error_kind,
             "compilation_async_timeout"
         );
-        // Try to clean up the partial file
+        // Partial file cleanup attempted
         let _ = std::fs::remove_file(path);
         timer.finish(false, true);
     } else {
@@ -487,14 +487,14 @@ pub(crate) fn spawn_native_compilation(class_hash: starknet_types_core::felt::Fe
         let lock = COMPILATION_IN_PROGRESS.entry(class_hash).or_insert_with(|| Arc::new(RwLock::new(()))).clone();
         let _guard = lock.write().await;
 
-        // Check cache again in case another task compiled it
+        // Cache checked again in case another task compiled it
         if cache::NATIVE_CACHE.contains_key(&class_hash) {
             COMPILATION_IN_PROGRESS.remove(&class_hash);
             drop(permit);
             return;
         }
 
-        // Validate class hash
+        // Class hash validated
         if let Err(e) = validate_class_hash(&class_hash) {
             tracing::error!(
                 target: "madara.cairo_native",
@@ -524,7 +524,7 @@ pub(crate) fn spawn_native_compilation(class_hash: starknet_types_core::felt::Fe
             }
         }
 
-        // Execute compilation
+        // Compilation executed
         execute_async_compilation(class_hash, sierra, path, compilation_timeout, config).await;
 
         COMPILATION_IN_PROGRESS.remove(&class_hash);
