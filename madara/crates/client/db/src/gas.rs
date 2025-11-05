@@ -48,9 +48,12 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
         let strk_l2_gas_price = match self.chain_config.override_strk_l2_gas_price {
             Some(l2_gas_price) => {
-                tracing::info!("Override override_strk_l2_gas_price to {}", l2_gas_price);
+                tracing::debug!(
+                    "Overriding strk_l2_gas_price to {} because override_strk_l2_gas_price is set in chain config",
+                    l2_gas_price
+                );
                 l2_gas_price
-            },
+            }
             None => {
                 let l2_gas_target = self.chain_config().l2_gas_target;
                 let max_change_denominator = self.chain_config().l2_gas_price_max_change_denominator;
