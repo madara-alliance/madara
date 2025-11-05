@@ -75,7 +75,12 @@ runs:
 
         # Set up clang-19 as default clang for Cairo Native
         sudo update-alternatives --install /usr/bin/clang clang /usr/lib/llvm-19/bin/clang-19 100
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/lib/llvm-19/bin/clang++-19 100
+        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/lib/llvm-19/bin/clang-19 100
+
+        # Also set explicit compiler environment variables for Cairo Native runtime
+        # Note: clang-19 handles both C and C++ compilation
+        echo "CC=clang-19" >> $GITHUB_ENV
+        echo "CXX=clang-19" >> $GITHUB_ENV
 
         # Add LLVM 19 binaries to PATH
         echo "/usr/lib/llvm-19/bin" >> $GITHUB_PATH

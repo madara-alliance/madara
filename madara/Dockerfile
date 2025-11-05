@@ -36,6 +36,11 @@ ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
 ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
 ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
 
+# Set explicit compilers for Cairo Native runtime compilation
+# Note: clang-19 handles both C and C++ compilation
+ENV CC=clang-19
+ENV CXX=clang-19
+
 # Configure linker search paths for Cairo Native runtime compilation
 ENV LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
 ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
