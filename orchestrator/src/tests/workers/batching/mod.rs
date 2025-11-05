@@ -388,7 +388,7 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
         .configure_database(ConfigType::Actual)
         .configure_lock_client(ConfigType::Actual)
         .configure_layer(Layer::L3)
-        .configure_madara_admin_rpc_url(&provider_url)
+        .configure_madara_feeder_gateway_url(&provider_url)
         .configure_max_blocks_per_snos_batch(None)
         .build()
         .await;
@@ -422,9 +422,10 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
     // Mock builtin weights calls for each block
     let builtin_weights = get_dummy_builtin_weights();
     server.mock(|when, then| {
-        when.path("/").body_includes("madara_V0_1_0_getBlockBuiltinWeights");
+        when.method(httpmock::Method::GET).path("/feeder_gateway/get_block_bouncer_weights");
         then.status(200)
-            .body(serde_json::to_vec(&json!({ "id": 1,"jsonrpc":"2.0","result": builtin_weights })).unwrap());
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_vec(&json!({ "bouncer_weights": builtin_weights })).unwrap());
     });
 
     crate::worker::event_handler::triggers::batching::BatchingTrigger.run_worker(services.config.clone()).await?;

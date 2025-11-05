@@ -259,7 +259,7 @@ impl BatchingTrigger {
                     state_update: &state_update,
                 },
                 config,
-                config.madara_client(),
+                config.madara_rpc_client(),
             )
             .await?;
         }
@@ -280,7 +280,7 @@ impl BatchingTrigger {
         config: &Arc<Config>,
     ) -> Result<(Option<StateUpdate>, AggregatorBatch, SnosBatch), JobError> {
         // Get the provider
-        let provider = config.madara_client();
+        let provider = config.madara_rpc_client();
 
         // Fetch Starknet version for the current block
         let current_block_starknet_version = fetch_block_starknet_version(config, block_number).await.map_err(|e| {
@@ -584,7 +584,7 @@ impl BatchingTrigger {
         }
 
         // Getting the latest block number from the sequencer
-        let provider = config.madara_client();
+        let provider = config.madara_rpc_client();
         let block_number_provider =
             provider.block_number().await.map_err(|e| JobError::ProviderError(e.to_string()))?;
 
@@ -619,7 +619,7 @@ impl BatchingTrigger {
         let latest_snos_block_in_db = latest_snos_batch.map_or(-1, |batch| batch.end_block as i64);
 
         // Getting the latest block number from the sequencer
-        let provider = config.madara_client();
+        let provider = config.madara_rpc_client();
         let block_number_provider =
             provider.block_number().await.map_err(|e| JobError::ProviderError(e.to_string()))?;
 
@@ -1113,63 +1113,42 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         block_number: u64,
     ) -> Result<BouncerWeights, JobError> {
-        use serde::Serialize;
+        use serde::Deserialize;
 
-        #[derive(Serialize)]
-        struct JsonRpcRequest {
-            jsonrpc: String,
-            method: String,
-            params: AdminRequestData,
-            id: u32,
+        #[derive(Deserialize)]
+        struct BouncerWeightsResponse {
+            bouncer_weights: BouncerWeights,
         }
-
-        #[derive(Serialize)]
-        struct AdminRequestData {
-            block_number: u64,
-        }
-
-        // Create the JSON-RPC request in the style of starknet_providers
-        let raw_request = JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            method: "madara_V0_1_0_getBlockBuiltinWeights".to_string(),
-            params: AdminRequestData { block_number },
-            id: 1,
-        };
-
-        // Serialize to JSON string to match the pattern you showed
-        let request_body = serde_json::to_string(&raw_request)
-            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to serialize request: {}", e))))?;
 
         debug!(
             block_number = %block_number,
-            request = %request_body,
-            "Sending admin RPC request for block builtin weights"
+            "Requesting block bouncer weights via REST"
         );
 
-        // Make the HTTP request
-        let client = reqwest::Client::new();
-        let response = client
-            .post(config.params.madara_admin_rpc_url.as_str())
-            .header("Content-Type", "application/json")
-            .body(request_body)
-            .send()
+        // Use the RestClient with query parameters
+        let response = config
+            .madara_feeder_gateway_client()
+            .get(&format!("/feeder_gateway/get_block_bouncer_weights?blockNumber={}", block_number))
             .await
-            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to send admin RPC request: {}", e))))?;
+            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to send REST request: {}", e))))?;
 
-        // Parse the response
-        let response_text = response
-            .text()
-            .await
-            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to read admin RPC response: {}", e))))?;
-
-        let parsed_response: JsonRpcResponse = serde_json::from_str(&response_text)
-            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse admin RPC response: {}", e))))?;
-
-        // Handle the response similar to starknet_providers pattern
-        if let Some(error) = parsed_response.error {
-            return Err(JobError::Other(OtherError(eyre!("Admin RPC error: {}", error))));
+        // Check for HTTP errors
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unable to read error response".to_string());
+            return Err(JobError::Other(OtherError(eyre!(
+                "REST request failed with status {}: {}",
+                status,
+                error_text
+            ))));
         }
 
-        parsed_response.result.ok_or_else(|| JobError::Other(OtherError(eyre!("Missing result in admin RPC response"))))
+        // Parse the response
+        let parsed_response: BouncerWeightsResponse = response
+            .json()
+            .await
+            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse REST response: {}", e))))?;
+
+        Ok(parsed_response.bouncer_weights)
     }
 }
