@@ -407,6 +407,15 @@ impl MadaraBackend<RocksDBStorage> {
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
+
+        // Initialize Cairo Native config with execution disabled for all tests
+        // This prevents linker issues and speeds up tests
+        static INIT_NATIVE_CONFIG: std::sync::Once = std::sync::Once::new();
+        INIT_NATIVE_CONFIG.call_once(|| {
+            let config = mp_class::native_config::NativeConfig::new().with_native_execution(false);
+            let _ = mp_class::native_config::init_config(config);
+        });
+
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).unwrap();
         let mut backend = Self::new_and_init(db, chain_config, Default::default()).unwrap();

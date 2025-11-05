@@ -68,7 +68,7 @@ impl SetupBuilder {
             setup,
             block_time: "2s".into(),
             block_production_disabled: false,
-            enable_native_execution: true,
+            enable_native_execution: false,
             native_cache_tempdir,
         }
     }

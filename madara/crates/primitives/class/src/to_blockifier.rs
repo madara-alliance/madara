@@ -119,7 +119,21 @@ fn compile_native_blocking(
         tokio::task::spawn_blocking(move || sierra_clone.info.contract_class.compile_to_native(&path_clone));
 
     // Block on the compilation
-    let rt = tokio::runtime::Handle::current();
+    // Check if we're in a Tokio runtime context (can be called from blockifier worker threads)
+    let rt = match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle,
+        Err(_) => {
+            // Not in a Tokio runtime - create a temporary runtime for compilation
+            tracing::debug!(
+                "⚠️  [Cairo Native BLOCKING] Not in Tokio runtime, creating temporary runtime for class {:#x}",
+                class_hash
+            );
+            timer.finish(false, false);
+            return Err(
+                "Not in Tokio runtime context - cannot compile in blocking mode from worker threads".to_string()
+            );
+        }
+    };
     let result = rt.block_on(async { tokio::time::timeout(compilation_timeout, compilation_future).await });
 
     match result {
@@ -181,11 +195,25 @@ fn compile_native_blocking(
 }
 
 fn spawn_native_compilation(class_hash: starknet_types_core::felt::Felt, sierra: Arc<SierraConvertedClass>) {
+    // Check if we're in a Tokio runtime context
+    // This can be called from blockifier's worker pool threads which don't have a Tokio runtime
+    let handle = match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle,
+        Err(_) => {
+            tracing::debug!(
+                "⚠️  [Cairo Native] Not in Tokio runtime context, skipping background compilation for class {:#x}",
+                class_hash
+            );
+            COMPILATION_IN_PROGRESS.remove(&class_hash);
+            return;
+        }
+    };
+
     let config = crate::native_config::get_config();
     let compilation_timeout = config.compilation_timeout;
 
-    // Spawn background task for native compilation
-    tokio::spawn(async move {
+    // Spawn background task for native compilation on the detected runtime
+    handle.spawn(async move {
         // Acquire compilation slot
         let permit = match COMPILATION_SEMAPHORE.try_acquire() {
             Ok(permit) => permit,
