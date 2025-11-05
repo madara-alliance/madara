@@ -81,6 +81,7 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 struct RocksDBStorageInner {
     db: DB,
     writeopts_no_wal: WriteOptions,
+    writeopts_sync: WriteOptions,
     config: RocksDBConfig,
 }
 
@@ -193,7 +194,13 @@ impl RocksDBStorage {
 
         let mut writeopts_no_wal = WriteOptions::new();
         writeopts_no_wal.disable_wal(true);
-        let inner = Arc::new(RocksDBStorageInner { writeopts_no_wal, db, config: config.clone() });
+
+        // Create write options with sync for critical operations requiring durability
+        let mut writeopts_sync = WriteOptions::new();
+        writeopts_sync.disable_wal(false); // Enable WAL for durability
+        writeopts_sync.set_sync(true);     // Force fsync to disk
+
+        let inner = Arc::new(RocksDBStorageInner { writeopts_no_wal, writeopts_sync, db, config: config.clone() });
 
         let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
             StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
