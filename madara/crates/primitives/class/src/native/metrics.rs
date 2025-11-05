@@ -1,15 +1,62 @@
-/// Metrics for Cairo Native compilation and caching
+//! Metrics for Cairo Native compilation and caching
+//!
+//! This module provides comprehensive metrics tracking for Cairo Native operations.
+//! All metrics use atomic operations for lock-free, thread-safe access.
+//!
+//! # Metrics Categories
+//!
+//! ## Cache Metrics
+//! - Memory cache hits/misses
+//! - Disk cache hits
+//! - Cache evictions
+//! - Current cache size
+//!
+//! ## Compilation Metrics
+//! - Compilations started/succeeded/failed/timeout
+//! - Compilation times (min/max/average)
+//! - Success rates
+//!
+//! ## Runtime Metrics
+//! - VM fallbacks (when native compilation isn't available)
+//! - Current active compilations
+//!
+//! # Usage
+//!
+//! Metrics are automatically recorded during compilation and cache operations.
+//! Use `metrics()` to get the global metrics instance and query statistics.
+//!
+//! ```rust
+//! use mp_class::native_metrics::metrics;
+//!
+//! let cache_hit_rate = metrics().get_cache_hit_rate();
+//! let avg_compilation_time = metrics().get_average_compilation_time_ms();
+//! ```
+//!
+//! # Thread Safety
+//!
+//! All metrics use atomic operations (`AtomicU64`, `AtomicUsize`) for thread-safe
+//! access without locking. Safe to query from any thread concurrently.
+
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
+/// Statistics about compilation times.
 #[derive(Debug, Clone, Copy)]
 pub struct CompilationTimeStats {
+    /// Average compilation time in milliseconds
     pub average_ms: u64,
+    /// Minimum compilation time in milliseconds
     pub min_ms: u64,
+    /// Maximum compilation time in milliseconds
     pub max_ms: u64,
+    /// Total number of successful compilations
     pub total_count: u64,
 }
 
+/// Metrics for Cairo Native compilation and caching operations.
+///
+/// All fields use atomic operations for lock-free, thread-safe access.
+/// Metrics are automatically updated during operations - no manual tracking needed.
 #[derive(Debug)]
 pub struct NativeMetrics {
     // Cache metrics
@@ -46,7 +93,7 @@ impl NativeMetrics {
             compilations_failed: AtomicU64::new(0),
             compilations_timeout: AtomicU64::new(0),
             total_compilation_time_ms: AtomicU64::new(0),
-            min_compilation_time_ms: AtomicU64::new(u64::MAX),
+            min_compilation_time_ms: AtomicU64::new(0),
             max_compilation_time_ms: AtomicU64::new(0),
             current_cache_size: AtomicUsize::new(0),
             current_compilations: AtomicUsize::new(0),
@@ -94,17 +141,19 @@ impl NativeMetrics {
             self.compilations_succeeded.fetch_add(1, Ordering::Relaxed);
             self.total_compilation_time_ms.fetch_add(duration_ms, Ordering::Relaxed);
 
-            // Update min
+            // Update min (skip if 0, which means "not set")
             let mut current_min = self.min_compilation_time_ms.load(Ordering::Relaxed);
-            while duration_ms < current_min {
-                match self.min_compilation_time_ms.compare_exchange_weak(
-                    current_min,
-                    duration_ms,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => break,
-                    Err(x) => current_min = x,
+            if current_min == 0 || duration_ms < current_min {
+                while current_min == 0 || duration_ms < current_min {
+                    match self.min_compilation_time_ms.compare_exchange_weak(
+                        current_min,
+                        duration_ms,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => break,
+                        Err(x) => current_min = x,
+                    }
                 }
             }
 
@@ -192,11 +241,8 @@ impl NativeMetrics {
 
     pub fn get_min_compilation_time_ms(&self) -> u64 {
         let min = self.min_compilation_time_ms.load(Ordering::Relaxed);
-        if min == u64::MAX {
-            0
-        } else {
-            min
-        }
+        // 0 means "not set yet" (no successful compilations)
+        min
     }
 
     pub fn get_max_compilation_time_ms(&self) -> u64 {
@@ -308,15 +354,27 @@ impl Default for NativeMetrics {
     }
 }
 
-/// Global metrics instance
+/// Global metrics instance (initialized lazily on first access).
 static METRICS: std::sync::LazyLock<NativeMetrics> = std::sync::LazyLock::new(NativeMetrics::new);
 
-/// Get the global metrics instance
+/// Get the global metrics instance.
+///
+/// Returns a thread-safe reference to the global metrics singleton.
+/// Safe to call from any thread.
 pub fn metrics() -> &'static NativeMetrics {
     &METRICS
 }
 
-/// Helper to time compilation
+/// Helper to time compilation operations.
+///
+/// Automatically records compilation start and end times in metrics.
+/// Usage:
+///
+/// ```rust
+/// let timer = CompilationTimer::new();
+/// // ... compilation happens ...
+/// timer.finish(success, timeout);
+/// ```
 pub struct CompilationTimer {
     start: Instant,
 }
@@ -419,5 +477,96 @@ mod tests {
         let summary = metrics.summary();
         assert!(summary.contains("Memory hits: 1"));
         assert!(summary.contains("Misses: 1"));
+    }
+
+    #[test]
+    fn test_global_metrics_singleton() {
+        // Test that the global metrics singleton works correctly
+        // This is important because production code uses metrics() not NativeMetrics::new()
+        let metrics = metrics();
+
+        // Get initial values (may be non-zero from other tests)
+        let initial_memory_hits = metrics.get_cache_hits_memory();
+        let initial_disk_hits = metrics.get_cache_hits_disk();
+        let initial_misses = metrics.get_cache_misses();
+        let initial_vm_fallbacks = metrics.get_vm_fallbacks();
+        let initial_evictions = metrics.get_cache_evictions();
+
+        // Record various cache metrics
+        metrics.record_cache_hit_memory();
+        metrics.record_cache_hit_memory(); // Record twice
+        metrics.record_cache_hit_disk();
+        metrics.record_cache_miss();
+        metrics.record_cache_miss(); // Record twice
+        metrics.record_vm_fallback();
+        metrics.record_cache_eviction();
+
+        // Verify cache metrics are recorded correctly
+        assert_eq!(metrics.get_cache_hits_memory(), initial_memory_hits + 2);
+        assert_eq!(metrics.get_cache_hits_disk(), initial_disk_hits + 1);
+        assert_eq!(metrics.get_cache_misses(), initial_misses + 2);
+        assert_eq!(metrics.get_vm_fallbacks(), initial_vm_fallbacks + 1);
+        assert_eq!(metrics.get_cache_evictions(), initial_evictions + 1);
+
+        // Verify derived metrics
+        let total_requests = metrics.get_total_requests();
+        assert_eq!(total_requests, initial_memory_hits + initial_disk_hits + initial_misses + 5); // 2 memory + 1 disk + 2 misses
+
+        let hit_rate = metrics.get_cache_hit_rate();
+        if total_requests > 0 {
+            assert!(hit_rate >= 0.0 && hit_rate <= 100.0);
+        } else {
+            assert_eq!(hit_rate, 0.0);
+        }
+
+        // Test compilation metrics
+        let initial_started = metrics.get_compilations_started();
+        let initial_succeeded = metrics.get_compilations_succeeded();
+        let initial_failed = metrics.get_compilations_failed();
+        let initial_timeout = metrics.get_compilations_timeout();
+
+        metrics.record_compilation_start();
+        metrics.record_compilation_end(100, true, false); // 100ms, success, no timeout
+        metrics.record_compilation_start();
+        metrics.record_compilation_end(200, true, false); // 200ms, success, no timeout
+        metrics.record_compilation_start();
+        metrics.record_compilation_end(0, false, false); // failed
+        metrics.record_compilation_start();
+        metrics.record_compilation_end(0, false, true); // timeout
+
+        assert_eq!(metrics.get_compilations_started(), initial_started + 4);
+        assert_eq!(metrics.get_compilations_succeeded(), initial_succeeded + 2);
+        assert_eq!(metrics.get_compilations_failed(), initial_failed + 1);
+        assert_eq!(metrics.get_compilations_timeout(), initial_timeout + 1);
+
+        // Verify compilation time metrics
+        let avg_time = metrics.get_average_compilation_time_ms();
+        if initial_succeeded + 2 > 0 {
+            // Should be at least 100ms (average of 100 and 200)
+            assert!(avg_time >= 100);
+        }
+
+        let min_time = metrics.get_min_compilation_time_ms();
+        if initial_succeeded + 2 > 0 {
+            // Min should be 100ms (first successful compilation)
+            assert!(min_time > 0);
+        }
+
+        let max_time = metrics.get_max_compilation_time_ms();
+        if initial_succeeded + 2 > 0 {
+            // Max should be at least 200ms
+            assert!(max_time >= 200);
+        }
+
+        // Test cache size
+        metrics.set_cache_size(42);
+        assert_eq!(metrics.get_current_cache_size(), 42);
+
+        // Verify summary contains expected information
+        let summary = metrics.summary();
+        assert!(!summary.is_empty());
+        assert!(summary.contains("Cairo Native Metrics"));
+        assert!(summary.contains("Cache:"));
+        assert!(summary.contains("Compilation:"));
     }
 }

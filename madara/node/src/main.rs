@@ -222,6 +222,10 @@ async fn main() -> anyhow::Result<()> {
     sys_info.show();
 
     // Initialize Cairo Native configuration
+    //
+    // The configuration is validated and initialized globally. Native execution is opt-in
+    // and only enabled when the --enable-native-execution CLI flag is set to true (default: false).
+    // When disabled, all contracts will use Cairo VM execution regardless of cache state.
     run_cmd
         .cairo_native_params
         .validate()
