@@ -1,6 +1,6 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
-name: Workflow - Pull Request Main (merge)
+name: Nightly Run
 
 on:
   workflow_dispatch:
@@ -45,7 +45,7 @@ jobs:
     with:
       image-name: madara
       image-file: ./madara/Dockerfile
-    needs: [check-merged-today, test-end-to-end]
+    needs: [test-end-to-end]
     if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
     permissions:
       contents: read
@@ -66,7 +66,7 @@ jobs:
     with:
       image-name: orchestrator
       image-file: ./orchestrator/Dockerfile
-    needs: [check-merged-today, test-end-to-end]
+    needs: [test-end-to-end]
     if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
     permissions:
       contents: read
@@ -75,13 +75,12 @@ jobs:
       id-token: write
     secrets: inherit
 
-  # Deprecating bootstrapper V1
   build-nightly-and-publish-bootstrapper:
     uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
       image-name: bootstrapper
       image-file: ./bootstrapper/Dockerfile
-    needs: [check-merged-today, test-end-to-end]
+    needs: [test-end-to-end]
     if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
     permissions:
       contents: read
@@ -141,8 +140,7 @@ jobs:
 
   # End-to-end tests
   test-end-to-end:
-    needs:
-      [check-merged-today, build-madara, build-orchestrator, build-bootstrapper]
+    needs: [build-madara, build-orchestrator, build-bootstrapper]
     if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
     uses: ./.github/workflows/task-test-end-to-end.yml
     with:
