@@ -128,8 +128,8 @@ starknet-types-core = { version = "0.2.1", default-features = false, features = 
   "hash",
 ] }
 blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "ff514ad8f39ac04302d0b176cef673a6a3820914", features = [
- "node_api",
- "cairo_native",
+  "node_api",
+  "cairo_native",
 ] }
 starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "ff514ad8f39ac04302d0b176cef673a6a3820914" }
 cairo-lang-starknet-classes = "2.12.3"

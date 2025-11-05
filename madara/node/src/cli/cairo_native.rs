@@ -16,8 +16,9 @@ pub struct CairoNativeParams {
     )]
     pub enable_native_execution: bool,
 
-    /// Directory path for storing compiled native classes.
-    /// These are .so files that can be reused across node restarts.
+    /// Directory path for storing compiled native classes (.so files).
+    /// These files can be reused across node restarts.
+    /// Default: /usr/share/madara/data/classes
     #[clap(env = "MADARA_NATIVE_CACHE_DIR", long, value_name = "PATH")]
     pub native_cache_dir: Option<PathBuf>,
 
@@ -84,6 +85,12 @@ impl CairoNativeParams {
 
     /// Validate the configuration
     pub fn validate(&self) -> Result<(), String> {
+        // Skip all validation if native execution is disabled
+        if !self.enable_native_execution {
+            return Ok(());
+        }
+
+        // Native execution is enabled - validate all parameters
         if self.native_max_concurrent_compilations == 0 {
             return Err("native_max_concurrent_compilations must be greater than 0".to_string());
         }

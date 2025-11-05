@@ -107,6 +107,12 @@ impl NativeConfig {
 
     /// Validate the configuration
     pub fn validate(&self) -> Result<(), String> {
+        // Skip all validation if native execution is disabled
+        if !self.enable_native_execution {
+            return Ok(());
+        }
+
+        // Native execution is enabled - validate all parameters
         if self.max_concurrent_compilations == 0 {
             return Err("max_concurrent_compilations must be greater than 0".to_string());
         }
@@ -140,17 +146,19 @@ pub fn init_config(config: NativeConfig) -> Result<(), String> {
 
     let cfg = get_config();
     if cfg.enable_native_execution {
+        let mode_description = match cfg.compilation_mode {
+            NativeCompilationMode::Async => "Async (VM fallback enabled)",
+            NativeCompilationMode::Blocking => "Blocking (strictly native, no VM fallback)",
+        };
         tracing::info!(
-            "🚀 Cairo Native ENABLED: cache_dir={:?}, max_memory_cache={}, max_concurrent={}, mode={:?}",
+            "🚀 Cairo Native ENABLED: cache_dir={:?}, mode={}, max_memory_cache={}, max_concurrent={}",
             cfg.cache_dir,
+            mode_description,
             cfg.max_memory_cache_size,
-            cfg.max_concurrent_compilations,
-            cfg.compilation_mode
+            cfg.max_concurrent_compilations
         );
     } else {
-        tracing::info!(
-            "🐪 Cairo Native DISABLED: All contracts will use Cairo VM execution"
-        );
+        tracing::info!("🐪 Cairo Native DISABLED: All contracts will use Cairo VM execution");
     }
 
     Ok(())

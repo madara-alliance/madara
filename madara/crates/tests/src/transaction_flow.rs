@@ -55,11 +55,22 @@ struct SetupBuilder {
     setup: TestSetup,
     block_time: String,
     block_production_disabled: bool,
+    enable_native_execution: bool,
+    native_cache_tempdir: Option<tempfile::TempDir>,
 }
 
 impl SetupBuilder {
     pub fn new(setup: TestSetup) -> Self {
-        Self { setup, block_time: "2s".into(), block_production_disabled: false }
+        // Always create a tempdir to avoid permissions issues with default path
+        let native_cache_tempdir = Some(tempfile::TempDir::new().expect("Failed to create temp dir for native cache"));
+
+        Self {
+            setup,
+            block_time: "2s".into(),
+            block_production_disabled: false,
+            enable_native_execution: true,
+            native_cache_tempdir,
+        }
     }
     pub fn with_block_production_disabled(mut self, disabled: bool) -> Self {
         self.block_production_disabled = disabled;
@@ -69,9 +80,15 @@ impl SetupBuilder {
         self.block_time = block_time.into();
         self
     }
+    pub fn with_native_execution(mut self, enabled: bool) -> Self {
+        self.enable_native_execution = enabled;
+        // Note: We keep the tempdir even when native is disabled to provide a valid
+        // writable path and avoid permissions issues with /usr/share/madara/data/classes
+        self
+    }
 
     fn sequencer_args(&self) -> impl Iterator<Item = String> {
-        [
+        let mut args = vec![
             "--devnet".into(),
             "--no-l1-sync".into(),
             "--l1-gas-price".into(),
@@ -81,9 +98,29 @@ impl SetupBuilder {
             "--chain-config-override".into(),
             format!("block_time={}", self.block_time),
             "--gateway".into(),
-        ]
-        .into_iter()
-        .chain(self.block_production_disabled.then_some("--no-block-production".into()))
+            "--enable-native-execution".into(),
+            self.enable_native_execution.to_string(),
+        ];
+
+        // When native execution is enabled, use blocking mode to ensure strictly native execution (no VM fallback)
+        // Note: native-cache-dir is set via MADARA_NATIVE_CACHE_DIR environment variable
+        if self.enable_native_execution {
+            args.push("--native-compilation-mode".into());
+            args.push("blocking".into());
+        }
+
+        args.into_iter().chain(self.block_production_disabled.then_some("--no-block-production".into()))
+    }
+
+    /// Get environment variables for the sequencer, including native cache dir
+    fn sequencer_env(&self) -> Vec<(String, String)> {
+        // Always provide a valid cache directory path via env var
+        // This prevents madara from trying to use the default /usr/share/madara/data/classes
+        // which requires root permissions
+        vec![(
+            "MADARA_NATIVE_CLASSES_PATH".into(),
+            self.native_cache_tempdir.as_ref().unwrap().path().display().to_string(),
+        )]
     }
 
     pub async fn run(self) -> RunningTestSetup {
@@ -96,73 +133,112 @@ impl SetupBuilder {
 
     async fn run_single_node(self) -> RunningTestSetup {
         // sequencer
-        let mut sequencer =
-            MadaraCmdBuilder::new().label("sequencer").enable_gateway().args(self.sequencer_args()).run();
+        let mut sequencer = MadaraCmdBuilder::new()
+            .label("sequencer")
+            .enable_gateway()
+            .env(self.sequencer_env())
+            .args(self.sequencer_args())
+            .run();
         sequencer.wait_for_sync_to(0).await;
-        RunningTestSetup::SingleNode(sequencer)
+        RunningTestSetup::SingleNode { node: sequencer, _native_cache_tempdir: self.native_cache_tempdir }
     }
 
     async fn run_gateway_and_sequencer(self) -> RunningTestSetup {
         let mut sequencer = MadaraCmdBuilder::new()
             .label("sequencer")
             .enable_gateway()
+            .env(self.sequencer_env())
             .args(self.sequencer_args().chain(["--gateway-trusted-add-transaction-endpoint".into()]))
             .run();
         sequencer.wait_for_sync_to(0).await; // wait until devnet genesis is deployed
 
+        let mut gateway_args = vec![
+            "--full".to_string(),
+            "--no-l1-sync".into(),
+            "--l1-gas-price".into(),
+            "0".into(),
+            "--chain-config-path".into(),
+            "test_devnet.yaml".into(),
+            "--chain-config-override".into(),
+            format!(
+                "gateway_url=\"{}\",feeder_gateway_url=\"{}\"",
+                sequencer.gateway_url(),
+                sequencer.feeder_gateway_url()
+            ),
+            "--validate-then-forward-txs-to".into(),
+            format!("{}/madara", sequencer.gateway_root_url.as_ref().unwrap()),
+            "--gateway".into(),
+        ];
+
+        // Add native execution flags to gateway (same as sequencer)
+        gateway_args.push("--enable-native-execution".into());
+        gateway_args.push(self.enable_native_execution.to_string());
+        if self.enable_native_execution {
+            gateway_args.push("--native-compilation-mode".into());
+            gateway_args.push("blocking".into());
+        }
+
         let mut gateway = MadaraCmdBuilder::new()
             .label("gateway")
             .enable_gateway()
-            .args([
-                "--full",
-                "--no-l1-sync",
-                "--l1-gas-price",
-                "0",
-                "--chain-config-path",
-                "test_devnet.yaml",
-                "--chain-config-override",
-                &format!(
-                    "gateway_url=\"{}\",feeder_gateway_url=\"{}\"",
-                    sequencer.gateway_url(),
-                    sequencer.feeder_gateway_url()
-                ),
-                "--validate-then-forward-txs-to",
-                &format!("{}/madara", sequencer.gateway_root_url.as_ref().unwrap()),
-                "--gateway",
-            ])
+            .env(self.sequencer_env())  // Gateway also needs native cache env for syncing
+            .args(gateway_args)
             .run();
         gateway.wait_for_sync_to(0).await; // wait until devnet genesis is synced
 
-        RunningTestSetup::TwoNodes { _sequencer: sequencer, user_facing: gateway }
+        RunningTestSetup::TwoNodes {
+            _sequencer: sequencer,
+            user_facing: gateway,
+            _native_cache_tempdir: self.native_cache_tempdir,
+        }
     }
 
     async fn run_full_node_and_sequencer(self) -> RunningTestSetup {
-        let mut sequencer =
-            MadaraCmdBuilder::new().label("sequencer").enable_gateway().args(self.sequencer_args()).run();
+        let mut sequencer = MadaraCmdBuilder::new()
+            .label("sequencer")
+            .enable_gateway()
+            .env(self.sequencer_env())
+            .args(self.sequencer_args())
+            .run();
         sequencer.wait_for_sync_to(0).await;
+
+        let mut full_node_args = vec![
+            "--full".to_string(),
+            "--no-l1-sync".into(),
+            "--l1-gas-price".into(),
+            "0".into(),
+            "--chain-config-path".into(),
+            "test_devnet.yaml".into(),
+            "--chain-config-override".into(),
+            format!(
+                "gateway_url=\"{}\",feeder_gateway_url=\"{}\"",
+                sequencer.gateway_url(),
+                sequencer.feeder_gateway_url()
+            ),
+            "--gateway".into(),
+        ];
+
+        // Add native execution flags to full_node (same as sequencer)
+        full_node_args.push("--enable-native-execution".into());
+        full_node_args.push(self.enable_native_execution.to_string());
+        if self.enable_native_execution {
+            full_node_args.push("--native-compilation-mode".into());
+            full_node_args.push("blocking".into());
+        }
 
         let mut full_node = MadaraCmdBuilder::new()
             .label("full_node")
             .enable_gateway()
-            .args([
-                "--full",
-                "--no-l1-sync",
-                "--l1-gas-price",
-                "0",
-                "--chain-config-path",
-                "test_devnet.yaml",
-                "--chain-config-override",
-                &format!(
-                    "gateway_url=\"{}\",feeder_gateway_url=\"{}\"",
-                    sequencer.gateway_url(),
-                    sequencer.feeder_gateway_url()
-                ),
-                "--gateway",
-            ])
+            .env(self.sequencer_env())  // Full node also needs native cache env for syncing
+            .args(full_node_args)
             .run();
         full_node.wait_for_sync_to(0).await;
 
-        RunningTestSetup::TwoNodes { _sequencer: sequencer, user_facing: full_node }
+        RunningTestSetup::TwoNodes {
+            _sequencer: sequencer,
+            user_facing: full_node,
+            _native_cache_tempdir: self.native_cache_tempdir,
+        }
     }
 }
 
@@ -170,14 +246,14 @@ use TestSetup::*;
 
 #[allow(clippy::large_enum_variant)]
 enum RunningTestSetup {
-    SingleNode(MadaraCmd),
-    TwoNodes { _sequencer: MadaraCmd, user_facing: MadaraCmd },
+    SingleNode { node: MadaraCmd, _native_cache_tempdir: Option<tempfile::TempDir> },
+    TwoNodes { _sequencer: MadaraCmd, user_facing: MadaraCmd, _native_cache_tempdir: Option<tempfile::TempDir> },
 }
 
 impl RunningTestSetup {
     pub fn user_facing_node(&self) -> &MadaraCmd {
         match self {
-            RunningTestSetup::SingleNode(sequencer) => sequencer,
+            RunningTestSetup::SingleNode { node, .. } => node,
             RunningTestSetup::TwoNodes { user_facing, .. } => user_facing,
         }
     }
@@ -306,11 +382,14 @@ async fn wait_for_next_block(provider: &(impl Provider + Send + Sync)) {
 
 #[tokio::test]
 #[rstest]
-#[case::full_node(FullNodeAndSequencer)]
-#[case::gateway(GatewayAndSequencer)]
-#[case::single_node(SequencerOnly)]
-async fn normal_transfer(#[case] setup: TestSetup) {
-    let setup = SetupBuilder::new(setup).run().await;
+#[case::full_node_native(FullNodeAndSequencer, true)]
+#[case::full_node_vm(FullNodeAndSequencer, false)]
+#[case::gateway_native(GatewayAndSequencer, true)]
+#[case::gateway_vm(GatewayAndSequencer, false)]
+#[case::single_node_native(SequencerOnly, true)]
+#[case::single_node_vm(SequencerOnly, false)]
+async fn normal_transfer(#[case] setup: TestSetup, #[case] enable_native: bool) {
+    let setup = SetupBuilder::new(setup).with_native_execution(enable_native).run().await;
 
     async fn perform_test<P: Provider + Sync + Send>(setup: &RunningTestSetup, provider: &P) {
         let account = setup.account(provider).await;
@@ -705,14 +784,24 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
 
 #[tokio::test]
 #[rstest]
-#[case::full_node_rpc(FullNodeAndSequencer, false)]
-#[case::full_node(FullNodeAndSequencer, true)]
-#[case::gateway_and_sequencer_rpc(GatewayAndSequencer, false)]
-#[case::gateway_and_sequencer(GatewayAndSequencer, true)]
-#[case::single_node_rpc(SequencerOnly, false)]
-#[case::single_node(SequencerOnly, true)]
-async fn declare_sierra_then_deploy(#[case] setup: TestSetup, #[case] via_gateway_api: bool) {
-    let setup = SetupBuilder::new(setup).with_block_time("500ms").run().await;
+#[case::full_node_rpc_native(FullNodeAndSequencer, false, true)]
+#[case::full_node_rpc_vm(FullNodeAndSequencer, false, false)]
+#[case::full_node_native(FullNodeAndSequencer, true, true)]
+#[case::full_node_vm(FullNodeAndSequencer, true, false)]
+#[case::gateway_and_sequencer_rpc_native(GatewayAndSequencer, false, true)]
+#[case::gateway_and_sequencer_rpc_vm(GatewayAndSequencer, false, false)]
+#[case::gateway_and_sequencer_native(GatewayAndSequencer, true, true)]
+#[case::gateway_and_sequencer_vm(GatewayAndSequencer, true, false)]
+#[case::single_node_rpc_native(SequencerOnly, false, true)]
+#[case::single_node_rpc_vm(SequencerOnly, false, false)]
+#[case::single_node_native(SequencerOnly, true, true)]
+#[case::single_node_vm(SequencerOnly, true, false)]
+async fn declare_sierra_then_deploy(
+    #[case] setup: TestSetup,
+    #[case] via_gateway_api: bool,
+    #[case] enable_native: bool,
+) {
+    let setup = SetupBuilder::new(setup).with_block_time("500ms").with_native_execution(enable_native).run().await;
 
     async fn perform_test<P: Provider + Sync + Send>(setup: &RunningTestSetup, provider: &P) {
         let mut nonce = setup.get_nonce(ACCOUNTS[0]).await;
