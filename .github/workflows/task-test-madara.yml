@@ -94,6 +94,9 @@ jobs:
           PROPTEST_CASES: ${{ inputs.proptest-cases }}
           LLVM_PROFILE_FILE: "madara-%p-%m.profraw"
           ANVIL_URL: ${{ env.ANVIL_DEFAULT_URL }}
+          # Cairo Native compilation environment
+          CC: clang-19
+          CXX: clang++-19
         run: |
           export COVERAGE_BIN=$(realpath target/release/madara)
           rm -f target/madara-* lcov.info

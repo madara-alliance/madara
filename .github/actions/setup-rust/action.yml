@@ -60,13 +60,22 @@ runs:
           libmlir-19-dev mlir-19-tools \
           libpolly-19-dev \
           liblld-19-dev \
-          libudev-dev protobuf-compiler gcc g++ build-essential \
+          libc6-dev libstdc++-11-dev gcc-11 g++-11 \
+          libudev-dev protobuf-compiler build-essential \
           libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
 
         # Set LLVM environment variables for Cairo Native
         echo "MLIR_SYS_190_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
         echo "LLVM_SYS_191_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
         echo "TABLEGEN_190_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
+
+        # Configure linker search paths for Cairo Native runtime compilation
+        echo "LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib" >> $GITHUB_ENV
+
+        # Set up clang-19 as default clang for Cairo Native
+        sudo update-alternatives --install /usr/bin/clang clang /usr/lib/llvm-19/bin/clang-19 100
+        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/lib/llvm-19/bin/clang++-19 100
 
         # Add LLVM 19 binaries to PATH
         echo "/usr/lib/llvm-19/bin" >> $GITHUB_PATH

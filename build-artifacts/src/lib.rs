@@ -132,7 +132,10 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     let version = get_version(artifacts)?;
     let image = format!("ghcr.io/madara-alliance/artifacts:{version}");
     println!("cargo::warning=fetching artifacts from image: {}", image);
-    let container_name = format!("madara-artifacts-extractor-v{}", version);
+
+    // Use a unique container name to avoid conflicts in CI environments
+    let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let container_name = format!("madara-artifacts-extractor-v{}-{}", version, timestamp);
 
     let root = &root.0;
 
@@ -145,9 +148,27 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
         .then_some(())
         .ok_or_else(|| err_handl(cmd, "Failed to download artifacts"))?;
 
-    // Remove any existing container with the same name
+    // Clean up old artifact extractor containers to prevent accumulation
     let mut docker = std::process::Command::new("docker");
-    docker.args(["rm", "-f", &container_name]).status().ok();
+    docker.args([
+        "ps",
+        "-a",
+        "--filter",
+        &format!("name=madara-artifacts-extractor-v{}", version),
+        "--format",
+        "{{.Names}}",
+    ]);
+    if let Ok(output) = docker.output() {
+        if output.status.success() {
+            let containers = String::from_utf8_lossy(&output.stdout);
+            for container in containers.lines() {
+                if !container.is_empty() {
+                    let mut rm_docker = std::process::Command::new("docker");
+                    rm_docker.args(["rm", "-f", container]).status().ok();
+                }
+            }
+        }
+    }
 
     // Create extraction container with consistent name
     let mut docker = std::process::Command::new("docker");

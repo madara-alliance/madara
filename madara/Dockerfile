@@ -27,13 +27,18 @@ RUN apt-get update -y && apt-get install -y wget gnupg software-properties-commo
     clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
     libmlir-19-dev mlir-19-tools \
     libpolly-19-dev \
-    liblld-19-dev
+    liblld-19-dev \
+    libc6-dev libstdc++-12-dev
 
 # Set LLVM environment variables for Cairo Native
 ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
 ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
 ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
 ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
+
+# Configure linker search paths for Cairo Native runtime compilation
+ENV LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
 
 # Install Python 3.9
 RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
