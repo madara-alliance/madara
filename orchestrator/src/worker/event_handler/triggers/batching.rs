@@ -987,7 +987,13 @@ impl BatchingTrigger {
         debug!("checking if we need to close the aggregator batch");
         *combined_weights = match batch.builtin_weights.checked_add(current_weights) {
             Some(weights) => weights,
-            None => return true,
+            None => {
+                warn!(
+                    "aggregator batch weights overflowed for batch {} when adding a new block. Adding {:?} and {:?}",
+                    batch.index, batch.builtin_weights, current_weights
+                );
+                return true;
+            }
         };
         (!batch.is_batch_ready)
             && ((state_update_len.is_some() && state_update_len.unwrap() > config.params.batching_config.max_blob_size)
