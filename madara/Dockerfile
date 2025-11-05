@@ -19,7 +19,19 @@ ENV RUSTC_WRAPPER=/bin/sccache
 
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
 
-RUN apt-get update -y && apt-get install -y wget clang
+# Install LLVM 19 for Cairo Native support
+RUN apt-get update -y && apt-get install -y wget gnupg software-properties-common && \
+    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \
+    add-apt-repository -y "deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-19 main" && \
+    apt-get update -y && apt-get install -y \
+    clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
+    libmlir-19-dev mlir-19-tools
+
+# Set LLVM environment variables for Cairo Native
+ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
+ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
+ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
+ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
 
 # Install Python 3.9
 RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \

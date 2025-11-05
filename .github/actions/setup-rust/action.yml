@@ -50,8 +50,24 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
+        # Add LLVM 19 repository
+        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+        sudo add-apt-repository -y "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main"
+
+        # Update and install dependencies including LLVM 19
         sudo apt-get update -y && sudo apt-get install -y \
-          clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
+          clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
+          libmlir-19-dev mlir-19-tools \
+          libudev-dev protobuf-compiler gcc g++ build-essential \
+          libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
+
+        # Set LLVM environment variables for Cairo Native
+        echo "MLIR_SYS_190_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
+        echo "LLVM_SYS_191_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
+        echo "TABLEGEN_190_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
+
+        # Add LLVM 19 binaries to PATH
+        echo "/usr/lib/llvm-19/bin" >> $GITHUB_PATH
 
     - name: Setup mold
       uses: rui314/setup-mold@v1
