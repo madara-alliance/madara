@@ -1,7 +1,7 @@
 use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
-use mp_block::header::CustomHeader;
+use mp_convert::Felt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
@@ -59,6 +59,10 @@ pub trait MadaraWriteRpcApi {
     #[method(name = "closeBlock")]
     async fn close_block(&self) -> RpcResult<()>;
 
+    /// Revert the blockchain to a specific block hash.
+    #[method(name = "revertTo")]
+    async fn revert_to(&self, block_hash: Felt) -> RpcResult<()>;
+    
     /// Submit a L1 message into the bypass input stream
     #[method(name = "addL1HandlerMessage")]
     async fn add_l1_handler_message(

@@ -100,6 +100,7 @@
 //! [m-proc-macros]: m_proc_macros
 #![warn(missing_docs)]
 
+use mc_db::MadaraStorageRead;
 mod cli;
 mod service;
 mod submit_tx;
@@ -249,6 +250,9 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.backend_params.rocksdb_config(),
     )
     .context("Starting madara backend")?;
+
+    let chain_tip = backend.db.get_chain_tip().expect("Chain tip should have been fetched.");
+    tracing::info!("💼 Starting chain with block: {:?}", chain_tip);
 
     let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 

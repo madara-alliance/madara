@@ -13,7 +13,7 @@ on:
         required: true
         type: string
     secrets:
-      ETHEREUM_SEPOLIA_BLAST_RPC:
+      ETHEREUM_SEPOLIA_RPC:
         required: true
       RPC_FOR_SNOS:
         required: true
@@ -99,7 +99,7 @@ jobs:
 
       - name: Run Orchestrator e2e test
         env:
-          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC || '' }}
+          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_RPC || '' }}
           MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
           MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: ${{ secrets.MADARA_ORCHESTRATOR_ATLANTIC_API_KEY }}
           # the self hosted runner has a different region so we override it here
