@@ -10,6 +10,8 @@ use starknet::core::types::{ExecutionResult, Felt, InvokeTransactionResult, Tran
 use std::path::Path;
 use std::str::FromStr;
 use std::{fs, io};
+use std::thread::sleep;
+use std::time::Duration;
 
 pub mod banner;
 pub mod constants;
@@ -78,6 +80,7 @@ pub async fn wait_for_transaction(
             panic!("Transaction failed with {:?}", reason);
         }
     }
+    sleep(Duration::from_secs(5));
 
     Ok(())
 }
