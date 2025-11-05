@@ -638,14 +638,11 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        match self.inner.get_custom_header_with_clear(true) {
-            Some(header) => {
-                let is_valid = header.is_block_hash_as_expected(&block_hash);
-                if !is_valid {
-                    tracing::warn!("Block hash not as expected for {}", block.header.block_number);
-                }
+        if let Some(header) = self.inner.get_custom_header_with_clear(true) {
+            let is_valid = header.is_block_hash_as_expected(&block_hash);
+            if !is_valid {
+                tracing::warn!("Block hash not as expected for {}", block.header.block_number);
             }
-            None => {}
         }
 
         // Save the block.

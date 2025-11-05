@@ -552,7 +552,7 @@ mod tests {
         }
 
         // Should have acquired at least some permits
-        assert!(permits.len() > 0);
+        assert!(!permits.is_empty());
 
         // Clean up
         drop(permits);

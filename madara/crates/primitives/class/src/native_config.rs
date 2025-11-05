@@ -194,8 +194,7 @@ mod tests {
 
     #[test]
     fn test_config_validation() {
-        let mut config = NativeConfig::default();
-        config.max_concurrent_compilations = 0;
+        let mut config = NativeConfig { max_concurrent_compilations: 0, ..Default::default() };
         assert!(config.validate().is_err());
 
         config.max_concurrent_compilations = 4;

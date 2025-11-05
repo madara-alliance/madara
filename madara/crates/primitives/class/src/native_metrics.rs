@@ -321,6 +321,12 @@ pub struct CompilationTimer {
     start: Instant,
 }
 
+impl Default for CompilationTimer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CompilationTimer {
     pub fn new() -> Self {
         metrics().record_compilation_start();

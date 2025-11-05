@@ -56,7 +56,3 @@ rstest = { workspace = true }
 assert_matches = { workspace = true }
 tempfile = { workspace = true }
 criterion = { workspace = true }
-
-[[bench]]
-name = "native_vs_vm"
-harness = false

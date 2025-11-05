@@ -415,7 +415,7 @@ mod test {
     fn test_load_missing_class_hashes() {
         let missed_class_hashes = &MISSED_CLASS_HASHES;
         assert_eq!(missed_class_hashes.len(), 38);
-        assert_eq!(missed_class_hashes.iter().map(|(_, v)| v.len()).sum::<usize>(), 57);
+        assert_eq!(missed_class_hashes.values().map(|v| v.len()).sum::<usize>(), 57);
     }
 
     #[test]
