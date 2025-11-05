@@ -10,7 +10,7 @@ pub struct CairoNativeParams {
     #[clap(
         env = "MADARA_ENABLE_NATIVE_EXECUTION",
         long,
-        default_value = "true",
+        default_value = "false",
         action = clap::ArgAction::Set,
         value_name = "BOOL"
     )]

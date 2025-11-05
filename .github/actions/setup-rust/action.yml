@@ -82,10 +82,14 @@ runs:
         echo "CC=clang-19" >> $GITHUB_ENV
         echo "CXX=clang-19" >> $GITHUB_ENV
 
+        # Configure linker for clang - use lld-19 for Cairo Native runtime compilation
+        # These flags are passed to clang when it invokes the linker
+        echo "LDFLAGS=-fuse-ld=lld-19" >> $GITHUB_ENV
+
         # Add LLVM 19 binaries to PATH
         echo "/usr/lib/llvm-19/bin" >> $GITHUB_PATH
 
     - name: Setup mold
       uses: rui314/setup-mold@v1
       with:
-        make-default: true
+        make-default: false # Don't make mold the default - Cairo Native runtime compilation needs lld-19

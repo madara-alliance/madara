@@ -108,5 +108,12 @@
   },
   "chain_config_override": {
     "overrides": []
+  },
+  "cairo_native_params": {
+    "enable_native_execution": false,
+    "native_max_memory_cache_size": 1000,
+    "native_max_concurrent_compilations": 4,
+    "native_compilation_timeout_secs": 300,
+    "native_compilation_mode": "async"
   }
 }
