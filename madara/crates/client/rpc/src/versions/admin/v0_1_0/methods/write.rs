@@ -3,6 +3,7 @@ use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_db::MadaraStorageRead;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
+use mp_block::header::CustomHeader;
 use mp_convert::Felt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
@@ -10,9 +11,7 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use mp_block::header::CustomHeader;
 use mp_utils::service::MadaraServiceId;
-
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -103,11 +102,11 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             Ok(())
         } else {
             Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "This method is only available in full node mode".to_string().into()
+                error: "This method is only available in full node mode".to_string().into(),
             })?
         }
     }
-    
+
     async fn add_l1_handler_message(
         &self,
         l1_handler_message: L1HandlerTransactionWithFee,
