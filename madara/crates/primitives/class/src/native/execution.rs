@@ -199,10 +199,7 @@ fn handle_async_compilation(
 /// Spawns a background compilation task if one isn't already running for this class.
 ///
 /// Uses atomic operations to prevent race conditions when multiple requests arrive simultaneously.
-fn spawn_compilation_if_needed(
-    class_hash: &starknet_types_core::felt::Felt,
-    sierra: &SierraConvertedClass,
-) {
+fn spawn_compilation_if_needed(class_hash: &starknet_types_core::felt::Felt, sierra: &SierraConvertedClass) {
     // Check if already compiling - use entry API for atomic check-and-insert
     if compilation::COMPILATION_IN_PROGRESS.contains_key(class_hash) {
         tracing::debug!(

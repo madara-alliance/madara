@@ -411,6 +411,10 @@ mod tests {
         let max_size = config.max_memory_cache_size;
 
         // Test that eviction threshold is calculated correctly
-        assert!(max_size > 0, "Max cache size should be positive");
+        // If Some, should be positive; if None, unlimited cache is valid
+        if let Some(size) = max_size {
+            assert!(size > 0, "Max cache size should be positive when set");
+        }
+        // None is also valid (unlimited cache)
     }
 }
