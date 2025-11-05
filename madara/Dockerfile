@@ -25,7 +25,9 @@ RUN apt-get update -y && apt-get install -y wget gnupg software-properties-commo
     add-apt-repository -y "deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-19 main" && \
     apt-get update -y && apt-get install -y \
     clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
-    libmlir-19-dev mlir-19-tools
+    libmlir-19-dev mlir-19-tools \
+    libpolly-19-dev \
+    liblld-19-dev
 
 # Set LLVM environment variables for Cairo Native
 ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19

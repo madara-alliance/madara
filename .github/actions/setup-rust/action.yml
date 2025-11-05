@@ -58,6 +58,8 @@ runs:
         sudo apt-get update -y && sudo apt-get install -y \
           clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
           libmlir-19-dev mlir-19-tools \
+          libpolly-19-dev \
+          liblld-19-dev \
           libudev-dev protobuf-compiler gcc g++ build-essential \
           libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
 
