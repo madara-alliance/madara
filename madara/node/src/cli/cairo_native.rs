@@ -52,6 +52,16 @@ use mp_class::native_config::{
     DEFAULT_MEMORY_CACHE_SIZE,
 };
 
+/// Default function for serde deserialization of memory cache size
+fn default_memory_cache_size() -> usize {
+    DEFAULT_MEMORY_CACHE_SIZE
+}
+
+/// Default function for serde deserialization of disk cache size
+fn default_disk_cache_size() -> u64 {
+    DEFAULT_DISK_CACHE_SIZE_BYTES
+}
+
 /// Validates and normalizes compilation mode input.
 ///
 /// Accepts "async" or "blocking" (case-insensitive) and returns the lowercase version.
@@ -184,6 +194,7 @@ pub struct CairoNativeParams {
         value_parser = parse_cache_size,
         value_name = "SIZE"
     )]
+    #[serde(default = "default_memory_cache_size")]
     pub native_max_memory_cache_size: usize,
 
     /// Maximum disk space (in bytes) for storing compiled classes.
@@ -204,6 +215,7 @@ pub struct CairoNativeParams {
         value_parser = parse_disk_cache_size,
         value_name = "BYTES"
     )]
+    #[serde(default = "default_disk_cache_size")]
     pub native_max_disk_cache_size: u64,
 
     /// Maximum number of contracts that can be compiled simultaneously.
