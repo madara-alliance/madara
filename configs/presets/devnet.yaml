@@ -1,9 +1,9 @@
 chain_name: "Madara"
-chain_id: "MADARA_DEVNET"
+chain_id: "STARKPAY_TESTNET"
 feeder_gateway_url: "http://localhost:8080/feeder_gateway/"
 gateway_url: "http://localhost:8080/gateway/"
-native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
-parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+native_fee_token_address: "0x13d5bf41c0bcd3b1eb76476d5613a9c7ab0dbc2c29769eda1a61efcbbce4d10"
+parent_fee_token_address: "0x13d5bf41c0bcd3b1eb76476d5613a9c7ab0dbc2c29769eda1a61efcbbce4d10"
 latest_protocol_version: "0.14.0"
 block_time: "10s"
 pending_block_update_time: "2s"
@@ -31,7 +31,7 @@ bouncer_config:
       mul_mod: 604
       range_check96: 56
 sequencer_address: "0x123"
-eth_core_contract_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512"
+eth_core_contract_address: "0x1123cf67854fa39f9e380e62fbb93c5e233b7a58d0716bbc7c552e2581ae618"
 eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
 mempool_max_transactions: 10000
 mempool_max_declare_transactions: 20

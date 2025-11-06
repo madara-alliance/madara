@@ -9,7 +9,8 @@ use starknet::accounts::ConnectedAccount;
 use starknet::core::types::{ExecutionResult, Felt, InvokeTransactionResult, TransactionReceipt};
 use std::path::Path;
 use std::str::FromStr;
-use std::{fs, io};
+use std::time::Duration;
+use std::{fs, io, thread};
 
 pub mod banner;
 pub mod constants;
@@ -78,6 +79,8 @@ pub async fn wait_for_transaction(
             panic!("Transaction failed with {:?}", reason);
         }
     }
+
+    thread::sleep(Duration::from_secs(12));
 
     Ok(())
 }
