@@ -2,7 +2,6 @@ use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::tests::common::get_sqs_client;
-use crate::tests::config::get_env_params;
 use crate::types::params::{AWSResourceIdentifier, QueueArgs, ARN};
 use crate::types::queue_control::QUEUES;
 use crate::types::Layer;
@@ -28,11 +27,8 @@ async fn localstack_config() -> aws_config::SdkConfig {
 /// Fixture to create a cloud provider with localstack config
 #[fixture]
 async fn cloud_provider(#[future] localstack_config: aws_config::SdkConfig) -> Arc<CloudProvider> {
-    // let config = localstack_config.await;
-    // Arc::new(CloudProvider::AWS(Box::new(config)))
-    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
-    let mut params = get_env_params();
-    Arc::new(CloudProvider::try_from(params.aws_params.clone()).expect("Failed to create provider config"))
+    let config = localstack_config.await;
+    Arc::new(CloudProvider::AWS(Box::new(config)))
 }
 
 /// Fixture to create queue args with a unique queue template
@@ -72,7 +68,6 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
 
         // Verify queue exists
         let queue_url = inner_sqs.get_queue_url_from_client(&queue_name).await?;
-        println!("✓ Queue exists: {}", queue_name);
 
         // Verify visibility timeout
         let attributes = inner_sqs
@@ -94,7 +89,6 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
             "Visibility timeout mismatch for queue {}",
             queue_name
         );
-        println!("✓ Visibility timeout correct for {}: {}s", queue_name, visibility_timeout);
 
         // Verify DLQ configuration if present
         if let Some(dlq_config) = &queue_config.dlq_config {
@@ -103,7 +97,6 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
             // Verify DLQ exists
             let dlq_url = inner_sqs.get_queue_url_from_client(&dlq_name).await;
             assert!(dlq_url.is_ok(), "DLQ {} should exist for queue {}", dlq_name, queue_name);
-            println!("✓ DLQ exists: {}", dlq_name);
 
             // Verify redrive policy
             let attributes = inner_sqs
@@ -139,12 +132,9 @@ async fn verify_queue_setup(inner_sqs: &InnerSQS, layer: &Layer, queue_args: &Qu
                 "Max receive count mismatch for queue {}",
                 queue_name
             );
-
-            println!(
-                "✓ Redrive policy correct for {}: DLQ={}, max_receive_count={}",
-                queue_name, dlq_name, max_receive_count
-            );
         }
+
+        println!("Queue properly setup: {}", queue_name);
     }
 
     Ok(())
@@ -187,7 +177,7 @@ async fn test_setup_with_name_identifier(
 }
 
 /// Test setup with ARN identifier for both L2 and L3 layers
-/// Verifies: ARN handling works correctly (setup should check for existence and skip creation)
+/// Verifies: queue creation, DLQs, visibility timeout, max receive count, is_ready_to_use
 #[rstest]
 #[case(Layer::L2)]
 #[case(Layer::L3)]
@@ -215,21 +205,27 @@ async fn test_setup_with_arn_identifier(
 
     let queue_args_arn = QueueArgs { queue_template_identifier: AWSResourceIdentifier::ARN(arn.clone()) };
 
-    // For ARN-based setup, we need to pre-create the queues for is_ready_to_use to pass
+    // Verify queues are not ready before setup
+    let ready_before = inner_sqs.is_ready_to_use(&layer, &queue_args_arn).await?;
+    assert!(!ready_before, "Queues should not be ready before setup");
+
+    // For ARN-based setup, we need to pre-create the queues since ARN setup skips creation
     // First create queues with name identifier
     let name_queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(arn.resource.clone()) };
     inner_sqs.setup(&layer, name_queue_args.clone()).await?;
-    println!("✓ Pre-created queues for ARN test");
+    println!("✓ Pre-created queues using Name identifier");
 
-    // Now run setup with ARN identifier (should skip creation and just verify existence)
-    let result = inner_sqs.setup(&layer, queue_args_arn.clone()).await;
-    assert!(result.is_ok(), "Setup with ARN identifier should succeed for {:?}", layer);
-    println!("✓ Setup with ARN identifier succeeded for {:?}", layer);
+    // Now run setup with ARN identifier (should verify existence and skip creation)
+    inner_sqs.setup(&layer, queue_args_arn.clone()).await?;
+    println!("✓ Setup completed for {:?} layer with ARN identifier", layer);
 
-    // Verify is_ready_to_use works with ARN identifier
-    let ready = inner_sqs.is_ready_to_use(&layer, &queue_args_arn).await?;
-    assert!(ready, "Queues should be ready with ARN identifier");
-    println!("✓ is_ready_to_use works with ARN identifier for {:?}", layer);
+    // Verify all queues, DLQs, timeouts, and max counts
+    verify_queue_setup(&inner_sqs, &layer, &queue_args_arn).await?;
+
+    // Verify queues are ready after setup
+    let ready_after = inner_sqs.is_ready_to_use(&layer, &queue_args_arn).await?;
+    assert!(ready_after, "Queues should be ready after setup");
+    println!("✓ is_ready_to_use returns true for {:?} layer with ARN identifier", layer);
 
     cleanup_queues(provider.clone()).await;
     Ok(())
