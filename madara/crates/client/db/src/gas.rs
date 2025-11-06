@@ -46,7 +46,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
             .to_u128()
             .context("Failed to convert STRK L1 data gas price to u128")?;
 
-        let strk_l2_gas_price = match self.chain_config.override_strk_l2_gas_price {
+        let strk_l2_gas_price = match self.chain_config.l2_gas_price_override {
             Some(l2_gas_price) => {
                 tracing::debug!(
                     "Overriding strk_l2_gas_price to {} because override_strk_l2_gas_price is set in chain config",

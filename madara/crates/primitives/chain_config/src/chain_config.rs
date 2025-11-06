@@ -191,7 +191,7 @@ pub struct ChainConfig {
     pub l2_gas_price_max_change_denominator: u128,
     /// Fixed L2 gas price.
     /// L2 gas price calculations will not be made if this is set.
-    pub override_strk_l2_gas_price: Option<u128>,
+    pub l2_gas_price_override: Option<u128>,
 
     /// Configuration for parallel execution in Blockifier. Only used for block production.
     #[serde(default)]
@@ -293,7 +293,7 @@ impl ChainConfig {
             l2_gas_target: 2_000_000_000,
             min_l2_gas_price: 100000,
             l2_gas_price_max_change_denominator: 48,
-            override_strk_l2_gas_price: None,
+            l2_gas_price_override: None,
 
             block_production_concurrency: BlockProductionConfig::default(),
 

@@ -79,6 +79,6 @@ mempool_ttl: null
 l2_gas_target: 2000000000
 min_l2_gas_price: 100000
 l2_gas_price_max_change_denominator: 48
-# Optional field to override the L2 gas calculation
-# Setting this field will ignore the gas l2_gas_target, min_l2_gas_price and l2_gas_price_max_change_denominator fields
+# Optional field to override the L2 gas price calculation
+# Setting this field will ignore the `l2_gas_target`, `min_l2_gas_price` and `l2_gas_price_max_change_denominator` fields
 override_strk_l2_gas_price: 2500
