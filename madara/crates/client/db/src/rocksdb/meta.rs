@@ -143,7 +143,6 @@ impl RocksDBStorageInner {
         // Note: Using regular write opts (no fsync) for performance
         // The chain tip will be synced on next flush or graceful shutdown
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
-
         Ok(())
     }
 
