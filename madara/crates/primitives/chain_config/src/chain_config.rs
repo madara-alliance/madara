@@ -28,6 +28,60 @@ use std::{
 };
 use url::Url;
 
+/// Custom serde module for u128 values in YAML
+/// serde_yaml doesn't natively support u128, so we handle both numbers and strings
+mod serde_u128 {
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &u128, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u128(*value)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct U128Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for U128Visitor {
+            type Value = u128;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a u128 as a number or string")
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<u128, E>
+            where
+                E: serde::de::Error,
+            {
+                if value < 0 {
+                    return Err(E::custom("u128 cannot be negative"));
+                }
+                Ok(value as u128)
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<u128, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(value as u128)
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<u128, E>
+            where
+                E: serde::de::Error,
+            {
+                value.parse::<u128>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_any(U128Visitor)
+    }
+}
+
 pub mod eth_core_contract_address {
     pub const MAINNET: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
     pub const SEPOLIA_TESTNET: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
@@ -112,16 +166,20 @@ pub enum L2GasPrice {
     /// Fixed L2 gas price
     Fixed {
         /// The fixed gas price value
+        #[serde(with = "serde_u128")]
         price: u128,
     },
     /// EIP-1559 style dynamic gas pricing
     #[serde(rename = "eip1559")]
     EIP1559 {
         /// The target gas usage per block for the block production
+        #[serde(with = "serde_u128")]
         target: u128,
         /// The minimum l2 gas price
+        #[serde(with = "serde_u128")]
         min_price: u128,
         /// The maximum change in l2 gas price per block (EIP-1559)
+        #[serde(with = "serde_u128")]
         max_change_denominator: u128,
     },
 }
