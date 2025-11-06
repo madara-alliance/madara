@@ -473,7 +473,8 @@ mod tests {
 
         #[test]
         fn test_from_bouncer_weights() {
-            let bouncer_weights = BouncerWeights { l1_gas: 1234, message_segment_length: usize::MAX, ..Default::default() };
+            let bouncer_weights =
+                BouncerWeights { l1_gas: 1234, message_segment_length: usize::MAX, ..Default::default() };
 
             let agg_weights = AggregatorBatchWeights::from(&bouncer_weights);
             assert_eq!(agg_weights.l1_gas, 1234);

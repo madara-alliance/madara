@@ -30,8 +30,6 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
 
-    let provider_url = format!("http://localhost:{}", server.port());
-
     let start_block;
     let end_block;
 
@@ -163,7 +161,6 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         .configure_storage_client(storage.into())
         .configure_database(database.into())
         .configure_lock_client(lock.into())
-        .configure_madara_admin_rpc_url(&provider_url)
         .build()
         .await;
 
@@ -182,8 +179,6 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let mut database = MockDatabaseClient::new();
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
-
-    let provider_url = format!("http://localhost:{}", server.port());
 
     let existing_aggregator_batch = crate::types::batch::AggregatorBatch {
         index: 1,
@@ -336,7 +331,6 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         .configure_lock_client(lock.into())
         .configure_min_block_to_process(0)
         .configure_max_block_to_process(Some(10))
-        .configure_madara_admin_rpc_url(&provider_url)
         .build()
         .await;
 
