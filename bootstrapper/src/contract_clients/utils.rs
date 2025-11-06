@@ -38,9 +38,9 @@ pub async fn build_single_owner_account<'a>(
     let mut singer_with_pending_id =
         SingleOwnerAccount::new(rpc, signer, account_address, chain_id, execution_encoding);
     // Note: it's a fix for the starknet rs issue, by default, starknet.rs asks for nonce at the latest
-    // block which causes the issues hence setting the block id to preconfirmed so that we get nonce in
+    // block which causes the issues hence setting the block id to PreConfirmed so that we get nonce in
     // right order
-    singer_with_pending_id.set_block_id(BlockId::Tag(BlockTag::Latest));
+    singer_with_pending_id.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
     singer_with_pending_id
 }
 
@@ -134,7 +134,7 @@ pub async fn declare_contract(clients: &Clients, input: DeclarationInput<'_>) ->
             let class_hash = contract_artifact_casm.class_hash().unwrap();
             let sierra_class_hash = contract_artifact.class_hash().unwrap();
 
-            if account.provider().get_class(BlockId::Tag(BlockTag::Latest), sierra_class_hash).await.is_ok() {
+            if account.provider().get_class(BlockId::Tag(BlockTag::PreConfirmed), sierra_class_hash).await.is_ok() {
                 return sierra_class_hash;
             }
 
@@ -160,7 +160,7 @@ pub async fn declare_contract(clients: &Clients, input: DeclarationInput<'_>) ->
             .unwrap();
 
             let class_hash = contract_abi_artifact.class_hash().expect("Failed to get class hash");
-            if clients.provider_l2().get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.is_ok() {
+            if clients.provider_l2().get_class(BlockId::Tag(BlockTag::PreConfirmed), class_hash).await.is_ok() {
                 return class_hash;
             }
 
@@ -203,14 +203,14 @@ pub(crate) async fn deploy_account_using_priv_key(
     log::debug!("signer : {:?}", signer);
     let mut oz_account_factory =
         OpenZeppelinAccountFactory::new(oz_account_class_hash, chain_id, signer, provider).await.unwrap();
-    oz_account_factory.set_block_id(BlockId::Tag(BlockTag::Latest));
+    oz_account_factory.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
 
     let deploy_txn = oz_account_factory.deploy_v3(Felt::ZERO).l1_gas(0).l2_gas(0).l1_data_gas(0);
     let account_address = deploy_txn.address();
     log::debug!("OZ Account will be deployed at the address: {:?}", account_address);
     save_to_json("account_address", &JsonValueType::StringType(account_address.to_string())).unwrap();
 
-    if provider.get_class_at(BlockId::Tag(BlockTag::Latest), account_address).await.is_ok() {
+    if provider.get_class_at(BlockId::Tag(BlockTag::PreConfirmed), account_address).await.is_ok() {
         log::info!("ℹ️ Account is already deployed. Skipping....");
         return account_address;
     }
