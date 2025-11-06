@@ -87,15 +87,6 @@ fn try_cache_lookup(
 ) -> Option<RunnableCompiledClass> {
     // Check in-memory cache first (fastest)
     if let Some(cached) = cache::try_get_from_memory_cache(class_hash) {
-        let elapsed = start.elapsed();
-        // Note: Memory cache lookup time is already recorded in try_get_from_memory_cache
-        tracing::info!(
-            target: "madara_cairo_native",
-            class_hash = %format!("{:#x}", class_hash.to_felt()),
-            elapsed = ?elapsed,
-            elapsed_ms = elapsed.as_millis(),
-            "memory_hit"
-        );
         return Some(cached);
     }
 
@@ -104,7 +95,7 @@ fn try_cache_lookup(
     if compilation::COMPILATION_IN_PROGRESS.contains_key(class_hash) {
         let elapsed = start.elapsed();
         super::metrics::metrics().record_compilation_in_progress_skip();
-        tracing::info!(
+        tracing::debug!(
             target: "madara_cairo_native",
             class_hash = %format!("{:#x}", class_hash.to_felt()),
             elapsed = ?elapsed,
@@ -116,15 +107,6 @@ fn try_cache_lookup(
     
     match cache::try_get_from_disk_cache(class_hash, sierra, config) {
         Ok(Some(cached)) => {
-            let elapsed = start.elapsed();
-            // Note: Disk cache lookup time is already recorded in try_get_from_disk_cache
-            tracing::info!(
-                target: "madara_cairo_native",
-                class_hash = %format!("{:#x}", class_hash.to_felt()),
-                elapsed = ?elapsed,
-                elapsed_ms = elapsed.as_millis(),
-                "disk_hit"
-            );
             Some(cached)
         }
         Ok(None) => {
@@ -157,7 +139,7 @@ fn handle_blocking_compilation(
     start: Instant,
 ) -> Result<RunnableCompiledClass, ProgramError> {
     super::metrics::metrics().record_compilation_blocking_miss();
-    tracing::info!(
+    tracing::debug!(
         target: "madara_cairo_native",
         class_hash = %format!("{:#x}", class_hash.to_felt()),
         "compilation_blocking_miss"
@@ -171,7 +153,7 @@ fn handle_blocking_compilation(
             let total_elapsed = start.elapsed();
             super::metrics::metrics().record_compilation_blocking_complete();
             super::metrics::metrics().record_compilation_blocking_conversion_time(conversion_elapsed.as_millis() as u64);
-            tracing::info!(
+            tracing::debug!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
                 elapsed = ?total_elapsed,
@@ -221,7 +203,7 @@ fn handle_async_compilation(
         if config.enable_retry {
             // Retry enabled: remove from failed list and retry compilation
             compilation::FAILED_COMPILATIONS.remove(class_hash);
-            tracing::info!(
+            tracing::debug!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
                 "compilation_retrying_previously_failed"
@@ -244,7 +226,7 @@ fn handle_async_compilation(
 
     // Fall back to VM while compilation happens in background
     super::metrics::metrics().record_vm_fallback();
-    tracing::info!(
+    tracing::debug!(
         target: "madara_cairo_native",
         class_hash = %format!("{:#x}", class_hash.to_felt()),
         "fallback_to_vm_async"

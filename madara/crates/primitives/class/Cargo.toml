@@ -17,7 +17,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-mc-analytics = { workspace = true }
 mp-convert = { workspace = true }
 mp-rpc = { workspace = true }
 
@@ -39,21 +38,15 @@ starknet_api = { workspace = true }
 
 # Other
 base64 = { workspace = true }
-dashmap = { workspace = true }
 flate2 = { workspace = true }
 lazy_static = { workspace = true }
 num-bigint = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["rt", "sync"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
 starknet-providers = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 mp-convert = { workspace = true }
-rstest = { workspace = true }
-assert_matches = { workspace = true }
-tempfile = { workspace = true }
-criterion = { workspace = true }

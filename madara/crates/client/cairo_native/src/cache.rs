@@ -388,7 +388,7 @@ pub(crate) fn try_get_from_disk_cache(
     if !path.exists() {
         let elapsed = start.elapsed();
         super::metrics::metrics().record_cache_disk_file_not_found();
-        tracing::info!(
+        tracing::debug!(
             target: "madara_cairo_native",
             class_hash = %format!("{:#x}", class_hash.to_felt()),
             elapsed = ?elapsed,
@@ -411,7 +411,7 @@ pub(crate) fn try_get_from_disk_cache(
             );
             return Ok(None);
         }
-        tracing::info!(
+        tracing::debug!(
         target: "madara_cairo_native",
         class_hash = %format!("{:#x}", class_hash.to_felt()),
         path = %path.display(),
@@ -490,7 +490,7 @@ pub(crate) fn try_get_from_disk_cache(
             super::metrics::metrics().record_cache_disk_runnable_convert_time(conversion_elapsed.as_millis() as u64);
             super::metrics::metrics().record_cache_lookup_time_disk(total_elapsed.as_millis() as u64);
 
-            tracing::info!(
+            tracing::debug!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
                 elapsed = ?total_elapsed,
