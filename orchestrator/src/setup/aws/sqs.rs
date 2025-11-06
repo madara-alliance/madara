@@ -4,7 +4,7 @@ use crate::types::queue::QueueType;
 use crate::types::Layer;
 use crate::{
     core::cloud::CloudProvider, core::traits::resource::Resource, types::params::QueueArgs,
-    types::queue_control::QUEUES, OrchestratorError, OrchestratorResult,
+    types::queue_control::QUEUES, OrchestratorResult,
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
@@ -59,27 +59,8 @@ impl Resource for InnerSQS {
                 AWSResourceIdentifier::Name(name) => {
                     let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
 
-                    let mut creation_attributes = HashMap::new();
-                    creation_attributes
-                        .insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
-
-                    let res = self
-                        .client()
-                        .create_queue()
-                        .queue_name(&queue_name)
-                        .set_attributes(Some(creation_attributes))
-                        .send()
-                        .await
-                        .map_err(|e| {
-                            OrchestratorError::ResourceSetupError(format!(
-                                "Failed to create SQS queue '{}': {}",
-                                queue_name, e
-                            ))
-                        })?;
-
-                    let queue_url = res
-                        .queue_url()
-                        .ok_or_else(|| OrchestratorError::ResourceSetupError("Failed to get queue url".to_string()))?;
+                    // Creating the queue
+                    let queue_url = self.create_queue(queue_name.clone()).await?;
 
                     tracing::info!("Queue created for type {}", queue_type);
 
@@ -91,46 +72,19 @@ impl Resource for InnerSQS {
                             .check_if_exists(&(args.queue_template_identifier.clone(), dlq_config.dlq_name.clone()))
                             .await?
                         {
-                            tracing::info!(" ⏭️️ DL queue already exists. Queue Type: {}", &dlq_config.dlq_name);
+                            tracing::info!(" ⏭️️  DLQ already exists. Queue Type: {}", &dlq_config.dlq_name);
                             // Fetch DLQ URL
                             let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
-                            let response =
-                                self.client().get_queue_url().queue_name(&dlq_name).send().await.map_err(|e| {
-                                    OrchestratorError::ResourceSetupError(format!(
-                                        "Failed to get queue URL for {}: {}",
-                                        dlq_name, e
-                                    ))
-                                })?;
-                            response
-                                .queue_url()
-                                .ok_or_else(|| {
-                                    OrchestratorError::ResourceSetupError(format!(
-                                        "Failed to get queue URL for {}",
-                                        dlq_name
-                                    ))
-                                })?
-                                .to_string()
+                            self.get_queue_url_from_client(&dlq_name).await?
                         } else {
+                            tracing::info!("⏳ Creating DLQ {}", &dlq_config.dlq_name);
                             // Create the DLQ
                             let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
 
                             // Standard DLQ creation (no FIFO attributes)
-                            let dlq_res =
-                                self.client().create_queue().queue_name(&dlq_name).send().await.map_err(|e| {
-                                    OrchestratorError::ResourceSetupError(format!(
-                                        "Failed to create DLQ '{}': {}",
-                                        dlq_name, e
-                                    ))
-                                })?;
-
-                            tracing::info!("DL Queue listed for type {}", queue_type);
-
-                            dlq_res
-                                .queue_url()
-                                .ok_or_else(|| {
-                                    OrchestratorError::ResourceSetupError("Failed to get DLQ url".to_string())
-                                })?
-                                .to_string()
+                            let dlq_url = self.create_queue(dlq_name).await?.to_string();
+                            tracing::info!("DLQ listed. Type {}", &dlq_config.dlq_name);
+                            dlq_url
                         };
 
                         let dlq_arn = self.get_queue_arn_from_url(&dlq_url).await?;
@@ -140,7 +94,12 @@ impl Resource for InnerSQS {
                             r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,
                             dlq_arn, &dlq_config.max_receive_count
                         );
-                        tracing::info!("Attaching Redrive Policy: {} for queue {}", &policy, &queue_name);
+                        tracing::info!(
+                            "Attaching Redrive Policy: {} for queue {} (DLQ Type = {})",
+                            &policy,
+                            &queue_name,
+                            &dlq_config.dlq_name
+                        );
                         attributes.insert(QueueAttributeName::RedrivePolicy, policy);
                     }
                     self.client()

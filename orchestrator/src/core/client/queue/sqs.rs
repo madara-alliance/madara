@@ -5,6 +5,7 @@ use crate::types::params::ARN;
 use crate::{
     core::client::queue::QueueClient,
     types::{params::QueueArgs, queue::QueueType},
+    OrchestratorError,
 };
 use async_trait::async_trait;
 use aws_config::Region;
@@ -96,10 +97,22 @@ impl InnerSQS {
         }
     }
 
-    /// get_queue_name_from_type - Get the queue specific name from it's type
+    /// get_queue_name_from_type - Get the queue specific name from its type
     /// This function returns the queue name based on the queue type provided
     pub fn get_queue_name_from_type(name: &str, queue_type: &QueueType) -> String {
         name.replace("{}", &queue_type.to_string())
+    }
+
+    /// Create a new queue with the given name
+    pub async fn create_queue(&self, queue_name: String) -> Result<String, OrchestratorError> {
+        let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
+            OrchestratorError::ResourceSetupError(format!("Failed to create SQS queue '{}': {}", queue_name, e))
+        })?;
+
+        Ok(res
+            .queue_url()
+            .ok_or_else(|| OrchestratorError::ResourceSetupError("Failed to get SQS URL".to_string()))?
+            .to_string())
     }
 }
 
