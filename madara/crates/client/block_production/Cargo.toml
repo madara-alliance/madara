@@ -31,7 +31,6 @@ bitvec.workspace = true
 assert_matches.workspace = true
 lazy_static.workspace = true
 serde_json.workspace = true
-tempfile.workspace = true
 criterion = { workspace = true }
 
 # Compile the test contracts in test cfg.

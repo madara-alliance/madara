@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::config;
-use crate::SierraConvertedClass;
+use mp_class::{CompiledSierra, SierraClassInfo, SierraConvertedClass};
 
 use super::cache;
 use super::compilation;
@@ -22,13 +22,13 @@ use super::compilation;
 pub(crate) fn handle_sierra_class(
     sierra: &SierraConvertedClass,
     class_hash: &starknet_types_core::felt::Felt,
-    compiled: &Arc<crate::CompiledSierra>,
-    info: &crate::SierraClassInfo,
+    compiled: &Arc<CompiledSierra>,
+    info: &SierraClassInfo,
     config: Arc<config::NativeConfig>,
 ) -> Result<RunnableCompiledClass, ProgramError> {
     // Convert Felt to ClassHash at the entry point for type safety
     let class_hash_typed = ClassHash(*class_hash);
-    
+
     tracing::debug!(
         target: "madara_cairo_native",
         class_hash = %format!("{:#x}", class_hash),
@@ -54,7 +54,7 @@ pub(crate) fn handle_sierra_class(
 
     // Handle compilation based on mode (blocking vs async)
     if config.is_blocking_mode() {
-        handle_blocking_compilation(&class_hash_typed, sierra, &config)
+        handle_blocking_compilation(&class_hash_typed, sierra, &config, start)
     } else {
         handle_async_compilation(&class_hash_typed, sierra, compiled, info, &config)
     }
@@ -65,8 +65,8 @@ pub(crate) fn handle_sierra_class(
 /// Converts the Sierra class to VM format and returns it immediately.
 fn handle_native_disabled(
     class_hash: &starknet_types_core::felt::Felt,
-    compiled: &Arc<crate::CompiledSierra>,
-    info: &crate::SierraClassInfo,
+    compiled: &Arc<CompiledSierra>,
+    info: &SierraClassInfo,
 ) -> Result<RunnableCompiledClass, ProgramError> {
     tracing::debug!(
         target: "madara_cairo_native",
@@ -88,24 +88,42 @@ fn try_cache_lookup(
     // Check in-memory cache first (fastest)
     if let Some(cached) = cache::try_get_from_memory_cache(class_hash) {
         let elapsed = start.elapsed();
+        // Note: Memory cache lookup time is already recorded in try_get_from_memory_cache
         tracing::info!(
             target: "madara_cairo_native",
             class_hash = %format!("{:#x}", class_hash.to_felt()),
             elapsed = ?elapsed,
-            "native_from_memory"
+            elapsed_ms = elapsed.as_millis(),
+            "memory_hit"
         );
         return Some(cached);
     }
 
     // Try disk cache (slower but persistent)
+    // Skip disk cache if compilation is in progress to avoid loading incomplete files
+    if compilation::COMPILATION_IN_PROGRESS.contains_key(class_hash) {
+        let elapsed = start.elapsed();
+        super::metrics::metrics().record_compilation_in_progress_skip();
+        tracing::info!(
+            target: "madara_cairo_native",
+            class_hash = %format!("{:#x}", class_hash.to_felt()),
+            elapsed = ?elapsed,
+            elapsed_ms = elapsed.as_millis(),
+            "compilation_in_progress_skipping_disk_cache"
+        );
+        return None;
+    }
+    
     match cache::try_get_from_disk_cache(class_hash, sierra, config) {
         Ok(Some(cached)) => {
             let elapsed = start.elapsed();
+            // Note: Disk cache lookup time is already recorded in try_get_from_disk_cache
             tracing::info!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
                 elapsed = ?elapsed,
-                "native_from_disk"
+                elapsed_ms = elapsed.as_millis(),
+                "disk_hit"
             );
             Some(cached)
         }
@@ -116,6 +134,7 @@ fn try_cache_lookup(
         Err(e) => {
             // Error loading from disk - log and fall through to compilation
             let elapsed = start.elapsed();
+            super::metrics::metrics().record_cache_disk_error_fallback();
             tracing::warn!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
@@ -135,7 +154,9 @@ fn handle_blocking_compilation(
     class_hash: &ClassHash,
     sierra: &SierraConvertedClass,
     config: &Arc<config::NativeConfig>,
+    start: Instant,
 ) -> Result<RunnableCompiledClass, ProgramError> {
+    super::metrics::metrics().record_compilation_blocking_miss();
     tracing::info!(
         target: "madara_cairo_native",
         class_hash = %format!("{:#x}", class_hash.to_felt()),
@@ -144,16 +165,19 @@ fn handle_blocking_compilation(
 
     match compilation::compile_native_blocking(*class_hash, sierra, config.as_ref()) {
         Ok(native_class) => {
+            let conversion_start = Instant::now();
+            let runnable = RunnableCompiledClass::from(native_class.as_ref().clone());
+            let conversion_elapsed = conversion_start.elapsed();
+            let total_elapsed = start.elapsed();
+            super::metrics::metrics().record_compilation_blocking_complete();
+            super::metrics::metrics().record_compilation_blocking_conversion_time(conversion_elapsed.as_millis() as u64);
             tracing::info!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
+                elapsed = ?total_elapsed,
+                elapsed_ms = total_elapsed.as_millis(),
+                conversion_ms = conversion_elapsed.as_millis(),
                 "compilation_blocking_complete"
-            );
-            let runnable = RunnableCompiledClass::from(native_class.as_ref().clone());
-            tracing::debug!(
-                target: "madara_cairo_native",
-                class_hash = %format!("{:#x}", class_hash.to_felt()),
-                "returning_native_blocking"
             );
             Ok(runnable)
         }
@@ -185,8 +209,8 @@ fn handle_blocking_compilation(
 fn handle_async_compilation(
     class_hash: &ClassHash,
     sierra: &SierraConvertedClass,
-    compiled: &Arc<crate::CompiledSierra>,
-    info: &crate::SierraClassInfo,
+    compiled: &Arc<CompiledSierra>,
+    info: &SierraClassInfo,
     config: &Arc<config::NativeConfig>,
 ) -> Result<RunnableCompiledClass, ProgramError> {
     // Check if this class previously failed compilation
@@ -248,8 +272,8 @@ fn spawn_compilation_if_needed(
 /// This is used when native execution is disabled or as a fallback during async compilation.
 fn convert_to_vm_class(
     class_hash: &starknet_types_core::felt::Felt,
-    compiled: &Arc<crate::CompiledSierra>,
-    info: &crate::SierraClassInfo,
+    compiled: &Arc<CompiledSierra>,
+    info: &SierraClassInfo,
     sierra_version_error_label: &str,
     vm_conversion_error_label: &str,
 ) -> Result<RunnableCompiledClass, ProgramError> {

@@ -6,7 +6,6 @@
 //!
 //! # Error Categories
 //!
-//! - **Validation errors**: Invalid class hashes, malformed inputs
 //! - **Compilation errors**: Native compilation failures, timeouts
 //! - **Conversion errors**: Sierra → CASM → Blockifier conversion failures
 //! - **I/O errors**: Cache directory creation, disk load failures
@@ -22,9 +21,6 @@ use std::time::Duration;
 /// Errors are automatically converted to `ProgramError` when propagated to blockifier.
 #[derive(Debug, thiserror::Error)]
 pub enum NativeCompilationError {
-    #[error("Invalid class hash {0:#x}: {1}")]
-    InvalidClassHash(starknet_types_core::felt::Felt, String),
-
     #[error("Compilation failed: {0}")]
     CompilationFailed(String),
 

@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 
 use super::config;
 use super::error::NativeCompilationError;
-use crate::SierraConvertedClass;
+use mp_class::SierraConvertedClass;
 
 use super::cache;
 
@@ -27,9 +27,8 @@ use super::cache;
 /// **Ownership**: Only `spawn_compilation_if_needed` inserts entries into this map.
 /// All other functions only read from or remove from it. This ensures clear ownership
 /// and prevents race conditions.
-pub(crate) static COMPILATION_IN_PROGRESS: std::sync::LazyLock<
-    DashMap<ClassHash, Arc<RwLock<()>>>,
-> = std::sync::LazyLock::new(DashMap::new);
+pub(crate) static COMPILATION_IN_PROGRESS: std::sync::LazyLock<DashMap<ClassHash, Arc<RwLock<()>>>> =
+    std::sync::LazyLock::new(DashMap::new);
 
 /// Get the current number of compilations in progress.
 ///
@@ -76,9 +75,9 @@ fn evict_failed_compilations_if_needed(max_failed_compilations: usize) {
 
     let to_remove = current_size - max_failed_compilations + 1; // Remove one extra to make room
     let eviction_start = Instant::now();
-    
+
     tracing::debug!(
-        target: "madara_cairo_native",
+        target: "madara.cairo_native",
         current_size = current_size,
         max_size = max_failed_compilations,
         evicting_count = to_remove,
@@ -104,11 +103,11 @@ fn evict_failed_compilations_if_needed(max_failed_compilations: usize) {
     for (key, _) in entries.into_iter().take(to_remove) {
         FAILED_COMPILATIONS.remove(&key);
     }
-    
+
     let eviction_elapsed = eviction_start.elapsed();
-    
+
     tracing::debug!(
-        target: "madara_cairo_native",
+        target: "madara.cairo_native",
         evicted_count = to_remove,
         elapsed = ?eviction_elapsed,
         elapsed_ms = eviction_elapsed.as_millis(),
@@ -142,7 +141,7 @@ fn try_acquire_compilation_permit() -> Option<tokio::sync::SemaphorePermit<'stat
         // Fallback: semaphore not initialized yet, use default value
         // This should never happen in normal operation since semaphore is initialized in main.rs
         tracing::warn!(
-            target: "madara_cairo_native",
+            target: "madara.cairo_native",
             "compilation_semaphore_not_initialized_using_default_limit"
         );
         Arc::new(tokio::sync::Semaphore::new(config::DEFAULT_MAX_CONCURRENT_COMPILATIONS))
@@ -268,7 +267,7 @@ fn cache_compiled_native_class(
     // Disk cache limit enforced after successful compilation
     if let Err(e) = cache::enforce_disk_cache_limit(&config.cache_dir, config.max_disk_cache_size) {
         tracing::warn!(
-            target: "madara_cairo_native",
+            target: "madara.cairo_native",
             cache_dir = %config.cache_dir.display(),
             error = %e,
             "disk_cache_enforcement_failed"
@@ -296,7 +295,6 @@ pub(crate) fn compile_native_blocking(
     sierra: &SierraConvertedClass,
     config: &config::NativeConfig,
 ) -> Result<Arc<NativeCompiledClassV1>, NativeCompilationError> {
-
     let path = cache::get_native_cache_path(&class_hash, config);
 
     // Ensure directory exists
@@ -310,7 +308,7 @@ pub(crate) fn compile_native_blocking(
     let timer = super::metrics::CompilationTimer::new();
 
     tracing::info!(
-        target: "madara_cairo_native",
+        target: "madara.cairo_native",
         class_hash = %format!("{:#x}", class_hash.to_felt()),
         path = %path.display(),
         "compilation_blocking_start"
@@ -330,9 +328,10 @@ pub(crate) fn compile_native_blocking(
 
     let elapsed = start.elapsed();
     tracing::info!(
-        target: "madara_cairo_native",
+        target: "madara.cairo_native",
         class_hash = %format!("{:#x}", class_hash.to_felt()),
         elapsed = ?elapsed,
+        elapsed_ms = elapsed.as_millis(),
         "compilation_blocking_success"
     );
 
@@ -360,7 +359,7 @@ fn handle_async_compilation_success(
         Err(e) => {
             // Conversion failed - log error and mark for retry
             tracing::error!(
-                target: "madara_cairo_native",
+                target: "madara.cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
                 error = %e,
                 "compilation_async_conversion_failed"
@@ -406,7 +405,7 @@ fn handle_async_compilation_failure(
     if is_timeout {
         // Timeouts are warnings - compilation can be retried later
         tracing::warn!(
-            target: "madara_cairo_native",
+            target: "madara.cairo_native",
             class_hash = %format!("{:#x}", class_hash.to_felt()),
             error = %error_msg,
             error_kind = error_kind,
@@ -418,7 +417,7 @@ fn handle_async_compilation_failure(
     } else {
         // Other failures are errors
         tracing::error!(
-            target: "madara_cairo_native",
+            target: "madara.cairo_native",
             class_hash = %format!("{:#x}", class_hash.to_felt()),
             error = %error_msg,
             error_kind = error_kind,
@@ -447,7 +446,7 @@ async fn execute_async_compilation(
     let timer = super::metrics::CompilationTimer::new();
 
     tracing::debug!(
-        target: "madara_cairo_native",
+        target: "madara.cairo_native",
         class_hash = %format!("{:#x}", class_hash.to_felt()),
         path = %path.display(),
         timeout_secs = compilation_timeout.as_secs(),
@@ -514,7 +513,7 @@ pub(crate) fn spawn_compilation_if_needed(
     config: Arc<config::NativeConfig>,
 ) {
     use dashmap::mapref::entry::Entry;
-    
+
     // Atomic check-and-insert to prevent race conditions
     match COMPILATION_IN_PROGRESS.entry(class_hash) {
         Entry::Vacant(entry) => {
@@ -527,20 +526,20 @@ pub(crate) fn spawn_compilation_if_needed(
             let max_concurrent = config.max_concurrent_compilations;
 
             tracing::debug!(
-                target: "madara_cairo_native",
+                target: "madara.cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
                 in_progress = in_progress_count,
                 max_concurrent = max_concurrent,
                 "compilation_async_spawning"
             );
-            
+
             // Check if we're in a Tokio runtime context
             // This can be called from blockifier's worker pool threads which don't have a Tokio runtime
             let handle = match tokio::runtime::Handle::try_current() {
                 Ok(handle) => handle,
                 Err(_) => {
                     tracing::debug!(
-                        target: "madara_cairo_native",
+                        target: "madara.cairo_native",
                         class_hash = %format!("{:#x}", class_hash.to_felt()),
                         "compilation_async_no_runtime_context"
                     );
@@ -558,7 +557,7 @@ pub(crate) fn spawn_compilation_if_needed(
                     Some(permit) => permit,
                     None => {
                         tracing::warn!(
-                            target: "madara_cairo_native",
+                            target: "madara.cairo_native",
                             class_hash = %format!("{:#x}", class_hash.to_felt()),
                             "compilation_async_max_concurrent_reached"
                         );
@@ -574,7 +573,7 @@ pub(crate) fn spawn_compilation_if_needed(
                     None => {
                         // Entry was removed (shouldn't happen, but handle gracefully)
                         tracing::warn!(
-                            target: "madara_cairo_native",
+                            target: "madara.cairo_native",
                             class_hash = %format!("{:#x}", class_hash.to_felt()),
                             "compilation_async_entry_missing"
                         );
@@ -597,7 +596,7 @@ pub(crate) fn spawn_compilation_if_needed(
                 if let Some(parent) = path.parent() {
                     if let Err(e) = std::fs::create_dir_all(parent) {
                         tracing::error!(
-                            target: "madara_cairo_native",
+                            target: "madara.cairo_native",
                             cache_dir = %parent.display(),
                             error = %e,
                             "compilation_async_cache_directory_creation_failed"
@@ -618,7 +617,7 @@ pub(crate) fn spawn_compilation_if_needed(
         Entry::Occupied(_) => {
             // Already compiling - another thread got there first
             tracing::debug!(
-                target: "madara_cairo_native",
+                target: "madara.cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
                 "compilation_already_in_progress"
             );

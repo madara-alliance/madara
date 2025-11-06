@@ -6,20 +6,12 @@
 //!
 //! # Key Modules
 //!
-//! - [`compile`]: Compilation utilities for CASM and Cairo Native
-//! - [`to_blockifier`]: Conversion to Blockifier's `RunnableCompiledClass` with native execution support
-//! - [`native_config`]: Configuration for Cairo Native execution
-//! - [`native_metrics`]: Metrics tracking for native compilation and caching
-//! - [`native_error`]: Error types for native compilation
+//! - [`compile`]: Compilation utilities for CASM
 //!
 //! # Cairo Native Execution
 //!
-//! Cairo Native execution provides faster contract execution by compiling contracts
-//! ahead-of-time to native code. This feature is opt-in and requires the
-//! `--enable-native-execution` CLI flag to be set to `true`. When disabled (default),
-//! all contracts use Cairo VM execution.
-//!
-//! See [`to_blockifier`] module for detailed architecture and usage.
+//! Cairo Native execution functionality has been moved to the `mc-cairo-native` crate.
+//! See that crate for Cairo Native execution, compilation, caching, and metrics.
 
 use class_hash::ComputeClassHashError;
 use compile::ClassCompilationError;
@@ -33,11 +25,6 @@ pub mod convert;
 mod into_starknet_core;
 mod into_starknet_types;
 pub mod mainnet_legacy_class_hashes;
-pub mod native;
-
-// Re-export native modules for backward compatibility and cleaner API
-pub use native::{config as native_config, error as native_error, metrics as native_metrics};
-mod to_blockifier;
 mod to_starknet_api;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

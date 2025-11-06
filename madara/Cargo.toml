@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "node",
+  "crates/client/cairo_native",
   "crates/client/db",
   "crates/client/exec",
   "crates/client/sync",
@@ -96,6 +97,7 @@ mp-oracle = { path = "crates/primitives/oracle", default-features = false }
 
 # Madara client
 mc-analytics = { path = "crates/client/analytics" }
+mc-cairo-native = { path = "crates/client/cairo_native" }
 mc-telemetry = { path = "crates/client/telemetry" }
 mc-db = { path = "crates/client/db" }
 mc-exec = { path = "crates/client/exec" }

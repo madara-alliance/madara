@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::config;
-use crate::SierraConvertedClass;
+use mp_class::SierraConvertedClass;
 
 /// Timeout for loading compiled classes from disk.
 ///
@@ -35,33 +35,26 @@ use crate::SierraConvertedClass;
 /// we need explicit timeout protection.
 const DISK_LOAD_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Timeout for memory cache lookup and conversion.
+///
+/// 100ms timeout prevents indefinite blocking during memory cache access or
+/// conversion operations. While memory cache lookups should be instant, conversion
+/// operations might hang due to issues with the cached native class.
+const MEMORY_CACHE_TIMEOUT: Duration = Duration::from_millis(100);
+
 /// In-memory cache for compiled native classes.
 ///
 /// Uses DashMap for concurrent access without locking.
 /// Stores tuples of `(compiled_class, last_access_time)` to enable LRU eviction.
 /// Access time is updated on every cache hit to track recently used classes.
-pub(crate) static NATIVE_CACHE: std::sync::LazyLock<
-    DashMap<ClassHash, (Arc<NativeCompiledClassV1>, Instant)>,
-> = std::sync::LazyLock::new(DashMap::new);
+pub(crate) static NATIVE_CACHE: std::sync::LazyLock<DashMap<ClassHash, (Arc<NativeCompiledClassV1>, Instant)>> =
+    std::sync::LazyLock::new(DashMap::new);
 
 /// Get the cache file path for a class hash.
 ///
 /// Constructs a path like `{cache_dir}/{class_hash:#x}.so`.
 /// The filename is validated to prevent path traversal attacks.
-pub(crate) fn get_native_cache_path(
-    class_hash: &ClassHash,
-    config: &config::NativeConfig,
-) -> PathBuf {
-
-    static LOGGED_PATH: std::sync::Once = std::sync::Once::new();
-    LOGGED_PATH.call_once(|| {
-        tracing::info!(
-            target: "madara_cairo_native",
-            cache_dir = %config.cache_dir.display(),
-            "cache_directory_initialized"
-        );
-    });
-
+pub(crate) fn get_native_cache_path(class_hash: &ClassHash, config: &config::NativeConfig) -> PathBuf {
     // Convert ClassHash to Felt for formatting (ClassHash implements ToFelt)
     let felt = class_hash.to_felt();
     // Ensure filename is safe (no path traversal)
@@ -105,7 +98,7 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
     if total_size > max_size {
         let eviction_start = Instant::now();
         let bytes_to_remove = total_size - max_size;
-        
+
         tracing::debug!(
             target: "madara_cairo_native",
             cache_dir = %cache_dir.display(),
@@ -114,7 +107,7 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
             bytes_to_remove = bytes_to_remove,
             "disk_cache_eviction_start"
         );
-        
+
         // Sort by access time (oldest first) - modification time tracks access time
         entries.sort_by_key(|(_, access_time, _)| *access_time);
 
@@ -130,7 +123,7 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
         }
 
         let eviction_elapsed = eviction_start.elapsed();
-        
+
         tracing::debug!(
             target: "madara_cairo_native",
             cache_dir = %cache_dir.display(),
@@ -157,11 +150,10 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
 /// This prevents holding DashMap locks while doing expensive operations.
 ///
 /// If `max_memory_cache_size` is `None`, no eviction is performed (unlimited cache).
-/// 
+///
 /// Requires config to be passed as a parameter (no global config fallback).
 /// This function is only called when native config is present.
 pub(crate) fn evict_cache_if_needed(config: &config::NativeConfig) {
-
     let Some(max_size) = config.max_memory_cache_size else {
         // Update cache size metric only, no eviction
         super::metrics::metrics().set_cache_size(NATIVE_CACHE.len());
@@ -178,7 +170,7 @@ pub(crate) fn evict_cache_if_needed(config: &config::NativeConfig) {
 
     let to_remove = current_size - max_size;
     let eviction_start = Instant::now();
-    
+
     tracing::debug!(
         target: "madara_cairo_native",
         current_size = current_size,
@@ -211,10 +203,11 @@ pub(crate) fn evict_cache_if_needed(config: &config::NativeConfig) {
     }
 
     let eviction_elapsed = eviction_start.elapsed();
-    
+
     // Cache size metric updated
     super::metrics::metrics().set_cache_size(NATIVE_CACHE.len());
-    
+    super::metrics::metrics().record_cache_eviction_time(eviction_elapsed.as_millis() as u64);
+
     tracing::debug!(
         target: "madara_cairo_native",
         evicted_count = to_remove,
@@ -224,42 +217,84 @@ pub(crate) fn evict_cache_if_needed(config: &config::NativeConfig) {
     );
 }
 
-/// Try to get a class from the in-memory cache.
+/// Try to get a class from the in-memory cache with a timeout.
 ///
 /// Returns `Some(RunnableCompiledClass)` if found, `None` otherwise.
-/// Updates access time for LRU tracking using mutable entry API to avoid unnecessary cloning.
+/// Updates access time for LRU tracking.
+///
+/// Wrapped in a timeout to prevent indefinite blocking during conversion.
 pub(crate) fn try_get_from_memory_cache(class_hash: &ClassHash) -> Option<RunnableCompiledClass> {
+    use std::sync::mpsc;
+    use std::thread;
+
+    let class_hash_for_log = *class_hash;
+    let (tx, rx) = mpsc::channel();
+
+    let thread_handle = thread::spawn(move || {
     let start = Instant::now();
 
-    use dashmap::mapref::entry::Entry;
-    match NATIVE_CACHE.entry(*class_hash) {
-        Entry::Occupied(mut entry) => {
-            // Get mutable reference to update access time without cloning the Arc
-            // This avoids the unnecessary clone that would happen with insert()
-            let (cached_class, access_time) = entry.get_mut();
-            *access_time = Instant::now();
-            
-            // Clone Arc once for return value (cheap - just increments ref count)
-            let cloned_class_arc = cached_class.clone();
+        if let Some(cached_entry) = NATIVE_CACHE.get(&class_hash_for_log) {
+            let (cached_class, _) = cached_entry.value();
 
-            let elapsed = start.elapsed();
+            // Clone before dropping the reference to avoid holding lock during insert
+            let cloned_class = cached_class.clone();
+            drop(cached_entry); // Reference dropped before insert to minimize lock hold time
+
+            // Access time updated for LRU eviction tracking
+            NATIVE_CACHE.insert(class_hash_for_log, (cloned_class.clone(), Instant::now()));
+
+            let lookup_elapsed = start.elapsed();
             let cache_size = NATIVE_CACHE.len();
             super::metrics::metrics().record_cache_hit_memory();
+            super::metrics::metrics().record_cache_lookup_time_memory(lookup_elapsed.as_millis() as u64);
+
+            // Convert Arc<NativeCompiledClassV1> to RunnableCompiledClass
+            let conversion_start = Instant::now();
+            let runnable = RunnableCompiledClass::from(cloned_class.as_ref().clone());
+            let conversion_elapsed = conversion_start.elapsed();
+            let total_elapsed = start.elapsed();
+
+            super::metrics::metrics().record_cache_conversion_time(conversion_elapsed.as_millis() as u64);
 
             tracing::debug!(
                 target: "madara_cairo_native",
-                class_hash = %format!("{:#x}", class_hash.to_felt()),
-                elapsed = ?elapsed,
+                class_hash = %format!("{:#x}", class_hash_for_log.to_felt()),
+                elapsed = ?total_elapsed,
+                lookup_ms = lookup_elapsed.as_millis(),
+                conversion_ms = conversion_elapsed.as_millis(),
                 cache_size = cache_size,
                 "memory_hit"
             );
 
-            // Convert Arc<NativeCompiledClassV1> to RunnableCompiledClass
-            // This clones the inner data structure (necessary for conversion)
-            let runnable = RunnableCompiledClass::from(cloned_class_arc.as_ref().clone());
-            Some(runnable)
+            let _ = tx.send(Some(runnable));
+        } else {
+            let _ = tx.send(None);
         }
-        Entry::Vacant(_) => None,
+    });
+
+    match rx.recv_timeout(MEMORY_CACHE_TIMEOUT) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            super::metrics::metrics().record_cache_memory_timeout();
+            tracing::warn!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash.to_felt()),
+                timeout_ms = MEMORY_CACHE_TIMEOUT.as_millis(),
+                "memory_cache_lookup_timeout"
+            );
+            // Don't wait for thread - it will be cleaned up when process exits
+            None
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            super::metrics::metrics().record_cache_memory_thread_disconnected();
+            tracing::warn!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash.to_felt()),
+                "memory_cache_thread_disconnected"
+            );
+            let _ = thread_handle.join();
+            None
+        }
     }
 }
 
@@ -288,21 +323,13 @@ fn try_load_executor_with_timeout(
     // Wait for result with timeout
     let start = Instant::now();
     match rx.recv_timeout(timeout) {
-        Ok(Ok(Some(executor))) => {
-            let elapsed = start.elapsed();
-            tracing::debug!(
-                target: "madara_cairo_native",
-                path = %path_for_logging.display(),
-                elapsed = ?elapsed,
-                "disk_load_success"
-            );
-            Ok(Some(executor))
-        }
+        Ok(Ok(Some(executor))) => Ok(Some(executor)),
         Ok(Ok(None)) => {
             Ok(None) // File locked
         }
         Ok(Err(e)) => {
             let elapsed = start.elapsed();
+            super::metrics::metrics().record_cache_disk_load_error();
             tracing::warn!(
                 target: "madara_cairo_native",
                 path = %path_for_logging.display(),
@@ -314,6 +341,7 @@ fn try_load_executor_with_timeout(
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
             let elapsed = start.elapsed();
+            super::metrics::metrics().record_cache_disk_load_timeout();
             tracing::warn!(
                 target: "madara_cairo_native",
                 path = %path_for_logging.display(),
@@ -323,10 +351,13 @@ fn try_load_executor_with_timeout(
             );
             // Note: Thread may still be running, but we can't wait for it
             // The thread will finish eventually, but we return None to avoid blocking
+            // We don't join() here because if the thread is stuck, join() would also block indefinitely
+            // The thread will be cleaned up when it finishes or when the process exits
             Ok(None) // Timeout - treat as cache miss
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             let elapsed = start.elapsed();
+            super::metrics::metrics().record_cache_disk_thread_disconnected();
             tracing::warn!(
                 target: "madara_cairo_native",
                 path = %path_for_logging.display(),
@@ -353,7 +384,48 @@ pub(crate) fn try_get_from_disk_cache(
     let start = Instant::now();
     let path = get_native_cache_path(class_hash, config);
 
+
     if !path.exists() {
+        let elapsed = start.elapsed();
+        super::metrics::metrics().record_cache_disk_file_not_found();
+        tracing::info!(
+            target: "madara_cairo_native",
+            class_hash = %format!("{:#x}", class_hash.to_felt()),
+            elapsed = ?elapsed,
+            elapsed_ms = elapsed.as_millis(),
+            "disk_cache_file_not_found"
+        );
+        return Ok(None);
+    }
+
+    // Check file size - if 0 or very small, file might be incomplete/corrupted
+    if let Ok(metadata) = std::fs::metadata(&path) {
+        let file_size = metadata.len();
+        if file_size == 0 {
+            super::metrics::metrics().record_cache_disk_file_empty();
+            tracing::warn!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash.to_felt()),
+                path = %path.display(),
+                "disk_cache_file_empty_skipping"
+            );
+            return Ok(None);
+        }
+        tracing::info!(
+        target: "madara_cairo_native",
+        class_hash = %format!("{:#x}", class_hash.to_felt()),
+        path = %path.display(),
+            file_size_bytes = file_size,
+        "attempting_disk_load"
+    );
+    } else {
+        super::metrics::metrics().record_cache_disk_metadata_error();
+        tracing::warn!(
+            target: "madara_cairo_native",
+            class_hash = %format!("{:#x}", class_hash.to_felt()),
+            path = %path.display(),
+            "disk_cache_file_metadata_error_skipping"
+        );
         return Ok(None);
     }
 
@@ -373,11 +445,11 @@ pub(crate) fn try_get_from_disk_cache(
 
             let load_elapsed = start.elapsed();
             super::metrics::metrics().record_cache_hit_disk();
+            super::metrics::metrics().record_cache_disk_load_time(load_elapsed.as_millis() as u64);
 
             // Converted to blockifier class using common logic
             let convert_start = Instant::now();
-            let blockifier_compiled_class = match crate::native::compilation::convert_sierra_to_blockifier_class(sierra)
-            {
+            let blockifier_compiled_class = match crate::compilation::convert_sierra_to_blockifier_class(sierra) {
                 Ok(compiled) => compiled,
                 Err(e) => {
                     tracing::error!(
@@ -395,32 +467,40 @@ pub(crate) fn try_get_from_disk_cache(
                 }
             };
             let convert_elapsed = convert_start.elapsed();
+            super::metrics::metrics().record_cache_disk_blockifier_convert_time(convert_elapsed.as_millis() as u64);
 
             let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
 
-            // Create Arc once and reuse it
-            let arc_native = Arc::new(native_class.clone());
             // Insert first, then evict if needed (reduces lock contention)
-            NATIVE_CACHE.insert(*class_hash, (arc_native.clone(), Instant::now()));
+            // This matches the old working implementation exactly
+            NATIVE_CACHE.insert(*class_hash, (Arc::new(native_class.clone()), Instant::now()));
 
             // Evict if cache is full (after insert to reduce contention window)
             evict_cache_if_needed(config);
 
+            // Convert to RunnableCompiledClass
+            // Use the original native_class (not the Arc) for conversion
+            // This matches the pattern used in blocking compilation
+            let conversion_start = Instant::now();
+            let runnable = RunnableCompiledClass::from(native_class);
+            let conversion_elapsed = conversion_start.elapsed();
             let total_elapsed = start.elapsed();
             let cache_size = NATIVE_CACHE.len();
+
+            super::metrics::metrics().record_cache_disk_runnable_convert_time(conversion_elapsed.as_millis() as u64);
+            super::metrics::metrics().record_cache_lookup_time_disk(total_elapsed.as_millis() as u64);
 
             tracing::info!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
                 elapsed = ?total_elapsed,
-                load = ?load_elapsed,
-                convert = ?convert_elapsed,
+                elapsed_ms = total_elapsed.as_millis(),
+                load_ms = load_elapsed.as_millis(),
+                convert_ms = convert_elapsed.as_millis(),
+                conversion_ms = conversion_elapsed.as_millis(),
                 cache_size = cache_size,
                 "disk_hit"
             );
-
-            // Use the cloned native_class (not the Arc) for conversion
-            let runnable = RunnableCompiledClass::from(native_class);
             Ok(Some(runnable))
         }
         None => {

@@ -103,24 +103,23 @@ impl SetupBuilder {
         ];
 
         // When native execution is enabled, use blocking mode to ensure strictly native execution (no VM fallback)
-        // Note: native-cache-dir is set via MADARA_NATIVE_CACHE_DIR environment variable
+        // Set cache directory via CLI flag to avoid using default /usr/share/madara/data/classes (requires root)
         if self.enable_native_execution {
             args.push("--native-compilation-mode".into());
             args.push("blocking".into());
+            if let Some(ref tempdir) = self.native_cache_tempdir {
+                args.push("--native-cache-dir".into());
+                args.push(tempdir.path().display().to_string());
+            }
         }
 
         args.into_iter().chain(self.block_production_disabled.then_some("--no-block-production".into()))
     }
 
-    /// Get environment variables for the sequencer, including native cache dir
+    /// Get environment variables for the sequencer
     fn sequencer_env(&self) -> Vec<(String, String)> {
-        // Always provide a valid cache directory path via env var
-        // This prevents madara from trying to use the default /usr/share/madara/data/classes
-        // which requires root permissions
-        vec![(
-            "MADARA_NATIVE_CLASSES_PATH".into(),
-            self.native_cache_tempdir.as_ref().unwrap().path().display().to_string(),
-        )]
+        // Native cache directory is now set via CLI flag (--native-cache-dir) instead of env var
+        vec![]
     }
 
     pub async fn run(self) -> RunningTestSetup {
@@ -176,12 +175,16 @@ impl SetupBuilder {
         if self.enable_native_execution {
             gateway_args.push("--native-compilation-mode".into());
             gateway_args.push("blocking".into());
+            if let Some(ref tempdir) = self.native_cache_tempdir {
+                gateway_args.push("--native-cache-dir".into());
+                gateway_args.push(tempdir.path().display().to_string());
+            }
         }
 
         let mut gateway = MadaraCmdBuilder::new()
             .label("gateway")
             .enable_gateway()
-            .env(self.sequencer_env())  // Gateway also needs native cache env for syncing
+            .env(self.sequencer_env())
             .args(gateway_args)
             .run();
         gateway.wait_for_sync_to(0).await; // wait until devnet genesis is synced
@@ -224,12 +227,16 @@ impl SetupBuilder {
         if self.enable_native_execution {
             full_node_args.push("--native-compilation-mode".into());
             full_node_args.push("blocking".into());
+            if let Some(ref tempdir) = self.native_cache_tempdir {
+                full_node_args.push("--native-cache-dir".into());
+                full_node_args.push(tempdir.path().display().to_string());
+            }
         }
 
         let mut full_node = MadaraCmdBuilder::new()
             .label("full_node")
             .enable_gateway()
-            .env(self.sequencer_env())  // Full node also needs native cache env for syncing
+            .env(self.sequencer_env())
             .args(full_node_args)
             .run();
         full_node.wait_for_sync_to(0).await;

@@ -6509,6 +6509,7 @@ dependencies = [
  "jsonrpsee",
  "mc-analytics",
  "mc-block-production",
+ "mc-cairo-native",
  "mc-db",
  "mc-devnet",
  "mc-e2e-tests",
@@ -6661,13 +6662,36 @@ dependencies = [
  "starknet-core",
  "starknet-types-core",
  "starknet_api",
- "tempfile",
  "thiserror 2.0.12",
  "tokio",
  "tracing",
  "tracing-core",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "mc-cairo-native"
+version = "0.8.0"
+dependencies = [
+ "blockifier",
+ "cairo-lang-starknet-classes",
+ "cairo-native",
+ "cairo-vm",
+ "dashmap",
+ "lazy_static",
+ "mc-analytics",
+ "mp-class",
+ "mp-convert",
+ "opentelemetry",
+ "serde",
+ "serde_json",
+ "starknet-types-core",
+ "starknet_api",
+ "tempfile",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6687,6 +6711,7 @@ dependencies = [
  "lazy_static",
  "librocksdb-sys",
  "mc-analytics",
+ "mc-cairo-native",
  "mp-block",
  "mp-bloom-filter",
  "mp-chain-config",
@@ -6807,6 +6832,7 @@ dependencies = [
  "blockifier",
  "cairo-vm",
  "itertools 0.13.0",
+ "mc-cairo-native",
  "mc-db",
  "mp-block",
  "mp-chain-config",
@@ -7383,6 +7409,7 @@ dependencies = [
  "dashmap",
  "flate2",
  "lazy_static",
+ "mc-analytics",
  "mp-convert",
  "mp-rpc",
  "num-bigint",

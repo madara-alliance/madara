@@ -31,7 +31,6 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-
 /// Default disk cache size: 10 GB
 pub const DEFAULT_DISK_CACHE_SIZE_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 
@@ -125,15 +124,13 @@ impl Default for NativeConfig {
     fn default() -> Self {
         Self {
             enable_native_execution: false, // Native disabled by default
-            cache_dir: std::env::var("MADARA_NATIVE_CLASSES_PATH")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| PathBuf::from(DEFAULT_CACHE_DIR)),
+            cache_dir: PathBuf::from(DEFAULT_CACHE_DIR), // Use default path, actual path comes from CLI/config
             max_memory_cache_size: Some(DEFAULT_MEMORY_CACHE_SIZE),
             max_disk_cache_size: Some(DEFAULT_DISK_CACHE_SIZE_BYTES),
             max_concurrent_compilations: DEFAULT_MAX_CONCURRENT_COMPILATIONS,
             compilation_timeout: Duration::from_secs(DEFAULT_COMPILATION_TIMEOUT_SECS),
             compilation_mode: NativeCompilationMode::Async, // Default to async
-            enable_retry: true, // Retry enabled by default
+            enable_retry: true,                             // Retry enabled by default
             max_failed_compilations: DEFAULT_MAX_FAILED_COMPILATIONS,
         }
     }
@@ -144,12 +141,15 @@ impl NativeConfig {
     ///
     /// Default values:
     /// - `enable_native_execution`: `false` (disabled)
-    /// - `cache_dir`: `/usr/share/madara/data/classes` (or `MADARA_NATIVE_CLASSES_PATH` env var)
+    /// - `cache_dir`: `/usr/share/madara/data/classes` (should be set via CLI/config, not env var)
     /// - `max_memory_cache_size`: Some(1000) classes (None = unlimited)
     /// - `max_disk_cache_size`: Some(10 GB) (None = unlimited)
     /// - `max_concurrent_compilations`: 4
     /// - `compilation_timeout`: 5 minutes
     /// - `compilation_mode`: `Async`
+    ///
+    /// Note: The cache directory should be set via `with_cache_dir()` from CLI parameters,
+    /// not from environment variables. The CLI layer handles environment variable parsing.
     pub fn new() -> Self {
         Self::default()
     }
@@ -273,12 +273,15 @@ pub fn setup_and_log(config: &NativeConfig) -> Result<(), String> {
     config.validate()?;
 
     // Initialize the compilation semaphore with the configured concurrency limit
-    crate::native::init_compilation_semaphore(config.max_concurrent_compilations);
+    crate::compilation::init_compilation_semaphore(config.max_concurrent_compilations);
 
     // Register OTEL metrics (will work even if OTEL isn't initialized yet, but won't export)
     // Metrics are registered lazily on first access, but we register here to ensure
     // they're available as soon as OTEL is initialized
-    let _ = crate::native::metrics::metrics(); // Force lazy initialization
+    let _ = crate::metrics::metrics(); // Force lazy initialization
+
+    // Log cache directory initialization (always logged, regardless of enable_native_execution)
+    tracing::info!("💾 Cairo-native directory initialized: {}", config.cache_dir.display());
 
     // Log configuration
     if config.enable_native_execution {
@@ -298,24 +301,18 @@ pub fn setup_and_log(config: &NativeConfig) -> Result<(), String> {
             None => "unlimited".to_string(),
         };
         tracing::info!(
-            target: "madara_cairo_native",
-            cache_dir = %config.cache_dir.display(),
-            mode = %mode_description,
-            memory_cache = %memory_cache_desc,
-            disk_cache = %disk_cache_desc,
-            max_concurrent = config.max_concurrent_compilations,
-            "cairo_native_enabled"
+            "🚀 Cairo native enabled - mode: {}, memory_cache: {}, disk_cache: {}, max_concurrent: {}",
+            mode_description,
+            memory_cache_desc,
+            disk_cache_desc,
+            config.max_concurrent_compilations
         );
     } else {
-        tracing::info!(
-            target: "madara_cairo_native",
-            "cairo_native_disabled"
-        );
+        tracing::info!("Cairo native disabled - all contracts will use Cairo VM");
     }
 
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {

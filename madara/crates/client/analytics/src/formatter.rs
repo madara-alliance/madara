@@ -87,6 +87,10 @@ struct CairoNativeEventVisitor {
     message: String,
     class_hash: Option<String>,
     elapsed: Option<String>,
+    elapsed_ms: Option<u64>,
+    conversion_ms: Option<u64>,
+    load_ms: Option<u64>,
+    convert_ms: Option<u64>,
     error: Option<String>,
 }
 
@@ -129,6 +133,24 @@ impl Visit for CairoNativeEventVisitor {
             _ => {}
         }
     }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        match field.name() {
+            "elapsed_ms" => {
+                self.elapsed_ms = Some(value);
+            }
+            "conversion_ms" => {
+                self.conversion_ms = Some(value);
+            }
+            "load_ms" => {
+                self.load_ms = Some(value);
+            }
+            "convert_ms" => {
+                self.convert_ms = Some(value);
+            }
+            _ => {}
+        }
+    }
 }
 
 impl CairoNativeEventVisitor {
@@ -146,6 +168,22 @@ impl CairoNativeEventVisitor {
 
     pub fn get_error(&self) -> Option<&str> {
         self.error.as_deref()
+    }
+
+    pub fn get_elapsed_ms(&self) -> Option<u64> {
+        self.elapsed_ms
+    }
+
+    pub fn get_conversion_ms(&self) -> Option<u64> {
+        self.conversion_ms
+    }
+
+    pub fn get_load_ms(&self) -> Option<u64> {
+        self.load_ms
+    }
+
+    pub fn get_convert_ms(&self) -> Option<u64> {
+        self.convert_ms
     }
 }
 
@@ -249,6 +287,10 @@ impl CustomFormatter {
         let message = visitor.get_message();
         let class_hash = visitor.get_class_hash();
         let elapsed = visitor.get_elapsed();
+        let elapsed_ms = visitor.get_elapsed_ms();
+        let conversion_ms = visitor.get_conversion_ms();
+        let load_ms = visitor.get_load_ms();
+        let convert_ms = visitor.get_convert_ms();
         let error = visitor.get_error();
 
         // Darker cyan for CAIRO_NATIVE prefix (more subtle)
@@ -286,13 +328,58 @@ impl CustomFormatter {
             write!(writer, " {}", error_style.apply_to(format!("error={}", err)))?;
         }
 
-        // Color-code timing based on duration
-        if let Some(timing) = elapsed {
+        // Format timing - prefer elapsed_ms if available, otherwise use elapsed Duration string
+        let timing_str = Self::format_timing(elapsed_ms, conversion_ms, load_ms, convert_ms, elapsed);
+        if let Some(timing) = timing_str {
             let elapsed_style = Self::get_timing_style(&timing);
             write!(writer, " {}", elapsed_style.apply_to(format!("- {}", timing)))?;
         }
 
         writeln!(writer)
+    }
+
+    /// Format timing information from various sources
+    /// Prefers elapsed_ms if available, shows breakdown if multiple components exist
+    fn format_timing(
+        elapsed_ms: Option<u64>,
+        conversion_ms: Option<u64>,
+        load_ms: Option<u64>,
+        convert_ms: Option<u64>,
+        elapsed: Option<&str>,
+    ) -> Option<String> {
+        // If we have elapsed_ms, use it as primary timing
+        if let Some(total_ms) = elapsed_ms {
+            let mut parts = Vec::new();
+            
+            // Format total time
+            let total_str = if total_ms >= 1000 {
+                format!("{:.3}s", total_ms as f64 / 1000.0)
+            } else {
+                format!("{}ms", total_ms)
+            };
+            parts.push(total_str);
+            
+            // Add breakdown if we have component timings
+            let mut breakdown = Vec::new();
+            if let Some(load) = load_ms {
+                breakdown.push(format!("load: {}ms", load));
+            }
+            if let Some(convert) = convert_ms {
+                breakdown.push(format!("convert: {}ms", convert));
+            }
+            if let Some(conv) = conversion_ms {
+                breakdown.push(format!("conversion: {}ms", conv));
+            }
+            
+            if !breakdown.is_empty() {
+                parts.push(format!("({})", breakdown.join(", ")));
+            }
+            
+            return Some(parts.join(" "));
+        }
+        
+        // Fall back to elapsed Duration string if available
+        elapsed.map(|s| s.to_string())
     }
 
     /// Format message for better clarity
@@ -421,7 +508,7 @@ where
             (&Level::INFO, "rpc_calls" | "gateway_calls") => {
                 self.format_http_call(&mut writer, event, target, &ts, level)
             }
-            (_, "madara.cairo_native") => self.format_cairo_native(&mut writer, event, &ts, level),
+            (_, "madara_cairo_native") => self.format_cairo_native(&mut writer, event, &ts, level),
             (&Level::INFO, _) => self.format_without_target(&mut writer, event, &ts, level, &Style::new().green()),
             (&Level::WARN, _) => {
                 self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().yellow())
