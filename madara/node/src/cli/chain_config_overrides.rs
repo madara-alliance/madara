@@ -108,6 +108,13 @@ pub struct ChainConfigOverridesInner {
 }
 
 impl ChainConfigOverrideParams {
+    /// Overrides the chain config according to the arguments given in the CLI/ENV
+    ///
+    /// NOTE: This will only override the fields according to the latest chain config.
+    ///
+    /// For e.g.: If we had a field `A` in chain config version 1 and removed that in version 2
+    /// (both are supported), the user cannot override `A` using this flag even if she's using
+    /// version 1.
     pub fn override_chain_config(&self, chain_config: ChainConfig) -> anyhow::Result<ChainConfig> {
         let versioned_constants = chain_config.versioned_constants;
 
@@ -154,13 +161,16 @@ impl ChainConfigOverrideParams {
             // Set the value to the final field in the path
             let last_key =
                 key_parts.last().with_context(|| format!("Invalid chain config override key path: {}", key))?;
-            match current_value.get_mut(*last_key) {
-                Some(field) => {
-                    *field = value.clone();
-                }
-                None => {
-                    bail!("Invalid chain config override key path: {}", key);
-                }
+
+            // If the parent is a mapping (object), insert or update the field
+            // This allows adding new fields for enum variants (e.g., changing l2_gas_price type)
+            // NOTE: A side effect of this would be that user can (try to) insert fields through CLI
+            // that are actually not present in the chain config without any errors. But this can
+            // anyway happen with the YAML as well, so I guess this is fine :)
+            if let Some(mapping) = current_value.as_mapping_mut() {
+                mapping.insert(Value::String(last_key.to_string()), value.clone());
+            } else {
+                bail!("Invalid chain config override key path: {}", key);
             }
         }
 

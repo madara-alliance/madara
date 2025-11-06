@@ -82,13 +82,17 @@ mempool_max_declare_transactions: 20
 # mempool_tx_max_age: "5h"
 mempool_ttl: null
 
-# L2 gas price configuration - choose either 'fixed' or 'eip1559'
+# L2 gas price configuration - choose either 'fixed' or 'eip1559'.
+# To override this through CLI, you need to override both the type and the values, or it will panic or lead to unexpected results!
+#
 # Option 1: Fixed gas price
 # l2_gas_price:
 #   type: fixed
 #   price: 2500
-
-# Option 2: EIP-1559 dynamic gas pricing (default)
+# For overriding through CLI, use `--chain-config-override=l2_gas_price.type=fixed,l2_gas_price.price=25000`
+#
+# Option 2: EIP-1559 dynamic gas pricing
+# For overriding through CLI, use `--chain-config-override=l2_gas_price.type=eip1559,l2_gas_price.target=2000000000,l2_gas_price.min_price=100000,l2_gas_price.max_change_denominator=48`
 l2_gas_price:
   type: eip1559
   target: 2000000000
