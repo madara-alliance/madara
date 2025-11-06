@@ -1,3 +1,8 @@
+# Chain config version - REQUIRED field
+# This version number is used to track breaking changes to the chain config format.
+# Current version: 1
+config_version: 1
+
 # Human readable chain name, for displaying to the console.
 chain_name: "Starknet Mainnet"
 
@@ -76,9 +81,16 @@ mempool_max_declare_transactions: 20
 # Max age of a transaction in the mempool. Null for no age limit.
 # mempool_tx_max_age: "5h"
 mempool_ttl: null
-l2_gas_target: 2000000000
-min_l2_gas_price: 100000
-l2_gas_price_max_change_denominator: 48
-# Optional field to override the L2 gas price calculation
-# Setting this field will ignore the `l2_gas_target`, `min_l2_gas_price` and `l2_gas_price_max_change_denominator` fields
-override_strk_l2_gas_price: 2500
+
+# L2 gas price configuration - choose either 'fixed' or 'eip1559'
+# Option 1: Fixed gas price
+# l2_gas_price:
+#   type: fixed
+#   price: 2500
+
+# Option 2: EIP-1559 dynamic gas pricing (default)
+l2_gas_price:
+  type: eip1559
+  target: 2000000000
+  min_price: 100000
+  max_change_denominator: 48

@@ -46,24 +46,14 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
             .to_u128()
             .context("Failed to convert STRK L1 data gas price to u128")?;
 
-        let strk_l2_gas_price = match self.chain_config.l2_gas_price_override {
-            Some(l2_gas_price) => {
-                tracing::debug!(
-                    "Overriding strk_l2_gas_price to {} because override_strk_l2_gas_price is set in chain config",
-                    l2_gas_price
-                );
-                l2_gas_price
+        let strk_l2_gas_price = match &self.chain_config.l2_gas_price {
+            mp_chain_config::L2GasPrice::Fixed { price } => {
+                tracing::debug!("Using fixed strk_l2_gas_price of {} from chain config", price);
+                *price
             }
-            None => {
-                let l2_gas_target = self.chain_config().l2_gas_target;
-                let max_change_denominator = self.chain_config().l2_gas_price_max_change_denominator;
-                calculate_gas_price(
-                    previous_strk_l2_gas_price,
-                    previous_l2_gas_used,
-                    l2_gas_target,
-                    max_change_denominator,
-                )?
-                .max(self.chain_config().min_l2_gas_price)
+            mp_chain_config::L2GasPrice::EIP1559 { target, min_price, max_change_denominator } => {
+                calculate_gas_price(previous_strk_l2_gas_price, previous_l2_gas_used, *target, *max_change_denominator)?
+                    .max(*min_price)
             }
         };
 

@@ -46,6 +46,9 @@ pub mod public_key {
     pub const SEPOLIA_INTEGRATION: &str = "0x4e4856eb36dbd5f4a7dca29f7bb5232974ef1fb7eb5b597c58077174c294da1";
 }
 
+/// Current chain config version
+pub const CURRENT_CONFIG_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct BlockProductionConfig {
@@ -103,9 +106,36 @@ pub enum SettlementChainKind {
     Starknet,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum L2GasPrice {
+    /// Fixed L2 gas price
+    Fixed {
+        /// The fixed gas price value
+        price: u128,
+    },
+    /// EIP-1559 style dynamic gas pricing
+    #[serde(rename = "eip1559")]
+    EIP1559 {
+        /// The target gas usage per block for the block production
+        target: u128,
+        /// The minimum l2 gas price
+        min_price: u128,
+        /// The maximum change in l2 gas price per block (EIP-1559)
+        max_change_denominator: u128,
+    },
+}
+
+impl L2GasPrice {
+    fn starknet_mainnet() -> Self {
+        Self::EIP1559 { target: 2_000_000_000, min_price: 100_000, max_change_denominator: 48 }
+    }
+}
+
+/// Chain config version 1 structure (without config_version field - it's in the enum tag)
 #[derive(Debug, Deserialize)]
-pub struct ChainConfig {
-    /// Human readable chain name, for displaying to the console.
+pub struct ChainConfigV1 {
+    /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
 
@@ -182,16 +212,8 @@ pub struct ChainConfig {
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
-    /// The target gas usage per block for the block production. This is used to estimate the l2 gas price for the next block.
-    pub l2_gas_target: u128,
-    /// The minimum l2 gas price for the block production. This is used to ensure that the l2 gas price does not go below this value.
-    pub min_l2_gas_price: u128,
-    /// The maximum change in l2 gas price per block. This is used to ensure that the l2 gas price does not change too much between blocks.
-    /// EIP-1559
-    pub l2_gas_price_max_change_denominator: u128,
-    /// Fixed L2 gas price.
-    /// L2 gas price calculations will not be made if this is set.
-    pub l2_gas_price_override: Option<u128>,
+    /// L2 gas price configuration - either fixed or EIP-1559 dynamic pricing
+    pub l2_gas_price: L2GasPrice,
 
     /// Configuration for parallel execution in Blockifier. Only used for block production.
     #[serde(default)]
@@ -202,11 +224,168 @@ pub struct ChainConfig {
     pub l1_messages_replay_max_duration: Duration,
 }
 
+/// Versioned chain config enum that handles different config versions
+#[derive(Debug, Deserialize)]
+#[serde(tag = "config_version")]
+pub enum ChainConfigVersioned {
+    #[serde(rename = "1")]
+    V1(ChainConfigV1),
+}
+
+/// Canonical chain config structure used throughout the codebase
+#[derive(Debug, Deserialize)]
+pub struct ChainConfig {
+    /// Human-readable chain name, for displaying to the console.
+    pub chain_name: String,
+    pub chain_id: ChainId,
+
+    /// Chain config version. This is used to track breaking changes to the chain config format.
+    /// Version must be explicitly specified in the config file.
+    pub config_version: u32,
+
+    /// The DA mode supported by L1.
+    #[serde(default)]
+    pub l1_da_mode: L1DataAvailabilityMode,
+
+    #[serde(default)]
+    pub settlement_chain_kind: SettlementChainKind,
+
+    // The Gateway URLs are the URLs of the endpoint that the node will use to sync blocks in full mode.
+    pub feeder_gateway_url: Url,
+    pub gateway_url: Url,
+
+    /// For starknet, this is the STRK ERC-20 contract on starknet.
+    pub native_fee_token_address: ContractAddress,
+    /// For starknet, this is the ETH ERC-20 contract on starknet.
+    pub parent_fee_token_address: ContractAddress,
+
+    #[serde(default)]
+    pub versioned_constants: ChainVersionedConstants,
+
+    /// Produce blocks using for this starknet protocol version.
+    #[serde(default = "starknet_version_latest", deserialize_with = "deserialize_starknet_version")]
+    pub latest_protocol_version: StarknetVersion,
+
+    /// Only used for block production.
+    /// Default: 30s.
+    #[serde(default = "default_block_time", deserialize_with = "deserialize_duration")]
+    pub block_time: Duration,
+
+    /// Do not produce empty blocks.
+    /// Warning: If a chain does not produce blocks regularily, estimate_fee RPC may behave incorrectly as its gas prices
+    /// are based on the latest block on chain.
+    #[serde(default)]
+    pub no_empty_blocks: bool,
+
+    /// Only used for block production.
+    /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
+    #[serde(default)]
+    pub bouncer_config: BouncerConfig,
+
+    /// Only used for block production.
+    pub sequencer_address: ContractAddress,
+
+    /// The Starknet core contract address for the L1 watcher.
+    pub eth_core_contract_address: String,
+
+    /// The Starknet SHARP verifier L1 address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
+    /// for more information
+    pub eth_gps_statement_verifier: String,
+
+    /// Private key used by the node to sign blocks provided through the
+    /// feeder gateway. This serves as a proof of origin and in the future
+    /// will also be used by the p2p protocol and tendermint consensus.
+    /// > [!NOTE]
+    /// > This key will be auto-generated on startup if none is provided.
+    /// > This also means the private key is by default regenerated on boot
+    #[serde(skip)]
+    pub private_key: ZeroingPrivateKey,
+
+    #[serde(default)]
+    pub mempool_mode: MempoolMode,
+    /// Minimum tip increase when replacing a transaction with the same (contract_address, nonce) pair in the mempool, as a ratio.
+    /// Tip bumping allows users to increase the priority of their transaction in the mempool, so that they are included in a block sooner.
+    /// This has no effect on FCFS (First-come-first-serve) mode mempools.
+    /// Default is 0.1 which means you have to increase the tip by at least 10%.
+    #[serde(default = "default_mempool_min_tip_bump")]
+    pub mempool_min_tip_bump: f64,
+    /// Transaction limit in the mempool.
+    pub mempool_max_transactions: usize,
+    /// Transaction limit in the mempool, we have an additional limit for declare transactions.
+    pub mempool_max_declare_transactions: Option<usize>,
+    /// Max age of a transaction in the mempool.
+    #[serde(deserialize_with = "deserialize_optional_duration")]
+    pub mempool_ttl: Option<Duration>,
+    /// L2 gas price configuration - either fixed or EIP-1559 dynamic pricing
+    pub l2_gas_price: L2GasPrice,
+
+    /// Configuration for parallel execution in Blockifier. Only used for block production.
+    #[serde(default)]
+    pub block_production_concurrency: BlockProductionConfig,
+
+    /// Configuration for l1 messages max replay duration.
+    #[serde(default = "default_l1_messages_replay_max_duration", deserialize_with = "deserialize_duration")]
+    pub l1_messages_replay_max_duration: Duration,
+}
+
+// Conversion implementations for versioned configs
+
+impl TryFrom<ChainConfigV1> for ChainConfig {
+    type Error = anyhow::Error;
+
+    fn try_from(v1: ChainConfigV1) -> Result<Self> {
+        Ok(ChainConfig {
+            config_version: 1,
+            chain_name: v1.chain_name,
+            chain_id: v1.chain_id,
+            l1_da_mode: v1.l1_da_mode,
+            settlement_chain_kind: v1.settlement_chain_kind,
+            feeder_gateway_url: v1.feeder_gateway_url,
+            gateway_url: v1.gateway_url,
+            native_fee_token_address: v1.native_fee_token_address,
+            parent_fee_token_address: v1.parent_fee_token_address,
+            versioned_constants: v1.versioned_constants,
+            latest_protocol_version: v1.latest_protocol_version,
+            block_time: v1.block_time,
+            no_empty_blocks: v1.no_empty_blocks,
+            bouncer_config: v1.bouncer_config,
+            sequencer_address: v1.sequencer_address,
+            eth_core_contract_address: v1.eth_core_contract_address,
+            eth_gps_statement_verifier: v1.eth_gps_statement_verifier,
+            private_key: v1.private_key,
+            mempool_mode: v1.mempool_mode,
+            mempool_min_tip_bump: v1.mempool_min_tip_bump,
+            mempool_max_transactions: v1.mempool_max_transactions,
+            mempool_max_declare_transactions: v1.mempool_max_declare_transactions,
+            mempool_ttl: v1.mempool_ttl,
+            l2_gas_price: v1.l2_gas_price,
+            block_production_concurrency: v1.block_production_concurrency,
+            l1_messages_replay_max_duration: v1.l1_messages_replay_max_duration,
+        })
+    }
+}
+
+impl TryFrom<ChainConfigVersioned> for ChainConfig {
+    type Error = anyhow::Error;
+
+    fn try_from(versioned: ChainConfigVersioned) -> Result<Self> {
+        match versioned {
+            ChainConfigVersioned::V1(v1) => ChainConfig::try_from(v1),
+        }
+    }
+}
+
 impl ChainConfig {
     pub fn from_yaml(path: &Path) -> Result<Self> {
         let config_str = fs::read_to_string(path)?;
         let config_value: serde_yaml::Value =
             serde_yaml::from_str(&config_str).context("While deserializing chain config")?;
+
+        // Pre-check for config_version field to provide a helpful error message
+        // If this field is missing, serde would give a less user-friendly error
+        config_value
+            .get("config_version")
+            .context("Missing required field 'config_version' in chain config. Please add 'config_version: 1' to your chain config file.")?;
 
         let versioned_constants_file_paths: BTreeMap<String, String> =
             serde_yaml::from_value(config_value.get("versioned_constants_path").cloned().unwrap_or_default())
@@ -219,10 +398,18 @@ impl ChainConfig {
             versioned_constants
         };
 
-        let chain_config: ChainConfig =
+        // Deserialize into versioned enum - serde handles version validation and dispatch
+        let versioned: ChainConfigVersioned =
             serde_yaml::from_str(&config_str).context("While deserializing chain config")?;
 
-        Ok(ChainConfig { versioned_constants, ..chain_config })
+        // Convert to canonical ChainConfig using TryFrom
+        let mut chain_config =
+            ChainConfig::try_from(versioned).context("While converting versioned config to ChainConfig")?;
+
+        // Override with loaded versioned constants
+        chain_config.versioned_constants = versioned_constants;
+
+        Ok(chain_config)
     }
 
     /// Verify that the chain config is valid for block production.
@@ -245,6 +432,7 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Mainnet".into(),
             chain_id: ChainId::Mainnet,
+            config_version: CURRENT_CONFIG_VERSION,
             // Since L1 here is Ethereum, that supports Blob.
             l1_da_mode: L1DataAvailabilityMode::Blob,
             settlement_chain_kind: SettlementChainKind::Ethereum,
@@ -290,10 +478,7 @@ impl ChainConfig {
             mempool_max_declare_transactions: Some(20),
             mempool_ttl: Some(Duration::from_secs(60 * 60)), // an hour?
             mempool_min_tip_bump: 0.1,
-            l2_gas_target: 2_000_000_000,
-            min_l2_gas_price: 100000,
-            l2_gas_price_max_change_denominator: 48,
-            l2_gas_price_override: None,
+            l2_gas_price: L2GasPrice::starknet_mainnet(),
 
             block_production_concurrency: BlockProductionConfig::default(),
 
@@ -554,6 +739,7 @@ mod tests {
     #[rstest]
     fn test_exec_constants() {
         let chain_config = ChainConfig {
+            config_version: CURRENT_CONFIG_VERSION,
             versioned_constants: [
                 (StarknetVersion::new(0, 1, 5, 0), {
                     let mut constants = VersionedConstants::default();

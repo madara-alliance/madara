@@ -3,7 +3,7 @@ use blockifier::bouncer::BouncerConfig;
 use clap::Parser;
 use mp_chain_config::{
     deserialize_starknet_version, serialize_starknet_version, BlockProductionConfig, ChainConfig,
-    L1DataAvailabilityMode, MempoolMode, SettlementChainKind, StarknetVersion,
+    L1DataAvailabilityMode, L2GasPrice, MempoolMode, SettlementChainKind, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
@@ -100,10 +100,7 @@ pub struct ChainConfigOverridesInner {
     pub mempool_max_declare_transactions: Option<usize>,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
-    pub l2_gas_target: u128,
-    pub min_l2_gas_price: u128,
-    pub l2_gas_price_max_change_denominator: u128,
-    pub l2_gas_price_override: Option<u128>,
+    pub l2_gas_price: L2GasPrice,
     pub no_empty_blocks: bool,
     pub block_production_concurrency: BlockProductionConfig,
     #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
@@ -132,15 +129,12 @@ impl ChainConfigOverrideParams {
             mempool_max_transactions: chain_config.mempool_max_transactions,
             mempool_max_declare_transactions: chain_config.mempool_max_declare_transactions,
             mempool_ttl: chain_config.mempool_ttl,
-            l2_gas_target: chain_config.l2_gas_target,
-            min_l2_gas_price: chain_config.min_l2_gas_price,
-            l2_gas_price_max_change_denominator: chain_config.l2_gas_price_max_change_denominator,
+            l2_gas_price: chain_config.l2_gas_price,
             feeder_gateway_url: chain_config.feeder_gateway_url,
             gateway_url: chain_config.gateway_url,
             no_empty_blocks: chain_config.no_empty_blocks,
             block_production_concurrency: chain_config.block_production_concurrency,
             l1_messages_replay_max_duration: chain_config.l1_messages_replay_max_duration,
-            l2_gas_price_override: chain_config.l2_gas_price_override,
         })
         .context("Failed to convert ChainConfig to Value")?;
 
@@ -176,6 +170,7 @@ impl ChainConfigOverrideParams {
         Ok(ChainConfig {
             chain_name: chain_config_overrides.chain_name,
             chain_id: chain_config_overrides.chain_id,
+            config_version: chain_config.config_version,
             settlement_chain_kind: chain_config_overrides.settlement_chain_kind,
             l1_da_mode: chain_config_overrides.l1_da_mode,
             feeder_gateway_url: chain_config_overrides.feeder_gateway_url,
@@ -195,13 +190,10 @@ impl ChainConfigOverrideParams {
             mempool_max_transactions: chain_config.mempool_max_transactions,
             mempool_max_declare_transactions: chain_config.mempool_max_declare_transactions,
             mempool_ttl: chain_config.mempool_ttl,
-            l2_gas_target: chain_config_overrides.l2_gas_target,
-            min_l2_gas_price: chain_config_overrides.min_l2_gas_price,
-            l2_gas_price_max_change_denominator: chain_config_overrides.l2_gas_price_max_change_denominator,
+            l2_gas_price: chain_config_overrides.l2_gas_price,
             no_empty_blocks: chain_config_overrides.no_empty_blocks,
             block_production_concurrency: chain_config_overrides.block_production_concurrency,
             l1_messages_replay_max_duration: chain_config_overrides.l1_messages_replay_max_duration,
-            l2_gas_price_override: chain_config_overrides.l2_gas_price_override,
         })
     }
 }
