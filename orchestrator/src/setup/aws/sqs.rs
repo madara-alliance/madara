@@ -4,7 +4,7 @@ use crate::types::queue::QueueType;
 use crate::types::Layer;
 use crate::{
     core::cloud::CloudProvider, core::traits::resource::Resource, types::params::QueueArgs,
-    types::queue_control::QUEUES, OrchestratorResult,
+    types::queue_control::QUEUES, OrchestratorError, OrchestratorResult,
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
@@ -60,12 +60,11 @@ impl Resource for InnerSQS {
                     let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
 
                     // Creating the queue
-                    let queue_url = self.create_queue(queue_name.clone()).await?;
+                    let queue_url = self.create_queue(queue_name.clone(), queue.visibility_timeout).await?;
 
                     tracing::info!("Queue created for type {}", queue_type);
 
                     let mut attributes = HashMap::new();
-                    attributes.insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
 
                     if let Some(dlq_config) = &queue.dlq_config {
                         let dlq_url = if self
@@ -82,12 +81,28 @@ impl Resource for InnerSQS {
                             let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
 
                             // Standard DLQ creation (no FIFO attributes)
-                            let dlq_url = self.create_queue(dlq_name).await?.to_string();
+                            let dlq_url = self
+                                .create_queue(
+                                    dlq_name,
+                                    QUEUES
+                                        .get(&dlq_config.dlq_name)
+                                        .ok_or_else(|| {
+                                            OrchestratorError::SetupError(format!(
+                                                "Failed to get DLQ {} in QUEUES",
+                                                &dlq_config.dlq_name
+                                            ))
+                                        })?
+                                        .visibility_timeout,
+                                )
+                                .await?
+                                .to_string();
                             tracing::info!("DLQ listed. Type {}", &dlq_config.dlq_name);
                             dlq_url
                         };
 
                         let dlq_arn = self.get_queue_arn_from_url(&dlq_url).await?;
+
+                        // println!("{}", &dlq_arn);
 
                         // Attach the dl queue policy to the queue
                         let policy = format!(

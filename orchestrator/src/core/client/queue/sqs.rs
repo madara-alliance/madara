@@ -14,6 +14,7 @@ use aws_sdk_sqs::types::{MessageAttributeValue, QueueAttributeName};
 use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
+use std::collections::HashMap;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -104,10 +105,19 @@ impl InnerSQS {
     }
 
     /// Create a new queue with the given name
-    pub async fn create_queue(&self, queue_name: String) -> Result<String, OrchestratorError> {
-        let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
-            OrchestratorError::ResourceSetupError(format!("Failed to create SQS queue '{}': {}", queue_name, e))
-        })?;
+    pub async fn create_queue(&self, queue_name: String, visibility_timeout: u32) -> Result<String, OrchestratorError> {
+        let mut attributes = HashMap::new();
+        attributes.insert(QueueAttributeName::VisibilityTimeout, visibility_timeout.to_string());
+        let res = self
+            .client()
+            .create_queue()
+            .queue_name(&queue_name)
+            .set_attributes(Some(attributes))
+            .send()
+            .await
+            .map_err(|e| {
+                OrchestratorError::ResourceSetupError(format!("Failed to create SQS queue '{}': {}", queue_name, e))
+            })?;
 
         Ok(res
             .queue_url()
