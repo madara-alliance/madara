@@ -6680,6 +6680,7 @@ dependencies = [
  "cairo-vm",
  "dashmap",
  "lazy_static",
+ "m-cairo-test-contracts",
  "mc-analytics",
  "mp-class",
  "mp-convert",

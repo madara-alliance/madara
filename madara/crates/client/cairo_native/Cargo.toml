@@ -44,4 +44,5 @@ opentelemetry = { workspace = true, features = ["metrics"] }
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+m-cairo-test-contracts = { path = "../../../crates/cairo-test-contracts" }
 
