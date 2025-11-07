@@ -30,6 +30,8 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
 
+    let provider_url = format!("http://localhost:{}", server.port());
+
     let start_block;
     let end_block;
 
@@ -150,13 +152,13 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     // Mock builtin weights calls for each block
     let builtin_weights = get_dummy_builtin_weights();
     server.mock(|when, then| {
-        when.path("/").body_includes("madara_V0_1_0_getBlockBuiltinWeights");
-        then.status(200)
-            .body(serde_json::to_vec(&json!({ "id": 1,"jsonrpc":"2.0","result": builtin_weights })).unwrap());
+        when.path("/feeder_gateway/get_block_bouncer_weights");
+        then.status(200).body(serde_json::to_vec(&json!({"bouncer_weights": builtin_weights})).unwrap());
     });
 
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
+        .configure_madara_feeder_gateway_url(&provider_url)
         .configure_prover_client(prover_client.into())
         .configure_storage_client(storage.into())
         .configure_database(database.into())
@@ -179,6 +181,8 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let mut database = MockDatabaseClient::new();
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
+
+    let provider_url = format!("http://localhost:{}", server.port());
 
     let existing_aggregator_batch = crate::types::batch::AggregatorBatch {
         index: 1,
@@ -318,13 +322,13 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     // Mock builtin weights calls for each block
     let builtin_weights = get_dummy_builtin_weights();
     server.mock(|when, then| {
-        when.path("/").body_includes("madara_V0_1_0_getBlockBuiltinWeights");
-        then.status(200)
-            .body(serde_json::to_vec(&json!({ "id": 1,"jsonrpc":"2.0","result": builtin_weights })).unwrap());
+        when.path("/feeder_gateway/get_block_bouncer_weights");
+        then.status(200).body(serde_json::to_vec(&json!({"bouncer_weights": builtin_weights})).unwrap());
     });
 
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
+        .configure_madara_feeder_gateway_url(&provider_url)
         .configure_database(database.into())
         .configure_storage_client(storage.into())
         .configure_prover_client(prover_client.into())
