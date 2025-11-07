@@ -1361,4 +1361,110 @@ mod tests {
             "Should have exactly one successful compilation"
         );
     }
+
+    #[tokio::test]
+    async fn test_compilation_in_progress_prevents_duplicate() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Verify caches don't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress initially"
+        );
+
+        // Spawn multiple concurrent requests for the same class
+        let num_concurrent_requests = 10;
+        let mut handles = vec![];
+
+        for _ in 0..num_concurrent_requests {
+            let sierra_clone = sierra.clone();
+            let class_hash_clone = class_hash;
+            let config_clone = config.clone();
+            let handle = tokio::spawn(async move {
+                handle_sierra_class(
+                    &sierra_clone,
+                    &class_hash_clone.to_felt(),
+                    &sierra_clone.compiled,
+                    &sierra_clone.info,
+                    config_clone,
+                )
+            });
+            handles.push(handle);
+        }
+
+        // Wait a short time to allow all requests to process
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify only one compilation was started
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation, not {}",
+            num_concurrent_requests
+        );
+
+        // Verify only one entry in COMPILATION_IN_PROGRESS
+        assert_eq!(
+            compilation::COMPILATION_IN_PROGRESS.len(),
+            1,
+            "Should have exactly one compilation in progress"
+        );
+        assert!(
+            compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should be in compilation_in_progress"
+        );
+
+        // Wait for compilation to complete
+        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
+        assert!(compilation_completed, "Compilation should complete within 20 seconds");
+
+        // Wait for all requests to complete
+        let mut results = vec![];
+        for handle in handles {
+            let result = handle.await.expect("Task should not panic");
+            results.push(result);
+        }
+
+        // Verify all requests succeeded
+        assert_eq!(results.len(), num_concurrent_requests, "All requests should complete");
+        for result in &results {
+            assert!(result.is_ok(), "All requests should succeed");
+        }
+
+        // Verify compilation completed successfully
+        assert!(
+            cache::NATIVE_CACHE.contains_key(&class_hash),
+            "Class should be in memory cache after compilation completes"
+        );
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress after completion"
+        );
+
+        // Verify metrics - only one compilation started and succeeded
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one successful compilation"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            num_concurrent_requests as u64,
+            "Should have {} VM fallbacks (one per concurrent request)",
+            num_concurrent_requests
+        );
+    }
 }
