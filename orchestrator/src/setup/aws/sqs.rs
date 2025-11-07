@@ -102,8 +102,6 @@ impl Resource for InnerSQS {
 
                         let dlq_arn = self.get_queue_arn_from_url(&dlq_url).await?;
 
-                        // println!("{}", &dlq_arn);
-
                         // Attach the dl queue policy to the queue
                         let policy = format!(
                             r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,
