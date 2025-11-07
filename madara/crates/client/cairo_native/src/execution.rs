@@ -1412,11 +1412,7 @@ mod tests {
         );
 
         // Verify only one entry in COMPILATION_IN_PROGRESS
-        assert_eq!(
-            compilation::COMPILATION_IN_PROGRESS.len(),
-            1,
-            "Should have exactly one compilation in progress"
-        );
+        assert_eq!(compilation::COMPILATION_IN_PROGRESS.len(), 1, "Should have exactly one compilation in progress");
         assert!(
             compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
             "Class should be in compilation_in_progress"

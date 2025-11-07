@@ -419,22 +419,14 @@ mod tests {
         assert!(!non_existent_cache_dir.exists(), "Cache directory should not exist initially");
 
         // Create config with non-existent cache directory
-        let config = NativeConfig::default()
-            .with_native_execution(true)
-            .with_cache_dir(non_existent_cache_dir.clone());
+        let config = NativeConfig::default().with_native_execution(true).with_cache_dir(non_existent_cache_dir.clone());
 
         // Validate config - this should create the directory
         let validation_result = config.validate();
         assert!(validation_result.is_ok(), "Config validation should succeed and create directory");
 
         // Verify directory was created
-        assert!(
-            non_existent_cache_dir.exists(),
-            "Cache directory should be created automatically by validate()"
-        );
-        assert!(
-            non_existent_cache_dir.is_dir(),
-            "Cache directory should be a directory"
-        );
+        assert!(non_existent_cache_dir.exists(), "Cache directory should be created automatically by validate()");
+        assert!(non_existent_cache_dir.is_dir(), "Cache directory should be a directory");
     }
 }
