@@ -1463,4 +1463,285 @@ mod tests {
             num_concurrent_requests
         );
     }
+
+    #[tokio::test]
+    async fn test_compilation_in_progress_cleanup() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Clear any existing state
+        cache::NATIVE_CACHE.remove(&class_hash);
+        compilation::COMPILATION_IN_PROGRESS.remove(&class_hash);
+        compilation::FAILED_COMPILATIONS.remove(&class_hash);
+
+        // Verify initial state - not in progress
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress initially"
+        );
+        assert_eq!(compilation::COMPILATION_IN_PROGRESS.len(), 0, "Should have no compilations in progress initially");
+
+        // Trigger async compilation
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        // Should return VM version immediately (async mode)
+        assert!(result.is_ok(), "Should return VM class immediately in async mode");
+
+        // Wait a short time to allow compilation to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify compilation started and entry is in COMPILATION_IN_PROGRESS
+        assert!(
+            compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should be in compilation_in_progress after spawning"
+        );
+        assert_eq!(compilation::COMPILATION_IN_PROGRESS.len(), 1, "Should have exactly one compilation in progress");
+
+        // Wait for compilation to complete (with timeout)
+        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
+        assert!(compilation_completed, "Compilation should complete within 20 seconds");
+
+        // Verify compilation completed successfully
+        assert!(
+            cache::NATIVE_CACHE.contains_key(&class_hash),
+            "Class should be in memory cache after compilation completes"
+        );
+
+        // Verify cleanup - entry should be removed from COMPILATION_IN_PROGRESS
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress after completion"
+        );
+        assert_eq!(
+            compilation::COMPILATION_IN_PROGRESS.len(),
+            0,
+            "Should have no compilations in progress after completion"
+        );
+
+        // Verify metrics - compilation should have succeeded
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one successful compilation"
+        );
+        assert_eq!(test_counters::COMPILATIONS_FAILED.load(Ordering::Relaxed), 0, "Should have no failed compilations");
+    }
+
+    #[tokio::test]
+    async fn test_async_mode_retry_enabled() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = Arc::new(
+            config::NativeConfig::default()
+                .with_native_execution(true)
+                .with_cache_dir(temp_dir.path().to_path_buf())
+                .with_compilation_mode(config::NativeCompilationMode::Async)
+                .with_compilation_timeout(Duration::from_secs(30))
+                .with_enable_retry(true),
+        );
+        compilation::init_compilation_semaphore(config.max_concurrent_compilations);
+
+        // Clear any existing state
+        cache::NATIVE_CACHE.remove(&class_hash);
+        compilation::COMPILATION_IN_PROGRESS.remove(&class_hash);
+        compilation::FAILED_COMPILATIONS.remove(&class_hash);
+
+        // Simulate a previously failed compilation by adding to FAILED_COMPILATIONS
+        compilation::FAILED_COMPILATIONS.insert(class_hash, Instant::now());
+        assert!(
+            compilation::FAILED_COMPILATIONS.contains_key(&class_hash),
+            "Class should be in FAILED_COMPILATIONS initially"
+        );
+
+        // Request the class with retry enabled
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        // Should return VM version immediately (async mode)
+        assert!(result.is_ok(), "Should return VM class immediately in async mode");
+
+        // Wait a short time to allow compilation to start
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify retry happened: class should be removed from FAILED_COMPILATIONS
+        assert!(
+            !compilation::FAILED_COMPILATIONS.contains_key(&class_hash),
+            "Class should be removed from FAILED_COMPILATIONS when retry is enabled"
+        );
+
+        // Verify compilation was spawned (should be in COMPILATION_IN_PROGRESS)
+        assert!(
+            compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Compilation should be spawned when retry is enabled"
+        );
+
+        // Wait for compilation to complete
+        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
+        assert!(compilation_completed, "Compilation should complete within 20 seconds");
+
+        // Verify compilation succeeded
+        assert!(
+            cache::NATIVE_CACHE.contains_key(&class_hash),
+            "Class should be in memory cache after successful retry compilation"
+        );
+        assert!(
+            !compilation::FAILED_COMPILATIONS.contains_key(&class_hash),
+            "Class should not be in FAILED_COMPILATIONS after successful compilation"
+        );
+
+        // Verify metrics
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation (retry)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one successful compilation"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_async_mode_retry_disabled() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = Arc::new(
+            config::NativeConfig::default()
+                .with_native_execution(true)
+                .with_cache_dir(temp_dir.path().to_path_buf())
+                .with_compilation_mode(config::NativeCompilationMode::Async)
+                .with_compilation_timeout(Duration::from_secs(30))
+                .with_enable_retry(false),
+        );
+        compilation::init_compilation_semaphore(config.max_concurrent_compilations);
+
+        // Clear any existing state
+        cache::NATIVE_CACHE.remove(&class_hash);
+        compilation::COMPILATION_IN_PROGRESS.remove(&class_hash);
+        compilation::FAILED_COMPILATIONS.remove(&class_hash);
+
+        // Simulate a previously failed compilation by adding to FAILED_COMPILATIONS
+        compilation::FAILED_COMPILATIONS.insert(class_hash, Instant::now());
+        assert!(
+            compilation::FAILED_COMPILATIONS.contains_key(&class_hash),
+            "Class should be in FAILED_COMPILATIONS initially"
+        );
+
+        // Request the class with retry disabled
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        // Should return VM version immediately (async mode)
+        assert!(result.is_ok(), "Should return VM class immediately in async mode");
+
+        // Wait a short time to ensure no compilation was spawned
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify retry did NOT happen: class should still be in FAILED_COMPILATIONS
+        assert!(
+            compilation::FAILED_COMPILATIONS.contains_key(&class_hash),
+            "Class should remain in FAILED_COMPILATIONS when retry is disabled"
+        );
+
+        // Verify compilation was NOT spawned (should NOT be in COMPILATION_IN_PROGRESS)
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Compilation should NOT be spawned when retry is disabled"
+        );
+
+        // Verify class is NOT in cache (no compilation happened)
+        assert!(
+            !cache::NATIVE_CACHE.contains_key(&class_hash),
+            "Class should NOT be in memory cache when retry is disabled"
+        );
+
+        // Verify metrics - no compilation should have started
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            0,
+            "Should have started no compilations when retry is disabled"
+        );
+        assert_eq!(test_counters::VM_FALLBACKS.load(Ordering::Relaxed), 1, "Should have exactly one VM fallback");
+    }
+
+    #[test]
+    fn test_compilation_timeout_config() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Clear any existing state
+        cache::NATIVE_CACHE.remove(&class_hash);
+        compilation::COMPILATION_IN_PROGRESS.remove(&class_hash);
+        compilation::FAILED_COMPILATIONS.remove(&class_hash);
+
+        // Verify caches don't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+
+        // Create config with a very short timeout to verify timeout behavior
+        // In a real scenario, compilations usually complete quickly, so we use 1ms to force timeout
+        let configured_timeout = Duration::from_millis(1);
+        let config = Arc::new(
+            config::NativeConfig::default()
+                .with_native_execution(true)
+                .with_cache_dir(temp_dir.path().to_path_buf())
+                .with_compilation_mode(config::NativeCompilationMode::Blocking)
+                .with_compilation_timeout(configured_timeout),
+        );
+
+        // Verify the config has the correct timeout value
+        assert_eq!(
+            config.compilation_timeout, configured_timeout,
+            "Config should have the configured timeout value of {:?}",
+            configured_timeout
+        );
+
+        // Attempt compilation with very short timeout - should timeout
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        // Should return an error due to timeout
+        assert!(result.is_err(), "Should return an error when compilation times out");
+
+        // Verify timeout metrics were recorded
+        use std::sync::atomic::Ordering;
+        let timeout_count = test_counters::COMPILATIONS_TIMEOUT.load(Ordering::Relaxed);
+        assert!(timeout_count > 0, "Should have recorded at least one compilation timeout");
+
+        // Verify the timeout error matches the configured timeout
+        if let Err(e) = result {
+            let error_str = format!("{:?}", e);
+            assert!(
+                error_str.contains("timeout") || error_str.contains("Timeout"),
+                "Error should mention timeout, got: {}",
+                error_str
+            );
+        }
+    }
 }
