@@ -1,0 +1,54 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Workflow - Release (publish)
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  # ========================================================================= #
+  #                           BUILD RELEASE IMAGES                            #
+  # ========================================================================= #
+
+  build-and-publish-madara:
+    uses: ./.github/workflows/task-build-and-publish-release.yml
+    with:
+      image-name: madara
+      image-file: ./madara/Dockerfile
+      release-tag: ${{ github.event.release.tag_name }}
+      is-prerelease: ${{ github.event.release.prerelease }}
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+
+  build-and-publish-orchestrator:
+    uses: ./.github/workflows/task-build-and-publish-release.yml
+    with:
+      image-name: orchestrator
+      image-file: ./orchestrator/Dockerfile
+      release-tag: ${{ github.event.release.tag_name }}
+      is-prerelease: ${{ github.event.release.prerelease }}
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+
+  build-and-publish-bootstrapper:
+    uses: ./.github/workflows/task-build-and-publish-release.yml
+    with:
+      image-name: bootstrapper
+      image-file: ./bootstrapper/Dockerfile
+      release-tag: ${{ github.event.release.tag_name }}
+      is-prerelease: ${{ github.event.release.prerelease }}
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
