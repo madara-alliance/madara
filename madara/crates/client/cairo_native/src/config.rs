@@ -37,6 +37,12 @@ pub const DEFAULT_DISK_CACHE_SIZE_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 /// Default compilation timeout: 5 minutes
 pub const DEFAULT_COMPILATION_TIMEOUT_SECS: u64 = 300;
 
+/// Default memory cache lookup timeout: 100 milliseconds
+pub const DEFAULT_MEMORY_CACHE_TIMEOUT_MS: u64 = 100;
+
+/// Default disk cache load timeout: 2 seconds
+pub const DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS: u64 = 2;
+
 /// Default memory cache size: 1000 classes
 pub const DEFAULT_MEMORY_CACHE_SIZE: usize = 1000;
 
@@ -101,6 +107,12 @@ pub struct NativeConfig {
     /// Maximum time to wait for a single compilation
     pub compilation_timeout: Duration,
 
+    /// Maximum time to wait for memory cache lookup
+    pub memory_cache_timeout: Duration,
+
+    /// Maximum time to wait for disk cache load
+    pub disk_cache_load_timeout: Duration,
+
     /// Compilation mode (async or blocking)
     pub compilation_mode: NativeCompilationMode,
 
@@ -123,12 +135,14 @@ pub struct NativeConfig {
 impl Default for NativeConfig {
     fn default() -> Self {
         Self {
-            enable_native_execution: false, // Native disabled by default
+            enable_native_execution: false,              // Native disabled by default
             cache_dir: PathBuf::from(DEFAULT_CACHE_DIR), // Use default path, actual path comes from CLI/config
             max_memory_cache_size: Some(DEFAULT_MEMORY_CACHE_SIZE),
             max_disk_cache_size: Some(DEFAULT_DISK_CACHE_SIZE_BYTES),
             max_concurrent_compilations: DEFAULT_MAX_CONCURRENT_COMPILATIONS,
             compilation_timeout: Duration::from_secs(DEFAULT_COMPILATION_TIMEOUT_SECS),
+            memory_cache_timeout: Duration::from_millis(DEFAULT_MEMORY_CACHE_TIMEOUT_MS),
+            disk_cache_load_timeout: Duration::from_secs(DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS),
             compilation_mode: NativeCompilationMode::Async, // Default to async
             enable_retry: true,                             // Retry enabled by default
             max_failed_compilations: DEFAULT_MAX_FAILED_COMPILATIONS,
@@ -187,6 +201,18 @@ impl NativeConfig {
     /// Set the compilation timeout
     pub fn with_compilation_timeout(mut self, timeout: Duration) -> Self {
         self.compilation_timeout = timeout;
+        self
+    }
+
+    /// Set the memory cache lookup timeout
+    pub fn with_memory_cache_timeout(mut self, timeout: Duration) -> Self {
+        self.memory_cache_timeout = timeout;
+        self
+    }
+
+    /// Set the disk cache load timeout
+    pub fn with_disk_cache_load_timeout(mut self, timeout: Duration) -> Self {
+        self.disk_cache_load_timeout = timeout;
         self
     }
 

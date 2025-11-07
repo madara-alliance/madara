@@ -48,8 +48,9 @@ use std::time::Duration;
 
 // Import default constants from the native config module
 use mc_cairo_native::config::{
-    DEFAULT_CACHE_DIR, DEFAULT_COMPILATION_TIMEOUT_SECS, DEFAULT_DISK_CACHE_SIZE_BYTES,
-    DEFAULT_MAX_CONCURRENT_COMPILATIONS, DEFAULT_MAX_FAILED_COMPILATIONS, DEFAULT_MEMORY_CACHE_SIZE,
+    DEFAULT_CACHE_DIR, DEFAULT_COMPILATION_TIMEOUT_SECS, DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS,
+    DEFAULT_DISK_CACHE_SIZE_BYTES, DEFAULT_MAX_CONCURRENT_COMPILATIONS, DEFAULT_MAX_FAILED_COMPILATIONS,
+    DEFAULT_MEMORY_CACHE_SIZE, DEFAULT_MEMORY_CACHE_TIMEOUT_MS,
 };
 
 /// Default function for serde deserialization of memory cache size
@@ -255,6 +256,42 @@ pub struct CairoNativeParams {
     )]
     pub native_compilation_timeout_secs: u64,
 
+    /// Maximum time to wait for memory cache lookup to complete.
+    ///
+    /// If a memory cache lookup takes longer than this timeout, it's treated as a cache miss
+    /// and the system falls back to disk cache or compilation.
+    ///
+    /// - **Default**: 100 milliseconds
+    /// - **Recommended**: 50-500 milliseconds depending on system performance
+    ///
+    /// Increase this timeout if you experience frequent memory cache timeouts on slower systems.
+    /// Most lookups complete in under 10 milliseconds.
+    #[clap(
+        env = "MADARA_NATIVE_MEMORY_CACHE_TIMEOUT_MS",
+        long,
+        default_value_t = DEFAULT_MEMORY_CACHE_TIMEOUT_MS,
+        value_name = "MILLISECONDS"
+    )]
+    pub native_memory_cache_timeout_ms: u64,
+
+    /// Maximum time to wait for disk cache load to complete.
+    ///
+    /// If loading a compiled class from disk takes longer than this timeout, it's treated as
+    /// a cache miss and the system falls back to compilation.
+    ///
+    /// - **Default**: 2 seconds
+    /// - **Recommended**: 1-5 seconds depending on disk I/O performance
+    ///
+    /// Increase this timeout if you experience frequent disk cache timeouts on slower storage.
+    /// Most disk loads complete in under 500 milliseconds.
+    #[clap(
+        env = "MADARA_NATIVE_DISK_CACHE_LOAD_TIMEOUT_SECS",
+        long,
+        default_value_t = DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS,
+        value_name = "SECONDS"
+    )]
+    pub native_disk_cache_load_timeout_secs: u64,
+
     /// How compilation failures are handled.
     ///
     /// - **`async`** (default): Compilations run in the background. Contracts use VM execution
@@ -320,6 +357,8 @@ impl Default for CairoNativeParams {
             native_max_disk_cache_bytes: DEFAULT_DISK_CACHE_SIZE_BYTES,
             native_max_concurrent_compilations: DEFAULT_MAX_CONCURRENT_COMPILATIONS,
             native_compilation_timeout_secs: DEFAULT_COMPILATION_TIMEOUT_SECS,
+            native_memory_cache_timeout_ms: DEFAULT_MEMORY_CACHE_TIMEOUT_MS,
+            native_disk_cache_load_timeout_secs: DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS,
             native_compilation_mode: "async".to_string(),
             native_enable_retry: true, // Retry enabled by default
             native_max_failed_compilations: DEFAULT_MAX_FAILED_COMPILATIONS,
@@ -334,9 +373,7 @@ impl CairoNativeParams {
     /// 1. The `native_cache_dir` CLI parameter if set (or `MADARA_NATIVE_CACHE_DIR` env var via clap)
     /// 2. The default path from `DEFAULT_CACHE_DIR` constant
     pub fn cache_dir(&self) -> PathBuf {
-        self.native_cache_dir
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_CACHE_DIR))
+        self.native_cache_dir.clone().unwrap_or_else(|| PathBuf::from(DEFAULT_CACHE_DIR))
     }
 
     /// Returns the compilation timeout as a `Duration` for use with async timers.
@@ -389,6 +426,8 @@ impl CairoNativeParams {
             .with_max_disk_cache_size(max_disk_cache_size)
             .with_max_concurrent_compilations(self.native_max_concurrent_compilations)
             .with_compilation_timeout(self.compilation_timeout())
+            .with_memory_cache_timeout(Duration::from_millis(self.native_memory_cache_timeout_ms))
+            .with_disk_cache_load_timeout(Duration::from_secs(self.native_disk_cache_load_timeout_secs))
             .with_compilation_mode(mode)
             .with_enable_retry(self.native_enable_retry)
             .with_max_failed_compilations(self.native_max_failed_compilations)

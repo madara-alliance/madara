@@ -6685,6 +6685,7 @@ dependencies = [
  "mp-class",
  "mp-convert",
  "opentelemetry",
+ "rstest 0.18.2",
  "serde",
  "serde_json",
  "starknet-types-core",

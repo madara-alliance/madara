@@ -628,7 +628,6 @@ pub(crate) fn spawn_compilation_if_needed(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starknet_types_core::felt::Felt;
 
     #[tokio::test]
     async fn test_compilation_semaphore_limit() {

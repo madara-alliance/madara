@@ -50,6 +50,97 @@ use opentelemetry::metrics::{Counter, Gauge, Histogram};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 use std::time::Instant;
 
+/// Test-only counters for verifying metrics in tests.
+/// These are only compiled in test builds and provide readable counters
+/// alongside the write-only OTEL metrics.
+#[cfg(test)]
+pub mod test_counters {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
+
+    /// Global mutex to serialize test execution and prevent interference between parallel tests.
+    /// Tests should acquire this mutex at the start and reset counters before running.
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// Acquire the test mutex and reset all counters.
+    /// Returns a guard that should be held for the duration of the test.
+    /// When the guard is dropped, the mutex is released.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// let _guard = test_counters::acquire_and_reset();
+    /// // Test code here - metrics are isolated from other parallel tests
+    /// ```
+    pub fn acquire_and_reset() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        reset_all();
+        guard
+    }
+
+    // Cache metrics
+    pub static CACHE_HITS_MEMORY: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_HITS_DISK: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_MEMORY_MISS: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_DISK_MISS: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_EVICTIONS: AtomicU64 = AtomicU64::new(0);
+
+    // Cache error counters
+    pub static CACHE_MEMORY_TIMEOUT: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_MEMORY_THREAD_DISCONNECTED: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_DISK_LOAD_TIMEOUT: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_DISK_LOAD_ERROR: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_DISK_THREAD_DISCONNECTED: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_DISK_ERROR_FALLBACK: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_DISK_FILE_NOT_FOUND: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_DISK_FILE_EMPTY: AtomicU64 = AtomicU64::new(0);
+    pub static CACHE_DISK_METADATA_ERROR: AtomicU64 = AtomicU64::new(0);
+
+    // Compilation metrics
+    pub static COMPILATIONS_STARTED: AtomicU64 = AtomicU64::new(0);
+    pub static COMPILATIONS_SUCCEEDED: AtomicU64 = AtomicU64::new(0);
+    pub static COMPILATIONS_FAILED: AtomicU64 = AtomicU64::new(0);
+    pub static COMPILATIONS_TIMEOUT: AtomicU64 = AtomicU64::new(0);
+
+    // Compilation flow metrics
+    pub static COMPILATION_IN_PROGRESS_SKIP: AtomicU64 = AtomicU64::new(0);
+    pub static COMPILATION_BLOCKING_MISS: AtomicU64 = AtomicU64::new(0);
+    pub static COMPILATION_BLOCKING_COMPLETE: AtomicU64 = AtomicU64::new(0);
+
+    // Runtime metrics
+    pub static VM_FALLBACKS: AtomicU64 = AtomicU64::new(0);
+
+    /// Reset all test counters to zero.
+    /// Should be called at the start of each test to ensure clean state.
+    pub fn reset_all() {
+        CACHE_HITS_MEMORY.store(0, Ordering::Relaxed);
+        CACHE_HITS_DISK.store(0, Ordering::Relaxed);
+        CACHE_MEMORY_MISS.store(0, Ordering::Relaxed);
+        CACHE_DISK_MISS.store(0, Ordering::Relaxed);
+        CACHE_EVICTIONS.store(0, Ordering::Relaxed);
+
+        CACHE_MEMORY_TIMEOUT.store(0, Ordering::Relaxed);
+        CACHE_MEMORY_THREAD_DISCONNECTED.store(0, Ordering::Relaxed);
+        CACHE_DISK_LOAD_TIMEOUT.store(0, Ordering::Relaxed);
+        CACHE_DISK_LOAD_ERROR.store(0, Ordering::Relaxed);
+        CACHE_DISK_THREAD_DISCONNECTED.store(0, Ordering::Relaxed);
+        CACHE_DISK_ERROR_FALLBACK.store(0, Ordering::Relaxed);
+        CACHE_DISK_FILE_NOT_FOUND.store(0, Ordering::Relaxed);
+        CACHE_DISK_FILE_EMPTY.store(0, Ordering::Relaxed);
+        CACHE_DISK_METADATA_ERROR.store(0, Ordering::Relaxed);
+
+        COMPILATIONS_STARTED.store(0, Ordering::Relaxed);
+        COMPILATIONS_SUCCEEDED.store(0, Ordering::Relaxed);
+        COMPILATIONS_FAILED.store(0, Ordering::Relaxed);
+        COMPILATIONS_TIMEOUT.store(0, Ordering::Relaxed);
+
+        COMPILATION_IN_PROGRESS_SKIP.store(0, Ordering::Relaxed);
+        COMPILATION_BLOCKING_MISS.store(0, Ordering::Relaxed);
+        COMPILATION_BLOCKING_COMPLETE.store(0, Ordering::Relaxed);
+
+        VM_FALLBACKS.store(0, Ordering::Relaxed);
+    }
+}
+
 /// Metrics for Cairo Native compilation and caching operations.
 ///
 /// Uses OpenTelemetry instruments for recording metrics (exported to Prometheus/OTLP).
@@ -58,7 +149,8 @@ pub struct NativeMetrics {
     // Cache metrics
     cache_hits_memory_counter: Counter<u64>,
     cache_hits_disk_counter: Counter<u64>,
-    cache_misses_counter: Counter<u64>,
+    cache_memory_miss_counter: Counter<u64>,
+    cache_disk_miss_counter: Counter<u64>,
     cache_evictions_counter: Counter<u64>,
     cache_size_gauge: Gauge<u64>,
 
@@ -124,10 +216,16 @@ impl NativeMetrics {
             "Number of disk cache hits for Cairo Native compiled classes".to_string(),
             "hit".to_string(),
         );
-        let cache_misses_counter = register_counter_metric_instrument(
+        let cache_memory_miss_counter = register_counter_metric_instrument(
             &meter,
-            "cairo_native_cache_misses".to_string(),
-            "Number of cache misses for Cairo Native compiled classes".to_string(),
+            "cairo_native_cache_memory_miss".to_string(),
+            "Number of memory cache misses for Cairo Native compiled classes".to_string(),
+            "miss".to_string(),
+        );
+        let cache_disk_miss_counter = register_counter_metric_instrument(
+            &meter,
+            "cairo_native_cache_disk_miss".to_string(),
+            "Number of disk cache misses for Cairo Native compiled classes".to_string(),
             "miss".to_string(),
         );
         let cache_evictions_counter = register_counter_metric_instrument(
@@ -316,7 +414,8 @@ impl NativeMetrics {
         Self {
             cache_hits_memory_counter,
             cache_hits_disk_counter,
-            cache_misses_counter,
+            cache_memory_miss_counter,
+            cache_disk_miss_counter,
             cache_evictions_counter,
             cache_size_gauge,
             cache_memory_timeout_counter,
@@ -352,18 +451,32 @@ impl NativeMetrics {
     // Cache operations
     pub fn record_cache_hit_memory(&self) {
         self.cache_hits_memory_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_HITS_MEMORY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_hit_disk(&self) {
         self.cache_hits_disk_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_HITS_DISK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    pub fn record_cache_miss(&self) {
-        self.cache_misses_counter.add(1, &[]);
+    pub fn record_cache_memory_miss(&self) {
+        self.cache_memory_miss_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_MEMORY_MISS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn record_cache_disk_miss(&self) {
+        self.cache_disk_miss_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_DISK_MISS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_eviction(&self) {
         self.cache_evictions_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_EVICTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn set_cache_size(&self, size: usize) {
@@ -373,38 +486,56 @@ impl NativeMetrics {
     // Cache error recording
     pub fn record_cache_memory_timeout(&self) {
         self.cache_memory_timeout_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_MEMORY_TIMEOUT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_memory_thread_disconnected(&self) {
         self.cache_memory_thread_disconnected_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_MEMORY_THREAD_DISCONNECTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_disk_load_timeout(&self) {
         self.cache_disk_load_timeout_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_DISK_LOAD_TIMEOUT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_disk_load_error(&self) {
         self.cache_disk_load_error_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_DISK_LOAD_ERROR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_disk_thread_disconnected(&self) {
         self.cache_disk_thread_disconnected_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_DISK_THREAD_DISCONNECTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_disk_error_fallback(&self) {
         self.cache_disk_error_fallback_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_DISK_ERROR_FALLBACK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_disk_file_not_found(&self) {
         self.cache_disk_file_not_found_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_DISK_FILE_NOT_FOUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_disk_file_empty(&self) {
         self.cache_disk_file_empty_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_DISK_FILE_EMPTY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_cache_disk_metadata_error(&self) {
         self.cache_disk_metadata_error_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::CACHE_DISK_METADATA_ERROR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     // Cache latency recording
@@ -439,6 +570,8 @@ impl NativeMetrics {
     // Compilation operations
     pub fn record_compilation_start(&self) {
         self.compilations_started_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::COMPILATIONS_STARTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // Update current compilations gauge by querying COMPILATION_IN_PROGRESS directly
         // This avoids maintaining separate atomic state
         self.update_current_compilations_gauge();
@@ -450,33 +583,47 @@ impl NativeMetrics {
 
         if timeout {
             self.compilations_timeout_counter.add(1, &[]);
+            #[cfg(test)]
+            test_counters::COMPILATIONS_TIMEOUT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return;
         }
 
         if success {
             self.compilations_succeeded_counter.add(1, &[]);
+            #[cfg(test)]
+            test_counters::COMPILATIONS_SUCCEEDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             // Record compilation time in histogram (in milliseconds as f64)
             self.compilation_time_histogram.record(duration_ms as f64, &[]);
         } else {
             self.compilations_failed_counter.add(1, &[]);
+            #[cfg(test)]
+            test_counters::COMPILATIONS_FAILED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     }
 
     pub fn record_vm_fallback(&self) {
         self.vm_fallbacks_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::VM_FALLBACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     // Compilation flow recording
     pub fn record_compilation_in_progress_skip(&self) {
         self.compilation_in_progress_skip_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::COMPILATION_IN_PROGRESS_SKIP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_compilation_blocking_miss(&self) {
         self.compilation_blocking_miss_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::COMPILATION_BLOCKING_MISS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_compilation_blocking_complete(&self) {
         self.compilation_blocking_complete_counter.add(1, &[]);
+        #[cfg(test)]
+        test_counters::COMPILATION_BLOCKING_COMPLETE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn record_compilation_blocking_conversion_time(&self, duration_ms: u64) {
@@ -518,8 +665,12 @@ pub fn metrics() -> &'static NativeMetrics {
 /// Usage:
 ///
 /// ```rust
+/// use mc_cairo_native::metrics::CompilationTimer;
+///
 /// let timer = CompilationTimer::new();
 /// // ... compilation happens ...
+/// let success = true;
+/// let timeout = false;
 /// timer.finish(success, timeout);
 /// ```
 pub struct CompilationTimer {
@@ -563,7 +714,6 @@ mod tests {
         metrics.record_cache_hit_memory();
         metrics.record_cache_hit_memory();
         metrics.record_cache_hit_disk();
-        metrics.record_cache_miss();
         metrics.record_cache_eviction();
     }
 
@@ -654,8 +804,6 @@ mod tests {
         metrics.record_cache_hit_memory();
         metrics.record_cache_hit_memory();
         metrics.record_cache_hit_disk();
-        metrics.record_cache_miss();
-        metrics.record_cache_miss();
         metrics.record_vm_fallback();
         metrics.record_cache_eviction();
 

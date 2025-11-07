@@ -33,14 +33,8 @@ use mp_class::SierraConvertedClass;
 /// This is different from CASM file loading in the sequencer, which doesn't have
 /// explicit timeouts because RocksDB handles timeouts internally. For disk files,
 /// we need explicit timeout protection.
-const DISK_LOAD_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// Timeout for memory cache lookup and conversion.
-///
-/// 100ms timeout prevents indefinite blocking during memory cache access or
-/// conversion operations. While memory cache lookups should be instant, conversion
-/// operations might hang due to issues with the cached native class.
-const MEMORY_CACHE_TIMEOUT: Duration = Duration::from_millis(100);
+// Timeout constants are now configurable via NativeConfig
+// Default values: memory_cache_timeout = 100ms, disk_cache_load_timeout = 2s
 
 /// In-memory cache for compiled native classes.
 ///
@@ -223,7 +217,10 @@ pub(crate) fn evict_cache_if_needed(config: &config::NativeConfig) {
 /// Updates access time for LRU tracking.
 ///
 /// Wrapped in a timeout to prevent indefinite blocking during conversion.
-pub(crate) fn try_get_from_memory_cache(class_hash: &ClassHash) -> Option<RunnableCompiledClass> {
+pub(crate) fn try_get_from_memory_cache(
+    class_hash: &ClassHash,
+    config: &config::NativeConfig,
+) -> Option<RunnableCompiledClass> {
     use std::sync::mpsc;
     use std::thread;
 
@@ -231,7 +228,7 @@ pub(crate) fn try_get_from_memory_cache(class_hash: &ClassHash) -> Option<Runnab
     let (tx, rx) = mpsc::channel();
 
     let thread_handle = thread::spawn(move || {
-    let start = Instant::now();
+        let start = Instant::now();
 
         if let Some(cached_entry) = NATIVE_CACHE.get(&class_hash_for_log) {
             let (cached_class, _) = cached_entry.value();
@@ -268,18 +265,30 @@ pub(crate) fn try_get_from_memory_cache(class_hash: &ClassHash) -> Option<Runnab
 
             let _ = tx.send(Some(runnable));
         } else {
+            // Memory cache miss - log it
+            let lookup_elapsed = start.elapsed();
+            let cache_size = NATIVE_CACHE.len();
+            super::metrics::metrics().record_cache_memory_miss();
+            tracing::debug!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash_for_log.to_felt()),
+                elapsed = ?lookup_elapsed,
+                elapsed_ms = lookup_elapsed.as_millis(),
+                cache_size = cache_size,
+                "memory_cache_miss"
+            );
             let _ = tx.send(None);
         }
     });
 
-    match rx.recv_timeout(MEMORY_CACHE_TIMEOUT) {
+    match rx.recv_timeout(config.memory_cache_timeout) {
         Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => {
             super::metrics::metrics().record_cache_memory_timeout();
             tracing::warn!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
-                timeout_ms = MEMORY_CACHE_TIMEOUT.as_millis(),
+                timeout_ms = config.memory_cache_timeout.as_millis(),
                 "memory_cache_lookup_timeout"
             );
             // Don't wait for thread - it will be cleaned up when process exits
@@ -384,7 +393,6 @@ pub(crate) fn try_get_from_disk_cache(
     let start = Instant::now();
     let path = get_native_cache_path(class_hash, config);
 
-
     if !path.exists() {
         let elapsed = start.elapsed();
         super::metrics::metrics().record_cache_disk_file_not_found();
@@ -411,13 +419,13 @@ pub(crate) fn try_get_from_disk_cache(
             );
             return Ok(None);
         }
-    tracing::debug!(
-        target: "madara_cairo_native",
-        class_hash = %format!("{:#x}", class_hash.to_felt()),
-        path = %path.display(),
-            file_size_bytes = file_size,
-        "attempting_disk_load"
-    );
+        tracing::debug!(
+            target: "madara_cairo_native",
+            class_hash = %format!("{:#x}", class_hash.to_felt()),
+            path = %path.display(),
+                file_size_bytes = file_size,
+            "attempting_disk_load"
+        );
     } else {
         super::metrics::metrics().record_cache_disk_metadata_error();
         tracing::warn!(
@@ -429,7 +437,7 @@ pub(crate) fn try_get_from_disk_cache(
         return Ok(None);
     }
 
-    match try_load_executor_with_timeout(&path, DISK_LOAD_TIMEOUT)? {
+    match try_load_executor_with_timeout(&path, config.disk_cache_load_timeout)? {
         Some(executor) => {
             // Update file access time by touching it (updates modification time)
             // This ensures disk cache eviction uses access time, not creation time
@@ -513,13 +521,13 @@ pub(crate) fn try_get_from_disk_cache(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mp_class::{FlattenedSierraClass, SierraClassInfo, SierraConvertedClass};
     use starknet_api::core::ClassHash;
     use starknet_types_core::felt::Felt;
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
-    use mp_class::{FlattenedSierraClass, SierraClassInfo, SierraConvertedClass};
 
     // Test mutex to serialize test execution for tests that need to clear/modify the entire cache
     // Most tests use unique class_hashes and don't need this mutex
@@ -539,9 +547,9 @@ mod tests {
         ClassHash(base + Felt::from(counter))
     }
 
-    // Helper function to create a test class hash with a specific value (for tests that need specific hashes)
-    fn create_test_class_hash(value: u64) -> ClassHash {
-        ClassHash(Felt::from(value))
+    // Helper function to create a test config with default values
+    fn create_test_config(temp_dir: &TempDir) -> config::NativeConfig {
+        config::NativeConfig::default().with_cache_dir(temp_dir.path().to_path_buf()).with_native_execution(true)
     }
 
     // Helper function to create a test NativeCompiledClassV1 from a Sierra class
@@ -558,7 +566,7 @@ mod tests {
         let executor = sierra.info.contract_class.compile_to_native(&so_path)?;
 
         // Convert Sierra to blockifier compiled class
-        let blockifier_compiled_class = super::compilation::convert_sierra_to_blockifier_class(sierra)?;
+        let blockifier_compiled_class = crate::compilation::convert_sierra_to_blockifier_class(sierra)?;
 
         // Create NativeCompiledClassV1
         let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
@@ -569,27 +577,47 @@ mod tests {
     // Helper function to create a test SierraConvertedClass from test contract
     fn create_test_sierra_class() -> Result<SierraConvertedClass, Box<dyn std::error::Error>> {
         use m_cairo_test_contracts::TEST_CONTRACT_SIERRA;
-        use mp_class::{CompiledSierra, SierraClassInfo};
-        use starknet_core::types::contract::SierraClass;
+        use mp_class::CompiledSierra;
+        use serde_json::Value;
 
-        // Parse the test contract JSON as SierraClass (handles compressed format)
-        let sierra_class: SierraClass = serde_json::from_slice(TEST_CONTRACT_SIERRA)?;
-        
-        // Flatten the Sierra class (decompresses if needed)
-        let flattened_class = sierra_class.flatten()?;
-        
-        // Convert to FlattenedSierraClass
-        let flattened_sierra = FlattenedSierraClass::from(flattened_class);
+        // Parse as JSON value first to check the structure
+        let mut json_value: Value = serde_json::from_slice(TEST_CONTRACT_SIERRA)
+            .map_err(|e| format!("Failed to parse TEST_CONTRACT_SIERRA as JSON: {}", e))?;
+
+        // Handle abi field - convert from object/array to string if needed
+        if let Some(abi_value) = json_value.get_mut("abi") {
+            if !abi_value.is_string() {
+                // Serialize the abi object/array to a JSON string
+                *abi_value = Value::String(serde_json::to_string(abi_value)?);
+            }
+        }
+
+        // Check if sierra_program is an array (flattened) or string (compressed)
+        let flattened_sierra = if let Some(sierra_program) = json_value.get("sierra_program") {
+            if sierra_program.is_array() {
+                // Flattened format - parse directly as FlattenedSierraClass
+                serde_json::from_value::<FlattenedSierraClass>(json_value)
+                    .map_err(|e| format!("Failed to parse as FlattenedSierraClass: {}", e))?
+            } else if sierra_program.is_string() {
+                // Compressed format - parse as CompressedSierraClass then decompress
+                use mp_class::CompressedSierraClass;
+                let compressed = serde_json::from_value::<CompressedSierraClass>(json_value)
+                    .map_err(|e| format!("Failed to parse as CompressedSierraClass: {}", e))?;
+                FlattenedSierraClass::try_from(compressed)
+                    .map_err(|e| format!("Failed to decompress CompressedSierraClass: {}", e))?
+            } else {
+                return Err("sierra_program field is neither an array nor a string".into());
+            }
+        } else {
+            return Err("JSON does not contain sierra_program field".into());
+        };
 
         // Compile to CASM to get compiled class hash
         let (compiled_class_hash, casm_class) = flattened_sierra.compile_to_casm()?;
         let compiled_sierra = CompiledSierra::try_from(&casm_class)?;
 
         // Create SierraClassInfo
-        let sierra_info = SierraClassInfo {
-            contract_class: Arc::new(flattened_sierra),
-            compiled_class_hash,
-        };
+        let sierra_info = SierraClassInfo { contract_class: Arc::new(flattened_sierra), compiled_class_hash };
 
         // Create SierraConvertedClass
         let sierra_converted = SierraConvertedClass {
@@ -673,17 +701,21 @@ mod tests {
 
     #[test]
     fn test_basic_memory_cache_hit() {
+        // Acquire metrics mutex to prevent interference with other tests
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+
         // Use unique class_hash to avoid interference with other parallel tests
         let class_hash = create_unique_test_class_hash();
-        
+
         // Create test Sierra class
         let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Create native class and insert into cache
-        let native_class = create_test_native_class(&sierra, &temp_dir, class_hash)
-            .expect("Failed to create test native class");
-        
+        let native_class =
+            create_test_native_class(&sierra, &temp_dir, class_hash).expect("Failed to create test native class");
+
         // Insert into cache with initial timestamp
         let initial_time = Instant::now();
         NATIVE_CACHE.insert(class_hash, (native_class.clone(), initial_time));
@@ -692,17 +724,14 @@ mod tests {
         assert!(NATIVE_CACHE.contains_key(&class_hash), "Cache should contain our test class");
 
         // Try to get from memory cache - should succeed
-        let result = try_get_from_memory_cache(&class_hash);
+        let result = try_get_from_memory_cache(&class_hash, &create_test_config(&temp_dir));
         assert!(result.is_some(), "Memory cache should return Some when class is cached");
 
         // Verify cache still contains the class (and access time was updated)
         assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should still be in cache after access");
         if let Some(entry) = NATIVE_CACHE.get(&class_hash) {
             let (_, access_time) = entry.value();
-            assert!(
-                *access_time >= initial_time,
-                "Access time should be updated to current or later time"
-            );
+            assert!(*access_time >= initial_time, "Access time should be updated to current or later time");
         } else {
             panic!("Class should still be in cache after access");
         }
@@ -710,17 +739,21 @@ mod tests {
 
     #[test]
     fn test_memory_cache_hit_after_disk_load() {
+        // Acquire metrics mutex to prevent interference with other tests
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+
         // Use unique class_hash to avoid interference with other parallel tests
         let class_hash = create_unique_test_class_hash();
-        
+
         // Create test Sierra class
         let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Simulate disk load: create native class and insert into cache (as disk load would do)
-        let native_class = create_test_native_class(&sierra, &temp_dir, class_hash)
-            .expect("Failed to create test native class");
-        
+        let native_class =
+            create_test_native_class(&sierra, &temp_dir, class_hash).expect("Failed to create test native class");
+
         // Insert into cache (simulating what happens after disk load)
         NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
 
@@ -728,46 +761,45 @@ mod tests {
         assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should be in memory cache");
 
         // Request the class again - should hit memory cache
-        let result = try_get_from_memory_cache(&class_hash);
+        let result = try_get_from_memory_cache(&class_hash, &create_test_config(&temp_dir));
         assert!(result.is_some(), "Should hit memory cache after disk load");
     }
 
     #[test]
     fn test_memory_cache_hit_updates_access_time() {
+        // Acquire metrics mutex to prevent interference with other tests
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+
         // Use unique class_hash to avoid interference with other parallel tests
         let class_hash = create_unique_test_class_hash();
-        
+
         // Create test Sierra class
         let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Create native class
-        let native_class = create_test_native_class(&sierra, &temp_dir, class_hash)
-            .expect("Failed to create test native class");
-        
+        let native_class =
+            create_test_native_class(&sierra, &temp_dir, class_hash).expect("Failed to create test native class");
+
         // Insert into cache with initial timestamp
         let initial_time = Instant::now();
         std::thread::sleep(Duration::from_millis(10)); // Small delay to ensure time difference
         NATIVE_CACHE.insert(class_hash, (native_class.clone(), initial_time));
 
         // Get initial access time from cache
-        let initial_access_time = NATIVE_CACHE
-            .get(&class_hash)
-            .map(|e| *e.value().1)
-            .expect("Class should be in cache");
+        let initial_access_time = NATIVE_CACHE.get(&class_hash).map(|e| e.value().1).expect("Class should be in cache");
 
         // Small delay before accessing
         std::thread::sleep(Duration::from_millis(10));
 
         // Access the cached class
-        let _result = try_get_from_memory_cache(&class_hash);
+        let _result = try_get_from_memory_cache(&class_hash, &create_test_config(&temp_dir));
         assert!(_result.is_some(), "Should successfully retrieve from cache");
 
         // Verify access time was updated
-        let updated_access_time = NATIVE_CACHE
-            .get(&class_hash)
-            .map(|e| *e.value().1)
-            .expect("Class should still be in cache");
+        let updated_access_time =
+            NATIVE_CACHE.get(&class_hash).map(|e| e.value().1).expect("Class should still be in cache");
 
         assert!(
             updated_access_time > initial_access_time,
@@ -779,48 +811,56 @@ mod tests {
 
     #[test]
     fn test_memory_cache_hit_preserves_class_data() {
+        // Acquire metrics mutex to prevent interference with other tests
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+
         // Use unique class_hash to avoid interference with other parallel tests
         let class_hash = create_unique_test_class_hash();
-        
+
         // Create test Sierra class
         let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Create native class
-        let native_class = create_test_native_class(&sierra, &temp_dir, class_hash)
-            .expect("Failed to create test native class");
-        
+        let native_class =
+            create_test_native_class(&sierra, &temp_dir, class_hash).expect("Failed to create test native class");
+
         // Insert into cache
         NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
 
         // Retrieve from cache
-        let retrieved = try_get_from_memory_cache(&class_hash)
+        let retrieved = try_get_from_memory_cache(&class_hash, &create_test_config(&temp_dir))
             .expect("Should successfully retrieve from cache");
 
         // Verify we got a RunnableCompiledClass (can't easily compare equality, but we can verify it's not None)
         // The fact that conversion succeeded means the data is preserved
         // In a more comprehensive test, we could execute the class and verify behavior matches
-        assert!(
-            std::mem::size_of_val(&retrieved) > 0,
-            "Retrieved class should have non-zero size"
-        );
+        assert!(std::mem::size_of_val(&retrieved) > 0, "Retrieved class should have non-zero size");
     }
 
     #[test]
     fn test_memory_cache_hit_concurrent_requests() {
+        // Acquire metrics mutex to prevent interference with other tests
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+
         // Use unique class_hash to avoid interference with other parallel tests
         let class_hash = create_unique_test_class_hash();
-        
+
         // Create test Sierra class
         let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Create native class
-        let native_class = create_test_native_class(&sierra, &temp_dir, class_hash)
-            .expect("Failed to create test native class");
-        
+        let native_class =
+            create_test_native_class(&sierra, &temp_dir, class_hash).expect("Failed to create test native class");
+
         // Insert into cache
         NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
+
+        // Create config once outside the loop to avoid moving temp_dir
+        let test_config = create_test_config(&temp_dir);
 
         // Spawn multiple threads that all request the same cached class
         let num_threads = 10;
@@ -828,9 +868,8 @@ mod tests {
 
         for _ in 0..num_threads {
             let hash = class_hash;
-            let handle = thread::spawn(move || {
-                try_get_from_memory_cache(&hash)
-            });
+            let config = test_config.clone(); // Clone config for each thread
+            let handle = thread::spawn(move || try_get_from_memory_cache(&hash, &config));
             handles.push(handle);
         }
 
@@ -853,30 +892,40 @@ mod tests {
 
     #[test]
     fn test_memory_cache_hit_after_eviction_and_reload() {
+        // Acquire metrics mutex to prevent interference with other tests
+        use crate::metrics::test_counters;
+        let _metrics_guard = test_counters::acquire_and_reset();
+
         // Use unique class_hash to avoid interference with other parallel tests
         let class_hash = create_unique_test_class_hash();
-        
+
         // Create test Sierra class
         let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Create native class
-        let native_class = create_test_native_class(&sierra, &temp_dir, class_hash)
-            .expect("Failed to create test native class");
-        
+        let native_class =
+            create_test_native_class(&sierra, &temp_dir, class_hash).expect("Failed to create test native class");
+
         // Insert into cache
         NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
 
         // Verify it's in cache
         assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should be in cache");
-        assert!(try_get_from_memory_cache(&class_hash).is_some(), "Should retrieve from cache");
+        assert!(
+            try_get_from_memory_cache(&class_hash, &create_test_config(&temp_dir)).is_some(),
+            "Should retrieve from cache"
+        );
 
         // Evict from memory cache (simulate eviction)
         NATIVE_CACHE.remove(&class_hash);
         assert!(!NATIVE_CACHE.contains_key(&class_hash), "Class should be removed from cache");
 
         // Verify it's no longer in memory cache
-        assert!(try_get_from_memory_cache(&class_hash).is_none(), "Should return None after eviction");
+        assert!(
+            try_get_from_memory_cache(&class_hash, &create_test_config(&temp_dir)).is_none(),
+            "Should return None after eviction"
+        );
 
         // Simulate reload from disk: insert back into cache
         NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
@@ -885,7 +934,7 @@ mod tests {
         assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should be back in cache");
 
         // Request again - should hit memory cache
-        let result = try_get_from_memory_cache(&class_hash);
+        let result = try_get_from_memory_cache(&class_hash, &create_test_config(&temp_dir));
         assert!(result.is_some(), "Should hit memory cache after reload from disk");
     }
 }

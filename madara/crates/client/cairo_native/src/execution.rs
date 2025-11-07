@@ -49,9 +49,6 @@ pub(crate) fn handle_sierra_class(
         return Ok(cached);
     }
 
-    // Cache miss - record metric and proceed to compilation
-    super::metrics::metrics().record_cache_miss();
-
     // Handle compilation based on mode (blocking vs async)
     if config.is_blocking_mode() {
         handle_blocking_compilation(&class_hash_typed, sierra, &config, start)
@@ -86,7 +83,7 @@ fn try_cache_lookup(
     config: &Arc<config::NativeConfig>,
 ) -> Option<RunnableCompiledClass> {
     // Check in-memory cache first (fastest)
-    if let Some(cached) = cache::try_get_from_memory_cache(class_hash) {
+    if let Some(cached) = cache::try_get_from_memory_cache(class_hash, config) {
         return Some(cached);
     }
 
@@ -104,13 +101,20 @@ fn try_cache_lookup(
         );
         return None;
     }
-    
+
     match cache::try_get_from_disk_cache(class_hash, sierra, config) {
-        Ok(Some(cached)) => {
-            Some(cached)
-        }
+        Ok(Some(cached)) => Some(cached),
         Ok(None) => {
-            // Cache miss - will fall through to compilation
+            // Disk cache miss - genuine miss (file not found/empty)
+            let elapsed = start.elapsed();
+            super::metrics::metrics().record_cache_disk_miss();
+            tracing::debug!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash.to_felt()),
+                elapsed = ?elapsed,
+                elapsed_ms = elapsed.as_millis(),
+                "cache_miss_both_memory_and_disk"
+            );
             None
         }
         Err(e) => {
@@ -152,7 +156,8 @@ fn handle_blocking_compilation(
             let conversion_elapsed = conversion_start.elapsed();
             let total_elapsed = start.elapsed();
             super::metrics::metrics().record_compilation_blocking_complete();
-            super::metrics::metrics().record_compilation_blocking_conversion_time(conversion_elapsed.as_millis() as u64);
+            super::metrics::metrics()
+                .record_compilation_blocking_conversion_time(conversion_elapsed.as_millis() as u64);
             tracing::debug!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
@@ -288,4 +293,1072 @@ fn convert_to_vm_class(
         "returning_vm_class"
     );
     Ok(vm_class)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::metrics::test_counters;
+    use mp_class::{FlattenedSierraClass, SierraClassInfo, SierraConvertedClass};
+    use starknet_api::core::ClassHash;
+    use starknet_types_core::felt::Felt;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+    use tempfile::TempDir;
+
+    // Test mutex to serialize test execution for tests that need to clear/modify caches
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    // Counter for generating unique test class hashes
+    static TEST_CLASS_HASH_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+    // Helper function to create a unique test class hash
+    fn create_unique_test_class_hash() -> ClassHash {
+        let counter = TEST_CLASS_HASH_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let base = Felt::from_hex_unchecked("0x2000000000000000000000000000000000000000000000000000000000000000");
+        ClassHash(base + Felt::from(counter))
+    }
+
+    // Helper function to create a test SierraConvertedClass (reuse from cache.rs tests)
+    fn create_test_sierra_class() -> Result<SierraConvertedClass, Box<dyn std::error::Error>> {
+        use m_cairo_test_contracts::TEST_CONTRACT_SIERRA;
+        use mp_class::CompiledSierra;
+        use serde_json::Value;
+
+        // Parse as JSON value first to check the structure
+        let mut json_value: Value = serde_json::from_slice(TEST_CONTRACT_SIERRA)
+            .map_err(|e| format!("Failed to parse TEST_CONTRACT_SIERRA as JSON: {}", e))?;
+
+        // Handle abi field - convert from object/array to string if needed
+        if let Some(abi_value) = json_value.get_mut("abi") {
+            if !abi_value.is_string() {
+                *abi_value = Value::String(serde_json::to_string(abi_value)?);
+            }
+        }
+
+        // Check if sierra_program is an array (flattened) or string (compressed)
+        let flattened_sierra = if let Some(sierra_program) = json_value.get("sierra_program") {
+            if sierra_program.is_array() {
+                serde_json::from_value::<FlattenedSierraClass>(json_value)
+                    .map_err(|e| format!("Failed to parse as FlattenedSierraClass: {}", e))?
+            } else if sierra_program.is_string() {
+                use mp_class::CompressedSierraClass;
+                let compressed = serde_json::from_value::<CompressedSierraClass>(json_value)
+                    .map_err(|e| format!("Failed to parse as CompressedSierraClass: {}", e))?;
+                FlattenedSierraClass::try_from(compressed)
+                    .map_err(|e| format!("Failed to decompress CompressedSierraClass: {}", e))?
+            } else {
+                return Err("sierra_program field is neither an array nor a string".into());
+            }
+        } else {
+            return Err("JSON does not contain sierra_program field".into());
+        };
+
+        // Compile to CASM to get compiled class hash
+        let (compiled_class_hash, casm_class) = flattened_sierra.compile_to_casm()?;
+        let compiled_sierra = CompiledSierra::try_from(&casm_class)?;
+
+        // Create SierraClassInfo
+        let sierra_info = SierraClassInfo { contract_class: Arc::new(flattened_sierra), compiled_class_hash };
+
+        // Create SierraConvertedClass
+        let sierra_converted = SierraConvertedClass {
+            class_hash: compiled_class_hash,
+            info: sierra_info,
+            compiled: Arc::new(compiled_sierra),
+        };
+
+        Ok(sierra_converted)
+    }
+
+    // Helper function to create a test NativeCompiledClassV1 and insert into memory cache
+    fn create_and_cache_native_class(
+        sierra: &SierraConvertedClass,
+        temp_dir: &TempDir,
+        class_hash: ClassHash,
+        _config: &config::NativeConfig,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use blockifier::execution::native::contract_class::NativeCompiledClassV1;
+        use std::time::Instant;
+
+        // Create path for compiled .so file
+        let so_path = temp_dir.path().join(format!("{:#x}.so", class_hash.to_felt()));
+
+        // Compile Sierra to native
+        let executor = sierra.info.contract_class.compile_to_native(&so_path)?;
+
+        // Convert Sierra to blockifier compiled class
+        let blockifier_compiled_class = crate::compilation::convert_sierra_to_blockifier_class(sierra)?;
+
+        // Create NativeCompiledClassV1
+        let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
+
+        // Insert into memory cache
+        cache::NATIVE_CACHE.insert(class_hash, (Arc::new(native_class), Instant::now()));
+
+        Ok(())
+    }
+
+    // Helper function to create and save a native class to disk (simulates previous compilation)
+    fn create_and_save_native_class_to_disk(
+        sierra: &SierraConvertedClass,
+        temp_dir: &TempDir,
+        class_hash: ClassHash,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use blockifier::execution::native::contract_class::NativeCompiledClassV1;
+
+        // Create path for compiled .so file
+        let so_path = temp_dir.path().join(format!("{:#x}.so", class_hash.to_felt()));
+
+        // Compile Sierra to native and save to disk
+        let executor = sierra.info.contract_class.compile_to_native(&so_path)?;
+
+        // Convert Sierra to blockifier compiled class
+        let blockifier_compiled_class = crate::compilation::convert_sierra_to_blockifier_class(sierra)?;
+
+        // Create NativeCompiledClassV1 (this validates the executor can be loaded)
+        let _native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
+
+        // File is already saved to disk by compile_to_native
+        // Verify file exists
+        assert!(so_path.exists(), "Native class file should exist on disk");
+
+        Ok(())
+    }
+
+    // Helper function to create a test config with native enabled
+    fn create_test_config(temp_dir: &TempDir, mode: config::NativeCompilationMode) -> Arc<config::NativeConfig> {
+        let config = Arc::new(
+            config::NativeConfig::default()
+                .with_native_execution(true)
+                .with_cache_dir(temp_dir.path().to_path_buf())
+                .with_compilation_mode(mode)
+                .with_compilation_timeout(Duration::from_secs(30)),
+        );
+
+        // Initialize compilation semaphore for async tests
+        compilation::init_compilation_semaphore(config.max_concurrent_compilations);
+
+        config
+    }
+
+    // Helper function to poll for compilation completion with timeout (async version)
+    // Returns true if compilation completed and class is cached, false if timeout
+    async fn wait_for_compilation_completion_async(class_hash: &ClassHash, timeout_secs: u64) -> bool {
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_secs(timeout_secs);
+        let check_interval = Duration::from_millis(100);
+
+        while start.elapsed() < timeout {
+            // Check if compilation completed and class is in cache
+            if cache::NATIVE_CACHE.contains_key(class_hash) {
+                // Give it a small delay to ensure it's fully cached
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                return true;
+            }
+
+            // Check if compilation is still in progress
+            if !compilation::COMPILATION_IN_PROGRESS.contains_key(class_hash) {
+                // Compilation finished but not cached - might have failed
+                // Wait a bit more to see if it gets cached
+                tokio::time::sleep(check_interval).await;
+                if cache::NATIVE_CACHE.contains_key(class_hash) {
+                    return true;
+                }
+                // Compilation finished but not cached - likely failed
+                return false;
+            }
+
+            tokio::time::sleep(check_interval).await;
+        }
+
+        // Timeout reached
+        false
+    }
+
+    #[test]
+    fn test_handle_sierra_class_memory_cache_hit() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Pre-populate memory cache
+        create_and_cache_native_class(&sierra, &temp_dir, class_hash, &config)
+            .expect("Failed to create and cache native class");
+
+        // Verify it's in cache before calling handle_sierra_class
+        assert!(cache::NATIVE_CACHE.contains_key(&class_hash), "Class should be in memory cache before call");
+
+        // Memory cache hit expected
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        assert!(result.is_ok(), "Should successfully retrieve from memory cache");
+        let runnable = result.unwrap();
+        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Verify it's still in cache after call
+        assert!(cache::NATIVE_CACHE.contains_key(&class_hash), "Class should remain in memory cache after call");
+
+        // Metrics assertions - memory cache hit, no disk access, no compilation
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache hit"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache misses (memory hit)"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache hits (memory hit, disk not checked)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache misses (disk not checked)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            0,
+            "Should have no compilations (memory cache hit)"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            0,
+            "Should have no VM fallbacks (native execution)"
+        );
+    }
+
+    #[test]
+    fn test_handle_sierra_class_memory_miss_disk_hit() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Create and save native class to disk (simulate previous compilation)
+        create_and_save_native_class_to_disk(&sierra, &temp_dir, class_hash)
+            .expect("Failed to create and save native class to disk");
+
+        // Verify memory cache still doesn't have it
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache before disk load");
+
+        // Disk cache hit expected
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        assert!(result.is_ok(), "Should successfully retrieve from disk cache");
+        let runnable = result.unwrap();
+        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Verify it was loaded into memory cache after disk hit
+        assert!(cache::NATIVE_CACHE.contains_key(&class_hash), "Should be loaded into memory cache after disk hit");
+
+        // Metrics assertions - disk cache hit, no compilation
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache hits (memory missed)"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache miss"
+        );
+        assert_eq!(test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed), 1, "Should have exactly one disk cache hit");
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache misses (disk hit)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            0,
+            "Should have no compilations (disk cache hit)"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            0,
+            "Should have no VM fallbacks (native execution from disk)"
+        );
+    }
+
+    #[test]
+    fn test_handle_sierra_class_native_disabled() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Create config with native disabled
+        let config = Arc::new(
+            config::NativeConfig::default().with_native_execution(false).with_cache_dir(temp_dir.path().to_path_buf()),
+        );
+
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        // VM class returned immediately when native is disabled
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        assert!(result.is_ok(), "Should return VM class when native is disabled");
+        let runnable = result.unwrap();
+        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Metrics assertions - native disabled
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            0,
+            "Should have no cache hits (native disabled)"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache misses (native disabled, no cache lookup)"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache hits (native disabled)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache misses (native disabled, no cache lookup)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            0,
+            "Should have no compilations (native disabled)"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            0,
+            "Should have no VM fallbacks (native disabled)"
+        );
+    }
+
+    #[test]
+    fn test_handle_sierra_class_cache_miss_blocking_mode() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+        let class_hash = create_unique_test_class_hash();
+
+        // Ensure our specific class_hash is not in any caches (cleanup from any previous runs)
+        cache::NATIVE_CACHE.remove(&class_hash);
+        compilation::COMPILATION_IN_PROGRESS.remove(&class_hash);
+        compilation::FAILED_COMPILATIONS.remove(&class_hash);
+
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Blocking);
+
+        // Verify caches don't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress initially"
+        );
+
+        // Reset metrics RIGHT BEFORE the operation to minimize window for other tests to interfere
+        // This ensures metrics from cache tests running in parallel don't leak in
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        // Blocking mode compiles synchronously
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        assert!(result.is_ok(), "Should successfully compile in blocking mode");
+        let runnable = result.unwrap();
+        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Verify it was cached
+        assert!(cache::NATIVE_CACHE.contains_key(&class_hash), "Should be cached after compilation");
+        // Compilation should be complete, so not in progress
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress after completion"
+        );
+
+        // Metrics assertions - cache miss and blocking compilation
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache hits (cache miss)"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache miss"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache hits (cache miss)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one disk cache miss"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one successful compilation in blocking mode"
+        );
+        assert_eq!(
+            test_counters::COMPILATION_BLOCKING_COMPLETE.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one blocking compilation completion"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            0,
+            "Should have no VM fallbacks (blocking mode waits for compilation)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_sierra_class_cache_miss_async_mode() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Verify caches don't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress initially"
+        );
+        assert!(
+            !compilation::FAILED_COMPILATIONS.contains_key(&class_hash),
+            "Class should not be in failed_compilations initially"
+        );
+
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        // Async mode returns VM immediately while compilation happens in background
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        assert!(result.is_ok(), "Should return VM class immediately in async mode");
+        let runnable = result.unwrap();
+        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Wait for compilation completion with 20 second timeout
+        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
+
+        assert!(compilation_completed, "Compilation should complete within 20 seconds");
+
+        // Verify compilation completed and class is cached
+        assert!(
+            cache::NATIVE_CACHE.contains_key(&class_hash),
+            "Class should be in memory cache after compilation completes"
+        );
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress after completion"
+        );
+        assert!(
+            !compilation::FAILED_COMPILATIONS.contains_key(&class_hash),
+            "Class should not be in failed_compilations after successful compilation"
+        );
+
+        // Metrics assertions - cache miss and async compilation
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache hits (cache miss)"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache miss"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache hits (cache miss)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one disk cache miss"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one VM fallback (async mode returns VM immediately)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one successful compilation after async completion"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_sierra_class_disk_cache_error() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Verify memory cache doesn't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+
+        // Create a corrupt/invalid .so file on disk to trigger disk cache error
+        let so_path = temp_dir.path().join(format!("{:#x}.so", class_hash.to_felt()));
+        std::fs::write(&so_path, b"invalid binary data").expect("Failed to write invalid file");
+
+        // Disk error handled gracefully, falls back to compilation
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        // In async mode, should return VM class even if disk cache fails
+        assert!(result.is_ok(), "Should handle disk cache error gracefully");
+
+        // Wait for compilation completion with 20 second timeout
+        // Compilation spawned in background after disk error
+        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
+
+        assert!(compilation_completed, "Compilation should complete within 20 seconds after disk cache error");
+
+        // Compilation completed successfully despite disk error - verify it's in cache
+        assert!(
+            cache::NATIVE_CACHE.contains_key(&class_hash),
+            "Class should be in memory cache after compilation completes"
+        );
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress after completion"
+        );
+        assert!(
+            !compilation::FAILED_COMPILATIONS.contains_key(&class_hash),
+            "Class should not be in failed_compilations after successful compilation"
+        );
+
+        // Metrics assertions - disk error and fallback to compilation
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache hits (cache miss)"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache miss"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache hits (disk load error)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache misses (disk errored, not missed)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_LOAD_ERROR.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one disk load error"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one VM fallback (async mode returns VM immediately)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation after disk error"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one successful compilation after disk error"
+        );
+    }
+
+    #[test]
+    fn test_handle_sierra_class_compilation_in_progress_skip_disk() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Verify memory cache doesn't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+
+        // Mark compilation as in progress
+        use tokio::sync::RwLock;
+        compilation::COMPILATION_IN_PROGRESS.insert(class_hash, Arc::new(RwLock::new(())));
+        assert!(
+            compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should be in compilation_in_progress"
+        );
+
+        // Disk cache skipped when compilation is in progress
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        assert!(result.is_ok(), "Should return VM class when compilation is in progress");
+
+        // Metrics assertions - compilation in progress, disk skipped
+
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::COMPILATION_IN_PROGRESS_SKIP.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one disk cache skip due to compilation in progress"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one VM fallback (async mode returns VM when compilation in progress)"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache hits (memory cache missed)"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache miss"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache hits (disk lookup was skipped)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache misses (disk lookup was skipped)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            0,
+            "Should have no new compilations started (already in progress)"
+        );
+
+        // Clean up
+        compilation::COMPILATION_IN_PROGRESS.remove(&class_hash);
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should be removed from compilation_in_progress"
+        );
+    }
+
+    #[test]
+    fn test_handle_sierra_class_blocking_compilation_failure() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Create config with very short timeout to force compilation failure
+        let config = Arc::new(
+            config::NativeConfig::default()
+                .with_native_execution(true)
+                .with_cache_dir(temp_dir.path().to_path_buf())
+                .with_compilation_mode(config::NativeCompilationMode::Blocking)
+                .with_compilation_timeout(Duration::from_millis(1)), // Very short timeout
+        );
+
+        // Verify caches don't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress initially"
+        );
+        assert!(
+            !compilation::FAILED_COMPILATIONS.contains_key(&class_hash),
+            "Class should not be in failed_compilations initially"
+        );
+
+        // Compilation timeout expected in blocking mode with very short timeout
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        assert!(result.is_err(), "Should return an error when compilation fails");
+
+        // Expected: compilation timeout/failure in blocking mode
+        // Verify class is not cached after failure
+        assert!(
+            !cache::NATIVE_CACHE.contains_key(&class_hash),
+            "Class should not be in memory cache after compilation failure"
+        );
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress after failure"
+        );
+        // In blocking mode, failures don't go to FAILED_COMPILATIONS (that's async mode only)
+
+        // Metrics assertions - compilation timeout/failure
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache miss"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one disk cache miss"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation"
+        );
+        let timeout_or_failed = test_counters::COMPILATIONS_TIMEOUT.load(Ordering::Relaxed)
+            + test_counters::COMPILATIONS_FAILED.load(Ordering::Relaxed);
+        assert_eq!(timeout_or_failed, 1, "Should have exactly one compilation timeout or failure");
+    }
+
+    #[tokio::test]
+    async fn test_handle_sierra_class_multiple_calls_same_class() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Verify caches don't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+
+        // First call triggers compilation and returns VM
+        let result1 =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        assert!(result1.is_ok(), "First call should succeed");
+
+        // Poll for compilation completion with 20 second timeout
+        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
+
+        // Metrics assertions - first call missed, second call hit memory
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache miss (first call)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one disk cache miss (first call)"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache hits (first call)"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache hits (first call)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one successful compilation (first call)"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one VM fallback (first call)"
+        );
+
+        // Test should fail if compilation doesn't complete within timeout
+        assert!(compilation_completed, "Compilation should complete within 20 seconds");
+
+        // Compilation completed - verify it's in cache
+        assert!(
+            cache::NATIVE_CACHE.contains_key(&class_hash),
+            "Class should be in memory cache after compilation completes"
+        );
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress after completion"
+        );
+
+        // Reset metrics before second call to isolate second call metrics
+        test_counters::reset_all();
+
+        // Second call hits cache since compilation completed
+        let result2 =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        assert!(result2.is_ok(), "Second call should succeed");
+
+        // Small delay to ensure cache was checked
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+
+        // Metrics assertions - second call hit memory cache
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache misses (second call)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache misses (second call)"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache hit"
+        );
+        assert_eq!(test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed), 0, "Should have no disk cache hits");
+        assert_eq!(test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed), 0, "Should have no compilations");
+        assert_eq!(
+            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
+            0,
+            "Should have no successful compilations"
+        );
+        assert_eq!(test_counters::VM_FALLBACKS.load(Ordering::Relaxed), 0, "Should have no VM fallbacks");
+    }
+
+    /// Tests the memory cache timeout scenario.
+    ///
+    /// Verifies that when a memory cache lookup times out, the system correctly
+    /// falls back to disk cache. The timeout duration is configurable via
+    /// `native_memory_cache_timeout_ms` in the config.
+    ///
+    /// Uses an extremely short timeout (1 nanosecond) to reliably trigger the timeout,
+    /// since conversion operations take significantly longer. The test validates:
+    /// - Timeout configuration is respected
+    /// - Fallback to disk cache occurs after memory cache timeout
+    /// - Timeout metric (`CACHE_MEMORY_TIMEOUT`) is recorded
+    /// - Timeout events are logged appropriately
+    #[test]
+    fn test_handle_sierra_class_memory_cache_timeout() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Configure an extremely short memory cache timeout to reliably trigger timeout
+        // 1 nanosecond timeout ensures timeout occurs since conversion operations take longer
+        let config = Arc::new(
+            config::NativeConfig::default()
+                .with_native_execution(true)
+                .with_cache_dir(temp_dir.path().to_path_buf())
+                .with_compilation_mode(config::NativeCompilationMode::Async)
+                .with_memory_cache_timeout(Duration::from_nanos(1)), // Extremely short timeout to force timeout
+        );
+
+        // Verify memory cache doesn't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+
+        // Pre-populate disk cache to enable testing disk fallback after memory timeout
+        create_and_save_native_class_to_disk(&sierra, &temp_dir, class_hash)
+            .expect("Failed to create and save native class to disk");
+
+        // Memory cache lookup will timeout, triggering fallback to disk cache
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        assert!(result.is_ok(), "Should successfully retrieve from disk cache after memory miss");
+        let runnable = result.unwrap();
+        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Verify it was loaded into memory cache after disk hit
+        assert!(cache::NATIVE_CACHE.contains_key(&class_hash), "Should be loaded into memory cache after disk hit");
+
+        // Metrics assertions - memory timeout, disk hit, no compilation
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache hits (memory timed out)"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache miss"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_TIMEOUT.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache timeout"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one disk cache hit (fallback after memory timeout)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache misses (disk hit)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            0,
+            "Should have no compilations (disk cache hit)"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            0,
+            "Should have no VM fallbacks (native execution from disk)"
+        );
+    }
+
+    /// Tests the disk cache timeout scenario.
+    ///
+    /// Verifies that when a disk cache load operation times out, the system correctly
+    /// falls back to compilation. The timeout duration is configurable via
+    /// `native_disk_cache_load_timeout_secs` in the config.
+    ///
+    /// Uses an extremely short timeout (1 microsecond) to reliably trigger the timeout,
+    /// since loading .so files takes significantly longer. The test validates:
+    /// - Timeout configuration is respected
+    /// - Fallback to compilation occurs after disk cache timeout
+    /// - Timeout metric (`CACHE_DISK_LOAD_TIMEOUT`) is recorded
+    /// - Timeout events are logged appropriately
+    #[tokio::test]
+    async fn test_handle_sierra_class_disk_cache_timeout() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Configure an extremely short disk cache timeout to reliably trigger timeout
+        // 1 microsecond timeout ensures timeout occurs since disk I/O operations take longer
+        let config = Arc::new(
+            config::NativeConfig::default()
+                .with_native_execution(true)
+                .with_cache_dir(temp_dir.path().to_path_buf())
+                .with_compilation_mode(config::NativeCompilationMode::Async)
+                .with_disk_cache_load_timeout(Duration::from_micros(1)), // Extremely short timeout to force timeout
+        );
+
+        // Verify memory cache doesn't have our unique class_hash
+        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+
+        // Pre-populate disk cache to enable testing timeout during disk load operation
+        // With 1 microsecond timeout, disk load will timeout since loading .so files takes longer
+        create_and_save_native_class_to_disk(&sierra, &temp_dir, class_hash)
+            .expect("Failed to create and save native class to disk");
+
+        // Memory cache misses, disk cache load times out (file exists but load operation times out),
+        // triggering fallback to compilation
+        let result =
+            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+
+        // Async mode returns VM immediately while compilation happens in background
+        assert!(result.is_ok(), "Should return VM class immediately in async mode");
+        let runnable = result.unwrap();
+        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Wait for compilation completion with 20 second timeout
+        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
+
+        assert!(compilation_completed, "Compilation should complete within 20 seconds");
+
+        // Verify compilation completed and class is cached
+        assert!(
+            cache::NATIVE_CACHE.contains_key(&class_hash),
+            "Class should be in memory cache after compilation completes"
+        );
+        assert!(
+            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
+            "Class should not be in compilation_in_progress after completion"
+        );
+
+        // Metrics assertions - disk timeout and fallback to compilation
+        use std::sync::atomic::Ordering;
+        assert_eq!(
+            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
+            0,
+            "Should have no memory cache hits (cache miss)"
+        );
+        assert_eq!(
+            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one memory cache miss"
+        );
+        assert_eq!(
+            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
+            0,
+            "Should have no disk cache hits (disk timed out)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one disk cache miss (timeout treated as miss)"
+        );
+        assert_eq!(
+            test_counters::CACHE_DISK_LOAD_TIMEOUT.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one disk cache load timeout"
+        );
+        assert_eq!(
+            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one VM fallback (async mode returns VM immediately)"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
+            1,
+            "Should have started exactly one compilation after disk timeout"
+        );
+        assert_eq!(
+            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
+            1,
+            "Should have exactly one successful compilation"
+        );
+    }
 }

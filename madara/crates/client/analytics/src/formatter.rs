@@ -92,6 +92,7 @@ struct CairoNativeEventVisitor {
     load_ms: Option<u64>,
     convert_ms: Option<u64>,
     error: Option<String>,
+    native_enabled: Option<bool>,
 }
 
 impl Visit for CairoNativeEventVisitor {
@@ -151,6 +152,12 @@ impl Visit for CairoNativeEventVisitor {
             _ => {}
         }
     }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        if field.name() == "native_enabled" {
+            self.native_enabled = Some(value);
+        }
+    }
 }
 
 impl CairoNativeEventVisitor {
@@ -184,6 +191,10 @@ impl CairoNativeEventVisitor {
 
     pub fn get_convert_ms(&self) -> Option<u64> {
         self.convert_ms
+    }
+
+    pub fn get_native_enabled(&self) -> Option<bool> {
+        self.native_enabled
     }
 }
 
@@ -292,6 +303,7 @@ impl CustomFormatter {
         let load_ms = visitor.get_load_ms();
         let convert_ms = visitor.get_convert_ms();
         let error = visitor.get_error();
+        let native_enabled = visitor.get_native_enabled();
 
         // Darker cyan for CAIRO_NATIVE prefix (more subtle)
         let cairo_native_prefix = Style::new().cyan().dim().apply_to("CAIRO_NATIVE");
@@ -299,7 +311,7 @@ impl CustomFormatter {
         let class_hash_style = Style::new().dim();
         let error_style = Style::new().red();
 
-        // Format: timestamp + CAIRO_NATIVE + [WARN/ERROR] + message + class_hash + (optional error) + (optional timing)
+        // Format: timestamp + CAIRO_NATIVE + [WARN/ERROR] + message + class_hash + native_enabled + (optional error) + (optional timing)
         write!(writer, "{} {}", self.timestamp_fmt(ts), cairo_native_prefix)?;
 
         // Level prefix shown for WARN and ERROR only
@@ -322,6 +334,11 @@ impl CustomFormatter {
             // Quotes removed if present from Debug formatting
             let hash_clean = hash.trim_matches('"');
             write!(writer, " {}", class_hash_style.apply_to(format!("class_hash={}", hash_clean)))?;
+        }
+
+        // Display native_enabled if present
+        if let Some(enabled) = native_enabled {
+            write!(writer, " {}", class_hash_style.apply_to(format!("native_enabled={}", enabled)))?;
         }
 
         if let Some(err) = error {
@@ -350,15 +367,12 @@ impl CustomFormatter {
         // If we have elapsed_ms, use it as primary timing
         if let Some(total_ms) = elapsed_ms {
             let mut parts = Vec::new();
-            
+
             // Format total time
-            let total_str = if total_ms >= 1000 {
-                format!("{:.3}s", total_ms as f64 / 1000.0)
-            } else {
-                format!("{}ms", total_ms)
-            };
+            let total_str =
+                if total_ms >= 1000 { format!("{:.3}s", total_ms as f64 / 1000.0) } else { format!("{}ms", total_ms) };
             parts.push(total_str);
-            
+
             // Add breakdown if we have component timings
             let mut breakdown = Vec::new();
             if let Some(load) = load_ms {
@@ -370,14 +384,14 @@ impl CustomFormatter {
             if let Some(conv) = conversion_ms {
                 breakdown.push(format!("conversion: {}ms", conv));
             }
-            
+
             if !breakdown.is_empty() {
                 parts.push(format!("({})", breakdown.join(", ")));
             }
-            
+
             return Some(parts.join(" "));
         }
-        
+
         // Fall back to elapsed Duration string if available
         elapsed.map(|s| s.to_string())
     }
