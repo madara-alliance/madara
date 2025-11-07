@@ -406,4 +406,35 @@ mod tests {
         assert_eq!(blocking_config.compilation_mode, NativeCompilationMode::Blocking);
         assert!(blocking_config.is_blocking_mode());
     }
+
+    #[test]
+    fn test_missing_cache_directory_created_automatically() {
+        use tempfile::TempDir;
+
+        // Create a temp directory and then create a subdirectory path that doesn't exist
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let non_existent_cache_dir = temp_dir.path().join("cache").join("classes");
+
+        // Verify directory doesn't exist
+        assert!(!non_existent_cache_dir.exists(), "Cache directory should not exist initially");
+
+        // Create config with non-existent cache directory
+        let config = NativeConfig::default()
+            .with_native_execution(true)
+            .with_cache_dir(non_existent_cache_dir.clone());
+
+        // Validate config - this should create the directory
+        let validation_result = config.validate();
+        assert!(validation_result.is_ok(), "Config validation should succeed and create directory");
+
+        // Verify directory was created
+        assert!(
+            non_existent_cache_dir.exists(),
+            "Cache directory should be created automatically by validate()"
+        );
+        assert!(
+            non_existent_cache_dir.is_dir(),
+            "Cache directory should be a directory"
+        );
+    }
 }
