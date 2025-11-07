@@ -8,7 +8,8 @@ use crate::core::StorageClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{
-    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
+    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights, SnosBatch, SnosBatchStatus,
+    SnosBatchUpdates,
 };
 use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
@@ -286,6 +287,9 @@ impl BatchingTrigger {
             JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_number, e))
         })?;
 
+        let current_weights =
+            AggregatorBatchWeights::from(&self.get_block_builtin_weights(config, block_number).await?);
+
         // Check if current block's Starknet version differs from the aggregator batch version
         // A batch can only contain blocks from the same Starknet protocol version (prover requirement)
         // Since SNOS batches belong to aggregator batches, they automatically inherit version consistency
@@ -368,9 +372,16 @@ impl BatchingTrigger {
                                 provider,
                             )
                             .await?;
+
+                        // Create a mutable variable to store the combined weights of current block and batch till now
+                        let mut combined_weights = AggregatorBatchWeights::default();
+
+                        // NOTE: should_close_aggregator_batch will also update the combined_weights
                         if self.should_close_aggregator_batch(
                             config,
                             Some(compressed_state_update.len()),
+                            &current_weights,
+                            &mut combined_weights,
                             &current_aggregator_batch,
                         ) {
                             // We cannot add the current block in this batch
@@ -422,12 +433,13 @@ impl BatchingTrigger {
                             )?;
 
                             Ok((
-                                Some(state_update),
+                                Some(squashed_state_update),
                                 self.update_aggregator_batch_info(
                                     current_aggregator_batch,
                                     block_number,
                                     Some(new_snos_batch.snos_batch_id),
                                     false,
+                                    combined_weights,
                                 )
                                 .await?,
                                 new_snos_batch,
@@ -437,15 +449,28 @@ impl BatchingTrigger {
                             // Update batch info and return
                             Ok((
                                 Some(squashed_state_update),
-                                self.update_aggregator_batch_info(current_aggregator_batch, block_number, None, false)
-                                    .await?,
+                                self.update_aggregator_batch_info(
+                                    current_aggregator_batch,
+                                    block_number,
+                                    None,
+                                    false,
+                                    combined_weights,
+                                )
+                                .await?,
                                 self.update_snos_batch_info(current_snos_batch, block_number).await?,
                             ))
                         }
                     }
                     None => Ok((
                         Some(state_update),
-                        self.update_aggregator_batch_info(current_aggregator_batch, block_number, None, false).await?,
+                        self.update_aggregator_batch_info(
+                            current_aggregator_batch,
+                            block_number,
+                            None,
+                            false,
+                            current_weights,
+                        )
+                        .await?,
                         self.update_snos_batch_info(current_snos_batch, block_number).await?,
                     )),
                 }
@@ -655,6 +680,9 @@ impl BatchingTrigger {
         })?;
         info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
 
+        // Getting the builtin weights for the start_block and adding it in the DB
+        let weights = AggregatorBatchWeights::from(&self.get_block_builtin_weights(config, start_block).await?);
+
         let batch = AggregatorBatch::new(
             index,
             start_snos_batch,
@@ -662,6 +690,7 @@ impl BatchingTrigger {
             self.get_state_update_file_path(index),
             self.get_blob_dir_path(index),
             bucket_id.clone(),
+            weights,
             starknet_version.clone(),
         );
 
@@ -824,6 +853,7 @@ impl BatchingTrigger {
         end_block: u64,
         end_snos_batch: Option<u64>,
         is_batch_ready: bool,
+        builtin_weights: AggregatorBatchWeights,
     ) -> Result<AggregatorBatch, JobError> {
         batch.end_block = end_block;
         if let Some(end_snos_batch) = end_snos_batch {
@@ -831,6 +861,7 @@ impl BatchingTrigger {
         }
         batch.is_batch_ready = is_batch_ready;
         batch.num_blocks = end_block - batch.start_block + 1;
+        batch.builtin_weights = builtin_weights;
         Ok(batch)
     }
 
@@ -937,6 +968,9 @@ impl BatchingTrigger {
     /// state-update and the batch.
     /// Returns true if a new batch should be started, false otherwise.
     ///
+    /// NOTE: This method also updates the `combined_weights` variable.
+    /// It's generated by combining `current_weights` and `batch.builtin_weights`
+    ///
     /// Starts a new batch if:
     /// 1. Length of the compressed state update has reached its max level
     /// 2. The number of blocks in the batch has reached max level
@@ -946,12 +980,25 @@ impl BatchingTrigger {
         &self,
         config: &Arc<Config>,
         state_update_len: Option<usize>,
+        current_weights: &AggregatorBatchWeights,
+        combined_weights: &mut AggregatorBatchWeights,
         batch: &AggregatorBatch,
     ) -> bool {
         debug!("checking if we need to close the aggregator batch");
+        *combined_weights = match batch.builtin_weights.checked_add(current_weights) {
+            Some(weights) => weights,
+            None => {
+                warn!(
+                    "aggregator batch weights overflowed for batch {} when adding a new block. Adding {:?} and {:?}",
+                    batch.index, batch.builtin_weights, current_weights
+                );
+                return true;
+            }
+        };
         (!batch.is_batch_ready)
             && ((state_update_len.is_some() && state_update_len.unwrap() > config.params.batching_config.max_blob_size)
                 || (batch.num_blocks >= config.params.batching_config.max_batch_size)
+                || (config.params.aggregator_batch_weights_limit.checked_sub(combined_weights).is_none())
                 || ((Utc::now().round_subsecs(0) - batch.created_at).abs().num_seconds() as u64
                     >= config.params.batching_config.max_batch_time_seconds))
     }
@@ -1015,7 +1062,13 @@ impl BatchingTrigger {
         snos_batch: &SnosBatch,
     ) -> Result<(), JobError> {
         // Sending None for state update len since this won't be the reason to close an already existing batch
-        if self.should_close_aggregator_batch(config, None, aggregator_batch) {
+        if self.should_close_aggregator_batch(
+            config,
+            None,
+            &aggregator_batch.builtin_weights,
+            &mut AggregatorBatchWeights::default(),
+            aggregator_batch,
+        ) {
             config
                 .database()
                 .update_or_create_aggregator_batch(

@@ -1,4 +1,4 @@
-use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchWeights};
 use chrono::{SubsecRound, Utc};
 use rstest::fixture;
 use uuid::Uuid;
@@ -104,6 +104,7 @@ pub fn build_batch(
         updated_at: Utc::now().round_subsecs(0),
         bucket_id: String::from("ABCD1234"),
         status: AggregatorBatchStatus::Open,
+        builtin_weights: AggregatorBatchWeights::default(),
         starknet_version: "0.13.2".to_string(),
     }
 }
