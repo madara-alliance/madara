@@ -149,6 +149,7 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
         .ok_or_else(|| err_handl(cmd, "Failed to download artifacts"))?;
 
     // Clean up old artifact extractor containers to prevent accumulation
+    // Match containers with pattern: madara-artifacts-extractor-v{version} or madara-artifacts-extractor-v{version}-{timestamp}
     let mut docker = std::process::Command::new("docker");
     docker.args([
         "ps",
@@ -161,8 +162,11 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     if let Ok(output) = docker.output() {
         if output.status.success() {
             let containers = String::from_utf8_lossy(&output.stdout);
+            let prefix = format!("madara-artifacts-extractor-v{}", version);
             for container in containers.lines() {
-                if !container.is_empty() {
+                let container = container.trim();
+                // Match containers that start with the prefix (handles both with and without timestamp)
+                if !container.is_empty() && container.starts_with(&prefix) {
                     let mut rm_docker = std::process::Command::new("docker");
                     rm_docker.args(["rm", "-f", container]).status().ok();
                 }

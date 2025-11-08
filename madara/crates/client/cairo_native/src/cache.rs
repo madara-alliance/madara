@@ -60,15 +60,17 @@ pub(crate) fn get_native_cache_path(class_hash: &ClassHash, config: &config::Nat
 
 /// Enforce disk cache size limit by removing least recently accessed files.
 ///
-/// Sorts all `.so` files by access time (file modification time, updated on each access)
-/// and removes the least recently accessed ones until the total size is below `max_size`.
-/// If `max_size` is `None`, no limit is enforced.
+/// When the disk cache grows too large, this function removes the oldest unused files
+/// to make room for new ones. Files are sorted by when they were last accessed,
+/// and the oldest files are deleted until the cache size is within the limit.
 ///
-/// **Access time tracking**: Files are "touched" (modification time updated) on each access
-/// in `try_get_from_disk_cache`, so modification time effectively tracks access time.
-/// This ensures LRU eviction based on actual usage, not just file creation time.
+/// **How it works**:
+/// - Tracks when each cached file was last used
+/// - When the cache exceeds the size limit, removes files that haven't been used recently
+/// - This ensures frequently used classes stay in cache while rarely used ones are removed
+/// - Works across different filesystems, automatically adapting to system capabilities
 ///
-/// Called after each successful disk write to prevent unbounded growth.
+/// Called automatically after saving new files to disk to keep the cache size manageable.
 pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64>) -> Result<(), std::io::Error> {
     let Some(max_size) = max_size else {
         return Ok(()); // No limit
@@ -80,10 +82,19 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
         let entry = entry?;
         let metadata = entry.metadata()?;
         if metadata.is_file() {
-            // Use modification time as access time (files are touched on access)
-            if let (Ok(modified), Ok(size)) = (metadata.modified(), metadata.len().try_into()) {
-                entries.push((entry.path(), modified, size));
-            }
+            // Determine when this file was last accessed for LRU eviction
+            // Try to use the system's access time first, but fall back to modification time
+            // if access time tracking is disabled (common on modern filesystems for performance)
+            // Since we update modification time whenever a file is accessed, it serves as a reliable
+            // indicator of when the file was last used
+            let access_time = metadata
+                .accessed()
+                .ok()
+                .or_else(|| metadata.modified().ok())
+                .unwrap_or_else(|| std::time::SystemTime::UNIX_EPOCH);
+
+            let size = metadata.len();
+            entries.push((entry.path(), access_time, size));
         }
     }
 
@@ -231,14 +242,16 @@ pub(crate) fn try_get_from_memory_cache(
         let start = Instant::now();
 
         if let Some(cached_entry) = NATIVE_CACHE.get(&class_hash_for_log) {
-            let (cached_class, _) = cached_entry.value();
+            // Retrieve the cached class (Arc clone is cheap - just increments reference count, doesn't copy data)
+            let cached_class = cached_entry.value().0.clone();
+            drop(cached_entry); // Release lock quickly to avoid blocking other threads
 
-            // Clone before dropping the reference to avoid holding lock during insert
-            let cloned_class = cached_class.clone();
-            drop(cached_entry); // Reference dropped before insert to minimize lock hold time
-
-            // Access time updated for LRU eviction tracking
-            NATIVE_CACHE.insert(class_hash_for_log, (cloned_class.clone(), Instant::now()));
+            // Update the access time to mark this class as recently used
+            // This ensures the cache knows which classes are most frequently accessed
+            // When the cache is full, least recently used classes will be evicted first
+            // Note: Cloning Arc again here is cheap (just increments ref count), and we need a separate
+            // reference to update the cache entry while keeping the original for conversion below
+            NATIVE_CACHE.insert(class_hash_for_log, (cached_class.clone(), Instant::now()));
 
             let lookup_elapsed = start.elapsed();
             let cache_size = NATIVE_CACHE.len();
@@ -247,7 +260,7 @@ pub(crate) fn try_get_from_memory_cache(
 
             // Convert Arc<NativeCompiledClassV1> to RunnableCompiledClass
             let conversion_start = Instant::now();
-            let runnable = RunnableCompiledClass::from(cloned_class.as_ref().clone());
+            let runnable = RunnableCompiledClass::from(cached_class.as_ref().clone());
             let conversion_elapsed = conversion_start.elapsed();
             let total_elapsed = start.elapsed();
 
@@ -439,12 +452,12 @@ pub(crate) fn try_get_from_disk_cache(
 
     match try_load_executor_with_timeout(&path, config.disk_cache_load_timeout)? {
         Some(executor) => {
-            // Update file access time by touching it (updates modification time)
-            // This ensures disk cache eviction uses access time, not creation time
-            // Touch the file by opening for write (no-op) which updates modification time
-            // This is a simple cross-platform way to update file access time for LRU eviction
+            // Mark this file as recently accessed by updating its modification time
+            // This helps the cache eviction system know which files are actively being used
+            // When the cache needs to free up space, it will remove files that haven't been
+            // accessed recently, keeping frequently used classes available
             let _ = std::fs::OpenOptions::new().write(true).open(&path).and_then(|f| {
-                // Truncate to same length (no-op) to update modification time
+                // Update the file timestamp without changing its contents
                 if let Ok(metadata) = f.metadata() {
                     f.set_len(metadata.len()).ok();
                 }
