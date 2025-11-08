@@ -115,12 +115,12 @@ impl Resource for InnerSQS {
                         );
                         attributes.insert(QueueAttributeName::RedrivePolicy, policy);
                     }
-                    self.client()
-                        .set_queue_attributes()
-                        .queue_url(queue_url)
-                        .set_attributes(Some(attributes))
-                        .send()
-                        .await?;
+                    let mut req = self.client().set_queue_attributes().queue_url(queue_url);
+                    if attributes.len() > 0 {
+                        // Empty attributes cause error in AWS
+                        req = req.set_attributes(Some(attributes))
+                    }
+                    req.send().await?;
                     tracing::info!("Setup completed for queue: {}", queue_type);
                 }
             }
