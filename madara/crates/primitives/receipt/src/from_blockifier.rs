@@ -95,7 +95,7 @@ fn format_revert_error(error_string: &str) -> String {
     let mut output_lines = Vec::new();
     let mut i = 0;
 
-    while i < lines.len() {
+    for (i, line) in lines.iter().enumerate() {
         let line = lines[i];
 
         // Check if this is the start of a VM exception frame
