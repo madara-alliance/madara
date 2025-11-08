@@ -116,7 +116,7 @@ impl Resource for InnerSQS {
                         attributes.insert(QueueAttributeName::RedrivePolicy, policy);
                     }
                     let mut req = self.client().set_queue_attributes().queue_url(queue_url);
-                    if attributes.len() > 0 {
+                    if attributes.is_empty() {
                         // Empty attributes cause error in AWS
                         req = req.set_attributes(Some(attributes))
                     }
