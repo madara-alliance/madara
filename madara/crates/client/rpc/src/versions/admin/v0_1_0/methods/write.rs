@@ -93,7 +93,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Only works in full node mode.
     async fn revert_to(&self, block_hash: Felt) -> RpcResult<()> {
         // Only allow revert when in full node mode
-        if self.ctx.service_status(MadaraServiceId::BlockProduction).is_off() {
+        // if self.ctx.service_status(MadaraServiceId::BlockProduction).is_off() {
             self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
             // TODO(heemankv, 04-11-25): We should spend time in ruling out the two sources of truth problem for ChainTip
             // For now, we have to manually fetch Chain Tip from DB and update this in backend
@@ -101,11 +101,11 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
             self.backend.chain_tip.send_replace(backend_chain_tip);
             Ok(())
-        } else {
-            Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "This method is only available in full node mode".to_string().into()
-            })?
-        }
+        // } else {
+        //     Err(StarknetRpcApiError::ErrUnexpectedError {
+        //         error: "This method is only available in full node mode".to_string().into()
+        //     })?
+        // }
     }
     
     async fn add_l1_handler_message(
