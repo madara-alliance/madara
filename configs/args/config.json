@@ -117,6 +117,7 @@
     "native_memory_cache_timeout_ms": 100,
     "native_disk_cache_load_timeout_secs": 2,
     "native_compilation_mode": "async",
-    "native_enable_retry": true
+    "native_enable_retry": true,
+    "native_max_failed_compilations": 10000
   }
 }
