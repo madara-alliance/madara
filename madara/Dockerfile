@@ -19,16 +19,13 @@ ENV RUSTC_WRAPPER=/bin/sccache
 
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
 
-# Install LLVM 19 for Cairo Native support
-RUN apt-get update -y && apt-get install -y wget gnupg software-properties-common && \
-    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \
-    add-apt-repository -y "deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-19 main" && \
-    apt-get update -y && apt-get install -y \
-    clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
-    libmlir-19-dev mlir-19-tools \
-    libpolly-19-dev \
-    liblld-19-dev \
-    libc6-dev libstdc++-12-dev
+# Copy Makefile for LLVM installation
+COPY Makefile /tmp/Makefile
+
+# Install LLVM 19 for Cairo Native support using Makefile target
+RUN apt-get update -y && apt-get install -y wget gnupg software-properties-common make && \
+    cd /tmp && make -f Makefile install-llvm19 CODENAME=bookworm && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set LLVM environment variables for Cairo Native
 ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19

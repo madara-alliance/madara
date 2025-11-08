@@ -322,6 +322,23 @@ pub(crate) fn try_get_from_memory_cache(
 
 /// Try to load a class from disk cache with a timeout.
 ///
+/// **Why a timeout?**
+/// Unlike CASM file loading from the database (which is a simple read operation), loading native
+/// compiled classes from disk involves:
+/// - Dynamic library loading (`dlopen`/`LoadLibrary`) which can hang if the file is corrupted or locked
+/// - File system I/O that may be slow or blocked by other processes
+/// - Memory mapping operations that could block indefinitely on certain filesystems
+///
+/// **Comparison with CASM loading:**
+/// - CASM files are loaded from RocksDB, which has built-in timeout handling and is optimized for fast reads
+/// - Native `.so` files require OS-level dynamic linking, which has no built-in timeout mechanism
+/// - A timeout prevents blocking transaction validation when disk I/O is slow or files are corrupted
+///
+/// **Timeout behavior:**
+/// - Default timeout: 2 seconds (configurable via `disk_cache_load_timeout`)
+/// - On timeout: Returns `None` (treated as cache miss), allowing fallback to compilation
+/// - Prevents indefinite blocking during transaction validation, ensuring system responsiveness
+///
 /// Wraps `AotContractExecutor::from_path` in a timeout to prevent indefinite blocking
 /// when called from blocking contexts (e.g., during transaction validation).
 fn try_load_executor_with_timeout(

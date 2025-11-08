@@ -50,19 +50,8 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
-        # Add LLVM 19 repository
-        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-        sudo add-apt-repository -y "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main"
-
-        # Update and install dependencies including LLVM 19
-        sudo apt-get update -y && sudo apt-get install -y \
-          clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
-          libmlir-19-dev mlir-19-tools \
-          libpolly-19-dev \
-          liblld-19-dev \
-          libc6-dev libstdc++-11-dev gcc-11 g++-11 \
-          libudev-dev protobuf-compiler build-essential \
-          libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
+        # Install LLVM 19 using Makefile target
+        make install-llvm19 SUDO=sudo CODENAME=jammy
 
         # Set LLVM environment variables for Cairo Native
         echo "MLIR_SYS_190_PREFIX=/usr/lib/llvm-19" >> $GITHUB_ENV
@@ -75,7 +64,7 @@ runs:
 
         # Set up clang-19 as default clang for Cairo Native
         sudo update-alternatives --install /usr/bin/clang clang /usr/lib/llvm-19/bin/clang-19 100
-        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/lib/llvm-19/bin/clang-19 100
+        sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/lib/llvm-19/bin/clang++ 100
 
         # Also set explicit compiler environment variables for Cairo Native runtime
         # Note: clang-19 handles both C and C++ compilation

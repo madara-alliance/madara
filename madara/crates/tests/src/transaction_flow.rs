@@ -116,12 +116,6 @@ impl SetupBuilder {
         args.into_iter().chain(self.block_production_disabled.then_some("--no-block-production".into()))
     }
 
-    /// Get environment variables for the sequencer
-    fn sequencer_env(&self) -> Vec<(String, String)> {
-        // Native cache directory is now set via CLI flag (--native-cache-dir) instead of env var
-        vec![]
-    }
-
     pub async fn run(self) -> RunningTestSetup {
         match self.setup {
             SequencerOnly => self.run_single_node().await,
@@ -132,12 +126,8 @@ impl SetupBuilder {
 
     async fn run_single_node(self) -> RunningTestSetup {
         // sequencer
-        let mut sequencer = MadaraCmdBuilder::new()
-            .label("sequencer")
-            .enable_gateway()
-            .env(self.sequencer_env())
-            .args(self.sequencer_args())
-            .run();
+        let mut sequencer =
+            MadaraCmdBuilder::new().label("sequencer").enable_gateway().args(self.sequencer_args()).run();
         sequencer.wait_for_sync_to(0).await;
         RunningTestSetup::SingleNode { node: sequencer, _native_cache_tempdir: self.native_cache_tempdir }
     }
@@ -146,7 +136,6 @@ impl SetupBuilder {
         let mut sequencer = MadaraCmdBuilder::new()
             .label("sequencer")
             .enable_gateway()
-            .env(self.sequencer_env())
             .args(self.sequencer_args().chain(["--gateway-trusted-add-transaction-endpoint".into()]))
             .run();
         sequencer.wait_for_sync_to(0).await; // wait until devnet genesis is deployed
@@ -181,12 +170,7 @@ impl SetupBuilder {
             }
         }
 
-        let mut gateway = MadaraCmdBuilder::new()
-            .label("gateway")
-            .enable_gateway()
-            .env(self.sequencer_env())
-            .args(gateway_args)
-            .run();
+        let mut gateway = MadaraCmdBuilder::new().label("gateway").enable_gateway().args(gateway_args).run();
         gateway.wait_for_sync_to(0).await; // wait until devnet genesis is synced
 
         RunningTestSetup::TwoNodes {
@@ -197,12 +181,8 @@ impl SetupBuilder {
     }
 
     async fn run_full_node_and_sequencer(self) -> RunningTestSetup {
-        let mut sequencer = MadaraCmdBuilder::new()
-            .label("sequencer")
-            .enable_gateway()
-            .env(self.sequencer_env())
-            .args(self.sequencer_args())
-            .run();
+        let mut sequencer =
+            MadaraCmdBuilder::new().label("sequencer").enable_gateway().args(self.sequencer_args()).run();
         sequencer.wait_for_sync_to(0).await;
 
         let mut full_node_args = vec![
@@ -233,12 +213,7 @@ impl SetupBuilder {
             }
         }
 
-        let mut full_node = MadaraCmdBuilder::new()
-            .label("full_node")
-            .enable_gateway()
-            .env(self.sequencer_env())
-            .args(full_node_args)
-            .run();
+        let mut full_node = MadaraCmdBuilder::new().label("full_node").enable_gateway().args(full_node_args).run();
         full_node.wait_for_sync_to(0).await;
 
         RunningTestSetup::TwoNodes {

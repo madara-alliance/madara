@@ -40,12 +40,15 @@ pub(crate) fn get_current_compilations_count() -> usize {
 /// Tracks classes that failed compilation in async mode.
 ///
 /// **Purpose**: When a compilation fails in async mode, the class hash is added here with
-/// a timestamp. This prevents retrying failed compilations when retry is disabled, and
-/// enables automatic retry when retry is enabled.
+/// a timestamp. This serves two purposes:
+/// 1. **Logging**: Enables special logging on subsequent requests to help debug compilation issues
+/// 2. **Retry Control**: When `config.enable_retry` is enabled, classes in this map are automatically
+///    retried on the next request, allowing recovery from transient failures
 ///
 /// **Retry Behavior**:
 /// - If `config.enable_retry` is `true`: Classes in this map are automatically retried on next request
 /// - If `config.enable_retry` is `false`: Classes in this map are NOT retried (prevents wasted compilation attempts)
+///   - However, they are still tracked for logging purposes to help identify problematic classes
 ///
 /// **Eviction**: Entries are evicted using LRU policy when the map exceeds a reasonable size limit
 /// (similar to memory cache eviction). This prevents unbounded growth.
@@ -55,6 +58,9 @@ pub(crate) fn get_current_compilations_count() -> usize {
 /// - Temporary resource constraints (disk space, memory) have been resolved
 /// - Transient file system issues have been resolved
 /// - Race conditions that caused the initial failure have cleared
+///
+/// **Note**: Retrying doesn't guarantee success - if a class genuinely cannot be compiled (e.g., invalid Sierra),
+/// retrying will fail again. The retry mechanism is primarily useful for transient failures.
 ///
 /// **Storage**: Uses `Instant` to track when the failure occurred for LRU eviction.
 /// Maximum size is limited to prevent unbounded growth (default: 10,000 entries).
@@ -431,61 +437,6 @@ fn handle_async_compilation_failure(
     FAILED_COMPILATIONS.insert(class_hash, Instant::now());
 }
 
-/// Execute async compilation in a background task.
-///
-/// This function performs the actual compilation work for async mode.
-/// It should be called from within a spawned async task with proper locks.
-async fn execute_async_compilation(
-    class_hash: ClassHash,
-    sierra: Arc<SierraConvertedClass>,
-    path: PathBuf,
-    compilation_timeout: Duration,
-    config: config::NativeConfig,
-) {
-    let start = Instant::now();
-    let timer = super::metrics::CompilationTimer::new();
-
-    tracing::debug!(
-        target: "madara_cairo_native",
-        class_hash = %format!("{:#x}", class_hash.to_felt()),
-        path = %path.display(),
-        timeout_secs = compilation_timeout.as_secs(),
-        "compilation_async_start"
-    );
-
-    // Use existing compile_to_native function in a blocking task with timeout
-    let sierra_clone = sierra.clone();
-    let path_clone = path.clone();
-    let compilation_future =
-        tokio::task::spawn_blocking(move || sierra_clone.info.contract_class.compile_to_native(&path_clone));
-
-    let compilation_result = tokio::time::timeout(compilation_timeout, compilation_future).await;
-
-    // Only one branch will execute, so moving timer is fine
-    match compilation_result {
-        Ok(Ok(Ok(executor))) => {
-            handle_async_compilation_success(class_hash, executor, &sierra, start, timer, &config);
-        }
-        Ok(Ok(Err(e))) => {
-            handle_async_compilation_failure(class_hash, "failed", format!("{:#}", e), &path, timer, false, &config);
-        }
-        Ok(Err(e)) => {
-            handle_async_compilation_failure(class_hash, "panic", format!("{:#}", e), &path, timer, false, &config);
-        }
-        Err(_) => {
-            handle_async_compilation_failure(
-                class_hash,
-                "timeout",
-                format!("Compilation exceeded timeout of {:?}", compilation_timeout),
-                &path,
-                timer,
-                true,
-                &config,
-            );
-        }
-    }
-}
-
 /// Spawn a background compilation task if one isn't already running for this class.
 ///
 /// **Ownership**: This is the ONLY function that inserts into `COMPILATION_IN_PROGRESS`.
@@ -607,8 +558,66 @@ pub(crate) fn spawn_compilation_if_needed(
                     }
                 }
 
-                // Compilation executed
-                execute_async_compilation(class_hash, sierra, path, compilation_timeout, (*config).clone()).await;
+                // Execute async compilation
+                let start = Instant::now();
+                let timer = super::metrics::CompilationTimer::new();
+
+                tracing::debug!(
+                    target: "madara_cairo_native",
+                    class_hash = %format!("{:#x}", class_hash.to_felt()),
+                    path = %path.display(),
+                    timeout_secs = compilation_timeout.as_secs(),
+                    "compilation_async_start"
+                );
+
+                // Use existing compile_to_native function in a blocking task with timeout
+                let sierra_clone = sierra.clone();
+                let path_clone = path.clone();
+                let compilation_future = tokio::task::spawn_blocking(move || {
+                    sierra_clone.info.contract_class.compile_to_native(&path_clone)
+                });
+
+                let compilation_result = tokio::time::timeout(compilation_timeout, compilation_future).await;
+
+                // Only one branch will execute, so moving timer is fine
+                match compilation_result {
+                    Ok(Ok(Ok(executor))) => {
+                        handle_async_compilation_success(class_hash, executor, &sierra, start, timer, &config);
+                    }
+                    Ok(Ok(Err(e))) => {
+                        handle_async_compilation_failure(
+                            class_hash,
+                            "failed",
+                            format!("{:#}", e),
+                            &path,
+                            timer,
+                            false,
+                            &config,
+                        );
+                    }
+                    Ok(Err(e)) => {
+                        handle_async_compilation_failure(
+                            class_hash,
+                            "panic",
+                            format!("{:#}", e),
+                            &path,
+                            timer,
+                            false,
+                            &config,
+                        );
+                    }
+                    Err(_) => {
+                        handle_async_compilation_failure(
+                            class_hash,
+                            "timeout",
+                            format!("Compilation exceeded timeout of {:?}", compilation_timeout),
+                            &path,
+                            timer,
+                            true,
+                            &config,
+                        );
+                    }
+                }
 
                 COMPILATION_IN_PROGRESS.remove(&class_hash);
                 drop(permit);
