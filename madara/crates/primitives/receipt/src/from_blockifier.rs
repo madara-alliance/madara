@@ -79,6 +79,119 @@ fn recursive_call_info_iter(res: &TransactionExecutionInfo) -> impl Iterator<Ite
         .flat_map(|call_info| call_info.iter()) // flatmap over the roots' recursive inner call infos
 }
 
+/// Formats the revert error string by removing redundant VM tracebacks.
+///
+/// The blockifier generates verbose error messages with VM tracebacks at every level
+/// of the call stack. This function filters them to show the traceback only once,
+/// positioned after the last regular contract call (CallContract) entry point frame
+/// and before any library call (LibraryCall) frames or the final error.
+///
+/// This makes error messages more concise while preserving the most relevant debugging information.
+fn format_revert_error(error_string: &str) -> String {
+    // Check if the original string ends with a newline
+    let ends_with_newline = error_string.ends_with('\n');
+
+    let lines: Vec<&str> = error_string.lines().collect();
+    let mut output_lines = Vec::new();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+
+        // Check if this is the start of a VM exception frame
+        // VM exception frames start with "Error at pc=..."
+        if line.trim().starts_with("Error at pc=") {
+            // Look ahead to see if there's another "Error in the called contract" entry
+            // or "Error in a library call" coming up
+            let mut has_nested_call_contract = false;
+            let mut j = i + 1;
+
+            // Scan forward to find the next entry point frame
+            while j < lines.len() {
+                let next_line = lines[j].trim();
+
+                // Found the next entry point - check if it's a CallContract or LibraryCall
+                if next_line.starts_with("Error in the called contract") {
+                    has_nested_call_contract = true;
+                    break;
+                } else if next_line.starts_with("Error in a library call")
+                    || next_line.starts_with("Execution failed")
+                    || next_line.starts_with("Entry point") {
+                    // Next entry is a library call or final error - don't skip this traceback
+                    has_nested_call_contract = false;
+                    break;
+                }
+
+                // Keep scanning through the traceback lines
+                if next_line.starts_with("Unknown location")
+                    || next_line.starts_with("Cairo traceback")
+                    || next_line.is_empty() {
+                    j += 1;
+                } else {
+                    // Reached a numbered entry like "1:" - check if it contains the patterns
+                    if let Some(colon_pos) = next_line.find(':') {
+                        let after_colon = &next_line[colon_pos + 1..].trim();
+                        if after_colon.starts_with("Error in the called contract") {
+                            has_nested_call_contract = true;
+                            break;
+                        } else if after_colon.starts_with("Error in a library call") {
+                            has_nested_call_contract = false;
+                            break;
+                        }
+                    }
+                    j += 1;
+                }
+            }
+
+            // Skip the VM traceback if there's a nested CallContract
+            if has_nested_call_contract {
+                // Skip this "Error at pc=..." line and all traceback lines until the next entry
+                while i < lines.len() {
+                    let current_line = lines[i].trim();
+                    i += 1;
+
+                    // Stop when we hit the next numbered entry or end
+                    if i < lines.len() {
+                        let next_line = lines[i].trim();
+                        if let Some(first_char) = next_line.chars().next() {
+                            if first_char.is_ascii_digit() && next_line.contains(':') {
+                                break;
+                            }
+                        }
+                    }
+
+                    // Also stop at the end or at lines that look like new entries
+                    if current_line.is_empty() && i < lines.len() {
+                        let peek = lines[i].trim();
+                        if let Some(first_char) = peek.chars().next() {
+                            if first_char.is_ascii_digit() || peek.starts_with("Execution failed") {
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Keep this traceback - it's before a library call or final error
+                output_lines.push(line);
+                i += 1;
+            }
+        } else {
+            // Not a VM traceback line - keep it
+            output_lines.push(line);
+            i += 1;
+        }
+    }
+
+    let mut result = output_lines.join("\n");
+
+    // Preserve the trailing newline if the original had one
+    if ends_with_newline {
+        result.push('\n');
+    }
+
+    result
+}
+
 pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Transaction) -> TransactionReceipt {
     let price_unit = match blockifier_tx_fee_type(tx) {
         FeeType::Eth => PriceUnit::Wei,
@@ -196,7 +309,8 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     };
 
     let execution_result = if let Some(reason) = &res.revert_error {
-        ExecutionResult::Reverted { reason: reason.to_string() }
+        let formatted_reason = format_revert_error(&reason.to_string());
+        ExecutionResult::Reverted { reason: formatted_reason }
     } else {
         ExecutionResult::Succeeded
     };
@@ -345,5 +459,62 @@ mod test {
             Hash256::from_str("0xeec1e25e91757d5e9c8a11cf6e84ddf078dbfbee23382ee979234fc86a8608a5").unwrap();
 
         assert_eq!(hash, expected_hash);
+    }
+
+    #[test]
+    fn test_format_revert_error_filters_redundant_tracebacks() {
+        // Real example from blockifier with VM tracebacks at every CallContract level
+        let input = "Transaction execution has failed:\n0: Error in the called contract (contract address: 0x05743c833ed33a3433f1c5587dac97753ddcc84f9844e6fa2a3268e5ae35cbc3, class hash: 0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2, selector: 0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad):\nError at pc=0:35988:\nCairo traceback (most recent call last):\nUnknown location (pc=0:330)\nUnknown location (pc=0:11695)\nUnknown location (pc=0:36001)\nUnknown location (pc=0:36001)\nUnknown location (pc=0:36001)\n\n1: Error in the called contract (contract address: 0x0286003f7c7bfc3f94e8f0af48b48302e7aee2fb13c23b141479ba00832ef2c6, class hash: 0x03e283b1e8bce178469acb94700999ecc7ad180420201e16eb0a81294ae8599b, selector: 0x0056878e39e16b42520b0d7936d3fd3498f86ceda4dbad50f6ff717644c95ed6):\nError at pc=0:115867:\nCairo traceback (most recent call last):\nUnknown location (pc=0:9435)\nUnknown location (pc=0:43555)\nUnknown location (pc=0:93296)\n\n2: Error in the called contract (contract address: 0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e, class hash: 0x070cdfaea3ec997bd3a8cdedfc0ffe804a58afc3d6b5a6e5c0218ec233ceea6d, selector: 0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20):\nError at pc=0:32:\nCairo traceback (most recent call last):\nUnknown location (pc=0:1683)\nUnknown location (pc=0:1669)\n\n3: Error in a library call (contract address: 0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e, class hash: 0x05ffbcfeb50d200a0677c48a129a11245a3fc519d1d98d76882d1c9a1b19c6ed, selector: 0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20):\nExecution failed. Failure reason:\nError in contract (contract address: 0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e, class hash: 0x05ffbcfeb50d200a0677c48a129a11245a3fc519d1d98d76882d1c9a1b19c6ed, selector: 0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20):\n0x753235365f737562204f766572666c6f77 ('u256_sub Overflow').\n";
+
+        // Expected output: only the traceback from entry 2 (last CallContract before LibraryCall) is kept
+        let expected = "Transaction execution has failed:\n0: Error in the called contract (contract address: 0x05743c833ed33a3433f1c5587dac97753ddcc84f9844e6fa2a3268e5ae35cbc3, class hash: 0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2, selector: 0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad):\n1: Error in the called contract (contract address: 0x0286003f7c7bfc3f94e8f0af48b48302e7aee2fb13c23b141479ba00832ef2c6, class hash: 0x03e283b1e8bce178469acb94700999ecc7ad180420201e16eb0a81294ae8599b, selector: 0x0056878e39e16b42520b0d7936d3fd3498f86ceda4dbad50f6ff717644c95ed6):\n2: Error in the called contract (contract address: 0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e, class hash: 0x070cdfaea3ec997bd3a8cdedfc0ffe804a58afc3d6b5a6e5c0218ec233ceea6d, selector: 0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20):\nError at pc=0:32:\nCairo traceback (most recent call last):\nUnknown location (pc=0:1683)\nUnknown location (pc=0:1669)\n\n3: Error in a library call (contract address: 0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e, class hash: 0x05ffbcfeb50d200a0677c48a129a11245a3fc519d1d98d76882d1c9a1b19c6ed, selector: 0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20):\nExecution failed. Failure reason:\nError in contract (contract address: 0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e, class hash: 0x05ffbcfeb50d200a0677c48a129a11245a3fc519d1d98d76882d1c9a1b19c6ed, selector: 0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20):\n0x753235365f737562204f766572666c6f77 ('u256_sub Overflow').\n";
+
+        let result = format_revert_error(input);
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_format_revert_error_preserves_trailing_newline() {
+        let input_with_newline = "Error at pc=0:123:\nCairo traceback\n";
+        let input_without_newline = "Error at pc=0:123:\nCairo traceback";
+
+        let result_with = format_revert_error(input_with_newline);
+        let result_without = format_revert_error(input_without_newline);
+
+        assert!(result_with.ends_with('\n'));
+        assert!(!result_without.ends_with('\n'));
+    }
+
+    #[test]
+    fn test_format_revert_error_keeps_traceback_before_library_call() {
+        let input = "0: Error in the called contract:\nError at pc=0:100:\nCairo traceback\n\n1: Error in a library call:\nExecution failed\n";
+        let result = format_revert_error(input);
+
+        // Should keep the traceback because it's before a library call
+        assert!(result.contains("Error at pc=0:100:"));
+        assert!(result.contains("Cairo traceback"));
+    }
+
+    #[test]
+    fn test_format_revert_error_skips_traceback_with_nested_call_contract() {
+        let input = "0: Error in the called contract:\nError at pc=0:100:\nCairo traceback\n\n1: Error in the called contract:\nError at pc=0:200:\nAnother traceback\n";
+        let result = format_revert_error(input);
+
+        // Should skip the first traceback because there's a nested CallContract
+        assert!(!result.contains("Error at pc=0:100:"));
+        assert!(!result.contains("Cairo traceback"));
+        // Should keep the second one
+        assert!(result.contains("Error at pc=0:200:"));
+        assert!(result.contains("Another traceback"));
+    }
+
+    #[test]
+    fn test_format_revert_error_no_tracebacks() {
+        let input = "Transaction execution has failed:\nExecution failed. Failure reason: 'Some error'\n";
+        let result = format_revert_error(input);
+
+        // Should preserve the error message as-is when there are no tracebacks
+        assert_eq!(result, input);
     }
 }
