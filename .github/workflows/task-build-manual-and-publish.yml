@@ -1,0 +1,88 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build And Publish Manual Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: Name of the Docker image
+        required: true
+        type: string
+      image-file:
+        description: Dockerfile used to build the image
+        required: true
+        type: string
+      registry:
+        description: Container registry domain
+        required: false
+        default: ghcr.io
+        type: string
+    outputs:
+      manual-sha:
+        description: Manual image tag (with commit sha)
+        value: ${{ jobs.build-manual-and-publish.outputs.manual-sha }}
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+jobs:
+  build-manual-and-publish:
+    runs-on: blacksmith-16vcpu-ubuntu-2204
+    outputs:
+      manual-sha: ${{ steps.tag.outputs.manual-sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: madara-${{ runner.os }}-rust-1.89
+
+      - name: Python Cairo setup (for apollo_starknet_os_program dependencies)
+        if: inputs.is-standalone == false
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
+      - name: Run make artifacts
+        run: yes | make artifacts
+
+      - name: Run cargo check
+        run: cargo check
+
+      - name: Tags
+        id: tag
+        run: |
+          IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image-name }}"
+          SHA=$(git rev-parse --short=7 "$GITHUB_SHA")
+          MANUAL_SHA="$IMAGE:manual-$SHA"
+
+          echo "manual-sha=$MANUAL_SHA" >> $GITHUB_OUTPUT
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker Image and Publish
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          file: ${{ inputs.image-file }}
+          tags: ${{ steps.tag.outputs.manual-sha }}
