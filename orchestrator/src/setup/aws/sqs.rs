@@ -64,8 +64,6 @@ impl Resource for InnerSQS {
 
                     tracing::info!("Queue created for type {}", queue_type);
 
-                    let mut attributes = HashMap::new();
-
                     if let Some(dlq_config) = &queue.dlq_config {
                         let dlq_url = if self
                             .check_if_exists(&(args.queue_template_identifier.clone(), dlq_config.dlq_name.clone()))
@@ -113,14 +111,15 @@ impl Resource for InnerSQS {
                             &queue_name,
                             &dlq_config.dlq_name
                         );
+                        let mut attributes = HashMap::new();
                         attributes.insert(QueueAttributeName::RedrivePolicy, policy);
+                        self.client()
+                            .set_queue_attributes()
+                            .queue_url(queue_url)
+                            .set_attributes(Some(attributes))
+                            .send()
+                            .await?;
                     }
-                    let mut req = self.client().set_queue_attributes().queue_url(queue_url);
-                    if !attributes.is_empty() {
-                        // Empty attributes cause error in AWS
-                        req = req.set_attributes(Some(attributes))
-                    }
-                    req.send().await?;
                     tracing::info!("Setup completed for queue: {}", queue_type);
                 }
             }
