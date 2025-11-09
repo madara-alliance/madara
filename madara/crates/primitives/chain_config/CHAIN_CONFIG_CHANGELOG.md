@@ -15,16 +15,17 @@ This is the initial versioned release of the chain config format. All chain conf
 The L2 gas price configuration has been refactored from multiple separate fields into a single enum-based configuration. This provides a clearer and more explicit way to specify gas pricing strategy.
 
 **Old Format (Deprecated):**
+
 ```yaml
 l2_gas_target: 2000000000
 min_l2_gas_price: 100000
 l2_gas_price_max_change_denominator: 48
-l2_gas_price_override: null  # or a fixed value
 ```
 
 **New Format:**
 
 Option 1 - EIP-1559 Dynamic Pricing:
+
 ```yaml
 l2_gas_price:
   type: eip1559
@@ -34,6 +35,7 @@ l2_gas_price:
 ```
 
 Option 2 - Fixed Gas Price:
+
 ```yaml
 l2_gas_price:
   type: fixed
@@ -55,6 +57,9 @@ The new format makes it explicit which pricing strategy is being used, preventin
 - `eth_gps_statement_verifier` (String): GPS statement verifier address on L1
 - `sequencer_address` (Address): Sequencer address for block production
 - `mempool_max_transactions` (usize): Maximum number of transactions in mempool
+- `l2_gas_price`: L2 gas pricing configuration
+  - For EIP-1559: `type: eip1559`, `target`, `min_price`, `max_change_denominator`
+  - For fixed: `type: fixed`, `price`
 
 ### Optional Fields
 
@@ -70,9 +75,6 @@ The new format makes it explicit which pricing strategy is being used, preventin
 - `mempool_min_tip_bump` (default: 0.1): Minimum tip increase ratio
 - `mempool_max_declare_transactions` (optional): Max declare transactions limit
 - `mempool_ttl` (optional): Transaction time-to-live in mempool
-- `l2_gas_price` (default: EIP1559): L2 gas pricing configuration
-  - For EIP-1559: `type: eip1559`, `target`, `min_price`, `max_change_denominator`
-  - For fixed: `type: fixed`, `price`
 - `block_production_concurrency` (default: auto): Parallel execution config
 - `l1_messages_replay_max_duration` (default: 3 days): L1 message replay duration
 
@@ -84,14 +86,13 @@ The new format makes it explicit which pricing strategy is being used, preventin
   - `l2_gas_target` → Use `l2_gas_price.target` (in EIP-1559 mode)
   - `min_l2_gas_price` → Use `l2_gas_price.min_price` (in EIP-1559 mode)
   - `l2_gas_price_max_change_denominator` → Use `l2_gas_price.max_change_denominator` (in EIP-1559 mode)
-  - `l2_gas_price_override` → Use `l2_gas_price` with `type: fixed` and `price` field
-  - `override_strk_l2_gas_price` → Use `l2_gas_price` with `type: fixed` and `price` field
 
 ### Migration Guide
 
 To migrate from a legacy (unversioned) chain config to version 1:
 
 1. Add the following line to the top of your chain config YAML file (after any comments):
+
    ```yaml
    config_version: 1
    ```
@@ -101,6 +102,7 @@ To migrate from a legacy (unversioned) chain config to version 1:
    **If you were using dynamic pricing (default):**
 
    Replace:
+
    ```yaml
    l2_gas_target: 2000000000
    min_l2_gas_price: 100000
@@ -108,6 +110,7 @@ To migrate from a legacy (unversioned) chain config to version 1:
    ```
 
    With:
+
    ```yaml
    l2_gas_price:
      type: eip1559
@@ -116,16 +119,10 @@ To migrate from a legacy (unversioned) chain config to version 1:
      max_change_denominator: 48
    ```
 
-   **If you were using fixed pricing:**
+   **(NEW FEAT) If you want to use fixed pricing:**
 
-   Replace:
-   ```yaml
-   l2_gas_price_override: 2500
-   # or
-   override_strk_l2_gas_price: 2500
-   ```
+   Use:
 
-   With:
    ```yaml
    l2_gas_price:
      type: fixed
@@ -153,7 +150,6 @@ l2_gas_price:
   target: 2000000000
   min_price: 100000
   max_change_denominator: 48
-
 # Or using fixed pricing
 # l2_gas_price:
 #   type: fixed
@@ -164,13 +160,14 @@ l2_gas_price:
 
 ## Version History
 
-| Version | Release Date | Status |
-|---------|--------------|---------|
+| Version | Release Date | Status  |
+| ------- | ------------ | ------- |
 | 1       | TBD          | Current |
 
 ## Future Versions
 
 Future breaking changes to the chain config format will increment the version number. This may include:
+
 - Adding new required fields
 - Removing fields
 - Changing field types or validation rules
