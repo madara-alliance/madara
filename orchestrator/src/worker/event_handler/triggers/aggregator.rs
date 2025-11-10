@@ -33,7 +33,7 @@ impl JobTrigger for AggregatorJobTrigger {
         // Process each batch
         for batch in closed_batches {
             // Check if all the child jobs are Completed
-            match self.check_child_jobs_status(batch.start_block, batch.end_block, config.clone()).await {
+            match self.check_child_jobs_status(batch.start_snos_batch, batch.end_snos_batch, config.clone()).await {
                 Ok(are_completed) => {
                     if are_completed {
                         debug!(batch_id = %batch.id, batch_index = %batch.index, "All child jobs are completed");
