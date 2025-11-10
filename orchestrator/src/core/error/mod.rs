@@ -28,4 +28,7 @@ pub enum OrchestratorCoreError {
 
     #[error("Invalid provider: {0}")]
     InvalidProvider(String),
+
+    #[error("Invalid versioned constants file: {0}")]
+    InvalidVersionedConstantsFile(#[from] blockifier::blockifier_versioned_constants::VersionedConstantsError),
 }

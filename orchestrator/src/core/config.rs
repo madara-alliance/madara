@@ -22,7 +22,7 @@ use url::Url;
 
 use crate::core::client::lock::mongodb::MongoLockClient;
 use crate::core::client::lock::LockClient;
-use crate::core::error::OrchestratorCoreResult;
+use crate::core::error::{OrchestratorCoreError, OrchestratorCoreResult};
 use crate::types::params::batching::BatchingParams;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
@@ -42,6 +42,7 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
+use blockifier::blockifier_versioned_constants::VersionedConstants;
 use blockifier::bouncer::BouncerWeights;
 
 /// Starknet versions supported by the service
@@ -119,6 +120,8 @@ pub struct ConfigParam {
     /// * Aggregator Proof
     pub store_audit_artifacts: bool,
     pub bouncer_weights_limit: BouncerWeights,
+    /// Optional versioned constants loaded from file. If None, defaults from blockifier will be used.
+    pub versioned_constants: Option<VersionedConstants>,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -205,6 +208,10 @@ impl Config {
 
         let layer = run_cmd.layer.clone();
 
+        let snos_config = SNOSParams::from(run_cmd.snos_args.clone());
+        let versioned_constants = Self::load_versioned_constants(&snos_config.versioned_constants_path)
+            .context("Failed to load versioned constants")?;
+
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
             madara_feeder_gateway_url: run_cmd
@@ -212,7 +219,7 @@ impl Config {
                 .clone()
                 .unwrap_or_else(|| run_cmd.madara_rpc_url.clone()),
             madara_version: run_cmd.madara_version,
-            snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
+            snos_config,
             batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
@@ -222,6 +229,7 @@ impl Config {
                 .context("Failed to get prover layout name")?,
             store_audit_artifacts: run_cmd.store_audit_artifacts,
             bouncer_weights_limit: Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?,
+            versioned_constants,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
@@ -488,6 +496,37 @@ impl Config {
     /// Returns the bouncer weights limit
     pub fn bouncer_weights_limit(&self) -> &BouncerWeights {
         &self.params.bouncer_weights_limit
+    }
+
+    /// Load versioned constants from file if path is provided.
+    /// If path is provided and loading fails, returns an error.
+    /// If no path is provided, returns None (will use blockifier defaults).
+    fn load_versioned_constants(
+        file_path: &Option<std::path::PathBuf>,
+    ) -> OrchestratorCoreResult<Option<VersionedConstants>> {
+        match file_path {
+            Some(path) => {
+                tracing::debug!(file_path = %path.display(), "Loading versioned constants from file");
+                match VersionedConstants::from_path(path) {
+                    Ok(constants) => {
+                        tracing::debug!(file_path = %path.display(), "Successfully loaded versioned constants from file");
+                        Ok(Some(constants))
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            file_path = %path.display(),
+                            "Failed to load versioned constants from file"
+                        );
+                        Err(OrchestratorCoreError::InvalidVersionedConstantsFile(e))
+                    }
+                }
+            }
+            None => {
+                tracing::debug!("No versioned constants path provided, using defaults from blockifier");
+                Ok(None)
+            }
+        }
     }
 
     /// Load bouncer weights limit from file or use defaults
