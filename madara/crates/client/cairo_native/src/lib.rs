@@ -26,6 +26,9 @@ pub mod execution;
 pub mod metrics;
 pub mod to_blockifier;
 
+#[cfg(test)]
+mod test_utils;
+
 // Re-export commonly used types
 pub use compilation::init_compilation_semaphore;
 pub use config::{NativeCompilationMode, NativeConfig};

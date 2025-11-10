@@ -298,147 +298,47 @@ fn convert_to_vm_class(
 mod tests {
     use super::*;
     use crate::metrics::test_counters;
-    use mp_class::{FlattenedSierraClass, SierraClassInfo, SierraConvertedClass};
+    use mp_class::SierraConvertedClass;
+    use rstest::rstest;
     use starknet_api::core::ClassHash;
-    use starknet_types_core::felt::Felt;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use tempfile::TempDir;
+    // Import fixtures from test_utils
+    use crate::test_utils::{async_config, blocking_config, sierra_class, temp_dir};
 
     // Test mutex to serialize test execution for tests that need to clear/modify caches
     static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
-    // Counter for generating unique test class hashes
-    static TEST_CLASS_HASH_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-
-    // Helper function to create a unique test class hash
+    // Helper function to create a unique test class hash (module_id=2 for execution.rs)
     fn create_unique_test_class_hash() -> ClassHash {
-        let counter = TEST_CLASS_HASH_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let base = Felt::from_hex_unchecked("0x2000000000000000000000000000000000000000000000000000000000000000");
-        ClassHash(base + Felt::from(counter))
+        crate::test_utils::create_unique_test_class_hash(2)
     }
 
-    // Helper function to create a test SierraConvertedClass (reuse from cache.rs tests)
-    fn create_test_sierra_class() -> Result<SierraConvertedClass, Box<dyn std::error::Error>> {
-        use m_cairo_test_contracts::TEST_CONTRACT_SIERRA;
-        use mp_class::CompiledSierra;
-        use serde_json::Value;
-
-        // Parse as JSON value first to check the structure
-        let mut json_value: Value = serde_json::from_slice(TEST_CONTRACT_SIERRA)
-            .map_err(|e| format!("Failed to parse TEST_CONTRACT_SIERRA as JSON: {}", e))?;
-
-        // Handle abi field - convert from object/array to string if needed
-        if let Some(abi_value) = json_value.get_mut("abi") {
-            if !abi_value.is_string() {
-                *abi_value = Value::String(serde_json::to_string(abi_value)?);
-            }
-        }
-
-        // Check if sierra_program is an array (flattened) or string (compressed)
-        let flattened_sierra = if let Some(sierra_program) = json_value.get("sierra_program") {
-            if sierra_program.is_array() {
-                serde_json::from_value::<FlattenedSierraClass>(json_value)
-                    .map_err(|e| format!("Failed to parse as FlattenedSierraClass: {}", e))?
-            } else if sierra_program.is_string() {
-                use mp_class::CompressedSierraClass;
-                let compressed = serde_json::from_value::<CompressedSierraClass>(json_value)
-                    .map_err(|e| format!("Failed to parse as CompressedSierraClass: {}", e))?;
-                FlattenedSierraClass::try_from(compressed)
-                    .map_err(|e| format!("Failed to decompress CompressedSierraClass: {}", e))?
-            } else {
-                return Err("sierra_program field is neither an array nor a string".into());
-            }
-        } else {
-            return Err("JSON does not contain sierra_program field".into());
-        };
-
-        // Compile to CASM to get compiled class hash
-        let (compiled_class_hash, casm_class) = flattened_sierra.compile_to_casm()?;
-        let compiled_sierra = CompiledSierra::try_from(&casm_class)?;
-
-        // Create SierraClassInfo
-        let sierra_info = SierraClassInfo { contract_class: Arc::new(flattened_sierra), compiled_class_hash };
-
-        // Create SierraConvertedClass
-        let sierra_converted = SierraConvertedClass {
-            class_hash: compiled_class_hash,
-            info: sierra_info,
-            compiled: Arc::new(compiled_sierra),
-        };
-
-        Ok(sierra_converted)
-    }
-
-    // Helper function to create a test NativeCompiledClassV1 and insert into memory cache
-    fn create_and_cache_native_class(
+    // Helper function to create a native class, optionally cache it in memory, and optionally verify it exists on disk
+    fn create_native_class(
         sierra: &SierraConvertedClass,
         temp_dir: &TempDir,
         class_hash: ClassHash,
-        _config: &config::NativeConfig,
+        cache_in_memory: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        use blockifier::execution::native::contract_class::NativeCompiledClassV1;
         use std::time::Instant;
 
         // Create path for compiled .so file
         let so_path = temp_dir.path().join(format!("{:#x}.so", class_hash.to_felt()));
 
-        // Compile Sierra to native
-        let executor = sierra.info.contract_class.compile_to_native(&so_path)?;
+        // Use shared function to create native class (this compiles and saves to disk)
+        let native_class = crate::test_utils::create_native_class_internal(sierra, &so_path)?;
 
-        // Convert Sierra to blockifier compiled class
-        let blockifier_compiled_class = crate::compilation::convert_sierra_to_blockifier_class(sierra)?;
+        // Optionally insert into memory cache
+        if cache_in_memory {
+            cache::NATIVE_CACHE.insert(class_hash, (native_class, Instant::now()));
+        }
 
-        // Create NativeCompiledClassV1
-        let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
-
-        // Insert into memory cache
-        cache::NATIVE_CACHE.insert(class_hash, (Arc::new(native_class), Instant::now()));
-
-        Ok(())
-    }
-
-    // Helper function to create and save a native class to disk (simulates previous compilation)
-    fn create_and_save_native_class_to_disk(
-        sierra: &SierraConvertedClass,
-        temp_dir: &TempDir,
-        class_hash: ClassHash,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        use blockifier::execution::native::contract_class::NativeCompiledClassV1;
-
-        // Create path for compiled .so file
-        let so_path = temp_dir.path().join(format!("{:#x}.so", class_hash.to_felt()));
-
-        // Compile Sierra to native and save to disk
-        let executor = sierra.info.contract_class.compile_to_native(&so_path)?;
-
-        // Convert Sierra to blockifier compiled class
-        let blockifier_compiled_class = crate::compilation::convert_sierra_to_blockifier_class(sierra)?;
-
-        // Create NativeCompiledClassV1 (this validates the executor can be loaded)
-        let _native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
-
-        // File is already saved to disk by compile_to_native
-        // Verify file exists
+        // Verify file exists on disk
         assert!(so_path.exists(), "Native class file should exist on disk");
 
         Ok(())
-    }
-
-    // Helper function to create a test config with native enabled
-    fn create_test_config(temp_dir: &TempDir, mode: config::NativeCompilationMode) -> Arc<config::NativeConfig> {
-        let config = Arc::new(
-            config::NativeConfig::default()
-                .with_native_execution(true)
-                .with_cache_dir(temp_dir.path().to_path_buf())
-                .with_compilation_mode(mode)
-                .with_compilation_timeout(Duration::from_secs(30)),
-        );
-
-        // Initialize compilation semaphore for async tests
-        compilation::init_compilation_semaphore(config.max_concurrent_compilations);
-
-        config
     }
 
     // Helper function to poll for compilation completion with timeout (async version)
@@ -475,26 +375,32 @@ mod tests {
         false
     }
 
-    #[test]
-    fn test_handle_sierra_class_memory_cache_hit() {
+    #[rstest]
+    fn test_handle_sierra_class_memory_cache_hit(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Create config using the temp_dir fixture (so cache_dir matches)
+        let async_config =
+            crate::test_utils::create_test_config_arc(&temp_dir, Some(config::NativeCompilationMode::Async), true);
 
         // Pre-populate memory cache
-        create_and_cache_native_class(&sierra, &temp_dir, class_hash, &config)
+        create_native_class(&sierra_class, &temp_dir, class_hash, true)
             .expect("Failed to create and cache native class");
 
         // Verify it's in cache before calling handle_sierra_class
         assert!(cache::NATIVE_CACHE.contains_key(&class_hash), "Class should be in memory cache before call");
 
         // Memory cache hit expected
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            async_config.clone(),
+        );
 
         assert!(result.is_ok(), "Should successfully retrieve from memory cache");
         let runnable = result.unwrap();
@@ -537,26 +443,34 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_handle_sierra_class_memory_miss_disk_hit() {
+    #[rstest]
+    fn test_handle_sierra_class_memory_miss_disk_hit(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
 
-        // Create and save native class to disk (simulate previous compilation)
-        create_and_save_native_class_to_disk(&sierra, &temp_dir, class_hash)
-            .expect("Failed to create and save native class to disk");
+        // Create config using the temp_dir fixture (so cache_dir matches)
+        let async_config =
+            crate::test_utils::create_test_config_arc(&temp_dir, Some(config::NativeCompilationMode::Async), true);
+
+        // Create and save native class to disk using the config's cache directory
+        let so_path = cache::get_native_cache_path(&class_hash, &async_config);
+        let _native_class = crate::test_utils::create_native_class_internal(&sierra_class, &so_path)
+            .expect("Failed to create native class");
+        assert!(so_path.exists(), "Native class file should exist on disk");
 
         // Verify memory cache still doesn't have it
         assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache before disk load");
 
         // Disk cache hit expected
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            async_config.clone(),
+        );
 
         assert!(result.is_ok(), "Should successfully retrieve from disk cache");
         let runnable = result.unwrap();
@@ -595,13 +509,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_handle_sierra_class_native_disabled() {
+    #[rstest]
+    fn test_handle_sierra_class_native_disabled(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Create config with native disabled
         let config = Arc::new(
@@ -611,8 +523,13 @@ mod tests {
         let _metrics_guard = test_counters::acquire_and_reset();
 
         // VM class returned immediately when native is disabled
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            config.clone(),
+        );
 
         assert!(result.is_ok(), "Should return VM class when native is disabled");
         let runnable = result.unwrap();
@@ -658,8 +575,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_handle_sierra_class_cache_miss_blocking_mode() {
+    #[rstest]
+    fn test_handle_sierra_class_cache_miss_blocking_mode(
+        sierra_class: SierraConvertedClass,
+        _temp_dir: TempDir,
+        blocking_config: Arc<config::NativeConfig>,
+    ) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         let class_hash = create_unique_test_class_hash();
@@ -668,10 +589,6 @@ mod tests {
         cache::NATIVE_CACHE.remove(&class_hash);
         compilation::COMPILATION_IN_PROGRESS.remove(&class_hash);
         compilation::FAILED_COMPILATIONS.remove(&class_hash);
-
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Blocking);
 
         // Verify caches don't have our unique class_hash
         assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
@@ -685,8 +602,13 @@ mod tests {
         let _metrics_guard = test_counters::acquire_and_reset();
 
         // Blocking mode compiles synchronously
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            blocking_config.clone(),
+        );
 
         assert!(result.is_ok(), "Should successfully compile in blocking mode");
         let runnable = result.unwrap();
@@ -747,14 +669,16 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_handle_sierra_class_cache_miss_async_mode() {
+    async fn test_handle_sierra_class_cache_miss_async_mode(
+        sierra_class: SierraConvertedClass,
+        _temp_dir: TempDir,
+        async_config: Arc<config::NativeConfig>,
+    ) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
 
         // Verify caches don't have our unique class_hash
         assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
@@ -770,8 +694,13 @@ mod tests {
         let _metrics_guard = test_counters::acquire_and_reset();
 
         // Async mode returns VM immediately while compilation happens in background
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            async_config.clone(),
+        );
 
         assert!(result.is_ok(), "Should return VM class immediately in async mode");
         let runnable = result.unwrap();
@@ -835,26 +764,34 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_handle_sierra_class_disk_cache_error() {
+    async fn test_handle_sierra_class_disk_cache_error(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
+
+        // Create config using the temp_dir fixture (so cache_dir matches)
+        let async_config =
+            crate::test_utils::create_test_config_arc(&temp_dir, Some(config::NativeCompilationMode::Async), true);
 
         // Verify memory cache doesn't have our unique class_hash
         assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
 
         // Create a corrupt/invalid .so file on disk to trigger disk cache error
-        let so_path = temp_dir.path().join(format!("{:#x}.so", class_hash.to_felt()));
+        // Use the config's cache directory path
+        let so_path = cache::get_native_cache_path(&class_hash, &async_config);
         std::fs::write(&so_path, b"invalid binary data").expect("Failed to write invalid file");
 
         // Disk error handled gracefully, falls back to compilation
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            async_config.clone(),
+        );
 
         // In async mode, should return VM class even if disk cache fails
         assert!(result.is_ok(), "Should handle disk cache error gracefully");
@@ -923,15 +860,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_handle_sierra_class_compilation_in_progress_skip_disk() {
+    #[rstest]
+    fn test_handle_sierra_class_compilation_in_progress_skip_disk(
+        sierra_class: SierraConvertedClass,
+        _temp_dir: TempDir,
+        async_config: Arc<config::NativeConfig>,
+    ) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
 
         // Verify memory cache doesn't have our unique class_hash
         assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
@@ -945,8 +883,13 @@ mod tests {
         );
 
         // Disk cache skipped when compilation is in progress
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            async_config.clone(),
+        );
 
         assert!(result.is_ok(), "Should return VM class when compilation is in progress");
 
@@ -997,14 +940,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_handle_sierra_class_blocking_compilation_failure() {
+    #[rstest]
+    fn test_handle_sierra_class_blocking_compilation_failure(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Create config with very short timeout to force compilation failure
         let config = Arc::new(
@@ -1027,8 +968,13 @@ mod tests {
         );
 
         // Compilation timeout expected in blocking mode with very short timeout
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            config.clone(),
+        );
 
         assert!(result.is_err(), "Should return an error when compilation fails");
 
@@ -1078,14 +1024,12 @@ mod tests {
     /// - Fallback to disk cache occurs after memory cache timeout
     /// - Timeout metric (`CACHE_MEMORY_TIMEOUT`) is recorded
     /// - Timeout events are logged appropriately
-    #[test]
-    fn test_handle_sierra_class_memory_cache_timeout() {
+    #[rstest]
+    fn test_handle_sierra_class_memory_cache_timeout(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Configure an extremely short memory cache timeout to reliably trigger timeout
         // 1 nanosecond timeout ensures timeout occurs since conversion operations take longer
@@ -1101,12 +1045,17 @@ mod tests {
         assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
 
         // Pre-populate disk cache to enable testing disk fallback after memory timeout
-        create_and_save_native_class_to_disk(&sierra, &temp_dir, class_hash)
+        create_native_class(&sierra_class, &temp_dir, class_hash, false)
             .expect("Failed to create and save native class to disk");
 
         // Memory cache lookup will timeout, triggering fallback to disk cache
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            config.clone(),
+        );
 
         assert!(result.is_ok(), "Should successfully retrieve from disk cache after memory miss");
         let runnable = result.unwrap();
@@ -1166,14 +1115,13 @@ mod tests {
     /// - Fallback to compilation occurs after disk cache timeout
     /// - Timeout metric (`CACHE_DISK_LOAD_TIMEOUT`) is recorded
     /// - Timeout events are logged appropriately
+    #[rstest]
     #[tokio::test]
-    async fn test_handle_sierra_class_disk_cache_timeout() {
+    async fn test_handle_sierra_class_disk_cache_timeout(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Configure an extremely short disk cache timeout to reliably trigger timeout
         // 1 microsecond timeout ensures timeout occurs since disk I/O operations take longer
@@ -1190,13 +1138,18 @@ mod tests {
 
         // Pre-populate disk cache to enable testing timeout during disk load operation
         // With 1 microsecond timeout, disk load will timeout since loading .so files takes longer
-        create_and_save_native_class_to_disk(&sierra, &temp_dir, class_hash)
+        create_native_class(&sierra_class, &temp_dir, class_hash, false)
             .expect("Failed to create and save native class to disk");
 
         // Memory cache misses, disk cache load times out (file exists but load operation times out),
         // triggering fallback to compilation
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            config.clone(),
+        );
 
         // Async mode returns VM immediately while compilation happens in background
         assert!(result.is_ok(), "Should return VM class immediately in async mode");
@@ -1262,15 +1215,17 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_compilation_in_progress_prevents_duplicate() {
+    async fn test_compilation_in_progress_prevents_duplicate(
+        sierra_class: SierraConvertedClass,
+        _temp_dir: TempDir,
+        async_config: Arc<config::NativeConfig>,
+    ) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
 
         // Verify caches don't have our unique class_hash
         assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
@@ -1284,9 +1239,9 @@ mod tests {
         let mut handles = vec![];
 
         for _ in 0..num_concurrent_requests {
-            let sierra_clone = sierra.clone();
+            let sierra_clone = sierra_class.clone();
             let class_hash_clone = class_hash;
-            let config_clone = config.clone();
+            let config_clone = async_config.clone();
             let handle = tokio::spawn(async move {
                 handle_sierra_class(
                     &sierra_clone,
@@ -1364,14 +1319,13 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_async_mode_retry_enabled() {
+    async fn test_async_mode_retry_enabled(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let config = Arc::new(
             config::NativeConfig::default()
                 .with_native_execution(true)
@@ -1395,8 +1349,13 @@ mod tests {
         );
 
         // Request the class with retry enabled
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            config.clone(),
+        );
 
         // Should return VM version immediately (async mode)
         assert!(result.is_ok(), "Should return VM class immediately in async mode");
@@ -1444,14 +1403,13 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_async_mode_retry_disabled() {
+    async fn test_async_mode_retry_disabled(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let config = Arc::new(
             config::NativeConfig::default()
                 .with_native_execution(true)
@@ -1475,8 +1433,13 @@ mod tests {
         );
 
         // Request the class with retry disabled
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            config.clone(),
+        );
 
         // Should return VM version immediately (async mode)
         assert!(result.is_ok(), "Should return VM class immediately in async mode");
@@ -1512,14 +1475,12 @@ mod tests {
         assert_eq!(test_counters::VM_FALLBACKS.load(Ordering::Relaxed), 1, "Should have exactly one VM fallback");
     }
 
-    #[test]
-    fn test_compilation_timeout_config() {
+    #[rstest]
+    fn test_compilation_timeout_config(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
         // Clear any existing state
         cache::NATIVE_CACHE.remove(&class_hash);
@@ -1548,8 +1509,13 @@ mod tests {
         );
 
         // Attempt compilation with very short timeout - should timeout
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            config.clone(),
+        );
 
         // Should return an error due to timeout
         assert!(result.is_err(), "Should return an error when compilation times out");

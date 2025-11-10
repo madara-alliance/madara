@@ -637,63 +637,11 @@ pub(crate) fn spawn_compilation_if_needed(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starknet_types_core::felt::Felt;
-    use std::sync::atomic::AtomicU64;
     use std::time::Duration;
 
-    // Helper to create unique test class hash
+    // Helper to create unique test class hash (module_id=3 for compilation.rs)
     fn create_unique_test_class_hash() -> ClassHash {
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let counter = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let base = Felt::from_hex_unchecked("0x3000000000000000000000000000000000000000000000000000000000000000");
-        ClassHash(base + Felt::from(counter))
-    }
-
-    // Helper to create test Sierra class
-    fn create_test_sierra_class() -> Result<SierraConvertedClass, Box<dyn std::error::Error>> {
-        use m_cairo_test_contracts::TEST_CONTRACT_SIERRA;
-        use mp_class::{CompiledSierra, FlattenedSierraClass, SierraClassInfo};
-        use serde_json::Value;
-
-        let mut json_value: Value = serde_json::from_slice(TEST_CONTRACT_SIERRA)
-            .map_err(|e| format!("Failed to parse TEST_CONTRACT_SIERRA as JSON: {}", e))?;
-
-        if let Some(abi_value) = json_value.get_mut("abi") {
-            if !abi_value.is_string() {
-                *abi_value = Value::String(serde_json::to_string(abi_value)?);
-            }
-        }
-
-        let flattened_sierra = if let Some(sierra_program) = json_value.get("sierra_program") {
-            if sierra_program.is_array() {
-                serde_json::from_value::<FlattenedSierraClass>(json_value)
-                    .map_err(|e| format!("Failed to parse as FlattenedSierraClass: {}", e))?
-            } else if sierra_program.is_string() {
-                use mp_class::CompressedSierraClass;
-                let compressed = serde_json::from_value::<CompressedSierraClass>(json_value)
-                    .map_err(|e| format!("Failed to parse as CompressedSierraClass: {}", e))?;
-                FlattenedSierraClass::try_from(compressed)
-                    .map_err(|e| format!("Failed to decompress CompressedSierraClass: {}", e))?
-            } else {
-                return Err("sierra_program field is neither an array nor a string".into());
-            }
-        } else {
-            return Err("sierra_program field is missing".into());
-        };
-
-        // Compile to CASM to get compiled class hash
-        let (compiled_class_hash, casm_class) = flattened_sierra.compile_to_casm()?;
-        let compiled_sierra = CompiledSierra::try_from(&casm_class)?;
-
-        // Create SierraClassInfo
-        let sierra_info = SierraClassInfo { contract_class: Arc::new(flattened_sierra), compiled_class_hash };
-
-        // Create SierraConvertedClass
-        Ok(SierraConvertedClass {
-            class_hash: compiled_class_hash,
-            info: sierra_info,
-            compiled: Arc::new(compiled_sierra),
-        })
+        crate::test_utils::create_unique_test_class_hash(3)
     }
 
     #[tokio::test]
@@ -714,16 +662,14 @@ mod tests {
 
         // Create config with async mode
         let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
-        let config = Arc::new(
-            config::NativeConfig::default()
-                .with_native_execution(true)
-                .with_cache_dir(temp_dir.path().to_path_buf())
-                .with_compilation_mode(config::NativeCompilationMode::Async)
-                .with_compilation_timeout(Duration::from_secs(30)),
-        );
+        let config = std::sync::Arc::new(crate::test_utils::create_test_config(
+            &temp_dir,
+            Some(config::NativeCompilationMode::Async),
+            false,
+        ));
 
         // Create test Sierra class
-        let sierra = Arc::new(create_test_sierra_class().expect("Failed to create test Sierra class"));
+        let sierra = Arc::new(crate::test_utils::get_test_sierra_class().clone());
 
         // Spawn 5 compilations (more than the limit of 2)
         let num_compilations = 5;
