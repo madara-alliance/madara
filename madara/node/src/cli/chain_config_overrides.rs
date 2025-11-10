@@ -113,7 +113,7 @@ impl ChainConfigOverrideParams {
     /// NOTE: This will only override the fields according to the latest chain config.
     ///
     /// For e.g.: If we had a field `A` in chain config version 1 and removed that in version 2
-    /// (both are supported), the user cannot override `A` using this flag even if she's using
+    /// (both are supported), the user cannot override `A` using this flag even if they're using
     /// version 1.
     pub fn override_chain_config(&self, chain_config: ChainConfig) -> anyhow::Result<ChainConfig> {
         let versioned_constants = chain_config.versioned_constants;

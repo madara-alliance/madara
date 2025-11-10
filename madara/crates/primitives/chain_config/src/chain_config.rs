@@ -443,7 +443,7 @@ impl ChainConfig {
         // If this field is missing, serde would give a less user-friendly error
         config_value
             .get("config_version")
-            .context("Missing required field 'config_version' in chain config. Please add 'config_version: 1' to your chain config file.")?;
+            .context("Missing required field 'config_version' in chain config. Please add 'config_version: <version>' to your chain config file.")?;
 
         let versioned_constants_file_paths: BTreeMap<String, String> =
             serde_yaml::from_value(config_value.get("versioned_constants_path").cloned().unwrap_or_default())
