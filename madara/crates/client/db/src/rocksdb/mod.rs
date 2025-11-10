@@ -86,7 +86,7 @@ struct RocksDBStorageInner {
 
 impl Drop for RocksDBStorageInner {
     fn drop(&mut self) {
-        tracing::debug!("Gracefully closing the database");
+        tracing::debug!("⏳ Gracefully closing the database...");
         self.flush().expect("Error when flushing the database");
         self.db.cancel_all_background_work(/* wait */ true);
     }

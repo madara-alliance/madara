@@ -239,7 +239,7 @@ async fn main() -> anyhow::Result<()> {
     if run_cmd.backend_params.no_save_preconfirmed {
         tracing::info!("⚠️  Preconfirmed blocks will NOT be saved to database & lost on restart!");
     } else {
-        tracing::info!("💾 Preconfirmed blocks will be saved to database");
+        tracing::info!("💾  Preconfirmed blocks will be saved to database");
     }
 
     let backend = MadaraBackend::open_rocksdb(
