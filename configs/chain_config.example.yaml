@@ -79,3 +79,9 @@ mempool_ttl: null
 l2_gas_target: 2000000000
 min_l2_gas_price: 100000
 l2_gas_price_max_change_denominator: 48
+
+# Custom Versioned constants files
+versioned_constants_path:
+  "0.13.5.0": "path/to/0.13.5/versioned-constants"
+  "0.14.0.0": "path/to/0.14.0/versioned-constants"
+  # and so on
