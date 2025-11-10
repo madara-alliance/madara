@@ -43,6 +43,7 @@ use crate::{
 };
 
 use blockifier::blockifier_versioned_constants::VersionedConstants;
+use crate::types::batch::AggregatorBatchWeights;
 use blockifier::bouncer::BouncerWeights;
 
 /// Starknet versions supported by the service
@@ -122,6 +123,7 @@ pub struct ConfigParam {
     pub bouncer_weights_limit: BouncerWeights,
     /// Optional versioned constants loaded from file. If None, defaults from blockifier will be used.
     pub versioned_constants: Option<VersionedConstants>,
+    pub aggregator_batch_weights_limit: AggregatorBatchWeights,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -206,6 +208,8 @@ impl Config {
         let settlement_config = SettlementConfig::try_from(run_cmd.clone())
             .context("Failed to create settlement config from run command")?;
 
+        let bouncer_weights_limit = Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?;
+
         let layer = run_cmd.layer.clone();
 
         let snos_config = SNOSParams::from(run_cmd.snos_args.clone());
@@ -230,6 +234,8 @@ impl Config {
             store_audit_artifacts: run_cmd.store_audit_artifacts,
             bouncer_weights_limit: Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?,
             versioned_constants,
+            aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
+            bouncer_weights_limit,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());

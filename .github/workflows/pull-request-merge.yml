@@ -4,91 +4,27 @@ name: Workflow - Pull Request Main (merge)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *"
+  merge_group:
 
 jobs:
-  # ========================================================================= #
-  #                               SCHEDULE GATE                               #
-  # ========================================================================= #
-
-  check-merged-today:
-    name: Check commits merged in previous UTC day
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.check.outputs.should_run }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check commits on main in previous UTC day
-        id: check
-        shell: bash
-        run: |
-          set -euo pipefail
-          SINCE="$(date -u -d 'yesterday 00:00' +%Y-%m-%dT%H:%M:%SZ)"
-          UNTIL="$(date -u -d 'today 00:00' +%Y-%m-%dT%H:%M:%SZ)"
-          git fetch origin main --prune
-          COUNT="$(git rev-list --count --since="$SINCE" --until="$UNTIL" origin/main)"
-          if [ "$COUNT" -gt 0 ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-          fi
   # ========================================================================= #
   #                              NIGHTLY RELEASE                              #
   # ========================================================================= #
 
   build-nightly-and-publish-madara:
-    uses: ./.github/workflows/task-build-nightly-and-publish.yml
-    with:
-      image-name: madara
-      image-file: ./madara/Dockerfile
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   # test-hive:
-  #   needs: [build-nightly]
-  #   uses: ./.github/workflows/task-test-hive.yml
-  #   with:
-  #     nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
-  #   secrets: inherit
+  #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
 
   build-nightly-and-publish-orchestrator:
-    uses: ./.github/workflows/task-build-nightly-and-publish.yml
-    with:
-      image-name: orchestrator
-      image-file: ./orchestrator/Dockerfile
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
-  # Deprecating bootstrapper V1
   build-nightly-and-publish-bootstrapper:
-    uses: ./.github/workflows/task-build-nightly-and-publish.yml
-    with:
-      image-name: bootstrapper
-      image-file: ./bootstrapper/Dockerfile
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   # ========================================================================= #
   #                                MERGE QUEUE                                #
@@ -118,36 +54,6 @@ jobs:
   #                                E2E Test                                   #
   # ========================================================================= #
 
-  # Build Madara binary
-  build-madara:
-    uses: ./.github/workflows/task-build-madara.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    secrets: inherit
-
-  # Build Orchestrator binary
-  build-orchestrator:
-    uses: ./.github/workflows/task-build-orchestrator.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    secrets: inherit
-
-  # Build Bootstrapper binary
-  build-bootstrapper:
-    uses: ./.github/workflows/task-build-bootstrapper.yml
-    needs: [check-merged-today]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    secrets: inherit
-
-  # End-to-end tests
   test-end-to-end:
-    needs:
-      [check-merged-today, build-madara, build-orchestrator, build-bootstrapper]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
-    uses: ./.github/workflows/task-test-end-to-end.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-      orchestrator-binary-hash: ${{ needs.build-orchestrator.outputs.orchestrator-binary-hash }}
-      bootstrapper-binary-hash: ${{ needs.build-bootstrapper.outputs.bootstrapper-binary-hash }}
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
-    secrets: inherit
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml

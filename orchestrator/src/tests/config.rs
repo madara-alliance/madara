@@ -13,6 +13,7 @@ use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
+use crate::types::batch::AggregatorBatchWeights;
 use crate::types::constant::BLOB_LEN;
 use crate::types::params::batching::BatchingParams;
 use crate::types::params::cloud_provider::AWSCredentials;
@@ -28,6 +29,7 @@ use crate::utils::rest_client::RestClient;
 use alloy::primitives::Address;
 use axum::Router;
 use blockifier::blockifier_versioned_constants::VersionedConstants;
+use blockifier::bouncer::BouncerWeights;
 use cairo_vm::types::layout_name::LayoutName;
 use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STRK_FEE_TOKEN};
 use httpmock::MockServer;
@@ -751,6 +753,7 @@ pub(crate) fn get_env_params() -> EnvParams {
             .unwrap_or(false),
         bouncer_weights_limit: Default::default(), // Use default bouncer weights for tests
         versioned_constants,
+        aggregator_batch_weights_limit: AggregatorBatchWeights::from(&BouncerWeights::default()),
     };
 
     let instrumentation_params = OTELConfig {
