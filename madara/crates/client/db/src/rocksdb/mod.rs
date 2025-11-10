@@ -86,7 +86,7 @@ struct RocksDBStorageInner {
 
 impl Drop for RocksDBStorageInner {
     fn drop(&mut self) {
-        tracing::debug!("⏳ Gracefully closing the database...");
+        tracing::info!("⏳ Gracefully closing the database...");
         self.flush().expect("Error when flushing the database"); // flush :)
         self.db.cancel_all_background_work(/* wait */ true);
     }
@@ -191,8 +191,9 @@ impl RocksDBStorage {
             ALL_COLUMNS.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name, col.rocksdb_options(&config))),
         )?;
 
+        // TODO(prakhar, 10/11/2025): update the name of the variable
         let mut writeopts_no_wal = WriteOptions::new();
-        writeopts_no_wal.disable_wal(true);
+        writeopts_no_wal.disable_wal(true); // Disabling WAL
         let inner = Arc::new(RocksDBStorageInner { writeopts_no_wal, db, config: config.clone() });
 
         let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {

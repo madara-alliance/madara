@@ -752,7 +752,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .flush_every_n_blocks
             .is_some_and(|flush_every_n_blocks| block_number.checked_rem(flush_every_n_blocks) == Some(0))
         {
-            tracing::debug!("Flushing.");
+            tracing::info!("🌊  Flushing.");
             self.inner.db.flush().context("Periodic database flush")?;
         }
 
