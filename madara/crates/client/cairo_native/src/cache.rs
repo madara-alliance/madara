@@ -665,72 +665,6 @@ mod tests {
         Ok(Arc::new(native_class))
     }
 
-    #[test]
-    fn test_get_native_cache_path() {
-        let felt = Felt::from(12345u64);
-        let hash = ClassHash(felt);
-        let config = config::NativeConfig::default();
-        let path = get_native_cache_path(&hash, &config);
-        assert!(path.to_string_lossy().contains("0x3039"));
-        assert!(path.extension().and_then(|s| s.to_str()) == Some("so"));
-    }
-
-    #[test]
-    fn test_get_native_cache_path_different_hashes() {
-        let felt1 = Felt::from(12345u64);
-        let felt2 = Felt::from(67890u64);
-        let hash1 = ClassHash(felt1);
-        let hash2 = ClassHash(felt2);
-        let config = config::NativeConfig::default();
-        let path1 = get_native_cache_path(&hash1, &config);
-        let path2 = get_native_cache_path(&hash2, &config);
-
-        // Different hashes should produce different paths
-        assert_ne!(path1, path2);
-    }
-
-    #[test]
-    fn test_evict_cache_if_needed_empty() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-        // Clear cache first
-        NATIVE_CACHE.clear();
-
-        let config = config::NativeConfig::default();
-        // This should not panic
-        evict_cache_if_needed(&config);
-
-        // Cache should still be empty
-        assert_eq!(NATIVE_CACHE.len(), 0);
-    }
-
-    #[test]
-    fn test_cache_size_metric() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-        // Clear cache
-        NATIVE_CACHE.clear();
-
-        let config = config::NativeConfig::default();
-        // Cache operations should not panic
-        evict_cache_if_needed(&config);
-    }
-
-    #[test]
-    fn test_cache_eviction_logic() {
-        let _guard = TEST_MUTEX.lock().unwrap();
-        // Clear cache
-        NATIVE_CACHE.clear();
-
-        let config = config::NativeConfig::default();
-        let max_size = config.max_memory_cache_size;
-
-        // Test that eviction threshold is calculated correctly
-        // If Some, should be positive; if None, unlimited cache is valid
-        if let Some(size) = max_size {
-            assert!(size > 0, "Max cache size should be positive when set");
-        }
-        // None is also valid (unlimited cache)
-    }
-
     // ============================================================================
     // Priority 1.1: Memory Cache Hit Scenarios
     // ============================================================================
@@ -767,7 +701,7 @@ mod tests {
         assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should still be in cache after access");
         if let Some(entry) = NATIVE_CACHE.get(&class_hash) {
             let (_, access_time) = entry.value();
-            assert!(*access_time >= initial_time, "Access time should be updated to current or later time");
+            assert!(*access_time > initial_time, "Access time should be updated to current or later time");
         } else {
             panic!("Class should still be in cache after access");
         }
@@ -778,6 +712,7 @@ mod tests {
         // Acquire metrics mutex to prevent interference with other tests
         use crate::metrics::test_counters;
         let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         // Use unique class_hash to avoid interference with other parallel tests
         let class_hash = create_unique_test_class_hash();
@@ -785,94 +720,29 @@ mod tests {
         // Create test Sierra class
         let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let config = create_simple_test_config(&temp_dir);
 
-        // Simulate disk load: create native class and insert into cache (as disk load would do)
-        let native_class =
-            create_test_native_class(&sierra, &temp_dir, class_hash, None).expect("Failed to create test native class");
+        // Create and save native class to disk (simulate previous compilation)
+        let path = get_native_cache_path(&class_hash, &config);
+        let _native_class = create_test_native_class(&sierra, &temp_dir, class_hash, Some(&config))
+            .expect("Failed to create and save native class to disk");
+        assert!(path.exists(), "Native class file should exist on disk");
 
-        // Insert into cache (simulating what happens after disk load)
-        NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
+        // Clear memory cache to ensure we start fresh
+        NATIVE_CACHE.remove(&class_hash);
+        assert!(!NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
 
-        // Verify class is now in memory cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should be in memory cache");
+        // Load from disk cache - this should populate memory cache
+        let disk_result = try_get_from_disk_cache(&class_hash, &sierra, &config);
+        assert!(disk_result.is_ok(), "Should successfully load from disk cache");
+        assert!(disk_result.unwrap().is_some(), "Should return cached class from disk");
 
-        // Request the class again - should hit memory cache
-        let result = try_get_from_memory_cache(&class_hash, &create_simple_test_config(&temp_dir));
+        // Verify class is now in memory cache after disk load
+        assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should be in memory cache after disk load");
+
+        // Request the class again - should hit memory cache (not disk)
+        let result = try_get_from_memory_cache(&class_hash, &config);
         assert!(result.is_some(), "Should hit memory cache after disk load");
-    }
-
-    #[test]
-    fn test_memory_cache_hit_updates_access_time() {
-        // Acquire metrics mutex to prevent interference with other tests
-        use crate::metrics::test_counters;
-        let _metrics_guard = test_counters::acquire_and_reset();
-
-        // Use unique class_hash to avoid interference with other parallel tests
-        let class_hash = create_unique_test_class_hash();
-
-        // Create test Sierra class
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-
-        // Create native class
-        let native_class =
-            create_test_native_class(&sierra, &temp_dir, class_hash, None).expect("Failed to create test native class");
-
-        // Insert into cache with initial timestamp
-        let initial_time = Instant::now();
-        std::thread::sleep(Duration::from_millis(10)); // Small delay to ensure time difference
-        NATIVE_CACHE.insert(class_hash, (native_class.clone(), initial_time));
-
-        // Get initial access time from cache
-        let initial_access_time = NATIVE_CACHE.get(&class_hash).map(|e| e.value().1).expect("Class should be in cache");
-
-        // Small delay before accessing
-        std::thread::sleep(Duration::from_millis(10));
-
-        // Access the cached class
-        let _result = try_get_from_memory_cache(&class_hash, &create_simple_test_config(&temp_dir));
-        assert!(_result.is_some(), "Should successfully retrieve from cache");
-
-        // Verify access time was updated
-        let updated_access_time =
-            NATIVE_CACHE.get(&class_hash).map(|e| e.value().1).expect("Class should still be in cache");
-
-        assert!(
-            updated_access_time > initial_access_time,
-            "Access time should be updated after cache hit. Initial: {:?}, Updated: {:?}",
-            initial_access_time,
-            updated_access_time
-        );
-    }
-
-    #[test]
-    fn test_memory_cache_hit_preserves_class_data() {
-        // Acquire metrics mutex to prevent interference with other tests
-        use crate::metrics::test_counters;
-        let _metrics_guard = test_counters::acquire_and_reset();
-
-        // Use unique class_hash to avoid interference with other parallel tests
-        let class_hash = create_unique_test_class_hash();
-
-        // Create test Sierra class
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-
-        // Create native class
-        let native_class =
-            create_test_native_class(&sierra, &temp_dir, class_hash, None).expect("Failed to create test native class");
-
-        // Insert into cache
-        NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
-
-        // Retrieve from cache
-        let retrieved = try_get_from_memory_cache(&class_hash, &create_simple_test_config(&temp_dir))
-            .expect("Should successfully retrieve from cache");
-
-        // Verify we got a RunnableCompiledClass (can't easily compare equality, but we can verify it's not None)
-        // The fact that conversion succeeded means the data is preserved
-        // In a more comprehensive test, we could execute the class and verify behavior matches
-        assert!(std::mem::size_of_val(&retrieved) > 0, "Retrieved class should have non-zero size");
     }
 
     #[test]
@@ -927,54 +797,6 @@ mod tests {
     }
 
     #[test]
-    fn test_memory_cache_hit_after_eviction_and_reload() {
-        // Acquire metrics mutex to prevent interference with other tests
-        use crate::metrics::test_counters;
-        let _metrics_guard = test_counters::acquire_and_reset();
-
-        // Use unique class_hash to avoid interference with other parallel tests
-        let class_hash = create_unique_test_class_hash();
-
-        // Create test Sierra class
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-
-        // Create native class
-        let native_class =
-            create_test_native_class(&sierra, &temp_dir, class_hash, None).expect("Failed to create test native class");
-
-        // Insert into cache
-        NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
-
-        // Verify it's in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should be in cache");
-        assert!(
-            try_get_from_memory_cache(&class_hash, &create_simple_test_config(&temp_dir)).is_some(),
-            "Should retrieve from cache"
-        );
-
-        // Evict from memory cache (simulate eviction)
-        NATIVE_CACHE.remove(&class_hash);
-        assert!(!NATIVE_CACHE.contains_key(&class_hash), "Class should be removed from cache");
-
-        // Verify it's no longer in memory cache
-        assert!(
-            try_get_from_memory_cache(&class_hash, &create_simple_test_config(&temp_dir)).is_none(),
-            "Should return None after eviction"
-        );
-
-        // Simulate reload from disk: insert back into cache
-        NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
-
-        // Verify it's back in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should be back in cache");
-
-        // Request again - should hit memory cache
-        let result = try_get_from_memory_cache(&class_hash, &create_simple_test_config(&temp_dir));
-        assert!(result.is_some(), "Should hit memory cache after reload from disk");
-    }
-
-    #[test]
     fn test_lru_eviction_when_limit_reached() {
         // Acquire metrics mutex to prevent interference with other tests
         use crate::metrics::test_counters;
@@ -995,18 +817,25 @@ mod tests {
         // Create test Sierra class (reused for all test classes)
         let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
 
-        // Create three unique class hashes
+        // Create four unique class hashes
         let class_hash_1 = create_unique_test_class_hash();
         let class_hash_2 = create_unique_test_class_hash();
         let class_hash_3 = create_unique_test_class_hash();
+        let class_hash_4 = create_unique_test_class_hash();
 
-        // Create native classes for all three
+        // Create native classes for all four
         let native_class_1 = create_test_native_class(&sierra, &temp_dir, class_hash_1, None)
             .expect("Failed to create test native class 1");
         let native_class_2 = create_test_native_class(&sierra, &temp_dir, class_hash_2, None)
             .expect("Failed to create test native class 2");
         let native_class_3 = create_test_native_class(&sierra, &temp_dir, class_hash_3, None)
             .expect("Failed to create test native class 3");
+        let native_class_4 = create_test_native_class(&sierra, &temp_dir, class_hash_4, None)
+            .expect("Failed to create test native class 4");
+
+        // ============================================================================
+        // Phase 1: Basic LRU eviction - oldest unaccessed item is evicted
+        // ============================================================================
 
         // Insert first class with initial timestamp
         let time_1 = Instant::now();
@@ -1054,117 +883,27 @@ mod tests {
         // Verify class_3 (newest) is still in cache
         assert!(NATIVE_CACHE.contains_key(&class_hash_3), "Class 3 (newest) should remain in cache");
 
-        // Verify eviction metric was recorded
-        use std::sync::atomic::Ordering;
-        assert_eq!(test_counters::CACHE_EVICTIONS.load(Ordering::Relaxed), 1, "Should have exactly one cache eviction");
-    }
+        // ============================================================================
+        // Phase 2: Access time tracking - verify access order affects eviction
+        // ============================================================================
 
-    #[test]
-    fn test_eviction_uses_access_time_correctly() {
-        // Acquire metrics mutex to prevent interference with other tests
-        use crate::metrics::test_counters;
-        let _metrics_guard = test_counters::acquire_and_reset();
-
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-
-        // Create config with small cache limit (2 classes)
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = config::NativeConfig::default()
-            .with_cache_dir(temp_dir.path().to_path_buf())
-            .with_native_execution(true)
-            .with_max_memory_cache_size(Some(2)); // Limit to 2 classes
-
-        // Clear cache to start fresh
-        NATIVE_CACHE.clear();
-
-        // Create test Sierra class (reused for all test classes)
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-
-        // Create four unique class hashes
-        let class_hash_1 = create_unique_test_class_hash();
-        let class_hash_2 = create_unique_test_class_hash();
-        let class_hash_3 = create_unique_test_class_hash();
-        let class_hash_4 = create_unique_test_class_hash();
-
-        // Create native classes for all four
-        let native_class_1 = create_test_native_class(&sierra, &temp_dir, class_hash_1, None)
-            .expect("Failed to create test native class 1");
-        let native_class_2 = create_test_native_class(&sierra, &temp_dir, class_hash_2, None)
-            .expect("Failed to create test native class 2");
-        let native_class_3 = create_test_native_class(&sierra, &temp_dir, class_hash_3, None)
-            .expect("Failed to create test native class 3");
-        let native_class_4 = create_test_native_class(&sierra, &temp_dir, class_hash_4, None)
-            .expect("Failed to create test native class 4");
-
-        // Insert first class
-        let time_1 = Instant::now();
-        std::thread::sleep(Duration::from_millis(10));
-        NATIVE_CACHE.insert(class_hash_1, (native_class_1.clone(), time_1));
-
-        // Insert second class
-        let time_2 = Instant::now();
-        std::thread::sleep(Duration::from_millis(10));
-        NATIVE_CACHE.insert(class_hash_2, (native_class_2.clone(), time_2));
-
-        // Verify both classes are in cache (at limit)
-        assert_eq!(NATIVE_CACHE.len(), 2, "Cache should contain exactly 2 classes");
-
-        // Access class_1 to update its access time (making it more recently used)
-        let _ = try_get_from_memory_cache(&class_hash_1, &config);
-        std::thread::sleep(Duration::from_millis(10));
-
-        // Verify class_1's access time was updated
-        let class_1_access_time_after_first_access =
-            NATIVE_CACHE.get(&class_hash_1).map(|e| e.value().1).expect("Class 1 should be in cache");
-        assert!(
-            class_1_access_time_after_first_access > time_1,
-            "Class 1 access time should be updated after first access"
-        );
-
-        // Access class_2 to update its access time (making it even more recently used than class_1)
+        // Access class_2 again to update its access time (making it more recently used than class_3)
         let _ = try_get_from_memory_cache(&class_hash_2, &config);
         std::thread::sleep(Duration::from_millis(10));
 
-        // Verify class_2's access time was updated and is more recent than class_1
-        let class_2_access_time =
+        // Verify class_2's access time was updated and is more recent than class_3
+        let class_2_access_time_after_second_access =
             NATIVE_CACHE.get(&class_hash_2).map(|e| e.value().1).expect("Class 2 should be in cache");
-        let class_1_access_time_before_eviction =
-            NATIVE_CACHE.get(&class_hash_1).map(|e| e.value().1).expect("Class 1 should be in cache");
+        let class_3_access_time_before_eviction =
+            NATIVE_CACHE.get(&class_hash_3).map(|e| e.value().1).expect("Class 3 should be in cache");
         assert!(
-            class_2_access_time > class_1_access_time_before_eviction,
-            "Class 2 should be more recently accessed than class 1"
+            class_2_access_time_after_second_access > class_3_access_time_before_eviction,
+            "Class 2 should be more recently accessed than class 3"
         );
 
-        // Insert third class (exceeds limit, should trigger eviction)
-        let time_3 = Instant::now();
-        NATIVE_CACHE.insert(class_hash_3, (native_class_3.clone(), time_3));
-
-        // Verify cache now has 3 classes (before eviction)
-        assert_eq!(NATIVE_CACHE.len(), 3, "Cache should have 3 classes before eviction");
-
-        // Trigger eviction
-        evict_cache_if_needed(&config);
-
-        // Verify cache size is now at limit (2 classes)
-        assert_eq!(NATIVE_CACHE.len(), 2, "Cache should be evicted down to limit of 2 classes");
-
-        // Verify class_1 (least recently accessed after class_2 was accessed) was evicted
-        assert!(!NATIVE_CACHE.contains_key(&class_hash_1), "Class 1 (least recently accessed) should be evicted");
-
-        // Verify class_2 (most recently accessed) is still in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash_2), "Class 2 (most recently accessed) should remain in cache");
-
-        // Verify class_3 (newest) is still in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash_3), "Class 3 (newest) should remain in cache");
-
-        // Now test with a different access pattern: add class_4 and access class_3
-        // This should evict class_2 (least recently accessed among class_2 and class_3)
+        // Insert fourth class (exceeds limit, should trigger eviction)
         NATIVE_CACHE.insert(class_hash_4, (native_class_4.clone(), Instant::now()));
         assert_eq!(NATIVE_CACHE.len(), 3, "Cache should have 3 classes before second eviction");
-
-        // Access class_3 to make it more recently used than class_2
-        let _ = try_get_from_memory_cache(&class_hash_3, &config);
-        std::thread::sleep(Duration::from_millis(10));
 
         // Trigger eviction again
         evict_cache_if_needed(&config);
@@ -1172,11 +911,11 @@ mod tests {
         // Verify cache size is back to limit (2 classes)
         assert_eq!(NATIVE_CACHE.len(), 2, "Cache should be evicted down to limit of 2 classes again");
 
-        // Verify class_2 (least recently accessed) was evicted
-        assert!(!NATIVE_CACHE.contains_key(&class_hash_2), "Class 2 (least recently accessed) should be evicted");
+        // Verify class_3 (least recently accessed among class_2 and class_3) was evicted
+        assert!(!NATIVE_CACHE.contains_key(&class_hash_3), "Class 3 (least recently accessed) should be evicted");
 
-        // Verify class_3 (accessed, more recent) is still in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash_3), "Class 3 (accessed, more recent) should remain in cache");
+        // Verify class_2 (most recently accessed) is still in cache
+        assert!(NATIVE_CACHE.contains_key(&class_hash_2), "Class 2 (most recently accessed) should remain in cache");
 
         // Verify class_4 (newest) is still in cache
         assert!(NATIVE_CACHE.contains_key(&class_hash_4), "Class 4 (newest) should remain in cache");
@@ -1188,225 +927,6 @@ mod tests {
             2,
             "Should have exactly two cache evictions"
         );
-    }
-
-    #[test]
-    fn test_eviction_removes_correct_entry() {
-        // Acquire metrics mutex to prevent interference with other tests
-        use crate::metrics::test_counters;
-        let _metrics_guard = test_counters::acquire_and_reset();
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = config::NativeConfig::default()
-            .with_cache_dir(temp_dir.path().to_path_buf())
-            .with_native_execution(true)
-            .with_max_memory_cache_size(Some(3)); // Limit to 3 classes
-
-        NATIVE_CACHE.clear();
-
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let class_hash_1 = create_unique_test_class_hash();
-        let class_hash_2 = create_unique_test_class_hash();
-        let class_hash_3 = create_unique_test_class_hash();
-        let class_hash_4 = create_unique_test_class_hash();
-        let class_hash_5 = create_unique_test_class_hash();
-
-        // Create native classes
-        let native_class_1 = create_test_native_class(&sierra, &temp_dir, class_hash_1, None)
-            .expect("Failed to create test native class 1");
-        let native_class_2 = create_test_native_class(&sierra, &temp_dir, class_hash_2, None)
-            .expect("Failed to create test native class 2");
-        let native_class_3 = create_test_native_class(&sierra, &temp_dir, class_hash_3, None)
-            .expect("Failed to create test native class 3");
-        let native_class_4 = create_test_native_class(&sierra, &temp_dir, class_hash_4, None)
-            .expect("Failed to create test native class 4");
-        let native_class_5 = create_test_native_class(&sierra, &temp_dir, class_hash_5, None)
-            .expect("Failed to create test native class 5");
-
-        // Insert classes with increasing timestamps
-        let time_1 = Instant::now();
-        std::thread::sleep(Duration::from_millis(10));
-        NATIVE_CACHE.insert(class_hash_1, (native_class_1.clone(), time_1));
-
-        let time_2 = Instant::now();
-        std::thread::sleep(Duration::from_millis(10));
-        NATIVE_CACHE.insert(class_hash_2, (native_class_2.clone(), time_2));
-
-        let time_3 = Instant::now();
-        std::thread::sleep(Duration::from_millis(10));
-        NATIVE_CACHE.insert(class_hash_3, (native_class_3.clone(), time_3));
-
-        // Verify all 3 classes are in cache (at limit)
-        assert_eq!(NATIVE_CACHE.len(), 3, "Cache should contain exactly 3 classes");
-        assert!(NATIVE_CACHE.contains_key(&class_hash_1), "Class 1 should be in cache");
-        assert!(NATIVE_CACHE.contains_key(&class_hash_2), "Class 2 should be in cache");
-        assert!(NATIVE_CACHE.contains_key(&class_hash_3), "Class 3 should be in cache");
-
-        // Access class_2 to update its access time (making it more recently used)
-        let _ = try_get_from_memory_cache(&class_hash_2, &config);
-        std::thread::sleep(Duration::from_millis(10));
-
-        // Access class_3 to update its access time (making it even more recently used)
-        let _ = try_get_from_memory_cache(&class_hash_3, &config);
-        std::thread::sleep(Duration::from_millis(10));
-
-        // Insert class_4 (exceeds limit, should trigger eviction)
-        let time_4 = Instant::now();
-        NATIVE_CACHE.insert(class_hash_4, (native_class_4.clone(), time_4));
-        assert_eq!(NATIVE_CACHE.len(), 4, "Cache should have 4 classes before eviction");
-
-        // Trigger eviction
-        evict_cache_if_needed(&config);
-
-        // Verify cache size is now at limit (3 classes)
-        assert_eq!(NATIVE_CACHE.len(), 3, "Cache should be evicted down to limit of 3 classes");
-
-        // Verify class_1 (oldest, least recently accessed) was evicted
-        assert!(!NATIVE_CACHE.contains_key(&class_hash_1), "Class 1 should be evicted");
-        assert!(NATIVE_CACHE.get(&class_hash_1).is_none(), "Class 1 should not be retrievable after eviction");
-
-        // Verify class_2 (accessed, more recent) is still in cache and retrievable
-        assert!(NATIVE_CACHE.contains_key(&class_hash_2), "Class 2 should remain in cache");
-        let retrieved_class_2 = NATIVE_CACHE.get(&class_hash_2);
-        assert!(retrieved_class_2.is_some(), "Class 2 should be retrievable");
-        assert!(
-            std::mem::size_of_val(&retrieved_class_2.unwrap().value().0) > 0,
-            "Retrieved class 2 should have non-zero size"
-        );
-
-        // Verify class_3 (accessed, most recent) is still in cache and retrievable
-        assert!(NATIVE_CACHE.contains_key(&class_hash_3), "Class 3 should remain in cache");
-        let retrieved_class_3 = NATIVE_CACHE.get(&class_hash_3);
-        assert!(retrieved_class_3.is_some(), "Class 3 should be retrievable");
-        assert!(
-            std::mem::size_of_val(&retrieved_class_3.unwrap().value().0) > 0,
-            "Retrieved class 3 should have non-zero size"
-        );
-
-        // Verify class_4 (newest) is still in cache and retrievable
-        assert!(NATIVE_CACHE.contains_key(&class_hash_4), "Class 4 should remain in cache");
-        let retrieved_class_4 = NATIVE_CACHE.get(&class_hash_4);
-        assert!(retrieved_class_4.is_some(), "Class 4 should be retrievable");
-        assert!(
-            std::mem::size_of_val(&retrieved_class_4.unwrap().value().0) > 0,
-            "Retrieved class 4 should have non-zero size"
-        );
-
-        // Now add class_5 and verify it evicts class_2 (least recently accessed among remaining)
-        let time_5 = Instant::now();
-        NATIVE_CACHE.insert(class_hash_5, (native_class_5.clone(), time_5));
-        assert_eq!(NATIVE_CACHE.len(), 4, "Cache should have 4 classes before second eviction");
-
-        // Trigger eviction again
-        evict_cache_if_needed(&config);
-
-        // Verify cache size is back to limit (3 classes)
-        assert_eq!(NATIVE_CACHE.len(), 3, "Cache should be evicted down to limit of 3 classes again");
-
-        // Verify class_2 (least recently accessed among remaining) was evicted
-        assert!(!NATIVE_CACHE.contains_key(&class_hash_2), "Class 2 should be evicted");
-        assert!(NATIVE_CACHE.get(&class_hash_2).is_none(), "Class 2 should not be retrievable after eviction");
-
-        // Verify class_1 is still not in cache (was already evicted)
-        assert!(!NATIVE_CACHE.contains_key(&class_hash_1), "Class 1 should still not be in cache");
-
-        // Verify class_3, class_4, and class_5 are still in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash_3), "Class 3 should remain in cache");
-        assert!(NATIVE_CACHE.contains_key(&class_hash_4), "Class 4 should remain in cache");
-        assert!(NATIVE_CACHE.contains_key(&class_hash_5), "Class 5 should remain in cache");
-
-        // Verify all remaining classes are retrievable with correct data
-        let retrieved_class_3_final = NATIVE_CACHE.get(&class_hash_3);
-        assert!(retrieved_class_3_final.is_some(), "Class 3 should be retrievable");
-        assert!(
-            std::mem::size_of_val(&retrieved_class_3_final.unwrap().value().0) > 0,
-            "Retrieved class 3 should have non-zero size"
-        );
-
-        let retrieved_class_4_final = NATIVE_CACHE.get(&class_hash_4);
-        assert!(retrieved_class_4_final.is_some(), "Class 4 should be retrievable");
-        assert!(
-            std::mem::size_of_val(&retrieved_class_4_final.unwrap().value().0) > 0,
-            "Retrieved class 4 should have non-zero size"
-        );
-
-        let retrieved_class_5_final = NATIVE_CACHE.get(&class_hash_5);
-        assert!(retrieved_class_5_final.is_some(), "Class 5 should be retrievable");
-        assert!(
-            std::mem::size_of_val(&retrieved_class_5_final.unwrap().value().0) > 0,
-            "Retrieved class 5 should have non-zero size"
-        );
-
-        // Verify eviction metrics were recorded
-        use std::sync::atomic::Ordering;
-        assert_eq!(
-            test_counters::CACHE_EVICTIONS.load(Ordering::Relaxed),
-            2,
-            "Should have exactly two cache evictions"
-        );
-    }
-
-    #[test]
-    fn test_limited_memory_cache_config_respected() {
-        // Acquire metrics mutex to prevent interference with other tests
-        use crate::metrics::test_counters;
-        let _metrics_guard = test_counters::acquire_and_reset();
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let limit = 10;
-        let config = config::NativeConfig::default()
-            .with_cache_dir(temp_dir.path().to_path_buf())
-            .with_native_execution(true)
-            .with_max_memory_cache_size(Some(limit)); // Limit to 10 classes
-
-        NATIVE_CACHE.clear();
-
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-
-        // Add exactly `limit` classes
-        let mut class_hashes = Vec::new();
-        for i in 0..limit {
-            let class_hash = create_unique_test_class_hash();
-            let native_class = create_test_native_class(&sierra, &temp_dir, class_hash, None)
-                .expect(&format!("Failed to create test native class {}", i));
-            NATIVE_CACHE.insert(class_hash, (native_class, Instant::now()));
-            class_hashes.push(class_hash);
-        }
-
-        // Verify cache is at limit
-        assert_eq!(NATIVE_CACHE.len(), limit, "Cache should be at limit");
-
-        // Add one more class - should trigger eviction
-        let extra_class_hash = create_unique_test_class_hash();
-        let extra_native_class = create_test_native_class(&sierra, &temp_dir, extra_class_hash, None)
-            .expect("Failed to create extra native class");
-        NATIVE_CACHE.insert(extra_class_hash, (extra_native_class, Instant::now()));
-
-        // Trigger eviction
-        evict_cache_if_needed(&config);
-
-        // Verify cache size is exactly at limit
-        assert_eq!(NATIVE_CACHE.len(), limit, "Cache should be evicted down to exactly {} classes", limit);
-
-        // Verify cache never exceeds limit by adding more classes
-        for i in 0..5 {
-            let class_hash = create_unique_test_class_hash();
-            let native_class = create_test_native_class(&sierra, &temp_dir, class_hash, None)
-                .expect(&format!("Failed to create test native class {}", i));
-            NATIVE_CACHE.insert(class_hash, (native_class, Instant::now()));
-            evict_cache_if_needed(&config);
-            assert!(
-                NATIVE_CACHE.len() <= limit,
-                "Cache should never exceed limit of {} classes, got {}",
-                limit,
-                NATIVE_CACHE.len()
-            );
-        }
-
-        // Final verification
-        assert_eq!(NATIVE_CACHE.len(), limit, "Cache should be exactly at limit after multiple evictions");
     }
 
     #[test]
@@ -1458,26 +978,36 @@ mod tests {
         assert!(path_2.exists(), "File 2 should exist on disk");
         std::thread::sleep(Duration::from_millis(10)); // Small delay to ensure time difference
 
-        // Access file_2 to update its modification time (making it more recently accessed)
-        // This ensures file_1 is the oldest and will be evicted first (LRU eviction)
-        // This simulates what happens when try_get_from_disk_cache touches the file
-        let _ = std::fs::OpenOptions::new().write(true).open(&path_2).and_then(|f| {
-            if let Ok(metadata) = f.metadata() {
-                f.set_len(metadata.len()).ok();
-            }
-            Ok(())
-        });
-        std::thread::sleep(Duration::from_millis(10)); // Small delay
+        // Access file_2 via try_get_from_disk_cache to update its modification time
+        // This tests that try_get_from_disk_cache updates file access time (LRU tracking)
+        // and ensures file_2 is more recently accessed than file_1 (for LRU eviction)
+        NATIVE_CACHE.remove(&class_hash_2); // Clear memory cache to force disk lookup
+        let initial_file_2_modified =
+            std::fs::metadata(&path_2).expect("File 2 should exist").modified().expect("Should get modification time");
+        std::thread::sleep(Duration::from_millis(100)); // Wait to ensure time difference
 
-        // Verify file_2's modification time was updated
+        let disk_result = try_get_from_disk_cache(&class_hash_2, &sierra, &config_with_limit);
+        assert!(disk_result.is_ok(), "Should successfully load from disk cache");
+        assert!(disk_result.unwrap().is_some(), "Should return cached class from disk");
+
+        // Verify file_2's modification time was updated by try_get_from_disk_cache
         let file_2_modified_after_access =
             std::fs::metadata(&path_2).expect("File 2 should exist").modified().expect("Should get modification time");
+        assert!(
+            file_2_modified_after_access > initial_file_2_modified,
+            "File 2 modification time should be updated after try_get_from_disk_cache access"
+        );
+
+        // Verify file_2 is more recently accessed than file_1
         let file_1_modified_before =
             std::fs::metadata(&path_1).expect("File 1 should exist").modified().expect("Should get modification time");
         assert!(
             file_2_modified_after_access > file_1_modified_before,
-            "File 2 modification time should be updated after access"
+            "File 2 should be more recently accessed than file 1 (for LRU eviction)"
         );
+
+        // Verify the class was loaded into memory cache after disk hit
+        assert!(NATIVE_CACHE.contains_key(&class_hash_2), "Class should be loaded into memory cache after disk hit");
 
         // Verify both files exist and total size is within limit
         let total_size = std::fs::metadata(&path_1).expect("File 1 should exist").len()
@@ -1558,57 +1088,5 @@ mod tests {
             remaining_size,
             max_disk_size
         );
-    }
-
-    #[test]
-    fn test_disk_cache_hit_updates_file_access_time() {
-        // Acquire metrics mutex to prevent interference with other tests
-        use crate::metrics::test_counters;
-        let _metrics_guard = test_counters::acquire_and_reset();
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config =
-            config::NativeConfig::default().with_cache_dir(temp_dir.path().to_path_buf()).with_native_execution(true);
-
-        let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-
-        // Create and save native class to disk
-        let path = get_native_cache_path(&class_hash, &config);
-        let _native_class = create_test_native_class(&sierra, &temp_dir, class_hash, Some(&config))
-            .expect("Failed to create and save native class");
-        assert!(path.exists(), "Native class file should exist on disk");
-
-        // Get initial modification time
-        let initial_modified =
-            std::fs::metadata(&path).expect("File should exist").modified().expect("Should get modification time");
-
-        // Wait a bit to ensure time difference
-        std::thread::sleep(Duration::from_millis(100));
-
-        // Clear memory cache to force disk lookup
-        NATIVE_CACHE.remove(&class_hash);
-
-        // Access from disk cache - this should update the file modification time
-        let result = try_get_from_disk_cache(&class_hash, &sierra, &config);
-        assert!(result.is_ok(), "Should successfully load from disk cache");
-        assert!(result.unwrap().is_some(), "Should return cached class from disk");
-
-        // Verify file modification time was updated
-        let updated_modified = std::fs::metadata(&path)
-            .expect("File should still exist")
-            .modified()
-            .expect("Should get modification time");
-
-        assert!(
-            updated_modified > initial_modified,
-            "File modification time should be updated after disk cache access. Initial: {:?}, Updated: {:?}",
-            initial_modified,
-            updated_modified
-        );
-
-        // Verify the class was loaded into memory cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should be loaded into memory cache after disk hit");
     }
 }

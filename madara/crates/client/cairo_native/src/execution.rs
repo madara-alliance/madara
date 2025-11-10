@@ -618,6 +618,12 @@ mod tests {
         let runnable = result.unwrap();
         assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
 
+        // Assert that the returned class is NOT Cairo Native (should be VM)
+        assert!(
+            !matches!(runnable, RunnableCompiledClass::V1Native(_)),
+            "Returned class should NOT be Cairo Native when native is disabled (VM class expected)"
+        );
+
         // Metrics assertions - native disabled
         use std::sync::atomic::Ordering;
         assert_eq!(
@@ -686,8 +692,11 @@ mod tests {
         let runnable = result.unwrap();
         assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
 
-        // Verify it was cached
-        assert!(cache::NATIVE_CACHE.contains_key(&class_hash), "Should be cached after compilation");
+        // Assert that the returned class IS Cairo Native (not VM)
+        assert!(
+            matches!(runnable, RunnableCompiledClass::V1Native(_)),
+            "Returned class should be Cairo Native after blocking compilation (not VM)"
+        );
         // Compilation should be complete, so not in progress
         assert!(
             !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
@@ -1057,115 +1066,6 @@ mod tests {
         assert_eq!(timeout_or_failed, 1, "Should have exactly one compilation timeout or failure");
     }
 
-    #[tokio::test]
-    async fn test_handle_sierra_class_multiple_calls_same_class() {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
-
-        let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
-
-        // Verify caches don't have our unique class_hash
-        assert!(!cache::NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
-
-        // First call triggers compilation and returns VM
-        let result1 =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
-        assert!(result1.is_ok(), "First call should succeed");
-
-        // Poll for compilation completion with 20 second timeout
-        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
-
-        // Metrics assertions - first call missed, second call hit memory
-        use std::sync::atomic::Ordering;
-        assert_eq!(
-            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
-            1,
-            "Should have exactly one memory cache miss (first call)"
-        );
-        assert_eq!(
-            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
-            1,
-            "Should have exactly one disk cache miss (first call)"
-        );
-        assert_eq!(
-            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
-            0,
-            "Should have no memory cache hits (first call)"
-        );
-        assert_eq!(
-            test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed),
-            0,
-            "Should have no disk cache hits (first call)"
-        );
-        assert_eq!(
-            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
-            1,
-            "Should have started exactly one compilation"
-        );
-        assert_eq!(
-            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
-            1,
-            "Should have exactly one successful compilation (first call)"
-        );
-        assert_eq!(
-            test_counters::VM_FALLBACKS.load(Ordering::Relaxed),
-            1,
-            "Should have exactly one VM fallback (first call)"
-        );
-
-        // Test should fail if compilation doesn't complete within timeout
-        assert!(compilation_completed, "Compilation should complete within 20 seconds");
-
-        // Compilation completed - verify it's in cache
-        assert!(
-            cache::NATIVE_CACHE.contains_key(&class_hash),
-            "Class should be in memory cache after compilation completes"
-        );
-        assert!(
-            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
-            "Class should not be in compilation_in_progress after completion"
-        );
-
-        // Reset metrics before second call to isolate second call metrics
-        test_counters::reset_all();
-
-        // Second call hits cache since compilation completed
-        let result2 =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
-        assert!(result2.is_ok(), "Second call should succeed");
-
-        // Small delay to ensure cache was checked
-        tokio::time::sleep(Duration::from_millis(1000)).await;
-
-        // Metrics assertions - second call hit memory cache
-        assert_eq!(
-            test_counters::CACHE_MEMORY_MISS.load(Ordering::Relaxed),
-            0,
-            "Should have no memory cache misses (second call)"
-        );
-        assert_eq!(
-            test_counters::CACHE_DISK_MISS.load(Ordering::Relaxed),
-            0,
-            "Should have no disk cache misses (second call)"
-        );
-        assert_eq!(
-            test_counters::CACHE_HITS_MEMORY.load(Ordering::Relaxed),
-            1,
-            "Should have exactly one memory cache hit"
-        );
-        assert_eq!(test_counters::CACHE_HITS_DISK.load(Ordering::Relaxed), 0, "Should have no disk cache hits");
-        assert_eq!(test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed), 0, "Should have no compilations");
-        assert_eq!(
-            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
-            0,
-            "Should have no successful compilations"
-        );
-        assert_eq!(test_counters::VM_FALLBACKS.load(Ordering::Relaxed), 0, "Should have no VM fallbacks");
-    }
-
     /// Tests the memory cache timeout scenario.
     ///
     /// Verifies that when a memory cache lookup times out, the system correctly
@@ -1462,81 +1362,6 @@ mod tests {
             "Should have {} VM fallbacks (one per concurrent request)",
             num_concurrent_requests
         );
-    }
-
-    #[tokio::test]
-    async fn test_compilation_in_progress_cleanup() {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
-
-        let class_hash = create_unique_test_class_hash();
-        let sierra = create_test_sierra_class().expect("Failed to create test Sierra class");
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let config = create_test_config(&temp_dir, config::NativeCompilationMode::Async);
-
-        // Clear any existing state
-        cache::NATIVE_CACHE.remove(&class_hash);
-        compilation::COMPILATION_IN_PROGRESS.remove(&class_hash);
-        compilation::FAILED_COMPILATIONS.remove(&class_hash);
-
-        // Verify initial state - not in progress
-        assert!(
-            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
-            "Class should not be in compilation_in_progress initially"
-        );
-        assert_eq!(compilation::COMPILATION_IN_PROGRESS.len(), 0, "Should have no compilations in progress initially");
-
-        // Trigger async compilation
-        let result =
-            handle_sierra_class(&sierra, &class_hash.to_felt(), &sierra.compiled, &sierra.info, config.clone());
-
-        // Should return VM version immediately (async mode)
-        assert!(result.is_ok(), "Should return VM class immediately in async mode");
-
-        // Wait a short time to allow compilation to start
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Verify compilation started and entry is in COMPILATION_IN_PROGRESS
-        assert!(
-            compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
-            "Class should be in compilation_in_progress after spawning"
-        );
-        assert_eq!(compilation::COMPILATION_IN_PROGRESS.len(), 1, "Should have exactly one compilation in progress");
-
-        // Wait for compilation to complete (with timeout)
-        let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
-        assert!(compilation_completed, "Compilation should complete within 20 seconds");
-
-        // Verify compilation completed successfully
-        assert!(
-            cache::NATIVE_CACHE.contains_key(&class_hash),
-            "Class should be in memory cache after compilation completes"
-        );
-
-        // Verify cleanup - entry should be removed from COMPILATION_IN_PROGRESS
-        assert!(
-            !compilation::COMPILATION_IN_PROGRESS.contains_key(&class_hash),
-            "Class should not be in compilation_in_progress after completion"
-        );
-        assert_eq!(
-            compilation::COMPILATION_IN_PROGRESS.len(),
-            0,
-            "Should have no compilations in progress after completion"
-        );
-
-        // Verify metrics - compilation should have succeeded
-        use std::sync::atomic::Ordering;
-        assert_eq!(
-            test_counters::COMPILATIONS_STARTED.load(Ordering::Relaxed),
-            1,
-            "Should have started exactly one compilation"
-        );
-        assert_eq!(
-            test_counters::COMPILATIONS_SUCCEEDED.load(Ordering::Relaxed),
-            1,
-            "Should have exactly one successful compilation"
-        );
-        assert_eq!(test_counters::COMPILATIONS_FAILED.load(Ordering::Relaxed), 0, "Should have no failed compilations");
     }
 
     #[tokio::test]

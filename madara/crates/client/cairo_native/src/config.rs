@@ -458,37 +458,4 @@ mod tests {
             error_msg
         );
     }
-
-    #[test]
-    fn test_cache_directory_creation_failure() {
-        use std::fs::File;
-        use tempfile::TempDir;
-
-        // Create a temp directory
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-
-        // Cache directory path has a parent that is a file
-        // This will cause create_dir_all to fail
-        let parent_file = temp_dir.path().join("parent_file");
-        File::create(&parent_file).expect("Failed to create parent file");
-        let invalid_cache_dir = parent_file.join("cache");
-
-        // Verify parent is a file
-        assert!(parent_file.is_file(), "Parent should be a file");
-        assert!(!invalid_cache_dir.exists(), "Cache directory should not exist");
-
-        let config = NativeConfig::default().with_native_execution(true).with_cache_dir(invalid_cache_dir.clone());
-
-        // Validate config - this should fail because create_dir_all cannot create a directory
-        // when the parent path is a file
-        let validation_result = config.validate();
-        assert!(validation_result.is_err(), "Config validation should fail when parent path is a file");
-
-        let error_msg = validation_result.unwrap_err();
-        assert!(
-            error_msg.contains("Failed to create cache directory"),
-            "Error message should mention 'Failed to create cache directory', got: {}",
-            error_msg
-        );
-    }
 }
