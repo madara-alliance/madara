@@ -462,7 +462,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         *self.latest_l1_confirmed.borrow()
     }
 
-    fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
+    pub fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
         self.chain_tip.borrow().as_preconfirmed().cloned()
     }
 
@@ -530,6 +530,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &new_tip
         } else {
             // Remove the pre-confirmed case: we save the parent confirmed in that case.
+            // Log when we're dropping a preconfirmed block
+            if let ChainTip::Preconfirmed(preconfirmed_block) = &new_tip {
+                tracing::info!(
+                    "⚠️  Preconfirmed block #{} NOT saved to database. Block will be lost on restart.",
+                    preconfirmed_block.header.block_number
+                );
+            }
             &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
         };
         // Write to db if needed.
@@ -751,6 +758,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
     /// parts.
     pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
+
+        // Update snapshots for storage proofs. (TODO (heemank 10/11/2025): decouple this logic)
+        self.inner.db.on_new_confirmed_head(block_number)?;
+
+        // Advance chain & clear preconfirmed atomically
+        self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
+
         // Also flush based on the configured interval if set
         if self
             .inner
@@ -761,11 +775,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             tracing::debug!("Flushing.");
             self.inner.db.flush().context("Periodic database flush")?;
         }
-
-        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
-
-        // Advance chain & clear preconfirmed atomically
-        self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
 
         Ok(())
     }

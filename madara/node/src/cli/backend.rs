@@ -51,7 +51,7 @@ pub struct BackendParams {
     pub backup_dir: Option<PathBuf>,
 
     /// Disable saving the preconfirmed block to database. This may speed up block production a bit.
-    #[clap(env = "MADARA_SAVE_PRECONFIRMED", long)]
+    #[clap(env = "MADARA_NO_SAVE_PRECONFIRMED", long)]
     #[serde(default)]
     pub no_save_preconfirmed: bool,
 

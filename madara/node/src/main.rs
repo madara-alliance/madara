@@ -234,6 +234,14 @@ async fn main() -> anyhow::Result<()> {
     // Database
 
     tracing::info!("💾 Opening database at: {}", run_cmd.backend_params.base_path.display());
+
+    // Log preconfirmed block persistence configuration
+    if run_cmd.backend_params.no_save_preconfirmed {
+        tracing::info!("⚠️  Preconfirmed blocks will NOT be saved to database & lost on restart!");
+    } else {
+        tracing::info!("💾 Preconfirmed blocks will be saved to database");
+    }
+
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
         chain_config.clone(),
@@ -243,7 +251,7 @@ async fn main() -> anyhow::Result<()> {
     .context("Starting madara backend")?;
 
     let chain_tip = backend.db.get_chain_tip().expect("Chain tip should have been fetched.");
-    tracing::info!("💼 Starting chain with block: {:?}", chain_tip);
+    tracing::info!("💼 Starting chain with block: {}", chain_tip);
 
     let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 
@@ -325,6 +333,15 @@ async fn main() -> anyhow::Result<()> {
     let gateway_client = Arc::new(provider);
 
     // Block production
+
+    // Log preconfirmed block restart behavior configuration
+    if run_cmd.is_sequencer() {
+        if run_cmd.block_production_params.close_preconfirmed_block_upon_restart {
+            tracing::info!("🔄 Preconfirmed blocks will be closed on restart");
+        } else {
+            tracing::info!("🔄 Preconfirmed blocks will be resumed on restart");
+        }
+    }
 
     let service_block_production = BlockProductionService::new(
         &run_cmd.block_production_params,

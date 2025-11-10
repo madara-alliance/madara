@@ -297,9 +297,17 @@ impl BlockProductionTask {
     ///
     /// This avoids re-executing transaction by re-adding them to the [Mempool].
     async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
-        if self.backend.has_preconfirmed_block() {
+        if let Some(preconfirmed_block) = self.backend.preconfirmed_block() {
+            // Get the preconfirmed block info for logging
+            let block_number = preconfirmed_block.header.block_number;
+            let tx_count = preconfirmed_block.transaction_count();
+
             if self.close_preconfirmed_block_upon_restart {
-                tracing::info!("Closing preconfirmed block on startup");
+                tracing::info!(
+                    "📦 Preconfirmed block #{} found with {} transactions. Closing it.",
+                    block_number,
+                    tx_count
+                );
                 let backend = self.backend.clone();
                 global_spawn_rayon_task(move || {
                     backend
@@ -310,8 +318,13 @@ impl BlockProductionTask {
                         .context("Closing preconfirmed block on startup")
                 })
                 .await?;
+                tracing::info!("✅ Preconfirmed block #{} closed successfully on startup.", block_number);
             } else {
-                tracing::info!("Keeping preconfirmed block on startup");
+                tracing::info!(
+                    "📦 Preconfirmed block #{} found with {} transactions. Resuming block production.",
+                    block_number,
+                    tx_count
+                );
             }
         }
         Ok(())
