@@ -1,4 +1,5 @@
 use strum::EnumIter;
+use strum_macros::Display;
 
 use super::constants::{
     EIC_CASM, EIC_SIERRA, ERC20_CASM, ERC20_SIERRA, MADARA_FACTORY_CASM, MADARA_FACTORY_SIERRA, TOKEN_BRIDGE_CASM,
@@ -6,7 +7,7 @@ use super::constants::{
 };
 
 // Types for Map keys
-#[derive(EnumIter, Debug, Copy, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(EnumIter, Debug, Display, Copy, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MadaraClass {
     TokenBridge,
