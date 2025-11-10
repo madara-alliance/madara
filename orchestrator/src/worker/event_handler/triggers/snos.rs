@@ -121,7 +121,7 @@ pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u6
     let block = provider
         .get_block_with_tx_hashes(BlockId::Number(block_number))
         .await
-        .wrap_err(format!("Failed to fetch block {} from sequencer", block_number))?;
+        .map_err(|e| eyre!("Failed to fetch block {} from sequencer: {}", block_number, e))?;
 
     let starknet_version = match block {
         starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,
