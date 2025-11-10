@@ -248,6 +248,7 @@ pub struct BlockProductionTask {
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
+    close_preconfirmed_block_upon_restart: bool,
 }
 
 impl BlockProductionTask {
@@ -256,7 +257,8 @@ impl BlockProductionTask {
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
-        no_charge_fee: bool
+        no_charge_fee: bool,
+        close_preconfirmed_block_upon_restart: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -270,6 +272,7 @@ impl BlockProductionTask {
             executor_commands_recv: Some(recv),
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
+            close_preconfirmed_block_upon_restart,
         }
     }
 
@@ -295,17 +298,21 @@ impl BlockProductionTask {
     /// This avoids re-executing transaction by re-adding them to the [Mempool].
     async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
         if self.backend.has_preconfirmed_block() {
-            tracing::debug!("Close pending block on startup.");
-            let backend = self.backend.clone();
-            global_spawn_rayon_task(move || {
-                backend
-                    .write_access()
-                    .close_preconfirmed(
-                        /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
-                    )
-                    .context("Closing preconfirmed block on startup")
-            })
-            .await?;
+            if self.close_preconfirmed_block_upon_restart {
+                tracing::info!("Closing preconfirmed block on startup");
+                let backend = self.backend.clone();
+                global_spawn_rayon_task(move || {
+                    backend
+                        .write_access()
+                        .close_preconfirmed(
+                            /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
+                        )
+                        .context("Closing preconfirmed block on startup")
+                })
+                .await?;
+            } else {
+                tracing::info!("Keeping preconfirmed block on startup");
+            }
         }
         Ok(())
     }
@@ -544,6 +551,7 @@ pub(crate) mod tests {
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
                 true,
+                true, // close_preconfirmed_block_upon_restart - default to true for tests
             )
         }
     }

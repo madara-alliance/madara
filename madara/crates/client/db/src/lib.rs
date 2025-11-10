@@ -399,6 +399,12 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         *guard = Some(custom_header);
     }
 
+    /// Flush all pending writes to disk. Critical for databases with WAL disabled.
+    /// Must be called before shutdown to ensure data persistence.
+    pub fn flush(&self) -> Result<()> {
+        self.db.flush()
+    }
+
 }
 
 impl MadaraBackend<RocksDBStorage> {

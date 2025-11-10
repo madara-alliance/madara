@@ -86,8 +86,8 @@ struct RocksDBStorageInner {
 
 impl Drop for RocksDBStorageInner {
     fn drop(&mut self) {
-        tracing::debug!("⏳ Gracefully closing the database...");
-        self.flush().expect("Error when flushing the database"); // flush :)
+        tracing::debug!("Gracefully closing the database");
+        self.flush().expect("Error when flushing the database");
         self.db.cancel_all_background_work(/* wait */ true);
     }
 }
@@ -208,6 +208,12 @@ impl RocksDBStorage {
             metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         })
+    }
+
+    /// Flush all pending writes to disk. This is important when WAL is disabled.
+    /// Should be called before shutdown to ensure data persistence.
+    pub fn flush(&self) -> Result<()> {
+        self.inner.flush()
     }
 }
 

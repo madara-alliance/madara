@@ -443,5 +443,14 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::Telemetry);
     }
 
-    app.start().await
+    let result = app.start().await;
+
+    // Critical: Flush database before exit to ensure data persistence (WAL is disabled)
+    if let Err(e) = backend.flush() {
+        tracing::error!("Failed to flush database during shutdown: {}", e);
+    } else {
+        tracing::debug!("🔍 DEBUG: Database flush completed successfully");
+    }
+
+    result
 }
