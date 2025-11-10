@@ -42,8 +42,8 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
-use blockifier::blockifier_versioned_constants::VersionedConstants;
 use crate::types::batch::AggregatorBatchWeights;
+use blockifier::blockifier_versioned_constants::VersionedConstants;
 use blockifier::bouncer::BouncerWeights;
 
 /// Starknet versions supported by the service
@@ -235,7 +235,6 @@ impl Config {
             bouncer_weights_limit: Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?,
             versioned_constants,
             aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
-            bouncer_weights_limit,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
