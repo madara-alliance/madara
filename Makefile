@@ -73,6 +73,7 @@ Targets:
   [ BUILDING ]
 
   - build-madara                  Build Madara with Cairo 0 environment setup
+  - build-orchestrator            Build Orchestrator with Cairo 0 environment setup
 
   [ CODE QUALITY ]
 
