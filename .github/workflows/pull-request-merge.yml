@@ -12,48 +12,19 @@ jobs:
   # ========================================================================= #
 
   build-nightly-and-publish-madara:
-    uses: ./.github/workflows/task-build-nightly-and-publish.yml
-    with:
-      image-name: madara
-      image-file: ./madara/Dockerfile
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   # test-hive:
-  #   needs: [build-nightly]
-  #   uses: ./.github/workflows/task-test-hive.yml
-  #   with:
-  #     nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
-  #   secrets: inherit
+  #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
 
   build-nightly-and-publish-orchestrator:
-    uses: ./.github/workflows/task-build-nightly-and-publish.yml
-    with:
-      image-name: orchestrator
-      image-file: ./orchestrator/Dockerfile
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
-  # Deprecating bootstrapper V1
   build-nightly-and-publish-bootstrapper:
-    uses: ./.github/workflows/task-build-nightly-and-publish.yml
-    with:
-      image-name: bootstrapper
-      image-file: ./bootstrapper/Dockerfile
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   # ========================================================================= #
   #                                MERGE QUEUE                                #
@@ -66,10 +37,6 @@ jobs:
   # Run coverage tests (Orchestrator)
   test-orchestrator:
     uses: ./.github/workflows/task-do-nothing-test-orchestrator.yml
-
-  # Run e2e tests (Orchestrator)
-  # e2e-orchestrator:
-  #   uses: ./.github/workflows/task-do-nothing-e2e-orchestrator.yml
 
   # Run coverage tests (Bootstrapper)
   test-bootstrapper:
@@ -87,28 +54,6 @@ jobs:
   #                                E2E Test                                   #
   # ========================================================================= #
 
-  # Build Madara binary
-  build-madara:
-    uses: ./.github/workflows/task-build-madara.yml
-    secrets: inherit
-
-  # Build Orchestrator binary
-  build-orchestrator:
-    uses: ./.github/workflows/task-build-orchestrator.yml
-    secrets: inherit
-
-  # Build Bootstrapper binary
-  build-bootstrapper:
-    uses: ./.github/workflows/task-build-bootstrapper.yml
-    secrets: inherit
-
-  # End-to-end tests
   test-end-to-end:
-    needs: [build-madara, build-orchestrator, build-bootstrapper]
-    uses: ./.github/workflows/task-test-end-to-end.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-      orchestrator-binary-hash: ${{ needs.build-orchestrator.outputs.orchestrator-binary-hash }}
-      bootstrapper-binary-hash: ${{ needs.build-bootstrapper.outputs.bootstrapper-binary-hash }}
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
-    secrets: inherit
+    if: github.event.pull_request.draft == false
+    uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml

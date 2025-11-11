@@ -1,16 +1,20 @@
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::lock::{LockResult, LockValue, MockLockClient};
 use crate::core::client::storage::MockStorageClient;
-use crate::tests::config::TestConfigBuilder;
+use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::types::batch::SnosBatchStatus;
 use crate::worker::event_handler::triggers::JobTrigger;
+use blockifier::bouncer::BouncerWeights;
 use bytes::Bytes;
 use httpmock::MockServer;
 use num_traits::FromPrimitive;
 use orchestrator_prover_client_interface::MockProverClient;
+use orchestrator_utils::layer::Layer;
 use rstest::rstest;
 use serde_json::json;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use starknet_api::execution_resources::GasAmount;
 use starknet_core::types::{Felt, MaybePreConfirmedStateUpdate, StateDiff, StateUpdate};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
@@ -25,6 +29,9 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     let mut database = MockDatabaseClient::new();
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
+
+    let provider_url = format!("http://localhost:{}", server.port());
+
     let start_block;
     let end_block;
 
@@ -54,7 +61,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
 
         let existing_snos_batch = crate::types::batch::SnosBatch {
             snos_batch_id: 1,
-            aggregator_batch_index: 1,
+            aggregator_batch_index: Some(1),
             start_block: 0,
             end_block: 3,
             num_blocks: 4,
@@ -139,14 +146,22 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
 
     let mut prover_client = MockProverClient::new();
     if !has_existing_batch {
-        prover_client.expect_submit_task().times(1).returning(|_| Ok("bucket_id".to_string()));
+        prover_client.expect_submit_task().times(2).returning(|_| Ok("bucket_id".to_string()));
     }
+
+    // Mock builtin weights calls for each block
+    let builtin_weights = get_dummy_builtin_weights();
+    server.mock(|when, then| {
+        when.path("/feeder_gateway/get_block_bouncer_weights");
+        then.status(200).body(serde_json::to_vec(&json!({"bouncer_weights": builtin_weights})).unwrap());
+    });
 
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
-        .configure_database(database.into())
-        .configure_storage_client(storage.into())
+        .configure_madara_feeder_gateway_url(&provider_url)
         .configure_prover_client(prover_client.into())
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
         .configure_lock_client(lock.into())
         .build()
         .await;
@@ -167,6 +182,8 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let mut storage = MockStorageClient::new();
     let mut lock = MockLockClient::new();
 
+    let provider_url = format!("http://localhost:{}", server.port());
+
     let existing_aggregator_batch = crate::types::batch::AggregatorBatch {
         index: 1,
         start_block: 0,
@@ -181,7 +198,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
 
     let existing_snos_batch = crate::types::batch::SnosBatch {
         snos_batch_id: 1,
-        aggregator_batch_index: 1,
+        aggregator_batch_index: Some(1),
         start_block: 0,
         end_block: 3,
         num_blocks: 4,
@@ -302,8 +319,16 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let mut prover_client = MockProverClient::new();
     prover_client.expect_submit_task().times(2).returning(|_| Ok("new_bucket_id".to_string()));
 
+    // Mock builtin weights calls for each block
+    let builtin_weights = get_dummy_builtin_weights();
+    server.mock(|when, then| {
+        when.path("/feeder_gateway/get_block_bouncer_weights");
+        then.status(200).body(serde_json::to_vec(&json!({"bouncer_weights": builtin_weights})).unwrap());
+    });
+
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
+        .configure_madara_feeder_gateway_url(&provider_url)
         .configure_database(database.into())
         .configure_storage_client(storage.into())
         .configure_prover_client(prover_client.into())
@@ -335,6 +360,81 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     assert_eq!(batch_3.start_block, 6, "Batch 3 should start at block 6");
     assert_eq!(batch_3.end_block, 7, "Batch 3 should end at block 7");
     assert_eq!(batch_3.starknet_version, "0.13.3", "Batch 3 should have version 0.13.3");
+
+    Ok(())
+}
+
+/// Test the batching worker for L3s.
+/// Doesn't mock Database or Storage.
+/// Mock `madara_V0_1_0_getBlockBuiltinWeights` response.
+/// NOTE: This method is present only in Madara as of now.
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test]
+async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(), Box<dyn Error>> {
+    let server = MockServer::start();
+
+    let end_block;
+    let provider_url = format!("http://localhost:{}", server.port());
+
+    let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&provider_url).expect("Failed to parse URL")));
+
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(provider.into())
+        .configure_storage_client(ConfigType::Actual)
+        .configure_database(ConfigType::Actual)
+        .configure_lock_client(ConfigType::Actual)
+        .configure_layer(Layer::L3)
+        .configure_madara_feeder_gateway_url(&provider_url)
+        .configure_max_blocks_per_snos_batch(None)
+        .build()
+        .await;
+
+    let database = services.config.database();
+
+    if !has_existing_batch {
+        end_block = 11;
+    } else {
+        let existing_snos_batch = crate::types::batch::SnosBatch {
+            snos_batch_id: 1,
+            aggregator_batch_index: None,
+            start_block: 0,
+            end_block: 3,
+            num_blocks: 4,
+            status: SnosBatchStatus::Open,
+            created_at: chrono::Utc::now(),
+            ..Default::default()
+        };
+        database.create_snos_batch(existing_snos_batch).await?;
+
+        end_block = 14;
+    }
+
+    // Mock block number call
+    let rpc_block_call_mock = server.mock(|when, then| {
+        when.path("/").body_includes("starknet_blockNumber");
+        then.status(200).body(serde_json::to_vec(&json!({ "id": 1, "jsonrpc": "2.0", "result": end_block })).unwrap());
+    });
+
+    // Mock builtin weights calls for each block
+    let builtin_weights = get_dummy_builtin_weights();
+    server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/feeder_gateway/get_block_bouncer_weights");
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_vec(&json!({ "bouncer_weights": builtin_weights })).unwrap());
+    });
+
+    crate::worker::event_handler::triggers::batching::BatchingTrigger.run_worker(services.config.clone()).await?;
+
+    let snos_batches_closed = database.get_snos_batches_without_jobs(SnosBatchStatus::Closed).await?;
+    let snos_batches_open = database.get_snos_batches_without_jobs(SnosBatchStatus::Open).await?;
+
+    assert_eq!(snos_batches_closed.len(), if has_existing_batch { 3 } else { 2 });
+    assert_eq!(snos_batches_open.len(), 1);
+
+    rpc_block_call_mock.assert();
 
     Ok(())
 }
@@ -382,4 +482,18 @@ fn get_dummy_state_update(block_num: u64) -> serde_json::Value {
     });
 
     serde_json::to_value(&state_update).unwrap()
+}
+
+fn get_dummy_builtin_weights() -> serde_json::Value {
+    let response = BouncerWeights {
+        l1_gas: 500_000,
+        message_segment_length: 700,
+        n_events: 1000,
+        n_txs: 100,
+        state_diff_size: 1000,
+        sierra_gas: GasAmount(1_000_000_000),
+        proving_gas: GasAmount(1_100_000_000),
+    };
+
+    serde_json::to_value(response).unwrap()
 }
