@@ -99,7 +99,9 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
-        let fresh_chain_tip = self.backend.db.get_chain_tip().unwrap();
+        let fresh_chain_tip = self.backend.db.get_chain_tip()
+            .context("Failed to get chain tip after revert")
+            .map_err(StarknetRpcApiError::from)?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
         self.backend.chain_tip.send_replace(backend_chain_tip);
         Ok(())
