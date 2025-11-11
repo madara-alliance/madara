@@ -192,6 +192,7 @@ impl RocksDBStorage {
         )?;
 
         let writeopts = config.write_mode.to_write_options();
+        tracing::info!("💾 Database write mode: {}", config.write_mode);
         let inner = Arc::new(RocksDBStorageInner { writeopts, db, config: config.clone() });
 
         let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {

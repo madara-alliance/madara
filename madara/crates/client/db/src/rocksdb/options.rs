@@ -75,6 +75,17 @@ impl DbWriteMode {
     }
 }
 
+impl std::fmt::Display for DbWriteMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DbWriteMode::WalWithFsync => write!(f, "wal-with-fsync (safest)"),
+            DbWriteMode::WalNoFsync => write!(f, "wal-no-fsync (recommended)"),
+            DbWriteMode::NoWalWithFsync => write!(f, "no-wal-with-fsync (fast)"),
+            DbWriteMode::NoWalNoFsync => write!(f, "no-wal-no-fsync (fastest)"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RocksDBConfig {
     /// Enable statistics. Statistics will be put in the `LOG` file in the db folder. This can have an effect on performance.
