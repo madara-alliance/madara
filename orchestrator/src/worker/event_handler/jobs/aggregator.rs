@@ -101,16 +101,17 @@ impl JobHandlerTrait for AggregatorJobHandler {
             }
             TaskStatus::Succeeded => {
                 // Get the aggregator query ID
-                let aggregator_query_id =
-                    config.prover_client().get_aggregator_task_id(&bucket_id, metadata.num_blocks + 1).await.map_err(
-                        |e| {
-                            error!(
-                                error = %e,
-                                "Failed to get aggregator query ID from prover client"
-                            );
-                            JobError::Other(OtherError(eyre!(e)))
-                        },
-                    )?;
+                let aggregator_query_id = config
+                    .prover_client()
+                    .get_aggregator_task_id(&bucket_id, metadata.num_snos_batches + 1)
+                    .await
+                    .map_err(|e| {
+                        error!(
+                            error = %e,
+                            "Failed to get aggregator query ID from prover client"
+                        );
+                        JobError::Other(OtherError(eyre!(e)))
+                    })?;
 
                 tracing::Span::current().record("aggregator_query_id", aggregator_query_id.as_str());
 

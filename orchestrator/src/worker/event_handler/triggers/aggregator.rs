@@ -55,6 +55,7 @@ impl JobTrigger for AggregatorJobTrigger {
                     batch_num: batch.index,
                     bucket_id: batch.bucket_id,
                     num_blocks: batch.num_blocks,
+                    num_snos_batches: batch.num_snos_batches,
                     start_block: batch.start_block,
                     end_block: batch.end_block,
                     download_proof: if config.params.store_audit_artifacts {
