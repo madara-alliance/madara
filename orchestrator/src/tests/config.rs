@@ -12,6 +12,7 @@ use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
+use crate::types::batch::AggregatorBatchWeights;
 use crate::types::constant::BLOB_LEN;
 use crate::types::params::batching::BatchingParams;
 use crate::types::params::cloud_provider::AWSCredentials;
@@ -23,8 +24,10 @@ use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
 use crate::types::params::{AWSResourceIdentifier, AlertArgs, OTELConfig, QueueArgs, StorageArgs};
 use crate::types::Layer;
+use crate::utils::rest_client::RestClient;
 use alloy::primitives::Address;
 use axum::Router;
+use blockifier::bouncer::BouncerWeights;
 use cairo_vm::types::layout_name::LayoutName;
 use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STRK_FEE_TOKEN};
 use httpmock::MockServer;
@@ -128,6 +131,12 @@ pub struct TestConfigBuilder {
     max_block_to_process: Option<Option<u64>>,
     /// Madara version
     madara_version: Option<StarknetVersion>,
+    /// Layer
+    layer: Option<Layer>,
+    /// Madara Feeder Gateway URL
+    madara_feeder_gateway_url: Option<String>,
+    /// Max blocks to keep per SNOS batch
+    max_blocks_per_snos_batch: Option<Option<u64>>,
 }
 
 impl Default for TestConfigBuilder {
@@ -161,6 +170,9 @@ impl TestConfigBuilder {
             min_block_to_process: None,
             max_block_to_process: None,
             madara_version: None,
+            layer: None,
+            madara_feeder_gateway_url: None,
+            max_blocks_per_snos_batch: None,
         }
     }
 
@@ -234,6 +246,21 @@ impl TestConfigBuilder {
         self
     }
 
+    pub fn configure_layer(mut self, layer: Layer) -> TestConfigBuilder {
+        self.layer = Some(layer);
+        self
+    }
+
+    pub fn configure_madara_feeder_gateway_url(mut self, madara_feeder_gateway_url: &str) -> TestConfigBuilder {
+        self.madara_feeder_gateway_url = Some(String::from(madara_feeder_gateway_url));
+        self
+    }
+
+    pub fn configure_max_blocks_per_snos_batch(mut self, max_blocks_per_snos: Option<u64>) -> TestConfigBuilder {
+        self.max_blocks_per_snos_batch = Some(max_blocks_per_snos);
+        self
+    }
+
     pub async fn build(self) -> TestConfigBuilderReturns {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
@@ -257,6 +284,9 @@ impl TestConfigBuilder {
             min_block_to_process,
             max_block_to_process,
             madara_version,
+            layer,
+            madara_feeder_gateway_url,
+            max_blocks_per_snos_batch,
         } = self;
 
         let (_starknet_rpc_url, starknet_client, starknet_server) =
@@ -306,12 +336,21 @@ impl TestConfigBuilder {
         if let Some(madara_version) = madara_version {
             params.orchestrator_params.madara_version = madara_version;
         }
+        if let Some(madara_feeder_gateway_url) = madara_feeder_gateway_url {
+            params.orchestrator_params.madara_feeder_gateway_url = Url::parse(&madara_feeder_gateway_url).unwrap();
+        }
+        if let Some(max_blocks_per_snos_batch) = max_blocks_per_snos_batch {
+            params.orchestrator_params.batching_config.max_blocks_per_snos_batch = max_blocks_per_snos_batch;
+        }
+
+        let madara_feeder_gateway_client =
+            Arc::new(RestClient::new(params.orchestrator_params.madara_feeder_gateway_url.clone()));
 
         let config = Arc::new(Config::new(
-            Layer::L2,
+            layer.unwrap_or(Layer::L2),
             params.orchestrator_params,
             starknet_client.clone(),
-            starknet_client, // Using the same client for admin operations in tests
+            madara_feeder_gateway_client,
             database,
             storage,
             lock,
@@ -683,11 +722,11 @@ pub(crate) fn get_env_params() -> EnvParams {
     let orchestrator_params = ConfigParam {
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
-        madara_admin_rpc_url: Url::parse(&get_env_var_or_default(
-            "MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL",
-            &get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"), // Use same URL as fallback for tests
+        madara_feeder_gateway_url: Url::parse(&get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL",
+            &get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL"), // Use same URL as fallback for tests
         ))
-        .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_ADMIN_RPC_URL"),
+        .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL"),
         madara_version: StarknetVersion::from_str(&get_env_var_or_default(
             "MADARA_ORCHESTRATOR_MADARA_VERSION",
             "0.13.4",
@@ -703,6 +742,7 @@ pub(crate) fn get_env_params() -> EnvParams {
             .parse::<bool>()
             .unwrap_or(false),
         bouncer_weights_limit: Default::default(), // Use default bouncer weights for tests
+        aggregator_batch_weights_limit: AggregatorBatchWeights::from(&BouncerWeights::default()),
     };
 
     let instrumentation_params = OTELConfig {

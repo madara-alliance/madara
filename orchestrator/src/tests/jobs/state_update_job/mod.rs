@@ -7,7 +7,7 @@ use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::tests::common::default_job_item;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::types::batch::AggregatorBatch;
+use crate::types::batch::{AggregatorBatch, AggregatorBatchWeights};
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
 };
@@ -87,6 +87,7 @@ async fn test_process_job_works(
             String::from(""),
             String::from(""),
             String::from(""),
+            AggregatorBatchWeights::default(),
             "0.13.2".to_string(),
         )])
     });
@@ -253,6 +254,7 @@ async fn process_job_works_unit_test() {
             String::from(""),
             String::from(""),
             String::from(""),
+            AggregatorBatchWeights::default(),
             "0.13.2".to_string(),
         )])
     });

@@ -1,0 +1,62 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Manual Docker Image Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build-madara:
+        description: "Build Madara image"
+        required: true
+        type: boolean
+        default: true
+      build-orchestrator:
+        description: "Build Orchestrator image"
+        required: true
+        type: boolean
+        default: true
+      build-bootstrapper:
+        description: "Build Bootstrapper image"
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  build-and-publish-madara:
+    if: ${{ inputs.build-madara }}
+    uses: ./.github/workflows/task-build-manual-and-publish.yml
+    with:
+      image-name: madara
+      image-file: ./madara/Dockerfile
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+
+  build-and-publish-orchestrator:
+    if: ${{ inputs.build-orchestrator }}
+    uses: ./.github/workflows/task-build-manual-and-publish.yml
+    with:
+      image-name: orchestrator
+      image-file: ./orchestrator/Dockerfile
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+
+  build-and-publish-bootstrapper:
+    if: ${{ inputs.build-bootstrapper }}
+    uses: ./.github/workflows/task-build-manual-and-publish.yml
+    with:
+      image-name: bootstrapper
+      image-file: ./bootstrapper/Dockerfile
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
