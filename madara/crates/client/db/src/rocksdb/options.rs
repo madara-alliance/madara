@@ -5,13 +5,75 @@ use std::path::PathBuf;
 
 use crate::rocksdb::column::{Column, ColumnMemoryBudget};
 use anyhow::{Context, Result};
-use rocksdb::{DBCompressionType, Env, Options, SliceTransform};
+use rocksdb::{DBCompressionType, Env, Options, SliceTransform, WriteOptions};
+use serde::{Deserialize, Serialize};
 
 const KiB: usize = 1024;
 const MiB: usize = 1024 * KiB;
 const GiB: usize = 1024 * MiB;
 
 pub use rocksdb::statistics::StatsLevel;
+
+/// RocksDB write durability mode. Controls WAL (Write-Ahead Log) and fsync behavior.
+///
+/// # Performance & Safety Trade-offs
+///
+/// | Mode | WAL | Fsync | Performance | Safety | Use Case |
+/// |------|-----|-------|-------------|--------|----------|
+/// | `WalWithFsync` | ✅ | ✅ | Slowest | Highest | Production critical data |
+/// | `WalNoFsync` | ✅ | ❌ | Medium | High | Production (safe on crash) |
+/// | `NoWalWithFsync` | ❌ | ✅ | Fast | Medium | Testing, can tolerate data loss |
+/// | `NoWalNoFsync` | ❌ | ❌ | Fastest | Lowest | Devnet, testing |
+///
+/// # Safety Considerations
+///
+/// - **WalWithFsync**: Data is written to WAL and fsynced to disk before acknowledging writes.
+///   Survives process crashes and power failures. Slowest option.
+///
+/// - **WalNoFsync** (recommended for production): Data is written to WAL but not immediately fsynced.
+///   Survives process crashes (OS will flush WAL). May lose recent writes on power failure.
+///
+/// - **NoWalWithFsync**: No WAL, but fsyncs data files. Recent uncommitted data may be lost on crash.
+///
+/// - **NoWalNoFsync**: No WAL and no fsync. Fastest but least safe. Only for development/testing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DbWriteMode {
+    /// WAL enabled + fsync enabled (safest, slowest)
+    WalWithFsync,
+    /// WAL enabled + fsync disabled (safe on crash, faster) - recommended for production
+    #[default]
+    WalNoFsync,
+    /// WAL disabled + fsync enabled (faster, may lose data on crash)
+    NoWalWithFsync,
+    /// WAL disabled + fsync disabled (fastest, least safe)
+    NoWalNoFsync,
+}
+
+impl DbWriteMode {
+    /// Convert the write mode to RocksDB WriteOptions
+    pub fn to_write_options(&self) -> WriteOptions {
+        let mut opts = WriteOptions::default();
+        match self {
+            DbWriteMode::WalWithFsync => {
+                // WAL enabled (default), fsync enabled (default)
+            }
+            DbWriteMode::WalNoFsync => {
+                // WAL enabled (default)
+                opts.set_sync(false);
+            }
+            DbWriteMode::NoWalWithFsync => {
+                opts.disable_wal(true);
+                // fsync enabled (default)
+            }
+            DbWriteMode::NoWalNoFsync => {
+                opts.disable_wal(true);
+                opts.set_sync(false);
+            }
+        }
+        opts
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RocksDBConfig {
@@ -41,6 +103,9 @@ pub struct RocksDBConfig {
     pub backup_dir: Option<PathBuf>,
     /// When true, the latest backup will be restored on startup.
     pub restore_from_latest_backup: bool,
+
+    /// Write durability mode (WAL and fsync settings)
+    pub write_mode: DbWriteMode,
 }
 
 impl Default for RocksDBConfig {
@@ -59,6 +124,7 @@ impl Default for RocksDBConfig {
             snapshot_interval: 5,
             backup_dir: None,
             restore_from_latest_backup: false,
+            write_mode: DbWriteMode::WalNoFsync,
         }
     }
 }

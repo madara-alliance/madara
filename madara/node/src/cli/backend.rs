@@ -1,4 +1,5 @@
-use mc_db::{rocksdb::RocksDBConfig, MadaraBackendConfig};
+use mc_db::rocksdb::{DbWriteMode, RocksDBConfig};
+use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -6,6 +7,31 @@ use std::path::PathBuf;
 const KiB: usize = 1024;
 #[allow(non_upper_case_globals)]
 const MiB: usize = 1024 * KiB;
+
+/// CLI wrapper for DbWriteMode to add clap ValueEnum support
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CliDbWriteMode {
+    /// WAL enabled + fsync enabled (safest, slowest)
+    WalWithFsync,
+    /// WAL enabled + fsync disabled (safe on crash, faster) - recommended for production
+    WalNoFsync,
+    /// WAL disabled + fsync enabled (faster, may lose data on crash)
+    NoWalWithFsync,
+    /// WAL disabled + fsync disabled (fastest, least safe)
+    NoWalNoFsync,
+}
+
+impl From<CliDbWriteMode> for DbWriteMode {
+    fn from(value: CliDbWriteMode) -> Self {
+        match value {
+            CliDbWriteMode::WalWithFsync => DbWriteMode::WalWithFsync,
+            CliDbWriteMode::WalNoFsync => DbWriteMode::WalNoFsync,
+            CliDbWriteMode::NoWalWithFsync => DbWriteMode::NoWalWithFsync,
+            CliDbWriteMode::NoWalNoFsync => DbWriteMode::NoWalNoFsync,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum StatsLevel {
@@ -129,6 +155,14 @@ pub struct BackendParams {
     /// The block you want to start syncing from. This will most probably break your database.
     #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
     pub unsafe_starting_block: Option<u64>,
+
+    /// RocksDB write durability mode. Controls WAL (Write-Ahead Log) and fsync behavior.
+    /// - wal-with-fsync: Safest, slowest (WAL enabled, fsync after each write)
+    /// - wal-no-fsync: Safe on crash, faster (WAL enabled, no fsync) - RECOMMENDED FOR PRODUCTION
+    /// - no-wal-with-fsync: Faster, may lose recent data on crash (no WAL, fsync enabled)
+    /// - no-wal-no-fsync: Fastest, least safe (no WAL, no fsync) - for testing only
+    #[clap(env = "MADARA_DB_WRITE_MODE", long, default_value = "wal-no-fsync")]
+    pub db_write_mode: CliDbWriteMode,
 }
 
 impl BackendParams {
@@ -153,6 +187,7 @@ impl BackendParams {
             snapshot_interval: self.db_snapshot_interval,
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
+            write_mode: self.db_write_mode.into(),
         }
     }
 }
