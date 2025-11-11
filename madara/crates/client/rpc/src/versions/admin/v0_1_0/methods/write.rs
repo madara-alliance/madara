@@ -11,8 +11,6 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use mp_utils::service::MadaraServiceId;
-use mp_block::header::CustomHeader;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
