@@ -365,5 +365,6 @@
 mod error;
 mod handler;
 mod helpers;
+mod metrics;
 mod router;
 pub mod service;

@@ -121,6 +121,7 @@ use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
+use mp_block::header::CustomHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
 use mp_block::TransactionWithReceipt;
@@ -133,7 +134,6 @@ use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use mp_block::header::CustomHeader;
 mod db_version;
 mod prelude;
 pub mod storage;
@@ -398,7 +398,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         let mut guard = self.custom_header.lock().expect("Poisoned lock");
         *guard = Some(custom_header);
     }
-
 }
 
 impl MadaraBackend<RocksDBStorage> {
@@ -639,11 +638,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        tracing::info!(
-            "🙇 Block hash {:?} computed for #{}",
-            block_hash,
-            block.header.block_number
-        );
+        tracing::info!("🙇 Block hash {:?} computed for #{}", block_hash, block.header.block_number);
 
         match self.inner.get_custom_header_with_clear(true) {
             Some(header) => {

@@ -17,6 +17,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
+mc-analytics.workspace = true
 mc-db.workspace = true
 mc-rpc.workspace = true
 mc-submit-tx.workspace = true
@@ -43,6 +44,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+# Instrumentation
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 
 [dev-dependencies]
 rstest.workspace = true

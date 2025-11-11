@@ -95,6 +95,7 @@ use mp_utils::AbortOnDrop;
 use opentelemetry::KeyValue;
 use std::collections::HashSet;
 use std::mem;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -248,6 +249,9 @@ pub struct BlockProductionTask {
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
+    bypass_pending_count: Arc<AtomicU64>,
+    executor_batch_pending_count: Arc<AtomicU64>,
+    executor_commands_pending_count: Arc<AtomicU64>,
 }
 
 impl BlockProductionTask {
@@ -256,20 +260,34 @@ impl BlockProductionTask {
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
-        no_charge_fee: bool
+        no_charge_fee: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
+        let bypass_pending_count = Arc::new(AtomicU64::new(0));
+        let executor_batch_pending_count = Arc::new(AtomicU64::new(0));
+        let executor_commands_pending_count = Arc::new(AtomicU64::new(0));
         Self {
             backend: backend.clone(),
             mempool,
             current_state: None,
-            metrics,
-            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender, no_charge_fee),
+            metrics: metrics.clone(),
+            handle: BlockProductionHandle::new(
+                backend,
+                sender,
+                bypass_input_sender,
+                metrics.clone(),
+                bypass_pending_count.clone(),
+                executor_commands_pending_count.clone(),
+                no_charge_fee,
+            ),
             state_notifications: None,
             executor_commands_recv: Some(recv),
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
+            bypass_pending_count,
+            executor_batch_pending_count,
+            executor_commands_pending_count,
         }
     }
 
@@ -350,6 +368,12 @@ impl BlockProductionTask {
 
                 state.append_batch(batch_execution_result).await?;
 
+                // Update CurrentBlockState metrics after batch is appended
+                self.metrics.executor_deployed_contracts_size.record(state.deployed_contracts.len() as u64, &[]);
+                self.metrics
+                    .executor_consumed_core_contract_nonces_size
+                    .record(state.consumed_core_contract_nonces.len() as u64, &[]);
+
                 self.send_state_notification(BlockProductionStateNotification::BatchExecuted);
             }
             ExecutorMessage::EndBlock(block_exec_summary) => {
@@ -407,6 +431,10 @@ impl BlockProductionTask {
                 self.metrics.block_gauge.record(state.block_number, &attributes);
                 self.metrics.transaction_counter.add(n_txs as u64, &[]);
 
+                // Reset CurrentBlockState metrics when block ends
+                self.metrics.executor_deployed_contracts_size.record(0, &[]);
+                self.metrics.executor_consumed_core_contract_nonces_size.record(0, &[]);
+
                 self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(state.block_number) });
                 self.send_state_notification(BlockProductionStateNotification::ClosedBlock);
             }
@@ -434,12 +462,17 @@ impl BlockProductionTask {
         let mut executor = executor::start_executor_thread(
             Arc::clone(&self.backend),
             self.executor_commands_recv.take().context("Task already started")?,
+            self.metrics.clone(),
+            self.executor_batch_pending_count.clone(),
+            self.executor_commands_pending_count.clone(),
         )
         .context("Starting executor thread")?;
 
         // Batcher task is handled in a separate tokio task.
         let batch_sender = executor.send_batch.take().context("Channel sender already taken")?;
         let bypass_tx_input = self.bypass_tx_input.take().context("Bypass tx channel already taken")?;
+        let bypass_pending_count = self.bypass_pending_count.clone();
+        let executor_batch_pending_count = self.executor_batch_pending_count.clone();
         let mut batcher_task = AbortOnDrop::spawn(
             Batcher::new(
                 self.backend.clone(),
@@ -448,6 +481,9 @@ impl BlockProductionTask {
                 ctx,
                 batch_sender,
                 bypass_tx_input,
+                self.metrics.clone(),
+                bypass_pending_count.clone(),
+                executor_batch_pending_count.clone(),
             )
             .run(),
         );

@@ -47,4 +47,8 @@ impl EvictionQueue {
         // We want the highest score which is last.
         self.0.last().filter(|e| e.0 > *other).map(|e| &e.1)
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }

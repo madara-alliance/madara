@@ -39,4 +39,8 @@ impl TimestampQueue {
         // Oldest is first (min `arrived_at`)
         self.0.first().filter(|tx| tx.0 < ts).map(|e| &e.1)
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }

@@ -116,7 +116,8 @@ fn format_revert_error(error_string: &str) -> String {
                     break;
                 } else if next_line.starts_with("Error in a library call")
                     || next_line.starts_with("Execution failed")
-                    || next_line.starts_with("Entry point") {
+                    || next_line.starts_with("Entry point")
+                {
                     // Next entry is a library call or final error - don't skip this traceback
                     has_nested_call_contract = false;
                     break;
@@ -125,7 +126,8 @@ fn format_revert_error(error_string: &str) -> String {
                 // Keep scanning through the traceback lines
                 if next_line.starts_with("Unknown location")
                     || next_line.starts_with("Cairo traceback")
-                    || next_line.is_empty() {
+                    || next_line.is_empty()
+                {
                     j += 1;
                 } else {
                     // Reached a numbered entry like "1:" - check if it contains the patterns
@@ -226,7 +228,8 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 };
                 (ordered_event, event.order)
             })
-        }).collect::<Vec<(Event, usize)>>();
+        })
+        .collect::<Vec<(Event, usize)>>();
 
     // Sort by order and extract just the Events
     let mut validate_events_with_order = validate_events;
@@ -247,13 +250,13 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 };
                 (ordered_event, event.order)
             })
-        }).collect::<Vec<(Event, usize)>>();
+        })
+        .collect::<Vec<(Event, usize)>>();
 
     // Sort by order and extract just the Events
     let mut execute_events_with_order = execute_events;
     execute_events_with_order.sort_by_key(|(_, order)| *order);
     let final_execute_events: Vec<Event> = execute_events_with_order.into_iter().map(|(event, _)| event).collect();
-
 
     // get all fee_transfer_calls
     let fee_transfer_calls = res.fee_transfer_call_info.iter().flat_map(|call_info| call_info.iter());
@@ -269,13 +272,14 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 };
                 (ordered_event, event.order)
             })
-        }).collect::<Vec<(Event, usize)>>();
+        })
+        .collect::<Vec<(Event, usize)>>();
 
     // Sort by order and extract just the Events
     let mut fee_transfer_events_with_order = fee_transfer_events;
     fee_transfer_events_with_order.sort_by_key(|(_, order)| *order);
-    let final_fee_transfer_events: Vec<Event> = fee_transfer_events_with_order.into_iter().map(|(event, _)| event).collect();
-
+    let final_fee_transfer_events: Vec<Event> =
+        fee_transfer_events_with_order.into_iter().map(|(event, _)| event).collect();
 
     let mut events = final_validate_events.clone();
     events.extend(final_execute_events);

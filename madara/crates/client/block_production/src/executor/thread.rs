@@ -12,7 +12,10 @@ use starknet_api::core::ClassHash;
 use std::{
     collections::{HashMap, HashSet},
     mem,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 use tokio::{sync::mpsc, time::Instant};
 
@@ -79,6 +82,10 @@ pub struct ExecutorThread {
     /// See `take_tx_batch`. When the mempool is empty, we will not be getting transactions.
     /// We still potentially want to emit empty blocks based on the block_time deadline.
     wait_rt: tokio::runtime::Runtime,
+
+    metrics: Arc<crate::metrics::BlockProductionMetrics>,
+    batch_pending_count: Arc<AtomicU64>,
+    commands_pending_count: Arc<AtomicU64>,
 }
 
 enum WaitTxBatchOutcome {
@@ -96,6 +103,9 @@ impl ExecutorThread {
         incoming_batches: mpsc::Receiver<super::BatchToExecute>,
         replies_sender: mpsc::Sender<super::ExecutorMessage>,
         commands: mpsc::UnboundedReceiver<super::ExecutorCommand>,
+        metrics: Arc<crate::metrics::BlockProductionMetrics>,
+        batch_pending_count: Arc<AtomicU64>,
+        commands_pending_count: Arc<AtomicU64>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             backend,
@@ -106,16 +116,25 @@ impl ExecutorThread {
                 .enable_time()
                 .build()
                 .context("Building tokio runtime")?,
+            metrics,
+            batch_pending_count,
+            commands_pending_count,
         })
     }
     /// Returns None when the channel is closed.
     /// We want to close down the thread in that case.
     fn wait_take_tx_batch(&mut self, deadline: Option<Instant>, should_wait: bool) -> WaitTxBatchOutcome {
         if let Ok(batch) = self.incoming_batches.try_recv() {
+            // Update metric when batch is received
+            let current = self.batch_pending_count.fetch_sub(1, Ordering::Relaxed) - 1;
+            self.metrics.executor_batch_channel_pending.record(current, &[]);
             return WaitTxBatchOutcome::Batch(batch);
         }
 
         if let Ok(cmd) = self.commands.try_recv() {
+            // Update metric when command is received
+            let current = self.commands_pending_count.fetch_sub(1, Ordering::Relaxed) - 1;
+            self.metrics.executor_commands_channel_pending.record(current, &[]);
             return WaitTxBatchOutcome::Command(cmd);
         }
 
@@ -130,10 +149,16 @@ impl ExecutorThread {
         // function.
         // Should be fine, as we optimistically try_recv above and we should only hit this when we actually have to wait.
         // nb.2: use an async block here, as timeout_at needs a runtime to be available on creation.
+        let batch_pending = self.batch_pending_count.clone();
+        let commands_pending = self.commands_pending_count.clone();
+        let metrics = self.metrics.clone();
         self.wait_rt.block_on(async {
             tokio::select! {
                 Some(cmd) = self.commands.recv() => {
                     tracing::debug!("Got cmd {cmd:?}.");
+                    // Update metric when command is received
+                    let current = commands_pending.fetch_sub(1, Ordering::Relaxed) - 1;
+                    metrics.executor_commands_channel_pending.record(current, &[]);
                     WaitTxBatchOutcome::Command(cmd)
                 }
                 _ = OptionFuture::from(deadline.map(tokio::time::sleep_until)) => {
@@ -143,6 +168,9 @@ impl ExecutorThread {
                 el = self.incoming_batches.recv() => match el {
                     Some(el) => {
                         tracing::debug!("Got new batch with {} transactions.", el.len());
+                        // Update metric when batch is received
+                        let current = batch_pending.fetch_sub(1, Ordering::Relaxed) - 1;
+                        metrics.executor_batch_channel_pending.record(current, &[]);
                         WaitTxBatchOutcome::Batch(el)
                     }
                     None => {
@@ -199,6 +227,18 @@ impl ExecutorThread {
             mem::take(&mut state.declared_classes),
             mem::take(&mut state.consumed_l1_to_l2_nonces),
         )?;
+
+        // Update metrics after clearing declared classes and consumed nonces
+        self.metrics.executor_declared_classes_size.record(0, &[]);
+        self.metrics.executor_consumed_nonces_size.record(0, &[]);
+
+        // Update layered cache metrics
+        let cache_metrics = cached_adapter.cache_metrics();
+        self.metrics.layered_cache_blocks.record(cache_metrics.cached_blocks as u64, &[]);
+        self.metrics.layered_cache_size.record(cache_metrics.approximate_size_bytes as u64, &[]);
+        self.metrics.layered_cache_state_maps_size.record(cache_metrics.total_state_maps_entries as u64, &[]);
+        self.metrics.layered_cache_classes_size.record(cache_metrics.total_classes as u64, &[]);
+        self.metrics.layered_cache_l1_to_l2_messages_size.record(cache_metrics.total_l1_to_l2_messages as u64, &[]);
 
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
             state_adaptor: cached_adapter,
@@ -316,6 +356,10 @@ impl ExecutorThread {
                             tracing::debug!("L1 Core Contract nonce already consumed: {nonce}");
                             continue;
                         }
+                        // Update consumed nonces metric
+                        self.metrics
+                            .executor_consumed_nonces_size
+                            .record(state.consumed_l1_to_l2_nonces().len() as u64, &[]);
                     }
                     to_exec.push(tx, additional_info)
                 }
@@ -388,6 +432,10 @@ impl ExecutorThread {
                             tracing::debug!("Declared class_hash={:#x}", class_hash.to_felt());
                             stats.declared_classes += 1;
                             execution_state.declared_classes.insert(class_hash, contract_class);
+                            // Update declared classes metric
+                            self.metrics
+                                .executor_declared_classes_size
+                                .record(execution_state.declared_classes.len() as u64, &[]);
                         }
                     }
                     Err(err) => {

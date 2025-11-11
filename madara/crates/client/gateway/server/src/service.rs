@@ -1,3 +1,4 @@
+use super::metrics::GatewayMetrics;
 use super::router::main_router;
 use anyhow::Context;
 use hyper::{server::conn::http1, service::service_fn};
@@ -44,6 +45,8 @@ pub async fn start_server(
         return Ok(());
     }
 
+    let metrics = GatewayMetrics::register()?;
+
     let listen_addr = if config.gateway_external {
         Ipv4Addr::UNSPECIFIED // listen on 0.0.0.0
     } else {
@@ -64,6 +67,7 @@ pub async fn start_server(
             let add_transaction_provider = add_transaction_provider.clone();
             let submit_validated = submit_validated.clone();
             let config = config.clone();
+            let metrics = metrics.clone();
 
             tokio::task::spawn(async move {
                 let service = service_fn(move |req| {
@@ -71,7 +75,11 @@ pub async fn start_server(
                     let add_transaction_provider = add_transaction_provider.clone();
                     let submit_validated = submit_validated.clone();
                     let config = config.clone();
+                    let metrics = metrics.clone();
                     async move {
+                        // Update metric when request starts
+                        metrics.on_request_start();
+
                         let path = req
                             .uri()
                             .path()
@@ -96,6 +104,9 @@ pub async fn start_server(
                             response_time = response_time,
                             "{path} {status} {res_len} - {response_time} micros"
                         );
+
+                        // Update metric when request ends
+                        metrics.on_request_end();
 
                         Ok::<_, Infallible>(res)
                     }

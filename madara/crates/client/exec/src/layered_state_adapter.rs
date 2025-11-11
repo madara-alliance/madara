@@ -121,6 +121,54 @@ impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
         }
         self.inner.is_l1_to_l2_message_nonce_consumed(nonce)
     }
+
+    /// Get the number of cached blocks in the layered state adapter.
+    pub fn cached_blocks_count(&self) -> usize {
+        self.cached_states_by_block_n.len()
+    }
+
+    /// Get detailed metrics about the cache
+    pub fn cache_metrics(&self) -> LayeredCacheMetrics {
+        let mut total_state_maps_entries = 0;
+        let mut total_classes = 0;
+        let mut total_l1_to_l2_messages = 0;
+        let mut approximate_size_bytes = 0;
+
+        for cache in &self.cached_states_by_block_n {
+            total_state_maps_entries += cache.state_diff.storage.len()
+                + cache.state_diff.nonces.len()
+                + cache.state_diff.class_hashes.len()
+                + cache.state_diff.compiled_class_hashes.len();
+            total_classes += cache.classes.len();
+            total_l1_to_l2_messages += cache.l1_to_l2_messages.len();
+            // Rough estimate: each entry is ~100 bytes on average
+            approximate_size_bytes += (cache.state_diff.storage.len()
+                + cache.state_diff.nonces.len()
+                + cache.state_diff.class_hashes.len()
+                + cache.state_diff.compiled_class_hashes.len())
+                * 100;
+            // Classes are larger, estimate ~5KB each
+            approximate_size_bytes += cache.classes.len() * 5000;
+            // L1 to L2 messages are small, ~50 bytes each
+            approximate_size_bytes += cache.l1_to_l2_messages.len() * 50;
+        }
+
+        LayeredCacheMetrics {
+            cached_blocks: self.cached_states_by_block_n.len(),
+            approximate_size_bytes,
+            total_state_maps_entries,
+            total_classes,
+            total_l1_to_l2_messages,
+        }
+    }
+}
+
+pub struct LayeredCacheMetrics {
+    pub cached_blocks: usize,
+    pub approximate_size_bytes: usize,
+    pub total_state_maps_entries: usize,
+    pub total_classes: usize,
+    pub total_l1_to_l2_messages: usize,
 }
 
 impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
