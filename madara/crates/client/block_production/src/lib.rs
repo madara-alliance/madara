@@ -252,6 +252,7 @@ pub struct BlockProductionTask {
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
+    no_charge_fee: bool,
 }
 
 impl BlockProductionTask {
@@ -274,6 +275,7 @@ impl BlockProductionTask {
             executor_commands_recv: Some(recv),
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
+            no_charge_fee,
         }
     }
 
@@ -295,30 +297,36 @@ impl BlockProductionTask {
     }
 
     /// Prepares a PreconfirmedExecutedTransaction for re-execution by converting it to blockifier Transaction format.
+    ///
+    /// This function properly handles execution flags including charge_fee by converting through ValidatedTransaction.
+    /// The charge_fee value is determined by the no_charge_fee configuration (charge_fee = !no_charge_fee).
     fn prepare_preconfirmed_tx_for_reexecution(
+        &self,
         preconfirmed_tx: &PreconfirmedExecutedTransaction,
         state_view: &MadaraStateView,
     ) -> anyhow::Result<blockifier::transaction::transaction_execution::Transaction> {
-        // Prefer declared_class from PreconfirmedExecutedTransaction if available
-        let class = if let Some(declared_class) = &preconfirmed_tx.declared_class {
-            Some(declared_class.clone())
-        } else if let Some(declare_tx) = preconfirmed_tx.transaction.transaction.as_declare() {
-            // Fallback: fetch from state_view if not stored in PreconfirmedExecutedTransaction
-            Some(
-                state_view
-                    .get_class_info_and_compiled(declare_tx.class_hash())?
-                    .with_context(|| format!("No class found for class_hash={:#x}", declare_tx.class_hash()))?,
-            )
-        } else {
-            None
-        };
+        // Convert PreconfirmedExecutedTransaction to ValidatedTransaction
+        // Use the actual charge_fee value from configuration (charge_fee = !no_charge_fee)
+        let mut validated_tx = preconfirmed_tx.to_validated();
+        validated_tx.charge_fee = !self.no_charge_fee;
 
-        TransactionWithHash::new(
-            preconfirmed_tx.transaction.transaction.clone(),
-            *preconfirmed_tx.transaction.receipt.transaction_hash(),
-        )
-        .into_blockifier(class.as_ref())
-        .context("Error converting transaction to blockifier format for reexecution")
+        // If declared_class is missing and transaction is Declare, fetch it from state_view
+        if validated_tx.declared_class.is_none() {
+            if let Some(declare_tx) = validated_tx.transaction.as_declare() {
+                validated_tx.declared_class = Some(
+                    state_view
+                        .get_class_info_and_compiled(declare_tx.class_hash())?
+                        .with_context(|| format!("No class found for class_hash={:#x}", declare_tx.class_hash()))?,
+                );
+            }
+        }
+
+        // Use into_blockifier_for_sequencing which properly sets execution flags including charge_fee
+        let (blockifier_tx, _, _) = validated_tx
+            .into_blockifier_for_sequencing()
+            .context("Error converting validated transaction to blockifier format for reexecution")?;
+
+        Ok(blockifier_tx)
     }
 
     /// Helper function to get the hash of block_n-10 if it exists.
@@ -344,7 +352,7 @@ impl BlockProductionTask {
     /// This function recreates the execution context and executes all transactions to get
     /// the bouncer_weights and state_diff needed for proper block closing.
     async fn reexecute_preconfirmed_block(
-        backend: &Arc<MadaraBackend>,
+        &self,
         preconfirmed_view: &MadaraPreconfirmedBlockView,
     ) -> anyhow::Result<BlockExecutionSummary> {
         // Get all executed transactions
@@ -356,7 +364,7 @@ impl BlockProductionTask {
         // Convert transactions to blockifier format
         let blockifier_txs: Vec<blockifier::transaction::transaction_execution::Transaction> = executed_txs
             .iter()
-            .map(|preconfirmed_tx| Self::prepare_preconfirmed_tx_for_reexecution(preconfirmed_tx, &parent_state_view))
+            .map(|preconfirmed_tx| self.prepare_preconfirmed_tx_for_reexecution(preconfirmed_tx, &parent_state_view))
             .collect::<Result<Vec<_>, _>>()
             .context("Converting preconfirmed transactions to blockifier format")?;
 
@@ -373,16 +381,17 @@ impl BlockProductionTask {
 
         // Create LayeredStateAdapter
         let state_adaptor =
-            LayeredStateAdapter::new(backend.clone()).context("Creating LayeredStateAdapter for re-execution")?;
+            LayeredStateAdapter::new(self.backend.clone()).context("Creating LayeredStateAdapter for re-execution")?;
 
         // Create TransactionExecutor
-        let mut executor = backend
+        let mut executor = self
+            .backend
             .new_executor_for_block_production(state_adaptor, exec_ctx.to_blockifier()?)
             .context("Creating TransactionExecutor for re-execution")?;
 
         // Prepare the block_n-10 state diff entry on the 0x1 contract
         if let Some((block_n_min_10, block_hash_n_min_10)) =
-            Self::wait_for_hash_of_block_min_10(backend, exec_ctx.block_number)?
+            Self::wait_for_hash_of_block_min_10(&self.backend, exec_ctx.block_number)?
         {
             let contract_address = 1u64.into();
             let key = block_n_min_10.into();
@@ -453,7 +462,8 @@ impl BlockProductionTask {
         );
 
         // Re-execute transactions to get BlockExecutionSummary
-        let block_exec_summary = Self::reexecute_preconfirmed_block(&self.backend, &preconfirmed_view)
+        let block_exec_summary = self
+            .reexecute_preconfirmed_block(&preconfirmed_view)
             .await
             .context("Re-executing preconfirmed block to get execution summary")?;
 
