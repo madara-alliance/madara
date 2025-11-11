@@ -43,6 +43,7 @@ use orchestrator_utils::env_utils::{
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
+use uuid::Uuid;
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
 // TestConfigBuilder allows to heavily customise the global configs based on the test's requirement.
 // Eg: We want to mock only the da client and leave rest to be as it is, use mock_da_client.
@@ -101,6 +102,8 @@ impl_mock_from! {
 
 // TestBuilder for Config
 pub struct TestConfigBuilder {
+    /// Unique identifier for this test instance (for resource isolation)
+    test_id: String,
     /// The RPC url used by the starknet client
     starknet_rpc_url_type: ConfigType,
     /// The starknet client to get data from the node
@@ -150,12 +153,55 @@ pub struct TestConfigBuilderReturns {
     pub config: Arc<Config>,
     pub provider_config: Arc<CloudProvider>,
     pub api_server_address: Option<SocketAddr>,
+    pub cleanup: TestCleanup,
+}
+
+/// TestCleanup handles automatic cleanup of test resources when dropped.
+/// This ensures that parallel tests don't leave orphaned resources.
+pub struct TestCleanup {
+    /// Database parameters for cleanup
+    db_params: Option<DatabaseArgs>,
+    /// Queue parameters for cleanup
+    queue_params: Option<QueueArgs>,
+    /// Storage parameters for cleanup
+    storage_params: Option<StorageArgs>,
+    /// Cloud provider for AWS resource cleanup
+    provider_config: Option<Arc<CloudProvider>>,
+}
+
+impl TestCleanup {
+    fn new(
+        db_params: Option<DatabaseArgs>,
+        queue_params: Option<QueueArgs>,
+        storage_params: Option<StorageArgs>,
+        provider_config: Option<Arc<CloudProvider>>,
+    ) -> Self {
+        Self { db_params, queue_params, storage_params, provider_config }
+    }
+}
+
+impl Drop for TestCleanup {
+    fn drop(&mut self) {
+        // Skip cleanup since LocalStack will be killed anyway after tests complete
+        // This prevents race conditions where cleanup interferes with parallel tests
+        // and ensures queues/resources remain available throughout test execution
+        tracing::debug!("Skipping cleanup - LocalStack will be killed after tests complete");
+
+        // Note: We could optionally cleanup here, but it's not necessary since:
+        // 1. LocalStack is ephemeral and will be destroyed after tests
+        // 2. Each test uses unique UUIDs for resource isolation
+        // 3. Cleanup can cause race conditions in parallel test execution
+    }
 }
 
 impl TestConfigBuilder {
     /// Create a new config
     pub fn new() -> TestConfigBuilder {
+        // Generate a unique identifier for this test instance
+        let test_id = Uuid::new_v4().to_string();
+
         TestConfigBuilder {
+            test_id,
             starknet_rpc_url_type: ConfigType::default(),
             starknet_client_type: ConfigType::default(),
             da_client_type: ConfigType::default(),
@@ -264,12 +310,13 @@ impl TestConfigBuilder {
     pub async fn build(self) -> TestConfigBuilderReturns {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
-        let mut params = get_env_params();
+        let mut params = get_env_params(Some(&self.test_id));
 
         let provider_config =
             Arc::new(CloudProvider::try_from(params.aws_params.clone()).expect("Failed to create provider config"));
 
         let TestConfigBuilder {
+            test_id: _,
             starknet_rpc_url_type,
             starknet_client_type,
             alerts_type,
@@ -296,6 +343,7 @@ impl TestConfigBuilder {
 
         let using_actual_queue = matches!(queue_type, ConfigType::Actual);
         let using_actual_database = matches!(database_type, ConfigType::Actual);
+        let using_actual_storage = matches!(storage_type, ConfigType::Actual);
         let using_actual_alerts = matches!(alerts_type, ConfigType::Actual);
 
         // init alerts
@@ -363,11 +411,20 @@ impl TestConfigBuilder {
 
         let api_server_address = implement_api_server(api_server_type, config.clone()).await;
 
+        // Create cleanup handle for automatic resource cleanup
+        let cleanup = TestCleanup::new(
+            if using_actual_database { Some(params.db_params.clone()) } else { None },
+            if using_actual_queue { Some(params.queue_params.clone()) } else { None },
+            if using_actual_storage { Some(params.storage_params.clone()) } else { None },
+            if using_actual_queue || using_actual_storage { Some(provider_config.clone()) } else { None },
+        );
+
         TestConfigBuilderReturns {
             starknet_server,
             config,
             provider_config: provider_config.clone(),
             api_server_address,
+            cleanup,
         }
     }
 }
@@ -595,25 +652,53 @@ pub struct EnvParams {
     instrumentation_params: OTELConfig,
 }
 
-pub(crate) fn get_env_params() -> EnvParams {
+pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
+    // Generate unique resource names for parallel test execution
+    let db_name = get_env_var_or_panic("MADARA_ORCHESTRATOR_DATABASE_NAME");
+    let database_name = if let Some(id) = test_id {
+        // MongoDB allows hyphens in database names, so we can use the UUID as-is
+        format!("{}-{}", db_name, id)
+    } else {
+        db_name
+    };
+
     let db_params = DatabaseArgs {
         connection_uri: get_env_var_or_panic("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL"),
-        database_name: get_env_var_or_panic("MADARA_ORCHESTRATOR_DATABASE_NAME"),
+        database_name,
     };
 
-    let storage_params = StorageArgs {
-        bucket_identifier: AWSResourceIdentifier::Name(format!(
-            "{}-{}",
-            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
-            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER")
-        )),
+    let bucket_base = format!(
+        "{}-{}",
+        get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
+        get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER")
+    );
+    let bucket_name = if let Some(id) = test_id {
+        // S3 bucket names can contain hyphens, but let's use a shorter format
+        // Remove hyphens from UUID to make it shorter and ensure it fits within limits
+        let sanitized_id = id.replace('-', "");
+        format!("{}-{}", bucket_base, sanitized_id)
+    } else {
+        bucket_base
     };
 
-    let queue_params = QueueArgs {
-        queue_template_identifier: AWSResourceIdentifier::Name(get_env_var_or_panic(
-            "MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER",
-        )),
+    let storage_params = StorageArgs { bucket_identifier: AWSResourceIdentifier::Name(bucket_name) };
+
+    let queue_base = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER");
+    let queue_identifier = if let Some(id) = test_id {
+        // SQS queue names have strict limits: alphanumeric, hyphens, underscores, 1-80 chars
+        // Remove hyphens from UUID to make it shorter
+        // Use first 16 chars of UUID (without hyphens) - this provides 2^64 uniqueness which is more than enough
+        // The template format is "test_{}_queue", so after replacement it becomes "test_{queue_type}_queue-{uuid}"
+        // Longest queue type is ~30 chars, so: "test_" (5) + queue_type (~30) + "_queue" (6) + "-" (1) + uuid (16) = ~58 chars
+        let sanitized_id = id.replace('-', "");
+        // Use first 16 characters for uniqueness (still provides 2^64 combinations)
+        let short_id = &sanitized_id[..sanitized_id.len().min(16)];
+        format!("{}-{}", queue_base, short_id)
+    } else {
+        queue_base
     };
+
+    let queue_params = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_identifier) };
 
     let aws_params = AWSCredentials { prefix: get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX") };
 

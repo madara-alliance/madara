@@ -7,6 +7,7 @@ use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
 use std::time::Duration;
 use tokio::time::sleep;
+use uuid::Uuid;
 
 pub const SNS_ALERT_TEST_QUEUE: &str = "orchestrator_sns_alert_testing_queue";
 
@@ -19,7 +20,13 @@ async fn sns_alert_subscribe_to_topic_receive_alert_works() {
     let services = TestConfigBuilder::new().configure_alerts(ConfigType::Actual).build().await;
 
     let sqs_client = get_sqs_client(services.provider_config.clone()).await;
-    let queue = sqs_client.create_queue().queue_name(SNS_ALERT_TEST_QUEUE).send().await.unwrap();
+
+    // Use unique queue name to avoid conflicts in parallel tests
+    let uuid_str = uuid::Uuid::new_v4().to_string();
+    let unique_queue_name = format!("{}-{}", SNS_ALERT_TEST_QUEUE, &uuid_str[..8]);
+
+    // Create the queue
+    let queue = sqs_client.create_queue().queue_name(&unique_queue_name).send().await.unwrap();
     let queue_url = queue.queue_url().unwrap();
 
     let sns_client = get_sns_client(services.provider_config.get_aws_client_or_panic()).await;

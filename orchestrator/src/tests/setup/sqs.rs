@@ -39,7 +39,14 @@ fn queue_args() -> QueueArgs {
     QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template) }
 }
 
-/// Helper function to cleanup all test queues
+/// Helper function to cleanup queues for a specific test (only deletes queues matching the queue_args identifier)
+async fn cleanup_queues_for_test(provider_config: Arc<CloudProvider>, queue_args: &QueueArgs) {
+    use crate::tests::common::cleanup_queues;
+    let _ = cleanup_queues(provider_config, queue_args).await;
+}
+
+/// Helper function to cleanup all test queues (use with caution in parallel tests)
+/// This is kept for backward compatibility but should be avoided in parallel test scenarios
 async fn cleanup_queues(provider_config: Arc<CloudProvider>) {
     let sqs_client = get_sqs_client(provider_config).await;
     let list_queues_output = sqs_client.list_queues().send().await.expect("Failed to list queues");
@@ -152,7 +159,9 @@ async fn test_setup_with_name_identifier(
     #[case] layer: Layer,
 ) -> color_eyre::Result<()> {
     let provider = cloud_provider.await;
-    cleanup_queues(provider.clone()).await;
+    // Use selective cleanup instead of deleting all test queues
+    // This prevents conflicts with other parallel tests
+    cleanup_queues_for_test(provider.clone(), &queue_args).await;
 
     let inner_sqs = InnerSQS::create_setup(provider.clone()).await?;
 
@@ -172,7 +181,7 @@ async fn test_setup_with_name_identifier(
     assert!(ready_after, "Queues should be ready after setup");
     println!("✓ is_ready_to_use returns true for {:?} layer", layer);
 
-    cleanup_queues(provider.clone()).await;
+    cleanup_queues_for_test(provider.clone(), &queue_args).await;
     Ok(())
 }
 
@@ -187,8 +196,8 @@ async fn test_setup_with_arn_identifier(
     #[case] layer: Layer,
 ) -> color_eyre::Result<()> {
     let provider = cloud_provider.await;
-    cleanup_queues(provider.clone()).await;
-
+    // For ARN test, we'll create queues with a unique template, so we don't need to cleanup first
+    // The unique UUID prefix ensures no conflicts with other parallel tests
     let inner_sqs = InnerSQS::create_setup(provider.clone()).await?;
 
     let uuid_prefix = &uuid::Uuid::new_v4().to_string()[0..4];
@@ -227,6 +236,6 @@ async fn test_setup_with_arn_identifier(
     assert!(ready_after, "Queues should be ready after setup");
     println!("✓ is_ready_to_use returns true for {:?} layer with ARN identifier", layer);
 
-    cleanup_queues(provider.clone()).await;
+    cleanup_queues_for_test(provider.clone(), &queue_args_arn).await;
     Ok(())
 }

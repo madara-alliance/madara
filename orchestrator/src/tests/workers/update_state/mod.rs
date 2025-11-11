@@ -4,6 +4,7 @@ use mockall::predicate::eq;
 use rstest::*;
 use uuid::Uuid;
 
+use crate::tests::common::mock_helpers::get_job_handler_context_safe;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::workers::utils::{create_and_store_prerequisite_jobs, get_job_item_mock_by_id};
 use crate::types::constant::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
@@ -11,7 +12,6 @@ use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
 use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -52,7 +52,7 @@ async fn update_state_worker_first_block() {
     // Create both SNOS and Aggregator jobs for block 0 with Completed status
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 1, JobStatus::Completed).await.unwrap();
 
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
@@ -81,7 +81,7 @@ async fn update_state_worker_first_block_missing() {
     // Note: Block 0 and 1 are missing, so the worker should not create a job
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 2, JobStatus::Completed).await.unwrap();
 
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
@@ -104,7 +104,7 @@ async fn update_state_worker_selects_consecutive_blocks() {
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 2, JobStatus::Completed).await.unwrap();
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 4, JobStatus::Completed).await.unwrap();
 
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
@@ -170,7 +170,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
 
     services.config.database().create_job(job_item).await.unwrap();
 
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
@@ -238,7 +238,7 @@ async fn update_state_worker_next_block_missing() {
 
     services.config.database().create_job(job_item).await.unwrap();
 
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());

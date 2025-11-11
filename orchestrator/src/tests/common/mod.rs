@@ -1,4 +1,6 @@
 pub mod constants;
+#[cfg(test)]
+pub mod mock_helpers;
 
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::client::MongoDbClient;
@@ -13,7 +15,7 @@ use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobS
 use crate::types::jobs::types::JobStatus::Created;
 use crate::types::jobs::types::JobType::DataSubmission;
 use crate::types::params::database::DatabaseArgs;
-use crate::types::params::{AlertArgs, QueueArgs, StorageArgs};
+use crate::types::params::{AWSResourceIdentifier, AlertArgs, QueueArgs, StorageArgs};
 use crate::types::queue::QueueType;
 use ::uuid::Uuid;
 use aws_config::SdkConfig;
@@ -129,22 +131,39 @@ pub async fn delete_storage(provider_config: Arc<CloudProvider>, s3_params: &Sto
 pub async fn create_queues(provider_config: Arc<CloudProvider>, queue_params: &QueueArgs) -> color_eyre::Result<()> {
     let sqs_client = get_sqs_client(provider_config).await;
 
-    // Dropping sqs queues
-    let list_queues_output = sqs_client.list_queues().send().await?;
-    let queue_urls = list_queues_output.queue_urls();
-    tracing::debug!("Found {} queues", queue_urls.len());
-    for queue_url in queue_urls {
-        match sqs_client.delete_queue().queue_url(queue_url).send().await {
-            Ok(_) => tracing::debug!("Successfully deleted queue: {}", queue_url),
-            Err(e) => tracing::error!("Error deleting queue {}: {:?}", queue_url, e),
+    // Get the queue template identifier for this test
+    let queue_template = queue_params.queue_template_identifier.to_string();
+
+    // Create all queues for this test
+    // Note: We don't delete existing queues since:
+    // 1. Each test has a unique UUID, so queues are isolated
+    // 2. LocalStack will be killed after tests, so cleanup isn't needed
+    // 3. Deleting queues can cause race conditions in parallel execution
+    for queue_type in QueueType::iter() {
+        let queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &queue_type);
+
+        // Create queue, handling the case where it might already exist
+        match sqs_client.create_queue().queue_name(queue_name.clone()).send().await {
+            Ok(_) => tracing::debug!("Created queue: {}", queue_name),
+            Err(e) => {
+                // If queue already exists, that's okay - we'll use the existing one
+                let error_str = e.to_string();
+                if error_str.contains("QueueAlreadyExists") || error_str.contains("QueueNameExists") {
+                    tracing::debug!("Queue {} already exists, using existing queue", queue_name);
+                } else {
+                    // For other errors, return the error
+                    tracing::error!("Failed to create queue {}: {:?}", queue_name, e);
+                    return Err(e.into());
+                }
+            }
         }
     }
 
-    for queue_type in QueueType::iter() {
-        let queue_name =
-            InnerSQS::get_queue_name_from_type(&queue_params.queue_template_identifier.to_string(), &queue_type);
-        sqs_client.create_queue().queue_name(queue_name).send().await?;
-    }
+    // Wait longer for queues to be fully available (LocalStack sometimes needs more time)
+    // This ensures queues are ready before tests try to use them
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    tracing::debug!("All queues created and ready for test");
     Ok(())
 }
 
@@ -152,6 +171,33 @@ pub async fn get_sqs_client(provider_config: Arc<CloudProvider>) -> aws_sdk_sqs:
     // This function is for localstack. So we can hardcode the region for this as of now.
     let config = provider_config.get_aws_client_or_panic();
     aws_sdk_sqs::Client::new(config)
+}
+
+/// Cleanup queues for a specific test (only deletes queues matching the queue_params identifier)
+pub async fn cleanup_queues(provider_config: Arc<CloudProvider>, queue_params: &QueueArgs) -> color_eyre::Result<()> {
+    let sqs_client = get_sqs_client(provider_config).await;
+    let queue_template = queue_params.queue_template_identifier.to_string();
+
+    // Delete only queues belonging to this test
+    for queue_type in QueueType::iter() {
+        let queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &queue_type);
+
+        match sqs_client.get_queue_url().queue_name(&queue_name).send().await {
+            Ok(output) => {
+                if let Some(queue_url) = output.queue_url() {
+                    match sqs_client.delete_queue().queue_url(queue_url).send().await {
+                        Ok(_) => tracing::debug!("Deleted queue: {}", queue_name),
+                        Err(e) => tracing::warn!("Error deleting queue {}: {:?}", queue_name, e),
+                    }
+                }
+            }
+            Err(_) => {
+                tracing::debug!("Queue {} does not exist, skipping", queue_name);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Deserialize, Debug)]

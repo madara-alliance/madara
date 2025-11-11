@@ -1,11 +1,11 @@
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
+use crate::tests::common::mock_helpers::get_job_handler_context_safe;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::types::batch::{SnosBatch, SnosBatchStatus};
 use crate::types::jobs::types::JobType;
 use crate::types::queue::QueueType;
-use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::event_handler::triggers::JobTrigger;
 use httpmock::MockServer;
@@ -73,7 +73,7 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
 
     // Setup job handler context
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // Mock queue operations
@@ -176,7 +176,7 @@ async fn test_create_snos_job_for_existing_batch(
 
     // Setup job handler context
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // Expecting 3 calls to send_message for the SNOS job trigger

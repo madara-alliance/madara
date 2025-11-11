@@ -12,12 +12,12 @@ use url::Url;
 
 use crate::core::config::Config;
 use crate::server::types::ApiResponse;
+use crate::tests::common::mock_helpers::get_job_handler_context_safe;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
 use crate::types::jobs::metadata::{JobSpecificMetadata, SettlementContext};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueNameForJobType;
-use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::parser::job_queue_message::JobQueueMessage;
 
@@ -53,6 +53,13 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
+    // Set up mock job handler (needed for queue_job_for_verification which calls get_job_handler)
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().with(eq(job_type.clone())).times(0..).returning(move |_| Arc::clone(&job_handler));
+
     let client = hyper::Client::new();
     let response = client
         .request(
@@ -68,8 +75,46 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     assert!(response.success);
     assert_eq!(response.message, Some(format!("Job with id {} queued for processing", job_id)));
 
-    // Verify job was added to process queue
-    let queue_message = config.queue().consume_message_from_queue(job_type.process_queue_name()).await.unwrap();
+    // Wait a bit for queue message to be available
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // Verify job was added to process queue - retry a few times in case of timing issues
+    let mut retries = 0;
+    let max_retries = 5;
+    let mut queue_message = None;
+
+    while retries < max_retries && queue_message.is_none() {
+        match config.queue().consume_message_from_queue(job_type.process_queue_name()).await {
+            Ok(msg) => queue_message = Some(msg),
+            Err(e) => {
+                let error_str = e.to_string();
+                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retries += 1;
+                    } else {
+                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
+                    }
+                } else if error_str.contains("NoData") {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retries += 1;
+                    } else {
+                        panic!("No message found in queue after {} retries: {}", max_retries, e);
+                    }
+                } else {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retries += 1;
+                    } else {
+                        panic!("Failed to consume message: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    let queue_message = queue_message.expect("Should have received message");
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
@@ -103,7 +148,7 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
 
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(job_type.clone())).times(1).returning(move |_| Arc::clone(&job_handler));
 
     let client = hyper::Client::new();
@@ -120,8 +165,43 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    // Verify job was added to verification queue
-    let queue_message = config.queue().consume_message_from_queue(job_type.verify_queue_name()).await.unwrap();
+    // Verify job was added to verification queue - retry a few times in case of timing issues
+    let mut retries = 0;
+    let max_retries = 5;
+    let mut queue_message = None;
+
+    while retries < max_retries && queue_message.is_none() {
+        match config.queue().consume_message_from_queue(job_type.verify_queue_name()).await {
+            Ok(msg) => queue_message = Some(msg),
+            Err(e) => {
+                let error_str = e.to_string();
+                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retries += 1;
+                    } else {
+                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
+                    }
+                } else if error_str.contains("NoData") {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retries += 1;
+                    } else {
+                        panic!("No message found in queue after {} retries: {}", max_retries, e);
+                    }
+                } else {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retries += 1;
+                    } else {
+                        panic!("Failed to consume message: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    let queue_message = queue_message.expect("Should have received message");
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
@@ -147,6 +227,13 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
+    // Set up mock job handler (needed for retry_job and queue_job_for_verification)
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().with(eq(job_type.clone())).times(0..).returning(move |_| Arc::clone(&job_handler));
+
     let client = hyper::Client::new();
     let response = client
         .request(Request::builder().uri(format!("http://{}/jobs/{}/retry", addr, job_id)).body(Body::empty()).unwrap())
@@ -159,9 +246,46 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     assert!(response.success);
     assert_eq!(response.message, Some(format!("Job with id {} retry initiated", job_id)));
 
-    // Verify job was added to process queue
-    let queue_message = config.queue().consume_message_from_queue(job_type.process_queue_name()).await.unwrap();
+    // Wait a bit for queue message to be available
+    tokio::time::sleep(Duration::from_secs(2)).await;
 
+    // Verify job was added to process queue - retry a few times in case of timing issues
+    let mut retries = 0;
+    let max_retries = 5;
+    let mut queue_message = None;
+
+    while retries < max_retries && queue_message.is_none() {
+        match config.queue().consume_message_from_queue(job_type.process_queue_name()).await {
+            Ok(msg) => queue_message = Some(msg),
+            Err(e) => {
+                let error_str = e.to_string();
+                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retries += 1;
+                    } else {
+                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
+                    }
+                } else if error_str.contains("NoData") {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retries += 1;
+                    } else {
+                        panic!("No message found in queue after {} retries: {}", max_retries, e);
+                    }
+                } else {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        retries += 1;
+                    } else {
+                        panic!("Failed to consume message: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    let queue_message = queue_message.expect("Should have received message");
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
