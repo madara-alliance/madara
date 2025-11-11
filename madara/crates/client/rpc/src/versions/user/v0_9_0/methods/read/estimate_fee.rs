@@ -27,7 +27,7 @@ pub async fn estimate_fee(
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<FeeEstimate>> {
     tracing::debug!("estimate fee on block_id {block_id:?}");
-    let view = starknet.resolve_block_view(block_id)?;
+    let view = starknet.resolve_block_view(BlockId::Tag(PreConfirmed))?;
     let mut exec_context = view.new_execution_context()?;
 
     if exec_context.protocol_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
