@@ -240,7 +240,7 @@ build-orchestrator: setup-cairo
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: check
-check:
+check: setup-cairo
 	@echo -e "$(DIM)Running code quality checks...$(RESET)"
 	@echo -e "$(INFO)Running prettier check...$(RESET)"
 	@npm install
@@ -262,7 +262,7 @@ check:
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
 
 .PHONY: fmt
-fmt:
+fmt: setup-cairo
 	@echo -e "$(DIM)Running code formatters...$(RESET)"
 	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
 	@npm install
