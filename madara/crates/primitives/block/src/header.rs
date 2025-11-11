@@ -363,7 +363,7 @@ fn concat_counts(
         state_diff_length.to_be_bytes(),
         [l1_data_availability_byte, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8, 0_u8],
     ]
-        .concat();
+    .concat();
 
     Felt::from_bytes_be_slice(concat_bytes.as_slice())
 }

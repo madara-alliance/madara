@@ -21,7 +21,7 @@ impl BlockProductionService {
         backend: &Arc<MadaraBackend>,
         mempool: Arc<mc_mempool::Mempool>,
         l1_client: Arc<dyn SettlementClient>,
-        no_charge_fee: bool
+        no_charge_fee: bool,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
 

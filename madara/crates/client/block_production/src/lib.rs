@@ -76,11 +76,15 @@
 
 use crate::batcher::Batcher;
 use crate::metrics::BlockProductionMetrics;
+use crate::util::BlockExecutionContext;
 use anyhow::Context;
+use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
+use blockifier::state::state_api::State;
 use executor::{BatchExecutionResult, ExecutorMessage};
 use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraPreconfirmedBlockView, MadaraStateView};
 use mc_exec::execution::TxInfo;
+use mc_exec::{LayeredStateAdapter, MadaraBackendExecutionExt};
 use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_block::TransactionWithReceipt;
@@ -96,7 +100,7 @@ use opentelemetry::KeyValue;
 use std::collections::HashSet;
 use std::mem;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 mod batcher;
@@ -256,7 +260,7 @@ impl BlockProductionTask {
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
-        no_charge_fee: bool
+        no_charge_fee: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -290,23 +294,204 @@ impl BlockProductionTask {
         }
     }
 
+    /// Prepares a PreconfirmedExecutedTransaction for re-execution by converting it to blockifier Transaction format.
+    fn prepare_preconfirmed_tx_for_reexecution(
+        preconfirmed_tx: &PreconfirmedExecutedTransaction,
+        state_view: &MadaraStateView,
+    ) -> anyhow::Result<blockifier::transaction::transaction_execution::Transaction> {
+        // Prefer declared_class from PreconfirmedExecutedTransaction if available
+        let class = if let Some(declared_class) = &preconfirmed_tx.declared_class {
+            Some(declared_class.clone())
+        } else if let Some(declare_tx) = preconfirmed_tx.transaction.transaction.as_declare() {
+            // Fallback: fetch from state_view if not stored in PreconfirmedExecutedTransaction
+            Some(
+                state_view
+                    .get_class_info_and_compiled(declare_tx.class_hash())?
+                    .with_context(|| format!("No class found for class_hash={:#x}", declare_tx.class_hash()))?,
+            )
+        } else {
+            None
+        };
+
+        TransactionWithHash::new(
+            preconfirmed_tx.transaction.transaction.clone(),
+            *preconfirmed_tx.transaction.receipt.transaction_hash(),
+        )
+        .into_blockifier(class.as_ref())
+        .context("Error converting transaction to blockifier format for reexecution")
+    }
+
+    /// Helper function to get the hash of block_n-10 if it exists.
+    fn wait_for_hash_of_block_min_10(
+        backend: &Arc<MadaraBackend>,
+        block_n: u64,
+    ) -> anyhow::Result<Option<(u64, Felt)>> {
+        let Some(block_n_min_10) = block_n.checked_sub(10) else {
+            return Ok(None);
+        };
+
+        if let Some(view) = backend.block_view_on_confirmed(block_n_min_10) {
+            let block_hash = view.get_block_info().context("Getting block hash of block_n - 10")?.block_hash;
+            Ok(Some((block_n_min_10, block_hash)))
+        } else {
+            // Block doesn't exist yet - this is fine, we'll skip it
+            Ok(None)
+        }
+    }
+
+    /// Re-executes all transactions in a PreconfirmedBlock to obtain BlockExecutionSummary.
+    ///
+    /// This function recreates the execution context and executes all transactions to get
+    /// the bouncer_weights and state_diff needed for proper block closing.
+    async fn reexecute_preconfirmed_block(
+        backend: &Arc<MadaraBackend>,
+        preconfirmed_view: &MadaraPreconfirmedBlockView,
+    ) -> anyhow::Result<BlockExecutionSummary> {
+        // Get all executed transactions
+        let executed_txs: Vec<_> = preconfirmed_view.borrow_content().executed_transactions().cloned().collect();
+
+        // Get parent block state view
+        let parent_state_view = preconfirmed_view.state_view_on_parent();
+
+        // Convert transactions to blockifier format
+        let blockifier_txs: Vec<blockifier::transaction::transaction_execution::Transaction> = executed_txs
+            .iter()
+            .map(|preconfirmed_tx| Self::prepare_preconfirmed_tx_for_reexecution(preconfirmed_tx, &parent_state_view))
+            .collect::<Result<Vec<_>, _>>()
+            .context("Converting preconfirmed transactions to blockifier format")?;
+
+        // Create BlockExecutionContext from PreconfirmedBlock header
+        let header = &preconfirmed_view.block().header;
+        let exec_ctx = BlockExecutionContext {
+            block_number: header.block_number,
+            sequencer_address: header.sequencer_address,
+            block_timestamp: UNIX_EPOCH + Duration::from_secs(header.block_timestamp.0),
+            protocol_version: header.protocol_version,
+            gas_prices: header.gas_prices.clone(),
+            l1_da_mode: header.l1_da_mode,
+        };
+
+        // Create LayeredStateAdapter
+        let state_adaptor =
+            LayeredStateAdapter::new(backend.clone()).context("Creating LayeredStateAdapter for re-execution")?;
+
+        // Create TransactionExecutor
+        let mut executor = backend
+            .new_executor_for_block_production(state_adaptor, exec_ctx.to_blockifier()?)
+            .context("Creating TransactionExecutor for re-execution")?;
+
+        // Prepare the block_n-10 state diff entry on the 0x1 contract
+        if let Some((block_n_min_10, block_hash_n_min_10)) =
+            Self::wait_for_hash_of_block_min_10(backend, exec_ctx.block_number)?
+        {
+            let contract_address = 1u64.into();
+            let key = block_n_min_10.into();
+            executor
+                .block_state
+                .as_mut()
+                .expect("Blockifier block context has been taken")
+                .set_storage_at(contract_address, key, block_hash_n_min_10)
+                .context("Cannot set storage value in cache")?;
+
+            tracing::debug!(
+                "State diff inserted {:#x} {:#x} => {block_hash_n_min_10:#x}",
+                contract_address.to_felt(),
+                key.to_felt()
+            );
+        }
+
+        // Execute all transactions
+        let execution_results = executor.execute_txs(&blockifier_txs, /* execution_deadline */ None);
+
+        // Check for execution errors (though we don't need to process results, we should check for panics)
+        for result in &execution_results {
+            if let Err(err) = result {
+                tracing::warn!("Transaction execution error during re-execution: {err:?}");
+            }
+        }
+
+        // Call finalize() to get BlockExecutionSummary
+        let block_exec_summary = executor.finalize().context("Finalizing executor to get BlockExecutionSummary")?;
+
+        Ok(block_exec_summary)
+    }
+
     /// Closes the last pending block store in db (if any).
     ///
-    /// This avoids re-executing transaction by re-adding them to the [Mempool].
+    /// Re-executes transactions if the block is not empty to obtain bouncer_weights and state_diff
+    /// before closing the block. This ensures correctness on restart.
     async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
-        if self.backend.has_preconfirmed_block() {
-            tracing::debug!("Close pending block on startup.");
+        if !self.backend.has_preconfirmed_block() {
+            return Ok(());
+        }
+
+        tracing::debug!("Close pending block on startup.");
+
+        let preconfirmed_view = self.backend.block_view_on_preconfirmed().context("Getting preconfirmed block view")?;
+
+        let block_number = preconfirmed_view.block_number();
+        let n_txs = preconfirmed_view.num_executed_transactions();
+
+        // If block is empty, close directly without re-execution
+        if n_txs == 0 {
+            tracing::debug!("Closing empty preconfirmed block on startup.");
             let backend = self.backend.clone();
             global_spawn_rayon_task(move || {
                 backend
                     .write_access()
-                    .close_preconfirmed(
-                        /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
-                    )
-                    .context("Closing preconfirmed block on startup")
+                    .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, None)
+                    .context("Closing empty preconfirmed block on startup")
             })
             .await?;
+            return Ok(());
         }
+
+        tracing::info!(
+            "Re-executing {} transaction(s) in preconfirmed block #{} to obtain bouncer_weights and state_diff",
+            n_txs,
+            block_number
+        );
+
+        // Re-execute transactions to get BlockExecutionSummary
+        let block_exec_summary = Self::reexecute_preconfirmed_block(&self.backend, &preconfirmed_view)
+            .await
+            .context("Re-executing preconfirmed block to get execution summary")?;
+
+        // Extract consumed L1 nonces from transactions
+        let consumed_core_contract_nonces: HashSet<u64> = preconfirmed_view
+            .borrow_content()
+            .executed_transactions()
+            .filter_map(|tx| tx.transaction.transaction.as_l1_handler().map(|l1_tx| l1_tx.nonce))
+            .collect();
+
+        let backend = self.backend.clone();
+        global_spawn_rayon_task(move || {
+            // Remove consumed L1 to L2 message nonces
+            for l1_nonce in consumed_core_contract_nonces {
+                backend
+                    .remove_pending_message_to_l2(l1_nonce)
+                    .context("Removing pending message to l2 from database")?;
+            }
+
+            // Save bouncer weights
+            backend
+                .write_access()
+                .write_bouncer_weights(block_number, &block_exec_summary.bouncer_weights)
+                .context("Saving Bouncer Weights for SNOS")?;
+
+            // Convert state_diff and close block
+            let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+            backend
+                .write_access()
+                .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
+                .context("Closing preconfirmed block on startup")?;
+
+            anyhow::Ok(())
+        })
+        .await?;
+
+        tracing::info!("✅ Closed preconfirmed block #{} with {} transactions on startup", block_number, n_txs);
+
         Ok(())
     }
 
