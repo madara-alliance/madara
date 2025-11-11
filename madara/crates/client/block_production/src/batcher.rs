@@ -49,7 +49,7 @@ impl Batcher {
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             // We use the permit API so that we don't have to remove transactions from the mempool until the last moment.
-            // The buffer inside of the channel is of size 1 - meaning we're preparing the next batch of transactions that will immediately be executed next, once
+            // The buffer inside the channel is of size 1 - meaning we're preparing the next batch of transactions that will immediately be executed next, once
             // the worker has finished executing its current one.
             let Some(Ok(permit)) = self.ctx.run_until_cancelled(self.out.reserve()).await else {
                 // Stop condition: service stopped (ctx), or batch sender closed.

@@ -50,6 +50,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 derive_more = { workspace = true, features = ["from_str"] }
+dotenv.workspace = true
 fdlimit.workspace = true
 figment = { workspace = true, features = ["toml", "json", "yaml"] }
 futures = { workspace = true, features = ["thread-pool"] }
@@ -85,3 +86,16 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[dev-dependencies]
+# Core
+mc-exec = { workspace = true }
+mc-e2e-tests = { workspace = true }
+# Primitives
+mp-bloom-filter = { workspace = true }
+mp-class = { workspace = true }
+mp-convert = { workspace = true }
+mp-gateway = { workspace = true }
+mp-receipt = { workspace = true }
+mp-transactions = { workspace = true }
+mp-utils = { workspace = true }

@@ -1,5 +1,5 @@
 {
-  "rollup_seq_url": "http://127.0.0.1:9944/rpc/v0.8.1/",
+  "rollup_seq_url": "http://127.0.0.1:9944/",
   "rollup_declare_v0_seq_url": "http://127.0.0.1:9943",
   "eth_priv_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
   "config_hash_version": "StarknetOsConfig2",
