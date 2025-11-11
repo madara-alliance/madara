@@ -211,8 +211,12 @@ setup-cairo:
 	fi
 	@echo -e "$(INFO)Installing Cairo 0 dependencies...$(RESET)"
 	@if [ ! -f sequencer_requirements.txt ]; then \
-		if [ -f /Volumes/External/rust-builds/git/checkouts/sequencer-be896281adc16bee/e04617e/scripts/requirements.txt ]; then \
-			sed 's/numpy==2.0.2/numpy<2.0/' /Volumes/External/rust-builds/git/checkouts/sequencer-be896281adc16bee/e04617e/scripts/requirements.txt > sequencer_requirements.txt; \
+		CARGO_HOME=$${CARGO_HOME:-$$HOME/.cargo}; \
+		GIT_CHECKOUTS=$$(readlink -f "$$CARGO_HOME/git" 2>/dev/null || echo "$$CARGO_HOME/git"); \
+		REQUIREMENTS_PATH=$$(find "$$GIT_CHECKOUTS/checkouts" -type f -path "*/sequencer*/scripts/requirements.txt" 2>/dev/null | head -n 1); \
+		if [ -n "$$REQUIREMENTS_PATH" ]; then \
+			sed 's/numpy==2.0.2/numpy<2.0/' "$$REQUIREMENTS_PATH" > sequencer_requirements.txt; \
+			echo -e "$(INFO)Found requirements.txt at: $$REQUIREMENTS_PATH$(RESET)"; \
 		else \
 			echo -e "$(WARN)⚠️  WARNING: Could not find requirements.txt from sequencer checkout$(RESET)"; \
 			echo -e "$(INFO)Creating basic requirements with cairo-lang...$(RESET)"; \
