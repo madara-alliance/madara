@@ -411,6 +411,13 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         let mut guard = self.custom_header.lock().expect("Poisoned lock");
         *guard = Some(custom_header);
     }
+
+    /// Flush all pending writes to disk. Critical for databases with WAL disabled.
+    /// Must be called before shutdown to ensure data persistence.
+    pub fn flush(&self) -> Result<()> {
+        self.db.flush()
+    }
+
 }
 
 impl MadaraBackend<RocksDBStorage> {
@@ -475,7 +482,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         *self.latest_l1_confirmed.borrow()
     }
 
-    fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
+    pub fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
         self.chain_tip.borrow().as_preconfirmed().cloned()
     }
 
@@ -543,6 +550,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &new_tip
         } else {
             // Remove the pre-confirmed case: we save the parent confirmed in that case.
+            // Log when we're dropping a preconfirmed block
+            if let ChainTip::Preconfirmed(preconfirmed_block) = &new_tip {
+                tracing::info!(
+                    "⚠️  Preconfirmed block #{} NOT saved to database. Block will be lost on restart.",
+                    preconfirmed_block.header.block_number
+                );
+            }
             &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
         };
         // Write to db if needed.
@@ -760,7 +774,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
     /// parts.
     pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
-        // Also flush based on the configured interval if set
+        // Flush the most latest state to db to reduce data loss
         if self
             .inner
             .config
@@ -771,7 +785,8 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             self.inner.db.flush().context("Periodic database flush")?;
         }
 
-        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
+        // Update snapshots for storage proofs. (TODO (heemank 10/11/2025): decouple this logic)
+        self.inner.db.on_new_confirmed_head(block_number)?;
 
         // Advance chain & clear preconfirmed atomically
         self.replace_chain_tip(ChainTip::Confirmed(block_number))?;

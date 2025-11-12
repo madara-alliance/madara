@@ -2,6 +2,7 @@ use crate::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
     GasVector, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MsgToL1, MsgToL2, PriceUnit, TransactionReceipt,
 };
+use crate::revert_error::RevertErrorExt;
 use anyhow::anyhow;
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{
@@ -77,119 +78,6 @@ fn recursive_call_info_iter(res: &TransactionExecutionInfo) -> impl Iterator<Ite
     res
         .non_optional_call_infos() // all root callinfos
         .flat_map(|call_info| call_info.iter()) // flatmap over the roots' recursive inner call infos
-}
-
-/// Formats the revert error string by removing redundant VM tracebacks.
-///
-/// The blockifier generates verbose error messages with VM tracebacks at every level
-/// of the call stack. This function filters them to show the traceback only once,
-/// positioned after the last regular contract call (CallContract) entry point frame
-/// and before any library call (LibraryCall) frames or the final error.
-///
-/// This makes error messages more concise while preserving the most relevant debugging information.
-fn format_revert_error(error_string: &str) -> String {
-    // Check if the original string ends with a newline
-    let ends_with_newline = error_string.ends_with('\n');
-
-    let lines: Vec<&str> = error_string.lines().collect();
-    let mut output_lines = Vec::new();
-    let mut i = 0;
-
-    while i < lines.len() {
-        let line = lines[i];
-
-        // Check if this is the start of a VM exception frame
-        // VM exception frames start with "Error at pc=..."
-        if line.trim().starts_with("Error at pc=") {
-            // Look ahead to see if there's another "Error in the called contract" entry
-            // or "Error in a library call" coming up
-            let mut has_nested_call_contract = false;
-            let mut j = i + 1;
-
-            // Scan forward to find the next entry point frame
-            while j < lines.len() {
-                let next_line = lines[j].trim();
-
-                // Found the next entry point - check if it's a CallContract or LibraryCall
-                if next_line.starts_with("Error in the called contract") {
-                    has_nested_call_contract = true;
-                    break;
-                } else if next_line.starts_with("Error in a library call")
-                    || next_line.starts_with("Execution failed")
-                    || next_line.starts_with("Entry point") {
-                    // Next entry is a library call or final error - don't skip this traceback
-                    has_nested_call_contract = false;
-                    break;
-                }
-
-                // Keep scanning through the traceback lines
-                if next_line.starts_with("Unknown location")
-                    || next_line.starts_with("Cairo traceback")
-                    || next_line.is_empty() {
-                    j += 1;
-                } else {
-                    // Reached a numbered entry like "1:" - check if it contains the patterns
-                    if let Some(colon_pos) = next_line.find(':') {
-                        let after_colon = &next_line[colon_pos + 1..].trim();
-                        if after_colon.starts_with("Error in the called contract") {
-                            has_nested_call_contract = true;
-                            break;
-                        } else if after_colon.starts_with("Error in a library call") {
-                            has_nested_call_contract = false;
-                            break;
-                        }
-                    }
-                    j += 1;
-                }
-            }
-
-            // Skip the VM traceback if there's a nested CallContract
-            if has_nested_call_contract {
-                // Skip this "Error at pc=..." line and all traceback lines until the next entry
-                while i < lines.len() {
-                    let current_line = lines[i].trim();
-                    i += 1;
-
-                    // Stop when we hit the next numbered entry or end
-                    if i < lines.len() {
-                        let next_line = lines[i].trim();
-                        if let Some(first_char) = next_line.chars().next() {
-                            if first_char.is_ascii_digit() && next_line.contains(':') {
-                                break;
-                            }
-                        }
-                    }
-
-                    // Also stop at the end or at lines that look like new entries
-                    if current_line.is_empty() && i < lines.len() {
-                        let peek = lines[i].trim();
-                        if let Some(first_char) = peek.chars().next() {
-                            if first_char.is_ascii_digit() || peek.starts_with("Execution failed") {
-                                break;
-                            }
-                        }
-                    }
-                }
-            } else {
-                // Keep this traceback - it's before a library call or final error
-                output_lines.push(line);
-                i += 1;
-            }
-        } else {
-            // Not a VM traceback line - keep it
-            output_lines.push(line);
-            i += 1;
-        }
-    }
-
-    let mut result = output_lines.join("\n");
-
-    // Preserve the trailing newline if the original had one
-    if ends_with_newline {
-        result.push('\n');
-    }
-
-    result
 }
 
 pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Transaction) -> TransactionReceipt {
@@ -311,8 +199,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     };
 
     let execution_result = if let Some(reason) = &res.revert_error {
-        let formatted_reason = format_revert_error(&reason.to_string());
-        ExecutionResult::Reverted { reason: formatted_reason }
+        ExecutionResult::Reverted { reason: reason.format_for_receipt_string() }
     } else {
         ExecutionResult::Succeeded
     };

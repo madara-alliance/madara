@@ -5,7 +5,7 @@ use bonsai_trie::id::Id;
 use bonsai_trie::{
     BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, ByteVec, DBError, DatabaseKey,
 };
-use rocksdb::{Direction, IteratorMode, WriteOptions};
+use rocksdb::{Direction, IteratorMode};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -44,8 +44,6 @@ impl RocksDBStorage {
         &self,
         column_mapping: DatabaseKeyMapping,
     ) -> BonsaiStorage<BasicId, BonsaiDB, H> {
-        let mut write_opt = WriteOptions::default();
-        write_opt.disable_wal(true);
         BonsaiStorage::new(
             BonsaiDB { backend: self.inner.clone(), column_mapping, snapshots: self.snapshots.clone() },
             BonsaiStorageConfig {
@@ -167,7 +165,7 @@ impl BonsaiDatabase for BonsaiDB {
         if let Some(batch) = batch {
             batch.put_cf(&handle, key.as_slice(), value);
         } else {
-            self.backend.db.put_cf_opt(&handle, key.as_slice(), value, &self.backend.writeopts_no_wal)?;
+            self.backend.db.put_cf_opt(&handle, key.as_slice(), value, &self.backend.writeopts)?;
         }
         Ok(old_value.map(Into::into))
     }
@@ -184,7 +182,7 @@ impl BonsaiDatabase for BonsaiDB {
         if let Some(batch) = batch {
             batch.delete_cf(&handle, key.as_slice());
         } else {
-            self.backend.db.delete_cf_opt(&handle, key.as_slice(), &self.backend.writeopts_no_wal)?;
+            self.backend.db.delete_cf_opt(&handle, key.as_slice(), &self.backend.writeopts)?;
         }
         Ok(old_value.map(Into::into))
     }
@@ -213,7 +211,7 @@ impl BonsaiDatabase for BonsaiDB {
 
     #[tracing::instrument(skip(self, batch))]
     fn write_batch(&mut self, batch: Self::Batch) -> Result<(), Self::DatabaseError> {
-        Ok(self.backend.db.write_opt(batch, &self.backend.writeopts_no_wal)?)
+        Ok(self.backend.db.write_opt(batch, &self.backend.writeopts)?)
     }
 }
 
