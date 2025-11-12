@@ -1265,10 +1265,9 @@ pub(crate) mod tests {
         assert_eq!(preconfirmed_view.num_executed_transactions(), executed_transactions.len());
 
         // Update the preconfirmed block header to match the original block header exactly
-        // This ensures the re-execution uses the same header values (timestamp, gas_prices, etc.)
+        // This ensures the re-execution uses the same header values like gas_prices
         let restart_preconfirmed_block = preconfirmed_view.block();
         let mut updated_header = restart_preconfirmed_block.header.clone();
-        updated_header.block_timestamp = header_info.block_timestamp;
         updated_header.gas_prices = header_info.gas_prices.clone();
 
         // Replace the preconfirmed block with updated header
@@ -1287,6 +1286,17 @@ pub(crate) mod tests {
         assert!(!restart_devnet_setup.backend.has_preconfirmed_block());
         assert_eq!(restart_devnet_setup.backend.latest_confirmed_block_n(), Some(block_number));
 
+        let reexecuted_block_info =
+            restart_devnet_setup.backend.block_view_on_confirmed(block_number).unwrap().get_block_info().unwrap();
+
+        // verify the header of the restart_preconfirmed_block before closing and after execution is same!!!
+        assert_eq!(restart_preconfirmed_block.header.block_timestamp, reexecuted_block_info.header.block_timestamp);
+        assert_eq!(restart_preconfirmed_block.header.protocol_version, reexecuted_block_info.header.protocol_version);
+        assert_eq!(restart_preconfirmed_block.header.l1_da_mode, reexecuted_block_info.header.l1_da_mode);
+        assert_eq!(restart_preconfirmed_block.header.gas_prices, reexecuted_block_info.header.gas_prices);
+        assert_eq!(restart_preconfirmed_block.header.sequencer_address, reexecuted_block_info.header.sequencer_address);
+        assert_eq!(restart_preconfirmed_block.header.block_number, reexecuted_block_info.header.block_number);
+
         let reexecuted_block = restart_devnet_setup.backend.block_view_on_confirmed(block_number).unwrap();
         let reexecuted_block_info = reexecuted_block.get_block_info().unwrap();
         let actual_global_state_root = reexecuted_block_info.header.global_state_root;
@@ -1296,9 +1306,6 @@ pub(crate) mod tests {
         // Sort both state diffs to normalize ordering before comparison
         actual_state_diff.sort();
         expected_state_diff_sorted.sort();
-
-        println!("actual_state_diff: {:?}", actual_state_diff);
-        println!("expected_state_diff_sorted: {:?}", expected_state_diff_sorted);
 
         // Verify global state root matches
         assert_eq!(

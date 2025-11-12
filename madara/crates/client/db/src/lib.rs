@@ -634,8 +634,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         // Global state root and block hash.
         let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
-        tracing::info!(" Global state root: {:?}", global_state_root);
-
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
