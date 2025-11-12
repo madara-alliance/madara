@@ -91,6 +91,12 @@ pub struct RpcParams {
     #[arg(env = "MADARA_RPC_ADMIN_EXTERNAL", long, default_value_t = false)]
     pub rpc_admin_external: bool,
 
+    /// Enables unsafe admin RPC methods. This includes dangerous methods like
+    /// `revertTo` and `setCustomBlockHeader` that can modify the blockchain state.
+    /// Use with extreme caution. Requires `--rpc-admin` to be enabled.
+    #[arg(env = "MADARA_RPC_UNSAFE", long, default_value_t = false, requires = "rpc_admin")]
+    pub rpc_unsafe: bool,
+
     /// Set the maximum RPC request payload size for both HTTP and WebSockets in mebibytes.
     #[arg(env = "MADARA_RPC_MAX_REQUEST_SIZE", long, default_value_t = RPC_DEFAULT_MAX_REQUEST_SIZE_MIB)]
     pub rpc_max_request_size: u32,
