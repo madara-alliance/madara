@@ -11,7 +11,6 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use mp_utils::service::MadaraServiceId;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -94,12 +93,16 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into()
-            }.into());
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
         }
 
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
-        let fresh_chain_tip = self.backend.db.get_chain_tip()
+        let fresh_chain_tip = self
+            .backend
+            .db
+            .get_chain_tip()
             .context("Failed to get chain tip after revert")
             .map_err(StarknetRpcApiError::from)?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
@@ -124,8 +127,9 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into()
-            }.into());
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
         }
 
         self.backend.set_custom_header(custom_block_headers);

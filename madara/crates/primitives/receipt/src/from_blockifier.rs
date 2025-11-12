@@ -1,8 +1,8 @@
+use crate::revert_error::RevertErrorExt;
 use crate::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
     GasVector, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MsgToL1, MsgToL2, PriceUnit, TransactionReceipt,
 };
-use crate::revert_error::RevertErrorExt;
 use anyhow::anyhow;
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{

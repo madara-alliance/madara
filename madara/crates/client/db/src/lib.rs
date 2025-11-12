@@ -417,7 +417,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn flush(&self) -> Result<()> {
         self.db.flush()
     }
-
 }
 
 impl MadaraBackend<RocksDBStorage> {

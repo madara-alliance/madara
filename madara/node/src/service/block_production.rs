@@ -12,7 +12,6 @@ pub struct BlockProductionService {
     task: Option<BlockProductionTask>,
     n_devnet_contracts: u64,
     disabled: bool,
-    close_preconfirmed_block_upon_restart: bool,
 }
 
 impl BlockProductionService {
@@ -38,7 +37,6 @@ impl BlockProductionService {
             )),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
-            close_preconfirmed_block_upon_restart: config.close_preconfirmed_block_upon_restart,
         })
     }
 }
