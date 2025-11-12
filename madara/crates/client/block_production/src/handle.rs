@@ -2,8 +2,8 @@ use crate::executor::{self, ExecutorCommand, ExecutorCommandError};
 use async_trait::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{
-    SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction, TransactionValidator,
-    TransactionValidatorConfig, SubmitL1HandlerTransaction
+    SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction,
+    TransactionValidator, TransactionValidatorConfig,
 };
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_9_0::{
@@ -11,9 +11,9 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::validated::ValidatedTransaction;
+use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
-use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
@@ -47,7 +47,7 @@ impl BlockProductionHandle {
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
-        no_charge_fee: bool
+        no_charge_fee: bool,
     ) -> Self {
         Self {
             executor_commands,
@@ -119,7 +119,7 @@ impl SubmitL1HandlerTransaction for BlockProductionHandle {
     async fn submit_l1_handler_transaction(
         &self,
         tx: L1HandlerTransactionWithFee,
-    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError>{
+    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError> {
         self.tx_converter.submit_l1_handler_transaction(tx).await
     }
 }

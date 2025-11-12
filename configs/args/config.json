@@ -82,6 +82,7 @@
     "rpc_external": false,
     "rpc_admin": false,
     "rpc_admin_external": false,
+    "rpc_unsafe": false,
     "rpc_max_request_size": 15,
     "rpc_max_response_size": 15,
     "rpc_max_subscriptions_per_connection": 1024,

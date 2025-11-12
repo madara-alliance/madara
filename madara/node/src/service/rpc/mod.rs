@@ -76,6 +76,7 @@ impl Service for RpcService {
         let block_prod_handle = self.block_prod_handle.clone();
 
         let pre_v0_9_preconfirmed_as_pending = self.config.rpc_pre_v0_9_preconfirmed_as_pending;
+        let rpc_unsafe_enabled = self.config.rpc_unsafe;
 
         runner.service_loop(move |ctx| async move {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
@@ -88,6 +89,7 @@ impl Service for RpcService {
                 ctx.clone(),
             );
             starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
+            starknet.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
 
             let metrics = RpcMetrics::register()?;
 

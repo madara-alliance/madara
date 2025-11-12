@@ -119,7 +119,7 @@ impl GasPriceProviderConfigBuilder {
     pub fn build(self) -> anyhow::Result<GasPriceProviderConfig> {
         let needs_oracle = self.fix_strk_per_eth.is_none();
         if needs_oracle && self.oracle_provider.is_none() {
-            // TODO: fix this messagee.
+            // TODO: fix this message
             tracing::debug!("Oracle provider must be set if no fix_strk_per_eth is provided. Gas prices may be incorrect when producing blocks.");
         }
 

@@ -830,6 +830,7 @@ pub struct Starknet {
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
+    pub(crate) rpc_unsafe_enabled: bool,
 }
 
 impl Starknet {
@@ -849,11 +850,16 @@ impl Starknet {
             block_prod_handle,
             ctx,
             pre_v0_9_preconfirmed_as_pending: false,
+            rpc_unsafe_enabled: false,
         }
     }
 
     pub fn set_pre_v0_9_preconfirmed_as_pending(&mut self, value: bool) {
         self.pre_v0_9_preconfirmed_as_pending = value;
+    }
+
+    pub fn set_rpc_unsafe_enabled(&mut self, value: bool) {
+        self.rpc_unsafe_enabled = value;
     }
 }
 
