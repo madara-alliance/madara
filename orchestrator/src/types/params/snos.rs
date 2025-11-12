@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::cli::snos::SNOSCliArgs;
 use url::Url;
 
@@ -7,6 +9,7 @@ pub struct SNOSParams {
     pub snos_full_output: bool,
     pub strk_fee_token_address: String,
     pub eth_fee_token_address: String,
+    pub versioned_constants_path: Option<PathBuf>,
 }
 
 impl From<SNOSCliArgs> for SNOSParams {
@@ -16,6 +19,7 @@ impl From<SNOSCliArgs> for SNOSParams {
             snos_full_output: args.snos_full_output,
             strk_fee_token_address: args.strk_fee_token_address,
             eth_fee_token_address: args.eth_fee_token_address,
+            versioned_constants_path: args.versioned_constants_path,
         }
     }
 }
