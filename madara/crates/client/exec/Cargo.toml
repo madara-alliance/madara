@@ -19,10 +19,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 # Madara
 mc-db = { workspace = true }
 mp-block = { workspace = true }
-mp-receipt = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
+mp-receipt = { workspace = true }
 mp-rpc = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
