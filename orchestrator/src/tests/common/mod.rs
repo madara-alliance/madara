@@ -232,105 +232,35 @@ pub(crate) async fn get_storage_client(provider_config: Arc<CloudProvider>) -> I
 /// # Arguments
 /// * `queue_client` - The queue client to use for consuming messages
 /// * `queue_type` - The type of queue to consume from
-/// * `max_retries` - Maximum number of retry attempts (default: 5)
-/// * `retry_delay` - Delay between retries in seconds (default: 1)
+/// * `max_retries` - Maximum number of retry attempts
+/// * `retry_delay` - Delay between retries in seconds
 ///
 /// # Returns
-/// * `Delivery` - The consumed message
-///
-/// # Panics
-/// * Panics if the queue doesn't exist after max_retries attempts
-/// * Panics if no message is found after max_retries attempts
-/// * Panics if any other error occurs after max_retries attempts
+/// * `Result<Delivery, QueueError>` - The consumed message or an error
+///   - Use `.unwrap()` when expecting a message
+///   - Use `.unwrap_err()` when expecting an error (e.g., empty queue)
 pub async fn consume_message_with_retry(
     queue_client: &dyn QueueClient,
     queue_type: QueueType,
     max_retries: usize,
     retry_delay: u64,
-) -> Delivery {
-    let mut retries = 0;
-    let mut queue_message = None;
-
-    while retries < max_retries && queue_message.is_none() {
+) -> Result<Delivery, QueueError> {
+    for attempt in 0..max_retries {
         match queue_client.consume_message_from_queue(queue_type.clone()).await {
-            Ok(msg) => queue_message = Some(msg),
+            Ok(msg) => return Ok(msg),
             Err(e) => {
-                let error_str = e.to_string();
-                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(retry_delay)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
-                    }
-                } else if error_str.contains("NoData") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(retry_delay)).await;
-                        retries += 1;
-                    } else {
-                        panic!("No message found in queue after {} retries: {}", max_retries, e);
-                    }
-                } else if retries < max_retries - 1 {
+                // Retry if we have retries remaining
+                if attempt < max_retries - 1 {
                     tokio::time::sleep(Duration::from_secs(retry_delay)).await;
-                    retries += 1;
+                    // Continue to next iteration (retry)
                 } else {
-                    panic!("Failed to consume message: {}", e);
+                    // Exhausted retries, return the error
+                    return Err(e);
                 }
             }
         }
     }
 
-    queue_message.expect("Should have received message")
-}
-
-/// Helper function to check for queue errors with retry logic.
-/// This is useful when checking that a queue exists but is empty (ErrorFromQueueError).
-///
-/// # Arguments
-/// * `queue_client` - The queue client to use for consuming messages
-/// * `queue_type` - The type of queue to check
-/// * `max_retries` - Maximum number of retry attempts
-/// * `retry_delay` - Delay between retries in seconds
-///
-/// # Returns
-/// * `QueueError` - The error returned from the queue (typically ErrorFromQueueError for empty queues)
-pub async fn check_queue_error_with_retry(
-    queue_client: &dyn QueueClient,
-    queue_type: QueueType,
-    max_retries: usize,
-    retry_delay: u64,
-) -> QueueError {
-    let mut retries = 0;
-
-    while retries < max_retries {
-        match queue_client.consume_message_from_queue(queue_type.clone()).await {
-            Ok(_) => {
-                // If we get a message, that's unexpected - retry in case it's a timing issue
-                if retries < max_retries - 1 {
-                    tokio::time::sleep(Duration::from_secs(retry_delay)).await;
-                    retries += 1;
-                } else {
-                    panic!("Expected queue to be empty but found a message after {} retries", max_retries);
-                }
-            }
-            Err(e) => {
-                let error_str = e.to_string();
-                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
-                    // Queue doesn't exist yet - retry
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(retry_delay)).await;
-                        retries += 1;
-                    } else {
-                        return e;
-                    }
-                } else {
-                    // Queue exists but empty (ErrorFromQueueError) or other error - return it
-                    return e;
-                }
-            }
-        }
-    }
-
-    // Should not reach here, but return a generic error if we do
-    queue_client.consume_message_from_queue(queue_type).await.unwrap_err()
+    // Should not reach here (we return on success or error), but make one final attempt if we do
+    queue_client.consume_message_from_queue(queue_type).await
 }

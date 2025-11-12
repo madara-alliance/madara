@@ -73,7 +73,7 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     assert_eq!(response.message, Some(format!("Job with id {} queued for processing", job_id)));
 
     // Verify job was added to process queue - retry a few times in case of timing issues
-    let queue_message = consume_message_with_retry(config.queue(), job_type.process_queue_name(), 5, 1).await;
+    let queue_message = consume_message_with_retry(config.queue(), job_type.process_queue_name(), 10, 2).await.unwrap();
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
@@ -127,7 +127,7 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     assert_eq!(response.message, Some(format!("Job with id {} queued for verification", job_id)));
 
     // Verify job was added to verification queue - retry a few times in case of timing issues
-    let queue_message = consume_message_with_retry(config.queue(), job_type.verify_queue_name(), 5, 1).await;
+    let queue_message = consume_message_with_retry(config.queue(), job_type.verify_queue_name(), 10, 2).await.unwrap();
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
@@ -166,7 +166,7 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     assert_eq!(response.message, Some(format!("Job with id {} retry initiated", job_id)));
 
     // Verify job was added to process queue - retry a few times in case of timing issues
-    let queue_message = consume_message_with_retry(config.queue(), job_type.process_queue_name(), 5, 1).await;
+    let queue_message = consume_message_with_retry(config.queue(), job_type.process_queue_name(), 10, 2).await.unwrap();
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 

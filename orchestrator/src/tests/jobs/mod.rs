@@ -33,8 +33,8 @@ mod aggregator_job;
 
 use crate::core::client::queue::QueueError;
 use crate::error::job::JobError;
+use crate::tests::common::consume_message_with_retry;
 use crate::tests::common::mock_helpers::{acquire_test_lock, get_job_handler_context_safe};
-use crate::tests::common::{check_queue_error_with_retry, consume_message_with_retry};
 use crate::types::constant::CAIRO_PIE_FILE_NAME;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::metadata::{
@@ -81,13 +81,9 @@ async fn create_job_job_does_not_exists_in_db_works() {
     // create_job calls get_job_handler exactly once
     _ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure create_job succeeds
-    let create_result =
-        JobHandlerService::create_job(JobType::SnosRun, "0".to_string(), metadata, services.config.clone()).await;
-    if let Err(e) = &create_result {
-        panic!("create_job failed: {:?}", e);
-    }
-    assert!(create_result.is_ok());
+    assert!(JobHandlerService::create_job(JobType::SnosRun, "0".to_string(), metadata, services.config.clone())
+        .await
+        .is_ok());
 
     // Db checks.
     let job_in_db = services.config.database().get_job_by_id(job_item.id).await.unwrap().unwrap();
@@ -97,7 +93,9 @@ async fn create_job_job_does_not_exists_in_db_works() {
 
     // Queue checks - retry a few times in case of timing issues
     let consumed_messages =
-        consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
+        consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 10, 1)
+            .await
+            .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -138,8 +136,9 @@ async fn create_job_job_exists_in_db_works() {
     assert_eq!(jobs_in_db.len(), 1);
 
     // Queue checks - queue should exist but be empty since job already existed
-    let queue_error =
-        check_queue_error_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
+    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1)
+        .await
+        .unwrap_err();
     // Since queue exists but is empty, we expect ErrorFromQueueError
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
@@ -201,7 +200,7 @@ async fn create_job_job_handler_returns_error() {
 
     // Verify no message was added to the queue
     // Wait a bit to ensure any async operations complete
-    sleep(Duration::from_millis(500)).await;
+    sleep(Duration::from_secs(2)).await;
 
     // Try to consume from the queue - should fail with NoData or QueueDoesNotExist
     let queue_result = services.config.queue().consume_message_from_queue(job_type.process_queue_name()).await;
@@ -262,7 +261,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 
     // Queue checks - retry a few times in case of timing issues
     let consumed_messages =
-        consume_message_with_retry(services.config.queue(), job_type.verify_queue_name(), 5, 1).await;
+        consume_message_with_retry(services.config.queue(), job_type.verify_queue_name(), 10, 1).await.unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -353,8 +352,9 @@ async fn process_job_with_job_exists_in_db_with_invalid_job_processing_status_er
     assert_eq!(job_in_db, job_item);
 
     // Queue checks.
-    let queue_error =
-        check_queue_error_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1).await;
+    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1)
+        .await
+        .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
@@ -376,8 +376,9 @@ async fn process_job_job_does_not_exists_in_db_works() {
     assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_err());
 
     // Queue checks.
-    let queue_error =
-        check_queue_error_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1).await;
+    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1)
+        .await
+        .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
@@ -518,10 +519,14 @@ async fn verify_job_with_verified_status_works() {
 
     // Queue checks - queues should exist but be empty
     let queue_error_verification =
-        check_queue_error_with_retry(services.config.queue(), QueueType::DataSubmissionJobVerification, 5, 1).await;
+        consume_message_with_retry(services.config.queue(), QueueType::DataSubmissionJobVerification, 5, 1)
+            .await
+            .unwrap_err();
     assert_matches!(queue_error_verification, QueueError::ErrorFromQueueError(_));
     let queue_error_processing =
-        check_queue_error_with_retry(services.config.queue(), QueueType::DataSubmissionJobProcessing, 5, 1).await;
+        consume_message_with_retry(services.config.queue(), QueueType::DataSubmissionJobProcessing, 5, 1)
+            .await
+            .unwrap_err();
     assert_matches!(queue_error_processing, QueueError::ErrorFromQueueError(_));
 }
 
@@ -560,7 +565,9 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
 
     // Queue checks - retry a few times in case of timing issues
     let consumed_messages =
-        consume_message_with_retry(services.config.queue(), QueueType::DataSubmissionJobProcessing, 5, 1).await;
+        consume_message_with_retry(services.config.queue(), QueueType::DataSubmissionJobProcessing, 10, 1)
+            .await
+            .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -613,8 +620,9 @@ async fn verify_job_with_rejected_status_works() {
     assert_eq!(updated_job.metadata.common.process_attempt_no, 1);
 
     // Queue checks - verify no message was added to the process queue
-    let queue_error =
-        check_queue_error_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
+    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1)
+        .await
+        .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
@@ -662,7 +670,9 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     // Queue checks - verify a message was added to the verification queue
     // Retry a few times in case of timing issues
     let consumed_messages =
-        consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1).await;
+        consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 10, 1)
+            .await
+            .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -712,8 +722,9 @@ async fn verify_job_with_pending_status_works() {
     assert_eq!(updated_job.metadata.common.verification_attempt_no, 1);
 
     // Queue checks - verify no message was added to the verification queue
-    let queue_error =
-        check_queue_error_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1).await;
+    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1)
+        .await
+        .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
@@ -870,7 +881,9 @@ async fn test_retry_job_adds_to_process_queue() {
     // Verify message was added to process queue
     // Retry a few times in case of timing issues
     let consumed_messages =
-        consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
+        consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1)
+            .await
+            .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_id);
 }
@@ -905,8 +918,9 @@ async fn test_retry_job_invalid_status(#[case] initial_status: JobStatus) {
     assert_eq!(job.status, initial_status);
 
     // Verify no message was added to process queue
-    let queue_error =
-        check_queue_error_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
+    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1)
+        .await
+        .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
