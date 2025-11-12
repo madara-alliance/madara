@@ -58,18 +58,38 @@ impl RevertErrorExt for RevertError {
     }
 }
 
-/// Filters redundant VM tracebacks from the error stack.
-///
-/// The blockifier generates VM tracebacks at every level of the call stack.
-/// This function filters them to show the traceback only once, positioned after
-/// the last regular contract call (CallContract) entry point frame and before
-/// any library call (LibraryCall) frames or the final error.
+/// Determines whether a VM traceback at the given index should be kept.
 ///
 /// Rules:
 /// - Always keep VM tracebacks that belong to LibraryCall entries
 /// - For CallContract entries:
 ///   - Keep the traceback if the next entry is a LibraryCall or if it's the last entry
 ///   - Remove the traceback if the next entry is another CallContract
+/// - If no owning entry point is found, keep the traceback (safety default)
+fn should_keep_vm_traceback(error_stack: &ErrorStack, vm_index: usize) -> bool {
+    let owning_entry = find_parent_entry_point(error_stack, vm_index);
+
+    match owning_entry {
+        Some(entry_point) => {
+            // Always keep VM tracebacks for LibraryCall entries
+            if entry_point.preamble_type == PreambleType::LibraryCall {
+                true
+            } else {
+                // For CallContract entries, check what comes next
+                !has_nested_call_contract_after(error_stack, vm_index)
+            }
+        }
+        // If we can't find an owning entry, keep the traceback
+        None => true,
+    }
+}
+
+/// Filters redundant VM tracebacks from the error stack.
+///
+/// The blockifier generates VM tracebacks at every level of the call stack.
+/// This function filters them to show the traceback only once, positioned after
+/// the last regular contract call (CallContract) entry point frame and before
+/// any library call (LibraryCall) frames or the final error.
 fn filter_redundant_vm_tracebacks(error_stack: ErrorStack) -> ErrorStack {
     let len = error_stack.stack.len();
 
@@ -81,24 +101,7 @@ fn filter_redundant_vm_tracebacks(error_stack: ErrorStack) -> ErrorStack {
 
         match segment {
             ErrorStackSegment::Vm(_) => {
-                // Find the owning EntryPoint by looking backward
-                let owning_entry = find_parent_entry_point(&error_stack, i);
-
-                let should_keep = match owning_entry {
-                    Some(entry_point) => {
-                        // Always keep VM tracebacks for LibraryCall entries
-                        if entry_point.preamble_type == PreambleType::LibraryCall {
-                            true
-                        } else {
-                            // For CallContract entries, check what comes next
-                            !has_nested_call_contract_after(&error_stack, i)
-                        }
-                    }
-                    // If we can't find an owning entry, keep the traceback
-                    None => true,
-                };
-
-                if should_keep {
+                if should_keep_vm_traceback(&error_stack, i) {
                     indices_to_keep.push(i);
                 }
             }
@@ -142,24 +145,7 @@ fn filter_redundant_vm_tracebacks_ref(error_stack: &ErrorStack) -> ErrorStack {
 
         match segment {
             ErrorStackSegment::Vm(vm_frame) => {
-                // Find the owning EntryPoint by looking backward
-                let owning_entry = find_parent_entry_point(error_stack, i);
-
-                let should_keep = match owning_entry {
-                    Some(entry_point) => {
-                        // Always keep VM tracebacks for LibraryCall entries
-                        if entry_point.preamble_type == PreambleType::LibraryCall {
-                            true
-                        } else {
-                            // For CallContract entries, check what comes next
-                            !has_nested_call_contract_after(error_stack, i)
-                        }
-                    }
-                    // If we can't find an owning entry, keep the traceback
-                    None => true,
-                };
-
-                if should_keep {
+                if should_keep_vm_traceback(error_stack, i) {
                     // Manually reconstruct the VmExceptionFrame
                     new_stack.push(ErrorStackSegment::Vm(VmExceptionFrame {
                         pc: vm_frame.pc,
