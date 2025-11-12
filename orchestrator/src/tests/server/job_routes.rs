@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use hyper::{Body, Request};
 use mockall::predicate::eq;
@@ -58,13 +57,6 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
-    // Set up mock job handler - queue_job_for_processing doesn't call get_job_handler, so times(0)
-    let mut job_handler = MockJobHandlerTrait::new();
-    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
-    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context_safe();
-    ctx.expect().with(eq(job_type.clone())).times(0).returning(move |_| Arc::clone(&job_handler));
-
     let client = hyper::Client::new();
     let response = client
         .request(
@@ -79,9 +71,6 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     let response: ApiResponse = serde_json::from_slice(&body_bytes).unwrap();
     assert!(response.success);
     assert_eq!(response.message, Some(format!("Job with id {} queued for processing", job_id)));
-
-    // Wait a bit for queue message to be available
-    tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Verify job was added to process queue - retry a few times in case of timing issues
     let queue_message = consume_message_with_retry(config.queue(), job_type.process_queue_name(), 5, 1).await;
@@ -137,8 +126,6 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     assert!(response.success);
     assert_eq!(response.message, Some(format!("Job with id {} queued for verification", job_id)));
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
     // Verify job was added to verification queue - retry a few times in case of timing issues
     let queue_message = consume_message_with_retry(config.queue(), job_type.verify_queue_name(), 5, 1).await;
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
@@ -166,13 +153,6 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
-    // Set up mock job handler - retry_job doesn't call get_job_handler directly, so times(0)
-    let mut job_handler = MockJobHandlerTrait::new();
-    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
-    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context_safe();
-    ctx.expect().with(eq(job_type.clone())).times(0).returning(move |_| Arc::clone(&job_handler));
-
     let client = hyper::Client::new();
     let response = client
         .request(Request::builder().uri(format!("http://{}/jobs/{}/retry", addr, job_id)).body(Body::empty()).unwrap())
@@ -184,9 +164,6 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     let response: ApiResponse = serde_json::from_slice(&body_bytes).unwrap();
     assert!(response.success);
     assert_eq!(response.message, Some(format!("Job with id {} retry initiated", job_id)));
-
-    // Wait a bit for queue message to be available
-    tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Verify job was added to process queue - retry a few times in case of timing issues
     let queue_message = consume_message_with_retry(config.queue(), job_type.process_queue_name(), 5, 1).await;

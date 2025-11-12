@@ -1,5 +1,5 @@
 use crate::core::client::SNS;
-use crate::tests::common::{get_sns_client, get_sqs_client};
+use crate::tests::common::{create_unique_queue_name, get_sns_client, get_sqs_client};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::types::params::{AWSResourceIdentifier, AlertArgs};
 use aws_sdk_sqs::types::QueueAttributeName::QueueArn;
@@ -21,8 +21,7 @@ async fn sns_alert_subscribe_to_topic_receive_alert_works() {
     let sqs_client = get_sqs_client(services.provider_config.clone()).await;
 
     // Use unique queue name to avoid conflicts in parallel tests
-    let uuid_str = uuid::Uuid::new_v4().to_string();
-    let unique_queue_name = format!("{}-{}", SNS_ALERT_TEST_QUEUE, &uuid_str[..8]);
+    let unique_queue_name = create_unique_queue_name(SNS_ALERT_TEST_QUEUE);
 
     // Create the queue
     let queue = sqs_client.create_queue().queue_name(&unique_queue_name).send().await.unwrap();

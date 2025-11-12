@@ -170,8 +170,11 @@ async fn update_state_worker_continues_from_previous_state_update() {
 
     services.config.database().create_job(job_item).await.unwrap();
 
-    let ctx = get_job_handler_context_safe();
-    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
+    let _ctx_guard = get_job_handler_context_safe();
+    _ctx_guard
+        .expect()
+        .with(eq(JobType::StateTransition))
+        .returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 

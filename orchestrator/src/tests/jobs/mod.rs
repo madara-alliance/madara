@@ -33,8 +33,8 @@ mod aggregator_job;
 
 use crate::core::client::queue::QueueError;
 use crate::error::job::JobError;
-use crate::tests::common::consume_message_with_retry;
 use crate::tests::common::mock_helpers::{acquire_test_lock, get_job_handler_context_safe};
+use crate::tests::common::{check_queue_error_with_retry, consume_message_with_retry};
 use crate::types::constant::CAIRO_PIE_FILE_NAME;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::metadata::{
@@ -95,9 +95,6 @@ async fn create_job_job_does_not_exists_in_db_works() {
     assert_eq!(job_in_db.internal_id, job_item.internal_id);
     assert_eq!(job_in_db.metadata, job_item.metadata);
 
-    // Waiting for 5 secs for message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
-
     // Queue checks - retry a few times in case of timing issues
     let consumed_messages =
         consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
@@ -140,14 +137,11 @@ async fn create_job_job_exists_in_db_works() {
         .unwrap();
     assert_eq!(jobs_in_db.len(), 1);
 
-    // Waiting for 5 secs for message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
-
-    // Queue checks.
-    let consumed_messages =
-        services.config.queue().consume_message_from_queue(job_item.job_type.process_queue_name()).await.unwrap_err();
-    // When queue doesn't exist, we get GetQueueUrlError; when queue exists but empty, we get ErrorFromQueueError
-    assert!(matches!(consumed_messages, QueueError::GetQueueUrlError(_) | QueueError::ErrorFromQueueError(_)));
+    // Queue checks - queue should exist but be empty since job already existed
+    let queue_error =
+        check_queue_error_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
+    // Since queue exists but is empty, we expect ErrorFromQueueError
+    assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
 /// Tests `create_job` function when job handler's `create_job` returns an error
@@ -256,12 +250,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     let _ctx_guard = get_job_handler_context_safe();
     _ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure process_job succeeds
-    let process_result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &process_result {
-        panic!("process_job failed: {:?}", e);
-    }
-    assert!(process_result.is_ok());
+    assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_ok());
     // Getting the updated job.
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     // checking if job_status is updated in db
@@ -363,14 +352,10 @@ async fn process_job_with_job_exists_in_db_with_invalid_job_processing_status_er
     // Job should be untouched in db.
     assert_eq!(job_in_db, job_item);
 
-    // Waiting for 5 secs for message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
-
     // Queue checks.
-    let consumed_messages =
-        services.config.queue().consume_message_from_queue(job_item.job_type.verify_queue_name()).await.unwrap_err();
-    // When queue doesn't exist, we get GetQueueUrlError; when queue exists but empty, we get ErrorFromQueueError
-    assert!(matches!(consumed_messages, QueueError::GetQueueUrlError(_) | QueueError::ErrorFromQueueError(_)));
+    let queue_error =
+        check_queue_error_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1).await;
+    assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
 /// Tests `process_job` function when job is not in the db
@@ -390,14 +375,10 @@ async fn process_job_job_does_not_exists_in_db_works() {
 
     assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_err());
 
-    // Waiting for 5 secs for message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
-
     // Queue checks.
-    let consumed_messages =
-        services.config.queue().consume_message_from_queue(job_item.job_type.verify_queue_name()).await.unwrap_err();
-    // When queue doesn't exist, we get GetQueueUrlError; when queue exists but empty, we get ErrorFromQueueError
-    assert!(matches!(consumed_messages, QueueError::GetQueueUrlError(_) | QueueError::ErrorFromQueueError(_)));
+    let queue_error =
+        check_queue_error_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1).await;
+    assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
 /// Tests `process_job` function when 2 workers try to process the same job.
@@ -529,34 +510,19 @@ async fn verify_job_with_verified_status_works() {
     // Mocking the `get_job_handler` call - verify_job calls it exactly once
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure verify_job succeeds
-    let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &verify_result {
-        panic!("verify_job failed: {:?}", e);
-    }
-    assert!(verify_result.is_ok());
+    assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
 
     // DB checks.
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(updated_job.status, JobStatus::Completed);
 
-    // Waiting for 5 secs for message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
-
-    // Queue checks.
-    let consumed_messages_verification_queue =
-        services.config.queue().consume_message_from_queue(QueueType::DataSubmissionJobVerification).await.unwrap_err();
-    // When queue doesn't exist, we get GetQueueUrlError; when queue exists but empty, we get ErrorFromQueueError
-    assert!(matches!(
-        consumed_messages_verification_queue,
-        QueueError::GetQueueUrlError(_) | QueueError::ErrorFromQueueError(_)
-    ));
-    let consumed_messages_processing_queue =
-        services.config.queue().consume_message_from_queue(QueueType::DataSubmissionJobProcessing).await.unwrap_err();
-    assert!(matches!(
-        consumed_messages_processing_queue,
-        QueueError::GetQueueUrlError(_) | QueueError::ErrorFromQueueError(_)
-    ));
+    // Queue checks - queues should exist but be empty
+    let queue_error_verification =
+        check_queue_error_with_retry(services.config.queue(), QueueType::DataSubmissionJobVerification, 5, 1).await;
+    assert_matches!(queue_error_verification, QueueError::ErrorFromQueueError(_));
+    let queue_error_processing =
+        check_queue_error_with_retry(services.config.queue(), QueueType::DataSubmissionJobProcessing, 5, 1).await;
+    assert_matches!(queue_error_processing, QueueError::ErrorFromQueueError(_));
 }
 
 /// Tests `verify_job` function when job is having expected status
@@ -586,19 +552,11 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     // Mocking the `get_job_handler` call - verify_job calls it exactly once
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure verify_job succeeds
-    let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &verify_result {
-        panic!("verify_job failed: {:?}", e);
-    }
-    assert!(verify_result.is_ok());
+    assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
 
     // DB checks.
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     assert_eq!(updated_job.status, JobStatus::VerificationFailed);
-
-    // Waiting for 5 secs for message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
 
     // Queue checks - retry a few times in case of timing issues
     let consumed_messages =
@@ -645,12 +603,7 @@ async fn verify_job_with_rejected_status_works() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure verify_job succeeds
-    let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &verify_result {
-        panic!("verify_job failed: {:?}", e);
-    }
-    assert!(verify_result.is_ok());
+    assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
 
     // DB checks - verify the job was moved to a failed state
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
@@ -659,17 +612,10 @@ async fn verify_job_with_rejected_status_works() {
     // Check that process attempt is recorded in common metadata
     assert_eq!(updated_job.metadata.common.process_attempt_no, 1);
 
-    // Waiting for 5 secs for a message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
-
     // Queue checks - verify no message was added to the process queue
-    let consumed_messages_processing_queue =
-        services.config.queue().consume_message_from_queue(job_item.job_type.process_queue_name()).await.unwrap_err();
-    // When queue doesn't exist, we get GetQueueUrlError; when queue exists but empty, we get ErrorFromQueueError
-    assert!(matches!(
-        consumed_messages_processing_queue,
-        QueueError::GetQueueUrlError(_) | QueueError::ErrorFromQueueError(_)
-    ));
+    let queue_error =
+        check_queue_error_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
+    assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
 /// Tests `verify_job` function when job is having expected status
@@ -703,12 +649,7 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure verify_job succeeds
-    let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &verify_result {
-        panic!("verify_job failed: {:?}", e);
-    }
-    assert!(verify_result.is_ok());
+    assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
 
     // DB checks - verify the job status remains PendingVerification and verification attempt is
     // incremented
@@ -717,9 +658,6 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
 
     // Check that verification attempt is recorded in common metadata
     assert_eq!(updated_job.metadata.common.verification_attempt_no, 1);
-
-    // Waiting for 5 secs for message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
 
     // Queue checks - verify a message was added to the verification queue
     // Retry a few times in case of timing issues
@@ -773,17 +711,10 @@ async fn verify_job_with_pending_status_works() {
     // Check that verification attempt is still recorded in common metadata
     assert_eq!(updated_job.metadata.common.verification_attempt_no, 1);
 
-    // Waiting for 5 secs for message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
-
     // Queue checks - verify no message was added to the verification queue
-    let consumed_messages_verification_queue =
-        services.config.queue().consume_message_from_queue(job_item.job_type.verify_queue_name()).await.unwrap_err();
-    // When queue doesn't exist, we get GetQueueUrlError; when queue exists but empty, we get ErrorFromQueueError
-    assert!(matches!(
-        consumed_messages_verification_queue,
-        QueueError::GetQueueUrlError(_) | QueueError::ErrorFromQueueError(_)
-    ));
+    let queue_error =
+        check_queue_error_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1).await;
+    assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
 #[rstest]
@@ -871,11 +802,15 @@ async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobT
     job_expected.metadata.common.failure_reason =
         Some(format!("Received failure queue message for job with status: {}", job_status));
 
-    // Compare fields individually, excluding timestamps which may differ slightly
+    // Compare fields individually, excluding timestamps which may differ slightly due to flakiness
+    // Timestamps (created_at, updated_at) are excluded as they can differ by milliseconds between creation and update
     assert_eq!(job_fetched.id, job_expected.id);
     assert_eq!(job_fetched.status, job_expected.status);
     assert_eq!(job_fetched.version, job_expected.version);
     assert_eq!(job_fetched.metadata.common.failure_reason, job_expected.metadata.common.failure_reason);
+    assert_eq!(job_fetched.internal_id, job_expected.internal_id);
+    assert_eq!(job_fetched.job_type, job_expected.job_type);
+    assert_eq!(job_fetched.external_id, job_expected.external_id);
 }
 
 #[rstest]
@@ -926,19 +861,11 @@ async fn test_retry_job_adds_to_process_queue() {
     services.config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.id;
 
-    // Retry the job - ensure it succeeds
-    let retry_result = JobHandlerService::retry_job(job_id, services.config.clone()).await;
-    if let Err(e) = &retry_result {
-        panic!("retry_job failed: {:?}", e);
-    }
-    assert!(retry_result.is_ok());
+    assert!(JobHandlerService::retry_job(job_id, services.config.clone()).await.is_ok());
 
     // Verify job status was updated to PendingRetry
     let updated_job = services.config.database().get_job_by_id(job_id).await.unwrap().unwrap();
     assert_eq!(updated_job.status, JobStatus::PendingRetry);
-
-    // Wait for message to be processed and ensure queue is ready
-    tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Verify message was added to process queue
     // Retry a few times in case of timing issues
@@ -977,13 +904,10 @@ async fn test_retry_job_invalid_status(#[case] initial_status: JobStatus) {
     let job = services.config.database().get_job_by_id(job_id).await.unwrap().unwrap();
     assert_eq!(job.status, initial_status);
 
-    // Wait briefly to ensure no messages were added
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
     // Verify no message was added to process queue
-    let queue_result = services.config.queue().consume_message_from_queue(job_item.job_type.process_queue_name()).await;
-    // When queue doesn't exist, we get GetQueueUrlError; when queue exists but empty, we get ErrorFromQueueError
-    assert!(matches!(queue_result, Err(QueueError::GetQueueUrlError(_)) | Err(QueueError::ErrorFromQueueError(_))));
+    let queue_error =
+        check_queue_error_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
+    assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
 /// Tests that SNS alert is sent when a job is moved to failed status.

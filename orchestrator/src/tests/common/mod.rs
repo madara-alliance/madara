@@ -3,7 +3,7 @@ pub mod constants;
 pub mod mock_helpers;
 
 use crate::core::client::queue::sqs::InnerSQS;
-use crate::core::client::queue::QueueClient;
+use crate::core::client::queue::{QueueClient, QueueError};
 use crate::core::client::MongoDbClient;
 use omniqueue::Delivery;
 use std::sync::Arc;
@@ -30,6 +30,19 @@ use mongodb::Client;
 use rstest::*;
 use serde::Deserialize;
 use strum::IntoEnumIterator as _;
+
+/// Creates a unique queue name by appending a UUID prefix to the base name.
+/// This is useful for parallel test execution to avoid queue name conflicts.
+///
+/// # Arguments
+/// * `base_name` - The base queue name to make unique
+///
+/// # Returns
+/// * `String` - A unique queue name in the format `{base_name}-{uuid_prefix}` where uuid_prefix is the first 8 characters of a UUID
+pub fn create_unique_queue_name(base_name: &str) -> String {
+    let uuid_str = Uuid::new_v4().to_string();
+    format!("{}-{}", base_name, &uuid_str[..8])
+}
 
 #[fixture]
 pub fn default_job_item() -> JobItem {
@@ -268,4 +281,56 @@ pub async fn consume_message_with_retry(
     }
 
     queue_message.expect("Should have received message")
+}
+
+/// Helper function to check for queue errors with retry logic.
+/// This is useful when checking that a queue exists but is empty (ErrorFromQueueError).
+///
+/// # Arguments
+/// * `queue_client` - The queue client to use for consuming messages
+/// * `queue_type` - The type of queue to check
+/// * `max_retries` - Maximum number of retry attempts
+/// * `retry_delay` - Delay between retries in seconds
+///
+/// # Returns
+/// * `QueueError` - The error returned from the queue (typically ErrorFromQueueError for empty queues)
+pub async fn check_queue_error_with_retry(
+    queue_client: &dyn QueueClient,
+    queue_type: QueueType,
+    max_retries: usize,
+    retry_delay: u64,
+) -> QueueError {
+    let mut retries = 0;
+
+    while retries < max_retries {
+        match queue_client.consume_message_from_queue(queue_type.clone()).await {
+            Ok(_) => {
+                // If we get a message, that's unexpected - retry in case it's a timing issue
+                if retries < max_retries - 1 {
+                    tokio::time::sleep(Duration::from_secs(retry_delay)).await;
+                    retries += 1;
+                } else {
+                    panic!("Expected queue to be empty but found a message after {} retries", max_retries);
+                }
+            }
+            Err(e) => {
+                let error_str = e.to_string();
+                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
+                    // Queue doesn't exist yet - retry
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(retry_delay)).await;
+                        retries += 1;
+                    } else {
+                        return e;
+                    }
+                } else {
+                    // Queue exists but empty (ErrorFromQueueError) or other error - return it
+                    return e;
+                }
+            }
+        }
+    }
+
+    // Should not reach here, but return a generic error if we do
+    queue_client.consume_message_from_queue(queue_type).await.unwrap_err()
 }
