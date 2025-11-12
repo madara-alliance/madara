@@ -6810,6 +6810,7 @@ dependencies = [
  "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-receipt",
  "mp-rpc",
  "mp-state-update",
  "mp-transactions",

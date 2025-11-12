@@ -8,10 +8,12 @@ use starknet_types_core::{
 };
 
 pub mod from_blockifier;
+pub mod revert_error;
 
 mod to_starknet_types;
 
 pub use from_blockifier::from_blockifier_execution_info;
+pub use revert_error::RevertErrorExt;
 pub use starknet_core::types::Hash256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
