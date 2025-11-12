@@ -1,4 +1,4 @@
-use mp_receipt::from_blockifier::RevertErrorExt;
+use mp_receipt::RevertErrorExt;
 use crate::{Error, ExecutionContext, ExecutionResult, TxExecError};
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::TransactionalState;
@@ -62,8 +62,8 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                 // NB: We use execute_raw because execute already does transaactional state.
                 let mut execution_info =
                     tx.execute_raw(&mut transactional_state, &self.block_context, false).map_err(make_reexec_error)?;
-                
-                execution_info.revert_error = execution_info.revert_error.map(|e| e.format_for_receipt());
+
+                execution_info.revert_error = execution_info.revert_error.take().map(|e| e.format_for_receipt());
 
                 let state_diff = transactional_state
                     .to_state_diff()
