@@ -12,7 +12,8 @@ This is the initial versioned release of the chain config format. All chain conf
 
 #### L2 Gas Price Configuration Refactor
 
-The L2 gas price configuration has been refactored from multiple separate fields into a single enum-based configuration. This provides a clearer and more explicit way to specify gas pricing strategy.
+The L2 gas price configuration has been refactored from multiple separate fields into a single enum-based configuration.
+This provides a clearer and more explicit way to specify gas pricing strategy.
 
 **Old Format (Deprecated):**
 
@@ -130,6 +131,7 @@ To migrate from a legacy (unversioned) chain config to version 1:
    ```
 
 3. Verify your config loads correctly:
+
    ```bash
    madara --chain-config-path /path/to/your/config.yaml --help
    ```
