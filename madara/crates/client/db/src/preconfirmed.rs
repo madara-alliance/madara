@@ -144,4 +144,10 @@ impl PreconfirmedBlock {
             block.append_candidates(replace_candidates)
         });
     }
+
+    /// Get the total number of transactions (executed + candidates) in this preconfirmed block.
+    pub fn transaction_count(&self) -> usize {
+        let content = self.content.borrow();
+        content.txs.len()
+    }
 }
