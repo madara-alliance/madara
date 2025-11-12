@@ -32,7 +32,7 @@ impl RocksDBStorageInner {
             batch.delete_cf(&col, super::serialize(&tx_hash)?);
         }
 
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 
