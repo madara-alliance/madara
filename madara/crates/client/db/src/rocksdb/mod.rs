@@ -52,7 +52,7 @@ pub mod update_global_trie;
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
 
-pub use options::{RocksDBConfig, StatsLevel};
+pub use options::{DbWriteMode, RocksDBConfig, StatsLevel};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
@@ -80,7 +80,7 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 
 struct RocksDBStorageInner {
     db: DB,
-    writeopts_no_wal: WriteOptions,
+    writeopts: WriteOptions,
     config: RocksDBConfig,
 }
 
@@ -191,9 +191,9 @@ impl RocksDBStorage {
             ALL_COLUMNS.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name, col.rocksdb_options(&config))),
         )?;
 
-        let mut writeopts_no_wal = WriteOptions::new();
-        writeopts_no_wal.disable_wal(true);
-        let inner = Arc::new(RocksDBStorageInner { writeopts_no_wal, db, config: config.clone() });
+        let writeopts = config.write_mode.to_write_options();
+        tracing::info!("📝 Database write mode: {}", config.write_mode);
+        let inner = Arc::new(RocksDBStorageInner { writeopts, db, config: config.clone() });
 
         let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
             StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
