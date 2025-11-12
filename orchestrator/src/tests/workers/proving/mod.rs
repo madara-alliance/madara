@@ -1,3 +1,5 @@
+#![allow(clippy::await_holding_lock)]
+
 use std::error::Error;
 use std::sync::Arc;
 
@@ -29,6 +31,7 @@ use url::Url;
 #[tokio::test]
 async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dyn Error>> {
     // Acquire test lock to serialize this test with others that use mocks
+    // This lock is intentionally held for the entire test to serialize execution
     let _test_lock = acquire_test_lock();
 
     let num_jobs = 5;

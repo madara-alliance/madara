@@ -257,13 +257,11 @@ pub async fn consume_message_with_retry(
                     } else {
                         panic!("No message found in queue after {} retries: {}", max_retries, e);
                     }
+                } else if retries < max_retries - 1 {
+                    tokio::time::sleep(Duration::from_secs(retry_delay)).await;
+                    retries += 1;
                 } else {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(retry_delay)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Failed to consume message: {}", e);
-                    }
+                    panic!("Failed to consume message: {}", e);
                 }
             }
         }

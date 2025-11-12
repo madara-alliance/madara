@@ -1,3 +1,5 @@
+#![allow(clippy::await_holding_lock)]
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -49,6 +51,7 @@ use assert_matches::assert_matches;
 /// Tests `create_job` function when job is not existing in the db.
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn create_job_job_does_not_exists_in_db_works() {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = crate::tests::common::mock_helpers::acquire_test_lock();
@@ -152,6 +155,7 @@ async fn create_job_job_exists_in_db_works() {
 /// and that no job is created in the database or added to the queue when creation fails
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn create_job_job_handler_returns_error() {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = crate::tests::common::mock_helpers::acquire_test_lock();
@@ -223,6 +227,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     #[case] job_status: JobStatus,
 ) {
     // Acquire test lock to serialize this test with others that use mocks
+    // This lock is intentionally held for the entire test to serialize execution
     let _test_lock = crate::tests::common::mock_helpers::acquire_test_lock();
 
     // Building config
@@ -280,6 +285,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 /// 3. Appropriate error message is set in the job metadata
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn process_job_handles_panic() {
     // Acquire test lock to serialize this test with others that use mocks
     // This prevents Mockall's global context from being interfered with by parallel tests
@@ -400,6 +406,7 @@ async fn process_job_job_does_not_exists_in_db_works() {
 /// when updating the job status.
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn process_job_two_workers_process_same_job_works() {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = acquire_test_lock();

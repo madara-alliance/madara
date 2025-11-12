@@ -46,6 +46,7 @@ async fn setup_trigger() -> (SocketAddr, Arc<Config>) {
 
 #[tokio::test]
 #[rstest]
+#[allow(clippy::await_holding_lock)]
 async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Config>)) {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = acquire_test_lock();
@@ -83,42 +84,7 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     // Verify job was added to process queue - retry a few times in case of timing issues
-    let mut retries = 0;
-    let max_retries = 5;
-    let mut queue_message = None;
-
-    while retries < max_retries && queue_message.is_none() {
-        match config.queue().consume_message_from_queue(job_type.process_queue_name()).await {
-            Ok(msg) => queue_message = Some(msg),
-            Err(e) => {
-                let error_str = e.to_string();
-                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
-                    }
-                } else if error_str.contains("NoData") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("No message found in queue after {} retries: {}", max_retries, e);
-                    }
-                } else {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Failed to consume message: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    let queue_message = queue_message.expect("Should have received message");
+    let queue_message = consume_message_with_retry(config.queue(), job_type.process_queue_name(), 5, 1).await;
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
@@ -133,6 +99,7 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
 
 #[tokio::test]
 #[rstest]
+#[allow(clippy::await_holding_lock)]
 async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Config>)) {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = acquire_test_lock();
