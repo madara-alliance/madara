@@ -547,7 +547,7 @@ impl BatchingTrigger {
         if self.should_close_snos_batch(config, &current_snos_batch).await? {
             // Close the current batch and start a new batch
             self.update_or_create_snos_batch_in_db(&current_snos_batch, config, SnosBatchStatus::Closed).await?;
-            self.start_snos_batch(current_snos_batch.snos_batch_id + 1, None, block_number)
+            self.start_snos_batch(current_snos_batch.snos_batch_id + 1, None, current_snos_batch.end_block + 1)
         } else {
             // Continue with the same SNOS batch
             self.update_snos_batch_info(current_snos_batch, block_number).await
@@ -1119,13 +1119,6 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         block_number: u64,
     ) -> Result<BouncerWeights, JobError> {
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct BouncerWeightsResponse {
-            bouncer_weights: BouncerWeights,
-        }
-
         debug!(
             block_number = %block_number,
             "Requesting block bouncer weights via REST"
@@ -1150,11 +1143,11 @@ impl BatchingTrigger {
         }
 
         // Parse the response
-        let parsed_response: BouncerWeightsResponse = response
+        let bouncer_weights: BouncerWeights = response
             .json()
             .await
             .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse REST response: {}", e))))?;
 
-        Ok(parsed_response.bouncer_weights)
+        Ok(bouncer_weights)
     }
 }
