@@ -153,7 +153,7 @@ impl RocksDBStorageInner {
                         super::serialize_to_smallvec::<[u8; 64]>(&value)?,
                     );
                 }
-                self.db.write_opt(batch, &self.writeopts_no_wal)?;
+                self.db.write_opt(batch, &self.writeopts)?;
                 anyhow::Ok(())
             },
         )?;
@@ -168,7 +168,7 @@ impl RocksDBStorageInner {
                         super::serialize_to_smallvec::<[u8; 64]>(&value)?,
                     );
                 }
-                self.db.write_opt(batch, &self.writeopts_no_wal)?;
+                self.db.write_opt(batch, &self.writeopts)?;
                 anyhow::Ok(())
             },
         )?;
@@ -183,7 +183,7 @@ impl RocksDBStorageInner {
                         super::serialize_to_smallvec::<[u8; 64]>(&value)?,
                     );
                 }
-                self.db.write_opt(batch, &self.writeopts_no_wal)?;
+                self.db.write_opt(batch, &self.writeopts)?;
                 anyhow::Ok(())
             },
         )?;
@@ -277,7 +277,7 @@ impl RocksDBStorageInner {
             total_storage_entries
         );
 
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
 
         tracing::info!("✅ REORG [contract_db_revert]: Successfully removed all contract state");
 
