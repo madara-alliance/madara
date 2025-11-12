@@ -11,7 +11,6 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use mp_utils::service::MadaraServiceId;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -89,22 +88,22 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     }
 
     /// Force revert chain to a previous block by hash.
-    /// Only works in full node mode.
+    /// Only available when unsafe RPC methods are enabled.
     async fn revert_to(&self, block_hash: Felt) -> RpcResult<()> {
-        // Only allow revert when in full node mode
-        if self.ctx.service_status(MadaraServiceId::BlockProduction).is_off() {
-            self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
-            // TODO(heemankv, 04-11-25): We should spend time in ruling out the two sources of truth problem for ChainTip
-            // For now, we have to manually fetch Chain Tip from DB and update this in backend
-            let fresh_chain_tip = self.backend.db.get_chain_tip().unwrap();
-            let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-            self.backend.chain_tip.send_replace(backend_chain_tip);
-            Ok(())
-        } else {
-            Err(StarknetRpcApiError::ErrUnexpectedError {
-                error: "This method is only available in full node mode".to_string().into(),
-            })?
+        // Check if unsafe RPC methods are enabled
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into()
+            }.into());
         }
+
+        self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
+        let fresh_chain_tip = self.backend.db.get_chain_tip()
+            .context("Failed to get chain tip after revert")
+            .map_err(StarknetRpcApiError::from)?;
+        let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
+        self.backend.chain_tip.send_replace(backend_chain_tip);
+        Ok(())
     }
 
     async fn add_l1_handler_message(
@@ -121,6 +120,13 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     }
 
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()> {
+        // Check if unsafe RPC methods are enabled
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into()
+            }.into());
+        }
+
         self.backend.set_custom_header(custom_block_headers);
         Ok(())
     }

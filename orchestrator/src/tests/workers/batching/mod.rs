@@ -153,7 +153,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     let builtin_weights = get_dummy_builtin_weights();
     server.mock(|when, then| {
         when.path("/feeder_gateway/get_block_bouncer_weights");
-        then.status(200).body(serde_json::to_vec(&json!({"bouncer_weights": builtin_weights})).unwrap());
+        then.status(200).body(serde_json::to_vec(&builtin_weights).unwrap());
     });
 
     let services = TestConfigBuilder::new()
@@ -323,7 +323,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let builtin_weights = get_dummy_builtin_weights();
     server.mock(|when, then| {
         when.path("/feeder_gateway/get_block_bouncer_weights");
-        then.status(200).body(serde_json::to_vec(&json!({"bouncer_weights": builtin_weights})).unwrap());
+        then.status(200).body(serde_json::to_vec(&builtin_weights).unwrap());
     });
 
     let services = TestConfigBuilder::new()
@@ -421,9 +421,7 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
     let builtin_weights = get_dummy_builtin_weights();
     server.mock(|when, then| {
         when.method(httpmock::Method::GET).path("/feeder_gateway/get_block_bouncer_weights");
-        then.status(200)
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_vec(&json!({ "bouncer_weights": builtin_weights })).unwrap());
+        then.status(200).header("Content-Type", "application/json").body(serde_json::to_vec(&builtin_weights).unwrap());
     });
 
     crate::worker::event_handler::triggers::batching::BatchingTrigger.run_worker(services.config.clone()).await?;
