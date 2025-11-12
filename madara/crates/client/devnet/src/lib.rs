@@ -408,6 +408,7 @@ mod tests {
             Arc::new(metrics),
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
             true,
+            true, // close_preconfirmed_block_upon_restart - default to true for tests
         );
 
         let tx_validator = Arc::new(TransactionValidator::new(

@@ -139,7 +139,7 @@ impl RocksDBStorageInner {
             &self.get_column(EVENTS_BLOOM_COLUMN),
             block_n.to_be_bytes(),
             &super::serialize(&writer)?,
-            &self.writeopts_no_wal,
+            &self.writeopts,
         )?;
         Ok(())
     }
