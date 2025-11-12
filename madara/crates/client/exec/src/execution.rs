@@ -63,7 +63,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                 let mut execution_info =
                     tx.execute_raw(&mut transactional_state, &self.block_context, false).map_err(make_reexec_error)?;
                 
-                execution_info.revert_error = execution_info.revert_error.map(|e| e.format_properly());
+                execution_info.revert_error = execution_info.revert_error.map(|e| e.format_for_receipt());
 
                 let state_diff = transactional_state
                     .to_state_diff()
