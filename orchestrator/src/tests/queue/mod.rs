@@ -62,7 +62,7 @@ mod tests {
 
         // Get the actual queue name and URL for this specific queue type
         let actual_queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &QueueType::SnosJobProcessing);
-        let actual_queue_url =
+        let _actual_queue_url =
             inner_sqs.get_queue_url_from_client(&actual_queue_name).await.expect("Failed to get queue URL");
 
         // Send message using our QueueClient (which adds version attribute)

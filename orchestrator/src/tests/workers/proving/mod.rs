@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
-use crate::tests::common::mock_helpers::get_job_handler_context_safe;
+use crate::tests::common::mock_helpers::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{db_checks_proving_worker, get_job_by_mock_id_vector};
 use crate::types::batch::AggregatorBatch;
@@ -28,6 +28,9 @@ use url::Url;
 #[case(false)]
 #[tokio::test]
 async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dyn Error>> {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let num_jobs = 5;
     // Choosing a random incomplete job ID out of the total number of jobs
     let random_incomplete_job_id: u64 = 3;

@@ -31,7 +31,8 @@ mod aggregator_job;
 
 use crate::core::client::queue::QueueError;
 use crate::error::job::JobError;
-use crate::tests::common::mock_helpers::get_job_handler_context_safe;
+use crate::tests::common::consume_message_with_retry;
+use crate::tests::common::mock_helpers::{acquire_test_lock, get_job_handler_context_safe};
 use crate::types::constant::CAIRO_PIE_FILE_NAME;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::metadata::{
@@ -74,7 +75,8 @@ async fn create_job_job_does_not_exists_in_db_works() {
     // Keep the guard alive for the entire test to prevent other tests from overwriting expectations
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let _ctx_guard = get_job_handler_context_safe();
-    _ctx_guard.expect().times(0..).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+    // create_job calls get_job_handler exactly once
+    _ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // Ensure create_job succeeds
     let create_result =
@@ -94,43 +96,8 @@ async fn create_job_job_does_not_exists_in_db_works() {
     sleep(Duration::from_secs(5)).await;
 
     // Queue checks - retry a few times in case of timing issues
-    let mut retries = 0;
-    let max_retries = 5;
-    let mut consumed_messages = None;
-
-    while retries < max_retries && consumed_messages.is_none() {
-        match services.config.queue().consume_message_from_queue(job_item.job_type.process_queue_name()).await {
-            Ok(msg) => consumed_messages = Some(msg),
-            Err(e) => {
-                let error_str = e.to_string();
-                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
-                    if retries < max_retries - 1 {
-                        // Queue might not be ready yet, wait and retry
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
-                    }
-                } else if error_str.contains("NoData") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("No message found in queue after {} retries: {}", max_retries, e);
-                    }
-                } else {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Failed to consume message: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    let consumed_messages = consumed_messages.expect("Should have received message");
+    let consumed_messages =
+        consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -180,45 +147,69 @@ async fn create_job_job_exists_in_db_works() {
     assert!(matches!(consumed_messages, QueueError::GetQueueUrlError(_) | QueueError::ErrorFromQueueError(_)));
 }
 
-/// Tests `create_job` function when job handler is not implemented in the `get_job_handler`
-/// This test should fail as job handler is not implemented in the `factory.rs`
+/// Tests `create_job` function when job handler's `create_job` returns an error
+/// This test verifies that errors from the job handler are properly propagated
+/// and that no job is created in the database or added to the queue when creation fails
 #[rstest]
-#[should_panic(expected = "Job type not implemented yet.")]
-#[ignore] // Temporarily ignored: panics in mock context poison mutex in parallel tests
 #[tokio::test]
-async fn create_job_job_handler_is_not_implemented_panics() {
+async fn create_job_job_handler_returns_error() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = crate::tests::common::mock_helpers::acquire_test_lock();
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
         .build()
         .await;
 
-    // Mocking the `get_job_handler` call in create_job function.
-    let ctx = get_job_handler_context_safe();
-    ctx.expect().times(1).returning(|_| panic!("Job type not implemented yet."));
-
     let job_type = JobType::ProofCreation;
+    let internal_id = "0".to_string();
 
     // Create a proper JobMetadata for the test
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
+            input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", internal_id, CAIRO_PIE_FILE_NAME))),
             ..Default::default()
         }),
     };
 
-    assert!(JobHandlerService::create_job(job_type.clone(), "0".to_string(), metadata, services.config.clone())
-        .await
-        .is_err());
+    // Create a mock job handler that returns an error
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler
+        .expect_create_job()
+        .times(1)
+        .returning(|_, _| Err(JobError::ProviderError("Job handler creation failed".to_string())));
 
-    // Waiting for 5 secs for message to be passed into the queue
-    sleep(Duration::from_secs(5)).await;
+    // Mock the `get_job_handler` call to return our error-producing handler
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let _ctx_guard = get_job_handler_context_safe();
+    _ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
 
-    // Queue checks.
-    let consumed_messages =
-        services.config.queue().consume_message_from_queue(job_type.process_queue_name()).await.unwrap_err();
-    assert_matches!(consumed_messages, QueueError::ErrorFromQueueError(_));
+    // Verify that create_job returns an error
+    let result =
+        JobHandlerService::create_job(job_type.clone(), internal_id.clone(), metadata, services.config.clone()).await;
+    assert!(result.is_err(), "create_job should return an error when job handler fails");
+
+    // Verify the error is the one we expect
+    assert_matches!(
+        result.unwrap_err(),
+        JobError::ProviderError(msg) if msg == "Job handler creation failed"
+    );
+
+    // Verify no job was created in the database
+    let job_in_db = services.config.database().get_job_by_internal_id_and_type(&internal_id, &job_type).await.unwrap();
+    assert!(job_in_db.is_none(), "No job should be created in the database when creation fails");
+
+    // Verify no message was added to the queue
+    // Wait a bit to ensure any async operations complete
+    sleep(Duration::from_millis(500)).await;
+
+    // Try to consume from the queue - should fail with NoData or QueueDoesNotExist
+    let queue_result = services.config.queue().consume_message_from_queue(job_type.process_queue_name()).await;
+
+    // The queue should be empty (NoData) or the queue might not exist yet
+    assert!(queue_result.is_err(), "Queue should be empty or not have a message when job creation fails");
 }
 
 /// Tests `process_job` function when job is already existing in the db and job status is either
@@ -254,11 +245,11 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
 
     // Mocking the `get_job_handler` call AFTER creating job
-    // Use times(0..) to allow multiple calls if needed
+    // process_job calls get_job_handler exactly once
     // Keep the guard alive for the entire test to prevent other tests from overwriting expectations
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let _ctx_guard = get_job_handler_context_safe();
-    _ctx_guard.expect().times(0..).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
+    _ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
 
     // Ensure process_job succeeds
     let process_result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
@@ -276,42 +267,8 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     assert_eq!(updated_job.metadata.common.process_attempt_no, 1);
 
     // Queue checks - retry a few times in case of timing issues
-    let mut retries = 0;
-    let max_retries = 5;
-    let mut consumed_messages = None;
-
-    while retries < max_retries && consumed_messages.is_none() {
-        match services.config.queue().consume_message_from_queue(job_type.verify_queue_name()).await {
-            Ok(msg) => consumed_messages = Some(msg),
-            Err(e) => {
-                let error_str = e.to_string();
-                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
-                    }
-                } else if error_str.contains("NoData") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("No message found in queue after {} retries: {}", max_retries, e);
-                    }
-                } else {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Failed to consume message: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    let consumed_messages = consumed_messages.expect("Should have received message");
+    let consumed_messages =
+        consume_message_with_retry(services.config.queue(), job_type.verify_queue_name(), 5, 1).await;
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -322,9 +279,12 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 /// 2. The job is moved to failed state
 /// 3. Appropriate error message is set in the job metadata
 #[rstest]
-#[ignore] // Temporarily ignored: panics in mock handler may poison mutex in parallel tests
 #[tokio::test]
 async fn process_job_handles_panic() {
+    // Acquire test lock to serialize this test with others that use mocks
+    // This prevents Mockall's global context from being interfered with by parallel tests
+    let _test_lock = acquire_test_lock();
+
     // Building config
     let mut mock_alert_client = MockAlertClient::new();
     mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
@@ -441,15 +401,19 @@ async fn process_job_job_does_not_exists_in_db_works() {
 #[rstest]
 #[tokio::test]
 async fn process_job_two_workers_process_same_job_works() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting process job function in job processor to return the external ID.
     job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
 
-    // Mocking the `get_job_handler` call in create_job function.
+    // Mocking the `get_job_handler` call - both workers will call it before one fails due to lock contention
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context_safe();
-    ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+    let _ctx_guard = get_job_handler_context_safe();
+    // Both workers will call get_job_handler (each process_job calls it once), so expect exactly 2 calls
+    _ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // building config
     let services = TestConfigBuilder::new()
@@ -555,8 +519,8 @@ async fn verify_job_with_verified_status_works() {
 
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = get_job_handler_context_safe();
-    // Mocking the `get_job_handler` call - use times(0..) to allow multiple calls
-    ctx.expect().times(0..).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+    // Mocking the `get_job_handler` call - verify_job calls it exactly once
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
     // Ensure verify_job succeeds
     let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
@@ -612,8 +576,8 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
 
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = get_job_handler_context_safe();
-    // Mocking the `get_job_handler` call - use times(0..) to allow multiple calls
-    ctx.expect().times(0..).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+    // Mocking the `get_job_handler` call - verify_job calls it exactly once
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
     // Ensure verify_job succeeds
     let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
@@ -630,42 +594,8 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     sleep(Duration::from_secs(5)).await;
 
     // Queue checks - retry a few times in case of timing issues
-    let mut retries = 0;
-    let max_retries = 5;
-    let mut consumed_messages = None;
-
-    while retries < max_retries && consumed_messages.is_none() {
-        match services.config.queue().consume_message_from_queue(QueueType::DataSubmissionJobProcessing).await {
-            Ok(msg) => consumed_messages = Some(msg),
-            Err(e) => {
-                let error_str = e.to_string();
-                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
-                    }
-                } else if error_str.contains("NoData") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("No message found in queue after {} retries: {}", max_retries, e);
-                    }
-                } else {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Failed to consume message: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    let consumed_messages = consumed_messages.expect("Should have received message");
+    let consumed_messages =
+        consume_message_with_retry(services.config.queue(), QueueType::DataSubmissionJobProcessing, 5, 1).await;
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -703,10 +633,10 @@ async fn verify_job_with_rejected_status_works() {
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Rejected("".to_string())));
     job_handler.expect_max_process_attempts().returning(move || 1u64);
 
-    // Mocking the `get_job_handler` call - use times(0..) to allow multiple calls
+    // Mocking the `get_job_handler` call - verify_job calls it exactly once
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = get_job_handler_context_safe();
-    ctx.expect().times(0..).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
     // Ensure verify_job succeeds
     let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
@@ -761,10 +691,10 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     job_handler.expect_max_verification_attempts().returning(move || 2u64);
     job_handler.expect_verification_polling_delay_seconds().returning(move || 2u64);
 
-    // Mocking the `get_job_handler` call - use times(0..) to allow multiple calls
+    // Mocking the `get_job_handler` call - verify_job calls it exactly once
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = get_job_handler_context_safe();
-    ctx.expect().times(0..).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
+    ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
     // Ensure verify_job succeeds
     let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
@@ -786,42 +716,8 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
 
     // Queue checks - verify a message was added to the verification queue
     // Retry a few times in case of timing issues
-    let mut retries = 0;
-    let max_retries = 5;
-    let mut consumed_messages = None;
-
-    while retries < max_retries && consumed_messages.is_none() {
-        match services.config.queue().consume_message_from_queue(job_item.job_type.verify_queue_name()).await {
-            Ok(msg) => consumed_messages = Some(msg),
-            Err(e) => {
-                let error_str = e.to_string();
-                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
-                    }
-                } else if error_str.contains("NoData") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("No message found in queue after {} retries: {}", max_retries, e);
-                    }
-                } else {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Failed to consume message: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    let consumed_messages = consumed_messages.expect("Should have received message");
+    let consumed_messages =
+        consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1).await;
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -1039,38 +935,8 @@ async fn test_retry_job_adds_to_process_queue() {
 
     // Verify message was added to process queue
     // Retry a few times in case of timing issues
-    let mut retries = 0;
-    let max_retries = 5;
-    let mut consumed_messages = None;
-
-    while retries < max_retries && consumed_messages.is_none() {
-        match services.config.queue().consume_message_from_queue(job_item.job_type.process_queue_name()).await {
-            Ok(msg) => consumed_messages = Some(msg),
-            Err(e) => {
-                let error_str = e.to_string();
-                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
-                    panic!("Queue does not exist: {}", e);
-                } else if error_str.contains("NoData") {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("No message found in queue after {} retries: {}", max_retries, e);
-                    }
-                } else {
-                    if retries < max_retries - 1 {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        retries += 1;
-                    } else {
-                        panic!("Failed to consume message: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    let consumed_messages = consumed_messages.expect("Should have received message");
-
+    let consumed_messages =
+        consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1).await;
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_id);
 }

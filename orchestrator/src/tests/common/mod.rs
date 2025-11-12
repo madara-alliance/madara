@@ -3,8 +3,11 @@ pub mod constants;
 pub mod mock_helpers;
 
 use crate::core::client::queue::sqs::InnerSQS;
+use crate::core::client::queue::QueueClient;
 use crate::core::client::MongoDbClient;
+use omniqueue::Delivery;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::cloud::CloudProvider;
@@ -15,7 +18,7 @@ use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobS
 use crate::types::jobs::types::JobStatus::Created;
 use crate::types::jobs::types::JobType::DataSubmission;
 use crate::types::params::database::DatabaseArgs;
-use crate::types::params::{AWSResourceIdentifier, AlertArgs, QueueArgs, StorageArgs};
+use crate::types::params::{AlertArgs, QueueArgs, StorageArgs};
 use crate::types::queue::QueueType;
 use ::uuid::Uuid;
 use aws_config::SdkConfig;
@@ -207,4 +210,64 @@ pub struct MessagePayloadType {
 
 pub(crate) async fn get_storage_client(provider_config: Arc<CloudProvider>) -> InnerAWSS3 {
     InnerAWSS3::create_setup(provider_config).await.unwrap()
+}
+
+/// Helper function to consume a message from a queue with retry logic.
+/// This function handles common timing issues in test environments (e.g., LocalStack)
+/// by retrying when queues don't exist yet or when messages aren't immediately available.
+///
+/// # Arguments
+/// * `queue_client` - The queue client to use for consuming messages
+/// * `queue_type` - The type of queue to consume from
+/// * `max_retries` - Maximum number of retry attempts (default: 5)
+/// * `retry_delay` - Delay between retries in seconds (default: 1)
+///
+/// # Returns
+/// * `Delivery` - The consumed message
+///
+/// # Panics
+/// * Panics if the queue doesn't exist after max_retries attempts
+/// * Panics if no message is found after max_retries attempts
+/// * Panics if any other error occurs after max_retries attempts
+pub async fn consume_message_with_retry(
+    queue_client: &dyn QueueClient,
+    queue_type: QueueType,
+    max_retries: usize,
+    retry_delay: u64,
+) -> Delivery {
+    let mut retries = 0;
+    let mut queue_message = None;
+
+    while retries < max_retries && queue_message.is_none() {
+        match queue_client.consume_message_from_queue(queue_type.clone()).await {
+            Ok(msg) => queue_message = Some(msg),
+            Err(e) => {
+                let error_str = e.to_string();
+                if error_str.contains("QueueDoesNotExist") || error_str.contains("GetQueueUrlError") {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(retry_delay)).await;
+                        retries += 1;
+                    } else {
+                        panic!("Queue does not exist after {} retries: {}", max_retries, e);
+                    }
+                } else if error_str.contains("NoData") {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(retry_delay)).await;
+                        retries += 1;
+                    } else {
+                        panic!("No message found in queue after {} retries: {}", max_retries, e);
+                    }
+                } else {
+                    if retries < max_retries - 1 {
+                        tokio::time::sleep(Duration::from_secs(retry_delay)).await;
+                        retries += 1;
+                    } else {
+                        panic!("Failed to consume message: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    queue_message.expect("Should have received message")
 }
