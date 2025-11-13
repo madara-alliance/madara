@@ -424,6 +424,8 @@ impl BlockProductionTask {
     /// Re-executes transactions if the block is not empty to obtain bouncer_weights and state_diff
     /// before closing the block. This ensures correctness on restart.
     async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
+        // TODO(mohiiit, 13-11-25): what if the starknet-version have been updated?
+        // version constants or bouncer weights have changed?
         if !self.backend.has_preconfirmed_block() {
             return Ok(());
         }
@@ -434,20 +436,6 @@ impl BlockProductionTask {
 
         let block_number = preconfirmed_view.block_number();
         let n_txs = preconfirmed_view.num_executed_transactions();
-
-        // If block is empty, close directly without re-execution
-        if n_txs == 0 {
-            tracing::debug!("Closing empty preconfirmed block on startup.");
-            let backend = self.backend.clone();
-            global_spawn_rayon_task(move || {
-                backend
-                    .write_access()
-                    .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, None)
-                    .context("Closing empty preconfirmed block on startup")
-            })
-            .await?;
-            return Ok(());
-        }
 
         tracing::info!(
             "Re-executing {} transaction(s) in preconfirmed block #{} to obtain bouncer_weights and state_diff",

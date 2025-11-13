@@ -56,7 +56,7 @@ impl RocksDBStorageInner {
                         );
                     }
                 }
-                self.db.write_opt(batch, &self.writeopts_no_wal)?;
+                self.db.write_opt(batch, &self.writeopts)?;
                 anyhow::Ok(())
             },
         )?;
@@ -83,7 +83,7 @@ impl RocksDBStorageInner {
                             })?,
                         );
                     }
-                    self.db.write_opt(batch, &self.writeopts_no_wal)?;
+                    self.db.write_opt(batch, &self.writeopts)?;
                     anyhow::Ok(())
                 },
             )?;
@@ -156,7 +156,7 @@ impl RocksDBStorageInner {
             total_classes
         );
 
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
 
         tracing::info!("✅ REORG [class_db_revert]: Successfully removed all declared classes");
 

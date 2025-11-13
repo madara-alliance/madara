@@ -148,7 +148,7 @@ impl RocksDBStorageInner {
             &super::serialize_to_smallvec::<[u8; 16]>(&block_n)?,
         );
 
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 
@@ -191,7 +191,7 @@ impl RocksDBStorageInner {
             value.iter().map(|tx_with_receipt| *tx_with_receipt.receipt.transaction_hash()).collect();
         batch.put_cf(&block_info_col, block_n_u32.to_be_bytes(), super::serialize(&block_info)?);
 
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 
@@ -202,7 +202,7 @@ impl RocksDBStorageInner {
 
         let block_n_to_state_diff = self.get_column(BLOCK_STATE_DIFF_COLUMN);
         batch.put_cf(&block_n_to_state_diff, block_n_u32.to_be_bytes(), &super::serialize(value)?);
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
 
         Ok(())
     }
@@ -214,7 +214,7 @@ impl RocksDBStorageInner {
 
         let block_n_to_bouncer_weights = self.get_column(BLOCK_BOUNCER_WEIGHT_COLUMN);
         batch.put_cf(&block_n_to_bouncer_weights, block_n_u32.to_be_bytes(), &super::serialize(value)?);
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
 
         Ok(())
     }
@@ -248,7 +248,7 @@ impl RocksDBStorageInner {
             );
         }
 
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 
@@ -380,7 +380,7 @@ impl RocksDBStorageInner {
             batch.delete_cf(&block_info_col, block_n_u32.to_be_bytes());
             batch.delete_cf(&block_hash_to_block_n_col, block_info.block_hash.to_bytes_be());
 
-            self.db.write_opt(batch, &self.writeopts_no_wal)?;
+            self.db.write_opt(batch, &self.writeopts)?;
             tracing::debug!("📦 REORG [block_db_revert]: Block {} successfully removed from database", block_n);
         }
 

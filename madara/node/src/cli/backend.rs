@@ -1,4 +1,5 @@
-use mc_db::{rocksdb::RocksDBConfig, MadaraBackendConfig};
+use mc_db::rocksdb::{DbWriteMode, RocksDBConfig};
+use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -51,7 +52,7 @@ pub struct BackendParams {
     pub backup_dir: Option<PathBuf>,
 
     /// Disable saving the preconfirmed block to database. This may speed up block production a bit.
-    #[clap(env = "MADARA_SAVE_PRECONFIRMED", long)]
+    #[clap(env = "MADARA_NO_SAVE_PRECONFIRMED", long)]
     #[serde(default)]
     pub no_save_preconfirmed: bool,
 
@@ -129,6 +130,20 @@ pub struct BackendParams {
     /// The block you want to start syncing from. This will most probably break your database.
     #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
     pub unsafe_starting_block: Option<u64>,
+
+    /// Enable Write-Ahead Log (WAL) for database writes.
+    /// WAL provides crash recovery by logging changes before applying them.
+    /// Disabling improves performance but may lose recent data on crash.
+    /// Recommended: true for production, false for testing/development.
+    #[clap(env = "MADARA_DB_WAL", long, default_value = "true")]
+    pub db_wal: bool,
+
+    /// Enable fsync for database writes.
+    /// Fsync forces data to disk before acknowledging writes, surviving power failures.
+    /// Disabling relies on OS buffering (faster, survives crashes but not power loss).
+    /// Recommended: false for production (good balance), true for maximum durability.
+    #[clap(env = "MADARA_DB_FSYNC", long, default_value = "false")]
+    pub db_fsync: bool,
 }
 
 impl BackendParams {
@@ -153,6 +168,7 @@ impl BackendParams {
             snapshot_interval: self.db_snapshot_interval,
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
+            write_mode: DbWriteMode { wal: self.db_wal, fsync: self.db_fsync },
         }
     }
 }

@@ -32,13 +32,13 @@ impl RocksDBStorageInner {
                 &self.get_column(META_COLUMN),
                 META_LAST_SYNCED_L1_EVENT_BLOCK_KEY,
                 block_n.to_be_bytes(),
-                &self.writeopts_no_wal,
+                &self.writeopts,
             )?;
         } else {
             self.db.delete_cf_opt(
                 &self.get_column(META_COLUMN),
                 META_LAST_SYNCED_L1_EVENT_BLOCK_KEY,
-                &self.writeopts_no_wal,
+                &self.writeopts,
             )?;
         }
         Ok(())
@@ -61,14 +61,10 @@ impl RocksDBStorageInner {
                 &self.get_column(META_COLUMN),
                 META_CONFIRMED_ON_L1_TIP_KEY,
                 block_n.to_be_bytes(),
-                &self.writeopts_no_wal,
+                &self.writeopts,
             )?;
         } else {
-            self.db.delete_cf_opt(
-                &self.get_column(META_COLUMN),
-                META_CONFIRMED_ON_L1_TIP_KEY,
-                &self.writeopts_no_wal,
-            )?;
+            self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_CONFIRMED_ON_L1_TIP_KEY, &self.writeopts)?;
         }
         Ok(())
     }
@@ -97,7 +93,7 @@ impl RocksDBStorageInner {
             &self.get_column(META_COLUMN),
             META_DEVNET_KEYS_KEY,
             super::serialize(&devnet_keys)?,
-            &self.writeopts_no_wal,
+            &self.writeopts,
         )?;
         Ok(())
     }
@@ -142,7 +138,7 @@ impl RocksDBStorageInner {
         // Write chain tip atomically
         // Note: Using regular write opts (no fsync) for performance
         // The chain tip will be synced on next flush or graceful shutdown
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 
@@ -168,7 +164,7 @@ impl RocksDBStorageInner {
             let tx_index = u16::try_from(tx_index).context("Converting tx_index to u16")?;
             batch.put_cf(&col, tx_index.to_be_bytes(), super::serialize(&value)?);
         }
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 
@@ -208,7 +204,7 @@ impl RocksDBStorageInner {
             &self.get_column(META_COLUMN),
             META_CHAIN_INFO_KEY,
             super::serialize_to_smallvec::<[u8; 128]>(info)?,
-            &self.writeopts_no_wal,
+            &self.writeopts,
         )?;
         Ok(())
     }
@@ -228,14 +224,10 @@ impl RocksDBStorageInner {
                 &self.get_column(META_COLUMN),
                 META_LATEST_APPLIED_TRIE_UPDATE,
                 super::serialize_to_smallvec::<[u8; 128]>(block_n)?,
-                &self.writeopts_no_wal,
+                &self.writeopts,
             )?;
         } else {
-            self.db.delete_cf_opt(
-                &self.get_column(META_COLUMN),
-                META_LATEST_APPLIED_TRIE_UPDATE,
-                &self.writeopts_no_wal,
-            )?;
+            self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_LATEST_APPLIED_TRIE_UPDATE, &self.writeopts)?;
         }
         Ok(())
     }

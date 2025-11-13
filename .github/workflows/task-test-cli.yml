@@ -1,11 +1,9 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Task - Run CLI tests
-
 on:
   workflow_dispatch:
   workflow_call:
-
 jobs:
   test-cli:
     runs-on: blacksmith-16vcpu-ubuntu-2204
@@ -14,24 +12,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
       - name: Load env
         uses: ./.github/actions/load-env
-
       - name: Rust setup
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: madara-${{ runner.os }}
-
       - name: Run cli without arguments
+        timeout-minutes: 10
         run: |
           CARGO_TARGET_DIR=target cargo run --manifest-path madara/Cargo.toml --bin madara --release -- --no-l1-sync --devnet &
           MADARA_PID=$!
           while ! echo exit | nc localhost 9944; do sleep 1; done
           kill $MADARA_PID
-
       - name: Run cli pointing to a file
+        timeout-minutes: 10
         run: |
           CARGO_TARGET_DIR=target cargo run --manifest-path madara/Cargo.toml --bin madara --release -- --no-l1-sync --devnet --config-file ./configs/args/config.json &
           MADARA_PID=$!
