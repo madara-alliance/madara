@@ -11,10 +11,4 @@ pub struct BlockProductionParams {
     /// Create this number of contracts in the genesis block for the devnet configuration.
     #[arg(env = "MADARA_DEVNET_CONTRACTS", long, default_value_t = 10)]
     pub devnet_contracts: u64,
-
-    /// Close preconfirmed block on restart instead of continuing with it.
-    /// When false (default), the node will resume with the preconfirmed block after restart.
-    /// When true, the preconfirmed block will be closed (finalized) on startup.
-    #[arg(env = "MADARA_CLOSE_PRECONFIRMED_BLOCK_UPON_RESTART", long)]
-    pub close_preconfirmed_block_upon_restart: bool,
 }
