@@ -532,6 +532,7 @@ pub fn gateway_preconfirmed_block_sync(
                         state_diff,
                         declared_class: None, // It seems we can't get the declared classes from the preconfirmed block :/
                         arrived_at,
+                        paid_fee_on_l1: None, // Gateway blocks don't contain paid_fee_on_l1, set to None
                     })
                     .collect();
 

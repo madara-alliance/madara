@@ -154,6 +154,14 @@ impl CurrentBlockState {
                 let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
                 let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
 
+                // Extract paid_fee_on_l1 from L1 handler transactions
+                let paid_fee_on_l1 = match &blockifier_tx {
+                    blockifier::transaction::transaction_execution::Transaction::L1Handler(l1_tx) => {
+                        Some(l1_tx.paid_fee_on_l1.0)
+                    }
+                    _ => None,
+                };
+
                 executed.push(PreconfirmedExecutedTransaction {
                     transaction: TransactionWithReceipt { transaction: converted_tx.transaction, receipt },
                     state_diff: TransactionStateUpdate {
@@ -198,6 +206,7 @@ impl CurrentBlockState {
                     },
                     declared_class,
                     arrived_at: additional_info.arrived_at,
+                    paid_fee_on_l1,
                 })
             }
         }
@@ -664,7 +673,6 @@ pub(crate) mod tests {
     use crate::BlockProductionStateNotification;
     use crate::{metrics::BlockProductionMetrics, BlockProductionTask};
     use blockifier::bouncer::{BouncerConfig, BouncerWeights};
-    use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
     use mc_db::MadaraBackend;
     use mc_devnet::{
         Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector, UDC_CONTRACT_ADDRESS,
@@ -672,16 +680,12 @@ pub(crate) mod tests {
     use mc_mempool::{Mempool, MempoolConfig};
     use mc_settlement_client::L1ClientMock;
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-    use mp_block::header::PreconfirmedHeader;
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_receipt::{Event, ExecutionResult};
     use mp_rpc::v0_9_0::{
         BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, DaMode,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
-    };
-    use mp_state_update::{
-        ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StorageEntry,
     };
     use mp_transactions::compute_hash::calculate_contract_address;
     use mp_transactions::IntoStarknetApiExt;
@@ -1032,96 +1036,6 @@ pub(crate) mod tests {
         validator.submit_invoke_transaction(tx).await.expect("Should accept the transaction");
     }
 
-    /// This test makes sure that if a pending block is already present in db
-    /// at startup, then it is closed and stored in db.
-    ///
-    /// This happens if a full node is shutdown (gracefully or not) midway
-    /// during block production.
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(30))]
-    #[tokio::test]
-    #[allow(clippy::too_many_arguments)]
-    async fn block_prod_pending_close_on_startup_pass(
-        #[future] devnet_setup: DevnetSetup,
-        #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
-        #[from(converted_class_legacy)]
-        #[with(Felt::ZERO)]
-        converted_class_legacy_0: mp_class::ConvertedClass,
-    ) {
-        let mut devnet_setup = devnet_setup.await;
-
-        let pending_state_diff = mp_state_update::StateDiff {
-            storage_diffs: vec![
-                ContractStorageDiffItem {
-                    address: Felt::TWO,
-                    storage_entries: vec![
-                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
-                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
-                    ],
-                },
-                ContractStorageDiffItem {
-                    address: Felt::THREE,
-                    storage_entries: vec![
-                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
-                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
-                    ],
-                },
-            ],
-            old_declared_contracts: vec![Felt::ZERO],
-            declared_classes: vec![
-                DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE },
-                DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::TWO },
-            ],
-            deployed_contracts: vec![
-                DeployedContractItem { address: Felt::TWO, class_hash: Felt::TWO },
-                DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE },
-            ],
-            replaced_classes: vec![],
-            nonces: vec![
-                NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
-                NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
-                NonceUpdate { contract_address: Felt::THREE, nonce: Felt::THREE },
-            ],
-        };
-
-        let tx_1 = PreconfirmedExecutedTransaction {
-            transaction: mp_block::TransactionWithReceipt { transaction: tx_invoke_v0.0, receipt: tx_invoke_v0.1 },
-            state_diff: pending_state_diff.clone().into(),
-            declared_class: Some(converted_class_legacy_0.clone()),
-            arrived_at: Default::default(),
-        };
-
-        devnet_setup
-            .backend
-            .write_access()
-            .new_preconfirmed(PreconfirmedBlock::new_with_content(
-                PreconfirmedHeader { block_number: 1, ..Default::default() },
-                [tx_1.clone()],
-                [],
-            ))
-            .unwrap();
-
-        // This should load the pending block from db and close it
-        let mut block_production_task = devnet_setup.block_prod_task();
-        assert_eq!(devnet_setup.backend.latest_block_n(), Some(1));
-        assert_eq!(devnet_setup.backend.latest_confirmed_block_n(), Some(0));
-        block_production_task.close_pending_block_if_exists().await.unwrap();
-
-        // Now we check this was the case.
-        assert_eq!(devnet_setup.backend.latest_block_n(), Some(1));
-        assert_eq!(devnet_setup.backend.latest_confirmed_block_n(), Some(1));
-        assert!(!devnet_setup.backend.has_preconfirmed_block());
-
-        let block = devnet_setup.backend.block_view_on_latest().unwrap().into_confirmed().unwrap();
-
-        assert_eq!(block.get_executed_transactions(..).unwrap(), vec![tx_1.transaction]);
-        assert_eq!(block.get_state_diff().unwrap(), pending_state_diff);
-        assert_eq!(
-            block.state_view().get_class_info_and_compiled(&Felt::ZERO).unwrap(),
-            Some(converted_class_legacy_0)
-        );
-    }
-
     /// Test that `close_pending_block_if_exists` correctly re-executes transactions
     /// and produces the same global state root and state diff as normal block closing.
     #[rstest::rstest]
@@ -1135,110 +1049,190 @@ pub(crate) mod tests {
         #[from(devnet_setup)]
         restart_devnet_setup: DevnetSetup,
     ) {
+        // used for phase 1, where we close the block and note down its
+        // global_state_root, state_diff, and header info
         let mut original_devnet_setup = original_devnet_setup.await;
+
+        // use for phase 2, where we compare the state of the block after re-execution with the state of the block before re-execution
         let mut restart_devnet_setup = restart_devnet_setup.await;
+
+        // --------------------------------------------------------------
+        // | PHASE 1: Close the block and note down its state.          |
+        // --------------------------------------------------------------
 
         // Step 1: Create a block normally with transactions in the original backend
         assert!(original_devnet_setup.mempool.is_empty().await);
 
         // Add various transaction types to mempool to test re-execution handles all types correctly
-        // 1. Invoke transaction
+        // All transactions will be in a single block
+
+        // 1. Declare a contract
+        let declare_res = sign_and_add_declare_tx(
+            &original_devnet_setup.contracts.0[0],
+            &original_devnet_setup.backend,
+            &original_devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        // 2. Deploy contract through UDC
+        let (contract_address, deploy_tx) = make_udc_call(
+            &original_devnet_setup.contracts.0[0],
+            &original_devnet_setup.backend,
+            /* nonce */ Felt::ONE,
+            declare_res.class_hash,
+            /* calldata (pubkey) */ &[Felt::TWO],
+        );
+        original_devnet_setup.tx_validator.submit_invoke_transaction(deploy_tx).await.unwrap();
+
+        // 3. Invoke transaction
         sign_and_add_invoke_tx(
             &original_devnet_setup.contracts.0[0],
             &original_devnet_setup.contracts.0[1],
             &original_devnet_setup.backend,
             &original_devnet_setup.tx_validator,
-            Felt::ZERO,
+            Felt::TWO, // nonce after declare (ZERO) and deploy (ONE)
         )
         .await;
 
-        // 2. Declare transaction
+        // 4. Declare transaction (for a different contract)
         sign_and_add_declare_tx(
             &original_devnet_setup.contracts.0[2],
             &original_devnet_setup.backend,
             &original_devnet_setup.tx_validator,
-            Felt::ZERO,
+            Felt::ZERO, // Different account, so nonce starts at ZERO
         )
         .await;
 
-        // 3. Another invoke transaction
+        // 5. Another invoke transaction
         sign_and_add_invoke_tx(
             &original_devnet_setup.contracts.0[1],
             &original_devnet_setup.contracts.0[3],
             &original_devnet_setup.backend,
             &original_devnet_setup.tx_validator,
-            Felt::ONE,
+            Felt::ZERO, // Different account, so nonce starts at ZERO
         )
         .await;
 
+        // 6. Add L1 handler transaction
+        let paid_fee_on_l1 = 128328u128;
+        original_devnet_setup.l1_client.add_tx(L1HandlerTransactionWithFee::new(
+            L1HandlerTransaction {
+                version: Felt::ZERO,
+                nonce: 55, // core contract nonce
+                contract_address,
+                entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
+                calldata: vec![
+                    /* from_address */ Felt::THREE,
+                    /* arg1 */ Felt::ONE,
+                    /* arg2 */ Felt::TWO,
+                ]
+                .into(),
+            },
+            paid_fee_on_l1,
+        ));
+
         assert!(!original_devnet_setup.mempool.is_empty().await);
 
-        // Note: L1 handler transactions are not included in this test because PreconfirmedExecutedTransaction
-        // doesn't store paid_fee_on_l1, which is required for re-execution. The paid_fee_on_l1 value affects
-        // execution results, so we can't use a default value. This would require storing paid_fee_on_l1 in
-        // PreconfirmedExecutedTransaction, which is a larger change.
-
-        // Run block production to create and close a block
+        // Run block production to create and close a block with all transactions
         let mut block_production_task = original_devnet_setup.block_prod_task();
         let mut notifications = block_production_task.subscribe_state_notifications();
+        let control = block_production_task.handle();
         let _task =
             AbortOnDrop::spawn(
                 async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
             );
 
-        // Wait for block to be closed
+        // Wait for batch to be executed
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+
+        // Manually close the block
+        control.close_block().await.unwrap();
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
 
         // Step 2: Capture global_state_root, state_diff, and header info from closed block
-        let block_number = 1;
+        let block_number = original_devnet_setup.backend.latest_confirmed_block_n().unwrap();
         let original_block = original_devnet_setup.backend.block_view_on_confirmed(block_number).unwrap();
         let original_block_info = original_block.get_block_info().unwrap();
         let expected_global_state_root = original_block_info.header.global_state_root;
         let expected_state_diff = original_block.get_state_diff().unwrap();
         let executed_transactions = original_block.get_executed_transactions(..).unwrap();
 
-        // Extract header info for recreating PreconfirmedHeader
-        let header_info = original_block_info.header.clone();
-
-        // Step 3: Execute the same transactions in the restart backend
+        // --------------------------------------------------------------
+        // | PHASE 2: Re-execute the block and note down its state.    |
+        // --------------------------------------------------------------
+        //
+        // We'll add them in the same order using the same helper functions
+        // All transactions will be in a single block
         // This ensures they're executed in the same context (clean genesis state)
         assert!(restart_devnet_setup.mempool.is_empty().await);
 
-        // Add the same transactions to mempool in the restart backend
-        // We'll add them in the same order using the same helper functions
-        // 1. Invoke transaction
+        // 1. Declare a contract
+        let restart_declare_res = sign_and_add_declare_tx(
+            &restart_devnet_setup.contracts.0[0],
+            &restart_devnet_setup.backend,
+            &restart_devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        // 2. Deploy contract through UDC
+        let (restart_contract_address, restart_deploy_tx) = make_udc_call(
+            &restart_devnet_setup.contracts.0[0],
+            &restart_devnet_setup.backend,
+            /* nonce */ Felt::ONE,
+            restart_declare_res.class_hash,
+            /* calldata (pubkey) */ &[Felt::TWO],
+        );
+        restart_devnet_setup.tx_validator.submit_invoke_transaction(restart_deploy_tx).await.unwrap();
+
+        // 3. Invoke transaction
         sign_and_add_invoke_tx(
             &restart_devnet_setup.contracts.0[0],
             &restart_devnet_setup.contracts.0[1],
             &restart_devnet_setup.backend,
             &restart_devnet_setup.tx_validator,
-            Felt::ZERO,
+            Felt::TWO, // nonce after declare (ZERO) and deploy (ONE)
         )
         .await;
 
-        // 2. Declare transaction
+        // 4. Declare transaction (for a different contract)
         sign_and_add_declare_tx(
             &restart_devnet_setup.contracts.0[2],
             &restart_devnet_setup.backend,
             &restart_devnet_setup.tx_validator,
-            Felt::ZERO,
+            Felt::ZERO, // Different account, so nonce starts at ZERO
         )
         .await;
 
-        // 3. Another invoke transaction
+        // 5. Another invoke transaction
         sign_and_add_invoke_tx(
             &restart_devnet_setup.contracts.0[1],
             &restart_devnet_setup.contracts.0[3],
             &restart_devnet_setup.backend,
             &restart_devnet_setup.tx_validator,
-            Felt::ONE,
+            Felt::ZERO, // Different account, so nonce starts at ZERO
         )
         .await;
 
-        assert!(!restart_devnet_setup.mempool.is_empty().await);
+        // 6. Add the same L1 handler transaction
+        restart_devnet_setup.l1_client.add_tx(L1HandlerTransactionWithFee::new(
+            L1HandlerTransaction {
+                version: Felt::ZERO,
+                nonce: 55, // core contract nonce
+                contract_address: restart_contract_address,
+                entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
+                calldata: vec![
+                    /* from_address */ Felt::THREE,
+                    /* arg1 */ Felt::ONE,
+                    /* arg2 */ Felt::TWO,
+                ]
+                .into(),
+            },
+            paid_fee_on_l1, // Use the same paid_fee_on_l1 value
+        ));
 
-        // Note: L1 handler transactions are not included - see comment above in original execution section
+        assert!(!restart_devnet_setup.mempool.is_empty().await);
 
         // Step 4: Run block production to execute transactions and add them to preconfirmed block
         // Use a very long block_time to prevent auto-closing, then stop manually after batch execution
@@ -1264,19 +1258,10 @@ pub(crate) mod tests {
         let preconfirmed_view = restart_devnet_setup.backend.block_view_on_preconfirmed().unwrap();
         assert_eq!(preconfirmed_view.num_executed_transactions(), executed_transactions.len());
 
-        // Update the preconfirmed block header to match the original block header exactly
-        // This ensures the re-execution uses the same header values like gas_prices
         let restart_preconfirmed_block = preconfirmed_view.block();
-        let mut updated_header = restart_preconfirmed_block.header.clone();
-        updated_header.gas_prices = header_info.gas_prices.clone();
 
-        // Replace the preconfirmed block with updated header
-        let updated_preconfirmed_block = PreconfirmedBlock::new_with_content(
-            updated_header,
-            preconfirmed_view.borrow_content().executed_transactions().cloned().collect::<Vec<_>>(),
-            Vec::<Arc<mp_transactions::validated::ValidatedTransaction>>::new(),
-        );
-        restart_devnet_setup.backend.write_access().new_preconfirmed(updated_preconfirmed_block).unwrap();
+        // adding some delay to see if block_timestamp would differ in the reexecution or not
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         // Step 5: Now call close_pending_block_if_exists to re-execute and close
         let mut reexec_block_production_task = restart_devnet_setup.block_prod_task();
@@ -1289,7 +1274,7 @@ pub(crate) mod tests {
         let reexecuted_block_info =
             restart_devnet_setup.backend.block_view_on_confirmed(block_number).unwrap().get_block_info().unwrap();
 
-        // verify the header of the restart_preconfirmed_block before closing and after execution is same!!!
+        // Verify the header fields match the pre-execution pre-confirmed block's header
         assert_eq!(restart_preconfirmed_block.header.block_timestamp, reexecuted_block_info.header.block_timestamp);
         assert_eq!(restart_preconfirmed_block.header.protocol_version, reexecuted_block_info.header.protocol_version);
         assert_eq!(restart_preconfirmed_block.header.l1_da_mode, reexecuted_block_info.header.l1_da_mode);
@@ -1321,7 +1306,6 @@ pub(crate) mod tests {
 
         // Verify transactions match
         let reexecuted_transactions = reexecuted_block.get_executed_transactions(..).unwrap();
-        assert_eq!(reexecuted_transactions.len(), executed_transactions.len(), "Number of transactions should match");
         assert_eq!(reexecuted_transactions, executed_transactions, "Transactions should match");
     }
 
