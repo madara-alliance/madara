@@ -304,15 +304,28 @@ impl BlockProductionTask {
         }
     }
 
-    /// Prepares a PreconfirmedExecutedTransaction for re-execution by converting it to blockifier Transaction format.
+    /// Prepares a PreconfirmedExecutedTransaction for re-execution by converting it to blockifier format.
     ///
-    /// This function properly handles execution flags including charge_fee by converting through ValidatedTransaction.
+    /// This function converts a `PreconfirmedExecutedTransaction` (stored in the database) back into a
+    /// blockifier transaction format that can be re-executed. It handles all the necessary conversions
+    /// and ensures execution flags are properly set.
     ///
-    /// IMPORTANT: `PreconfirmedExecutedTransaction` doesn't store the original `charge_fee` value, so we use
-    /// `charge_fee = true` as the default (matching `to_validated()`). This ensures re-execution matches the
-    /// original execution, since transactions are typically executed with `charge_fee = true` during normal
-    /// block production. If the original execution used `charge_fee = false`, the state diff would be different
-    /// and this re-execution would fail anyway, which is expected behavior.
+    /// # Process
+    ///
+    /// 1. Converts `PreconfirmedExecutedTransaction` to `ValidatedTransaction` using `to_validated()`
+    /// 2. Sets `charge_fee` based on the `no_charge_fee` configuration (`charge_fee = !no_charge_fee`)
+    /// 3. Fetches `declared_class` from state if missing (for Declare transactions)
+    /// 4. Converts to blockifier format using `into_blockifier_for_sequencing()` which properly applies execution flags
+    ///
+    /// # Important Notes
+    ///
+    /// - The `charge_fee` flag is determined by `self.no_charge_fee` configuration, ensuring consistency
+    ///   between original execution and re-execution
+    /// - For L1 handler transactions, `paid_fee_on_l1` is preserved from `PreconfirmedExecutedTransaction`
+    ///   (stored during `append_batch`) and used during conversion via `to_validated()`
+    /// - Declare transactions may need their `declared_class` fetched from state if not already stored
+    /// - The conversion uses `into_blockifier_for_sequencing()` which properly sets all execution flags
+    ///   including `charge_fee`, `validate`, and `only_query`
     fn prepare_preconfirmed_tx_for_reexecution(
         &self,
         preconfirmed_tx: &PreconfirmedExecutedTransaction,
@@ -362,8 +375,25 @@ impl BlockProductionTask {
 
     /// Re-executes all transactions in a PreconfirmedBlock to obtain BlockExecutionSummary.
     ///
-    /// This function recreates the execution context and executes all transactions to get
-    /// the bouncer_weights and state_diff needed for proper block closing.
+    /// This function is called when Madara restarts with a preconfirmed block in the database.
+    /// It recreates the execution context and re-executes all transactions to regenerate:
+    /// - `bouncer_weights`: Resource usage metrics required for block finalization
+    /// - `state_diff`: Aggregated state changes needed for block closing
+    ///
+    /// # Process
+    ///
+    /// 1. Retrieves all executed transactions from the preconfirmed block
+    /// 2. Converts them to blockifier format using `prepare_preconfirmed_tx_for_reexecution()`
+    /// 3. Creates `BlockExecutionContext` from the preconfirmed block's header (preserving timestamp, gas_prices, etc.)
+    /// 4. Sets up `LayeredStateAdapter` for state access
+    /// 5. Creates `TransactionExecutor` with proper `block_n-10` state diff handling (Starknet protocol requirement)
+    /// 6. Executes all transactions and calls `finalize()` to get `BlockExecutionSummary`
+    ///
+    /// # Important Notes
+    ///
+    /// - The execution context uses the exact header values from the preconfirmed block (timestamp, gas_prices, etc.)
+    /// - This ensures re-execution produces the same results as the original execution
+    /// - The `block_n-10` state diff entry is set on the `0x1` contract address for protocol compliance
     async fn reexecute_preconfirmed_block(
         &self,
         preconfirmed_view: &MadaraPreconfirmedBlockView,
@@ -419,13 +449,40 @@ impl BlockProductionTask {
         Ok(block_exec_summary)
     }
 
-    /// Closes the last pending block store in db (if any).
+    /// Closes the last pending block stored in the database (if any).
     ///
-    /// Re-executes transactions if the block is not empty to obtain bouncer_weights and state_diff
-    /// before closing the block. This ensures correctness on restart.
+    /// This function is called when Madara restarts and finds a preconfirmed block in the database.
+    /// It handles closing the block properly by re-executing transactions to regenerate execution context.
+    ///
+    /// # Process
+    ///
+    /// 1. Checks if a preconfirmed block exists, returns early if not
+    /// 2. Re-executes all transactions in the block using `reexecute_preconfirmed_block()` to obtain:
+    ///    - `bouncer_weights`: Required for block finalization
+    ///    - `state_diff`: Required for block closing
+    /// 3. Extracts consumed L1 handler nonces from transactions
+    /// 4. Removes consumed L1 to L2 message nonces from the database
+    /// 5. Saves bouncer weights to the database
+    /// 6. Closes the preconfirmed block with the regenerated state_diff
+    ///
+    /// # Why Re-execution is Necessary
+    ///
+    /// When Madara shuts down during block production, the preconfirmed block is saved with executed transactions
+    /// but without the `BlockExecutionSummary` (bouncer_weights and state_diff). These are only generated when
+    /// `finalize()` is called on the executor, which happens during normal block closing. On restart, we need to
+    /// recreate the execution context and re-execute transactions to obtain these values before closing the block.
+    ///
+    /// # Important Notes
+    ///
+    /// - The re-execution uses the exact header values from the preconfirmed block (timestamp, gas_prices, etc.)
+    /// - The `charge_fee` flag is determined by `self.no_charge_fee` configuration
+    /// - L1 handler transactions preserve their `paid_fee_on_l1` value (stored during `append_batch`)
+    ///
+    /// # TODO (mohit, 13/11/2025)
+    ///
+    /// - Handle cases where Starknet version has been updated between shutdown and restart
+    /// - Handle cases where version constants or bouncer weights have changed
     async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
-        // TODO(mohiiit, 13-11-25): what if the starknet-version have been updated?
-        // version constants or bouncer weights have changed?
         if !self.backend.has_preconfirmed_block() {
             return Ok(());
         }
@@ -1024,8 +1081,41 @@ pub(crate) mod tests {
         validator.submit_invoke_transaction(tx).await.expect("Should accept the transaction");
     }
 
-    /// Test that `close_pending_block_if_exists` correctly re-executes transactions
-    /// and produces the same global state root and state diff as normal block closing.
+    //
+    // This test verifies that when Madara restarts with a preconfirmed block, the re-execution process
+    // Test that `close_pending_block_if_exists` correctly re-executes transactions and produces matching results.
+    // produces the same global state root and state diff as the original execution. This ensures correctness
+    // of the restart recovery mechanism.
+    //
+    // # Test Process
+    //
+    // **Phase 1: Normal Block Production**
+    // 1. Creates a block with various transaction types (invoke, declare, deploy, L1 handler)
+    // 2. Closes the block normally and captures:
+    //    - `global_state_root`
+    //    - `state_diff`
+    //    - `header` information
+    //    - Executed transactions
+    //
+    // # Transaction Types Tested
+    // - **Invoke transactions**: Standard contract calls
+    // - **Declare transactions**: Class declarations
+    // - **Deploy transactions**: Contract deployments via UDC
+    // - **L1 handler transactions**: L1 to L2 messages with `paid_fee_on_l1`
+    //
+    // # Key Assertions
+    //
+    // - Global state root must match exactly (ensures state consistency)
+    // - State diff must match (values are the same, order may differ)
+    // - Header fields must match the preconfirmed block (timestamp, gas_prices, etc.)
+    // - All transactions must match
+    //
+    // # Important Notes
+    //
+    // - Uses two separate `DevnetSetup` fixtures to ensure clean state isolation
+    // - State diffs are sorted before comparison to handle ordering differences
+    // - The test verifies that `paid_fee_on_l1` is preserved for L1 handler transactions
+    // - The test ensures that re-execution produces deterministic results
     #[rstest::rstest]
     #[timeout(Duration::from_secs(100))]
     #[tokio::test]
