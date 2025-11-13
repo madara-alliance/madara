@@ -72,6 +72,18 @@ pub enum StorageChainTip {
     Preconfirmed { header: PreconfirmedHeader, content: Vec<PreconfirmedExecutedTransaction> },
 }
 
+impl std::fmt::Display for StorageChainTip {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => write!(f, "empty state"),
+            Self::Confirmed(block_n) => write!(f, "confirmed block: #{block_n}"),
+            Self::Preconfirmed { header, .. } => {
+                write!(f, "pre-confirmed block: #{}", header.block_number)
+            }
+        }
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct StoredChainInfo {
     pub chain_id: ChainId,

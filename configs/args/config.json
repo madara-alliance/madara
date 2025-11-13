@@ -27,7 +27,9 @@
     "db_memtable_blocks_budget_mib": 1024,
     "db_memtable_contracts_budget_mib": 128,
     "db_memtable_other_budget_mib": 128,
-    "db_memtable_prefix_bloom_filter_ratio": 0
+    "db_memtable_prefix_bloom_filter_ratio": 0,
+    "db_wal": true,
+    "db_fsync": false
   },
   "l2_sync_params": {
     "l2_sync_disabled": false,
@@ -82,6 +84,7 @@
     "rpc_external": false,
     "rpc_admin": false,
     "rpc_admin_external": false,
+    "rpc_unsafe": false,
     "rpc_max_request_size": 15,
     "rpc_max_response_size": 15,
     "rpc_max_subscriptions_per_connection": 1024,
@@ -104,6 +107,7 @@
   },
   "block_production_params": {
     "block_production_disabled": false,
+    "close_preconfirmed_block_upon_restart": false,
     "devnet_contracts": 10
   },
   "chain_config_override": {

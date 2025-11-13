@@ -1,3 +1,4 @@
+config_version: 1
 chain_name: "Starknet Mainnet"
 chain_id: "SN_MAIN"
 feeder_gateway_url: "https://alpha-mainnet.starknet.io/feeder_gateway/"
@@ -36,6 +37,8 @@ eth_gps_statement_verifier: "0x47312450B3Ac8b5b8e247a6bB6d523e7605bDb60"
 mempool_max_transactions: 10000
 mempool_max_declare_transactions: 20
 mempool_ttl: "5h"
-l2_gas_target: 2000000000
-min_l2_gas_price: 100000
-l2_gas_price_max_change_denominator: 48
+l2_gas_price:
+  type: eip1559
+  target: 2000000000
+  min_price: 100000
+  max_change_denominator: 48
