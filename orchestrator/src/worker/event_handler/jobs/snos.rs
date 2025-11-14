@@ -125,6 +125,7 @@ impl JobHandlerTrait for SnosJobHandler {
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
+            versioned_constants: None,
         };
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {

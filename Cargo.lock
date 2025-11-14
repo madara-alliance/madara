@@ -5210,6 +5210,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=240f08b31c9745674106f6883581c43c072dd8f3#240f08b31c9745674106f6883581c43c072dd8f3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7656,8 +7657,8 @@ dependencies = [
 name = "orchestrator-ethereum-da-client"
 version = "0.8.0"
 dependencies = [
+ "alloy",
  "async-trait",
- "c-kzg",
  "color-eyre",
  "dotenvy",
  "mockall 0.13.0",
@@ -9141,6 +9142,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=240f08b31c9745674106f6883581c43c072dd8f3#240f08b31c9745674106f6883581c43c072dd8f3"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -10607,6 +10609,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
+source = "git+https://github.com/keep-starknet-strange/snos?rev=240f08b31c9745674106f6883581c43c072dd8f3#240f08b31c9745674106f6883581c43c072dd8f3"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
