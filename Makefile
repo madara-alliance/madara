@@ -216,7 +216,8 @@ setup-cairo:
 	@if [ ! -f sequencer_requirements.txt ]; then \
 		CARGO_HOME=$${CARGO_HOME:-$$HOME/.cargo}; \
 		GIT_CHECKOUTS=$$(readlink -f "$$CARGO_HOME/git" 2>/dev/null || echo "$$CARGO_HOME/git"); \
-		REQUIREMENTS_PATH=$$(find "$$GIT_CHECKOUTS/checkouts" -type f -path "*/sequencer*/scripts/requirements.txt" 2>/dev/null | head -n 1); \
+		SEQUENCER_REV=$$(grep -A 2 'name = "blockifier"' Cargo.lock | grep 'sequencer?rev=' | sed -E 's/.*rev=([a-f0-9]+).*/\1/' | cut -c1-7); \
+		REQUIREMENTS_PATH=$$(find "$$GIT_CHECKOUTS/checkouts" -type f -path "*/sequencer*/$$SEQUENCER_REV*/scripts/requirements.txt" 2>/dev/null | head -n 1); \
 		if [ -n "$$REQUIREMENTS_PATH" ]; then \
 			sed 's/numpy==2.0.2/numpy<2.0/' "$$REQUIREMENTS_PATH" > sequencer_requirements.txt; \
 			echo -e "$(INFO)Found requirements.txt at: $$REQUIREMENTS_PATH$(RESET)"; \
