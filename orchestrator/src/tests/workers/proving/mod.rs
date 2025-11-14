@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
-use crate::tests::common::mock_helpers::{acquire_test_lock, get_job_handler_context_safe};
+use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{db_checks_proving_worker, get_job_by_mock_id_vector};
 use crate::types::batch::AggregatorBatch;

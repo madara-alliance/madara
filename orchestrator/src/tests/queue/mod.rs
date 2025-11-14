@@ -29,9 +29,11 @@ mod tests {
         let config = localstack_config.await;
         // Create queue name with template format: "test-{uuid}-{}_queue"
         // This matches the format expected by get_queue_name_from_type
-        let uuid = uuid::Uuid::new_v4();
-        let uuid_str = uuid.to_string();
-        let queue_template = format!("test-{}-{{}}_queue", &uuid_str[..8]);
+        // Use create_unique_queue_name helper to generate unique queue name
+        let unique_name = crate::tests::common::create_unique_queue_name("test");
+        // Extract the UUID prefix (first 8 chars after "test-")
+        let uuid_prefix = unique_name.strip_prefix("test-").map(|s| &s[..8.min(s.len())]).unwrap_or("default");
+        let queue_template = format!("test-{}-{{}}_queue", uuid_prefix);
         let queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &QueueType::SnosJobProcessing);
 
         let inner_sqs = InnerSQS::new(&config);

@@ -1,6 +1,6 @@
 pub mod constants;
 #[cfg(test)]
-pub mod mock_helpers;
+pub mod test_utils;
 
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::client::queue::{QueueClient, QueueError};
@@ -143,7 +143,6 @@ pub async fn delete_storage(provider_config: Arc<CloudProvider>, s3_params: &Sto
 }
 
 // SQS structs & functions
-
 pub async fn create_queues(provider_config: Arc<CloudProvider>, queue_params: &QueueArgs) -> color_eyre::Result<()> {
     let sqs_client = get_sqs_client(provider_config).await;
 
@@ -155,6 +154,8 @@ pub async fn create_queues(provider_config: Arc<CloudProvider>, queue_params: &Q
     // 1. Each test has a unique UUID, so queues are isolated
     // 2. LocalStack will be killed after tests, so cleanup isn't needed
     // 3. Deleting queues can cause race conditions in parallel execution
+    //
+    // TODO (mohit 14/11/25): Use InnerSQS::setup method to create queues and DLQs (code duplication as of now)
     for queue_type in QueueType::iter() {
         let queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &queue_type);
 

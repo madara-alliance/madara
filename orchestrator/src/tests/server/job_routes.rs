@@ -11,8 +11,9 @@ use url::Url;
 
 use crate::core::config::Config;
 use crate::server::types::ApiResponse;
+use crate::tests::common::constants::{QUEUE_CONSUME_MAX_RETRIES, QUEUE_CONSUME_RETRY_DELAY_SECS};
 use crate::tests::common::consume_message_with_retry;
-use crate::tests::common::mock_helpers::{acquire_test_lock, get_job_handler_context_safe};
+use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
 use crate::types::jobs::metadata::{JobSpecificMetadata, SettlementContext};
@@ -73,7 +74,14 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     assert_eq!(response.message, Some(format!("Job with id {} queued for processing", job_id)));
 
     // Verify job was added to process queue - retry a few times in case of timing issues
-    let queue_message = consume_message_with_retry(config.queue(), job_type.process_queue_name(), 10, 2).await.unwrap();
+    let queue_message = consume_message_with_retry(
+        config.queue(),
+        job_type.process_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
@@ -127,7 +135,14 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     assert_eq!(response.message, Some(format!("Job with id {} queued for verification", job_id)));
 
     // Verify job was added to verification queue - retry a few times in case of timing issues
-    let queue_message = consume_message_with_retry(config.queue(), job_type.verify_queue_name(), 10, 2).await.unwrap();
+    let queue_message = consume_message_with_retry(
+        config.queue(),
+        job_type.verify_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
@@ -166,7 +181,14 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     assert_eq!(response.message, Some(format!("Job with id {} retry initiated", job_id)));
 
     // Verify job was added to process queue - retry a few times in case of timing issues
-    let queue_message = consume_message_with_retry(config.queue(), job_type.process_queue_name(), 10, 2).await.unwrap();
+    let queue_message = consume_message_with_retry(
+        config.queue(),
+        job_type.process_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 

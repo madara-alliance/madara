@@ -1,4 +1,33 @@
+//! # Job Tests Module
+//!
+//! This module contains tests for job creation, processing, and management functionality.
+//!
+//! ## Sequential Test Execution
+//!
+//! Some tests in this module use mocks (via Mockall) which rely on a global context that is not
+//! thread-safe. To enable parallel test execution while preventing race conditions and mutex
+//! poisoning, these tests use `acquire_test_lock()` to serialize execution. This ensures:
+//!
+//! - Only one test using mocks runs at a time, preventing interference between tests
+//! - Mock expectations are set and verified correctly without conflicts
+//! - Tests can still run in parallel with non-mock tests (which use isolated resources via UUIDs)
+//!
+//! Tests that use `acquire_test_lock()` will run sequentially with respect to each other, but
+//! can still run in parallel with tests that don't use mocks. This provides a good balance
+//! between test isolation and execution speed.
+//!
+//! The `#![allow(clippy::await_holding_lock)]` annotation is necessary because these tests
+//! intentionally hold a mutex guard across await points to serialize test execution. This is
+//! safe because:
+//! - The lock is held for the entire test duration to prevent concurrent mock usage
+//! - The mutex is test-scoped and won't block production code
+//! - This pattern is explicitly designed to serialize tests, not protect shared state
+
 #![allow(clippy::await_holding_lock)]
+// The above allow is necessary because tests intentionally hold a mutex guard across await points
+// to serialize test execution. This ensures only one test using mocks runs at a time, preventing
+// interference between tests when they set expectations for the same JobType. The lock is held for
+// the entire test duration, which is safe because it's test-scoped and won't block production code.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,8 +62,9 @@ mod aggregator_job;
 
 use crate::core::client::queue::QueueError;
 use crate::error::job::JobError;
+use crate::tests::common::constants::{QUEUE_CONSUME_MAX_RETRIES, QUEUE_CONSUME_RETRY_DELAY_SECS};
 use crate::tests::common::consume_message_with_retry;
-use crate::tests::common::mock_helpers::{acquire_test_lock, get_job_handler_context_safe};
+use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::types::constant::CAIRO_PIE_FILE_NAME;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::metadata::{
@@ -54,7 +84,7 @@ use assert_matches::assert_matches;
 #[allow(clippy::await_holding_lock)]
 async fn create_job_job_does_not_exists_in_db_works() {
     // Acquire test lock to serialize this test with others that use mocks
-    let _test_lock = crate::tests::common::mock_helpers::acquire_test_lock();
+    let _test_lock = crate::tests::common::test_utils::acquire_test_lock();
 
     let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 0);
     let mut job_handler = MockJobHandlerTrait::new();
@@ -92,10 +122,14 @@ async fn create_job_job_does_not_exists_in_db_works() {
     assert_eq!(job_in_db.metadata, job_item.metadata);
 
     // Queue checks - retry a few times in case of timing issues
-    let consumed_messages =
-        consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 10, 1)
-            .await
-            .unwrap();
+    let consumed_messages = consume_message_with_retry(
+        services.config.queue(),
+        job_item.job_type.process_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -136,9 +170,14 @@ async fn create_job_job_exists_in_db_works() {
     assert_eq!(jobs_in_db.len(), 1);
 
     // Queue checks - queue should exist but be empty since job already existed
-    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1)
-        .await
-        .unwrap_err();
+    let queue_error = consume_message_with_retry(
+        services.config.queue(),
+        job_item.job_type.process_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap_err();
     // Since queue exists but is empty, we expect ErrorFromQueueError
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
@@ -151,7 +190,7 @@ async fn create_job_job_exists_in_db_works() {
 #[allow(clippy::await_holding_lock)]
 async fn create_job_job_handler_returns_error() {
     // Acquire test lock to serialize this test with others that use mocks
-    let _test_lock = crate::tests::common::mock_helpers::acquire_test_lock();
+    let _test_lock = crate::tests::common::test_utils::acquire_test_lock();
 
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
@@ -206,7 +245,8 @@ async fn create_job_job_handler_returns_error() {
     let queue_result = services.config.queue().consume_message_from_queue(job_type.process_queue_name()).await;
 
     // The queue should be empty (NoData) or the queue might not exist yet
-    assert!(queue_result.is_err(), "Queue should be empty or not have a message when job creation fails");
+    // Use assert_matches! for consistency and better error messages
+    assert_matches!(queue_result.unwrap_err(), QueueError::ErrorFromQueueError(_));
 }
 
 /// Tests `process_job` function when job is already existing in the db and job status is either
@@ -221,7 +261,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 ) {
     // Acquire test lock to serialize this test with others that use mocks
     // This lock is intentionally held for the entire test to serialize execution
-    let _test_lock = crate::tests::common::mock_helpers::acquire_test_lock();
+    let _test_lock = crate::tests::common::test_utils::acquire_test_lock();
 
     // Building config
     let services = TestConfigBuilder::new()
@@ -246,8 +286,8 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     // process_job calls get_job_handler exactly once
     // Keep the guard alive for the entire test to prevent other tests from overwriting expectations
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let _ctx_guard = get_job_handler_context_safe();
-    _ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
+    let ctx_guard = get_job_handler_context_safe();
+    ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
 
     assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_ok());
     // Getting the updated job.
@@ -260,8 +300,14 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     assert_eq!(updated_job.metadata.common.process_attempt_no, 1);
 
     // Queue checks - retry a few times in case of timing issues
-    let consumed_messages =
-        consume_message_with_retry(services.config.queue(), job_type.verify_queue_name(), 10, 1).await.unwrap();
+    let consumed_messages = consume_message_with_retry(
+        services.config.queue(),
+        job_type.verify_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -352,9 +398,14 @@ async fn process_job_with_job_exists_in_db_with_invalid_job_processing_status_er
     assert_eq!(job_in_db, job_item);
 
     // Queue checks.
-    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1)
-        .await
-        .unwrap_err();
+    let queue_error = consume_message_with_retry(
+        services.config.queue(),
+        job_item.job_type.verify_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
@@ -376,9 +427,14 @@ async fn process_job_job_does_not_exists_in_db_works() {
     assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_err());
 
     // Queue checks.
-    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1)
-        .await
-        .unwrap_err();
+    let queue_error = consume_message_with_retry(
+        services.config.queue(),
+        job_item.job_type.verify_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
@@ -444,7 +500,11 @@ async fn process_job_two_workers_process_same_job_works() {
 /// The job should be moved to the failed status.
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn process_job_job_handler_returns_error_works() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting process job function in job processor to return the external ID.
     let failure_reason = "Failed to process job";
@@ -487,7 +547,11 @@ async fn process_job_job_handler_returns_error_works() {
 /// and returns a `Verified` verification status.
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn verify_job_with_verified_status_works() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
 
     // building config
@@ -518,15 +582,23 @@ async fn verify_job_with_verified_status_works() {
     assert_eq!(updated_job.status, JobStatus::Completed);
 
     // Queue checks - queues should exist but be empty
-    let queue_error_verification =
-        consume_message_with_retry(services.config.queue(), QueueType::DataSubmissionJobVerification, 5, 1)
-            .await
-            .unwrap_err();
+    let queue_error_verification = consume_message_with_retry(
+        services.config.queue(),
+        QueueType::DataSubmissionJobVerification,
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap_err();
     assert_matches!(queue_error_verification, QueueError::ErrorFromQueueError(_));
-    let queue_error_processing =
-        consume_message_with_retry(services.config.queue(), QueueType::DataSubmissionJobProcessing, 5, 1)
-            .await
-            .unwrap_err();
+    let queue_error_processing = consume_message_with_retry(
+        services.config.queue(),
+        QueueType::DataSubmissionJobProcessing,
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap_err();
     assert_matches!(queue_error_processing, QueueError::ErrorFromQueueError(_));
 }
 
@@ -534,7 +606,11 @@ async fn verify_job_with_verified_status_works() {
 /// and returns a `Rejected` verification status.
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn verify_job_with_rejected_status_adds_to_queue_works() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
 
     // building config
@@ -564,10 +640,14 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     assert_eq!(updated_job.status, JobStatus::VerificationFailed);
 
     // Queue checks - retry a few times in case of timing issues
-    let consumed_messages =
-        consume_message_with_retry(services.config.queue(), QueueType::DataSubmissionJobProcessing, 10, 1)
-            .await
-            .unwrap();
+    let consumed_messages = consume_message_with_retry(
+        services.config.queue(),
+        QueueType::DataSubmissionJobProcessing,
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -577,7 +657,11 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
 /// the job to process queue because of maximum attempts reached.
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn verify_job_with_rejected_status_works() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     // Building config
     let mut mock_alert_client = MockAlertClient::new();
     mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
@@ -620,9 +704,14 @@ async fn verify_job_with_rejected_status_works() {
     assert_eq!(updated_job.metadata.common.process_attempt_no, 1);
 
     // Queue checks - verify no message was added to the process queue
-    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1)
-        .await
-        .unwrap_err();
+    let queue_error = consume_message_with_retry(
+        services.config.queue(),
+        job_item.job_type.process_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
@@ -630,7 +719,11 @@ async fn verify_job_with_rejected_status_works() {
 /// and returns a `Pending` verification status.
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn verify_job_with_pending_status_adds_to_queue_works() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     // Building config
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
@@ -669,10 +762,14 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
 
     // Queue checks - verify a message was added to the verification queue
     // Retry a few times in case of timing issues
-    let consumed_messages =
-        consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 10, 1)
-            .await
-            .unwrap();
+    let consumed_messages = consume_message_with_retry(
+        services.config.queue(),
+        job_item.job_type.verify_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_item.id);
 }
@@ -682,7 +779,11 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
 /// the job to process queue because of maximum attempts reached.
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn verify_job_with_pending_status_works() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     // Building config
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
@@ -722,9 +823,14 @@ async fn verify_job_with_pending_status_works() {
     assert_eq!(updated_job.metadata.common.verification_attempt_no, 1);
 
     // Queue checks - verify no message was added to the verification queue
-    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.verify_queue_name(), 5, 1)
-        .await
-        .unwrap_err();
+    let queue_error = consume_message_with_retry(
+        services.config.queue(),
+        job_item.job_type.verify_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
@@ -880,10 +986,14 @@ async fn test_retry_job_adds_to_process_queue() {
 
     // Verify message was added to process queue
     // Retry a few times in case of timing issues
-    let consumed_messages =
-        consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1)
-            .await
-            .unwrap();
+    let consumed_messages = consume_message_with_retry(
+        services.config.queue(),
+        job_item.job_type.process_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
     assert_eq!(consumed_message_payload.id, job_id);
 }
@@ -918,9 +1028,14 @@ async fn test_retry_job_invalid_status(#[case] initial_status: JobStatus) {
     assert_eq!(job.status, initial_status);
 
     // Verify no message was added to process queue
-    let queue_error = consume_message_with_retry(services.config.queue(), job_item.job_type.process_queue_name(), 5, 1)
-        .await
-        .unwrap_err();
+    let queue_error = consume_message_with_retry(
+        services.config.queue(),
+        job_item.job_type.process_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap_err();
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 

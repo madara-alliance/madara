@@ -1,6 +1,8 @@
+#![allow(clippy::await_holding_lock)]
+
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
-use crate::tests::common::mock_helpers::get_job_handler_context_safe;
+use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::types::batch::{SnosBatch, SnosBatchStatus};
@@ -25,6 +27,9 @@ use uuid::Uuid;
 #[case(vec![1, 2, 3])]
 #[tokio::test]
 async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<(), Box<dyn Error>> {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
     // Setup mock server and clients
