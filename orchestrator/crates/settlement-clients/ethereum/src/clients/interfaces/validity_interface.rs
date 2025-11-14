@@ -5,7 +5,6 @@ use alloy::primitives::{Bytes, I256, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::eth::TransactionReceipt;
 use alloy::sol;
-use alloy::transports::http::Http;
 use alloy::transports::{RpcError, TransportErrorKind};
 use async_trait::async_trait;
 

@@ -31,4 +31,9 @@ pub struct EthereumSettlementCliArgs {
 
     #[arg(env = "MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR", long, default_value = "1.5")]
     pub max_gas_price_mul_factor: f64,
+
+    /// Whether settling on Ethereum mainnet (true) or Sepolia testnet (false).
+    /// Mainnet uses blob proofs (pre-Fusaka), Sepolia uses cell proofs (post-Fusaka).
+    #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_IS_MAINNET", long, default_value = "false")]
+    pub is_mainnet: bool,
 }

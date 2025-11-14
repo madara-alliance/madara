@@ -342,7 +342,7 @@ impl EventWorker {
             let result = self.handle_message(&parsed_message).await;
             match self.post_processing(result, message, &parsed_message).await {
                 Ok(_) => {
-                    info!("Message processed successfully");
+                    debug!("Message processed successfully");
                     Ok(())
                 }
                 Err(e) => {

@@ -130,6 +130,7 @@ pub(crate) async fn prepare_sidecar(
 }
 
 // Function to prepare sidecar for EIP 7594 transaction
+#[allow(clippy::type_complexity)]
 pub fn prepare_sidecar_with_cells(
     state_diff: &[Vec<u8>],
     trusted_setup: &KzgSettings,

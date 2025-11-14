@@ -644,6 +644,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
             .parse()
             .expect("Invalid max gas price mul factor"),
+        is_mainnet: false, // for tests, default to sepolia/testnet behavior
     });
 
     let snos_config = SNOSParams {

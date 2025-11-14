@@ -9,7 +9,7 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
-use color_eyre::eyre::{eyre, Result, WrapErr};
+use color_eyre::eyre::{eyre, Result};
 use opentelemetry::KeyValue;
 use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};

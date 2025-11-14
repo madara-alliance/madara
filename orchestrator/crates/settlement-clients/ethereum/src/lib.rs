@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use alloy::consensus::{
-    BlobTransactionSidecar, SignableTransaction, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar, TxEnvelope,
+    BlobTransactionSidecar, SignableTransaction, Signed, TxEip4844, TxEip4844Variant, TxEip4844WithSidecar, TxEnvelope,
 };
 #[cfg(not(feature = "testing"))]
 use alloy::eips::eip2718::Encodable2718;
@@ -18,7 +18,7 @@ use alloy::providers::{PendingTransactionBuilder, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
-use c_kzg::{Blob, Bytes32, KzgCommitment, KzgProof, KzgSettings};
+use c_kzg::{Blob, Bytes32, KzgProof, KzgSettings};
 use color_eyre::eyre::{bail, eyre, Ok};
 use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
@@ -86,6 +86,8 @@ pub struct EthereumSettlementValidatedArgs {
     pub ethereum_finality_retry_wait_in_secs: u64,
 
     pub max_gas_price_mul_factor: f64,
+
+    pub is_mainnet: bool,
 }
 
 #[allow(dead_code)]
@@ -97,6 +99,7 @@ pub struct EthereumSettlementClient {
     impersonate_account: Option<Address>,
     tx_finality_retry_wait_in_seconds: u64,
     max_gas_price_mul_factor: f64,
+    is_mainnet: bool,
 }
 
 impl EthereumSettlementClient {
@@ -125,6 +128,7 @@ impl EthereumSettlementClient {
             impersonate_account: None,
             tx_finality_retry_wait_in_seconds: settlement_cfg.ethereum_finality_retry_wait_in_secs,
             max_gas_price_mul_factor: settlement_cfg.max_gas_price_mul_factor,
+            is_mainnet: settlement_cfg.is_mainnet,
         }
     }
 
@@ -152,6 +156,7 @@ impl EthereumSettlementClient {
             impersonate_account,
             max_gas_price_mul_factor: 2f64,
             tx_finality_retry_wait_in_seconds: 10,
+            is_mainnet: false, // for testing, default to sepolia/testnet behavior
         }
     }
 
@@ -253,42 +258,60 @@ impl SettlementClient for EthereumSettlementClient {
         state_diff: Vec<Vec<u8>>,
         _nonce: u64,
     ) -> Result<String> {
-        info!(
-            log_type = "starting",
-            category = "update_state",
-            function_type = "blobs",
-            "Updating state with blobs."
-        );
+        info!(log_type = "starting", category = "update_state", function_type = "blobs", "Updating state with blobs.");
 
         let mut mul_factor = GAS_PRICE_MULTIPLIER_START;
 
         loop {
-            // Create a EIP4844 transaction with the given program output and state diff
-            // let tx_envelope =
-            //     self.create_transaction_with_cells(program_output.clone(), state_diff.clone(), mul_factor).await?;
-            let pending_transaction = match self
-                .create_transaction_with_cells(program_output.clone(), state_diff.clone(), mul_factor)
-                .await
-            {
-                Result::Ok(pending_transaction) => pending_transaction,
-                Err(e) => {
-                    bail!("Failed to send state update transaction: {:?}", e)
-                } // Err(e) => match e {
-                  //     SendTransactionError::ReplacementTransactionUnderpriced(e) => {
-                  //         warn!("Failed to send the state update transaction: {:?} with {:?} multiplication factor, trying again...", e, mul_factor);
-                  //         mul_factor = self.get_next_mul_factor(mul_factor)?;
-                  //         continue;
-                  //     }
-                  //     SendTransactionError::Other(_) => {
-                  //         bail!("Failed to send state update transaction: {:?}", e);
-                  //     }
-                  // },
+            // Create and send transaction based on whether we're on mainnet or sepolia
+            // Mainnet uses blob proofs (pre-Fusaka), Sepolia uses cell proofs (post-Fusaka)
+            let pending_transaction = if self.is_mainnet {
+                // For mainnet: create blob transaction and send using standard method
+                let tx_envelope =
+                    self.create_blob_transaction(program_output.clone(), state_diff.clone(), mul_factor).await?;
+                match self.send_transaction(tx_envelope).await {
+                    Result::Ok(pending_transaction) => pending_transaction,
+                    Err(e) => match e {
+                        SendTransactionError::ReplacementTransactionUnderpriced(e) => {
+                            warn!(
+                                "Failed to send the blob transaction: {:?} with {:?} multiplication factor, trying again...",
+                                e, mul_factor
+                            );
+                            mul_factor = self.get_next_mul_factor(mul_factor)?;
+                            continue;
+                        }
+                        SendTransactionError::Other(_) => {
+                            bail!("Failed to send blob transaction: {:?}", e);
+                        }
+                    },
+                }
+            } else {
+                // For sepolia: create cell transaction and send with EIP7594 encoding
+                let tx_signed =
+                    self.create_cell_transaction(program_output.clone(), state_diff.clone(), mul_factor).await?;
+                match self.send_cell_transaction(tx_signed).await {
+                    Result::Ok(pending_transaction) => pending_transaction,
+                    Err(e) => match e {
+                        SendTransactionError::ReplacementTransactionUnderpriced(e) => {
+                            warn!(
+                                "Failed to send the cell transaction: {:?} with {:?} multiplication factor, trying again...",
+                                e, mul_factor
+                            );
+                            mul_factor = self.get_next_mul_factor(mul_factor)?;
+                            continue;
+                        }
+                        SendTransactionError::Other(_) => {
+                            bail!("Failed to send cell transaction: {:?}", e);
+                        }
+                    },
+                }
             };
 
             tracing::info!(
                 log_type = "completed",
                 category = "update_state",
                 function_type = "blobs",
+                tx_type = if self.is_mainnet { "blob_proofs" } else { "cell_proofs" },
                 "State updated with blobs."
             );
 
@@ -447,8 +470,9 @@ impl EthereumSettlementClient {
         Ok(get_input_data_for_eip_4844(program_output, kzg_proofs_bytes)?)
     }
 
-    /// Method to create a transaction object with gas price limits set using the `mul_factor`
-    async fn create_transaction(
+    /// Method to create a blob transaction (pre-Fusaka, for mainnet)
+    /// Creates transaction with blob proofs
+    async fn create_blob_transaction(
         &self,
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
@@ -493,12 +517,15 @@ impl EthereumSettlementClient {
         Ok(tx_signed.into())
     }
 
-    async fn create_transaction_with_cells(
+    /// Method to create a cell transaction (post-Fusaka, for sepolia/testnet)
+    /// Creates transaction with cell proofs
+    /// Returns the signed transaction variant with EIP7594 sidecar
+    async fn create_cell_transaction(
         &self,
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         mul_factor: f64,
-    ) -> Result<PendingTransactionBuilder<Ethereum>> {
+    ) -> Result<Signed<TxEip4844Variant<BlobTransactionSidecarEip7594>>> {
         // Prepare sidecar with cells and cell proofs
         let (sidecar_blobs, sidecar_commitments, all_cell_proofs) =
             prepare_sidecar_with_cells(&state_diff, &KZG_SETTINGS)?;
@@ -514,15 +541,18 @@ impl EthereumSettlementClient {
             flat_cell_proofs, // These are now cell proofs, not blob proofs
         );
 
-        // Rest of your transaction creation code...
+        // Get chain id and nonce for the transaction
         let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
         let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
 
+        // Get gas price estimates with margin
         let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
             self.get_gas_price_estimates(mul_factor).await?;
 
+        // Prepare input bytes for transaction
         let input_bytes = Self::build_input_bytes(program_output, state_diff).await?;
 
+        // Prepare EIP4844 transaction
         let tx = TxEip4844 {
             chain_id,
             nonce,
@@ -537,26 +567,13 @@ impl EthereumSettlementClient {
             input: Bytes::from(hex::decode(input_bytes)?),
         };
 
+        // Add sidecar to transaction
         let tx_with_sidecar = TxEip4844WithSidecar { tx, sidecar: sidecar.clone() };
         let mut variant = TxEip4844Variant::from(tx_with_sidecar);
+        // Sign transaction
         let signature = self.wallet.default_signer().sign_transaction(&mut variant).await?;
         let tx_signed = variant.into_signed(signature);
-
-        let pending_transaction = {
-            let encoded = tx_signed.encoded_2718();
-            self.provider.send_raw_transaction(encoded.as_slice()).await.map_err(|e| {
-                if e.to_string().contains("error code -32000: replacement transaction underpriced") {
-                    warn!("Transaction rejected because of insufficient gas price");
-                    SendTransactionError::ReplacementTransactionUnderpriced(e)
-                } else {
-                    SendTransactionError::Other(e)
-                }
-            })?
-        };
-
-        Result::Ok(pending_transaction)
-
-        // Ok(tx_signed.into())
+        Ok(tx_signed)
     }
 
     async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<(u128, u128, u128)> {
@@ -585,7 +602,37 @@ impl EthereumSettlementClient {
         }
     }
 
-    /// Method to send transaction
+    /// Method to send cell transaction (EIP7594 with cell proofs)
+    async fn send_cell_transaction(
+        &self,
+        tx_signed: Signed<TxEip4844Variant<BlobTransactionSidecarEip7594>>,
+    ) -> Result<PendingTransactionBuilder<Ethereum>, SendTransactionError> {
+        // Sending transaction when testing
+        #[cfg(feature = "testing")]
+        let pending_transaction = {
+            // For testing, we might need to configure the transaction differently
+            // but cell transactions with impersonation might not be supported yet
+            bail!("Cell transactions with testing/impersonation not yet supported")
+        };
+
+        // Sending transaction when not testing
+        #[cfg(not(feature = "testing"))]
+        let pending_transaction = {
+            let encoded = tx_signed.encoded_2718();
+            self.provider.send_raw_transaction(encoded.as_slice()).await.map_err(|e| {
+                if e.to_string().contains("error code -32000: replacement transaction underpriced") {
+                    warn!("Cell transaction rejected because of insufficient gas price");
+                    SendTransactionError::ReplacementTransactionUnderpriced(e)
+                } else {
+                    SendTransactionError::Other(e)
+                }
+            })?
+        };
+
+        Result::Ok(pending_transaction)
+    }
+
+    /// Method to send blob transaction (standard EIP4844)
     async fn send_transaction(
         &self,
         tx_envelope: TxEnvelope,
