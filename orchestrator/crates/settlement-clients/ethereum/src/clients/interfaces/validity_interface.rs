@@ -89,17 +89,12 @@ pub trait StarknetValidityContractTrait {
 #[async_trait]
 impl<T> StarknetValidityContractTrait for T
 where
-    T: AsRef<
-            StarknetValidityContract::StarknetValidityContractInstance<
-                Http<reqwest::Client>,
-                Arc<LocalWalletSignerMiddleware>,
-                Ethereum,
-            >,
-        > + Send
+    T: AsRef<StarknetValidityContract::StarknetValidityContractInstance<Arc<LocalWalletSignerMiddleware>, Ethereum>>
+        + Send
         + Sync,
 {
     async fn state_block_number(&self) -> Result<I256, alloy::contract::Error> {
-        Ok(self.as_ref().stateBlockNumber().call().await?._0)
+        Ok(self.as_ref().stateBlockNumber().call().await?)
     }
 
     async fn update_state(

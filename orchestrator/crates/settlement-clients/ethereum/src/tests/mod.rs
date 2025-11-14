@@ -66,7 +66,7 @@ pub struct EthereumTestBuilder {
 #[allow(dead_code)]
 pub struct EthereumTest {
     _anvil: AnvilInstance,
-    provider: alloy::providers::RootProvider<alloy::transports::http::Http<reqwest::Client>>,
+    provider: crate::types::DefaultHttpProvider,
     pub rpc_url: Url,
 }
 
@@ -104,7 +104,7 @@ impl EthereumTestBuilder {
         };
 
         // Setup Provider
-        let provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
+        let provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
 
         if let Some(impersonator) = self.impersonator {
             provider.anvil_impersonate_account(impersonator).await.expect("Unable to impersonate account.");

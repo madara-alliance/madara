@@ -12,11 +12,8 @@ use crate::types::LocalWalletSignerMiddleware;
 
 /// Client to interact with a Starknet core contract running in `Validity` mode
 pub struct StarknetValidityContractClient {
-    core_contract: StarknetValidityContract::StarknetValidityContractInstance<
-        Http<reqwest::Client>,
-        Arc<LocalWalletSignerMiddleware>,
-        Ethereum,
-    >,
+    core_contract:
+        StarknetValidityContract::StarknetValidityContractInstance<Arc<LocalWalletSignerMiddleware>, Ethereum>,
 }
 
 impl StarknetValidityContractClient {
@@ -28,22 +25,12 @@ impl StarknetValidityContractClient {
     }
 }
 
-impl
-    AsRef<
-        StarknetValidityContract::StarknetValidityContractInstance<
-            Http<reqwest::Client>,
-            Arc<LocalWalletSignerMiddleware>,
-            Ethereum,
-        >,
-    > for StarknetValidityContractClient
+impl AsRef<StarknetValidityContract::StarknetValidityContractInstance<Arc<LocalWalletSignerMiddleware>, Ethereum>>
+    for StarknetValidityContractClient
 {
     fn as_ref(
         &self,
-    ) -> &StarknetValidityContract::StarknetValidityContractInstance<
-        Http<reqwest::Client>,
-        Arc<LocalWalletSignerMiddleware>,
-        Ethereum,
-    > {
+    ) -> &StarknetValidityContract::StarknetValidityContractInstance<Arc<LocalWalletSignerMiddleware>, Ethereum> {
         &self.core_contract
     }
 }

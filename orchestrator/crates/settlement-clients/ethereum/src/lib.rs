@@ -10,9 +10,10 @@ use alloy::consensus::{
 use alloy::eips::eip2718::Encodable2718;
 use alloy::eips::eip2930::AccessList;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
+use alloy::eips::eip7594::BlobTransactionSidecarEip7594;
 use alloy::hex;
 use alloy::network::{Ethereum, EthereumWallet};
-use alloy::primitives::{Address, Bytes, B256, U256};
+use alloy::primitives::{Address, Bytes, FixedBytes, B256, I256, U256};
 use alloy::providers::{PendingTransactionBuilder, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
@@ -28,7 +29,7 @@ use url::Url;
 
 use crate::clients::interfaces::validity_interface::StarknetValidityContractTrait;
 use crate::clients::StarknetValidityContractClient;
-use crate::conversion::{slice_u8_to_u256, vec_u8_32_to_vec_u256};
+use crate::conversion::{prepare_sidecar_with_cells, slice_u8_to_u256, vec_u8_32_to_vec_u256};
 pub mod clients;
 pub mod conversion;
 mod error;
@@ -36,12 +37,9 @@ pub mod tests;
 pub mod types;
 
 use crate::error::SendTransactionError;
-use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
-use alloy::providers::RootProvider;
-use alloy::transports::http::Http;
+use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256, DefaultHttpProvider};
 use lazy_static::lazy_static;
 use mockall::automock;
-use reqwest::Client;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
@@ -69,7 +67,8 @@ const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
 lazy_static! {
     pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
     pub static ref KZG_SETTINGS: KzgSettings = KzgSettings::load_trusted_setup_file(
-        &PROJECT_ROOT.join("crates/settlement-clients/ethereum/src/trusted_setup.txt")
+        &PROJECT_ROOT.join("crates/settlement-clients/ethereum/src/trusted_setup.txt"),
+        0 // precompute parameter: 0 for minimal memory usage
     )
     .expect("Error loading trusted setup file");
 }
@@ -94,7 +93,7 @@ pub struct EthereumSettlementClient {
     core_contract_client: StarknetValidityContractClient,
     wallet: EthereumWallet,
     wallet_address: Address,
-    provider: Arc<RootProvider<Http<Client>>>,
+    provider: Arc<DefaultHttpProvider>,
     impersonate_account: Option<Address>,
     tx_finality_retry_wait_in_seconds: u64,
     max_gas_price_mul_factor: f64,
@@ -108,14 +107,11 @@ impl EthereumSettlementClient {
         let wallet = EthereumWallet::from(signer);
 
         // provider without wallet
-        let provider = Arc::new(ProviderBuilder::new().on_http(settlement_cfg.ethereum_rpc_url.clone()));
+        let provider = Arc::new(ProviderBuilder::new().connect_http(settlement_cfg.ethereum_rpc_url.clone()));
 
         // provider with wallet
         let filler_provider = Arc::new(
-            ProviderBuilder::new()
-                .with_recommended_fillers()
-                .wallet(wallet.clone())
-                .on_http(settlement_cfg.ethereum_rpc_url.clone()),
+            ProviderBuilder::new().wallet(wallet.clone()).connect_http(settlement_cfg.ethereum_rpc_url.clone()),
         );
 
         let core_contract_client =
@@ -134,7 +130,7 @@ impl EthereumSettlementClient {
 
     #[cfg(feature = "testing")]
     pub fn with_test_params(
-        provider: RootProvider<Http<Client>>,
+        provider: DefaultHttpProvider,
         core_contract_address: Address,
         rpc_url: Url,
         impersonate_account: Option<Address>,
@@ -144,8 +140,7 @@ impl EthereumSettlementClient {
         let wallet_address = signer.address();
         let wallet = EthereumWallet::from(signer);
 
-        let fill_provider =
-            Arc::new(ProviderBuilder::new().with_recommended_fillers().wallet(wallet.clone()).on_http(rpc_url));
+        let fill_provider = Arc::new(ProviderBuilder::new().wallet(wallet.clone()).connect_http(rpc_url));
 
         let core_contract_client = StarknetValidityContractClient::new(core_contract_address, fill_provider);
 
@@ -175,8 +170,8 @@ impl EthereumSettlementClient {
             let fixed_size_blob: [u8; BYTES_PER_BLOB] = blob_data[i as usize].as_slice().try_into()?;
 
             let blob = Blob::new(fixed_size_blob);
-            let commitment = KzgCommitment::blob_to_kzg_commitment(&blob, &KZG_SETTINGS)?;
-            let (kzg_proof, y_0_value) = KzgProof::compute_kzg_proof(&blob, &x_0_value, &KZG_SETTINGS)?;
+            let commitment = KZG_SETTINGS.blob_to_kzg_commitment(&blob)?;
+            let (kzg_proof, y_0_value) = KZG_SETTINGS.compute_kzg_proof(&blob, &x_0_value)?;
 
             let y_0_value_program_output = y_0_values_program_output[i as usize];
 
@@ -189,13 +184,8 @@ impl EthereumSettlementClient {
             }
 
             // Verifying the proof for double check
-            let eval = KzgProof::verify_kzg_proof(
-                &commitment.to_bytes(),
-                &x_0_value,
-                &y_0_value,
-                &kzg_proof.to_bytes(),
-                &KZG_SETTINGS,
-            )?;
+            let eval =
+                KZG_SETTINGS.verify_kzg_proof(&commitment.to_bytes(), &x_0_value, &y_0_value, &kzg_proof.to_bytes())?;
 
             if !eval {
                 bail!("ERROR : Assertion failed, not able to verify the proof.");
@@ -263,7 +253,7 @@ impl SettlementClient for EthereumSettlementClient {
         state_diff: Vec<Vec<u8>>,
         _nonce: u64,
     ) -> Result<String> {
-        tracing::info!(
+        info!(
             log_type = "starting",
             category = "update_state",
             function_type = "blobs",
@@ -274,19 +264,25 @@ impl SettlementClient for EthereumSettlementClient {
 
         loop {
             // Create a EIP4844 transaction with the given program output and state diff
-            let tx_envelope = self.create_transaction(program_output.clone(), state_diff.clone(), mul_factor).await?;
-            let pending_transaction = match self.send_transaction(tx_envelope).await {
+            // let tx_envelope =
+            //     self.create_transaction_with_cells(program_output.clone(), state_diff.clone(), mul_factor).await?;
+            let pending_transaction = match self
+                .create_transaction_with_cells(program_output.clone(), state_diff.clone(), mul_factor)
+                .await
+            {
                 Result::Ok(pending_transaction) => pending_transaction,
-                Err(e) => match e {
-                    SendTransactionError::ReplacementTransactionUnderpriced(e) => {
-                        warn!("Failed to send the state update transaction: {:?} with {:?} multiplication factor, trying again...", e, mul_factor);
-                        mul_factor = self.get_next_mul_factor(mul_factor)?;
-                        continue;
-                    }
-                    SendTransactionError::Other(_) => {
-                        bail!("Failed to send state update transaction: {:?}", e);
-                    }
-                },
+                Err(e) => {
+                    bail!("Failed to send state update transaction: {:?}", e)
+                } // Err(e) => match e {
+                  //     SendTransactionError::ReplacementTransactionUnderpriced(e) => {
+                  //         warn!("Failed to send the state update transaction: {:?} with {:?} multiplication factor, trying again...", e, mul_factor);
+                  //         mul_factor = self.get_next_mul_factor(mul_factor)?;
+                  //         continue;
+                  //     }
+                  //     SendTransactionError::Other(_) => {
+                  //         bail!("Failed to send state update transaction: {:?}", e);
+                  //     }
+                  // },
             };
 
             tracing::info!(
@@ -387,7 +383,7 @@ impl SettlementClient for EthereumSettlementClient {
     /// Get the last block settled through the core contract
     async fn get_last_settled_block(&self) -> Result<Option<u64>> {
         let block_number = self.core_contract_client.state_block_number().await?;
-        let minus_one = alloy_primitives::I256::from_str("-1")?;
+        let minus_one = I256::from_str("-1")?;
         // Check if block_number is -1
         // Meaning that no state update has happened yet.
         if block_number == minus_one {
@@ -497,8 +493,74 @@ impl EthereumSettlementClient {
         Ok(tx_signed.into())
     }
 
+    async fn create_transaction_with_cells(
+        &self,
+        program_output: Vec<[u8; 32]>,
+        state_diff: Vec<Vec<u8>>,
+        mul_factor: f64,
+    ) -> Result<PendingTransactionBuilder<Ethereum>> {
+        // Prepare sidecar with cells and cell proofs
+        let (sidecar_blobs, sidecar_commitments, all_cell_proofs) =
+            prepare_sidecar_with_cells(&state_diff, &KZG_SETTINGS)?;
+
+        // Flatten all cell proofs into a single vector
+        // Format: all proofs for blob 0, then all proofs for blob 1, etc.
+        let flat_cell_proofs: Vec<FixedBytes<48>> = all_cell_proofs.into_iter().flatten().collect();
+
+        // Create the sidecar with cell proofs
+        let sidecar = BlobTransactionSidecarEip7594::new(
+            sidecar_blobs,
+            sidecar_commitments,
+            flat_cell_proofs, // These are now cell proofs, not blob proofs
+        );
+
+        // Rest of your transaction creation code...
+        let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
+        let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
+
+        let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
+            self.get_gas_price_estimates(mul_factor).await?;
+
+        let input_bytes = Self::build_input_bytes(program_output, state_diff).await?;
+
+        let tx = TxEip4844 {
+            chain_id,
+            nonce,
+            gas_limit: GAS_LIMIT_STATE_UPDATE,
+            max_fee_per_blob_gas,
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+            to: self.core_contract_client.contract_address(),
+            value: U256::from(0),
+            access_list: AccessList(vec![]),
+            blob_versioned_hashes: sidecar.versioned_hashes().collect(),
+            input: Bytes::from(hex::decode(input_bytes)?),
+        };
+
+        let tx_with_sidecar = TxEip4844WithSidecar { tx, sidecar: sidecar.clone() };
+        let mut variant = TxEip4844Variant::from(tx_with_sidecar);
+        let signature = self.wallet.default_signer().sign_transaction(&mut variant).await?;
+        let tx_signed = variant.into_signed(signature);
+
+        let pending_transaction = {
+            let encoded = tx_signed.encoded_2718();
+            self.provider.send_raw_transaction(encoded.as_slice()).await.map_err(|e| {
+                if e.to_string().contains("error code -32000: replacement transaction underpriced") {
+                    warn!("Transaction rejected because of insufficient gas price");
+                    SendTransactionError::ReplacementTransactionUnderpriced(e)
+                } else {
+                    SendTransactionError::Other(e)
+                }
+            })?
+        };
+
+        Result::Ok(pending_transaction)
+
+        // Ok(tx_signed.into())
+    }
+
     async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<(u128, u128, u128)> {
-        let eip1559_est = self.provider.estimate_eip1559_fees(None).await?;
+        let eip1559_est = self.provider.estimate_eip1559_fees().await?;
 
         let max_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_fee_per_gas, mul_factor);
         let max_priority_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_priority_fee_per_gas, mul_factor);
@@ -527,7 +589,7 @@ impl EthereumSettlementClient {
     async fn send_transaction(
         &self,
         tx_envelope: TxEnvelope,
-    ) -> Result<PendingTransactionBuilder<Http<Client>, Ethereum>, SendTransactionError> {
+    ) -> Result<PendingTransactionBuilder<Ethereum>, SendTransactionError> {
         // Sending transaction when testing
         #[cfg(feature = "testing")]
         let pending_transaction = {
@@ -564,7 +626,7 @@ mod test_config {
 
     #[allow(dead_code)]
     pub async fn configure_transaction(
-        provider: Arc<RootProvider<Http<Client>>>,
+        provider: Arc<DefaultHttpProvider>,
         tx_envelope: TxEnvelope,
         impersonate_account: Option<Address>,
     ) -> TransactionRequest {
