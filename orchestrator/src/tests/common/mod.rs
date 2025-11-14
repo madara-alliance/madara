@@ -23,8 +23,10 @@ use crate::types::queue::QueueType;
 use ::uuid::Uuid;
 use aws_config::SdkConfig;
 use aws_sdk_s3::Client as S3Client;
-use aws_sdk_sns::error::SdkError;
+use aws_sdk_sns::error::SdkError as SnsSdkError;
 use aws_sdk_sns::operation::create_topic::CreateTopicError;
+use aws_sdk_sqs::error::SdkError as SqsSdkError;
+use aws_sdk_sqs::operation::create_queue::CreateQueueError;
 use chrono::{SubsecRound, Utc};
 use mongodb::Client;
 use rstest::*;
@@ -80,7 +82,7 @@ pub fn custom_job_item(default_job_item: JobItem, #[default(String::from("0"))] 
 pub async fn create_sns_arn(
     provider_config: Arc<CloudProvider>,
     aws_sns_params: &AlertArgs,
-) -> Result<(), SdkError<CreateTopicError>> {
+) -> Result<(), SnsSdkError<CreateTopicError>> {
     let alert_topic_name = aws_sns_params.alert_identifier.to_string();
     let sns_client = get_sns_client(provider_config.get_aws_client_or_panic()).await;
     sns_client.create_topic().name(alert_topic_name).send().await?;
@@ -163,9 +165,15 @@ pub async fn create_queues(provider_config: Arc<CloudProvider>, queue_params: &Q
         match sqs_client.create_queue().queue_name(queue_name.clone()).send().await {
             Ok(_) => tracing::debug!("Created queue: {}", queue_name),
             Err(e) => {
-                // If queue already exists, that's okay - we'll use the existing one
-                let error_str = e.to_string();
-                if error_str.contains("QueueAlreadyExists") || error_str.contains("QueueNameExists") {
+                // Check if the error is due to queue already existing
+                let is_queue_exists_error = match &e {
+                    SqsSdkError::ServiceError(service_err) => {
+                        matches!(service_err.err(), CreateQueueError::QueueNameExists(_))
+                    }
+                    _ => false,
+                };
+
+                if is_queue_exists_error {
                     tracing::debug!("Queue {} already exists, using existing queue", queue_name);
                 } else {
                     // For other errors, return the error
