@@ -16,7 +16,7 @@ use std::time::Duration;
 /// use orchestrator::utils::helpers::wait_until_ready;
 ///
 /// async fn wait_for_ready() -> Result<(), Box<dyn std::error::Error>> {
-///     let result = wait_until_ready(|| async { Ok(()) }, 10).await;
+///     let result: Result<(), Box<dyn std::error::Error>> = wait_until_ready(|| Box::pin(async { Ok(()) }), 10).await;
 ///     assert!(result.is_ok());
 ///     Ok(())
 /// }
