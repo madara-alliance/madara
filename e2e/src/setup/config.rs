@@ -18,6 +18,7 @@ use crate::services::{
 };
 use std::env;
 use std::time::Duration;
+use url::Url;
 
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub enum DBState {
@@ -384,6 +385,7 @@ impl SetupConfigBuilder {
             .port(get_free_port().await?)
             .gateway_url(Some(madara_config.gateway_endpoint()))
             .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
+            .ethereum_url(Url::parse(&env::var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL").unwrap()).unwrap())
             .logs((true, true))
             .build();
 
