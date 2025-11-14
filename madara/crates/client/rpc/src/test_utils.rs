@@ -542,6 +542,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
                     state_diff: Default::default(),
                     declared_class: None,
                     arrived_at: Default::default(),
+                    paid_fee_on_l1: None,
                 }],
                 [],
             ))
@@ -817,6 +818,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
                     compiled: CompiledSierra(Default::default()).into(),
                 })),
                 arrived_at: TxTimestamp::default(),
+                paid_fee_on_l1: None,
             }],
             [],
         ))

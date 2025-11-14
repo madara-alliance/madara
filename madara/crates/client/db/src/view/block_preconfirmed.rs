@@ -513,6 +513,7 @@ mod tests {
                         },
                         declared_class: None,
                         arrived_at: Default::default(),
+                        paid_fee_on_l1: None,
                     },
                     // Tx #1 - Revert some changes, make additional changes
                     PreconfirmedExecutedTransaction {
@@ -545,6 +546,7 @@ mod tests {
                         },
                         declared_class: None,
                         arrived_at: Default::default(),
+                        paid_fee_on_l1: None,
                     },
                 ],
                 vec![], // no candidates

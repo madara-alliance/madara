@@ -107,7 +107,6 @@
   },
   "block_production_params": {
     "block_production_disabled": false,
-    "close_preconfirmed_block_upon_restart": false,
     "devnet_contracts": 10
   },
   "chain_config_override": {
