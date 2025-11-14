@@ -11,13 +11,6 @@ pub enum ClientType {
     Starknet,
 }
 
-// Test types in a separate module
-#[cfg(test)]
-pub mod test_types {
-    #[derive(Debug, Default, PartialEq)]
-    pub struct DummyConfig;
-}
-
 /// A trait defining the interface for settlement layer clients (Ethereum L1, Starknet).
 ///
 /// This trait provides the core functionality needed to:

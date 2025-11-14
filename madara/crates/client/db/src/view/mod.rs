@@ -1,5 +1,5 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::{preconfirmed::PreconfirmedBlock, prelude::*, ChainTip};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 mod block;
 mod block_confirmed;
@@ -70,7 +70,13 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                     .context("Parent block should be found")?
                     .get_block_info()?;
 
-                let (block_timestamp, gas_prices) = if let Some(custom_header) = self.custom_header.lock().expect("Poisoned lock").clone().filter(|h| h.block_n == parent_block_number + 1) {
+                let (block_timestamp, gas_prices) = if let Some(custom_header) = self
+                    .custom_header
+                    .lock()
+                    .expect("Poisoned lock")
+                    .clone()
+                    .filter(|h| h.block_n == parent_block_number + 1)
+                {
                     // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
                     let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
                     let gas_prices = custom_header.gas_prices;
