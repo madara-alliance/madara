@@ -170,8 +170,9 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u128,
 ) -> anyhow::Result<BlockExecutionContext> {
-
-    let (block_timestamp, gas_prices) = if let Some(custom_header) = backend.get_custom_header().filter(|h| h.block_n == block_n) {
+    let (block_timestamp, gas_prices) = if let Some(custom_header) =
+        backend.get_custom_header().filter(|h| h.block_n == block_n)
+    {
         // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
         let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
         let gas_prices = custom_header.gas_prices;

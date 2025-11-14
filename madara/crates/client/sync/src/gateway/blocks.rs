@@ -18,6 +18,7 @@ use mp_utils::AbortOnDrop;
 use std::{ops::Range, sync::Arc, time::Duration};
 
 pub type GatewayBlockSync = PipelineController<GatewaySyncSteps>;
+#[allow(clippy::too_many_arguments)]
 pub fn block_with_state_update_pipeline(
     backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
