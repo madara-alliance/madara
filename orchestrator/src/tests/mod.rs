@@ -6,5 +6,6 @@ pub mod database;
 pub mod jobs;
 pub mod queue;
 pub mod server;
+pub mod setup;
 pub mod utils;
 pub mod workers;

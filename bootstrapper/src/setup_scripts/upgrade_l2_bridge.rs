@@ -1,5 +1,5 @@
 use starknet::accounts::{Account, ConnectedAccount};
-use starknet_types_core::felt::Felt;
+use starknet::core::types::Felt;
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAccount};

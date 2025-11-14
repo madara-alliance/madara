@@ -1,39 +1,115 @@
-//! Madara database
+//! We use [`rocksdb`] as the key-value store backend for the Madara node. Rocksdb Is highly
+//! flexible, and you can find out more about the specific configuration we are using in
+//! [`rocksdb_global_options`]. Rocksdb splits storage into columns, each having their own key-value
+//! mappings for the data they store. We define this in the [`Column`] enum. Pay special attention
+//! to the string mappings in [`Column::rocksdb_name`]: this is what is actually used under the hood
+//! by Rocksdb and what you will see each column actually referred to as.
 //!
-//! # Block storage
+//! # Storage API
 //!
-//! Storing new blocks is the responsibility of the consumers of this crate. In the madara
-//! node architecture, this means: the sync service mc-sync (when we are syncing new blocks), or
-//! the block production mc-block-production task when we are producing blocks.
-//! For the sake of the mc-db documentation, we will call this service the "block importer" downstream service.
+//! Storing new blocks is the responsibility of the consumers of this crate. In the madara node
+//! architecture, this means: the sync service `mc-sync` (when we are syncing new blocks), or the
+//! block production `mc-block-production` task when we are producing new blocks. For the sake of
+//! documentation, we will call this service the _"block importer"_.
 //!
-//! The block importer service has two ways of adding blocks to the database, namely:
-//! - the easy [`MadaraBackend::add_full_block_with_classes`] function, which takes a full block, and does everything
-//!   required to save it properly and increment the latest block number of the database.
-//! - or, the more complicated lower level API that allows you to store partial blocks.
+//! We divide the backend storage API into two components: a high-level storage API, useful for full
+//! block storage without shooting yourself in the foot, and a low-level API which allows for
+//! granular and targeted updates to the database but requires you to pay special attention to what
+//! you are doing.
 //!
-//! Note that the validity of the block being stored is not checked for neither of those APIs.
+//! Note that the validity of the block being stored is not checked by neither of those APIs. It is
+//! the responsibility of the block importer to check that blocks are valid before storing them in
+//! db.
 //!
-//! For the low-level API, there are a few responsibilities to follow:
+//! ## High-level API
 //!
-//! - The database can store partial blocks. Adding headers can be done using [`MadaraBackend::store_block_header`],
-//!   transactions and receipts using [`MadaraBackend::store_transactions`], classes using [`MadaraBackend::class_db_store_block`],
-//!   state diffs using [`MadaraBackend::store_state_diff`], events using [`MadaraBackend::store_events`]. Furthermore,
-//!   [`MadaraBackend::apply_to_global_trie`] also needs to be called.
-//! - Each of those functions can be called in parallel, however, [`MadaraBackend::apply_to_global_trie`] needs to be called
-//!   sequentially. This is because we cannot support updating the global trie in an inter-block parallelism fashion. However,
-//!   parallelism is still used inside of that function - intra-block parallelism.
-//! - Each of these block parts has a [`chain_head::BlockNStatus`] associated inside of [`MadaraBackend::head_status`],
-//!   which the block importer service can use however it wants. However, [`ChainHead::full_block`] is special,
-//!   as it is updated by this crate.
-//! - The block importer service needs to call [`MadaraBackend::on_block`] to mark a block as fully imported. This function
-//!   will increment the [`ChainHead::full_block`] field, marking a new block. It will also record some metrics, flush the
-//!   database if needed, and make may create db backups if the backend is configured to do so.
+//! The high-level API is quite simple: just call [`add_full_block_with_classes`] and it will handle
+//! everything required to save blocks properly to the db, including any side effects to storage
+//! such as incrementing the latest block number.
 //!
-//! In addition, readers of the database should use [`db_block_id::DbBlockId`] when querying blocks from the database.
-//! This ensures that any partial block data beyond the current [`ChainHead::full_block`] will not be visible to, eg. the rpc
-//! service. The block importer service can however bypass this restriction by using [`db_block_id::RawDbBlockId`] instead;
-//! allowing it to see the partial data it has saved beyond the latest block marked as full.
+//! ## Low-level API
+//!
+//! For the low-level API, there are a few responsibilities to follow. The database can store
+//! partial blocks: blocks are divided into _headers_, _transactions & receipts_, _classes_,
+//! _state diffs_ and _events_. These can be stored individually, so that for example if the node
+//! can store a block's header faster than its other components, it can move on to the next block
+//! and start storing _its_ header. Partial block storage allows the node to make progress in block
+//! sync while minimizing the churn induced by certain heavy operations such as state root
+//! computation.
+//!
+//! To store individual block components, refer to:
+//!
+//! - headers: [`store_block_header`]
+//! - transactions & receipts: [`store_transactions`]
+//! - classes: [`store_classes`]
+//! - state diffs: [`store_state_diff`]
+//! - events: [`store_events`]
+//!
+//! You will also need to call [`apply_to_global_trie`] once a block has been fully imported to
+//! compute its state root.
+//!
+//! ### Parallelism
+//!
+//! Each of the low-level API functions can be called in parallel, however, [`apply_to_global_trie`]
+//! needs to be called _sequentially_. This is because we cannot update the global trie across
+//! multiple blocks at once. However, parallelism is still used inside of that function -
+//! parallelism within a single block.
+//!
+//! ### Head Status
+//!
+//! Because each block component can be written to at different speeds, we need to keep track of the
+//! advancement of each component stored this way. For example, we might have stored block headers
+//! until block 6 but only have all block transactions and receipts until block 3.
+//!
+//! To address this issue, each block component has a [`BlockNStatus`] associated to it inside of
+//! [`head_status`], which the block importer service can use however it wants. This includes block
+//! numbers for [`headers`], [`state diffs`], [`classes`], [`transactions`], [`events`], and the
+//! [`global trie`]. Unless you use the high-level API, _you will have to set these manually_ using
+//! [`BlockNStatus::set_current`]!
+//!
+//! ### Sealing blocks
+//!
+//! [`head_status`] also contains an extra field, [`full block`], which acts differently from the
+//! rest in that it is set by the backend crate. _You should not set this yourself!_
+//!
+//! The block importer service needs to call [`on_full_block_imported`] to mark a block as fully
+//! imported. This function will increment [`full block`], marking a new block as available for
+//! query in the database (sealed). It will also do some extra cleanup, such as recording metrics,
+//! flushing the database if needed, as well as creating db backups if the backup flag has been set
+//! when launching the node.
+//!
+//! ## Querying the db
+//!
+//! Any external crate reading the database should use [`DbBlockId`] when querying blocks from the
+//! database. This ensures that any partial block data beyond the current [`full block`] will not be
+//! visible to, eg. the rpc service.
+//!
+//! The block importer service can still bypass this restriction by using [`RawDbBlockId`] instead;
+//! allowing it to see the partial data it has saved beyond the latest block marked as full. As a
+//! general rule, you should avoid using this unless you really need to and you are sure of what you
+//! are doing!
+//!
+//! [rocksdb_global_options]: rocksdb_options::rocksdb_global_options
+//! [`add_full_block_with_classes`]: `MadaraBackend::add_full_block_with_classes`
+//! [`store_block_header`]: MadaraBackend::store_block_header
+//! [`store_transactions`]: MadaraBackend::store_transactions
+//! [`store_classes`]: MadaraBackend::store_classes
+//! [`store_state_diff`]: MadaraBackend::store_state_diff
+//! [`store_events`]: MadaraBackend::store_events
+//! [`apply_to_global_trie`]: MadaraBackend::apply_to_global_trie
+//! [`BlockNStatus`]: chain_head::BlockNStatus
+//! [`BlockNStatus::set_current`]: chain_head::BlockNStatus::set_current
+//! [`head_status`]: MadaraBackend::head_status
+//! [`headers`]: ChainHead::headers
+//! [`state diffs`]: ChainHead::state_diffs
+//! [`classes`]: ChainHead::classes
+//! [`transactions`]: ChainHead::transactions
+//! [`events`]: ChainHead::events
+//! [`global trie`]: ChainHead::global_trie
+//! [`full block`]: ChainHead::full_block
+//! [`on_full_block_imported`]: MadaraBackend::on_full_block_imported
+//! [`DbBlockId`]: db_block_id::DbBlockId
+//! [`RawDbBlockId`]: db_block_id::RawDbBlockId
 
 use crate::gas::L1GasQuoteCell;
 use crate::preconfirmed::PreconfirmedBlock;
@@ -56,7 +132,8 @@ use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
-
+use std::sync::{Arc, Mutex};
+use mp_block::header::CustomHeader;
 mod db_version;
 mod prelude;
 pub mod storage;
@@ -190,6 +267,19 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// Keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
+
+    /// Custom header used during block replay to ensure deterministic execution.
+    ///
+    /// When replaying a block, we must match the exact timestamp and gas configuration
+    /// from the original block to reproduce the expected block hash. This field stores
+    /// header overrides that are applied during transaction validation and execution,
+    /// along with the expected block hash to validate against after block creation.
+    /// # Important Notes
+    /// - Custom header is different for each block and must be set per block
+    /// - **Must verify** that the block number matches before use
+    /// - **Must clear** after use to prevent reuse across different blocks
+    /// - Access is thread-safe via Mutex to allow concurrent operations
+    pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
 #[derive(Debug, Default)]
@@ -214,6 +304,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
+            custom_header: Mutex::new(None),
         };
         backend.init().context("Initializing madara backend")?;
         Ok(backend)
@@ -287,6 +378,33 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
         Ok(())
     }
+
+    pub fn get_custom_header(&self) -> Option<CustomHeader> {
+        self.get_custom_header_with_clear(false)
+    }
+
+    pub fn get_custom_header_with_clear(&self, clear: bool) -> Option<CustomHeader> {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        let result = guard.clone();
+
+        if clear {
+            *guard = None;
+        }
+
+        result
+    }
+
+    pub fn set_custom_header(&self, custom_header: CustomHeader) {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        *guard = Some(custom_header);
+    }
+
+    /// Flush all pending writes to disk. Critical for databases with WAL disabled.
+    /// Must be called before shutdown to ensure data persistence.
+    pub fn flush(&self) -> Result<()> {
+        self.db.flush()
+    }
+
 }
 
 impl MadaraBackend<RocksDBStorage> {
@@ -344,7 +462,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         *self.latest_l1_confirmed.borrow()
     }
 
-    fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
+    pub fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
         self.chain_tip.borrow().as_preconfirmed().cloned()
     }
 
@@ -412,6 +530,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &new_tip
         } else {
             // Remove the pre-confirmed case: we save the parent confirmed in that case.
+            // Log when we're dropping a preconfirmed block
+            if let ChainTip::Preconfirmed(preconfirmed_block) = &new_tip {
+                tracing::info!(
+                    "⚠️  Preconfirmed block #{} NOT saved to database. Block will be lost on restart.",
+                    preconfirmed_block.header.block_number
+                );
+            }
             &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
         };
         // Write to db if needed.
@@ -527,6 +652,22 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
+        tracing::info!(
+            "🙇 Block hash {:?} computed for #{}",
+            block_hash,
+            block.header.block_number
+        );
+
+        match self.inner.get_custom_header_with_clear(true) {
+            Some(header) => {
+                let is_valid = header.is_block_hash_as_expected(&block_hash);
+                if !is_valid {
+                    tracing::warn!("Block hash not as expected for {}", block.header.block_number);
+                }
+            }
+            None => {}
+        }
+
         // Save the block.
 
         self.write_header(BlockHeaderWithSignatures { header, block_hash, consensus_signatures: vec![] })?;
@@ -617,7 +758,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
     /// parts.
     pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
-        // Also flush based on the configured interval if set
+        // Flush the most latest state to db to reduce data loss
         if self
             .inner
             .config
@@ -628,7 +769,8 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             self.inner.db.flush().context("Periodic database flush")?;
         }
 
-        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
+        // Update snapshots for storage proofs. (TODO (heemank 10/11/2025): decouple this logic)
+        self.inner.db.on_new_confirmed_head(block_number)?;
 
         // Advance chain & clear preconfirmed atomically
         self.replace_chain_tip(ChainTip::Confirmed(block_number))?;

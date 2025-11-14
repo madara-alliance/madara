@@ -1,5 +1,5 @@
 # Step 0: setup tooling (rust)
-FROM rust:1.89 AS base-rust
+FROM rust:1.89-bookworm AS base-rust
 WORKDIR /app
 
 # Note that we do not install cargo chef and sccache through docker to avoid
@@ -111,6 +111,7 @@ COPY orchestrator orchestrator
 COPY test_utils test_utils
 COPY build-artifacts build-artifacts
 
+# Run cargo build with venv activateed
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     . /app/sequencer_venv/bin/activate && \

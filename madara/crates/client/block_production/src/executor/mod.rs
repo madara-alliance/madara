@@ -11,7 +11,7 @@ use tokio::sync::{
 };
 
 mod tests;
-mod thread;
+pub(crate) mod thread;
 
 /// Handle to used to talk with the executor thread.
 pub struct ExecutorThreadHandle {
@@ -37,8 +37,13 @@ pub enum ExecutorCommand {
 }
 
 #[derive(Debug)]
-/// Executor thread => master task
+/// Actor model messages, sent between the block production and itself to drive the production of
+/// new blocks.
+///
+/// We use this since the block production is parallelized and message passing allows for easy
+/// communication between the execution thread and the master thread.
 pub enum ExecutorMessage {
+    /// Asks the block production task to start a new block.
     StartNewBlock {
         /// The proto-header. It's exactly like PreconfirmedHeader, but it does not have the parent_block_hash field because it's not known yet.
         exec_ctx: BlockExecutionContext,
@@ -76,6 +81,7 @@ pub fn start_executor_thread(
     let (stop_sender, stop_recv) = oneshot::channel();
 
     let executor = thread::ExecutorThread::new(backend, incoming_batches, replies_sender, commands)?;
+    // TODO(heemankv, 28-10-25): We should not use std thread builder over a tokio mpsc context, might not be stable
     std::thread::Builder::new()
         .name("executor".into())
         .spawn(move || stop_sender.send(std::panic::catch_unwind(AssertUnwindSafe(move || executor.run()))))

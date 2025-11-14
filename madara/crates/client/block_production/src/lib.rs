@@ -1,4 +1,78 @@
-//! Block production service.
+//! Madara block production. This crate is responsible for _producing state_ when the node is
+//! running as a sequencer. Full node sync does _not_ use this crate. Instead, refer to [`mc_sync`].
+//!
+//! # Execution Model
+//!
+//! Block production works by processing transactions which are streamed to it from the [mempool].
+//! For performance reasons, this is separated into a **batching phase**, an **aggregation phase**
+//! and a **pending phase**, which are optimistically parallelized. Effectively, this allows block
+//! production to lag behind on certain tasks (on large blocks for example) while still being able
+//! to make progress wherever it can.
+//!
+//! ## Batching Phase
+//!
+//! Because efficient block production is complicated (help my head hurts), transaction aggregation
+//! is handled by a [`Batcher`] which consumes three transaction streams (this has the disadvantage
+//! of making the code quite hard to follow at times :/ ).
+//!
+//! - The `l1_tx_stream` sends all l1 transactions received as part of l1 sync (this is different
+//!   from l2 sync, l1 sync is always active even during block production because we need a way to
+//!   register l1 to l2 messages even as we are producing new blocks).
+//!
+//! - The `mempool_tx_stream` sends all validated transaction which have been added to the mempool,
+//!   following whichever mempool ordering policy is in use at the time of block production (this
+//!   can be first-come-first-served or fee-market).
+//!
+//! - The `bypass_txs_stream` allows transactions to be added to block production _without having
+//!   them be validated by the mempool_. This is used by certain _permisioned_ (admin) endpoints and
+//!   is useful when initially setting up a chain, where trying to deploy some genesis contracts
+//!   might result in an invalidation until they have been deployed. This kind of cyclical
+//!   invalidation requires a way to force-add transactions, and the bypass stream does just that.
+//!
+//! The batcher aggregates transactions from all these streams into a 'batch', which it sends back
+//! to the main block production task via message passing using channels, where the sending end
+//! is [`ExecutorThreadHandle::send_batch`] and the receiving end is
+//! [`ExecutorThread::incoming_batches`].
+//!
+//! ## Aggregation Phase
+//!
+//! Between transaction batches, updates to the block production state is handled by the
+//! [`BlockProductionTask`], which is responsible for starting, running and monitoring block
+//! production. The aggregation phase is used to drive updates to the block production state through
+//! an actor model implemented via message passing, where the block production task drives itself to
+//! completion by messaging itself across threads, state updates and method calls. This is handled
+//! by [`process_reply`], which needs to handle the following messages:
+//!
+//! - [`StartNewBlock`]: this message is sent whenever the [`ExecutorThread`] starts a new block and
+//!   it instructs the [`BlockProductionTask`] to clear its [`PendingBlockState`] in preparation for
+//!   the next batch.
+//!
+//! - [`BatchExecuted`]: this message is sent whenever the [`ExecutorThread`] has finished executing
+//!   a batch, marking it as ready to consume by the [`BlockProductionTask`]. When this is received,
+//!   the latest batch is added to the [`PendingBlockState`].
+//!
+//! - [`EndBlock`]: this message is sent by the [`ExecutorThread`] under one of several condition.
+//!   Either the block has been forcefully closed (for example by an admin endpoint), or it is full
+//!   as per the constraints set it the chain config, else the block time has elapsed as per the
+//!   constraints set in the chain config. In any of these cases, whenever the [`ExecutorThread`]
+//!   receives this message it will proceed to finalize (seal) the pending block and store it to db
+//!   as a full block.
+//!
+//! ## Pending Phase
+//!
+//! One important detail to note is that the [`PendingBlockState`] kept in the
+//! [`BlockProductionTask`] is stored in **RAM**. We periodically flush this value to db at an
+//! interval defined by the `pending tick` as set in the chain config.
+//! (TODO(mohit 13/10/2025): update this when 0.14.0 merges)
+//!
+//! [mempool]: mc_mempool
+//! [`StartNewBlock`]: ExecutorMessage::StartNewBlock
+//! [`BatchExecuted`]: ExecutorMessage::BatchExecuted
+//! [`EndBlock`]: ExecutorMessage::EndBlock
+//! [`ExecutorThreadHandle::send_batch`]: executor::ExecutorThreadHandle::send_batch
+//! [`ExecutorThread::incoming_batches`]: executor::thread::ExecutorThread::incoming_batches
+//! [`ExecutorThread`]: executor::thread::ExecutorThread
+//! [`process_reply`]: BlockProductionTask::process_reply
 
 use crate::batcher::Batcher;
 use crate::metrics::BlockProductionMetrics;
@@ -174,6 +248,7 @@ pub struct BlockProductionTask {
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
+    close_preconfirmed_block_upon_restart: bool,
 }
 
 impl BlockProductionTask {
@@ -182,6 +257,8 @@ impl BlockProductionTask {
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
+        no_charge_fee: bool,
+        close_preconfirmed_block_upon_restart: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -190,11 +267,12 @@ impl BlockProductionTask {
             mempool,
             current_state: None,
             metrics,
-            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender),
+            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender, no_charge_fee),
             state_notifications: None,
             executor_commands_recv: Some(recv),
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
+            close_preconfirmed_block_upon_restart,
         }
     }
 
@@ -219,18 +297,35 @@ impl BlockProductionTask {
     ///
     /// This avoids re-executing transaction by re-adding them to the [Mempool].
     async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
-        if self.backend.has_preconfirmed_block() {
-            tracing::debug!("Close pending block on startup.");
-            let backend = self.backend.clone();
-            global_spawn_rayon_task(move || {
-                backend
-                    .write_access()
-                    .close_preconfirmed(
-                        /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
-                    )
-                    .context("Closing preconfirmed block on startup")
-            })
-            .await?;
+        if let Some(preconfirmed_block) = self.backend.preconfirmed_block() {
+            // Get the preconfirmed block info for logging
+            let block_number = preconfirmed_block.header.block_number;
+            let tx_count = preconfirmed_block.transaction_count();
+
+            if self.close_preconfirmed_block_upon_restart {
+                tracing::info!(
+                    "📦 Preconfirmed block #{} found with {} transactions. Closing it.",
+                    block_number,
+                    tx_count
+                );
+                let backend = self.backend.clone();
+                global_spawn_rayon_task(move || {
+                    backend
+                        .write_access()
+                        .close_preconfirmed(
+                            /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
+                        )
+                        .context("Closing preconfirmed block on startup")
+                })
+                .await?;
+                tracing::info!("✅ Preconfirmed block #{} closed successfully on startup.", block_number);
+            } else {
+                tracing::info!(
+                    "📦 Preconfirmed block #{} found with {} transactions. Resuming block production.",
+                    block_number,
+                    tx_count
+                );
+            }
         }
         Ok(())
     }
@@ -468,6 +563,8 @@ pub(crate) mod tests {
                 self.mempool.clone(),
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
+                true,
+                true, // close_preconfirmed_block_upon_restart - default to true for tests
             )
         }
     }

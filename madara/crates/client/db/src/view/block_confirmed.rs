@@ -64,7 +64,7 @@ impl<D: MadaraStorageRead> MadaraConfirmedBlockView<D> {
     pub fn get_block_info(&self) -> Result<MadaraBlockInfo> {
         self.backend
             .db
-            .get_block_info(self.block_number)?
+            .get_block_info(self.block_number())?
             .with_context(|| format!("Block info at height {} should be found", self.block_number))
     }
 

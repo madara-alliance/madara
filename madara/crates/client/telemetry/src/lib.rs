@@ -1,3 +1,122 @@
+//! Madara telemetry service. This crate manages telemetry data collection and transmission
+//! for Madara nodes, sending metrics and system information to configured endpoints.
+//!
+//! # Overview
+//!
+//! The Telemetry service collects and transmits operational data from Madara nodes to remote
+//! telemetry endpoints. This enables monitoring of node health, performance metrics, and system
+//! information. The service operates asynchronously, buffering events and transmitting them via
+//! WebSocket connections without blocking node operation.
+//!
+//! The telemetry system is split into two main components: the [`TelemetryService`] which manages
+//! WebSocket connections and event transmission, and the [`TelemetryHandle`] which provides a
+//! lightweight interface for other parts of the system to send telemetry events.
+//!
+//! # Architecture
+//!
+//! The telemetry system consists of several key components working together:
+//!
+//! - [`TelemetryService`]: The main service that manages WebSocket connections to telemetry endpoints.
+//! - [`TelemetryHandle`]: A cloneable handle for sending telemetry events from anywhere in the system.
+//! - [`TelemetryEvent`]: Individual telemetry messages with associated verbosity levels.
+//! - [`SysInfo`]: System information collector that gathers hardware and OS details.
+//! - [`VerbosityLevel`]: Controls which events are sent to which endpoints based on their verbosity.
+//!
+//! # Telemetry Endpoints and Verbosity
+//!
+//! The service supports multiple telemetry endpoints, each configured with a verbosity level:
+//!
+//! - **Info level (0)**: Essential operational events like node startup, connection status
+//! - **Debug level (1)**: Detailed diagnostic information for troubleshooting
+//!
+//! Endpoints only receive events at or below their configured verbosity level, allowing
+//! different monitoring systems to receive different levels of detail.
+//!
+//! # Event Transmission Flow
+//!
+//! When a telemetry event is sent through the system:
+//!
+//! 1. **Event Creation**: Components create events via [`TelemetryHandle::send`] with a verbosity
+//!    level and JSON message payload.
+//! 2. **Event Buffering**: Events are sent through a broadcast channel to the telemetry service.
+//! 3. **WebSocket Transmission**: The service processes events and sends them to all connected
+//!    endpoints that match the event's verbosity level.
+//! 4. **Error Handling**: Connection failures are logged but don't block the service.
+//!
+//! # System Information Collection
+//!
+//! The [`SysInfo`] component automatically collects system information including:
+//!
+//! - CPU information (brand, core count, architecture).
+//! - Memory information (total RAM).
+//! - Operating system details (distribution, kernel version).
+//! - Target platform information (OS, architecture, environment).
+//!
+//! This information is transmitted during the initial connection event and provides context
+//! for telemetry data analysis.
+//!
+//! # Service Lifecycle
+//!
+//! The telemetry service follows the standard Madara service pattern:
+//!
+//! 1. **Initialization**: Create the service with configured endpoints.
+//! 2. **Connection**: Establish WebSocket connections to all configured endpoints.
+//! 3. **Operation**: Continuously process telemetry events from the broadcast channel.
+//! 4. **Transmission**: Send events to appropriate endpoints based on verbosity.
+//! 5. **Shutdown**: Gracefully close connections when the service stops.
+//!
+//! # Connection Management
+//!
+//! WebSocket connections are established asynchronously during service startup. If an endpoint
+//! is unreachable, the service logs a warning but continues operating with the remaining
+//! connections. Failed connections are not automatically retried - the service assumes
+//! telemetry endpoints are monitoring infrastructure that should be highly available.
+//!
+//! # Usage Example
+//!
+//! ```rust
+//! // Create telemetry service with endpoints
+//! let endpoints = vec![
+//!     ("wss://telemetry.example.com".to_string(), 0), // Info level
+//!     ("wss://debug.example.com".to_string(), 1),     // Debug level
+//! ];
+//! let telemetry = TelemetryService::new(endpoints)?;
+//!
+//! // Get a handle for sending events
+//! let handle = telemetry.new_handle();
+//!
+//! // Send telemetry events
+//! handle.send(VerbosityLevel::Info, serde_json::json!({
+//!     "msg": "block.imported",
+//!     "block_number": 12345,
+//!     "block_hash": "0x..."
+//! }));
+//! ```
+//!
+//! # Error Handling
+//!
+//! The telemetry service is designed to be resilient to failures:
+//!
+//! - WebSocket connection failures are logged but don't crash the service.
+//! - Malformed events are ignored rather than stopping transmission.
+//! - The broadcast channel has a buffer to handle temporary transmission delays.
+//! - Missing required fields (like "msg") generate warnings but don't block processing.
+//!
+//! # Performance Considerations
+//!
+//! The telemetry system is designed to have minimal impact on node performance:
+//!
+//! - Events are transmitted asynchronously via broadcast channels.
+//! - WebSocket connections operate independently of core node operations.
+//! - System information is collected once at startup rather than repeatedly.
+//! - The broadcast channel is bounded to prevent unbounded memory growth.
+//!
+//! [`TelemetryService`]: TelemetryService
+//! [`TelemetryHandle`]: TelemetryHandle
+//! [`TelemetryEvent`]: TelemetryEvent
+//! [`TelemetryHandle::send`]: TelemetryHandle::send
+//! [`SysInfo`]: SysInfo
+//! [`VerbosityLevel`]: VerbosityLevel
 use std::time::SystemTime;
 
 use anyhow::Context;

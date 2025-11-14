@@ -1,3 +1,4 @@
+use blockifier::bouncer::BouncerWeights;
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
 use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
@@ -64,6 +65,12 @@ pub struct SnosBatchUpdates {
     pub end_block: Option<u64>,
     /// Updated batch status
     pub status: Option<SnosBatchStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct AggregatorBatchWeights {
+    pub l1_gas: usize,
+    pub message_segment_length: usize,
 }
 
 /// Aggregator Batch
@@ -139,11 +146,40 @@ pub struct AggregatorBatch {
     /// Used to track the batch in the proving system
     pub bucket_id: String,
 
+    /// Builtin weights for the batch. We decide when to close a batch based on this.
+    pub builtin_weights: AggregatorBatchWeights,
+
     /// Current status of the aggregator batch
     pub status: AggregatorBatchStatus,
     /// Starknet protocol version for all blocks in this batch
     /// All blocks in a batch must have the same Starknet version for prover compatibility
     pub starknet_version: String,
+}
+
+impl AggregatorBatchWeights {
+    pub fn new(l1_gas: usize, message_segment_length: usize) -> Self {
+        Self { l1_gas, message_segment_length }
+    }
+
+    pub fn checked_add(&self, other: &AggregatorBatchWeights) -> Option<AggregatorBatchWeights> {
+        Some(Self {
+            l1_gas: self.l1_gas.checked_add(other.l1_gas)?,
+            message_segment_length: self.message_segment_length.checked_add(other.message_segment_length)?,
+        })
+    }
+
+    pub fn checked_sub(&self, other: &AggregatorBatchWeights) -> Option<AggregatorBatchWeights> {
+        Some(Self {
+            l1_gas: self.l1_gas.checked_sub(other.l1_gas)?,
+            message_segment_length: self.message_segment_length.checked_sub(other.message_segment_length)?,
+        })
+    }
+}
+
+impl From<&BouncerWeights> for AggregatorBatchWeights {
+    fn from(weights: &BouncerWeights) -> Self {
+        Self { l1_gas: weights.l1_gas, message_segment_length: weights.message_segment_length }
+    }
 }
 
 impl AggregatorBatch {
@@ -158,6 +194,7 @@ impl AggregatorBatch {
     ///
     /// # Returns
     /// A new `AggregatorBatch` instance with status `Open` and single block
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         index: u64,
         start_snos_batch: u64,
@@ -165,6 +202,7 @@ impl AggregatorBatch {
         squashed_state_updates_path: String,
         blob_path: String,
         bucket_id: String,
+        builtin_weights: AggregatorBatchWeights,
         starknet_version: String,
     ) -> Self {
         Self {
@@ -184,6 +222,7 @@ impl AggregatorBatch {
             bucket_id,
             starknet_version,
             status: AggregatorBatchStatus::Open,
+            builtin_weights,
         }
     }
 }
@@ -201,6 +240,8 @@ pub enum SnosBatchStatus {
     Closed,
     /// A SNOS job has been created for this batch
     SnosJobCreated,
+    /// A SNOS job has beed Completed
+    Completed,
 }
 
 /// SNOS Batch
@@ -231,7 +272,8 @@ pub struct SnosBatch {
 
     /// Reference to the parent aggregator batch index
     /// This establishes the hierarchical relationship between SNOS and aggregator batches
-    pub aggregator_batch_index: u64,
+    /// This is Optional since for L3s, we don't have aggregator batches
+    pub aggregator_batch_index: Option<u64>,
 
     /// Number of blocks in this SNOS batch
     pub num_blocks: u64,
@@ -261,10 +303,15 @@ impl SnosBatch {
     /// * `snos_batch_id` - Unique sequential ID for this SNOS batch
     /// * `aggregator_batch_index` - Index of the parent aggregator batch
     /// * `start_block` - The start block number of the batch
+    /// * `end_block` - The end block number of the batch
     ///
     /// # Returns
     /// A new `SnosBatch` instance with status `Open`
-    pub fn new(snos_batch_id: u64, aggregator_batch_index: u64, start_block: u64) -> Self {
+    ///
+    /// # Panics
+    ///
+    /// Panics if `end_block` < `start_block`
+    pub fn new(snos_batch_id: u64, aggregator_batch_index: Option<u64>, start_block: u64) -> Self {
         Self {
             id: Uuid::new_v4(),
             snos_batch_id,
@@ -293,5 +340,145 @@ impl SnosBatch {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod aggregator_batch_weights_tests {
+        use super::*;
+
+        #[test]
+        fn test_new() {
+            let weights = AggregatorBatchWeights::new(1000, 500);
+            assert_eq!(weights.l1_gas, 1000);
+            assert_eq!(weights.message_segment_length, 500);
+        }
+
+        #[test]
+        fn test_checked_add_success() {
+            let weights1 = AggregatorBatchWeights::new(1000, 500);
+            let weights2 = AggregatorBatchWeights::new(2000, 300);
+
+            let result = weights1.checked_add(&weights2);
+            assert!(result.is_some());
+
+            let sum = result.unwrap();
+            assert_eq!(sum.l1_gas, 3000);
+            assert_eq!(sum.message_segment_length, 800);
+        }
+
+        #[test]
+        fn test_checked_add_overflow_l1_gas() {
+            let weights1 = AggregatorBatchWeights::new(usize::MAX, 100);
+            let weights2 = AggregatorBatchWeights::new(1, 100);
+
+            let result = weights1.checked_add(&weights2);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_checked_add_overflow_message_segment_length() {
+            let weights1 = AggregatorBatchWeights::new(100, usize::MAX);
+            let weights2 = AggregatorBatchWeights::new(100, 1);
+
+            let result = weights1.checked_add(&weights2);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_checked_add_max_values() {
+            let weights1 = AggregatorBatchWeights::new(usize::MAX / 2, usize::MAX / 2);
+            let weights2 = AggregatorBatchWeights::new(usize::MAX / 2, usize::MAX / 2);
+
+            let result = weights1.checked_add(&weights2);
+            assert!(result.is_some());
+
+            let sum = result.unwrap();
+            assert_eq!(sum.l1_gas, usize::MAX - 1);
+            assert_eq!(sum.message_segment_length, usize::MAX - 1);
+        }
+
+        #[test]
+        fn test_checked_sub_success() {
+            let weights1 = AggregatorBatchWeights::new(2000, 500);
+            let weights2 = AggregatorBatchWeights::new(1000, 300);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_some());
+
+            let diff = result.unwrap();
+            assert_eq!(diff.l1_gas, 1000);
+            assert_eq!(diff.message_segment_length, 200);
+        }
+
+        #[test]
+        fn test_checked_sub_with_zero() {
+            let weights1 = AggregatorBatchWeights::new(1000, 500);
+            let weights2 = AggregatorBatchWeights::new(0, 0);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_some());
+
+            let diff = result.unwrap();
+            assert_eq!(diff.l1_gas, 1000);
+            assert_eq!(diff.message_segment_length, 500);
+        }
+
+        #[test]
+        fn test_checked_sub_equal_values() {
+            let weights1 = AggregatorBatchWeights::new(1000, 500);
+            let weights2 = AggregatorBatchWeights::new(1000, 500);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_some());
+
+            let diff = result.unwrap();
+            assert_eq!(diff.l1_gas, 0);
+            assert_eq!(diff.message_segment_length, 0);
+        }
+
+        #[test]
+        fn test_checked_sub_underflow_l1_gas() {
+            let weights1 = AggregatorBatchWeights::new(100, 500);
+            let weights2 = AggregatorBatchWeights::new(200, 300);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_checked_sub_underflow_message_segment_length() {
+            let weights1 = AggregatorBatchWeights::new(500, 100);
+            let weights2 = AggregatorBatchWeights::new(300, 200);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_checked_sub_from_max() {
+            let weights1 = AggregatorBatchWeights::new(usize::MAX, usize::MAX);
+            let weights2 = AggregatorBatchWeights::new(1, 1);
+
+            let result = weights1.checked_sub(&weights2);
+            assert!(result.is_some());
+
+            let diff = result.unwrap();
+            assert_eq!(diff.l1_gas, usize::MAX - 1);
+            assert_eq!(diff.message_segment_length, usize::MAX - 1);
+        }
+
+        #[test]
+        fn test_from_bouncer_weights() {
+            let bouncer_weights =
+                BouncerWeights { l1_gas: 1234, message_segment_length: usize::MAX, ..Default::default() };
+
+            let agg_weights = AggregatorBatchWeights::from(&bouncer_weights);
+            assert_eq!(agg_weights.l1_gas, 1234);
+            assert_eq!(agg_weights.message_segment_length, usize::MAX);
+        }
     }
 }

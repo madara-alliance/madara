@@ -277,8 +277,8 @@ impl ExecutorThread {
         tracing::debug!("Starting executor thread.");
 
         // The goal here is to do the least possible between batches, as to maximize CPU usage. Any millisecond spent
-        //  outside of `TransactionExecutor::execute_txs` is a millisecond where we could have used every CPU cores, but are using only one.
-        // `blockifier` isn't really well optimized in this regard, but since we can't easily change its code (maybe we should?) we're
+        //  outside `TransactionExecutor::execute_txs` is a millisecond where we could have used every CPU core, but are using only one.
+        // `blockifier` isn't really well optimized in this regard, but since we can't easily change its code (maybe we should?), we're
         //  still optimizing everything we have a hand on here in madara.
         loop {
             // Take transactions to execute.
@@ -373,7 +373,7 @@ impl ExecutorThread {
             stats.exec_duration += exec_duration;
 
             // Doesn't process the results, it just inspects them for logging stats, and figures out which classes were declared.
-            // Results are processed async, outside of the executor.
+            // Results are processed async, outside the executor.
             for (btx, res) in executed_txs.txs.iter().zip(blockifier_results.iter()) {
                 match res {
                     Ok((execution_info, _state_diff)) => {

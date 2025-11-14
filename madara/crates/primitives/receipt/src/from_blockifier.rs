@@ -2,6 +2,7 @@ use crate::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
     GasVector, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MsgToL1, MsgToL2, PriceUnit, TransactionReceipt,
 };
+use crate::revert_error::RevertErrorExt;
 use anyhow::anyhow;
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{
@@ -196,7 +197,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     };
 
     let execution_result = if let Some(reason) = &res.revert_error {
-        ExecutionResult::Reverted { reason: reason.to_string() }
+        ExecutionResult::Reverted { reason: reason.format_for_receipt_string() }
     } else {
         ExecutionResult::Succeeded
     };
