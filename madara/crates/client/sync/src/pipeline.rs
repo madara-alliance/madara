@@ -45,7 +45,7 @@ pub trait PipelineSteps: Sync + Send + 'static {
 
 /// The pipeline controller is used to drive and execute the [`PipelineSteps`].
 pub struct PipelineController<S: PipelineSteps> {
-    steps: Arc<S>,
+    pub(crate) steps: Arc<S>,
     /// Every parallel step currently being run. Polling it will poll every future, it will return the results as FCFS.
     queue: FuturesOrdered<ParallelStepFuture<S>>,
     /// The currently being run sequential step. There can only be one at a time.
@@ -102,10 +102,10 @@ impl<S: PipelineSteps> PipelineController<S> {
     pub fn is_empty(&self) -> bool {
         self.applying.is_none() && self.queue.is_empty() && self.next_inputs.is_empty()
     }
-    fn queue_len(&self) -> usize {
+    pub(crate) fn queue_len(&self) -> usize {
         self.queue.len()
     }
-    fn is_applying(&self) -> bool {
+    pub(crate) fn is_applying(&self) -> bool {
         self.applying.is_some()
     }
 
