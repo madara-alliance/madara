@@ -46,6 +46,8 @@ impl SignalHandler {
     ///
     /// Use this to create child tokens for different subsystems:
     /// ```rust
+    /// use orchestrator::utils::signal_handler::SignalHandler;
+    /// let signal_handler = SignalHandler::new();
     /// let worker_token = signal_handler.get_shutdown_token().child_token();
     /// ```
     pub fn get_shutdown_token(&self) -> CancellationToken {

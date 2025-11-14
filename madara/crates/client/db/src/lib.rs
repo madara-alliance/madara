@@ -121,6 +121,7 @@ use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
+use mp_block::header::CustomHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
 use mp_block::TransactionWithReceipt;
@@ -133,7 +134,6 @@ use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use mp_block::header::CustomHeader;
 mod db_version;
 mod prelude;
 pub mod storage;
@@ -404,7 +404,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     pub fn flush(&self) -> Result<()> {
         self.db.flush()
     }
-
 }
 
 impl MadaraBackend<RocksDBStorage> {
@@ -582,10 +581,10 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .context("There is no current preconfirmed block")?
             .get_full_block_with_classes()?;
 
-        if let Some(state_diff) = state_diff {
-            let temp_old = block.state_diff.old_declared_contracts;
+        if let Some(mut state_diff) = state_diff {
+            state_diff.old_declared_contracts =
+                std::mem::replace(&mut block.state_diff.old_declared_contracts, state_diff.old_declared_contracts);
             block.state_diff = state_diff;
-            block.state_diff.old_declared_contracts = temp_old;
         }
 
         // Write the block & apply to global trie
@@ -654,20 +653,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        tracing::info!(
-            "🙇 Block hash {:?} computed for #{}",
-            block_hash,
-            block.header.block_number
-        );
+        tracing::info!("🙇 Block hash {:?} computed for #{}", block_hash, block.header.block_number);
 
-        match self.inner.get_custom_header_with_clear(true) {
-            Some(header) => {
-                let is_valid = header.is_block_hash_as_expected(&block_hash);
-                if !is_valid {
-                    tracing::warn!("Block hash not as expected for {}", block.header.block_number);
-                }
+        if let Some(header) = self.inner.get_custom_header_with_clear(true) {
+            let is_valid = header.is_block_hash_as_expected(&block_hash);
+            if !is_valid {
+                tracing::warn!("Block hash not as expected for {}", block.header.block_number);
             }
-            None => {}
         }
 
         // Save the block.

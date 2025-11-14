@@ -1,4 +1,3 @@
-use mp_receipt::RevertErrorExt;
 use crate::{Error, ExecutionContext, ExecutionResult, TxExecError};
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::TransactionalState;
@@ -9,6 +8,7 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::ExecutableTransaction;
 use mc_db::MadaraStorageRead;
 use mp_convert::ToFelt;
+use mp_receipt::RevertErrorExt;
 use starknet_api::block::FeeType;
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::{ClassHash, ContractAddress, Nonce};

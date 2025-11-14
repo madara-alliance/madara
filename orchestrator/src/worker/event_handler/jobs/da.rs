@@ -116,12 +116,13 @@ impl DAJobHandler {
             // @note: if nonce is null and there is some len of writes, make an api call to get the contract
             // nonce for the block
 
-            if nonce.is_none() && !storage_entries.is_empty() && address != Felt::ONE {
-                let get_current_nonce_result = config
-                    .madara_rpc_client()
-                    .get_nonce(BlockId::Number(block_no), address)
-                    .await
-                    .map_err(|e| JobError::ProviderError(format!("Failed to get nonce : {}", e)))?;
+            if nonce.is_none() && !storage_entries.is_empty() && address != Felt::ONE && address != Felt::TWO {
+                let get_current_nonce_result =
+                    config.madara_rpc_client().get_nonce(BlockId::Number(block_no), address).await.map_err(|e| {
+                        JobError::ProviderError(format!(
+                            "Failed to get nonce for address {address} at block {block_no}: {e}"
+                        ))
+                    })?;
 
                 nonce = Some(get_current_nonce_result);
             }
