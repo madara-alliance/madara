@@ -232,7 +232,7 @@ setup-cairo:
 	@$(VENV_ACTIVATE) && cairo-compile --version > /dev/null 2>&1 && echo -e "$(PASS)✅ Cairo 0 environment ready (cairo-compile $$($(VENV_ACTIVATE) && cairo-compile --version 2>&1))$(RESET)" || (echo -e "$(WARN)❌ Cairo setup failed$(RESET)" && exit 1)
 
 .PHONY: build-madara
-build-madara: setup-cairo
+build-madara:
 	@echo -e "$(DIM)Building Madara with Cairo 0 environment...$(RESET)"
 	@$(VENV_ACTIVATE) && cargo build --manifest-path madara/Cargo.toml  --bin madara --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
