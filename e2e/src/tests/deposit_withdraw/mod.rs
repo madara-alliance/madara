@@ -244,9 +244,9 @@ async fn execute_eth_l1_deposit(
     let wallet = EthereumWallet::from(signer.clone());
 
     let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
+        .disable_recommended_fillers()
         .wallet(wallet)
-        .on_http(test_config.get_anvil_config().endpoint());
+        .connect_http(test_config.get_anvil_config().endpoint());
 
     // Create contracts - compiler infers the complex types
     let eth_bridge_contract = StarknetEthBridge::new(l1_context.eth_bridge_address, &provider);
@@ -290,9 +290,9 @@ async fn execute_erc20_l1_deposit(
     let wallet = EthereumWallet::from(signer.clone());
 
     let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
+        .disable_recommended_fillers()
         .wallet(wallet)
-        .on_http(test_config.get_anvil_config().endpoint());
+        .connect_http(test_config.get_anvil_config().endpoint());
 
     // Create contracts - compiler infers the complex types
     let erc20_token_contract = ERC20Token::new(l1_context.erc20_token_address, &provider);

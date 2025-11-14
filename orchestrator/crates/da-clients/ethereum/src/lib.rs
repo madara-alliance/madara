@@ -1,20 +1,34 @@
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
 
-use std::str::FromStr;
+use std::sync::Arc;
 
-use alloy::network::Ethereum;
-use alloy::providers::{ProviderBuilder, RootProvider};
-use alloy::rpc::client::RpcClient;
-use alloy::transports::http::Http;
+use alloy::providers::ProviderBuilder;
 use async_trait::async_trait;
 use color_eyre::Result;
 use mockall::automock;
 use mockall::predicate::*;
 use orchestrator_da_client_interface::{DaClient, DaVerificationStatus};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use url::Url;
+
+pub type DefaultHttpProvider = alloy::providers::fillers::FillProvider<
+    alloy::providers::fillers::JoinFill<
+        alloy::providers::Identity,
+        alloy::providers::fillers::JoinFill<
+            alloy::providers::fillers::GasFiller,
+            alloy::providers::fillers::JoinFill<
+                alloy::providers::fillers::BlobGasFiller,
+                alloy::providers::fillers::JoinFill<
+                    alloy::providers::fillers::NonceFiller,
+                    alloy::providers::fillers::ChainIdFiller,
+                >,
+            >,
+        >,
+    >,
+    alloy::providers::RootProvider<alloy::network::Ethereum>,
+    alloy::network::Ethereum,
+>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthereumDaValidatedArgs {
@@ -23,16 +37,12 @@ pub struct EthereumDaValidatedArgs {
 
 pub struct EthereumDaClient {
     #[allow(dead_code)]
-    provider: RootProvider<Ethereum, Http<Client>>,
+    provider: Arc<DefaultHttpProvider>,
 }
 
 impl EthereumDaClient {
-    pub async fn new_with_args(ethereum_da_params: &EthereumDaValidatedArgs) -> Self {
-        let client = RpcClient::new_http(
-            Url::from_str(ethereum_da_params.ethereum_da_rpc_url.as_str())
-                .expect("Failed to parse ethereum_da_rpc_url"),
-        );
-        let provider = ProviderBuilder::<_, Ethereum>::new().on_client(client);
+    pub async fn new_with_args(args: &EthereumDaValidatedArgs) -> Self {
+        let provider = Arc::new(ProviderBuilder::new().connect_http(args.ethereum_da_rpc_url.clone()));
         Self { provider }
     }
 }

@@ -1,28 +1,23 @@
 use alloy::network::{Ethereum, EthereumWallet};
+use alloy::primitives::U256;
 use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller,
 };
 use alloy::providers::{Identity, RootProvider};
-use alloy::transports::http::{Client, Http};
-use alloy_primitives::U256;
 
 pub type LocalWalletSignerMiddleware = FillProvider<
     JoinFill<
         JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>,
         WalletFiller<EthereumWallet>,
     >,
-    RootProvider<Http<Client>>,
-    Http<Client>,
+    RootProvider<Ethereum>,
     Ethereum,
 >;
 
-pub type EthHttpProvider = FillProvider<
-    JoinFill<
-        JoinFill<JoinFill<JoinFill<Identity, GasFiller>, NonceFiller>, ChainIdFiller>,
-        WalletFiller<EthereumWallet>,
-    >,
-    RootProvider<Http<Client>>,
-    Http<Client>,
+// Type alias for the provider returned by connect_http (with default fillers)
+pub type DefaultHttpProvider = FillProvider<
+    JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>,
+    RootProvider<Ethereum>,
     Ethereum,
 >;
 

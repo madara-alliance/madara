@@ -49,7 +49,7 @@ impl Default for PathfinderConfig {
             database_path: get_database_path(DATA_DIR, PATHFINDER_DATABASE_DIR),
             binary_path: get_binary_path(PATHFINDER_BINARY),
             ethereum_url: Url::parse("https://eth-sepolia.public.blastapi.io").unwrap(),
-            rpc_root_version: "v07".to_string(),
+            rpc_root_version: "v09".to_string(),
             network: "custom".to_string(),
             chain_id: "MADARA_DEVNET".to_string(),
             gateway_url: Some(Url::parse(format!("http://{}:8080/feeder", DEFAULT_SERVICE_HOST).as_str()).unwrap()),

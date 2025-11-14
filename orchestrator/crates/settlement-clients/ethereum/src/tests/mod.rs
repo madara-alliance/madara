@@ -66,7 +66,7 @@ pub struct EthereumTestBuilder {
 #[allow(dead_code)]
 pub struct EthereumTest {
     _anvil: AnvilInstance,
-    provider: alloy::providers::RootProvider<alloy::transports::http::Http<reqwest::Client>>,
+    provider: crate::types::DefaultHttpProvider,
     pub rpc_url: Url,
 }
 
@@ -104,7 +104,7 @@ impl EthereumTestBuilder {
         };
 
         // Setup Provider
-        let provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
+        let provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
 
         if let Some(impersonator) = self.impersonator {
             provider.anvil_impersonate_account(impersonator).await.expect("Unable to impersonate account.");
@@ -204,6 +204,7 @@ mod settlement_client_tests {
             max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
                 .parse()
                 .expect("Invalid max gas price mul factor"),
+            is_mainnet: false, // for tests, default to sepolia/testnet behavior
         };
 
         // Deploying a dummy contract
@@ -288,6 +289,7 @@ mod settlement_client_tests {
             max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
                 .parse()
                 .expect("Invalid max gas price mul factor"),
+            is_mainnet: false, // for tests, default to sepolia/testnet behavior
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
@@ -364,6 +366,7 @@ mod settlement_client_tests {
             max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
                 .parse()
                 .expect("Invalid max gas price mul factor"),
+            is_mainnet: false, // for tests, default to sepolia/testnet behavior
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(

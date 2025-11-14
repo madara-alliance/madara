@@ -1,7 +1,8 @@
-use alloy::providers::{ProviderBuilder, RootProvider};
+use alloy::network::Ethereum;
+use alloy::primitives::{Address, B256};
+use alloy::providers::fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller};
+use alloy::providers::{Identity, ProviderBuilder, RootProvider};
 use alloy::sol;
-use alloy::transports::http::{Client, Http};
-use alloy_primitives::{Address, B256};
 use std::str::FromStr;
 use url::Url;
 
@@ -37,12 +38,16 @@ impl FromStr for SettlementLayer {
 }
 
 pub struct FactChecker {
-    fact_registry: Option<FactRegistry::FactRegistryInstance<TransportT, ProviderT>>,
+    fact_registry: Option<FactRegistry::FactRegistryInstance<ProviderT>>,
     settlement_layer: SettlementLayer,
 }
 
-type TransportT = Http<Client>;
-type ProviderT = RootProvider<TransportT>;
+// Type alias for the provider returned by connect_http (with default fillers)
+type ProviderT = FillProvider<
+    JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>,
+    RootProvider<Ethereum>,
+    Ethereum,
+>;
 
 impl FactChecker {
     pub fn new(rpc_url: Url, gps_verifier_contract_address: String, settlement_layer: String) -> Self {
@@ -50,7 +55,7 @@ impl FactChecker {
 
         match settlement_layer {
             SettlementLayer::Ethereum => {
-                let provider = ProviderBuilder::new().on_http(rpc_url);
+                let provider = ProviderBuilder::new().connect_http(rpc_url);
                 let fact_registry = FactRegistry::new(
                     Address::from_str(gps_verifier_contract_address.as_str())
                         .expect("Invalid GPS verifier contract address"),
@@ -67,9 +72,7 @@ impl FactChecker {
             SettlementLayer::Ethereum => {
                 let fact_registry =
                     self.fact_registry.as_ref().expect("Fact registry should be initialized for Ethereum");
-                let FactRegistry::isValidReturn { _0 } =
-                    fact_registry.isValid(*fact).call().await.map_err(FactCheckerError::InvalidFact)?;
-                Ok(_0)
+                fact_registry.isValid(*fact).call().await.map_err(FactCheckerError::InvalidFact)
             }
             SettlementLayer::Starknet => {
                 // TODO:L3 Implement actual Starknet fact checking
