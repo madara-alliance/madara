@@ -107,9 +107,9 @@ async fn create_job_job_does_not_exists_in_db_works() {
     // Set up mock AFTER creating services to ensure proper ordering
     // Keep the guard alive for the entire test to prevent other tests from overwriting expectations
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let _ctx_guard = get_job_handler_context_safe();
+    let ctx_guard = get_job_handler_context_safe();
     // create_job calls get_job_handler exactly once
-    _ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+    ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     assert!(JobHandlerService::create_job(JobType::SnosRun, "0".to_string(), metadata, services.config.clone())
         .await
@@ -219,8 +219,8 @@ async fn create_job_job_handler_returns_error() {
 
     // Mock the `get_job_handler` call to return our error-producing handler
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let _ctx_guard = get_job_handler_context_safe();
-    _ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
+    let ctx_guard = get_job_handler_context_safe();
+    ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
 
     // Verify that create_job returns an error
     let result =
@@ -456,9 +456,9 @@ async fn process_job_two_workers_process_same_job_works() {
 
     // Mocking the `get_job_handler` call - both workers will call it before one fails due to lock contention
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let _ctx_guard = get_job_handler_context_safe();
+    let ctx_guard = get_job_handler_context_safe();
     // Both workers will call get_job_handler (each process_job calls it once), so expect exactly 2 calls
-    _ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+    ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // building config
     let services = TestConfigBuilder::new()
