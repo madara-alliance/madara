@@ -110,6 +110,9 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_url = snos_url.trim_end_matches('/');
         debug!("Calling generate_pie function");
 
+        // Use pre-loaded versioned constants from config (loaded at startup)
+        let versioned_constants = config.params.versioned_constants.clone();
+
         let input = PieGenerationInput {
             rpc_url: snos_url.to_string(),
             blocks: (start_block_number..=end_block_number).collect(),
@@ -125,6 +128,7 @@ impl JobHandlerTrait for SnosJobHandler {
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
+            versioned_constants,
         };
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
