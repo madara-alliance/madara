@@ -11,7 +11,7 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-
+use mp_utils::service::MadaraServiceId;
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
@@ -137,12 +137,17 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         self.backend.chain_tip.send_replace(backend_chain_tip);
 
         // Reset block production executor state if block production is enabled
-        if let Some(block_prod_handle) = &self.block_prod_handle {
-            block_prod_handle
-                .reset_state()
-                .await
-                .context("Resetting block production executor state after reorg")
-                .map_err(StarknetRpcApiError::from)?;
+        let bp_status = self.ctx.service_status(MadaraServiceId::BlockProduction);
+        if matches!(bp_status, mp_utils::service::MadaraServiceStatus::On) {
+          if let Some(block_prod_handle) = &self.block_prod_handle {
+              tracing::debug!("revertTo: resetting block production state");
+              block_prod_handle
+                  .reset_state()
+                  .await
+                  .context("Resetting block production executor state after reorg")
+                  .map_err(StarknetRpcApiError::from)?;
+              tracing::debug!("revertTo: block production state reset complete");
+          }
         }
 
         Ok(())
