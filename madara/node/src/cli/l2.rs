@@ -74,6 +74,12 @@ pub struct L2SyncParams {
     /// Enable bouncer config syncing.
     #[arg(env = "MADARA_ENABLE_BOUNCER_CONFIG_SYNCING", long, default_value_t = false)]
     pub bouncer_config_sync_enable: bool,
+
+    /// Disable blockchain reorganization. When enabled, if a divergent state is discovered,
+    /// the node will stop with an error instead of performing a reorg. This is useful for
+    /// operators who want to manually handle chain divergences.
+    #[clap(env = "MADARA_NO_REORG", long, default_value_t = true)]
+    pub no_reorg: bool,
 }
 
 impl L2SyncParams {
