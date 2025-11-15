@@ -9,7 +9,10 @@ use starknet_core::types::{BlockId, EmittedEvent, EventFilter};
 use starknet_providers::{Provider, ProviderError};
 use starknet_types_core::felt::Felt;
 use std::iter;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 // Starknet event conversion
@@ -153,6 +156,100 @@ pub fn watch_events(
             )
         })
         .try_flatten()
+}
+
+/// A stream wrapper that filters events based on dynamic block confirmation depth for Starknet
+/// 
+/// This uses a background task to periodically update the latest block number,
+/// making the stream implementation much simpler.
+pub struct ConfirmationDepthFilteredStream<S, P> {
+    inner: S,
+    min_confirmations: u64,
+    latest_block: Arc<AtomicU64>,
+    _update_task: tokio::task::JoinHandle<()>,
+    _phantom: std::marker::PhantomData<fn() -> P>,
+}
+
+impl<S, P> ConfirmationDepthFilteredStream<S, P>
+where
+    S: Stream<Item = Result<MessageToL2WithMetadata, SettlementClientError>> + Unpin,
+    P: Provider + Send + Sync + 'static,
+{
+    pub fn new(inner: S, provider: Arc<P>, min_confirmations: u64) -> Self {
+        let latest_block = Arc::new(AtomicU64::new(0));
+        
+        // Spawn background task to periodically update the latest block number
+        let latest_block_clone = Arc::clone(&latest_block);
+        let update_task = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(6)); // Starknet block time
+            loop {
+                interval.tick().await;
+                match provider.block_number().await {
+                    Ok(block) => {
+                        latest_block_clone.store(block, Ordering::Relaxed);
+                        tracing::trace!("Updated latest Starknet block number to {}", block);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to update latest Starknet block number: {}", e);
+                    }
+                }
+            }
+        });
+        
+        Self { inner, min_confirmations, latest_block, _update_task: update_task, _phantom: std::marker::PhantomData }
+    }
+}
+
+impl<S, P> Drop for ConfirmationDepthFilteredStream<S, P> {
+    fn drop(&mut self) {
+        // Abort the background task when the stream is dropped
+        self._update_task.abort();
+    }
+}
+
+impl<S, P> Stream for ConfirmationDepthFilteredStream<S, P>
+where
+    S: Stream<Item = Result<MessageToL2WithMetadata, SettlementClientError>> + Unpin,
+{
+    type Item = Result<MessageToL2WithMetadata, SettlementClientError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        // Poll the inner stream for the next event
+        loop {
+            match Pin::new(&mut this.inner).poll_next(cx) {
+                Poll::Ready(Some(Ok(event))) => {
+                    // Check if this event meets the confirmation depth requirement
+                    let latest = this.latest_block.load(Ordering::Relaxed);
+                    let threshold = latest.saturating_sub(this.min_confirmations);
+                    
+                    if event.l1_block_number <= threshold {
+                        return Poll::Ready(Some(Ok(event)));
+                    }
+                    
+                    // Event doesn't have enough confirmations yet, skip it and continue polling
+                    tracing::debug!(
+                        "Skipping event at block {} (needs {} confirmations, latest Starknet block: {})",
+                        event.l1_block_number,
+                        this.min_confirmations,
+                        latest
+                    );
+                    // Continue the loop to get the next event
+                }
+                Poll::Ready(Some(Err(e))) => {
+                    // Pass through errors
+                    return Poll::Ready(Some(Err(e)));
+                }
+                Poll::Ready(None) => {
+                    // Stream ended
+                    return Poll::Ready(None);
+                }
+                Poll::Pending => {
+                    return Poll::Pending;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

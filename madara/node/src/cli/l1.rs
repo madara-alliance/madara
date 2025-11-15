@@ -122,4 +122,9 @@ pub struct L1SyncParams {
         default_value_t = MadaraSettlementLayer::Eth,
     )]
     pub settlement_layer: MadaraSettlementLayer,
+
+    /// Minimum settlement blocks for L1 sync.
+    /// This is the minimum number of blocks that must be settled on L1 before the node can sync/process the messages.
+    #[clap(env = "MADARA_MIN_SETTLEMENT_BLOCKS", long, default_value = "10")]
+    pub min_settlement_blocks: u64, 
 }
