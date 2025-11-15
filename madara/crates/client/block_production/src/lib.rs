@@ -166,6 +166,7 @@ pub use handle::BlockProductionHandle;
 pub enum BlockProductionStateNotification {
     ClosedBlock,
     BatchExecuted,
+    StateReset,
 }
 
 #[derive(Debug)]
@@ -730,6 +731,11 @@ impl BlockProductionTask {
     /// Handles the state machine and its transitions.
     async fn process_reply(&mut self, reply: ExecutorMessage) -> anyhow::Result<()> {
         match reply {
+            ExecutorMessage::StateReset { latest_block_n } => {
+                tracing::info!("🔄 Resetting block production task state after reorg to latest_block_n={:?}", latest_block_n);
+                self.current_state = Some(TaskState::NotExecuting { latest_block_n });
+                self.send_state_notification(BlockProductionStateNotification::StateReset);
+            }
             ExecutorMessage::StartNewBlock { exec_ctx } => {
                 tracing::debug!("Received ExecutorMessage::StartNewBlock block_n={}", exec_ctx.block_number);
                 let current_state = self.current_state.take().context("No current state")?;
