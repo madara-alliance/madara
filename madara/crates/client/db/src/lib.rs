@@ -807,6 +807,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
         self.db.get_latest_applied_trie_update()
     }
+    pub fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
+        self.db.get_snap_sync_latest_block()
+    }
 }
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
@@ -833,6 +836,9 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_latest_applied_trie_update(block_n)
+    }
+    pub fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
+        self.db.write_snap_sync_latest_block(block_n)
     }
 
     /// Revert the blockchain to a specific block hash.

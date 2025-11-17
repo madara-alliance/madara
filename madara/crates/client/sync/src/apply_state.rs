@@ -146,7 +146,6 @@ impl ApplyStateSteps {
         // 2. We're far enough from the target (distance >= APPLY_STATE_SNAP_BATCH_SIZE)
         let should_use_snap_sync = self.snap_sync && distance_to_target >= APPLY_STATE_SNAP_BATCH_SIZE;
         if should_use_snap_sync {
-            tracing::info!("⚡ Using snap sync (accumulating state diffs)");
             self.sync_snap(block_range, input).await
         } else {
             // Before switching to block-by-block sync, we need to flush any accumulated state diffs
@@ -160,7 +159,6 @@ impl ApplyStateSteps {
                     self.clone().flush_accumulated_state_diffs(block_range.start).await?;
                 }
             }
-            tracing::info!("🔨 Using block-by-block sync");
             self.sync_each_block(block_range, input).await
         }
     }
@@ -200,6 +198,9 @@ impl ApplyStateSteps {
                     .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
 
                 backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
+
+                // Update snap sync marker - this path is only taken during snap sync mode
+                backend.write_snap_sync_latest_block(&latest_block.checked_sub(1))?;
 
                 tracing::info!("Global State Root till block {:?} is {:?}", &latest_block.checked_sub(1), global_state_root);
                 Ok::<(), anyhow::Error>(())

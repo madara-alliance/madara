@@ -16,6 +16,7 @@ const META_CONFIRMED_ON_L1_TIP_KEY: &[u8] = b"CONFIRMED_ON_L1_TIP";
 const META_CHAIN_TIP_KEY: &[u8] = b"CHAIN_TIP";
 const META_CHAIN_INFO_KEY: &[u8] = b"CHAIN_INFO";
 const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
+const META_SNAP_SYNC_LATEST_BLOCK: &[u8] = b"SNAP_SYNC_LATEST_BLOCK";
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub enum StoredChainTipWithoutContent {
@@ -234,6 +235,41 @@ impl RocksDBStorageInner {
             self.db.delete_cf_opt(
                 &self.get_column(META_COLUMN),
                 META_LATEST_APPLIED_TRIE_UPDATE,
+                &self.writeopts,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Get the latest block number where snap sync computed the trie.
+    /// Returns None if snap sync was never used.
+    #[tracing::instrument(skip(self))]
+    pub(super) fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_SNAP_SYNC_LATEST_BLOCK)? else {
+            tracing::debug!("📖 Reading snap_sync_latest_block: None (snap sync never used)");
+            return Ok(None);
+        };
+        let block_n = super::deserialize(&res)?;
+        tracing::debug!("📖 Reading snap_sync_latest_block: Some({})", block_n);
+        Ok(Some(block_n))
+    }
+
+    /// Set the latest block number where snap sync computed the trie.
+    #[tracing::instrument(skip(self))]
+    pub(super) fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
+        if let Some(block_n) = block_n {
+            tracing::debug!("✍️  Setting snap_sync_latest_block to: {}", block_n);
+            self.db.put_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_SNAP_SYNC_LATEST_BLOCK,
+                super::serialize_to_smallvec::<[u8; 128]>(block_n)?,
+                &self.writeopts,
+            )?;
+        } else {
+            tracing::debug!("🗑️  Clearing snap_sync_latest_block (set to None)");
+            self.db.delete_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_SNAP_SYNC_LATEST_BLOCK,
                 &self.writeopts,
             )?;
         }
