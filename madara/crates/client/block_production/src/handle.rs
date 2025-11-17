@@ -12,15 +12,26 @@ use mp_rpc::v0_9_0::{
 };
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 use tokio::sync::{mpsc, oneshot};
 
-struct BypassInput(mpsc::Sender<ValidatedTransaction>);
+struct BypassInput {
+    sender: mpsc::Sender<ValidatedTransaction>,
+    metrics: Arc<crate::metrics::BlockProductionMetrics>,
+    pending_count: Arc<AtomicU64>,
+}
 
 #[async_trait]
 impl SubmitValidatedTransaction for BypassInput {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
-        self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
+        self.sender.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))?;
+        // Update metric directly when count changes
+        let current = self.pending_count.fetch_add(1, Ordering::Relaxed) + 1;
+        self.metrics.bypass_tx_channel_pending.record(current, &[]);
+        Ok(())
     }
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
         None
@@ -38,6 +49,9 @@ pub struct BlockProductionHandle {
     /// Commands to executor task.
     executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
     bypass_input: mpsc::Sender<ValidatedTransaction>,
+    metrics: Arc<crate::metrics::BlockProductionMetrics>,
+    pending_count: Arc<AtomicU64>,
+    commands_pending_count: Arc<AtomicU64>,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
 }
@@ -47,13 +61,25 @@ impl BlockProductionHandle {
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
+        metrics: Arc<crate::metrics::BlockProductionMetrics>,
+        pending_count: Arc<AtomicU64>,
+        commands_pending_count: Arc<AtomicU64>,
         no_charge_fee: bool,
     ) -> Self {
+        let metrics_clone = metrics.clone();
+        let pending_count_clone = pending_count.clone();
         Self {
             executor_commands,
             bypass_input: bypass_input.clone(),
+            metrics: metrics.clone(),
+            pending_count: pending_count.clone(),
+            commands_pending_count: commands_pending_count.clone(),
             tx_converter: TransactionValidator::new(
-                Arc::new(BypassInput(bypass_input)),
+                Arc::new(BypassInput {
+                    sender: bypass_input,
+                    metrics: metrics_clone,
+                    pending_count: pending_count_clone,
+                }),
                 backend,
                 TransactionValidatorConfig { disable_validation: true, disable_fee: no_charge_fee },
             )
@@ -67,12 +93,19 @@ impl BlockProductionHandle {
         self.executor_commands
             .send(ExecutorCommand::CloseBlock(sender))
             .map_err(|_| ExecutorCommandError::ChannelClosed)?;
+        // Update metric when command is sent
+        let current = self.commands_pending_count.fetch_add(1, Ordering::Relaxed) + 1;
+        self.metrics.executor_commands_channel_pending.record(current, &[]);
         recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
     }
 
     /// Send a transaction through the bypass channel to bypass mempool and validation.
     pub async fn send_tx_raw(&self, tx: ValidatedTransaction) -> Result<(), ExecutorCommandError> {
-        self.bypass_input.send(tx).await.map_err(|_| ExecutorCommandError::ChannelClosed)
+        self.bypass_input.send(tx).await.map_err(|_| ExecutorCommandError::ChannelClosed)?;
+        // Update metric directly when count changes
+        let current = self.pending_count.fetch_add(1, Ordering::Relaxed) + 1;
+        self.metrics.bypass_tx_channel_pending.record(current, &[]);
+        Ok(())
     }
 }
 

@@ -177,7 +177,7 @@ impl MempoolConfig {
 pub struct Mempool<D: MadaraStorageRead = RocksDBStorage> {
     backend: Arc<MadaraBackend<D>>,
     inner: MempoolInnerWithNotify,
-    metrics: MempoolMetrics,
+    metrics: Arc<MempoolMetrics>,
     config: MempoolConfig,
     ttl: Option<Duration>,
     /// Pubsub for transaction statuses.
@@ -193,7 +193,7 @@ impl<D: MadaraStorageRead> Mempool<D> {
             ttl: backend.chain_config().mempool_ttl,
             backend,
             config,
-            metrics: MempoolMetrics::register(),
+            metrics: Arc::new(MempoolMetrics::register()),
             watch_transaction_status: Default::default(),
             preconfirmed_transactions_statuses: Default::default(),
         }
@@ -275,6 +275,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             entry.insert(status.clone());
             self.watch_transaction_status.publish(&tx.hash, Some(TransactionStatus::Preconfirmed(status)));
         }
+
+        // Update all mempool metrics
+        self.update_all_mempool_metrics();
     }
 
     /// Update secondary state when a new transaction has been successfully removed from the mempool.
@@ -296,6 +299,33 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
             }
         }
+
+        // Update all mempool metrics
+        self.update_all_mempool_metrics();
+    }
+
+    /// Update all mempool-related metrics. This should be called after any mempool modification.
+    /// Note: This spawns an async task to acquire a read lock on the inner mempool, so call sparingly.
+    fn update_all_mempool_metrics(&self) {
+        let metrics = self.metrics.clone();
+        let inner = self.inner.inner_arc();
+        let preconfirmed = self.preconfirmed_transactions_statuses.clone();
+        tokio::spawn(async move {
+            // Update preconfirmed_tx_statuses_size (no lock needed)
+            let preconfirmed_size = preconfirmed.len() as u64;
+            metrics.preconfirmed_tx_statuses_size.record(preconfirmed_size, &[]);
+
+            // Update inner mempool metrics (requires lock)
+            let inner_metrics = inner.read().await.detailed_metrics();
+
+            metrics.mempool_size.record(inner_metrics.num_transactions as u64, &[]);
+            metrics.mempool_ready_transactions.record(inner_metrics.ready_transactions as u64, &[]);
+            metrics.mempool_num_accounts.record(inner_metrics.num_accounts as u64, &[]);
+            metrics.mempool_ready_queue_size.record(inner_metrics.ready_queue_size as u64, &[]);
+            metrics.mempool_timestamp_queue_size.record(inner_metrics.timestamp_queue_size as u64, &[]);
+            metrics.mempool_by_tx_hash_size.record(inner_metrics.by_tx_hash_size as u64, &[]);
+            metrics.mempool_eviction_queue_size.record(inner_metrics.eviction_queue_size as u64, &[]);
+        });
     }
 
     async fn remove_ttl_exceeded_txs(&self) -> anyhow::Result<()> {

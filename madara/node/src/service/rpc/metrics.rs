@@ -1,10 +1,16 @@
 use jsonrpsee::types::Request;
 use jsonrpsee::MethodResponse;
-use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
+use mc_analytics::{
+    register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument,
+};
 use opentelemetry::{global, KeyValue};
 use opentelemetry::{
-    metrics::{Counter, Histogram},
+    metrics::{Counter, Gauge, Histogram},
     InstrumentationScope,
+};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
 };
 use std::time::Instant;
 
@@ -18,6 +24,10 @@ pub struct RpcMetrics {
     calls_started: Counter<u64>,
     /// Number of calls completed.
     calls_finished: Counter<u64>,
+    /// Number of concurrent RPC requests.
+    concurrent_requests: Gauge<u64>,
+    /// Internal counter for tracking concurrent requests.
+    concurrent_requests_count: Arc<AtomicU64>,
     /// Number of Websocket sessions opened.
     ws_sessions_opened: Option<Counter<u64>>,
     /// Number of Websocket sessions closed.
@@ -77,7 +87,23 @@ impl RpcMetrics {
             "".to_string(),
         );
 
-        Ok(Self { calls_time, calls_started, calls_finished, ws_sessions_opened, ws_sessions_closed, ws_sessions_time })
+        let concurrent_requests = register_gauge_metric_instrument(
+            &meter,
+            "rpc_concurrent_requests".to_string(),
+            "Number of concurrent RPC requests being processed".to_string(),
+            "request".to_string(),
+        );
+
+        Ok(Self {
+            calls_time,
+            calls_started,
+            calls_finished,
+            concurrent_requests,
+            concurrent_requests_count: Arc::new(AtomicU64::new(0)),
+            ws_sessions_opened,
+            ws_sessions_closed,
+            ws_sessions_time,
+        })
     }
 
     pub(crate) fn ws_connect(&self) {
@@ -103,6 +129,9 @@ impl RpcMetrics {
             req.params(),
         );
         self.calls_started.add(1, &[KeyValue::new("method", req.method_name().to_string())]);
+        // Update concurrent requests metric
+        let current = self.concurrent_requests_count.fetch_add(1, Ordering::Relaxed) + 1;
+        self.concurrent_requests.record(current, &[]);
     }
 
     pub(crate) fn on_response(&self, req: &Request, rp: &MethodResponse, transport_label: &'static str, now: Instant) {
@@ -126,6 +155,9 @@ impl RpcMetrics {
                 KeyValue::new("success", rp.is_success().to_string()),
             ],
         );
+        // Update concurrent requests metric
+        let current = self.concurrent_requests_count.fetch_sub(1, Ordering::Relaxed) - 1;
+        self.concurrent_requests.record(current, &[]);
     }
 }
 

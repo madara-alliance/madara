@@ -27,6 +27,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             }
         }
         self.watch_transaction_status.publish(&tx_hash, value);
+
+        // Update metrics after status change
+        let preconfirmed_size = self.preconfirmed_transactions_statuses.len() as u64;
+        self.metrics.preconfirmed_tx_statuses_size.record(preconfirmed_size, &[]);
     }
 
     /// Takes an iterator of items (transaction_hash, transaction_index).

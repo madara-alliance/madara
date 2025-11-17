@@ -13,7 +13,10 @@ use mp_transactions::{
     L1HandlerTransactionWithFee,
 };
 use mp_utils::service::ServiceContext;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 use tokio::sync::mpsc;
 
 pub struct Batcher {
@@ -24,6 +27,9 @@ pub struct Batcher {
     out: mpsc::Sender<BatchToExecute>,
     bypass_in: mpsc::Receiver<ValidatedTransaction>,
     batch_size: usize,
+    metrics: Arc<crate::metrics::BlockProductionMetrics>,
+    bypass_pending_count: Arc<AtomicU64>,
+    executor_batch_pending_count: Arc<AtomicU64>,
 }
 
 impl Batcher {
@@ -34,6 +40,9 @@ impl Batcher {
         ctx: ServiceContext,
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
+        metrics: Arc<crate::metrics::BlockProductionMetrics>,
+        bypass_pending_count: Arc<AtomicU64>,
+        executor_batch_pending_count: Arc<AtomicU64>,
     ) -> Self {
         Self {
             mempool,
@@ -43,6 +52,9 @@ impl Batcher {
             bypass_in,
             batch_size: backend.chain_config().block_production_concurrency.batch_size,
             backend,
+            metrics,
+            bypass_pending_count,
+            executor_batch_pending_count,
         }
     }
 
@@ -66,14 +78,26 @@ impl Batcher {
             let (chain_id, sn_version) =
                 (self.backend.chain_config().chain_id.to_felt(), self.backend.chain_config().latest_protocol_version);
 
-            let bypass_txs_stream =
-                stream::unfold(&mut self.bypass_in, |chan| async move { chan.recv().await.map(|tx| (tx, chan)) }).map(
-                    |tx| {
-                        tx.into_blockifier_for_sequencing()
-                            .map(|(btx, ts, declared_class)| (btx, AdditionalTxInfo { declared_class, arrived_at: ts }))
-                            .map_err(anyhow::Error::from)
-                    },
-                );
+            let bypass_pending_count = self.bypass_pending_count.clone();
+            let metrics_clone = self.metrics.clone();
+            let bypass_txs_stream = stream::unfold(&mut self.bypass_in, move |chan| {
+                let pending_count = bypass_pending_count.clone();
+                let metrics = metrics_clone.clone();
+                async move {
+                    chan.recv().await.map(|tx| {
+                        // Update metric directly when count changes
+                        // fetch_sub returns the old value, so subtract 1 to get the new value
+                        let current = pending_count.fetch_sub(1, Ordering::Relaxed) - 1;
+                        metrics.bypass_tx_channel_pending.record(current, &[]);
+                        (tx, chan)
+                    })
+                }
+            })
+            .map(|tx| {
+                tx.into_blockifier_for_sequencing()
+                    .map(|(btx, ts, declared_class)| (btx, AdditionalTxInfo { declared_class, arrived_at: ts }))
+                    .map_err(anyhow::Error::from)
+            });
 
             let l1_txs_stream = self.l1_message_stream.as_mut().map(|res| {
                 Ok(res?.into_blockifier(chain_id, sn_version).map(|(btx, declared_class)| {
@@ -135,6 +159,13 @@ impl Batcher {
 
             if !batch.is_empty() {
                 tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
+
+                // Record batch size metric
+                self.metrics.batch_to_execute_size.record(batch.len() as u64, &[]);
+
+                // Update metric when batch is sent
+                let current = self.executor_batch_pending_count.fetch_add(1, Ordering::Relaxed) + 1;
+                self.metrics.executor_batch_channel_pending.record(current, &[]);
 
                 permit.send(batch);
             }

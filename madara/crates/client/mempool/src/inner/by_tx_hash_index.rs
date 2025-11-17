@@ -42,4 +42,8 @@ impl ByTxHashIndex {
     pub fn get(&self, hash: &TransactionHash) -> Option<&TxKey> {
         self.0.get(hash)
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }

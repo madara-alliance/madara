@@ -91,6 +91,11 @@ impl MempoolInnerWithNotify {
     pub async fn write(&self) -> MempoolWriteAccess {
         MempoolWriteAccess { notify: self.notify.clone(), inner: self.inner.clone().write_owned().await }
     }
+
+    /// Get a clone of the inner Arc<RwLock<InnerMempool>> for use in async tasks.
+    pub(crate) fn inner_arc(&self) -> Arc<RwLock<InnerMempool>> {
+        self.inner.clone()
+    }
 }
 
 #[cfg(test)]

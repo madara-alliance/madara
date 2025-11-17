@@ -356,6 +356,29 @@ impl InnerMempool {
             num_accounts: self.num_accounts(),
         }
     }
+
+    /// Get detailed metrics about all internal structures
+    pub fn detailed_metrics(&self) -> InnerMempoolMetrics {
+        InnerMempoolMetrics {
+            num_transactions: self.num_transactions(),
+            ready_transactions: self.ready_transactions(),
+            num_accounts: self.num_accounts(),
+            ready_queue_size: self.ready_queue.ready_transactions(),
+            timestamp_queue_size: self.timestamp_queue.len(),
+            by_tx_hash_size: self.by_tx_hash.len(),
+            eviction_queue_size: self.eviction_queue.len(),
+        }
+    }
+}
+
+pub struct InnerMempoolMetrics {
+    pub num_transactions: usize,
+    pub ready_transactions: usize,
+    pub num_accounts: usize,
+    pub ready_queue_size: usize,
+    pub timestamp_queue_size: usize,
+    pub by_tx_hash_size: usize,
+    pub eviction_queue_size: usize,
 }
 
 pub struct MempoolStateSummary {
