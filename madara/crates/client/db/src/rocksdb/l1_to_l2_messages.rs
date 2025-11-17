@@ -78,12 +78,7 @@ impl RocksDBStorageInner {
 
     pub(super) fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
-        self.db.put_cf_opt(
-            &on_l2_cf,
-            core_contract_nonce.to_be_bytes(),
-            txn_hash.to_bytes_be(),
-            &self.writeopts,
-        )?;
+        self.db.put_cf_opt(&on_l2_cf, core_contract_nonce.to_be_bytes(), txn_hash.to_bytes_be(), &self.writeopts)?;
         Ok(())
     }
 

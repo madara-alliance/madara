@@ -12,7 +12,6 @@ pub struct BlockProductionService {
     task: Option<BlockProductionTask>,
     n_devnet_contracts: u64,
     disabled: bool,
-    close_preconfirmed_block_upon_restart: bool,
 }
 
 impl BlockProductionService {
@@ -22,7 +21,7 @@ impl BlockProductionService {
         backend: &Arc<MadaraBackend>,
         mempool: Arc<mc_mempool::Mempool>,
         l1_client: Arc<dyn SettlementClient>,
-        no_charge_fee: bool
+        no_charge_fee: bool,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
 
@@ -38,7 +37,6 @@ impl BlockProductionService {
             )),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
-            close_preconfirmed_block_upon_restart: config.close_preconfirmed_block_upon_restart,
         })
     }
 }

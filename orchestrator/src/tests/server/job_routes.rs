@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use hyper::{Body, Request};
 use mockall::predicate::eq;
@@ -12,12 +11,14 @@ use url::Url;
 
 use crate::core::config::Config;
 use crate::server::types::ApiResponse;
+use crate::tests::common::constants::{QUEUE_CONSUME_MAX_RETRIES, QUEUE_CONSUME_RETRY_DELAY_SECS};
+use crate::tests::common::consume_message_with_retry;
+use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
 use crate::types::jobs::metadata::{JobSpecificMetadata, SettlementContext};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueNameForJobType;
-use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::parser::job_queue_message::JobQueueMessage;
 
@@ -45,7 +46,11 @@ async fn setup_trigger() -> (SocketAddr, Arc<Config>) {
 
 #[tokio::test]
 #[rstest]
+#[allow(clippy::await_holding_lock)]
 async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Config>)) {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let (addr, config) = setup_trigger.await;
     let job_type = JobType::DataSubmission;
 
@@ -68,8 +73,15 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     assert!(response.success);
     assert_eq!(response.message, Some(format!("Job with id {} queued for processing", job_id)));
 
-    // Verify job was added to process queue
-    let queue_message = config.queue().consume_message_from_queue(job_type.process_queue_name()).await.unwrap();
+    // Verify job was added to process queue - retry a few times in case of timing issues
+    let queue_message = consume_message_with_retry(
+        config.queue(),
+        job_type.process_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
@@ -84,7 +96,11 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
 
 #[tokio::test]
 #[rstest]
+#[allow(clippy::await_holding_lock)]
 async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Config>)) {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let (addr, config) = setup_trigger.await;
     let job_type = JobType::DataSubmission;
 
@@ -103,7 +119,7 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
 
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(job_type.clone())).times(1).returning(move |_| Arc::clone(&job_handler));
 
     let client = hyper::Client::new();
@@ -118,10 +134,15 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     assert!(response.success);
     assert_eq!(response.message, Some(format!("Job with id {} queued for verification", job_id)));
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
-
-    // Verify job was added to verification queue
-    let queue_message = config.queue().consume_message_from_queue(job_type.verify_queue_name()).await.unwrap();
+    // Verify job was added to verification queue - retry a few times in case of timing issues
+    let queue_message = consume_message_with_retry(
+        config.queue(),
+        job_type.verify_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 
@@ -159,9 +180,15 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     assert!(response.success);
     assert_eq!(response.message, Some(format!("Job with id {} retry initiated", job_id)));
 
-    // Verify job was added to process queue
-    let queue_message = config.queue().consume_message_from_queue(job_type.process_queue_name()).await.unwrap();
-
+    // Verify job was added to process queue - retry a few times in case of timing issues
+    let queue_message = consume_message_with_retry(
+        config.queue(),
+        job_type.process_queue_name(),
+        QUEUE_CONSUME_MAX_RETRIES,
+        QUEUE_CONSUME_RETRY_DELAY_SECS,
+    )
+    .await
+    .unwrap();
     let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
     assert_eq!(message_payload.id, job_id);
 

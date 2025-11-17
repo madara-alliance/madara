@@ -118,7 +118,6 @@ jobs:
             --features testing \
             --lcov \
             --output-path lcov.info \
-            --test-threads=1 \
             --package "orchestrator*" \
             --no-fail-fast
 
