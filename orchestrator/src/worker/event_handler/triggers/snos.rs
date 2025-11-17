@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -43,8 +43,6 @@ impl JobTrigger for SnosJobTrigger {
     /// - Respects concurrency limits defined in service configuration
     /// - Processes blocks in order while filling available slots efficiently
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
-        trace!(log_type = "starting", category = "SnosRunWorker", "SnosRunWorker started.");
-
         // Self-healing: recover any orphaned SNOS jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::SnosRun).await {
             error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
@@ -70,25 +68,20 @@ impl JobTrigger for SnosJobTrigger {
                 .await
             {
                 Ok(_) => {
-                    info!(batch_id = %snos_batch.snos_batch_id,"Successfully created new snos job");
                     config.database().update_or_create_snos_batch(&snos_batch, &SnosBatchUpdates {end_block: None, status: Some(SnosBatchStatus::SnosJobCreated)}).await?;
                 },
                 Err(e) => {
-                    warn!(
-                        batch_id = %snos_batch.snos_batch_id,
-                        error = %e,
-                        "Failed to create new snos job"
-                    );
+                    error!(error = %e,"Failed to create new {:?} job for {}", JobType::SnosRun, snos_batch.snos_batch_id);
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
                     ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                    return Err(e.into());
                 }
             }
         }
 
-        trace!(log_type = "completed", category = "SnosWorker", "SnosWorker completed.");
         Ok(())
     }
 }

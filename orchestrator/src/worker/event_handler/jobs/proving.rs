@@ -22,14 +22,15 @@ pub struct ProvingJobHandler;
 #[async_trait]
 impl JobHandlerTrait for ProvingJobHandler {
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(log_type = "starting", "Proving job creation started.");
+        debug!(log_type = "starting", "{:?} job {} creation started", JobType::ProofCreation, internal_id);
         let job_item = JobItem::create(internal_id.clone(), JobType::ProofCreation, JobStatus::Created, metadata);
-        info!(log_type = "completed", "Proving job created.");
+        debug!(log_type = "completed", "{:?} job {} creation completed", JobType::ProofCreation, internal_id);
         Ok(job_item)
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        info!("Proving job processing started");
+        let internal_id = job.internal_id.clone();
+        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::ProofCreation, internal_id);
 
         // Get proving metadata
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
@@ -80,11 +81,14 @@ impl JobHandlerTrait for ProvingJobHandler {
         let proof_duration = proof_start.elapsed().as_secs_f64();
         MetricsRecorder::record_proof_generation_time("proof_submission", proof_duration);
 
+        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::ProofCreation, internal_id);
+
         Ok(external_id)
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        info!(log_type = "starting", "Proving job verification started.");
+        let internal_id = job.internal_id.clone();
+        debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::ProofCreation, internal_id);
 
         // Get proving metadata
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into()?;
@@ -124,7 +128,12 @@ impl JobHandlerTrait for ProvingJobHandler {
 
         match task_status {
             TaskStatus::Processing => {
-                info!("Proving job verification pending.");
+                info!(
+                    job_id = %job.id,
+                    "{:?} job {} verification is pending, will retry in sometime",
+                    JobType::ProofCreation,
+                    internal_id
+                );
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
@@ -139,11 +148,11 @@ impl JobHandlerTrait for ProvingJobHandler {
                     debug!("Downloading and storing proof to path: {}", download_path);
                     config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
                 }
-                info!("Proving job verification completed.");
+                info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::ProofCreation, internal_id);
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
-                info!("Proving job verification failed.");
+                info!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::ProofCreation, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Prover job #{} failed with error: {}",
                     job.internal_id, err

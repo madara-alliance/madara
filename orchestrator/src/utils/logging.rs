@@ -113,7 +113,7 @@ where
 {
     fn format_event(&self, ctx: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &Event<'_>) -> std::fmt::Result {
         let meta = event.metadata();
-        let now = Utc::now().format("%m-%d %H:%M:%S").to_string();
+        let now = Utc::now().format("%y-%m-%d %H:%M:%S").to_string();
 
         // Colors
         let ts_color = "\x1b[96m"; // Bright Cyan
@@ -125,30 +125,16 @@ where
             Level::ERROR => "\x1b[31m",
         };
         let msg_color = "\x1b[97m"; // Bright White
-        let fixed_field_color = "\x1b[92m"; // Bright Green
+        let queue_color = "\x1b[92m"; // Bright Green
         let reset = "\x1b[0m";
-        let function_color = "\x1b[35m"; // Magenta
+        let dim_color = "\x1b[90m"; // Dim gray for separators
 
-        // Format line
-        write!(writer, "{}{}{} ", ts_color, now, reset)?;
-        write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
-
-        // Use actual file path if available, otherwise convert module path
-        let file_path = if let Some(file) = meta.file() {
-            file.to_string()
-        } else if let Some(module_path) = meta.module_path() {
-            format!("src/{}.rs", module_path.replace("::", "/"))
-        } else {
-            "NaN".to_string()
-        };
-
-        write!(writer, "{}[{}:{}]{} ", function_color, file_path, meta.line().unwrap_or(0), reset)?;
-
-        // Add filtered span fields if available
+        // Extract queue from span fields
+        let mut queue = (String::from("-"), String::from("-"));
         if let Some(span) = ctx.lookup_current() {
             if let Some(custom_fields) = span.extensions().get::<CustomSpanFields>() {
-                if !custom_fields.filtered_display.is_empty() {
-                    write!(writer, "{}[{}]{} ", fixed_field_color, custom_fields.filtered_display, reset)?;
+                if let Some(q_value) = custom_fields.raw_fields.get("q") {
+                    queue = queue_type_to_parts(&q_value);
                 }
             }
         }
@@ -156,13 +142,26 @@ where
         let mut visitor = FieldExtractor::default();
         event.record(&mut visitor);
 
+        // Table-like format with fixed widths:
+        // Timestamp (14 chars) | Level (5 chars) | Queue (24 chars) | Message and fields
+        write!(writer, "{}{}{} ", ts_color, now, reset)?;
+        write!(writer, "{}|{} ", dim_color, reset)?;
+        write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
+        write!(writer, "{}|{} ", dim_color, reset)?;
+        write!(writer, "{}{:<20}{} ", queue_color, queue.0, reset)?;
+        write!(writer, "{}|{} ", dim_color, reset)?;
+        write!(writer, "{}{:<14}{} ", queue_color, queue.1, reset)?;
+        write!(writer, "{}|{} ", dim_color, reset)?;
+
         // Write the main message
         write!(writer, "{}{}{}", msg_color, visitor.message, reset)?;
 
-        // Write fields separately with proper formatting
-        if !visitor.fields.is_empty() || !visitor.meta.is_empty() {
+        // Write fields separately with proper formatting (excluding queue which is already shown)
+        if !visitor.meta.is_empty() || !visitor.fields.is_empty() {
             write!(writer, " (")?;
             let mut first = true;
+
+            // Write meta fields (id, etc.) but skip 'q' since it's in the queue column
             if !visitor.meta.is_empty() {
                 write!(writer, "{}{}{}", msg_color, visitor.meta, reset)?;
                 first = false;
@@ -190,25 +189,20 @@ struct FieldExtractor {
 
 impl tracing::field::Visit for FieldExtractor {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        let fixed_field_color = "\x1b[92m"; // Bright Green
+        let fixed_field_color = "\x1b[90m"; // Dark Grey
         let reset = "\x1b[0m";
 
         if field.name() == "message" {
             self.message = format!("{:?}", value).trim_matches('"').to_string();
+        } else if field.name() == "q" {
+            // Skip 'q' field - it's displayed in the queue column
+            return;
         } else {
             let formatted_value = format!("{:?}", value).trim_matches('"').to_string();
-            let formatted_field = format!(
-                "{}{}{}={}{}{}",
-                fixed_field_color,
-                field.name(),
-                reset,
-                fixed_field_color,
-                formatted_value,
-                reset
-            );
+            let formatted_field = format!("{}{}={}{}", fixed_field_color, field.name(), formatted_value, reset);
 
-            // Prioritize q and id fields
-            if field.name() == "q" || field.name() == "id" {
+            // Prioritize id field
+            if field.name() == "id" {
                 if !self.meta.is_empty() {
                     self.meta.push_str(", ");
                 }
@@ -374,5 +368,26 @@ pub fn init_logging() {
             .with(fmt_layer)
             .with(ErrorLayer::default());
         tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
+    }
+}
+
+/// Function used by the logger to display queue with pretty formatting
+pub fn queue_type_to_parts(queue_type: &str) -> (String, String) {
+    match queue_type {
+        "snos_job_processing" => (String::from("SNOS"), String::from("PROCESSING")),
+        "snos_job_verification" => (String::from("SNOS"), String::from("VERIFICATION")),
+        "proving_job_processing" => (String::from("PROVING"), String::from("PROCESSING")),
+        "proving_job_verification" => (String::from("PROVING"), String::from("VERIFICATION")),
+        "proof_registration_job_processing" => (String::from("PROOF_REGISTRATION"), String::from("PROCESSING")),
+        "proof_registration_job_verification" => (String::from("PROOF_REGISTRATION"), String::from("VERIFICATION")),
+        "data_submission_job_processing" => (String::from("DATA_SUBMISSION"), String::from("PROCESSING")),
+        "data_submission_job_verification" => (String::from("DATA_SUBMISSION"), String::from("VERIFICATION")),
+        "update_state_job_processing" => (String::from("UPDATE_STATE"), String::from("PROCESSING")),
+        "update_state_job_verification" => (String::from("UPDATE_STATE"), String::from("VERIFICATION")),
+        "aggregator_job_processing" => (String::from("AGGREGATOR"), String::from("PROCESSING")),
+        "aggregator_job_verification" => (String::from("AGGREGATOR"), String::from("VERIFICATION")),
+        "job_handle_failure" => (String::from("JOB_HANDLE_FAILURE"), String::from("-")),
+        "worker_trigger" => (String::from("WORKER_TRIGGER"), String::from("-")),
+        _ => (String::from("-"), String::from("-")),
     }
 }

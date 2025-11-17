@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct ProvingJobTrigger;
 
@@ -21,8 +21,6 @@ impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        info!(log_type = "starting", "ProvingWorker started.");
-
         // Self-healing: We intentionally do not heal orphaned Proving jobs as
         // they might create inconsistent state on the atlantic side,
         // sending request twice, opening the same bucket again, adding the the
@@ -97,19 +95,19 @@ impl JobTrigger for ProvingJobTrigger {
             )
             .await
             {
-                Ok(_) => info!(block_id = %snos_job.internal_id, "Successfully created new proving job"),
+                Ok(_) => {}
                 Err(e) => {
-                    warn!(job_id = %snos_job.internal_id, error = %e, "Failed to create new proving job");
+                    error!(error = %e, "Failed to create new {:?} job for {}", JobType::ProofCreation, snos_job.internal_id);
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::ProofCreation)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
                     ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                    return Err(e.into());
                 }
             }
         }
 
-        trace!(log_type = "completed", "ProvingWorker completed.");
         Ok(())
     }
 }

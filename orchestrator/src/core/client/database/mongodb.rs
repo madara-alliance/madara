@@ -1024,7 +1024,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(batches)
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_snos_batches_without_jobs(
         &self,
         snos_batch_status: SnosBatchStatus,

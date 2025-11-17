@@ -2,6 +2,7 @@ use mockall_double::double;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::core::config::Config;
@@ -49,28 +50,22 @@ impl JobService {
         let message = JobQueueMessage { id };
         config.queue().send_message(queue.clone(), serde_json::to_string(&message)?, delay).await?;
 
-        tracing::info!(
-            log_type = "JobQueue",
-            category = "add_job_to_queue",
-            function_type = "add_job_to_queue",
-            "Added job with id {:?} to {:?} queue",
-            id,
-            queue
-        );
+        tracing::debug!("Added job with id {:?} to {:?} queue", id, queue);
         Ok(())
     }
+
+    /// Adds a job to its processing queue
     pub async fn add_job_to_process_queue(id: Uuid, job_type: &JobType, config: Arc<Config>) -> Result<(), JobError> {
-        tracing::info!("Adding job with id {:?} to processing queue", id);
         Self::add_job_to_queue(config, id, job_type.process_queue_name(), None).await
     }
 
+    /// Adds a job to its verification queue
     pub async fn add_job_to_verify_queue(
         config: Arc<Config>,
         id: Uuid,
         job_type: &JobType,
         delay: Option<Duration>,
     ) -> Result<(), JobError> {
-        tracing::info!("Adding job with id {:?} to Verification queue", id);
         Self::add_job_to_queue(config, id, job_type.verify_queue_name(), delay).await
     }
 

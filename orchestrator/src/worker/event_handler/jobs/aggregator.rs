@@ -24,9 +24,9 @@ pub struct AggregatorJobHandler;
 #[async_trait]
 impl JobHandlerTrait for AggregatorJobHandler {
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(log_type = "starting", block_no = %internal_id,"Aggregator job creation started.");
+        debug!(log_type = "starting", "{:?} job {} creation started", JobType::Aggregator, internal_id);
         let job_item = JobItem::create(internal_id.clone(), JobType::Aggregator, JobStatus::Created, metadata);
-        info!(log_type = "completed", block_no = %internal_id, "Aggregator job creation completed.");
+        debug!(log_type = "completed", "{:?} job {} creation completed", JobType::Aggregator, internal_id);
         Ok(job_item)
     }
 
@@ -38,7 +38,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
     /// Now, we follow the following logic:
     /// 1. Call close batch for the bucket
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        info!(log_type = "starting", "Aggregator job processing started.");
+        let internal_id = job.internal_id.clone();
+        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::Aggregator, internal_id);
 
         // Get aggregator metadata
         let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
@@ -63,17 +64,14 @@ impl JobHandlerTrait for AggregatorJobHandler {
             )
             .await?;
 
-        info!(
-            log_type = "completed",
-            bucket_id = %external_id,
-            "Aggregator job processing completed."
-        );
+        info!(log_type = "completed", job_id = %job.id, bucket_id = %external_id, "✅ {:?} job {} processed successfully", JobType::Aggregator, internal_id);
 
         Ok(external_id)
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        info!(log_type = "starting", "Aggregator job verification started.");
+        let internal_id = job.internal_id.clone();
+        debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::Aggregator, internal_id);
 
         // Get aggregator metadata
         let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
@@ -96,7 +94,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
         match task_status {
             TaskStatus::Processing => {
-                info!("Aggregator job verification pending.");
+                info!(job_id = %job.id, "{:?} job {} verification is pending, will retry in sometime", JobType::Aggregator, internal_id);
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
@@ -170,7 +168,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     )
                     .await?;
 
-                info!("Aggregator job verification completed.");
+                info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::Aggregator, internal_id);
 
                 // Return the status that the job is verified
                 Ok(JobVerificationStatus::Verified)
@@ -183,7 +181,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                         AggregatorBatchStatus::VerificationFailed,
                     )
                     .await?;
-                warn!("Aggregator job verification failed.");
+                info!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::Aggregator, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Aggregator job #{} failed with error: {}",
                     job.internal_id, err

@@ -36,7 +36,7 @@ pub struct StateUpdateJobHandler;
 #[async_trait]
 impl JobHandlerTrait for StateUpdateJobHandler {
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(log_type = "starting", "State update job creation started.");
+        debug!(log_type = "starting", "{:?} job {} creation started", JobType::StateTransition, internal_id);
 
         // Extract state transition metadata
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
@@ -51,11 +51,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         }
         let job_item = JobItem::create(internal_id.clone(), JobType::StateTransition, JobStatus::Created, metadata);
 
-        info!(
-            log_type = "completed",
-            context = ?state_metadata.context,
-            "State update job created."
-        );
+        debug!(log_type = "completed", "{:?} job {} creation completed", JobType::StateTransition, internal_id);
 
         Ok(job_item)
     }
@@ -76,7 +72,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// TODO: Update the code in the future releases to fix this.
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
-        info!(log_type = "starting", "State update job processing started.");
+        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::StateTransition, internal_id);
 
         // Get the state transition metadata
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
@@ -84,7 +80,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let (blocks_or_batches_to_settle, last_failed_block_or_batch) = match state_metadata.context.clone() {
             SettlementContext::Block(data) => {
                 self.validate_block_numbers(config.clone(), &data.to_settle).await?;
-                debug!(blocks = ?data.to_settle, "Validated block numbers");
                 if !data.to_settle.is_empty() {
                     tracing::Span::current().record("block_start", data.to_settle[0]);
                     tracing::Span::current().record("block_end", data.to_settle[data.to_settle.len() - 1]);
@@ -163,7 +158,12 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 }
             };
 
-            debug!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, "Validating transaction receipt");
+            info!(
+                job_id = %job.id,
+                tx_hash = %txn_hash,
+                nonce = %nonce,
+                "State update transaction submitted successfully for job {}. Validating transaction receipt", job.internal_id
+            );
 
             config.settlement_client()
                 .wait_for_tx_finality(&txn_hash)
@@ -181,11 +181,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         let val = blocks_or_batches_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;
 
-        info!(
-            log_type = "completed",
-            last_settled_block = %val,
-            "State update job processed successfully."
-        );
+        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::StateTransition, internal_id);
 
         Ok(val.to_string())
     }
@@ -197,105 +193,20 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     ///    provider.
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let internal_id = job.internal_id.clone();
-        info!(log_type = "starting", "State update job verification started.");
+        debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::StateTransition, internal_id);
 
         // Get state update metadata
-        let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
-        // Get transaction hashes
-        let tx_hashes = state_metadata.tx_hashes.clone();
+        let state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
         let nums_settled = match state_metadata.context.clone() {
             SettlementContext::Block(data) => data.to_settle,
             SettlementContext::Batch(data) => data.to_settle,
         };
 
-        // Return the status from the settlement contract if the layer is L2
-        // TODO: Remove this check from here and use the same logic (checking the core contract for
-        //       verification rather than the txn status) for both L2s and L3s
-        if config.layer() == &Layer::L2 {
-            // Get the status from the settlement contract
-            return Self::verify_through_contract(&config, &nums_settled, &job.id, &internal_id).await;
-        }
-
-        // Check the transaction status if the layer is not L2
-        debug!(job_id = %job.internal_id, "Retrieved block numbers from metadata");
-        let settlement_client = config.settlement_client();
-
-        for (tx_hash, num_settled) in tx_hashes.iter().zip(nums_settled.iter()) {
-            debug!(
-                tx_hash = %tx_hash,
-                num = %num_settled,
-                "Verifying transaction inclusion"
-            );
-
-            let tx_inclusion_status =
-                settlement_client.verify_tx_inclusion(tx_hash).await.map_err(|e| JobError::Other(OtherError(e)))?;
-
-            match tx_inclusion_status {
-                SettlementVerificationStatus::Rejected(_) => {
-                    warn!(
-                        tx_hash = %tx_hash,
-                        num = %num_settled,
-                        "Transaction rejected"
-                    );
-                    state_metadata.context = self.update_last_failed(state_metadata.context.clone(), *num_settled);
-                    job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-                    return Ok(tx_inclusion_status.into());
-                }
-                // If the tx is still pending, we wait for it to be finalized and check again the status.
-                SettlementVerificationStatus::Pending => {
-                    debug!(
-                        tx_hash = %tx_hash,
-                        "Transaction pending, waiting for finality"
-                    );
-                    settlement_client
-                        .wait_for_tx_finality(tx_hash)
-                        .await
-                        .map_err(|e| JobError::Other(OtherError(e)))?;
-
-                    let new_status = settlement_client
-                        .verify_tx_inclusion(tx_hash)
-                        .await
-                        .map_err(|e| JobError::Other(OtherError(e)))?;
-
-                    match new_status {
-                        SettlementVerificationStatus::Rejected(_) => {
-                            warn!(
-                                tx_hash = %tx_hash,
-                                num = %num_settled,
-                                "Transaction rejected after finality"
-                            );
-                            state_metadata.context =
-                                self.update_last_failed(state_metadata.context.clone(), *num_settled);
-                            job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-                            return Ok(new_status.into());
-                        }
-                        SettlementVerificationStatus::Pending => {
-                            error!(
-                                tx_hash = %tx_hash,
-                                "Transaction still pending after finality check"
-                            );
-                            Err(StateUpdateError::TxnShouldNotBePending { tx_hash: tx_hash.to_string() })?
-                        }
-                        SettlementVerificationStatus::Verified => {
-                            debug!(
-                                tx_hash = %tx_hash,
-                                "Transaction verified after finality"
-                            );
-                        }
-                    }
-                }
-                SettlementVerificationStatus::Verified => {
-                    debug!(
-                        tx_hash = %tx_hash,
-                        "Transaction verified"
-                    );
-                }
-            }
-        }
-
-        // Finally, check the status of the settlement-contract
-        Self::verify_through_contract(&config, &nums_settled, &job.id, &internal_id).await
+        // Get the status from the settlement contract
+        let result = Self::verify_through_contract(&config, &nums_settled, &job.id, &internal_id).await?;
+        info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::StateTransition, internal_id);
+        Ok(result)
     }
 
     fn max_process_attempts(&self) -> u64 {
@@ -417,15 +328,18 @@ impl StateUpdateJobHandler {
             config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?
         {
             if last_settled_block >= to_block_num {
-                warn!(
-                    "Contract state ({}) already ahead of the block to be settled ({}). Skipping update state call.",
-                    last_settled_block, to_block_num
+                info!(
+                    last_settled_block = %last_settled_block,
+                    to_block_num = %to_block_num,
+                    "Contract state already ahead of the block to be settled, skipping update state call"
                 );
                 Ok(false)
             } else {
                 Ok(true)
             }
         } else {
+            // None implies that no state update has happened yet in the core contract
+            // So, we should send a state update transaction
             Ok(true)
         }
     }

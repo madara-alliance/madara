@@ -61,7 +61,7 @@ impl JobHandlerService {
         config: Arc<Config>,
     ) -> Result<(), JobError> {
         let start = Instant::now();
-        info!(
+        debug!(
             log_type = "starting",
             category = "general",
             function_type = "create_job",
@@ -90,7 +90,6 @@ impl JobHandlerService {
         let job_handler = factory::get_job_handler(&job_type).await;
         let job_item = job_handler.create_job(internal_id.clone(), metadata).await?;
         config.database().create_job(job_item.clone()).await?;
-        debug!("Job item inside the create job function: {:?}", job_item);
 
         // Record metrics for job creation
         MetricsRecorder::record_job_created(&job_item);
@@ -111,7 +110,9 @@ impl JobHandlerService {
             KeyValue::new("operation_type", "create_job"),
         ];
 
-        info!(
+        info!(job_id = %job_item.id, "📝 Successfully created new {:?} job with internal id {}", job_type, internal_id);
+
+        debug!(
             log_type = "completed",
             category = "general",
             function_type = "create_job",
@@ -187,7 +188,7 @@ impl JobHandlerService {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
         let internal_id = job.internal_id.clone();
-        info!(
+        debug!(
             log_type = "starting",
             category = "general",
             function_type = "process_job",
@@ -206,8 +207,6 @@ impl JobHandlerService {
             // PendingRetry status) verification failed state means that the previous processing
             // failed, and we want to retry
             JobStatus::Created | JobStatus::VerificationFailed | JobStatus::PendingRetry => {
-                info!(job_id = ?id, status = ?job.status, "Processing job");
-
                 // Record retry if this is not the first attempt
                 if job.status == JobStatus::VerificationFailed || job.status == JobStatus::PendingRetry {
                     MetricsRecorder::record_job_retry(&job, &job.status.to_string());
@@ -230,7 +229,6 @@ impl JobHandlerService {
         // This updates the version of the job.
         // This ensures that if another thread was about to process the same job,
         // it would fail to update the job in the database because the version would be outdated
-        debug!(job_id = ?id, "Updating job status to LockedForProcessing");
         job.metadata.common.process_started_at = Some(Utc::now());
 
         // Record state transition
@@ -256,6 +254,13 @@ impl JobHandlerService {
                 error!(job_id = ?id, error = ?e, "Failed to update job status");
             })?;
 
+        info!(
+            job_id = ?id,
+            job_type = ?job.job_type,
+            from_status = "Created/VerificationFailed/PendingRetry",
+            "Updating status of {:?} job {} to {}", job.job_type, job.internal_id, JobStatus::LockedForProcessing
+        );
+
         // Update job status tracking metrics for LockedForProcessing
         let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
         ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
@@ -265,11 +270,9 @@ impl JobHandlerService {
             &job.id.to_string(),
         );
 
-        debug!(job_id = ?id, job_type = ?job.job_type, "Getting job handler");
         let external_id = match AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind().await
         {
             Ok(Ok(external_id)) => {
-                debug!(job_id = ?id, job_type = ?job.job_type, "Successfully processed job with external ID: {:?}", external_id);
                 Span::current().record("external_id", format!("{:?}", external_id).as_str());
                 // Add the time of processing to the metadata.
                 job.metadata.common.process_completed_at = Some(Utc::now());
@@ -304,7 +307,6 @@ impl JobHandlerService {
         job.metadata.common.process_attempt_no += 1;
 
         // Update job status and metadata
-        debug!(job_id = ?id, "Updating job status to PendingVerification");
         config
             .database()
             .update_job(
@@ -321,6 +323,14 @@ impl JobHandlerService {
                 JobError::from(e)
             })?;
 
+        info!(
+            job_id = ?id,
+            job_type = ?job.job_type,
+            external_id = ?external_id,
+            from_status = ?JobStatus::LockedForProcessing,
+            "Updating status of {:?} job {} to {}", job.job_type, job.internal_id, JobStatus::PendingVerification
+        );
+
         // Update job status tracking metrics for PendingVerification
         let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
         ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
@@ -331,7 +341,6 @@ impl JobHandlerService {
         );
 
         // Add to the verification queue
-        debug!(job_id = ?id, "Adding job to verification queue");
         JobService::add_job_to_verify_queue(
             config.clone(),
             job.id,
@@ -349,7 +358,7 @@ impl JobHandlerService {
             KeyValue::new("operation_type", "process_job"),
         ];
 
-        info!(
+        debug!(
             log_type = "completed",
             category = "general",
             function_type = "process_job",
@@ -400,12 +409,12 @@ impl JobHandlerService {
         if !matches!(job.external_id, ExternalId::Number(0)) {
             Span::current().record("external_id", format!("{:?}", job.external_id).as_str());
         }
-        info!(log_type = "starting", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job started for block");
+        debug!(log_type = "starting", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job started for block");
 
         match job.status {
             // Jobs with `VerificationTimeout` will be retired manually after resetting verification attempt number to 0.
             JobStatus::PendingVerification | JobStatus::VerificationTimeout => {
-                info!(job_id = ?id, status = ?job.status, "Proceeding with verification");
+                debug!(job_id = ?id, status = ?job.status, "Proceeding with verification");
             }
             _ => {
                 error!(job_id = ?id, status = ?job.status, "Invalid job status for verification");
@@ -414,7 +423,6 @@ impl JobHandlerService {
         }
 
         let job_handler = factory::get_job_handler(&job.job_type).await;
-        debug!(job_id = ?id, "Verifying job with handler");
 
         job.metadata.common.verification_started_at = Some(Utc::now());
 
@@ -442,7 +450,6 @@ impl JobHandlerService {
 
         match verification_status {
             JobVerificationStatus::Verified => {
-                info!(job_id = ?id, "Job verified successfully");
                 // Calculate verification time if processing completion timestamp exists
                 if let Some(verification_time) = job.metadata.common.verification_started_at {
                     let time_taken = (Utc::now() - verification_time).num_milliseconds();
@@ -478,6 +485,14 @@ impl JobHandlerService {
                         error!(job_id = ?id, error = ?e, "Failed to update job status to Completed");
                         e
                     })?;
+
+                info!(
+                    job_id = ?id,
+                    job_type = ?job.job_type,
+                    external_id = ?job.external_id,
+                    from_status = ?JobStatus::PendingVerification,
+                    "Updating status of {:?} job {} to {}", job.job_type, job.internal_id, JobStatus::Completed
+                );
 
                 // Update job status tracking metrics for Completed
                 let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
@@ -540,8 +555,6 @@ impl JobHandlerService {
                 }
             }
             JobVerificationStatus::Pending => {
-                debug!(job_id = ?id, "Job verification still pending");
-
                 if job.metadata.common.verification_attempt_no >= job_handler.max_verification_attempts() {
                     warn!(job_id = ?id, "Max verification attempts reached. Marking job as timed out");
 
@@ -590,7 +603,7 @@ impl JobHandlerService {
             attributes.push(KeyValue::new("operation_job_status", format!("{}", job_status)));
         }
 
-        info!(log_type = "completed", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job completed for block");
+        debug!(log_type = "completed", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job completed for block");
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);

@@ -311,7 +311,6 @@ impl QueueClient for SQS {
             .queue_url(&queue_url)
             .max_number_of_messages(1)
             .message_attribute_names("All")
-            .visibility_timeout(30)
             .send()
             .await?;
 
