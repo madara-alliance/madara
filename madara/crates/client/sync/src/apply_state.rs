@@ -198,12 +198,15 @@ impl ApplyStateSteps {
                     .write_access()
                     .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
 
-                backend.write_latest_applied_trie_update(&latest_block.checked_sub(1))?;
+                let block_number = &latest_block.checked_sub(1);
+                backend.write_latest_applied_trie_update(block_number)?;
 
                 // Update snap sync marker - this path is only taken during snap sync mode
-                backend.write_snap_sync_latest_block(&latest_block.checked_sub(1))?;
+                backend.write_snap_sync_latest_block(block_number)?;
 
-                tracing::info!("Global State Root till block {:?} is {:?}", &latest_block.checked_sub(1), global_state_root);
+                if let Some(block_num) = block_number {
+                    tracing::info!("Global State Root till block {} is {:#x}", block_num, global_state_root);
+                }
                 Ok::<(), anyhow::Error>(())
             })
             .await?;

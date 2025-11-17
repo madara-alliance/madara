@@ -185,62 +185,22 @@ impl StateDiffMap {
     }
 }
 
-/// Compress a single contract's storage entries by checking against pre_range_block
+/// Compress a single contract's storage entries by filtering out zero values
 async fn compress_single_contract(
     contract_addr: Felt,
     storage_entries: Vec<StorageEntry>,
-    backend: Arc<MadaraBackend>,
-    pre_range_block_option: Option<u64>,
+    _backend: Arc<MadaraBackend>,
+    _pre_range_block_option: Option<u64>,
 ) -> anyhow::Result<Option<ContractStorageDiffItem>> {
-    let storage_entries = match pre_range_block_option {
-        Some(pre_range_block) => {
-            // Check if contract existed at pre_range_block
-            let contract_existed = check_contract_existed_at_block(backend.clone(), contract_addr, pre_range_block).await?;
-
-            let compressed_entries = if contract_existed {
-                // Contract existed - check each storage entry against pre_range value
-                stream::iter(storage_entries)
-                    .map(|entry| {
-                        let backend = backend.clone();
-                        async move {
-                            let pre_range_value = check_pre_range_storage_value(
-                                backend,
-                                contract_addr,
-                                entry.key,
-                                pre_range_block
-                            ).await;
-                            (entry, pre_range_value)
-                        }
-                    })
-                    .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
-                    .filter_map(|(entry, pre_range_value)| async move {
-                        // Only keep if value changed
-                        if pre_range_value != Some(entry.value) {
-                            Some(entry)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .await
-            } else {
-                // Contract didn't exist - filter out zero values (default state)
-                storage_entries
-                    .into_iter()
-                    .filter(|entry| entry.value != Felt::ZERO)
-                    .collect()
-            };
-
-            compressed_entries
-        }
-        None => {
-            // No pre_range_block - filter out zero values (default state)
-            storage_entries
-                .into_iter()
-                .filter(|entry| entry.value != Felt::ZERO)
-                .collect()
-        }
-    };
+    // Simply filter out zero values (default state)
+    // We don't check against pre_range_block because:
+    // 1. Writing duplicate values to RocksDB is cheap (essentially a no-op)
+    // 2. Checking pre_range values requires expensive DB reads
+    // 3. Unlike the orchestrator, we're not optimizing for L1 blob costs here
+    let storage_entries: Vec<StorageEntry> = storage_entries
+        .into_iter()
+        .filter(|entry| entry.value != Felt::ZERO)
+        .collect();
 
     if !storage_entries.is_empty() {
         Ok(Some(ContractStorageDiffItem { address: contract_addr, storage_entries }))
@@ -325,15 +285,7 @@ async fn process_class(
     }
 }
 
-/// This function tells if the contract existed at the given block number
-pub async fn check_contract_existed_at_block(
-    backend: Arc<MadaraBackend>,
-    contract_address: Felt,
-    block_number: u64,
-) -> anyhow::Result<bool> {
-    let x = get_class_hash_at(backend.clone(), block_number, contract_address).await?.is_some();
-    Ok(x)
-}
+
 
 /// This function returns the class hash of a contract at a given block number
 /// If it exists, it returns the class hash along with `exists=true`
@@ -351,18 +303,4 @@ pub async fn get_class_hash_at(
                 contract_address, block_number
             )
         })
-}
-
-pub async fn check_pre_range_storage_value(
-    backend: Arc<MadaraBackend>,
-    contract_address: Felt,
-    key: Felt,
-    pre_range_block: u64,
-) -> Option<Felt> {
-    tokio::task::spawn_blocking(move || {
-        backend.db.get_storage_at(pre_range_block, &contract_address, &key).ok().flatten()
-    })
-        .await
-        .ok()
-        .flatten()
 }

@@ -563,8 +563,6 @@ impl BlockImporterCtx {
 
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
-        tracing::debug!("Global State Root till block {:?} is {:?}", block_range.end.checked_sub(1), got);
-
         // Sanity check: verify state root.
         if !self.config.no_check && !self.config.trust_state_root {
             let expected = self
