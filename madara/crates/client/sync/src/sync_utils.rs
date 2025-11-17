@@ -7,7 +7,6 @@ use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, DeployedContra
 use mc_db::{MadaraBackend, MadaraStorageRead};
 
 const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 400;
-const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 10000;
 
 /// Compress a raw accumulated state diff by checking against pre_range_block
 /// This should be called ONCE after all accumulation is complete

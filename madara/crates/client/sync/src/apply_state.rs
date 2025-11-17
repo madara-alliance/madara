@@ -107,9 +107,11 @@ impl ApplyStateSteps {
             }
         }
 
-        // Apply if we've accumulated enough blocks or reached target
-        let should_apply = latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE)
-            || target_block.map(|t| latest_block >= t).unwrap_or(false);
+        // Apply accumulated diffs if either condition is met:
+        // 1. We've reached the sync target (ensures we flush before transitioning modes)
+        // 2. We've accumulated APPLY_STATE_SNAP_BATCH_SIZE blocks (periodic flush for memory)
+        let should_apply = target_block.map(|t| latest_block >= t).unwrap_or(false)
+            || latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE);
 
         if should_apply {
             self.clone()
@@ -194,9 +196,13 @@ impl ApplyStateSteps {
 
         self.importer
             .run_in_rayon_pool_global(move |_| {
+                // Use latest_block - 1 as the block number for trie commit
+                // The squashed state diff represents the FINAL state at this block
+                // Fallback lookups in contract_state_leaf_hash need to query at this block number
+                let trie_block_number = latest_block.saturating_sub(1);
                 let global_state_root = backend
                     .write_access()
-                    .apply_to_global_trie(current_first_block, vec![accumulated_state_diff].iter())?;
+                    .apply_to_global_trie(trie_block_number, vec![accumulated_state_diff].iter())?;
 
                 let block_number = &latest_block.checked_sub(1);
                 backend.write_latest_applied_trie_update(block_number)?;
