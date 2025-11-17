@@ -227,7 +227,7 @@ impl ForwardPipeline for GatewayForwardSync {
     ) -> anyhow::Result<()> {
         tracing::debug!("Run pipeline to height={target_height:?}");
 
-        self.apply_state_pipeline.steps.set_target_block(target_height);
+        self.apply_state_pipeline.set_target_block(target_height);
 
         let mut done = false;
         while !done {
@@ -320,7 +320,7 @@ impl GatewayLatestProbe {
     pub fn new(client: Arc<GatewayProvider>) -> Self {
         Self { client }
     }
-    
+
     async fn probe(
         self: Arc<Self>,
         _highest_known_block: Option<ProviderBlockHeader>,

@@ -429,6 +429,7 @@ impl PipelineSteps for GatewaySyncSteps {
         self: Arc<Self>,
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
+        _target_block: Option<u64>,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
         tracing::debug!("Gateway sync sequential step: {block_range:?}");
         Ok(ApplyOutcome::Success(input))

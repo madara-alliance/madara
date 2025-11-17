@@ -47,7 +47,6 @@ pub fn apply_state_pipeline(
             disable_tries,
             snap_sync,
             state_diff_map: Mutex::new(Default::default()),
-            target_block: Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX)),
         },
         parallelization,
         batch_size,
@@ -61,7 +60,6 @@ pub struct ApplyStateSteps {
     disable_tries: bool,
     snap_sync: bool,
     state_diff_map: Mutex<crate::sync_utils::StateDiffMap>,
-    target_block: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl PipelineController<ApplyStateSteps> {
@@ -92,7 +90,8 @@ impl ApplyStateSteps {
     pub async fn sync_snap(
         self: Arc<Self>,
         block_range: Range<u64>,
-        input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput
+        input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput,
+        target_block: Option<u64>
     ) -> anyhow::Result<ApplyOutcome<()>> {
         let current_first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
         let latest_block = block_range.end;
@@ -108,10 +107,11 @@ impl ApplyStateSteps {
             }
         }
 
-        let target_block = self.target_block.load(std::sync::atomic::Ordering::Relaxed);
-
         // Apply if we've accumulated enough blocks or reached target
-        if latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE) || latest_block >= target_block {
+        let should_apply = latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE)
+            || target_block.map(|t| latest_block >= t).unwrap_or(false);
+
+        if should_apply {
             self.clone()
                 .apply_accumulated_diffs(current_first_block, latest_block)
                 .await
@@ -137,16 +137,17 @@ impl ApplyStateSteps {
     pub async fn sync(
         self: Arc<Self>,
         block_range: Range<u64>,
-        input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput
+        input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput,
+        target_block: Option<u64>
     ) -> anyhow::Result<ApplyOutcome<()>> {
-        let target_block = self.target_block.load(std::sync::atomic::Ordering::Relaxed);
-        let distance_to_target = target_block.saturating_sub(block_range.start);
+        let distance_to_target = target_block.map(|t| t.saturating_sub(block_range.start));
         // Use snap sync if:
         // 1. Snap sync is enabled, AND
         // 2. We're far enough from the target (distance >= APPLY_STATE_SNAP_BATCH_SIZE)
-        let should_use_snap_sync = self.snap_sync && distance_to_target >= APPLY_STATE_SNAP_BATCH_SIZE;
+        let should_use_snap_sync = self.snap_sync
+            && distance_to_target.map(|d| d >= APPLY_STATE_SNAP_BATCH_SIZE).unwrap_or(false);
         if should_use_snap_sync {
-            self.sync_snap(block_range, input).await
+            self.sync_snap(block_range, input, target_block).await
         } else {
             // Before switching to block-by-block sync, we need to flush any accumulated state diffs
             // from snap sync to avoid losing data or computing incorrect state roots
@@ -214,9 +215,6 @@ impl ApplyStateSteps {
         Ok(())
     }
 
-    pub fn set_target_block(&self, target: u64) {
-        self.target_block.store(target, std::sync::atomic::Ordering::Relaxed);
-    }
 }
 
 impl PipelineSteps for ApplyStateSteps {
@@ -236,11 +234,12 @@ impl PipelineSteps for ApplyStateSteps {
         self: Arc<Self>,
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
+        target_block: Option<u64>,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
         if self.disable_tries {
             return Ok(ApplyOutcome::Success(()));
         }
 
-        self.sync(block_range, input).await
+        self.sync(block_range, input, target_block).await
     }
 }
