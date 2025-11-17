@@ -45,18 +45,22 @@ impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
         let view = backend.view_on_latest_confirmed();
         let block_number = view.latest_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
 
-        let l1_gas_quote = backend
-            .get_last_l1_gas_quote()
-            .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
-
-        let gas_prices = if let Some(block) = view.block_view_on_latest_confirmed() {
-            let block_info = block.get_block_info()?;
-            let previous_strk_l2_gas_price = block_info.header.gas_prices.strk_l2_gas_price;
-            let previous_l2_gas_used = block_info.total_l2_gas_used;
-
-            backend.calculate_gas_prices(&l1_gas_quote, previous_strk_l2_gas_price, previous_l2_gas_used)?
+        let gas_prices = if let Some(custom_header) = backend.get_custom_header().filter(|h| h.block_n == block_number) {
+            custom_header.gas_prices
         } else {
-            backend.calculate_gas_prices(&l1_gas_quote, 0, 0)?
+            let l1_gas_quote = backend
+                .get_last_l1_gas_quote()
+                .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+
+            if let Some(block) = view.block_view_on_latest_confirmed() {
+                let block_info = block.get_block_info()?;
+                let previous_strk_l2_gas_price = block_info.header.gas_prices.strk_l2_gas_price;
+                let previous_l2_gas_used = block_info.total_l2_gas_used;
+
+                backend.calculate_gas_prices(&l1_gas_quote, previous_strk_l2_gas_price, previous_l2_gas_used)?
+            } else {
+                backend.calculate_gas_prices(&l1_gas_quote, 0, 0)?
+            }
         };
 
         Ok(Self {
