@@ -23,7 +23,7 @@ name = "madara"
 # Madara
 mc-analytics = { workspace = true }
 mc-block-production = { workspace = true }
-mc-cairo-native = { workspace = true }
+mc-class-exec = { workspace = true }
 mc-db = { workspace = true }
 mc-devnet = { workspace = true }
 mc-gateway-client = { workspace = true }

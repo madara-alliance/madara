@@ -6509,7 +6509,7 @@ dependencies = [
  "jsonrpsee",
  "mc-analytics",
  "mc-block-production",
- "mc-cairo-native",
+ "mc-class-exec",
  "mc-db",
  "mc-devnet",
  "mc-e2e-tests",
@@ -6671,7 +6671,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-cairo-native"
+name = "mc-class-exec"
 version = "0.8.0"
 dependencies = [
  "blockifier",
@@ -6713,7 +6713,7 @@ dependencies = [
  "lazy_static",
  "librocksdb-sys",
  "mc-analytics",
- "mc-cairo-native",
+ "mc-class-exec",
  "mp-block",
  "mp-bloom-filter",
  "mp-chain-config",
@@ -6834,7 +6834,7 @@ dependencies = [
  "blockifier",
  "cairo-vm",
  "itertools 0.13.0",
- "mc-cairo-native",
+ "mc-class-exec",
  "mc-db",
  "mp-block",
  "mp-chain-config",

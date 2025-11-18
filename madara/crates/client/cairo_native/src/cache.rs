@@ -3,17 +3,16 @@
 //! This module handles both in-memory and disk-based caching of compiled native classes.
 
 use blockifier::execution::contract_class::RunnableCompiledClass;
-use blockifier::execution::native::contract_class::NativeCompiledClassV1;
 use cairo_native::executor::AotContractExecutor;
 use cairo_vm::types::errors::program_errors::ProgramError;
 use dashmap::DashMap;
 use mp_convert::ToFelt;
 use starknet_api::core::ClassHash;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::config;
+use super::native_class::NativeCompiledClass;
 use mp_class::SierraConvertedClass;
 
 /// Timeout for loading compiled classes from disk.
@@ -48,7 +47,7 @@ use mp_class::SierraConvertedClass;
 /// - `cache_get()` - Get a class (tests only)
 /// - `cache_remove()` - Remove a class (tests only)
 /// - `cache_clear()` - Clear cache (tests only)
-static NATIVE_CACHE: std::sync::LazyLock<DashMap<ClassHash, (Arc<NativeCompiledClassV1>, Instant)>> =
+static NATIVE_CACHE: std::sync::LazyLock<DashMap<ClassHash, (NativeCompiledClass, Instant)>> =
     std::sync::LazyLock::new(DashMap::new);
 
 /// Check if a class hash exists in the memory cache.
@@ -60,13 +59,13 @@ pub(crate) fn cache_contains(class_hash: &ClassHash) -> bool {
 ///
 /// This is used internally by cache operations. External code should use
 /// `cache_compiled_native_class()` or other high-level functions.
-pub(crate) fn cache_insert(class_hash: ClassHash, native_class: Arc<NativeCompiledClassV1>, access_time: Instant) {
+pub(crate) fn cache_insert(class_hash: ClassHash, native_class: NativeCompiledClass, access_time: Instant) {
     NATIVE_CACHE.insert(class_hash, (native_class, access_time));
 }
 
 /// Get a class from cache (for tests only).
 #[cfg(test)]
-pub(crate) fn cache_get(class_hash: &ClassHash) -> Option<(Arc<NativeCompiledClassV1>, Instant)> {
+pub(crate) fn cache_get(class_hash: &ClassHash) -> Option<(NativeCompiledClass, Instant)> {
     NATIVE_CACHE.get(class_hash).map(|e| e.value().clone())
 }
 
@@ -98,7 +97,11 @@ pub(crate) fn get_native_cache_path(class_hash: &ClassHash, config: &config::Nat
     let filename = format!("{:#x}.so", felt);
     debug_assert!(!filename.contains("..") && !filename.contains("/"));
 
-    config.cache_dir.join(filename)
+    config
+        .execution_config()
+        .expect("get_disk_cache_path should only be called when native execution is enabled")
+        .cache_dir
+        .join(filename)
 }
 
 /// Enforce disk cache size limit by removing least recently accessed files.
@@ -202,7 +205,10 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
 /// Requires config to be passed as a parameter (no global config fallback).
 /// This function is only called when native config is present.
 pub(crate) fn evict_cache_if_needed(config: &config::NativeConfig) {
-    let Some(max_size) = config.max_memory_cache_size else {
+    let exec_config = config
+        .execution_config()
+        .expect("evict_cache_if_needed should only be called when native execution is enabled");
+    let Some(max_size) = exec_config.max_memory_cache_size else {
         // Update cache size metric only, no eviction
         super::metrics::metrics().set_cache_size(cache_len());
         return; // No limit
@@ -301,9 +307,9 @@ pub(crate) fn try_get_from_memory_cache(
             super::metrics::metrics().record_cache_hit_memory();
             super::metrics::metrics().record_cache_lookup_time_memory(lookup_elapsed.as_millis() as u64);
 
-            // Convert Arc<NativeCompiledClassV1> to RunnableCompiledClass
+            // Convert NativeCompiledClass to RunnableCompiledClass
             let conversion_start = Instant::now();
-            let runnable = RunnableCompiledClass::from(cached_class.as_ref().clone());
+            let runnable = cached_class.to_runnable();
             let conversion_elapsed = conversion_start.elapsed();
             let total_elapsed = start.elapsed();
 
@@ -337,14 +343,17 @@ pub(crate) fn try_get_from_memory_cache(
         }
     });
 
-    match rx.recv_timeout(config.memory_cache_timeout) {
+    let exec_config = config
+        .execution_config()
+        .expect("try_get_from_memory_cache should only be called when native execution is enabled");
+    match rx.recv_timeout(exec_config.memory_cache_timeout) {
         Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => {
             super::metrics::metrics().record_cache_memory_timeout();
             tracing::warn!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
-                timeout_ms = config.memory_cache_timeout.as_millis(),
+                timeout_ms = exec_config.memory_cache_timeout.as_millis(),
                 "memory_cache_lookup_timeout"
             );
             // Don't wait for thread - it will be cleaned up when process exits
@@ -527,7 +536,10 @@ pub(crate) fn try_get_from_disk_cache(
         return Ok(None);
     }
 
-    match try_load_executor_with_timeout(&path, config.disk_cache_load_timeout)? {
+    let exec_config = config
+        .execution_config()
+        .expect("try_get_from_disk_cache should only be called when native execution is enabled");
+    match try_load_executor_with_timeout(&path, exec_config.disk_cache_load_timeout)? {
         Some(executor) => {
             // Mark this file as recently accessed by updating its modification time
             // This helps the cache eviction system know which files are actively being used
@@ -567,20 +579,18 @@ pub(crate) fn try_get_from_disk_cache(
             let convert_elapsed = convert_start.elapsed();
             super::metrics::metrics().record_cache_disk_blockifier_convert_time(convert_elapsed.as_millis() as u64);
 
-            let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
+            let native_class = NativeCompiledClass::new(executor, blockifier_compiled_class);
 
             // Insert first, then evict if needed (reduces lock contention)
             // This matches the old working implementation exactly
-            cache_insert(*class_hash, Arc::new(native_class.clone()), Instant::now());
+            cache_insert(*class_hash, native_class.clone(), Instant::now());
 
             // Evict if cache is full (after insert to reduce contention window)
             evict_cache_if_needed(config);
 
             // Convert to RunnableCompiledClass
-            // Use the original native_class (not the Arc) for conversion
-            // This matches the pattern used in blocking compilation
             let conversion_start = Instant::now();
-            let runnable = RunnableCompiledClass::from(native_class);
+            let runnable = native_class.to_runnable();
             let conversion_elapsed = conversion_start.elapsed();
             let total_elapsed = start.elapsed();
             let cache_size = cache_len();
@@ -614,7 +624,6 @@ mod tests {
     use mp_class::SierraConvertedClass;
     use rstest::rstest;
     use starknet_api::core::ClassHash;
-    use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
     use tempfile::TempDir;
@@ -635,7 +644,7 @@ mod tests {
         crate::test_utils::create_unique_test_class_hash(1)
     }
 
-    // Helper function to create a test NativeCompiledClassV1 from a Sierra class
+    // Helper function to create a test NativeCompiledClass from a Sierra class
     // This compiles a real Sierra class to create valid test data
     // If config is provided, uses get_native_cache_path for consistent path construction
     // Otherwise, uses temp_dir path directly
@@ -645,7 +654,7 @@ mod tests {
         temp_dir: &TempDir,
         class_hash: ClassHash,
         config: Option<&config::NativeConfig>,
-    ) -> Result<Arc<NativeCompiledClassV1>, Box<dyn std::error::Error>> {
+    ) -> Result<NativeCompiledClass, Box<dyn std::error::Error>> {
         // Use get_native_cache_path if config is provided, otherwise construct path from temp_dir
         let so_path = if let Some(config) = config {
             get_native_cache_path(&class_hash, config)
@@ -786,10 +795,10 @@ mod tests {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         // Create config with small cache limit (2 classes)
-        let config = config::NativeConfig::default()
+        let config = config::NativeConfig::builder()
             .with_cache_dir(temp_dir.path().to_path_buf())
-            .with_native_execution(true)
-            .with_max_memory_cache_size(Some(2)); // Limit to 2 classes
+            .with_max_memory_cache_size(Some(2)) // Limit to 2 classes
+            .build();
 
         // Clear cache to start fresh
         cache_clear();
@@ -910,8 +919,7 @@ mod tests {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         // Save to disk to get file size
-        let config =
-            config::NativeConfig::default().with_cache_dir(temp_dir.path().to_path_buf()).with_native_execution(true);
+        let config = config::NativeConfig::builder().with_cache_dir(temp_dir.path().to_path_buf()).build();
 
         // Create first file to get a baseline size
         let class_hash_1 = create_unique_test_class_hash();
@@ -935,10 +943,10 @@ mod tests {
         // This ensures file_1 alone is enough to bring us under limit
         let max_disk_size = file_size * 2 + file_size / 2; // Allows 2 files + half a file
 
-        let config_with_limit = config::NativeConfig::default()
+        let config_with_limit = config::NativeConfig::builder()
             .with_cache_dir(temp_dir.path().to_path_buf())
-            .with_native_execution(true)
-            .with_max_disk_cache_size(Some(max_disk_size));
+            .with_max_disk_cache_size(Some(max_disk_size))
+            .build();
 
         // Create and save second class
         let class_hash_2 = create_unique_test_class_hash();
@@ -1028,7 +1036,8 @@ mod tests {
         assert!(file_1_modified < file_3_modified, "File 1 should be older than file 3 (will be evicted first)");
 
         // Trigger eviction with the configured limit
-        enforce_disk_cache_limit(&config_with_limit.cache_dir, config_with_limit.max_disk_cache_size)
+        let exec_config = config_with_limit.execution_config().expect("test should use enabled config");
+        enforce_disk_cache_limit(&exec_config.cache_dir, exec_config.max_disk_cache_size)
             .expect("Disk cache eviction should succeed");
 
         // Verify file_1 (oldest, LRU) was completely deleted

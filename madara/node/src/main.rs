@@ -231,7 +231,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Setup: validate, initialize semaphore, and log configuration
     // Note: Validation happens inside setup_and_log() via NativeConfig::validate()
-    mc_cairo_native::config::setup_and_log(&cairo_native_config)
+    mc_class_exec::config::setup_and_log(&cairo_native_config)
         .map_err(|e| anyhow::anyhow!("Cairo Native configuration setup failed: {}", e))?;
 
     // ===================================================================== //

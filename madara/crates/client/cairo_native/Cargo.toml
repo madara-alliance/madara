@@ -1,6 +1,6 @@
 [package]
-description = "Cairo Native execution and compilation for Madara"
-name = "mc-cairo-native"
+description = "Contract class execution for Madara - supports both Cairo Native (AOT compiled) and Cairo VM execution"
+name = "mc-class-exec"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true

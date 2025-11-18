@@ -28,7 +28,7 @@
 //! Use `metrics()` to get the global metrics instance.
 //!
 //! ```rust
-//! use mc_cairo_native::metrics::metrics;
+//! use mc_class_exec::metrics::metrics;
 //!
 //! metrics().record_cache_hit_memory();
 //! ```
@@ -665,7 +665,7 @@ pub fn metrics() -> &'static NativeMetrics {
 /// Usage:
 ///
 /// ```rust
-/// use mc_cairo_native::metrics::CompilationTimer;
+/// use mc_class_exec::metrics::CompilationTimer;
 ///
 /// let timer = CompilationTimer::new();
 /// // ... compilation happens ...

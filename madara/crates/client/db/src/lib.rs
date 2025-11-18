@@ -119,7 +119,7 @@ use crate::rocksdb::RocksDBStorage;
 use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
-use mc_cairo_native::config::NativeConfig;
+use mc_class_exec::config::NativeConfig;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
 use mp_block::header::CustomHeader;
@@ -431,8 +431,8 @@ impl MadaraBackend<RocksDBStorage> {
         let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).unwrap();
         // For tests, use default (disabled) Cairo Native config (no native execution)
         // Initialize compilation semaphore for tests (required even if native execution is disabled)
-        let test_config = mc_cairo_native::config::NativeConfig::new();
-        mc_cairo_native::init_compilation_semaphore(test_config.max_concurrent_compilations);
+        let test_config = mc_class_exec::config::NativeConfig::new();
+        mc_class_exec::init_compilation_semaphore(test_config.max_concurrent_compilations);
         let cairo_native_config = Arc::new(test_config);
         let mut backend = Self::new_and_init(db, chain_config, Default::default(), cairo_native_config).unwrap();
         backend._temp_dir = Some(temp_dir);

@@ -5,6 +5,7 @@
 use blockifier::execution::contract_class::RunnableCompiledClass;
 use cairo_vm::types::errors::program_errors::ProgramError;
 use mp_convert::ToFelt;
+use serde::de::Error as _;
 use starknet_api::contract_class::ContractClass as ApiContractClass;
 use starknet_api::core::ClassHash;
 use std::sync::Arc;
@@ -32,12 +33,12 @@ pub(crate) fn handle_sierra_class(
     tracing::debug!(
         target: "madara_cairo_native",
         class_hash = %format!("{:#x}", class_hash),
-        native_enabled = config.enable_native_execution,
+        native_enabled = config.is_enabled(),
         "handle_sierra_class"
     );
 
     // If native execution is disabled, use VM immediately
-    if !config.enable_native_execution {
+    if !config.is_enabled() {
         return handle_native_disabled(class_hash, compiled, info);
     }
 
@@ -126,30 +127,102 @@ fn try_cache_lookup(
     }
 }
 
+/// Waits for compilation to complete by polling the cache.
+///
+/// This helper function polls the cache at regular intervals until:
+/// - The class appears in cache (success)
+/// - Compilation fails (error)
+/// - Timeout is reached (error)
+///
+/// Returns the compiled class if found, or an error if compilation failed or timed out.
+fn wait_for_compilation_completion(
+    class_hash: &ClassHash,
+    sierra: &SierraConvertedClass,
+    config: &Arc<config::NativeConfig>,
+    start: Instant,
+    timeout: std::time::Duration,
+    poll_interval: std::time::Duration,
+) -> Result<RunnableCompiledClass, ProgramError> {
+    let deadline = start + timeout;
+
+    loop {
+        // Check timeout first
+        let now = Instant::now();
+        if now > deadline {
+            let elapsed = now.duration_since(start);
+            tracing::warn!(
+                target: "madara_cairo_native",
+                class_hash = %format!("{:#x}", class_hash.to_felt()),
+                elapsed_secs = elapsed.as_secs(),
+                timeout_secs = timeout.as_secs(),
+                "compilation_blocking_timeout"
+            );
+            return Err(ProgramError::Parse(serde_json::Error::custom(format!(
+                "Compilation timeout after {:?} for class hash {:#x}",
+                timeout,
+                class_hash.to_felt()
+            ))));
+        }
+
+        // Check if compilation is still in progress
+        // Use get_compilation_lock to check if compilation is in progress (reuses the lock check logic)
+        let compilation_lock = compilation::get_compilation_lock(class_hash);
+        if compilation_lock.is_none() {
+            // Compilation completed - try to get from cache (reuse existing cache lookup logic)
+            if let Some(cached) = try_cache_lookup(class_hash, sierra, start, config) {
+                let conversion_start = Instant::now();
+                let conversion_elapsed = conversion_start.elapsed();
+                let total_elapsed = now.duration_since(start);
+                super::metrics::metrics().record_compilation_blocking_complete();
+                super::metrics::metrics()
+                    .record_compilation_blocking_conversion_time(conversion_elapsed.as_millis() as u64);
+                tracing::debug!(
+                    target: "madara_cairo_native",
+                    class_hash = %format!("{:#x}", class_hash.to_felt()),
+                    elapsed = ?total_elapsed,
+                    elapsed_ms = total_elapsed.as_millis(),
+                    conversion_ms = conversion_elapsed.as_millis(),
+                    "compilation_blocking_complete"
+                );
+                return Ok(cached);
+            }
+
+            // Compilation finished but not in cache - check if it failed
+            if compilation::has_failed_compilation(class_hash) {
+                let elapsed = now.duration_since(start);
+                tracing::warn!(
+                    target: "madara_cairo_native",
+                    class_hash = %format!("{:#x}", class_hash.to_felt()),
+                    elapsed_secs = elapsed.as_secs(),
+                    "compilation_blocking_failed"
+                );
+                return Err(ProgramError::Parse(serde_json::Error::custom(format!(
+                    "Compilation failed for class hash {:#x}",
+                    class_hash.to_felt()
+                ))));
+            }
+        }
+
+        // Wait before next poll
+        std::thread::sleep(poll_interval);
+    }
+}
+
 /// Handles compilation in blocking mode.
 ///
-/// Compiles synchronously and returns the native class, or fails if compilation fails.
+/// In blocking mode, this function waits for compilation to complete rather than falling back to VM.
+/// - If compilation is already in progress (from async mode), it waits for it to complete.
+/// - Otherwise, it starts compilation synchronously and waits for it to finish.
 ///
-/// **Concurrent Compilation Protection**: If compilation is already in progress (from async mode),
-/// this function will fall back to VM execution rather than starting a duplicate compilation.
-/// This prevents race conditions and ensures consistent behavior.
+/// **Concurrent Compilation Protection**: Uses atomic entry API to prevent duplicate compilations.
+/// This ensures only one compilation happens per class hash.
 fn handle_blocking_compilation(
     class_hash: &ClassHash,
     sierra: &SierraConvertedClass,
     config: &Arc<config::NativeConfig>,
     start: Instant,
 ) -> Result<RunnableCompiledClass, ProgramError> {
-    // Check if compilation is already in progress (from async mode)
-    // In blocking mode, we fall back to VM rather than waiting or starting duplicate compilation
-    if compilation::is_compilation_in_progress(class_hash) {
-        tracing::debug!(
-            target: "madara_cairo_native",
-            class_hash = %format!("{:#x}", class_hash.to_felt()),
-            "compilation_already_in_progress_fallback_to_vm"
-        );
-        // Fall back to VM execution - compilation will complete in background
-        return handle_native_disabled(&class_hash.to_felt(), &sierra.compiled, &sierra.info);
-    }
+    use std::time::Duration;
 
     super::metrics::metrics().record_compilation_blocking_miss();
     tracing::debug!(
@@ -158,10 +231,57 @@ fn handle_blocking_compilation(
         "compilation_blocking_miss"
     );
 
+    // Get timeout and poll interval from config
+    let exec_config = config
+        .execution_config()
+        .expect("handle_blocking_compilation should only be called when native execution is enabled");
+    let compilation_timeout = exec_config.compilation_timeout;
+    let poll_interval = Duration::from_millis(config::DEFAULT_COMPILATION_POLL_INTERVAL_MS);
+
+    // Check if compilation is already in progress
+    if compilation::is_compilation_in_progress(class_hash) {
+        // Compilation already in progress - wait for it to complete
+        tracing::debug!(
+            target: "madara_cairo_native",
+            class_hash = %format!("{:#x}", class_hash.to_felt()),
+            timeout_secs = compilation_timeout.as_secs(),
+            poll_interval_ms = poll_interval.as_millis(),
+            "compilation_already_in_progress_waiting"
+        );
+        return wait_for_compilation_completion(class_hash, sierra, config, start, compilation_timeout, poll_interval);
+    }
+
+    // No compilation in progress - try to start it using spawn_compilation_if_needed
+    // This ensures atomic check and prevents race conditions
+    // Note: spawn_compilation_if_needed requires Tokio runtime; if not available, it returns early
+    compilation::spawn_compilation_if_needed(*class_hash, Arc::new(sierra.clone()), config.clone());
+
+    // Check if compilation actually started (spawn_compilation_if_needed may return early if no runtime)
+    if compilation::is_compilation_in_progress(class_hash) {
+        // Compilation started - wait for it to complete
+        tracing::debug!(
+            target: "madara_cairo_native",
+            class_hash = %format!("{:#x}", class_hash.to_felt()),
+            timeout_secs = compilation_timeout.as_secs(),
+            poll_interval_ms = poll_interval.as_millis(),
+            "compilation_blocking_waiting"
+        );
+        return wait_for_compilation_completion(class_hash, sierra, config, start, compilation_timeout, poll_interval);
+    }
+
+    // No Tokio runtime available - fall back to synchronous compilation
+    // This handles the case where spawn_compilation_if_needed couldn't start async compilation
+    tracing::debug!(
+        target: "madara_cairo_native",
+        class_hash = %format!("{:#x}", class_hash.to_felt()),
+        "compilation_blocking_no_runtime_fallback_to_sync"
+    );
+
+    // Use synchronous compilation directly
     match compilation::compile_native_blocking(*class_hash, sierra, config.as_ref()) {
         Ok(native_class) => {
             let conversion_start = Instant::now();
-            let runnable = RunnableCompiledClass::from(native_class.as_ref().clone());
+            let runnable = native_class.to_runnable();
             let conversion_elapsed = conversion_start.elapsed();
             let total_elapsed = start.elapsed();
             super::metrics::metrics().record_compilation_blocking_complete();
@@ -178,26 +298,17 @@ fn handle_blocking_compilation(
             Ok(runnable)
         }
         Err(e) => {
-            // In blocking mode, compilation failures fall back to VM execution
-            // This ensures transactions don't fail due to compilation issues
-            // The error is logged but VM fallback is used to maintain system availability
-            //
-            // **Production Behavior**: When compilation fails in blocking mode:
-            // - The transaction does NOT fail
-            // - VM execution is used as fallback
-            // - The compilation error is logged for debugging
-            // - Subsequent requests will retry compilation (if retry is enabled)
-            // - This ensures system availability even when native compilation has issues
             tracing::warn!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
                 error = %e,
-                "compilation_blocking_failed_fallback_to_vm"
+                "compilation_blocking_failed"
             );
-            // Record VM fallback metric before falling back to VM
-            super::metrics::metrics().record_vm_fallback();
-            // Fall back to VM execution instead of failing the transaction
-            handle_native_disabled(&class_hash.to_felt(), &sierra.compiled, &sierra.info)
+            Err(ProgramError::Parse(serde_json::Error::custom(format!(
+                "Compilation failed for class hash {:#x}: {}",
+                class_hash.to_felt(),
+                e
+            ))))
         }
     }
 }
@@ -225,8 +336,11 @@ fn handle_async_compilation(
     let is_failed = compilation::has_failed_compilation(class_hash);
 
     // Handle retry logic based on config
+    let exec_config = config
+        .execution_config()
+        .expect("handle_async_compilation should only be called when native execution is enabled");
     if is_failed {
-        if config.enable_retry {
+        if exec_config.enable_retry {
             // Retry enabled: remove from failed list and retry compilation
             compilation::remove_failed_compilation(class_hash);
             tracing::debug!(
@@ -322,7 +436,7 @@ mod tests {
     // Import test utilities from test_utils
     // Note: assert_counters is a macro exported at crate root due to #[macro_export]
     use crate::assert_counters;
-    use crate::test_utils::{assert_is_native_class, assert_is_vm_class};
+    use crate::test_utils::assert_is_vm_class;
 
     use crate::metrics::test_counters;
     use mp_class::SierraConvertedClass;
@@ -495,15 +609,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_sierra_class_native_disabled(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
+    fn test_handle_sierra_class_native_disabled(sierra_class: SierraConvertedClass, _temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         let class_hash = create_unique_test_class_hash();
 
         // Create config with native disabled
-        let config = Arc::new(
-            config::NativeConfig::default().with_native_execution(false).with_cache_dir(temp_dir.path().to_path_buf()),
-        );
+        let config = Arc::new(config::NativeConfig::Disabled);
 
         let _metrics_guard = test_counters::acquire_and_reset();
 
@@ -577,10 +689,8 @@ mod tests {
         assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
 
         // Assert that the returned class IS Cairo Native (not VM)
-        assert!(
-            matches!(runnable, RunnableCompiledClass::V1Native(_)),
-            "Returned class should be Cairo Native after blocking compilation (not VM)"
-        );
+        use crate::test_utils::assert_is_native_class;
+        assert_is_native_class(&runnable);
         // Compilation should be complete, so not in progress
         assert!(
             !compilation::is_compilation_in_progress(&class_hash),
@@ -790,11 +900,11 @@ mod tests {
 
         // Create config with very short timeout to force compilation failure
         let config = Arc::new(
-            config::NativeConfig::default()
-                .with_native_execution(true)
+            config::NativeConfig::builder()
                 .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Blocking)
-                .with_compilation_timeout(Duration::from_millis(1)), // Very short timeout
+                .with_compilation_timeout(Duration::from_millis(1)) // Very short timeout
+                .build(),
         );
 
         // Verify caches don't have our unique class_hash
@@ -817,18 +927,20 @@ mod tests {
             config.clone(),
         );
 
-        // In blocking mode, compilation failures should fall back to VM (not fail transaction)
-        // However, with very short timeout, it might return error - check both cases
-        match result {
-            Ok(runnable) => {
-                // Fallback to VM occurred
-                assert_is_vm_class(&runnable);
-            }
-            Err(_) => {
-                // Error returned (shouldn't happen in production, but test uses extreme timeout)
-                // In production, blocking mode failures fall back to VM
-            }
-        }
+        // In blocking mode, compilation failures/timeouts should return an error (not fall back to VM)
+        // This is the key difference from async mode - blocking mode waits and fails if compilation fails
+        assert!(
+            result.is_err(),
+            "Blocking mode should return error on compilation timeout/failure, not fall back to VM"
+        );
+        let error = result.unwrap_err();
+        // Verify error message contains timeout or compilation failure indication
+        let error_msg = format!("{:?}", error);
+        assert!(
+            error_msg.contains("timeout") || error_msg.contains("Compilation") || error_msg.contains("failed"),
+            "Error message should indicate compilation timeout or failure: {}",
+            error_msg
+        );
 
         // Expected: compilation timeout/failure in blocking mode
         // Verify class is not cached after failure
@@ -844,6 +956,7 @@ mod tests {
             CACHE_MEMORY_MISS: 1,
             CACHE_DISK_MISS: 1,
             COMPILATIONS_STARTED: 1,
+            VM_FALLBACKS: 0, // No VM fallback in blocking mode
         );
         use std::sync::atomic::Ordering;
         let timeout_or_failed = test_counters::COMPILATIONS_TIMEOUT.load(Ordering::Relaxed)
@@ -873,11 +986,11 @@ mod tests {
         // Configure an extremely short memory cache timeout to reliably trigger timeout
         // 1 nanosecond timeout ensures timeout occurs since conversion operations take longer
         let config = Arc::new(
-            config::NativeConfig::default()
-                .with_native_execution(true)
+            config::NativeConfig::builder()
                 .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Async)
-                .with_memory_cache_timeout(Duration::from_nanos(1)), // Extremely short timeout to force timeout
+                .with_memory_cache_timeout(Duration::from_nanos(1)) // Extremely short timeout to force timeout
+                .build(),
         );
 
         // Verify memory cache doesn't have our unique class_hash
@@ -938,11 +1051,11 @@ mod tests {
         // Configure an extremely short disk cache timeout to reliably trigger timeout
         // 1 microsecond timeout ensures timeout occurs since disk I/O operations take longer
         let config = Arc::new(
-            config::NativeConfig::default()
-                .with_native_execution(true)
+            config::NativeConfig::builder()
                 .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Async)
-                .with_disk_cache_load_timeout(Duration::from_micros(1)), // Extremely short timeout to force timeout
+                .with_disk_cache_load_timeout(Duration::from_micros(1)) // Extremely short timeout to force timeout
+                .build(),
         );
 
         // Verify memory cache doesn't have our unique class_hash
@@ -1033,7 +1146,7 @@ mod tests {
         }
 
         // Wait a short time to allow all requests to process
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Verify only one compilation was started
         assert_counters!(
@@ -1084,14 +1197,15 @@ mod tests {
 
         let class_hash = create_unique_test_class_hash();
         let config = Arc::new(
-            config::NativeConfig::default()
-                .with_native_execution(true)
+            config::NativeConfig::builder()
                 .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Async)
                 .with_compilation_timeout(Duration::from_secs(30))
-                .with_enable_retry(true),
+                .with_enable_retry(true)
+                .build(),
         );
-        compilation::init_compilation_semaphore(config.max_concurrent_compilations);
+        let exec_config = config.execution_config().expect("test should use enabled config");
+        compilation::init_compilation_semaphore(exec_config.max_concurrent_compilations);
 
         // Clear any existing state
         cache::cache_remove(&class_hash);
@@ -1158,14 +1272,15 @@ mod tests {
 
         let class_hash = create_unique_test_class_hash();
         let config = Arc::new(
-            config::NativeConfig::default()
-                .with_native_execution(true)
+            config::NativeConfig::builder()
                 .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Async)
                 .with_compilation_timeout(Duration::from_secs(30))
-                .with_enable_retry(false),
+                .with_enable_retry(false)
+                .build(),
         );
-        compilation::init_compilation_semaphore(config.max_concurrent_compilations);
+        let exec_config = config.execution_config().expect("test should use enabled config");
+        compilation::init_compilation_semaphore(exec_config.max_concurrent_compilations);
 
         // Clear any existing state
         cache::cache_remove(&class_hash);
@@ -1232,22 +1347,23 @@ mod tests {
         // In a real scenario, compilations usually complete quickly, so we use 1ms to force timeout
         let configured_timeout = Duration::from_millis(1);
         let config = Arc::new(
-            config::NativeConfig::default()
-                .with_native_execution(true)
+            config::NativeConfig::builder()
                 .with_cache_dir(temp_dir.path().to_path_buf())
                 .with_compilation_mode(config::NativeCompilationMode::Blocking)
-                .with_compilation_timeout(configured_timeout),
+                .with_compilation_timeout(configured_timeout)
+                .build(),
         );
 
         // Verify the config has the correct timeout value
+        let exec_config = config.execution_config().expect("test should use enabled config");
         assert_eq!(
-            config.compilation_timeout, configured_timeout,
+            exec_config.compilation_timeout, configured_timeout,
             "Config should have the configured timeout value of {:?}",
             configured_timeout
         );
 
         // Attempt compilation with very short timeout - should timeout
-        // In blocking mode, timeouts fall back to VM execution (production behavior)
+        // In blocking mode, timeouts should return an error (not fall back to VM)
         let result = handle_sierra_class(
             &sierra_class,
             &class_hash.to_felt(),
@@ -1256,16 +1372,95 @@ mod tests {
             config.clone(),
         );
 
-        // In blocking mode, compilation failures (including timeouts) fall back to VM
-        // This ensures transactions don't fail due to compilation issues
-        assert!(result.is_ok(), "Should fall back to VM when compilation times out");
+        // In blocking mode, compilation timeouts should return an error (not fall back to VM)
+        // This is the key difference from async mode - blocking mode waits and fails if compilation times out
+        assert!(result.is_err(), "Blocking mode should return error on compilation timeout, not fall back to VM");
+        let error = result.unwrap_err();
+        // Verify error message contains timeout indication
+        let error_msg = format!("{:?}", error);
+        assert!(
+            error_msg.contains("timeout") || error_msg.contains("Timeout"),
+            "Error message should indicate compilation timeout: {}",
+            error_msg
+        );
+
+        // Verify timeout metrics were recorded (no VM fallback in blocking mode)
+        assert_counters!(
+            COMPILATIONS_TIMEOUT: 1,
+            VM_FALLBACKS: 0, // No VM fallback in blocking mode
+        );
+    }
+
+    /// Tests that async mode falls back to VM on compilation timeout/failure.
+    ///
+    /// This test verifies the key difference between async and blocking modes:
+    /// - Async mode: Falls back to VM when compilation fails or times out
+    /// - Blocking mode: Returns error when compilation fails or times out
+    #[rstest]
+    #[tokio::test]
+    async fn test_handle_sierra_class_async_compilation_failure_fallback_to_vm(
+        sierra_class: SierraConvertedClass,
+        temp_dir: TempDir,
+    ) {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let class_hash = create_unique_test_class_hash();
+
+        // Clear any existing state
+        cache::cache_remove(&class_hash);
+        compilation::remove_compilation_in_progress(&class_hash);
+        compilation::remove_failed_compilation(&class_hash);
+
+        // Create config with very short timeout to force compilation failure
+        let config = Arc::new(
+            config::NativeConfig::builder()
+                .with_cache_dir(temp_dir.path().to_path_buf())
+                .with_compilation_mode(config::NativeCompilationMode::Async)
+                .with_compilation_timeout(Duration::from_millis(1)) // Very short timeout
+                .build(),
+        );
+
+        // Verify caches don't have our unique class_hash
+        assert!(!cache::cache_contains(&class_hash), "Class should not be in memory cache initially");
+        assert!(
+            !compilation::is_compilation_in_progress(&class_hash),
+            "Class should not be in compilation_in_progress initially"
+        );
+
+        // In async mode, compilation timeout/failure should fall back to VM (not return error)
+        let result = handle_sierra_class(
+            &sierra_class,
+            &class_hash.to_felt(),
+            &sierra_class.compiled,
+            &sierra_class.info,
+            config.clone(),
+        );
+
+        // Async mode should return VM class immediately (fallback), not error
+        assert!(result.is_ok(), "Async mode should fall back to VM on compilation timeout/failure, not return error");
         let runnable = result.unwrap();
         assert_is_vm_class(&runnable); // Verify it's VM class, not Native
 
-        // Verify timeout metrics were recorded (timeout was detected even though we fell back to VM)
-        assert_counters!(
-            COMPILATIONS_TIMEOUT: 1,
-            VM_FALLBACKS: 1,
+        // Wait a bit for compilation to complete/fail in background
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Verify compilation was attempted and failed/timed out
+        assert!(
+            compilation::has_failed_compilation(&class_hash),
+            "Class should be marked as failed compilation in async mode"
         );
+
+        // Metrics assertions - async mode falls back to VM
+        assert_counters!(
+            CACHE_MEMORY_MISS: 1,
+            CACHE_DISK_MISS: 1,
+            COMPILATIONS_STARTED: 1,
+            VM_FALLBACKS: 1, // VM fallback occurred in async mode
+        );
+        use std::sync::atomic::Ordering;
+        let timeout_or_failed = test_counters::COMPILATIONS_TIMEOUT.load(Ordering::Relaxed)
+            + test_counters::COMPILATIONS_FAILED.load(Ordering::Relaxed);
+        assert_eq!(timeout_or_failed, 1, "Should have exactly one compilation timeout or failure");
     }
 }

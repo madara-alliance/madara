@@ -3,7 +3,6 @@
 //! This module handles the compilation of Sierra classes to native code,
 //! including blocking and async modes, retry logic, and concurrency control.
 
-use blockifier::execution::native::contract_class::NativeCompiledClassV1;
 use cairo_native::executor::AotContractExecutor;
 use dashmap::DashMap;
 use mp_convert::ToFelt;
@@ -15,6 +14,7 @@ use tokio::sync::RwLock;
 
 use super::config;
 use super::error::NativeCompilationError;
+use super::native_class::NativeCompiledClass;
 use mp_class::SierraConvertedClass;
 
 use super::cache;
@@ -43,20 +43,27 @@ pub(crate) fn is_compilation_in_progress(class_hash: &ClassHash) -> bool {
 
 /// Mark compilation as in progress and return the lock (internal use only).
 ///
-/// This is used internally by `spawn_compilation_if_needed`. External code should not
-/// call this directly.
+/// This function atomically checks if compilation is already in progress and marks it if not.
+/// Returns `Some(lock)` if compilation was successfully marked (new compilation started),
+/// or `None` if compilation was already in progress (duplicate request).
+///
+/// This is used internally by `spawn_compilation_if_needed` to prevent duplicate compilations.
 pub(crate) fn mark_compilation_in_progress(class_hash: ClassHash) -> Option<Arc<RwLock<()>>> {
     use dashmap::mapref::entry::Entry;
     use std::sync::Arc;
     use tokio::sync::RwLock;
-
+    
     match COMPILATION_IN_PROGRESS.entry(class_hash) {
         Entry::Vacant(entry) => {
+            // Not compiling - mark as in progress atomically
             let lock = Arc::new(RwLock::new(()));
             entry.insert(lock.clone());
             Some(lock)
         }
-        Entry::Occupied(entry) => Some(entry.get().clone()),
+        Entry::Occupied(_) => {
+            // Already compiling - return None to indicate duplicate
+            None
+        }
     }
 }
 
@@ -73,8 +80,10 @@ pub(crate) fn insert_compilation_in_progress(class_hash: ClassHash) {
     COMPILATION_IN_PROGRESS.insert(class_hash, Arc::new(RwLock::new(())));
 }
 
-/// Get compilation lock if compilation is in progress (for waiting in blocking mode).
-#[cfg(test)]
+/// Get compilation lock if compilation is in progress.
+///
+/// This can be used to wait on the compilation lock in blocking mode.
+/// Returns `Some(lock)` if compilation is in progress, `None` otherwise.
 pub(crate) fn get_compilation_lock(class_hash: &ClassHash) -> Option<Arc<RwLock<()>>> {
     COMPILATION_IN_PROGRESS.get(class_hash).map(|e| e.value().clone())
 }
@@ -334,27 +343,28 @@ fn cache_compiled_native_class(
     executor: AotContractExecutor,
     blockifier_compiled_class: blockifier::execution::contract_class::CompiledClassV1,
     config: &config::NativeConfig,
-) -> Arc<NativeCompiledClassV1> {
-    let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
+) -> NativeCompiledClass {
+    let native_class = NativeCompiledClass::new(executor, blockifier_compiled_class);
 
-    let arc_native = Arc::new(native_class);
     // Inserted first, then evicted if needed (reduces lock contention)
-    cache::cache_insert(class_hash, arc_native.clone(), Instant::now());
+    cache::cache_insert(class_hash, native_class.clone(), Instant::now());
 
     // Eviction performed if cache is full (after insert to reduce contention window)
     cache::evict_cache_if_needed(config);
 
     // Disk cache limit enforced after successful compilation
-    if let Err(e) = cache::enforce_disk_cache_limit(&config.cache_dir, config.max_disk_cache_size) {
+    let exec_config =
+        config.execution_config().expect("finish_compilation should only be called when native execution is enabled");
+    if let Err(e) = cache::enforce_disk_cache_limit(&exec_config.cache_dir, exec_config.max_disk_cache_size) {
         tracing::warn!(
             target: "madara_cairo_native",
-            cache_dir = %config.cache_dir.display(),
+            cache_dir = %exec_config.cache_dir.display(),
             error = %e,
             "disk_cache_enforcement_failed"
         );
     }
 
-    arc_native
+    native_class
 }
 
 /// Compile a class synchronously (blocking) and return the result.
@@ -374,7 +384,7 @@ pub(crate) fn compile_native_blocking(
     class_hash: ClassHash,
     sierra: &SierraConvertedClass,
     config: &config::NativeConfig,
-) -> Result<Arc<NativeCompiledClassV1>, NativeCompilationError> {
+) -> Result<NativeCompiledClass, NativeCompilationError> {
     let path = cache::get_native_cache_path(&class_hash, config);
 
     // Ensure directory exists
@@ -395,7 +405,10 @@ pub(crate) fn compile_native_blocking(
     );
 
     // Compilation executed - timer consumed by execute_native_compilation
-    let executor = match execute_native_compilation(sierra, &path, config.compilation_timeout, timer) {
+    let exec_config = config
+        .execution_config()
+        .expect("compile_native_blocking should only be called when native execution is enabled");
+    let executor = match execute_native_compilation(sierra, &path, exec_config.compilation_timeout, timer) {
         Ok(executor) => executor,
         Err(e) => {
             // Timer consumed in execute_native_compilation, metrics already recorded
@@ -446,7 +459,10 @@ fn handle_async_compilation_success(
             );
             timer.finish(false, false);
             // Mark this class as failed (with timestamp for eviction)
-            evict_failed_compilations_if_needed(config.max_failed_compilations);
+            let exec_config = config
+                .execution_config()
+                .expect("handle_async_compilation_success should only be called when native execution is enabled");
+            evict_failed_compilations_if_needed(exec_config.max_failed_compilations);
             FAILED_COMPILATIONS.insert(class_hash, Instant::now());
             return;
         }
@@ -507,7 +523,10 @@ fn handle_async_compilation_failure(
     }
 
     // Mark this class as failed (with timestamp for eviction)
-    evict_failed_compilations_if_needed(config.max_failed_compilations);
+    let exec_config = config
+        .execution_config()
+        .expect("handle_async_compilation_failure should only be called when native execution is enabled");
+    evict_failed_compilations_if_needed(exec_config.max_failed_compilations);
     mark_failed_compilation(class_hash, Instant::now());
 }
 
@@ -537,175 +556,175 @@ pub(crate) fn spawn_compilation_if_needed(
     sierra: Arc<SierraConvertedClass>,
     config: Arc<config::NativeConfig>,
 ) {
-    use dashmap::mapref::entry::Entry;
+    // Use mark_compilation_in_progress to atomically check and mark compilation in progress
+    // This reuses the atomic entry logic and prevents duplicate compilations
+    let lock = match mark_compilation_in_progress(class_hash) {
+        Some(lock) => {
+            // Successfully marked as in progress - proceed with compilation
+            lock
+        }
+        None => {
+            // Already compiling (entry was occupied) - nothing to do
+            return;
+        }
+    };
+    
+    // Lock is now held, proceed with compilation setup
+    // Note: We don't need to wait on the lock here since this is async compilation
+    let _ = lock;
 
-    // Atomic check-and-insert to prevent race conditions
-    match COMPILATION_IN_PROGRESS.entry(class_hash) {
-        Entry::Vacant(entry) => {
-            // Not compiling - mark as in progress atomically
-            use std::sync::Arc;
-            use tokio::sync::RwLock;
-            entry.insert(Arc::new(RwLock::new(())));
+    let exec_config = config
+        .execution_config()
+        .expect("spawn_compilation_if_needed should only be called when native execution is enabled");
+    let in_progress_count = get_current_compilations_count();
+    let max_concurrent = exec_config.max_concurrent_compilations;
 
-            let in_progress_count = get_current_compilations_count();
-            let max_concurrent = config.max_concurrent_compilations;
+    tracing::debug!(
+        target: "madara_cairo_native",
+        class_hash = %format!("{:#x}", class_hash.to_felt()),
+        in_progress = in_progress_count,
+        max_concurrent = max_concurrent,
+        "compilation_async_spawning"
+    );
 
+    // Check if we're in a Tokio runtime context
+    // This can be called from blockifier's worker pool threads which don't have a Tokio runtime
+    let handle = match tokio::runtime::Handle::try_current() {
+        Ok(handle) => handle,
+        Err(_) => {
             tracing::debug!(
                 target: "madara_cairo_native",
                 class_hash = %format!("{:#x}", class_hash.to_felt()),
-                in_progress = in_progress_count,
-                max_concurrent = max_concurrent,
-                "compilation_async_spawning"
+                "compilation_async_no_runtime_context"
             );
+            remove_compilation_in_progress(&class_hash);
+            return;
+        }
+    };
 
-            // Check if we're in a Tokio runtime context
-            // This can be called from blockifier's worker pool threads which don't have a Tokio runtime
-            let handle = match tokio::runtime::Handle::try_current() {
-                Ok(handle) => handle,
-                Err(_) => {
-                    tracing::debug!(
-                        target: "madara_cairo_native",
-                        class_hash = %format!("{:#x}", class_hash.to_felt()),
-                        "compilation_async_no_runtime_context"
-                    );
-                    remove_compilation_in_progress(&class_hash);
-                    return;
-                }
-            };
+    let compilation_timeout = exec_config.compilation_timeout;
 
-            let compilation_timeout = config.compilation_timeout;
-
-            // Spawn background task for native compilation on the detected runtime
-            handle.spawn(async move {
-                // Acquire compilation slot
-                let permit = match try_acquire_compilation_permit() {
-                    Some(permit) => permit,
-                    None => {
-                        tracing::warn!(
-                            target: "madara_cairo_native",
-                            class_hash = %format!("{:#x}", class_hash.to_felt()),
-                            "compilation_async_max_concurrent_reached"
-                        );
-                        remove_compilation_in_progress(&class_hash);
-                        return;
-                    }
-                };
-
-                // Get the lock that was already created above
-                // The entry should always exist here since it was atomically inserted before spawning this task
-                let lock = match COMPILATION_IN_PROGRESS.get(&class_hash) {
-                    Some(entry) => entry.value().clone(),
-                    None => {
-                        // Entry was removed (shouldn't happen, but handle gracefully)
-                        tracing::warn!(
-                            target: "madara_cairo_native",
-                            class_hash = %format!("{:#x}", class_hash.to_felt()),
-                            "compilation_async_entry_missing"
-                        );
-                        drop(permit);
-                        return;
-                    }
-                };
-                let _guard = lock.write().await;
-
-                // Cache checked again in case another task compiled it
-                if cache::cache_contains(&class_hash) {
-                    remove_compilation_in_progress(&class_hash);
-                    drop(permit);
-                    return;
-                }
-
-                let path = cache::get_native_cache_path(&class_hash, &config);
-
-                // Ensure directory exists
-                if let Some(parent) = path.parent() {
-                    if let Err(e) = std::fs::create_dir_all(parent) {
-                        tracing::error!(
-                            target: "madara_cairo_native",
-                            cache_dir = %parent.display(),
-                            error = %e,
-                            "compilation_async_cache_directory_creation_failed"
-                        );
-                        remove_compilation_in_progress(&class_hash);
-                        drop(permit);
-                        return;
-                    }
-                }
-
-                // Execute async compilation
-                let start = Instant::now();
-                let timer = super::metrics::CompilationTimer::new();
-
-                tracing::debug!(
+    // Spawn background task for native compilation on the detected runtime
+    handle.spawn(async move {
+        // Acquire compilation slot
+        let permit = match try_acquire_compilation_permit() {
+            Some(permit) => permit,
+            None => {
+                tracing::warn!(
                     target: "madara_cairo_native",
                     class_hash = %format!("{:#x}", class_hash.to_felt()),
-                    path = %path.display(),
-                    timeout_secs = compilation_timeout.as_secs(),
-                    "compilation_async_start"
+                    "compilation_async_max_concurrent_reached"
                 );
+                remove_compilation_in_progress(&class_hash);
+                return;
+            }
+        };
 
-                // Use existing compile_to_native function in a blocking task with timeout
-                let sierra_clone = sierra.clone();
-                let path_clone = path.clone();
-                let compilation_future = tokio::task::spawn_blocking(move || {
-                    sierra_clone.info.contract_class.compile_to_native(&path_clone)
-                });
+        // Get the lock that was already created above
+        // The entry should always exist here since it was atomically inserted before spawning this task
+        let lock = match COMPILATION_IN_PROGRESS.get(&class_hash) {
+            Some(entry) => entry.value().clone(),
+            None => {
+                // Entry was removed (shouldn't happen, but handle gracefully)
+                tracing::warn!(
+                    target: "madara_cairo_native",
+                    class_hash = %format!("{:#x}", class_hash.to_felt()),
+                    "compilation_async_entry_missing"
+                );
+                drop(permit);
+                return;
+            }
+        };
+        let _guard = lock.write().await;
 
-                let compilation_result = tokio::time::timeout(compilation_timeout, compilation_future).await;
+        // Cache checked again in case another task compiled it
+        if cache::cache_contains(&class_hash) {
+            remove_compilation_in_progress(&class_hash);
+            drop(permit);
+            return;
+        }
 
-                // Only one branch will execute, so moving timer is fine
-                match compilation_result {
-                    Ok(Ok(Ok(executor))) => {
-                        handle_async_compilation_success(class_hash, executor, &sierra, start, timer, &config);
-                    }
-                    Ok(Ok(Err(e))) => {
-                        handle_async_compilation_failure(
-                            class_hash,
-                            "failed",
-                            format!("{:#}", e),
-                            &path,
-                            timer,
-                            false,
-                            &config,
-                        );
-                    }
-                    Ok(Err(e)) => {
-                        handle_async_compilation_failure(
-                            class_hash,
-                            "panic",
-                            format!("{:#}", e),
-                            &path,
-                            timer,
-                            false,
-                            &config,
-                        );
-                    }
-                    Err(_) => {
-                        handle_async_compilation_failure(
-                            class_hash,
-                            "timeout",
-                            format!("Compilation exceeded timeout of {:?}", compilation_timeout),
-                            &path,
-                            timer,
-                            true,
-                            &config,
-                        );
-                    }
-                }
+        let path = cache::get_native_cache_path(&class_hash, &config);
 
+        // Ensure directory exists
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::error!(
+                    target: "madara_cairo_native",
+                    cache_dir = %parent.display(),
+                    error = %e,
+                    "compilation_async_cache_directory_creation_failed"
+                );
                 remove_compilation_in_progress(&class_hash);
                 drop(permit);
-            });
+                return;
+            }
         }
-        Entry::Occupied(_) => {
-            // Already compiling - another thread got there first
-            tracing::debug!(
-                target: "madara_cairo_native",
-                class_hash = %format!("{:#x}", class_hash.to_felt()),
-                "compilation_already_in_progress"
-            );
+
+        // Execute async compilation
+        let start = Instant::now();
+        let timer = super::metrics::CompilationTimer::new();
+
+        tracing::debug!(
+            target: "madara_cairo_native",
+            class_hash = %format!("{:#x}", class_hash.to_felt()),
+            path = %path.display(),
+            timeout_secs = compilation_timeout.as_secs(),
+            "compilation_async_start"
+        );
+
+        // Use existing compile_to_native function in a blocking task with timeout
+        let sierra_clone = sierra.clone();
+        let path_clone = path.clone();
+        let compilation_future = tokio::task::spawn_blocking(move || {
+            sierra_clone.info.contract_class.compile_to_native(&path_clone)
+        });
+
+        let compilation_result = tokio::time::timeout(compilation_timeout, compilation_future).await;
+
+        // Only one branch will execute, so moving timer is fine
+        match compilation_result {
+            Ok(Ok(Ok(executor))) => {
+                handle_async_compilation_success(class_hash, executor, &sierra, start, timer, &config);
+            }
+            Ok(Ok(Err(e))) => {
+                handle_async_compilation_failure(
+                    class_hash,
+                    "failed",
+                    format!("{:#}", e),
+                    &path,
+                    timer,
+                    false,
+                    &config,
+                );
+            }
+            Ok(Err(e)) => {
+                handle_async_compilation_failure(
+                    class_hash,
+                    "panic",
+                    format!("{:#}", e),
+                    &path,
+                    timer,
+                    false,
+                    &config,
+                );
+            }
+            Err(_) => {
+                handle_async_compilation_failure(
+                    class_hash,
+                    "timeout",
+                    format!("Compilation exceeded timeout of {:?}", compilation_timeout),
+                    &path,
+                    timer,
+                    true,
+                    &config,
+                );
+            }
         }
-    }
+
+        remove_compilation_in_progress(&class_hash);
+        drop(permit);
+    });
 }
 
 #[cfg(test)]
@@ -789,6 +808,7 @@ mod tests {
         assert!(COMPILATION_IN_PROGRESS.is_empty(), "All compilations should have completed");
 
         // Verify config has valid max_concurrent_compilations
-        assert!(config.max_concurrent_compilations > 0);
+        let exec_config = config.execution_config().expect("test should use enabled config");
+        assert!(exec_config.max_concurrent_compilations > 0);
     }
 }

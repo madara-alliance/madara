@@ -126,15 +126,18 @@ pub fn create_test_config(
     use std::time::Duration;
 
     // temp_dir.path() already exists (created by TempDir::new())
-    let config = config::NativeConfig::default()
-        .with_native_execution(true)
+    let builder = config::NativeConfig::builder()
         .with_cache_dir(temp_dir.path().to_path_buf())
         .with_compilation_mode(mode.unwrap_or(config::NativeCompilationMode::Async))
         .with_compilation_timeout(Duration::from_secs(30));
 
     if init_semaphore {
-        crate::compilation::init_compilation_semaphore(config.max_concurrent_compilations);
+        // Extract max_concurrent_compilations from builder before building
+        let max_concurrent = builder.max_concurrent_compilations();
+        crate::compilation::init_compilation_semaphore(max_concurrent);
     }
+
+    let config = builder.build();
 
     config
 }
@@ -157,27 +160,22 @@ pub fn create_test_config_arc(
 /// * `so_path` - Path where the compiled .so file should be saved
 ///
 /// # Returns
-/// Returns `Arc<NativeCompiledClassV1>` on success.
+/// Returns `NativeCompiledClass` on success.
 #[cfg(test)]
 pub fn create_native_class_internal(
     sierra: &SierraConvertedClass,
     so_path: &PathBuf,
-) -> Result<
-    std::sync::Arc<blockifier::execution::native::contract_class::NativeCompiledClassV1>,
-    Box<dyn std::error::Error>,
-> {
-    use blockifier::execution::native::contract_class::NativeCompiledClassV1;
-
+) -> Result<crate::native_class::NativeCompiledClass, Box<dyn std::error::Error>> {
     // Compile Sierra to native
     let executor = sierra.info.contract_class.compile_to_native(so_path)?;
 
     // Convert Sierra to blockifier compiled class
     let blockifier_compiled_class = crate::compilation::convert_sierra_to_blockifier_class(sierra)?;
 
-    // Create NativeCompiledClassV1
-    let native_class = NativeCompiledClassV1::new(executor, blockifier_compiled_class);
+    // Create NativeCompiledClass
+    let native_class = crate::native_class::NativeCompiledClass::new(executor, blockifier_compiled_class);
 
-    Ok(Arc::new(native_class))
+    Ok(native_class)
 }
 
 /// Fixture: Provides a compiled Sierra class (compiled once, reused)

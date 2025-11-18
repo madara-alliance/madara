@@ -1,8 +1,8 @@
-//! Cairo Native execution and compilation for Madara
+//! Contract class execution for Madara
 //!
-//! This crate provides Cairo Native execution as an alternative to Cairo VM for executing
-//! Starknet contracts. It implements a multi-tier caching system with compilation management,
-//! error handling, and comprehensive metrics tracking.
+//! This crate provides contract class execution for Madara, supporting both Cairo Native
+//! (AOT compiled) and Cairo VM execution. It implements a multi-tier caching system with
+//! compilation management, error handling, and comprehensive metrics tracking.
 //!
 //! **Important**: Native execution is only enabled when the `--enable-native-execution` CLI flag
 //! is set to `true`. When disabled (default), all contracts use Cairo VM execution regardless
@@ -24,6 +24,7 @@ pub mod config;
 pub mod error;
 pub mod execution;
 pub mod metrics;
+pub mod native_class;
 pub mod to_blockifier;
 
 #[cfg(test)]

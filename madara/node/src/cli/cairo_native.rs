@@ -47,7 +47,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 // Import default constants from the native config module
-use mc_cairo_native::config::{
+use mc_class_exec::config::{
     DEFAULT_CACHE_DIR, DEFAULT_COMPILATION_TIMEOUT_SECS, DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS,
     DEFAULT_DISK_CACHE_SIZE_BYTES, DEFAULT_MAX_CONCURRENT_COMPILATIONS, DEFAULT_MAX_FAILED_COMPILATIONS,
     DEFAULT_MEMORY_CACHE_SIZE, DEFAULT_MEMORY_CACHE_TIMEOUT_MS,
@@ -397,8 +397,8 @@ impl CairoNativeParams {
     /// Validation is performed automatically by `NativeConfig::validate()` which is called
     /// via `setup_and_log()` after conversion. This ensures configuration errors are caught
     /// before the system starts using the configuration.
-    pub fn to_runtime_config(&self) -> mc_cairo_native::config::NativeConfig {
-        use mc_cairo_native::config::NativeCompilationMode;
+    pub fn to_runtime_config(&self) -> mc_class_exec::config::NativeConfig {
+        use mc_class_exec::config::NativeCompilationMode;
 
         // Normalize compilation mode: parse string and convert to enum
         let mode = match self.native_compilation_mode.to_lowercase().as_str() {
@@ -419,7 +419,7 @@ impl CairoNativeParams {
             Some(self.native_max_disk_cache_bytes) // User specified a numeric limit in bytes
         };
 
-        mc_cairo_native::config::NativeConfig::new()
+        mc_class_exec::config::NativeConfig::new()
             .with_native_execution(self.enable_native_execution)
             .with_cache_dir(self.cache_dir())
             .with_max_memory_cache_size(max_memory_cache_size)

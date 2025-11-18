@@ -1,6 +1,6 @@
 #![cfg(test)]
 use crate::{rocksdb::RocksDBConfig, MadaraBackend, MadaraBackendConfig};
-use mc_cairo_native::config::NativeConfig;
+use mc_class_exec::config::NativeConfig;
 use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
 use mp_chain_config::ChainConfig;
 use mp_receipt::{
