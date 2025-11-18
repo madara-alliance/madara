@@ -269,15 +269,14 @@ impl BlockProductionTask {
     /// # Parameters
     ///
     /// * `no_charge_fee`: Determines whether fees are charged during transaction execution.
-    ///   This value is stored and used during re-execution to ensure consistency.
-    ///   Even if the Madara flag changes between shutdown and restart, re-execution will
-    ///   use the same fee charging behavior as the original execution.
+    ///
+    /// # TODO(mohit 18/11/2025): Update the code to use config same as pre-close
     pub fn new(
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
-        no_charge_fee: bool, // Stored to preserve fee charging behavior during re-execution
+        no_charge_fee: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -327,10 +326,10 @@ impl BlockProductionTask {
     ///
     /// # Important Notes
     ///
-    /// - The `charge_fee` flag is determined by `self.no_charge_fee` configuration, ensuring consistency
-    ///   between original execution and re-execution. This preserves the exact execution context,
-    ///   even if the Madara `--no-charge-fee` flag has changed between shutdown and restart.
-    ///   The value stored when `BlockProductionTask` was created is used, not the current flag value.
+    /// - The `charge_fee` flag is determined by `self.no_charge_fee` configuration. Note that `new()` is
+    ///   called every time Madara starts, so there is no guarantee that the `no_charge_fee` value matches
+    ///   the value used during original execution. This is a limitation that should be addressed by storing
+    ///   execution configuration in the database (see TODO in `new()`).
     /// - For L1 handler transactions, `paid_fee_on_l1` is preserved from `PreconfirmedExecutedTransaction`
     ///   (stored during `append_batch`) and used during conversion via `to_validated()`
     /// - Declare transactions may need their `declared_class` fetched from state if not already stored
@@ -500,10 +499,39 @@ impl BlockProductionTask {
         // Execute all transactions
         let execution_results = executor.execute_txs(&blockifier_txs, /* execution_deadline */ None);
 
-        // Check for execution errors (though we don't need to process results, we should check for panics)
-        for result in &execution_results {
-            if let Err(err) = result {
-                tracing::warn!("Transaction execution error during re-execution: {err:?}");
+        // Verify that re-execution produces matching receipts
+        for (i, (result, preconfirmed_tx)) in execution_results.iter().zip(executed_txs.iter()).enumerate() {
+            match result {
+                Ok((exec_info, _state_maps)) => {
+                    // Convert execution info to receipt
+                    let reexecuted_receipt = from_blockifier_execution_info(exec_info, &blockifier_txs[i]);
+
+                    // Compare receipts - they should match exactly
+                    assert_eq!(
+                        reexecuted_receipt.transaction_hash(),
+                        preconfirmed_tx.transaction.receipt.transaction_hash(),
+                        "Re-execution produced different receipt for transaction {} (hash: {:#x})",
+                        i,
+                        preconfirmed_tx.transaction.receipt.transaction_hash()
+                    );
+
+                    assert_eq!(
+                        reexecuted_receipt,
+                        preconfirmed_tx.transaction.receipt,
+                        "Re-execution produced different receipt content for transaction {} (hash: {:#x})",
+                        i,
+                        preconfirmed_tx.transaction.receipt.transaction_hash()
+                    );
+                }
+                Err(err) => {
+                    tracing::warn!("Transaction execution error during re-execution: {err:?}");
+                    // If execution failed, we can't compare receipts, but this is unexpected
+                    anyhow::bail!(
+                        "Transaction {} (hash: {:#x}) failed during re-execution: {err:?}",
+                        i,
+                        preconfirmed_tx.transaction.receipt.transaction_hash()
+                    );
+                }
             }
         }
 
@@ -732,6 +760,11 @@ impl BlockProductionTask {
         // We will then see the anyhow::Ok(()) result in the stop channel, as per the implementation of [`StopErrorReceiver::recv`].
         // Note that for this to work, we need to make sure the `send_batch` channel is never aliased -
         //  otherwise it will never not be closed automatically.
+        //
+        // TODO(mohit 18/11/2025): Handle closing preconfirmed block on graceful shutdown.
+        // When shutting down gracefully, if there's an open preconfirmed block, we should close it using the executor's
+        // current state (by sending CloseBlock command and processing EndBlock message) rather than re-executing.
+        // This avoids unnecessary re-execution since we already have the executor running with the current state.
 
         loop {
             tokio::select! {
