@@ -2,10 +2,10 @@
 
 use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
-use blockifier::{blockifier::transaction_executor::TransactionExecutor, state::state_api::State};
+use blockifier::blockifier::transaction_executor::TransactionExecutor;
 use futures::future::OptionFuture;
 use mc_db::MadaraBackend;
-use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
+use mc_exec::{execution::TxInfo, LayeredStateAdapter};
 use mp_convert::{Felt, ToFelt};
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
@@ -220,29 +220,14 @@ impl ExecutorThread {
             previous_l2_gas_used,
         )?;
 
-        // Create the TransactionExecution, but reuse the layered_state_adapter.
-        let mut executor =
-            self.backend.new_executor_for_block_production(state.state_adaptor, exec_ctx.to_blockifier()?)?;
+        // Create the TransactionExecutor with block_n-10 handling, reusing the layered_state_adapter.
+        let executor = crate::util::create_executor_with_block_n_min_10(
+            &self.backend,
+            &exec_ctx,
+            state.state_adaptor,
+            |block_n| self.wait_for_hash_of_block_min_10(block_n),
+        )?;
 
-        // Prepare the block_n-10 state diff entry on the 0x1 contract.
-        if let Some((block_n_min_10, block_hash_n_min_10)) =
-            self.wait_for_hash_of_block_min_10(exec_ctx.block_number)?
-        {
-            let contract_address = 1u64.into();
-            let key = block_n_min_10.into();
-            executor
-                .block_state
-                .as_mut()
-                .expect("Blockifier block context has been taken")
-                .set_storage_at(contract_address, key, block_hash_n_min_10)
-                .context("Cannot set storage value in cache")?;
-
-            tracing::debug!(
-                "State diff inserted {:#x} {:#x} => {block_hash_n_min_10:#x}",
-                contract_address.to_felt(),
-                key.to_felt()
-            );
-        }
         Ok(ExecutorStateExecuting {
             exec_ctx,
             executor,
