@@ -15,7 +15,7 @@ use itertools::Itertools;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{ error, info, warn};
+use tracing::{error, info, warn};
 
 pub struct UpdateStateJobTrigger;
 

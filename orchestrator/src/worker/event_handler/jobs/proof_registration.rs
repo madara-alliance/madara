@@ -63,10 +63,10 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             .prover_client()
             .submit_l2_query(&task_id, &formatted_proof, proving_metadata.n_steps)
             .await
-            .context(format!(
-                "Failed to submit proof for L2 verification for job_id: {}, task_id: {}",
-                job.internal_id, task_id
-            ))?;
+            .inspect_err(|e| {
+                error!(error = %e, "Failed to submit proof for L2 verification for job {}",
+                job.internal_id);
+            })?;
 
         info!(log_type = "completed", job_id = %job.id, external_id = %external_id, "✅ {:?} job {} processed successfully", JobType::ProofRegistration, internal_id);
         Ok(external_id)
@@ -96,13 +96,17 @@ impl JobHandlerTrait for RegisterProofJobHandler {
         };
 
         debug!(%task_id, "Getting task status from prover client");
-        let task_status =
-            config.prover_client().get_task_status(TaskType::Job, &task_id, fact.clone(), cross_verify).await.context(
-                format!(
-                    "Failed to get task status from prover client for job_id: {}, task_id: {}",
-                    job.internal_id, task_id
-                ),
-            )?;
+        let task_status = config
+            .prover_client()
+            .get_task_status(TaskType::Job, &task_id, fact.clone(), cross_verify)
+            .await
+            .inspect_err(|e| {
+                error!(
+                    error = %e,
+                    "Failed to get task status from prover client for job {}",
+                    job.internal_id
+                )
+            })?;
 
         match task_status {
             TaskStatus::Processing => {
@@ -116,10 +120,9 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             }
             TaskStatus::Succeeded => {
                 if let Some(download_path) = &proving_metadata.download_proof {
-                    let fetched_proof = config.prover_client().get_proof(&task_id).await.context(format!(
-                        "Failed to fetch proof from prover client for job_id: {}, task_id: {}",
-                        job.internal_id, task_id
-                    ))?;
+                    let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
+                        error!(error = %e, "Failed to fetch proof from prover client for job {}", job.internal_id);
+                    })?;
                     debug!("Downloading and storing bridge proof to path: {}", download_path);
                     config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
                 }
