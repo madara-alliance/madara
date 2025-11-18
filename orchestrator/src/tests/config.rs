@@ -157,26 +157,13 @@ pub struct TestConfigBuilderReturns {
 }
 
 /// TestCleanup handles automatic cleanup of test resources when dropped.
-/// This ensures that parallel tests don't leave orphaned resources.
-pub struct TestCleanup {
-    /// Database parameters for cleanup
-    db_params: Option<DatabaseArgs>,
-    /// Queue parameters for cleanup
-    queue_params: Option<QueueArgs>,
-    /// Storage parameters for cleanup
-    storage_params: Option<StorageArgs>,
-    /// Cloud provider for AWS resource cleanup
-    provider_config: Option<Arc<CloudProvider>>,
-}
+/// Currently, cleanup is disabled since LocalStack is ephemeral and will be destroyed after tests.
+/// This ensures that parallel tests don't interfere with each other's resources.
+pub struct TestCleanup;
 
 impl TestCleanup {
-    fn new(
-        db_params: Option<DatabaseArgs>,
-        queue_params: Option<QueueArgs>,
-        storage_params: Option<StorageArgs>,
-        provider_config: Option<Arc<CloudProvider>>,
-    ) -> Self {
-        Self { db_params, queue_params, storage_params, provider_config }
+    fn new() -> Self {
+        Self
     }
 }
 
@@ -412,12 +399,8 @@ impl TestConfigBuilder {
         let api_server_address = implement_api_server(api_server_type, config.clone()).await;
 
         // Create cleanup handle for automatic resource cleanup
-        let cleanup = TestCleanup::new(
-            if using_actual_database { Some(params.db_params.clone()) } else { None },
-            if using_actual_queue { Some(params.queue_params.clone()) } else { None },
-            if using_actual_storage { Some(params.storage_params.clone()) } else { None },
-            if using_actual_queue || using_actual_storage { Some(provider_config.clone()) } else { None },
-        );
+        // Note: Cleanup is currently disabled since LocalStack is ephemeral
+        let cleanup = TestCleanup::new();
 
         TestConfigBuilderReturns {
             starknet_server,

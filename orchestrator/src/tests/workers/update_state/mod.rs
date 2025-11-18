@@ -4,7 +4,7 @@ use mockall::predicate::eq;
 use rstest::*;
 use uuid::Uuid;
 
-use crate::tests::common::mock_helpers::get_job_handler_context_safe;
+use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::workers::utils::{create_and_store_prerequisite_jobs, get_job_item_mock_by_id};
 use crate::types::constant::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
@@ -42,7 +42,11 @@ async fn update_state_worker_with_pending_jobs() {
 
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn update_state_worker_first_block() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
@@ -70,7 +74,11 @@ async fn update_state_worker_first_block() {
 
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn update_state_worker_first_block_missing() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
@@ -92,7 +100,11 @@ async fn update_state_worker_first_block_missing() {
 
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn update_state_worker_selects_consecutive_blocks() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
@@ -123,7 +135,11 @@ async fn update_state_worker_selects_consecutive_blocks() {
 
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn update_state_worker_continues_from_previous_state_update() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
@@ -170,8 +186,8 @@ async fn update_state_worker_continues_from_previous_state_update() {
 
     services.config.database().create_job(job_item).await.unwrap();
 
-    let ctx = get_job_handler_context_safe();
-    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
+    let ctx_guard = get_job_handler_context_safe();
+    ctx_guard.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
@@ -189,7 +205,11 @@ async fn update_state_worker_continues_from_previous_state_update() {
 
 #[rstest]
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn update_state_worker_next_block_missing() {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)

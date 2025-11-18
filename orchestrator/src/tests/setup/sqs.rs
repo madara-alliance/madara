@@ -1,7 +1,6 @@
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
-use crate::tests::common::get_sqs_client;
 use crate::types::params::{AWSResourceIdentifier, QueueArgs, ARN};
 use crate::types::queue_control::QUEUES;
 use crate::types::Layer;
@@ -43,20 +42,6 @@ fn queue_args() -> QueueArgs {
 async fn cleanup_queues_for_test(provider_config: Arc<CloudProvider>, queue_args: &QueueArgs) {
     use crate::tests::common::cleanup_queues;
     let _ = cleanup_queues(provider_config, queue_args).await;
-}
-
-/// Helper function to cleanup all test queues (use with caution in parallel tests)
-/// This is kept for backward compatibility but should be avoided in parallel test scenarios
-async fn cleanup_queues(provider_config: Arc<CloudProvider>) {
-    let sqs_client = get_sqs_client(provider_config).await;
-    let list_queues_output = sqs_client.list_queues().send().await.expect("Failed to list queues");
-    let queue_urls = list_queues_output.queue_urls();
-
-    for queue_url in queue_urls {
-        if queue_url.contains("test-") {
-            sqs_client.delete_queue().queue_url(queue_url).send().await.ok();
-        }
-    }
 }
 
 /// Helper function to verify queue setup for a given layer

@@ -1,10 +1,13 @@
 pub mod constants;
 #[cfg(test)]
-pub mod mock_helpers;
+pub mod test_utils;
 
 use crate::core::client::queue::sqs::InnerSQS;
+use crate::core::client::queue::{QueueClient, QueueError};
 use crate::core::client::MongoDbClient;
+use omniqueue::Delivery;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::cloud::CloudProvider;
@@ -20,13 +23,28 @@ use crate::types::queue::QueueType;
 use ::uuid::Uuid;
 use aws_config::SdkConfig;
 use aws_sdk_s3::Client as S3Client;
-use aws_sdk_sns::error::SdkError;
+use aws_sdk_sns::error::SdkError as SnsSdkError;
 use aws_sdk_sns::operation::create_topic::CreateTopicError;
+use aws_sdk_sqs::error::SdkError as SqsSdkError;
+use aws_sdk_sqs::operation::create_queue::CreateQueueError;
 use chrono::{SubsecRound, Utc};
 use mongodb::Client;
 use rstest::*;
 use serde::Deserialize;
 use strum::IntoEnumIterator as _;
+
+/// Creates a unique queue name by appending a UUID prefix to the base name.
+/// This is useful for parallel test execution to avoid queue name conflicts.
+///
+/// # Arguments
+/// * `base_name` - The base queue name to make unique
+///
+/// # Returns
+/// * `String` - A unique queue name in the format `{base_name}-{uuid_prefix}` where uuid_prefix is the first 8 characters of a UUID
+pub fn create_unique_queue_name(base_name: &str) -> String {
+    let uuid_str = Uuid::new_v4().to_string();
+    format!("{}-{}", base_name, &uuid_str[..8])
+}
 
 #[fixture]
 pub fn default_job_item() -> JobItem {
@@ -64,7 +82,7 @@ pub fn custom_job_item(default_job_item: JobItem, #[default(String::from("0"))] 
 pub async fn create_sns_arn(
     provider_config: Arc<CloudProvider>,
     aws_sns_params: &AlertArgs,
-) -> Result<(), SdkError<CreateTopicError>> {
+) -> Result<(), SnsSdkError<CreateTopicError>> {
     let alert_topic_name = aws_sns_params.alert_identifier.to_string();
     let sns_client = get_sns_client(provider_config.get_aws_client_or_panic()).await;
     sns_client.create_topic().name(alert_topic_name).send().await?;
@@ -127,7 +145,6 @@ pub async fn delete_storage(provider_config: Arc<CloudProvider>, s3_params: &Sto
 }
 
 // SQS structs & functions
-
 pub async fn create_queues(provider_config: Arc<CloudProvider>, queue_params: &QueueArgs) -> color_eyre::Result<()> {
     let sqs_client = get_sqs_client(provider_config).await;
 
@@ -139,6 +156,8 @@ pub async fn create_queues(provider_config: Arc<CloudProvider>, queue_params: &Q
     // 1. Each test has a unique UUID, so queues are isolated
     // 2. LocalStack will be killed after tests, so cleanup isn't needed
     // 3. Deleting queues can cause race conditions in parallel execution
+    //
+    // TODO (mohit 14/11/25): Use InnerSQS::setup method to create queues and DLQs (code duplication as of now)
     for queue_type in QueueType::iter() {
         let queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &queue_type);
 
@@ -146,9 +165,15 @@ pub async fn create_queues(provider_config: Arc<CloudProvider>, queue_params: &Q
         match sqs_client.create_queue().queue_name(queue_name.clone()).send().await {
             Ok(_) => tracing::debug!("Created queue: {}", queue_name),
             Err(e) => {
-                // If queue already exists, that's okay - we'll use the existing one
-                let error_str = e.to_string();
-                if error_str.contains("QueueAlreadyExists") || error_str.contains("QueueNameExists") {
+                // Check if the error is due to queue already existing
+                let is_queue_exists_error = match &e {
+                    SqsSdkError::ServiceError(service_err) => {
+                        matches!(service_err.err(), CreateQueueError::QueueNameExists(_))
+                    }
+                    _ => false,
+                };
+
+                if is_queue_exists_error {
                     tracing::debug!("Queue {} already exists, using existing queue", queue_name);
                 } else {
                     // For other errors, return the error
@@ -207,4 +232,44 @@ pub struct MessagePayloadType {
 
 pub(crate) async fn get_storage_client(provider_config: Arc<CloudProvider>) -> InnerAWSS3 {
     InnerAWSS3::create_setup(provider_config).await.unwrap()
+}
+
+/// Helper function to consume a message from a queue with retry logic.
+/// This function handles common timing issues in test environments (e.g., LocalStack)
+/// by retrying when queues don't exist yet or when messages aren't immediately available.
+///
+/// # Arguments
+/// * `queue_client` - The queue client to use for consuming messages
+/// * `queue_type` - The type of queue to consume from
+/// * `max_retries` - Maximum number of retry attempts
+/// * `retry_delay` - Delay between retries in seconds
+///
+/// # Returns
+/// * `Result<Delivery, QueueError>` - The consumed message or an error
+///   - Use `.unwrap()` when expecting a message
+///   - Use `.unwrap_err()` when expecting an error (e.g., empty queue)
+pub async fn consume_message_with_retry(
+    queue_client: &dyn QueueClient,
+    queue_type: QueueType,
+    max_retries: usize,
+    retry_delay: u64,
+) -> Result<Delivery, QueueError> {
+    for attempt in 0..max_retries {
+        match queue_client.consume_message_from_queue(queue_type.clone()).await {
+            Ok(msg) => return Ok(msg),
+            Err(e) => {
+                // Retry if we have retries remaining
+                if attempt < max_retries - 1 {
+                    tokio::time::sleep(Duration::from_secs(retry_delay)).await;
+                    // Continue to next iteration (retry)
+                } else {
+                    // Exhausted retries, return the error
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    // Should not reach here (we return on success or error), but make one final attempt if we do
+    queue_client.consume_message_from_queue(queue_type).await
 }

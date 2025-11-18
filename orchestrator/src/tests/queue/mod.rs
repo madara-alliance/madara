@@ -29,9 +29,11 @@ mod tests {
         let config = localstack_config.await;
         // Create queue name with template format: "test-{uuid}-{}_queue"
         // This matches the format expected by get_queue_name_from_type
-        let uuid = uuid::Uuid::new_v4();
-        let uuid_str = uuid.to_string();
-        let queue_template = format!("test-{}-{{}}_queue", &uuid_str[..8]);
+        // Use create_unique_queue_name helper to generate unique queue name
+        let unique_name = crate::tests::common::create_unique_queue_name("test");
+        // Extract the UUID prefix (first 8 chars after "test-")
+        let uuid_prefix = unique_name.strip_prefix("test-").map(|s| &s[..8.min(s.len())]).unwrap_or("default");
+        let queue_template = format!("test-{}-{{}}_queue", uuid_prefix);
         let queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &QueueType::SnosJobProcessing);
 
         let inner_sqs = InnerSQS::new(&config);
@@ -54,7 +56,7 @@ mod tests {
         #[future] test_queue: (InnerSQS, String, String),
     ) {
         let config = localstack_config.await;
-        let (inner_sqs, queue_template, _queue_url) = test_queue.await;
+        let (inner_sqs, queue_template, queue_url) = test_queue.await;
 
         // Create SQS client using our QueueClient abstraction
         let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()) };
@@ -84,10 +86,7 @@ mod tests {
         delivery.ack().await.expect("Failed to ack message");
 
         // Cleanup - delete the queue we created
-        let actual_queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &QueueType::SnosJobProcessing);
-        let actual_queue_url =
-            inner_sqs.get_queue_url_from_client(&actual_queue_name).await.expect("Failed to get queue URL");
-        inner_sqs.client().delete_queue().queue_url(&actual_queue_url).send().await.ok();
+        inner_sqs.client().delete_queue().queue_url(&queue_url).send().await.ok();
     }
 
     /// Integration test for version-based message filtering

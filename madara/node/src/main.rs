@@ -110,6 +110,7 @@ use crate::service::{L1SyncConfig, MempoolService};
 use anyhow::{bail, Context};
 use clap::Parser;
 use cli::RunCmd;
+use dotenv::dotenv;
 use figment::{
     providers::{Format, Json, Serialized, Toml, Yaml},
     Figment,
@@ -125,7 +126,6 @@ use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService, WarpUpdateConfig};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
-use dotenv::dotenv;
 
 use std::{env, path::Path};
 use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch};
