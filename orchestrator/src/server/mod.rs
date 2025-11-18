@@ -38,7 +38,15 @@ pub async fn setup_server(config: Arc<Config>) -> OrchestratorResult<SocketAddr>
 }
 
 pub(crate) async fn get_server_url(server_params: &ServerParams) -> (SocketAddr, tokio::net::TcpListener) {
-    let address = format!("{}:{}", server_params.host, server_params.port);
+    // In test mode, use port 0 to get a random available port (prevents "Address already in use" errors)
+    // In production, use the configured port
+    let port = if cfg!(test) {
+        0 // Let OS assign an available port
+    } else {
+        server_params.port
+    };
+
+    let address = format!("{}:{}", server_params.host, port);
     let listener = tokio::net::TcpListener::bind(address.clone()).await.expect("Failed to get listener");
     let api_server_url = listener.local_addr().expect("Unable to bind address to listener.");
 

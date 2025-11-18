@@ -44,7 +44,7 @@ impl GatewayMock {
         });
     }
 
-    pub fn mock_header_latest(&self, block_number: u64, hash: Felt) -> Mock {
+    pub fn mock_header_latest(&self, block_number: u64, hash: Felt) -> Mock<'_> {
         self.mock_server.mock(|when, then| {
             when.method("GET")
                 .path_contains("get_block")
@@ -180,12 +180,12 @@ impl GatewayMock {
         });
     }
 
-    pub fn mock_block_pending(&self, block_number: u64) -> Mock {
+    pub fn mock_block_pending(&self, block_number: u64) -> Mock<'_> {
         self.mock_block_pending_with_ts(block_number, 1725950824)
     }
 
     /// Ts is timestamp. We use that to differentiate pending blocks in the tests.
-    pub fn mock_block_pending_with_ts(&self, block_number: u64, timestamp: usize) -> Mock {
+    pub fn mock_block_pending_with_ts(&self, block_number: u64, timestamp: usize) -> Mock<'_> {
         // block alpha-sepolia 171544
         self.mock_server.mock(|when, then| {
             when.method("GET")
@@ -330,7 +330,7 @@ impl GatewayMock {
         });
     }
 
-    pub fn mock_block_pending_not_found(&self) -> Mock {
+    pub fn mock_block_pending_not_found(&self) -> Mock<'_> {
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_state_update").query_param("blockNumber", "pending");
             then.status(400).header("content-type", "application/json").json_body(json!({

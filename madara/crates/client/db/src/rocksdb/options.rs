@@ -49,10 +49,7 @@ pub struct DbWriteMode {
 
 impl Default for DbWriteMode {
     fn default() -> Self {
-        Self {
-            wal: true,
-            fsync: false,
-        }
+        Self { wal: true, fsync: false }
     }
 }
 
