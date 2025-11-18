@@ -103,7 +103,7 @@ impl ApplyStateSteps {
 
             let mut state_diff_map = self.state_diff_map.lock().await;
             for single_contract_state_diff in state_diffs {
-                state_diff_map.apply_state_diff(&single_contract_state_diff);
+                state_diff_map.apply_state_diff(single_contract_state_diff);
             }
         }
 
@@ -202,7 +202,7 @@ impl ApplyStateSteps {
                 let trie_block_number = latest_block.saturating_sub(1);
                 let global_state_root = backend
                     .write_access()
-                    .apply_to_global_trie(trie_block_number, vec![accumulated_state_diff].iter())?;
+                    .apply_to_global_trie(trie_block_number, [accumulated_state_diff].iter())?;
 
                 let block_number = &latest_block.checked_sub(1);
                 backend.write_latest_applied_trie_update(block_number)?;

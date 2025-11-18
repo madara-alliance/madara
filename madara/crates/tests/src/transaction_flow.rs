@@ -280,11 +280,14 @@ fn make_transfer_call(recipient: Felt, amount: u128) -> Vec<Call> {
 }
 
 async fn get_latest_block_n(provider: &(impl Provider + Send + Sync)) -> u64 {
-    let MaybePreConfirmedBlockWithTxHashes::Block(b) =
-        provider.get_block_with_tx_hashes(BlockId::Tag(BlockTag::Latest)).await.unwrap()
-    else {
-        unreachable!("block latest is pending")
-    };
+    // Retry logic for when block isn't available yet
+    for _ in 0..10 {
+        match provider.get_block_with_tx_hashes(BlockId::Tag(BlockTag::Latest)).await {
+            Ok(MaybePreConfirmedBlockWithTxHashes::Block(b)) => return b.block_number,
+            Ok(_) => unreachable!("block latest is pending"),
+            Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+        }
+    }
     b.block_number
 }
 
