@@ -513,7 +513,7 @@ impl BlockProductionTask {
         Ok(block_exec_summary)
     }
 
-    /// Closes the last pending block stored in the database (if any).
+    /// Closes the last preconfirmed block stored in the database (if any).
     ///
     /// This function is called when Madara restarts and finds a preconfirmed block in the database.
     /// It handles closing the block properly by re-executing transactions to regenerate execution context.
@@ -546,12 +546,12 @@ impl BlockProductionTask {
     ///
     /// - Handle cases where Starknet version has been updated between shutdown and restart
     /// - Handle cases where version constants or bouncer weights have changed
-    async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
+    async fn close_preconfirmed_block_if_exists(&mut self) -> anyhow::Result<()> {
         if !self.backend.has_preconfirmed_block() {
             return Ok(());
         }
 
-        tracing::debug!("Close pending block on startup.");
+        tracing::debug!("Close preconfirmed block on startup.");
 
         let preconfirmed_view = self.backend.block_view_on_preconfirmed().context("Getting preconfirmed block view")?;
 
@@ -691,7 +691,7 @@ impl BlockProductionTask {
     pub(crate) async fn setup_initial_state(&mut self) -> Result<(), anyhow::Error> {
         self.backend.chain_config().precheck_block_production()?;
 
-        self.close_pending_block_if_exists().await.context("Cannot close pending block on startup")?;
+        self.close_preconfirmed_block_if_exists().await.context("Cannot close preconfirmed block on startup")?;
 
         // initial state
         let latest_block_n = self.backend.latest_confirmed_block_n();
@@ -1121,8 +1121,8 @@ pub(crate) mod tests {
     }
 
     //
-    // This test verifies that when Madara restarts with a preconfirmed block, `close_pending_block_if_exists`
-    // correctly re-executes transactions and produces the same global state root and state diff as the original
+    // This test verifies that when Madara restarts with a preconfirmed block, `close_preconfirmed_block_if_exists`
+    // correctly re-executes transactions and produces the same global state root, state diff, and receipts as the original
     // execution. This ensures correctness of the restart recovery mechanism.
     //
     // # Test Process
@@ -1147,6 +1147,7 @@ pub(crate) mod tests {
     // - State diff must match (values are the same, order may differ)
     // - Header fields must match the preconfirmed block (timestamp, gas_prices, etc.)
     // - All transactions must match
+    // - All receipts must match exactly (ensures execution results are identical)
     //
     // # Important Notes
     //
@@ -1157,7 +1158,7 @@ pub(crate) mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_secs(100))]
     #[tokio::test]
-    async fn test_close_pending_block_reexecution_matches_normal_closing(
+    async fn test_close_preconfirmed_block_reexecution_matches_normal_closing(
         #[future]
         #[from(devnet_setup)]
         original_devnet_setup: DevnetSetup,
@@ -1247,7 +1248,7 @@ pub(crate) mod tests {
 
         // Add various transaction types to mempool to test re-execution handles all types correctly
         // All transactions will be in a single block
-        let contract_address = create_and_execute_transactions(&original_devnet_setup).await;
+        let _contract_address = create_and_execute_transactions(&original_devnet_setup).await;
 
         assert!(!original_devnet_setup.mempool.is_empty().await);
 
@@ -1318,9 +1319,9 @@ pub(crate) mod tests {
         // adding some delay to see if block_timestamp would differ in the reexecution or not
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        // Step 5: Now call close_pending_block_if_exists to re-execute and close
+        // Step 5: Now call close_preconfirmed_block_if_exists to re-execute and close the preconfirmed block
         let mut reexec_block_production_task = restart_devnet_setup.block_prod_task();
-        reexec_block_production_task.close_pending_block_if_exists().await.unwrap();
+        reexec_block_production_task.close_preconfirmed_block_if_exists().await.unwrap();
 
         // Step 6: Verify results match
         assert!(!restart_devnet_setup.backend.has_preconfirmed_block());
@@ -1362,9 +1363,29 @@ pub(crate) mod tests {
         // Verify transactions match
         let reexecuted_transactions = reexecuted_block.get_executed_transactions(..).unwrap();
         assert_eq!(reexecuted_transactions, executed_transactions, "Transactions should match");
+
+        // Verify receipts match - re-execution should produce identical receipts
+        assert_eq!(executed_transactions.len(), reexecuted_transactions.len(), "Number of transactions should match");
+        for (i, (original_tx, reexecuted_tx)) in
+            executed_transactions.iter().zip(reexecuted_transactions.iter()).enumerate()
+        {
+            assert_eq!(
+                original_tx.receipt.transaction_hash(),
+                reexecuted_tx.receipt.transaction_hash(),
+                "Receipt transaction hash should match for transaction {}",
+                i
+            );
+            assert_eq!(
+                original_tx.receipt,
+                reexecuted_tx.receipt,
+                "Receipt should match exactly for transaction {} (hash: {:#x})",
+                i,
+                original_tx.receipt.transaction_hash()
+            );
+        }
     }
 
-    // This test makes sure that the pending tick closes the block
+    // This test makes sure that the preconfirmed tick closes the block
     // if the bouncer capacity is reached
     #[ignore] // FIXME: this test is complicated by the fact validation / actual execution fee may differ a bit. Ignore for now.
     #[rstest::rstest]
@@ -1441,8 +1462,8 @@ pub(crate) mod tests {
     }
 
     // This test makes sure that the block time tick correctly
-    // adds the transaction to the pending block, closes it
-    // and creates a new empty pending block
+    // adds the transaction to the preconfirmed block, closes it
+    // and creates a new empty preconfirmed block
     #[rstest::rstest]
     #[timeout(Duration::from_secs(30))]
     #[tokio::test]
