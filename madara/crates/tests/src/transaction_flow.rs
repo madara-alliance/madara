@@ -288,6 +288,13 @@ async fn get_latest_block_n(provider: &(impl Provider + Send + Sync)) -> u64 {
             Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
         }
     }
+
+    // Final attempt - will panic with clear error if still failing
+    let MaybePreConfirmedBlockWithTxHashes::Block(b) =
+        provider.get_block_with_tx_hashes(BlockId::Tag(BlockTag::Latest)).await.unwrap()
+    else {
+        unreachable!("block latest is pending")
+    };
     b.block_number
 }
 
