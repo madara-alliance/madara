@@ -1367,6 +1367,19 @@ impl DatabaseClient for MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(updated_batches)
     }
+
+    async fn health_check(&self) -> Result<(), DatabaseError> {
+        let start = Instant::now();
+
+        // Perform a simple ping operation to verify connectivity
+        // This is a lightweight operation that checks if the database is accessible
+        self.database.run_command(doc! { "ping": 1 }, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "health_check")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(())
+    }
 }
 
 // Generic utility function to convert Vec<T> to Option<T>
