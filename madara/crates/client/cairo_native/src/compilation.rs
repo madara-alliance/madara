@@ -27,8 +27,57 @@ use super::cache;
 /// **Ownership**: Only `spawn_compilation_if_needed` inserts entries into this map.
 /// All other functions only read from or remove from it. This ensures clear ownership
 /// and prevents race conditions.
-pub(crate) static COMPILATION_IN_PROGRESS: std::sync::LazyLock<DashMap<ClassHash, Arc<RwLock<()>>>> =
+///
+/// **Access Control**: This map is private. Use accessor functions to interact with it:
+/// - `is_compilation_in_progress()` - Check if compilation is in progress
+/// - `mark_compilation_in_progress()` - Mark compilation as in progress (internal use)
+/// - `remove_compilation_in_progress()` - Remove compilation marker (internal use)
+/// - `get_current_compilations_count()` - Get current count
+static COMPILATION_IN_PROGRESS: std::sync::LazyLock<DashMap<ClassHash, Arc<RwLock<()>>>> =
     std::sync::LazyLock::new(DashMap::new);
+
+/// Check if compilation is in progress for a class hash.
+pub(crate) fn is_compilation_in_progress(class_hash: &ClassHash) -> bool {
+    COMPILATION_IN_PROGRESS.contains_key(class_hash)
+}
+
+/// Mark compilation as in progress and return the lock (internal use only).
+///
+/// This is used internally by `spawn_compilation_if_needed`. External code should not
+/// call this directly.
+pub(crate) fn mark_compilation_in_progress(class_hash: ClassHash) -> Option<Arc<RwLock<()>>> {
+    use dashmap::mapref::entry::Entry;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    match COMPILATION_IN_PROGRESS.entry(class_hash) {
+        Entry::Vacant(entry) => {
+            let lock = Arc::new(RwLock::new(()));
+            entry.insert(lock.clone());
+            Some(lock)
+        }
+        Entry::Occupied(entry) => Some(entry.get().clone()),
+    }
+}
+
+/// Remove compilation in progress marker (internal use only).
+pub(crate) fn remove_compilation_in_progress(class_hash: &ClassHash) {
+    COMPILATION_IN_PROGRESS.remove(class_hash);
+}
+
+/// Insert compilation in progress marker (for tests only).
+#[cfg(test)]
+pub(crate) fn insert_compilation_in_progress(class_hash: ClassHash) {
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+    COMPILATION_IN_PROGRESS.insert(class_hash, Arc::new(RwLock::new(())));
+}
+
+/// Get compilation lock if compilation is in progress (for waiting in blocking mode).
+#[cfg(test)]
+pub(crate) fn get_compilation_lock(class_hash: &ClassHash) -> Option<Arc<RwLock<()>>> {
+    COMPILATION_IN_PROGRESS.get(class_hash).map(|e| e.value().clone())
+}
 
 /// Get the current number of compilations in progress.
 ///
@@ -64,8 +113,33 @@ pub(crate) fn get_current_compilations_count() -> usize {
 ///
 /// **Storage**: Uses `Instant` to track when the failure occurred for LRU eviction.
 /// Maximum size is limited to prevent unbounded growth (default: 10,000 entries).
-pub(crate) static FAILED_COMPILATIONS: std::sync::LazyLock<DashMap<ClassHash, Instant>> =
-    std::sync::LazyLock::new(DashMap::new);
+///
+/// **Access Control**: This map is private. Use accessor functions to interact with it:
+/// - `has_failed_compilation()` - Check if a class failed compilation
+/// - `mark_failed_compilation()` - Mark a class as failed (internal use)
+/// - `remove_failed_compilation()` - Remove failed marker (internal use)
+static FAILED_COMPILATIONS: std::sync::LazyLock<DashMap<ClassHash, Instant>> = std::sync::LazyLock::new(DashMap::new);
+
+/// Check if a class hash has a failed compilation record.
+pub(crate) fn has_failed_compilation(class_hash: &ClassHash) -> bool {
+    FAILED_COMPILATIONS.contains_key(class_hash)
+}
+
+/// Mark a class as having failed compilation (internal use only).
+pub(crate) fn mark_failed_compilation(class_hash: ClassHash, timestamp: Instant) {
+    FAILED_COMPILATIONS.insert(class_hash, timestamp);
+}
+
+/// Remove a failed compilation marker (internal use only).
+pub(crate) fn remove_failed_compilation(class_hash: &ClassHash) {
+    FAILED_COMPILATIONS.remove(class_hash);
+}
+
+/// Clear all failed compilation records (for tests only).
+#[cfg(test)]
+pub(crate) fn clear_failed_compilations() {
+    FAILED_COMPILATIONS.clear();
+}
 
 /// Evict entries from FAILED_COMPILATIONS if it exceeds the size limit.
 ///
@@ -265,7 +339,7 @@ fn cache_compiled_native_class(
 
     let arc_native = Arc::new(native_class);
     // Inserted first, then evicted if needed (reduces lock contention)
-    cache::NATIVE_CACHE.insert(class_hash, (arc_native.clone(), Instant::now()));
+    cache::cache_insert(class_hash, arc_native.clone(), Instant::now());
 
     // Eviction performed if cache is full (after insert to reduce contention window)
     cache::evict_cache_if_needed(config);
@@ -384,8 +458,8 @@ fn handle_async_compilation_success(
     cache_compiled_native_class(class_hash, executor, blockifier_compiled_class, config);
 
     // Removed from failed compilations if present (successful retry)
-    FAILED_COMPILATIONS.remove(&class_hash);
-    let cache_size = cache::NATIVE_CACHE.len();
+    remove_failed_compilation(&class_hash);
+    let cache_size = cache::cache_len();
 
     tracing::debug!(
         target: "madara_cairo_native",
@@ -434,7 +508,7 @@ fn handle_async_compilation_failure(
 
     // Mark this class as failed (with timestamp for eviction)
     evict_failed_compilations_if_needed(config.max_failed_compilations);
-    FAILED_COMPILATIONS.insert(class_hash, Instant::now());
+    mark_failed_compilation(class_hash, Instant::now());
 }
 
 /// Spawn a background compilation task if one isn't already running for this class.
@@ -473,7 +547,7 @@ pub(crate) fn spawn_compilation_if_needed(
             use tokio::sync::RwLock;
             entry.insert(Arc::new(RwLock::new(())));
 
-            let in_progress_count = COMPILATION_IN_PROGRESS.len();
+            let in_progress_count = get_current_compilations_count();
             let max_concurrent = config.max_concurrent_compilations;
 
             tracing::debug!(
@@ -494,7 +568,7 @@ pub(crate) fn spawn_compilation_if_needed(
                         class_hash = %format!("{:#x}", class_hash.to_felt()),
                         "compilation_async_no_runtime_context"
                     );
-                    COMPILATION_IN_PROGRESS.remove(&class_hash);
+                    remove_compilation_in_progress(&class_hash);
                     return;
                 }
             };
@@ -512,7 +586,7 @@ pub(crate) fn spawn_compilation_if_needed(
                             class_hash = %format!("{:#x}", class_hash.to_felt()),
                             "compilation_async_max_concurrent_reached"
                         );
-                        COMPILATION_IN_PROGRESS.remove(&class_hash);
+                        remove_compilation_in_progress(&class_hash);
                         return;
                     }
                 };
@@ -535,8 +609,8 @@ pub(crate) fn spawn_compilation_if_needed(
                 let _guard = lock.write().await;
 
                 // Cache checked again in case another task compiled it
-                if cache::NATIVE_CACHE.contains_key(&class_hash) {
-                    COMPILATION_IN_PROGRESS.remove(&class_hash);
+                if cache::cache_contains(&class_hash) {
+                    remove_compilation_in_progress(&class_hash);
                     drop(permit);
                     return;
                 }
@@ -552,7 +626,7 @@ pub(crate) fn spawn_compilation_if_needed(
                             error = %e,
                             "compilation_async_cache_directory_creation_failed"
                         );
-                        COMPILATION_IN_PROGRESS.remove(&class_hash);
+                        remove_compilation_in_progress(&class_hash);
                         drop(permit);
                         return;
                     }
@@ -619,7 +693,7 @@ pub(crate) fn spawn_compilation_if_needed(
                     }
                 }
 
-                COMPILATION_IN_PROGRESS.remove(&class_hash);
+                remove_compilation_in_progress(&class_hash);
                 drop(permit);
             });
         }
@@ -653,8 +727,8 @@ mod tests {
 
         // Clear any existing state
         COMPILATION_IN_PROGRESS.clear();
-        cache::NATIVE_CACHE.clear();
-        FAILED_COMPILATIONS.clear();
+        cache::cache_clear();
+        clear_failed_compilations();
 
         // Set a low semaphore limit (2 concurrent compilations)
         let max_concurrent = 2;
@@ -679,8 +753,8 @@ mod tests {
             let class_hash = create_unique_test_class_hash();
 
             // Clear cache to force compilation
-            cache::NATIVE_CACHE.remove(&class_hash);
-            COMPILATION_IN_PROGRESS.remove(&class_hash);
+            cache::cache_remove(&class_hash);
+            remove_compilation_in_progress(&class_hash);
 
             class_hashes.push(class_hash);
 

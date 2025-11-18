@@ -41,8 +41,51 @@ use mp_class::SierraConvertedClass;
 /// Uses DashMap for concurrent access without locking.
 /// Stores tuples of `(compiled_class, last_access_time)` to enable LRU eviction.
 /// Access time is updated on every cache hit to track recently used classes.
-pub(crate) static NATIVE_CACHE: std::sync::LazyLock<DashMap<ClassHash, (Arc<NativeCompiledClassV1>, Instant)>> =
+///
+/// **Access Control**: This cache is private. Use accessor functions to interact with it:
+/// - `cache_contains()` - Check if a class exists
+/// - `cache_insert()` - Insert a class (internal use)
+/// - `cache_get()` - Get a class (tests only)
+/// - `cache_remove()` - Remove a class (tests only)
+/// - `cache_clear()` - Clear cache (tests only)
+static NATIVE_CACHE: std::sync::LazyLock<DashMap<ClassHash, (Arc<NativeCompiledClassV1>, Instant)>> =
     std::sync::LazyLock::new(DashMap::new);
+
+/// Check if a class hash exists in the memory cache.
+pub(crate) fn cache_contains(class_hash: &ClassHash) -> bool {
+    NATIVE_CACHE.contains_key(class_hash)
+}
+
+/// Insert a class into the memory cache (internal use only).
+///
+/// This is used internally by cache operations. External code should use
+/// `cache_compiled_native_class()` or other high-level functions.
+pub(crate) fn cache_insert(class_hash: ClassHash, native_class: Arc<NativeCompiledClassV1>, access_time: Instant) {
+    NATIVE_CACHE.insert(class_hash, (native_class, access_time));
+}
+
+/// Get a class from cache (for tests only).
+#[cfg(test)]
+pub(crate) fn cache_get(class_hash: &ClassHash) -> Option<(Arc<NativeCompiledClassV1>, Instant)> {
+    NATIVE_CACHE.get(class_hash).map(|e| e.value().clone())
+}
+
+/// Remove a class from cache (for tests only).
+#[cfg(test)]
+pub(crate) fn cache_remove(class_hash: &ClassHash) {
+    NATIVE_CACHE.remove(class_hash);
+}
+
+/// Clear the cache (for tests only).
+#[cfg(test)]
+pub(crate) fn cache_clear() {
+    NATIVE_CACHE.clear();
+}
+
+/// Get the current cache size.
+pub(crate) fn cache_len() -> usize {
+    NATIVE_CACHE.len()
+}
 
 /// Get the cache file path for a class hash.
 ///
@@ -161,12 +204,12 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
 pub(crate) fn evict_cache_if_needed(config: &config::NativeConfig) {
     let Some(max_size) = config.max_memory_cache_size else {
         // Update cache size metric only, no eviction
-        super::metrics::metrics().set_cache_size(NATIVE_CACHE.len());
+        super::metrics::metrics().set_cache_size(cache_len());
         return; // No limit
     };
 
     // Quick size check first (fast operation)
-    let current_size = NATIVE_CACHE.len();
+    let current_size = cache_len();
     if current_size <= max_size {
         // Update cache size metric only
         super::metrics::metrics().set_cache_size(current_size);
@@ -210,7 +253,7 @@ pub(crate) fn evict_cache_if_needed(config: &config::NativeConfig) {
     let eviction_elapsed = eviction_start.elapsed();
 
     // Cache size metric updated
-    super::metrics::metrics().set_cache_size(NATIVE_CACHE.len());
+    super::metrics::metrics().set_cache_size(cache_len());
     super::metrics::metrics().record_cache_eviction_time(eviction_elapsed.as_millis() as u64);
 
     tracing::debug!(
@@ -244,17 +287,17 @@ pub(crate) fn try_get_from_memory_cache(
         if let Some(cached_entry) = NATIVE_CACHE.get(&class_hash_for_log) {
             // Retrieve the cached class (Arc clone is cheap - just increments reference count, doesn't copy data)
             let cached_class = cached_entry.value().0.clone();
-            drop(cached_entry); // Release lock quickly to avoid blocking other threads
+            drop(cached_entry); // Release shard lock before expensive operations below
 
             // Update the access time to mark this class as recently used
             // This ensures the cache knows which classes are most frequently accessed
             // When the cache is full, least recently used classes will be evicted first
             // Note: Cloning Arc again here is cheap (just increments ref count), and we need a separate
             // reference to update the cache entry while keeping the original for conversion below
-            NATIVE_CACHE.insert(class_hash_for_log, (cached_class.clone(), Instant::now()));
+            cache_insert(class_hash_for_log, cached_class.clone(), Instant::now());
 
             let lookup_elapsed = start.elapsed();
-            let cache_size = NATIVE_CACHE.len();
+            let cache_size = cache_len();
             super::metrics::metrics().record_cache_hit_memory();
             super::metrics::metrics().record_cache_lookup_time_memory(lookup_elapsed.as_millis() as u64);
 
@@ -280,7 +323,7 @@ pub(crate) fn try_get_from_memory_cache(
         } else {
             // Memory cache miss - log it
             let lookup_elapsed = start.elapsed();
-            let cache_size = NATIVE_CACHE.len();
+            let cache_size = cache_len();
             super::metrics::metrics().record_cache_memory_miss();
             tracing::debug!(
                 target: "madara_cairo_native",
@@ -415,12 +458,29 @@ fn try_load_executor_with_timeout(
 ///
 /// Returns `Some(RunnableCompiledClass)` if successfully loaded, `None` otherwise.
 /// On success, also adds the class to the memory cache.
+///
+/// **Guard Clause**: Skips disk cache if compilation is in progress to avoid loading incomplete files.
 pub(crate) fn try_get_from_disk_cache(
     class_hash: &ClassHash,
     sierra: &SierraConvertedClass,
     config: &config::NativeConfig,
 ) -> Result<Option<RunnableCompiledClass>, ProgramError> {
     let start = Instant::now();
+
+    // Skip disk cache if compilation is in progress to avoid loading incomplete files
+    if super::compilation::is_compilation_in_progress(class_hash) {
+        let elapsed = start.elapsed();
+        super::metrics::metrics().record_compilation_in_progress_skip();
+        tracing::debug!(
+            target: "madara_cairo_native",
+            class_hash = %format!("{:#x}", class_hash.to_felt()),
+            elapsed = ?elapsed,
+            elapsed_ms = elapsed.as_millis(),
+            "compilation_in_progress_skipping_disk_cache"
+        );
+        return Ok(None);
+    }
+
     let path = get_native_cache_path(class_hash, config);
 
     if !path.exists() {
@@ -511,7 +571,7 @@ pub(crate) fn try_get_from_disk_cache(
 
             // Insert first, then evict if needed (reduces lock contention)
             // This matches the old working implementation exactly
-            NATIVE_CACHE.insert(*class_hash, (Arc::new(native_class.clone()), Instant::now()));
+            cache_insert(*class_hash, Arc::new(native_class.clone()), Instant::now());
 
             // Evict if cache is full (after insert to reduce contention window)
             evict_cache_if_needed(config);
@@ -523,7 +583,7 @@ pub(crate) fn try_get_from_disk_cache(
             let runnable = RunnableCompiledClass::from(native_class);
             let conversion_elapsed = conversion_start.elapsed();
             let total_elapsed = start.elapsed();
-            let cache_size = NATIVE_CACHE.len();
+            let cache_size = cache_len();
 
             super::metrics::metrics().record_cache_disk_runnable_convert_time(conversion_elapsed.as_millis() as u64);
             super::metrics::metrics().record_cache_lookup_time_disk(total_elapsed.as_millis() as u64);
@@ -563,6 +623,9 @@ mod tests {
     use std::sync::Mutex;
     // Import fixtures from test_utils
     use crate::test_utils::{sierra_class, temp_dir, test_config};
+
+    // Import assert_counters macro (exported at crate root due to #[macro_export])
+    use crate::assert_counters;
 
     /// Test mutex to serialize test execution for tests that need to clear/modify caches
     static TEST_MUTEX: Mutex<()> = Mutex::new(());
@@ -612,20 +675,19 @@ mod tests {
 
         // Insert into cache with initial timestamp
         let initial_time = Instant::now();
-        NATIVE_CACHE.insert(class_hash, (native_class.clone(), initial_time));
+        cache_insert(class_hash, native_class.clone(), initial_time);
 
         // Verify cache contains our specific class
-        assert!(NATIVE_CACHE.contains_key(&class_hash), "Cache should contain our test class");
+        assert!(cache_contains(&class_hash), "Cache should contain our test class");
 
         // Try to get from memory cache - should succeed
         let result = try_get_from_memory_cache(&class_hash, &test_config);
         assert!(result.is_some(), "Memory cache should return Some when class is cached");
 
         // Verify cache still contains the class (and access time was updated)
-        assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should still be in cache after access");
-        if let Some(entry) = NATIVE_CACHE.get(&class_hash) {
-            let (_, access_time) = entry.value();
-            assert!(*access_time > initial_time, "Access time should be updated to current or later time");
+        assert!(cache_contains(&class_hash), "Class should still be in cache after access");
+        if let Some((_, access_time)) = cache_get(&class_hash) {
+            assert!(access_time > initial_time, "Access time should be updated to current or later time");
         } else {
             panic!("Class should still be in cache after access");
         }
@@ -651,8 +713,8 @@ mod tests {
         assert!(path.exists(), "Native class file should exist on disk");
 
         // Clear memory cache to ensure we start fresh
-        NATIVE_CACHE.remove(&class_hash);
-        assert!(!NATIVE_CACHE.contains_key(&class_hash), "Class should not be in memory cache initially");
+        cache_remove(&class_hash);
+        assert!(!cache_contains(&class_hash), "Class should not be in memory cache initially");
 
         // Load from disk cache - this should populate memory cache
         let disk_result = try_get_from_disk_cache(&class_hash, &sierra_class, &test_config);
@@ -660,7 +722,7 @@ mod tests {
         assert!(disk_result.unwrap().is_some(), "Should return cached class from disk");
 
         // Verify class is now in memory cache after disk load
-        assert!(NATIVE_CACHE.contains_key(&class_hash), "Class should be in memory cache after disk load");
+        assert!(cache_contains(&class_hash), "Class should be in memory cache after disk load");
 
         // Request the class again - should hit memory cache (not disk)
         let result = try_get_from_memory_cache(&class_hash, &test_config);
@@ -685,7 +747,7 @@ mod tests {
             .expect("Failed to create test native class");
 
         // Insert into cache
-        NATIVE_CACHE.insert(class_hash, (native_class.clone(), Instant::now()));
+        cache_insert(class_hash, native_class.clone(), Instant::now());
 
         // Spawn multiple threads that all request the same cached class
         let num_threads = 10;
@@ -712,7 +774,7 @@ mod tests {
         }
 
         // Verify cache still contains our specific class
-        assert!(NATIVE_CACHE.contains_key(&class_hash), "Cache should still contain our test class");
+        assert!(cache_contains(&class_hash), "Cache should still contain our test class");
     }
 
     #[rstest]
@@ -730,7 +792,7 @@ mod tests {
             .with_max_memory_cache_size(Some(2)); // Limit to 2 classes
 
         // Clear cache to start fresh
-        NATIVE_CACHE.clear();
+        cache_clear();
 
         // Create four unique class hashes
         let class_hash_1 = create_unique_test_class_hash();
@@ -755,48 +817,47 @@ mod tests {
         // Insert first class with initial timestamp
         let time_1 = Instant::now();
         std::thread::sleep(Duration::from_millis(10)); // Small delay to ensure time difference
-        NATIVE_CACHE.insert(class_hash_1, (native_class_1.clone(), time_1));
+        cache_insert(class_hash_1, native_class_1.clone(), time_1);
 
         // Insert second class with later timestamp
         let time_2 = Instant::now();
         std::thread::sleep(Duration::from_millis(10)); // Small delay to ensure time difference
-        NATIVE_CACHE.insert(class_hash_2, (native_class_2.clone(), time_2));
+        cache_insert(class_hash_2, native_class_2.clone(), time_2);
 
         // Verify both classes are in cache (at limit)
-        assert_eq!(NATIVE_CACHE.len(), 2, "Cache should contain exactly 2 classes");
-        assert!(NATIVE_CACHE.contains_key(&class_hash_1), "Class 1 should be in cache");
-        assert!(NATIVE_CACHE.contains_key(&class_hash_2), "Class 2 should be in cache");
+        assert_eq!(cache_len(), 2, "Cache should contain exactly 2 classes");
+        assert!(cache_contains(&class_hash_1), "Class 1 should be in cache");
+        assert!(cache_contains(&class_hash_2), "Class 2 should be in cache");
 
         // Access class_2 to update its access time (making it more recently used)
         let _ = try_get_from_memory_cache(&class_hash_2, &config);
         std::thread::sleep(Duration::from_millis(10)); // Small delay
 
         // Verify class_2's access time was updated
-        let class_2_access_time =
-            NATIVE_CACHE.get(&class_hash_2).map(|e| e.value().1).expect("Class 2 should be in cache");
+        let class_2_access_time = cache_get(&class_hash_2).map(|(_, time)| time).expect("Class 2 should be in cache");
         assert!(class_2_access_time > time_2, "Class 2 access time should be updated");
 
         // Insert third class (exceeds limit)
         let time_3 = Instant::now();
-        NATIVE_CACHE.insert(class_hash_3, (native_class_3.clone(), time_3));
+        cache_insert(class_hash_3, native_class_3.clone(), time_3);
 
         // Verify cache now has 3 classes (before eviction)
-        assert_eq!(NATIVE_CACHE.len(), 3, "Cache should have 3 classes before eviction");
+        assert_eq!(cache_len(), 3, "Cache should have 3 classes before eviction");
 
         // Trigger eviction
         evict_cache_if_needed(&config);
 
         // Verify cache size is now at limit (2 classes)
-        assert_eq!(NATIVE_CACHE.len(), 2, "Cache should be evicted down to limit of 2 classes");
+        assert_eq!(cache_len(), 2, "Cache should be evicted down to limit of 2 classes");
 
         // Verify class_1 (oldest, not accessed) was evicted
-        assert!(!NATIVE_CACHE.contains_key(&class_hash_1), "Class 1 (oldest, not accessed) should be evicted");
+        assert!(!cache_contains(&class_hash_1), "Class 1 (oldest, not accessed) should be evicted");
 
         // Verify class_2 (accessed, more recent) is still in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash_2), "Class 2 (accessed, more recent) should remain in cache");
+        assert!(cache_contains(&class_hash_2), "Class 2 (accessed, more recent) should remain in cache");
 
         // Verify class_3 (newest) is still in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash_3), "Class 3 (newest) should remain in cache");
+        assert!(cache_contains(&class_hash_3), "Class 3 (newest) should remain in cache");
 
         // ============================================================================
         // Phase 2: Access time tracking - verify access order affects eviction
@@ -808,39 +869,36 @@ mod tests {
 
         // Verify class_2's access time was updated and is more recent than class_3
         let class_2_access_time_after_second_access =
-            NATIVE_CACHE.get(&class_hash_2).map(|e| e.value().1).expect("Class 2 should be in cache");
+            cache_get(&class_hash_2).map(|(_, time)| time).expect("Class 2 should be in cache");
         let class_3_access_time_before_eviction =
-            NATIVE_CACHE.get(&class_hash_3).map(|e| e.value().1).expect("Class 3 should be in cache");
+            cache_get(&class_hash_3).map(|(_, time)| time).expect("Class 3 should be in cache");
         assert!(
             class_2_access_time_after_second_access > class_3_access_time_before_eviction,
             "Class 2 should be more recently accessed than class 3"
         );
 
         // Insert fourth class (exceeds limit, should trigger eviction)
-        NATIVE_CACHE.insert(class_hash_4, (native_class_4.clone(), Instant::now()));
-        assert_eq!(NATIVE_CACHE.len(), 3, "Cache should have 3 classes before second eviction");
+        cache_insert(class_hash_4, native_class_4.clone(), Instant::now());
+        assert_eq!(cache_len(), 3, "Cache should have 3 classes before second eviction");
 
         // Trigger eviction again
         evict_cache_if_needed(&config);
 
         // Verify cache size is back to limit (2 classes)
-        assert_eq!(NATIVE_CACHE.len(), 2, "Cache should be evicted down to limit of 2 classes again");
+        assert_eq!(cache_len(), 2, "Cache should be evicted down to limit of 2 classes again");
 
         // Verify class_3 (least recently accessed among class_2 and class_3) was evicted
-        assert!(!NATIVE_CACHE.contains_key(&class_hash_3), "Class 3 (least recently accessed) should be evicted");
+        assert!(!cache_contains(&class_hash_3), "Class 3 (least recently accessed) should be evicted");
 
         // Verify class_2 (most recently accessed) is still in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash_2), "Class 2 (most recently accessed) should remain in cache");
+        assert!(cache_contains(&class_hash_2), "Class 2 (most recently accessed) should remain in cache");
 
         // Verify class_4 (newest) is still in cache
-        assert!(NATIVE_CACHE.contains_key(&class_hash_4), "Class 4 (newest) should remain in cache");
+        assert!(cache_contains(&class_hash_4), "Class 4 (newest) should remain in cache");
 
         // Verify eviction metrics were recorded
-        use std::sync::atomic::Ordering;
-        assert_eq!(
-            test_counters::CACHE_EVICTIONS.load(Ordering::Relaxed),
-            2,
-            "Should have exactly two cache evictions"
+        assert_counters!(
+            CACHE_EVICTIONS: 2,
         );
     }
 
@@ -894,7 +952,7 @@ mod tests {
         // Access file_2 via try_get_from_disk_cache to update its modification time
         // This tests that try_get_from_disk_cache updates file access time (LRU tracking)
         // and ensures file_2 is more recently accessed than file_1 (for LRU eviction)
-        NATIVE_CACHE.remove(&class_hash_2); // Clear memory cache to force disk lookup
+        cache_remove(&class_hash_2); // Clear memory cache to force disk lookup
         let initial_file_2_modified =
             std::fs::metadata(&path_2).expect("File 2 should exist").modified().expect("Should get modification time");
         std::thread::sleep(Duration::from_millis(100)); // Wait to ensure time difference
@@ -920,7 +978,7 @@ mod tests {
         );
 
         // Verify the class was loaded into memory cache after disk hit
-        assert!(NATIVE_CACHE.contains_key(&class_hash_2), "Class should be loaded into memory cache after disk hit");
+        assert!(cache_contains(&class_hash_2), "Class should be loaded into memory cache after disk hit");
 
         // Verify both files exist and total size is within limit
         let total_size = std::fs::metadata(&path_1).expect("File 1 should exist").len()

@@ -219,3 +219,63 @@ pub fn async_config(temp_dir: TempDir) -> Arc<crate::config::NativeConfig> {
 pub fn blocking_config(temp_dir: TempDir) -> Arc<crate::config::NativeConfig> {
     create_test_config_arc(&temp_dir, Some(crate::config::NativeCompilationMode::Blocking), true)
 }
+
+/// Macro to assert multiple counter values in tests.
+///
+/// Usage:
+/// ```rust
+/// assert_counters!(
+///     CACHE_HITS_MEMORY: 1,
+///     CACHE_MEMORY_MISS: 0,
+///     CACHE_HITS_DISK: 0,
+/// );
+/// ```
+#[cfg(test)]
+#[macro_export]
+macro_rules! assert_counters {
+    (
+        $($counter:ident: $expected:expr),* $(,)?
+    ) => {
+        $(
+            assert_eq!(
+                crate::metrics::test_counters::$counter.load(std::sync::atomic::Ordering::Relaxed),
+                $expected,
+                "Counter {} should be {}",
+                stringify!($counter),
+                $expected
+            );
+        )*
+    };
+}
+
+/// Assert that a RunnableCompiledClass is a VM class (not Native).
+///
+/// This helper function is used in tests to verify that a `RunnableCompiledClass`
+/// is a VM-compiled class (V0 or V1) and not a Native-compiled class (V1Native).
+#[cfg(test)]
+pub fn assert_is_vm_class(runnable: &blockifier::execution::contract_class::RunnableCompiledClass) {
+    match runnable {
+        blockifier::execution::contract_class::RunnableCompiledClass::V0(_) => {} // VM class - OK
+        blockifier::execution::contract_class::RunnableCompiledClass::V1(_) => {} // VM class - OK
+        blockifier::execution::contract_class::RunnableCompiledClass::V1Native(_) => {
+            panic!("Expected VM class but got Native class");
+        }
+    }
+}
+
+/// Assert that a RunnableCompiledClass is a Native class (not VM).
+///
+/// This helper function is used in tests to verify that a `RunnableCompiledClass`
+/// is a Native-compiled class (V1Native) and not a VM-compiled class (V0 or V1).
+#[cfg(test)]
+pub fn assert_is_native_class(runnable: &blockifier::execution::contract_class::RunnableCompiledClass) {
+    match runnable {
+        blockifier::execution::contract_class::RunnableCompiledClass::V1Native(_) => {} // Native class - OK
+        blockifier::execution::contract_class::RunnableCompiledClass::V0(_) => {
+            panic!("Expected Native class but got VM class");
+        }
+        blockifier::execution::contract_class::RunnableCompiledClass::V1(_) => {
+            panic!("Expected Native class but got VM class");
+        }
+    }
+}
