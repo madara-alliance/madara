@@ -232,7 +232,7 @@ impl PipelineSteps for GatewaySyncSteps {
                 .latest_confirmed_block_n();
 
             for block_n in block_range {
-                tracing::info!("📥 Fetching block #{} from gateway", block_n);
+                tracing::debug!("📥 Fetching block #{} from gateway", block_n);
                 let block = self
                     .client
                     .get_state_update_with_block(BlockId::Number(block_n))
@@ -414,7 +414,7 @@ impl PipelineSteps for GatewaySyncSteps {
                         importer.save_transactions(block_n, gateway_block.transactions)?;
                         importer.save_events(block_n, gateway_block.events)?;
 
-                        tracing::info!("✅ Block #{} saved: header, state_diff, transactions, events", block_n);
+                        tracing::debug!("✅ Block #{} saved: header, state_diff, transactions, events", block_n);
 
                         anyhow::Ok(gateway_block.state_diff)
                     })
