@@ -1,7 +1,9 @@
 use std::fmt::Write;
 
+use alloy::consensus::BlobTransactionSidecar;
 use alloy::dyn_abi::parser::Error;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
+use alloy::eips::eip7594::BlobTransactionSidecarVariant;
 use alloy::primitives::{FixedBytes, U256};
 use c_kzg::{Blob, KzgSettings};
 use color_eyre::eyre::{eyre, ContextCompat};
@@ -103,11 +105,23 @@ pub(crate) fn u8_48_to_hex_string(data: [u8; 48]) -> String {
     first_hex + &second_hex
 }
 
-/// Function to prepare the sidecar for EIP 4844 transaction
-pub(crate) async fn prepare_sidecar(
+pub(crate) fn prepare_sidecar(
     state_diff: &[Vec<u8>],
     trusted_setup: &KzgSettings,
-) -> EyreResult<(Vec<FixedBytes<BYTES_PER_BLOB>>, Vec<FixedBytes<48>>, Vec<FixedBytes<48>>)> {
+    disable_peerdas: bool,
+) -> EyreResult<BlobTransactionSidecarVariant> {
+    if disable_peerdas {
+        prepare_sidecar_with_proof(state_diff, trusted_setup)
+    } else {
+        prepare_sidecar_with_cells(state_diff, trusted_setup)
+    }
+}
+
+/// Function to prepare the sidecar for EIP 4844 transaction
+pub(crate) fn prepare_sidecar_with_proof(
+    state_diff: &[Vec<u8>],
+    trusted_setup: &KzgSettings,
+) -> EyreResult<BlobTransactionSidecarVariant> {
     let mut sidecar_blobs = vec![];
     let mut sidecar_commitments = vec![];
     let mut sidecar_proofs = vec![];
@@ -126,7 +140,11 @@ pub(crate) async fn prepare_sidecar(
         sidecar_proofs.push(FixedBytes::new(proof.to_bytes().into_inner()));
     }
 
-    Ok((sidecar_blobs, sidecar_commitments, sidecar_proofs))
+    Ok(BlobTransactionSidecarVariant::from(BlobTransactionSidecar::new(
+        sidecar_blobs,
+        sidecar_commitments,
+        sidecar_proofs,
+    )))
 }
 
 // Function to prepare sidecar for EIP 7594 transaction
@@ -134,7 +152,7 @@ pub(crate) async fn prepare_sidecar(
 pub fn prepare_sidecar_with_cells(
     state_diff: &[Vec<u8>],
     trusted_setup: &KzgSettings,
-) -> EyreResult<(Vec<FixedBytes<BYTES_PER_BLOB>>, Vec<FixedBytes<48>>, Vec<Vec<FixedBytes<48>>>)> {
+) -> EyreResult<BlobTransactionSidecarVariant> {
     let mut sidecar_blobs = vec![];
     let mut sidecar_commitments = vec![];
     let mut all_cell_proofs = vec![]; // Vec of Vec because each blob has CELLS_PER_EXT_BLOB proofs
@@ -160,7 +178,16 @@ pub fn prepare_sidecar_with_cells(
         all_cell_proofs.push(blob_cell_proofs);
     }
 
-    Ok((sidecar_blobs, sidecar_commitments, all_cell_proofs))
+    // Flatten all cell proofs into a single vector
+    // Format: all proofs for blob 0, then all proofs for blob 1, etc.
+    let flat_cell_proofs: Vec<FixedBytes<48>> = all_cell_proofs.into_iter().flatten().collect();
+
+    // Create the sidecar with cell proofs
+    Ok(BlobTransactionSidecarVariant::from(BlobTransactionSidecar::new(
+        sidecar_blobs,
+        sidecar_commitments,
+        flat_cell_proofs, // These are now cell proofs, not blob proofs
+    )))
 }
 
 /// Convert hex string data into Vec<u8>
@@ -331,12 +358,19 @@ mod tests {
 
         let blob_data_vec = vec![hex_string_to_u8_vec(&blob_data).unwrap()];
 
-        match prepare_sidecar(&blob_data_vec, &trusted_setup).await {
+        match prepare_sidecar(&blob_data_vec, &trusted_setup, false) {
             Ok(result) => {
-                let (_, sidecar_commitments, sidecar_proofs) = result;
-                // Assumption: since only 1 blob, thus only 1 commitment and proof
-                assert_eq!(blob_commitment, sidecar_commitments[0].to_string());
-                assert_eq!(blob_proof, sidecar_proofs[0].to_string());
+                match result {
+                    BlobTransactionSidecarVariant::Eip4844(sidecar) => {
+                        // Assumption: since only 1 blob, thus only 1 commitment and proof
+                        assert_eq!(blob_commitment, sidecar.commitments[0].to_string());
+                        assert_eq!(blob_proof, sidecar.proofs[0].to_string());
+                    }
+                    BlobTransactionSidecarVariant::Eip7594(_) => {
+                        panic!("Unexpected transaction variant")
+                    }
+                }
+                // let (_, sidecar_commitments, sidecar_proofs) = result;
             }
             Err(err) => {
                 panic!("{}", err.to_string())
