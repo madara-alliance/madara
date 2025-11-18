@@ -23,18 +23,29 @@ mod tests {
     }
 
     /// Fixture to create a test queue with InnerSQS
-    /// Returns tuple of (InnerSQS, queue_name, queue_url)
+    /// Returns tuple of (InnerSQS, queue_template, queue_url)
     #[fixture]
     async fn test_queue(#[future] localstack_config: aws_config::SdkConfig) -> (InnerSQS, String, String) {
         let config = localstack_config.await;
-        let queue_name = format!("test-snos-job-processing-{}", uuid::Uuid::new_v4());
+        // Create queue name with template format: "test-{uuid}-{}_queue"
+        // This matches the format expected by get_queue_name_from_type
+        // Use create_unique_queue_name helper to generate unique queue name
+        let unique_name = crate::tests::common::create_unique_queue_name("test");
+        // Extract the UUID prefix (first 8 chars after "test-")
+        let uuid_prefix = unique_name.strip_prefix("test-").map(|s| &s[..8.min(s.len())]).unwrap_or("default");
+        let queue_template = format!("test-{}-{{}}_queue", uuid_prefix);
+        let queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &QueueType::SnosJobProcessing);
 
         let inner_sqs = InnerSQS::new(&config);
         inner_sqs.client().create_queue().queue_name(&queue_name).send().await.expect("Failed to create queue");
 
+        // Wait a bit for queue to be fully available
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
         let queue_url = inner_sqs.get_queue_url_from_client(&queue_name).await.expect("Failed to get queue URL");
 
-        (inner_sqs, queue_name, queue_url)
+        // Create QueueArgs with the template (not the specific queue name)
+        (inner_sqs, queue_template, queue_url)
     }
 
     /// Test that send_message adds the OrchestratorVersion message attribute using Omni Queue
@@ -45,11 +56,16 @@ mod tests {
         #[future] test_queue: (InnerSQS, String, String),
     ) {
         let config = localstack_config.await;
-        let (inner_sqs, queue_name, queue_url) = test_queue.await;
+        let (inner_sqs, queue_template, queue_url) = test_queue.await;
 
         // Create SQS client using our QueueClient abstraction
-        let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_name.clone()) };
+        let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()) };
         let sqs = SQS::new(&config, &queue_args);
+
+        // Get the actual queue name and URL for this specific queue type
+        let actual_queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &QueueType::SnosJobProcessing);
+        let actual_queue_url =
+            inner_sqs.get_queue_url_from_client(&actual_queue_name).await.expect("Failed to get queue URL");
 
         // Send message using our QueueClient (which adds version attribute)
         let test_payload = "test message content";
@@ -69,7 +85,7 @@ mod tests {
         // Acknowledge the message
         delivery.ack().await.expect("Failed to ack message");
 
-        // Cleanup
+        // Cleanup - delete the queue we created
         inner_sqs.client().delete_queue().queue_url(&queue_url).send().await.ok();
     }
 
@@ -90,13 +106,18 @@ mod tests {
         use tokio::time::{sleep, Duration};
 
         let config = localstack_config.await;
-        let (inner_sqs, queue_name, queue_url) = test_queue.await;
+        let (inner_sqs, queue_template, _queue_url) = test_queue.await;
 
         // Create CloudProvider and use Config to build queue client (proper way for tests)
         let provider_config = Arc::new(CloudProvider::AWS(Box::new(config.clone())));
-        let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_name.clone()) };
+        let queue_args = QueueArgs { queue_template_identifier: AWSResourceIdentifier::Name(queue_template.clone()) };
         let sqs =
             Config::build_queue_client(&queue_args, provider_config).await.expect("Failed to create queue client");
+
+        // Get the actual queue name and URL for this specific queue type
+        let actual_queue_name = InnerSQS::get_queue_name_from_type(&queue_template, &QueueType::SnosJobProcessing);
+        let actual_queue_url =
+            inner_sqs.get_queue_url_from_client(&actual_queue_name).await.expect("Failed to get queue URL");
 
         let incompatible_version = "orchestrator-0.0.1";
 
@@ -112,7 +133,7 @@ mod tests {
             inner_sqs
                 .client()
                 .send_message()
-                .queue_url(&queue_url)
+                .queue_url(&actual_queue_url)
                 .message_body(&payload)
                 .message_attributes(ORCHESTRATOR_VERSION_ATTRIBUTE, version_attr)
                 .send()
@@ -179,7 +200,7 @@ mod tests {
         let queue_attributes = inner_sqs
             .client()
             .get_queue_attributes()
-            .queue_url(&queue_url)
+            .queue_url(&actual_queue_url)
             .attribute_names(aws_sdk_sqs::types::QueueAttributeName::ApproximateNumberOfMessages)
             .send()
             .await
@@ -196,6 +217,6 @@ mod tests {
         assert_eq!(approximate_message_count, 5, "Should have exactly 5 incompatible messages remaining in queue");
 
         // Cleanup
-        inner_sqs.client().delete_queue().queue_url(&queue_url).send().await.ok();
+        inner_sqs.client().delete_queue().queue_url(&actual_queue_url).send().await.ok();
     }
 }

@@ -325,7 +325,7 @@ impl SubmitL1HandlerTransaction for TransactionValidator {
 
         let response = L1HandlerTransactionResult { transaction_hash: api_tx.tx_hash().to_felt() };
 
-        let contract_address = tx.tx.contract_address.clone();
+        let contract_address = tx.tx.contract_address;
 
         let validated_txn = ValidatedTransaction {
             transaction: mp_transactions::Transaction::L1Handler(tx.tx),
