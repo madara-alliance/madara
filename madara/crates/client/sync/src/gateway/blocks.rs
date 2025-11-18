@@ -232,7 +232,7 @@ impl PipelineSteps for GatewaySyncSteps {
                 .latest_confirmed_block_n();
 
             for block_n in block_range {
-                tracing::info!("📥 Fetching block #{} from gateway", block_n);
+                tracing::debug!("📥 Fetching block #{} from gateway", block_n);
                 let block = self
                     .client
                     .get_state_update_with_block(BlockId::Number(block_n))
@@ -414,7 +414,7 @@ impl PipelineSteps for GatewaySyncSteps {
                         importer.save_transactions(block_n, gateway_block.transactions)?;
                         importer.save_events(block_n, gateway_block.events)?;
 
-                        tracing::info!("✅ Block #{} saved: header, state_diff, transactions, events", block_n);
+                        tracing::debug!("✅ Block #{} saved: header, state_diff, transactions, events", block_n);
 
                         anyhow::Ok(gateway_block.state_diff)
                     })
@@ -533,6 +533,12 @@ pub fn gateway_preconfirmed_block_sync(
                         state_diff,
                         declared_class: None, // It seems we can't get the declared classes from the preconfirmed block :/
                         arrived_at,
+                        paid_fee_on_l1: None, // Gateway blocks don't contain paid_fee_on_l1 because:
+                                              // 1. Gateway API responses don't include fee payment metadata
+                                              // 2. paid_fee_on_l1 is only relevant for L1 handler transactions paid on L1
+                                              // 3. Gateway blocks contain execution results but not fee payment details
+                                              // 4. This information would need to be fetched from L1 if required, but
+                                              //    for gateway sync purposes it's not available and not critical
                     })
                     .collect();
 
