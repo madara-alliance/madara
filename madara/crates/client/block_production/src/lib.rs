@@ -264,12 +264,20 @@ pub struct BlockProductionTask {
 }
 
 impl BlockProductionTask {
+    /// Creates a new BlockProductionTask.
+    ///
+    /// # Parameters
+    ///
+    /// * `no_charge_fee`: Determines whether fees are charged during transaction execution.
+    ///   This value is stored and used during re-execution to ensure consistency.
+    ///   Even if the Madara flag changes between shutdown and restart, re-execution will
+    ///   use the same fee charging behavior as the original execution.
     pub fn new(
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
-        no_charge_fee: bool,
+        no_charge_fee: bool, // Stored to preserve fee charging behavior during re-execution
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -320,7 +328,9 @@ impl BlockProductionTask {
     /// # Important Notes
     ///
     /// - The `charge_fee` flag is determined by `self.no_charge_fee` configuration, ensuring consistency
-    ///   between original execution and re-execution
+    ///   between original execution and re-execution. This preserves the exact execution context,
+    ///   even if the Madara `--no-charge-fee` flag has changed between shutdown and restart.
+    ///   The value stored when `BlockProductionTask` was created is used, not the current flag value.
     /// - For L1 handler transactions, `paid_fee_on_l1` is preserved from `PreconfirmedExecutedTransaction`
     ///   (stored during `append_batch`) and used during conversion via `to_validated()`
     /// - Declare transactions may need their `declared_class` fetched from state if not already stored
@@ -337,12 +347,30 @@ impl BlockProductionTask {
         validated_tx.charge_fee = !self.no_charge_fee;
 
         // If declared_class is missing and transaction is Declare, fetch it from state_view
+        // NOTE: For declare transactions in the preconfirmed block, declared_class MUST be stored
+        // during append_batch. If it's None here, that indicates data corruption - we should panic.
         if validated_tx.declared_class.is_none() {
             if let Some(declare_tx) = validated_tx.transaction.as_declare() {
+                // This should never happen for declare transactions in the preconfirmed block
+                // If it does, it indicates missing data that should have been stored during original execution
                 validated_tx.declared_class = Some(
                     state_view
-                        .get_class_info_and_compiled(declare_tx.class_hash())?
-                        .with_context(|| format!("No class found for class_hash={:#x}", declare_tx.class_hash()))?,
+                        .get_class_info_and_compiled(declare_tx.class_hash())
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "CRITICAL: Error fetching class for class_hash={:#x} in preconfirmed block. \
+                                 This indicates data corruption - declared_class should have been stored during append_batch. Error: {}",
+                                declare_tx.class_hash(),
+                                e
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "CRITICAL: Class not found for class_hash={:#x} in parent state view. \
+                                 For declare transactions in the preconfirmed block, declared_class must be stored during append_batch.",
+                                declare_tx.class_hash()
+                            )
+                        })?,
                 );
             }
         }
@@ -353,6 +381,42 @@ impl BlockProductionTask {
             .context("Error converting validated transaction to blockifier format for reexecution")?;
 
         Ok(blockifier_tx)
+    }
+
+    /// Helper function to close a preconfirmed block with the given state_diff and bouncer weights.
+    /// This is used both during normal block closing (EndBlock case) and during restart recovery.
+    async fn close_preconfirmed_block_with_state_diff(
+        backend: Arc<MadaraBackend>,
+        block_number: u64,
+        consumed_core_contract_nonces: HashSet<u64>,
+        bouncer_weights: &blockifier::bouncer::BouncerWeights,
+        state_diff: mp_state_update::StateDiff,
+    ) -> anyhow::Result<()> {
+        // Clone bouncer_weights to move into the closure
+        let bouncer_weights = bouncer_weights.clone();
+        global_spawn_rayon_task(move || {
+            // Remove consumed L1 to L2 message nonces
+            for l1_nonce in consumed_core_contract_nonces {
+                backend
+                    .remove_pending_message_to_l2(l1_nonce)
+                    .context("Removing pending message to l2 from database")?;
+            }
+
+            // Save bouncer weights
+            backend
+                .write_access()
+                .write_bouncer_weights(block_number, &bouncer_weights)
+                .context("Saving Bouncer Weights for SNOS")?;
+
+            // Close the preconfirmed block with state_diff
+            backend
+                .write_access()
+                .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
+                .context("Closing preconfirmed block")?;
+
+            anyhow::Ok(())
+        })
+        .await
     }
 
     /// Helper function to get the hash of block_n-10 if it exists.
@@ -368,8 +432,8 @@ impl BlockProductionTask {
             let block_hash = view.get_block_info().context("Getting block hash of block_n - 10")?.block_hash;
             Ok(Some((block_n_min_10, block_hash)))
         } else {
-            // Block doesn't exist yet - this is fine, we'll skip it
-            Ok(None)
+            // This should be unreachable - if we're here, something is wrong
+            unreachable!("Block doesn't exist yet - this path should not be reachable")
         }
     }
 
@@ -423,12 +487,12 @@ impl BlockProductionTask {
         };
 
         // Create LayeredStateAdapter
-        let state_adaptor =
+        let state_adapter =
             LayeredStateAdapter::new(self.backend.clone()).context("Creating LayeredStateAdapter for re-execution")?;
 
         // Create TransactionExecutor with block_n-10 handling
         let mut executor =
-            crate::util::create_executor_with_block_n_min_10(&self.backend, &exec_ctx, state_adaptor, |block_n| {
+            crate::util::create_executor_with_block_n_min_10(&self.backend, &exec_ctx, state_adapter, |block_n| {
                 Self::wait_for_hash_of_block_min_10(&self.backend, block_n)
             })
             .context("Creating TransactionExecutor for re-execution")?;
@@ -513,31 +577,17 @@ impl BlockProductionTask {
             .filter_map(|tx| tx.transaction.transaction.as_l1_handler().map(|l1_tx| l1_tx.nonce))
             .collect();
 
-        let backend = self.backend.clone();
-        global_spawn_rayon_task(move || {
-            // Remove consumed L1 to L2 message nonces
-            for l1_nonce in consumed_core_contract_nonces {
-                backend
-                    .remove_pending_message_to_l2(l1_nonce)
-                    .context("Removing pending message to l2 from database")?;
-            }
-
-            // Save bouncer weights
-            backend
-                .write_access()
-                .write_bouncer_weights(block_number, &block_exec_summary.bouncer_weights)
-                .context("Saving Bouncer Weights for SNOS")?;
-
-            // Convert state_diff and close block
-            let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
-            backend
-                .write_access()
-                .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
-                .context("Closing preconfirmed block on startup")?;
-
-            anyhow::Ok(())
-        })
-        .await?;
+        // Convert state_diff and close block using helper function
+        let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+        Self::close_preconfirmed_block_with_state_diff(
+            self.backend.clone(),
+            block_number,
+            consumed_core_contract_nonces,
+            &block_exec_summary.bouncer_weights,
+            state_diff,
+        )
+        .await
+        .context("Closing preconfirmed block on startup")?;
 
         tracing::info!("✅ Closed preconfirmed block #{} with {} transactions on startup", block_number, n_txs);
 
@@ -602,28 +652,17 @@ impl BlockProductionTask {
                     .context("No current pre-confirmed block")?
                     .num_executed_transactions();
 
-                let backend = self.backend.clone();
-                global_spawn_rayon_task(move || {
-                    for l1_nonce in state.consumed_core_contract_nonces {
-                        // This ensures we remove the nonces for rejected L1 to L2 message transactions. This avoids us from reprocessing them on restart.
-                        backend
-                            .remove_pending_message_to_l2(l1_nonce)
-                            .context("Removing pending message to l2 from database")?;
-                    }
-
-                    backend
-                        .write_access()
-                        .write_bouncer_weights(state.block_number, &block_exec_summary.bouncer_weights)
-                        .context("Saving Bouncer Weights for SNOS")?;
-
-                    let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
-                    backend
-                        .write_access()
-                        .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
-                        .context("Closing block")?;
-                    anyhow::Ok(())
-                })
-                .await?;
+                // Convert state_diff and close block using helper function
+                let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+                Self::close_preconfirmed_block_with_state_diff(
+                    self.backend.clone(),
+                    state.block_number,
+                    state.consumed_core_contract_nonces,
+                    &block_exec_summary.bouncer_weights,
+                    state_diff,
+                )
+                .await
+                .context("Closing block")?;
 
                 let time_to_close = start_time.elapsed();
                 tracing::info!(
@@ -1082,10 +1121,9 @@ pub(crate) mod tests {
     }
 
     //
-    // This test verifies that when Madara restarts with a preconfirmed block, the re-execution process
-    // Test that `close_pending_block_if_exists` correctly re-executes transactions and produces matching results.
-    // produces the same global state root and state diff as the original execution. This ensures correctness
-    // of the restart recovery mechanism.
+    // This test verifies that when Madara restarts with a preconfirmed block, `close_pending_block_if_exists`
+    // correctly re-executes transactions and produces the same global state root and state diff as the original
+    // execution. This ensures correctness of the restart recovery mechanism.
     //
     // # Test Process
     //
@@ -1141,74 +1179,75 @@ pub(crate) mod tests {
         // Step 1: Create a block normally with transactions in the original backend
         assert!(original_devnet_setup.mempool.is_empty().await);
 
+        // Helper function to create and execute transactions for testing
+        async fn create_and_execute_transactions(setup: &DevnetSetup) -> Felt {
+            // 1. Declare a contract
+            let declare_res =
+                sign_and_add_declare_tx(&setup.contracts.0[0], &setup.backend, &setup.tx_validator, Felt::ZERO).await;
+
+            // 2. Deploy contract through UDC
+            let (contract_address, deploy_tx) = make_udc_call(
+                &setup.contracts.0[0],
+                &setup.backend,
+                /* nonce */ Felt::ONE,
+                declare_res.class_hash,
+                /* calldata (pubkey) */ &[Felt::TWO],
+            );
+            setup.tx_validator.submit_invoke_transaction(deploy_tx).await.unwrap();
+
+            // 3. Invoke transaction
+            sign_and_add_invoke_tx(
+                &setup.contracts.0[0],
+                &setup.contracts.0[1],
+                &setup.backend,
+                &setup.tx_validator,
+                Felt::TWO, // nonce after declare (ZERO) and deploy (ONE)
+            )
+            .await;
+
+            // 4. Declare transaction (for a different contract)
+            sign_and_add_declare_tx(
+                &setup.contracts.0[2],
+                &setup.backend,
+                &setup.tx_validator,
+                Felt::ZERO, // Different account, so nonce starts at ZERO
+            )
+            .await;
+
+            // 5. Another invoke transaction
+            sign_and_add_invoke_tx(
+                &setup.contracts.0[1],
+                &setup.contracts.0[3],
+                &setup.backend,
+                &setup.tx_validator,
+                Felt::ZERO, // Different account, so nonce starts at ZERO
+            )
+            .await;
+
+            // 6. Add L1 handler transaction
+            let paid_fee_on_l1 = 128328u128;
+            setup.l1_client.add_tx(L1HandlerTransactionWithFee::new(
+                L1HandlerTransaction {
+                    version: Felt::ZERO,
+                    nonce: 55, // core contract nonce
+                    contract_address,
+                    entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
+                    calldata: vec![
+                        /* from_address */ Felt::THREE,
+                        /* arg1 */ Felt::ONE,
+                        /* arg2 */ Felt::TWO,
+                    ]
+                    .into(),
+                },
+                paid_fee_on_l1,
+            ));
+
+            contract_address
+        }
+
         // Add various transaction types to mempool to test re-execution handles all types correctly
         // All transactions will be in a single block
-
-        // 1. Declare a contract
-        let declare_res = sign_and_add_declare_tx(
-            &original_devnet_setup.contracts.0[0],
-            &original_devnet_setup.backend,
-            &original_devnet_setup.tx_validator,
-            Felt::ZERO,
-        )
-        .await;
-
-        // 2. Deploy contract through UDC
-        let (contract_address, deploy_tx) = make_udc_call(
-            &original_devnet_setup.contracts.0[0],
-            &original_devnet_setup.backend,
-            /* nonce */ Felt::ONE,
-            declare_res.class_hash,
-            /* calldata (pubkey) */ &[Felt::TWO],
-        );
-        original_devnet_setup.tx_validator.submit_invoke_transaction(deploy_tx).await.unwrap();
-
-        // 3. Invoke transaction
-        sign_and_add_invoke_tx(
-            &original_devnet_setup.contracts.0[0],
-            &original_devnet_setup.contracts.0[1],
-            &original_devnet_setup.backend,
-            &original_devnet_setup.tx_validator,
-            Felt::TWO, // nonce after declare (ZERO) and deploy (ONE)
-        )
-        .await;
-
-        // 4. Declare transaction (for a different contract)
-        sign_and_add_declare_tx(
-            &original_devnet_setup.contracts.0[2],
-            &original_devnet_setup.backend,
-            &original_devnet_setup.tx_validator,
-            Felt::ZERO, // Different account, so nonce starts at ZERO
-        )
-        .await;
-
-        // 5. Another invoke transaction
-        sign_and_add_invoke_tx(
-            &original_devnet_setup.contracts.0[1],
-            &original_devnet_setup.contracts.0[3],
-            &original_devnet_setup.backend,
-            &original_devnet_setup.tx_validator,
-            Felt::ZERO, // Different account, so nonce starts at ZERO
-        )
-        .await;
-
-        // 6. Add L1 handler transaction
-        let paid_fee_on_l1 = 128328u128;
-        original_devnet_setup.l1_client.add_tx(L1HandlerTransactionWithFee::new(
-            L1HandlerTransaction {
-                version: Felt::ZERO,
-                nonce: 55, // core contract nonce
-                contract_address,
-                entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
-                calldata: vec![
-                    /* from_address */ Felt::THREE,
-                    /* arg1 */ Felt::ONE,
-                    /* arg2 */ Felt::TWO,
-                ]
-                .into(),
-            },
-            paid_fee_on_l1,
-        ));
+        let contract_address = create_and_execute_transactions(&original_devnet_setup).await;
 
         assert!(!original_devnet_setup.mempool.is_empty().await);
 
@@ -1245,70 +1284,8 @@ pub(crate) mod tests {
         // This ensures they're executed in the same context (clean genesis state)
         assert!(restart_devnet_setup.mempool.is_empty().await);
 
-        // 1. Declare a contract
-        let restart_declare_res = sign_and_add_declare_tx(
-            &restart_devnet_setup.contracts.0[0],
-            &restart_devnet_setup.backend,
-            &restart_devnet_setup.tx_validator,
-            Felt::ZERO,
-        )
-        .await;
-
-        // 2. Deploy contract through UDC
-        let (restart_contract_address, restart_deploy_tx) = make_udc_call(
-            &restart_devnet_setup.contracts.0[0],
-            &restart_devnet_setup.backend,
-            /* nonce */ Felt::ONE,
-            restart_declare_res.class_hash,
-            /* calldata (pubkey) */ &[Felt::TWO],
-        );
-        restart_devnet_setup.tx_validator.submit_invoke_transaction(restart_deploy_tx).await.unwrap();
-
-        // 3. Invoke transaction
-        sign_and_add_invoke_tx(
-            &restart_devnet_setup.contracts.0[0],
-            &restart_devnet_setup.contracts.0[1],
-            &restart_devnet_setup.backend,
-            &restart_devnet_setup.tx_validator,
-            Felt::TWO, // nonce after declare (ZERO) and deploy (ONE)
-        )
-        .await;
-
-        // 4. Declare transaction (for a different contract)
-        sign_and_add_declare_tx(
-            &restart_devnet_setup.contracts.0[2],
-            &restart_devnet_setup.backend,
-            &restart_devnet_setup.tx_validator,
-            Felt::ZERO, // Different account, so nonce starts at ZERO
-        )
-        .await;
-
-        // 5. Another invoke transaction
-        sign_and_add_invoke_tx(
-            &restart_devnet_setup.contracts.0[1],
-            &restart_devnet_setup.contracts.0[3],
-            &restart_devnet_setup.backend,
-            &restart_devnet_setup.tx_validator,
-            Felt::ZERO, // Different account, so nonce starts at ZERO
-        )
-        .await;
-
-        // 6. Add the same L1 handler transaction
-        restart_devnet_setup.l1_client.add_tx(L1HandlerTransactionWithFee::new(
-            L1HandlerTransaction {
-                version: Felt::ZERO,
-                nonce: 55, // core contract nonce
-                contract_address: restart_contract_address,
-                entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
-                calldata: vec![
-                    /* from_address */ Felt::THREE,
-                    /* arg1 */ Felt::ONE,
-                    /* arg2 */ Felt::TWO,
-                ]
-                .into(),
-            },
-            paid_fee_on_l1, // Use the same paid_fee_on_l1 value
-        ));
+        // Create the same transactions using the helper function
+        let _restart_contract_address = create_and_execute_transactions(&restart_devnet_setup).await;
 
         assert!(!restart_devnet_setup.mempool.is_empty().await);
 
@@ -1323,20 +1300,20 @@ pub(crate) mod tests {
         // Wait for batch to be executed (transactions added to preconfirmed block)
         assert_eq!(restart_notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
+        // Fetch preconfirmed block view BEFORE dropping the task to avoid race conditions
+        let preconfirmed_view = restart_devnet_setup.backend.block_view_on_preconfirmed().unwrap();
+        assert_eq!(preconfirmed_view.num_executed_transactions(), executed_transactions.len());
+        let restart_preconfirmed_block = preconfirmed_view.block();
+
         // Stop the task before it closes the block (drop the AbortOnDrop which will abort the task)
         drop(restart_task);
 
         // Give it a moment to finish current operations
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        // Verify preconfirmed block exists with transactions and no confirmed blocks yet
+        // Verify preconfirmed block still exists with transactions and no confirmed blocks yet
         assert!(restart_devnet_setup.backend.has_preconfirmed_block());
         assert_eq!(restart_devnet_setup.backend.latest_confirmed_block_n(), Some(0));
-
-        let preconfirmed_view = restart_devnet_setup.backend.block_view_on_preconfirmed().unwrap();
-        assert_eq!(preconfirmed_view.num_executed_transactions(), executed_transactions.len());
-
-        let restart_preconfirmed_block = preconfirmed_view.block();
 
         // adding some delay to see if block_timestamp would differ in the reexecution or not
         tokio::time::sleep(Duration::from_millis(200)).await;
