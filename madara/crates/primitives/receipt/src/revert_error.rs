@@ -125,10 +125,7 @@ fn filter_redundant_vm_tracebacks(error_stack: ErrorStack) -> ErrorStack {
     // Truncate to only keep the elements we want
     stack_vec.truncate(indices_to_keep.len());
 
-    ErrorStack {
-        header: error_stack.header,
-        stack: stack_vec,
-    }
+    ErrorStack { header: error_stack.header, stack: stack_vec }
 }
 
 /// Filters redundant VM tracebacks from the error stack (reference version for display).
@@ -136,10 +133,7 @@ fn filter_redundant_vm_tracebacks(error_stack: ErrorStack) -> ErrorStack {
 /// This version works with references and constructs a new ErrorStack for display purposes.
 /// Used when we can't move out of the original error stack.
 fn filter_redundant_vm_tracebacks_ref(error_stack: &ErrorStack) -> ErrorStack {
-    let mut new_stack = ErrorStack {
-        header: error_stack.header.clone(),
-        stack: Vec::new(),
-    };
+    let mut new_stack = ErrorStack { header: error_stack.header.clone(), stack: Vec::new() };
 
     let len = error_stack.stack.len();
 
@@ -166,7 +160,7 @@ fn filter_redundant_vm_tracebacks_ref(error_stack: &ErrorStack) -> ErrorStack {
                         storage_address: entry_point.storage_address,
                         class_hash: entry_point.class_hash,
                         selector: entry_point.selector,
-                    }
+                    },
                 ));
             }
             ErrorStackSegment::Cairo1RevertSummary(summary) => {
@@ -183,7 +177,10 @@ fn filter_redundant_vm_tracebacks_ref(error_stack: &ErrorStack) -> ErrorStack {
 
 /// Finds the EntryPoint that owns the VM traceback at the given index.
 /// Looks backward from the current index to find the most recent EntryPoint.
-fn find_parent_entry_point(error_stack: &ErrorStack, vm_index: usize) -> Option<&blockifier::execution::stack_trace::EntryPointErrorFrame> {
+fn find_parent_entry_point(
+    error_stack: &ErrorStack,
+    vm_index: usize,
+) -> Option<&blockifier::execution::stack_trace::EntryPointErrorFrame> {
     for i in (0..vm_index).rev() {
         if let ErrorStackSegment::EntryPoint(entry_point) = &error_stack.stack[i] {
             return Some(entry_point);
@@ -272,19 +269,20 @@ mod tests {
     #[test]
     fn test_format_for_receipt_filters_redundant_tracebacks() {
         // Build the ErrorStack structure that represents the unfiltered error
-        let mut error_stack = ErrorStack {
-            header: ErrorStackHeader::Execution,
-            stack: vec![],
-        };
+        let mut error_stack = ErrorStack { header: ErrorStackHeader::Execution, stack: vec![] };
 
         // Entry 0: CallContract with VM traceback (should be removed)
         error_stack.push(
             EntryPointErrorFrame {
                 depth: 0,
                 preamble_type: PreambleType::CallContract,
-                storage_address: test_contract_address!("0x05743c833ed33a3433f1c5587dac97753ddcc84f9844e6fa2a3268e5ae35cbc3"),
+                storage_address: test_contract_address!(
+                    "0x05743c833ed33a3433f1c5587dac97753ddcc84f9844e6fa2a3268e5ae35cbc3"
+                ),
                 class_hash: test_class_hash!("0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2"),
-                selector: Some(EntryPointSelector(test_felt!("0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"
+                ))),
             }
             .into(),
         );
@@ -302,9 +300,13 @@ mod tests {
             EntryPointErrorFrame {
                 depth: 1,
                 preamble_type: PreambleType::CallContract,
-                storage_address: test_contract_address!("0x0286003f7c7bfc3f94e8f0af48b48302e7aee2fb13c23b141479ba00832ef2c6"),
+                storage_address: test_contract_address!(
+                    "0x0286003f7c7bfc3f94e8f0af48b48302e7aee2fb13c23b141479ba00832ef2c6"
+                ),
                 class_hash: test_class_hash!("0x03e283b1e8bce178469acb94700999ecc7ad180420201e16eb0a81294ae8599b"),
-                selector: Some(EntryPointSelector(test_felt!("0x0056878e39e16b42520b0d7936d3fd3498f86ceda4dbad50f6ff717644c95ed6"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x0056878e39e16b42520b0d7936d3fd3498f86ceda4dbad50f6ff717644c95ed6"
+                ))),
             }
             .into(),
         );
@@ -322,9 +324,13 @@ mod tests {
             EntryPointErrorFrame {
                 depth: 2,
                 preamble_type: PreambleType::CallContract,
-                storage_address: test_contract_address!("0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e"),
+                storage_address: test_contract_address!(
+                    "0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e"
+                ),
                 class_hash: test_class_hash!("0x070cdfaea3ec997bd3a8cdedfc0ffe804a58afc3d6b5a6e5c0218ec233ceea6d"),
-                selector: Some(EntryPointSelector(test_felt!("0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20"
+                ))),
             }
             .into(),
         );
@@ -342,9 +348,13 @@ mod tests {
             EntryPointErrorFrame {
                 depth: 3,
                 preamble_type: PreambleType::LibraryCall,
-                storage_address: test_contract_address!("0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e"),
+                storage_address: test_contract_address!(
+                    "0x06f373b346561036d98ea10fb3e60d2f459c872b1933b50b21fe6ef4fda3b75e"
+                ),
                 class_hash: test_class_hash!("0x05ffbcfeb50d200a0677c48a129a11245a3fc519d1d98d76882d1c9a1b19c6ed"),
-                selector: Some(EntryPointSelector(test_felt!("0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x0041b033f4a31df8067c24d1e9b550a2ce75fd4a29e1147af9752174f0e6cb20"
+                ))),
             }
             .into(),
         );
@@ -369,19 +379,20 @@ mod tests {
     #[test]
     fn test_format_for_receipt_filters_redundant_tracebacks_2() {
         // Build the ErrorStack structure that represents the unfiltered error
-        let mut error_stack = ErrorStack {
-            header: ErrorStackHeader::Execution,
-            stack: vec![],
-        };
+        let mut error_stack = ErrorStack { header: ErrorStackHeader::Execution, stack: vec![] };
 
         // Entry 0: CallContract with VM traceback (should be kept - next is LibraryCall)
         error_stack.push(
             EntryPointErrorFrame {
                 depth: 0,
                 preamble_type: PreambleType::CallContract,
-                storage_address: test_contract_address!("0x006fb38baf7a14acc032ff556c2791b03292861581572d02296c5093fd16cafb"),
+                storage_address: test_contract_address!(
+                    "0x006fb38baf7a14acc032ff556c2791b03292861581572d02296c5093fd16cafb"
+                ),
                 class_hash: test_class_hash!("0x03530cc4759d78042f1b543bf797f5f3d647cde0388c33734cf91b7f7b9314a9"),
-                selector: Some(EntryPointSelector(test_felt!("0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"
+                ))),
             }
             .into(),
         );
@@ -399,9 +410,13 @@ mod tests {
             EntryPointErrorFrame {
                 depth: 1,
                 preamble_type: PreambleType::LibraryCall,
-                storage_address: test_contract_address!("0x006fb38baf7a14acc032ff556c2791b03292861581572d02296c5093fd16cafb"),
+                storage_address: test_contract_address!(
+                    "0x006fb38baf7a14acc032ff556c2791b03292861581572d02296c5093fd16cafb"
+                ),
                 class_hash: test_class_hash!("0x041cb0280ebadaa75f996d8d92c6f265f6d040bb3ba442e5f86a554f1765244e"),
-                selector: Some(EntryPointSelector(test_felt!("0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"
+                ))),
             }
             .into(),
         );
@@ -419,9 +434,13 @@ mod tests {
             EntryPointErrorFrame {
                 depth: 2,
                 preamble_type: PreambleType::CallContract,
-                storage_address: test_contract_address!("0x046e9237f5408b5f899e72125dd69bd55485a287aaf24663d3ebe00d237fc7ef"),
+                storage_address: test_contract_address!(
+                    "0x046e9237f5408b5f899e72125dd69bd55485a287aaf24663d3ebe00d237fc7ef"
+                ),
                 class_hash: test_class_hash!("0x070cdfaea3ec997bd3a8cdedfc0ffe804a58afc3d6b5a6e5c0218ec233ceea6d"),
-                selector: Some(EntryPointSelector(test_felt!("0x00e5b455a836c7a254df57ed39d023d46b641b331162c6c0b369647056655409"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x00e5b455a836c7a254df57ed39d023d46b641b331162c6c0b369647056655409"
+                ))),
             }
             .into(),
         );
@@ -439,9 +458,13 @@ mod tests {
             EntryPointErrorFrame {
                 depth: 3,
                 preamble_type: PreambleType::LibraryCall,
-                storage_address: test_contract_address!("0x046e9237f5408b5f899e72125dd69bd55485a287aaf24663d3ebe00d237fc7ef"),
+                storage_address: test_contract_address!(
+                    "0x046e9237f5408b5f899e72125dd69bd55485a287aaf24663d3ebe00d237fc7ef"
+                ),
                 class_hash: test_class_hash!("0x0358663e6ed9d37efd33d4661e20b2bad143e0f92076b0c91fe65f31ccf55046"),
-                selector: Some(EntryPointSelector(test_felt!("0x00e5b455a836c7a254df57ed39d023d46b641b331162c6c0b369647056655409"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x00e5b455a836c7a254df57ed39d023d46b641b331162c6c0b369647056655409"
+                ))),
             }
             .into(),
         );

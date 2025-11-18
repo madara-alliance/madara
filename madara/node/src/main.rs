@@ -110,6 +110,7 @@ use crate::service::{L1SyncConfig, MempoolService};
 use anyhow::{bail, Context};
 use clap::Parser;
 use cli::RunCmd;
+use dotenv::dotenv;
 use figment::{
     providers::{Format, Json, Serialized, Toml, Yaml},
     Figment,
@@ -125,7 +126,6 @@ use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService, WarpUpdateConfig};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
-use dotenv::dotenv;
 
 use std::{env, path::Path};
 use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch};
@@ -333,17 +333,6 @@ async fn main() -> anyhow::Result<()> {
     let gateway_client = Arc::new(provider);
 
     // Block production
-
-    // Log preconfirmed block restart behavior configuration
-    // TODO(mohiiit, 12-11-25): what if the starknet-version have been updated?
-    // version constants or bouncer weights have changed?
-    if run_cmd.is_sequencer() {
-        if run_cmd.block_production_params.close_preconfirmed_block_upon_restart {
-            tracing::info!("🔄 Preconfirmed blocks will be closed on restart");
-        } else {
-            tracing::info!("🔄 Preconfirmed blocks will be resumed on restart");
-        }
-    }
 
     let service_block_production = BlockProductionService::new(
         &run_cmd.block_production_params,

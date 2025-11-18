@@ -39,6 +39,9 @@ impl<'a> UdcSetup<'a> {
                 Vec::from([udc_class_hash, Felt::ZERO, Felt::ONE, Felt::ZERO]),
                 None,
             )
+            .l1_gas(0)
+            .l1_data_gas(0)
+            .l2_gas(0)
             .send()
             .await
             .unwrap();

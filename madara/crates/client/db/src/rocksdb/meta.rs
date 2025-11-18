@@ -64,11 +64,7 @@ impl RocksDBStorageInner {
                 &self.writeopts,
             )?;
         } else {
-            self.db.delete_cf_opt(
-                &self.get_column(META_COLUMN),
-                META_CONFIRMED_ON_L1_TIP_KEY,
-                &self.writeopts,
-            )?;
+            self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_CONFIRMED_ON_L1_TIP_KEY, &self.writeopts)?;
         }
         Ok(())
     }
@@ -231,11 +227,7 @@ impl RocksDBStorageInner {
                 &self.writeopts,
             )?;
         } else {
-            self.db.delete_cf_opt(
-                &self.get_column(META_COLUMN),
-                META_LATEST_APPLIED_TRIE_UPDATE,
-                &self.writeopts,
-            )?;
+            self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_LATEST_APPLIED_TRIE_UPDATE, &self.writeopts)?;
         }
         Ok(())
     }
