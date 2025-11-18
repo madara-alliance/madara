@@ -433,7 +433,11 @@ impl ExecutorThread {
                 );
                 let block_exec_summary = execution_state.executor.finalize()?;
 
-                if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock(Box::new(block_exec_summary))).is_err() {
+                if self
+                    .replies_sender
+                    .blocking_send(super::ExecutorMessage::EndBlock(Box::new(block_exec_summary)))
+                    .is_err()
+                {
                     // Receiver closed
                     break Ok(());
                 }
