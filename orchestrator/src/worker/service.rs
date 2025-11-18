@@ -2,7 +2,6 @@ use mockall_double::double;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::info;
 use uuid::Uuid;
 
 use crate::core::config::Config;

@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Result, WrapErr};
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, };
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///

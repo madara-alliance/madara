@@ -12,7 +12,7 @@ use color_eyre::eyre::eyre;
 use orchestrator_prover_client_interface::{TaskStatus, TaskType};
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 pub struct RegisterProofJobHandler;
 

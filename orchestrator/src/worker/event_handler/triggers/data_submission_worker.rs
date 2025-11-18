@@ -10,7 +10,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{error};
 
 pub struct DataSubmissionJobTrigger;
 

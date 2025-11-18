@@ -134,7 +134,7 @@ where
         if let Some(span) = ctx.lookup_current() {
             if let Some(custom_fields) = span.extensions().get::<CustomSpanFields>() {
                 if let Some(q_value) = custom_fields.raw_fields.get("q") {
-                    queue = queue_type_to_parts(&q_value);
+                    queue = queue_type_to_parts(q_value);
                 }
             }
         }
@@ -196,7 +196,6 @@ impl tracing::field::Visit for FieldExtractor {
             self.message = format!("{:?}", value).trim_matches('"').to_string();
         } else if field.name() == "q" {
             // Skip 'q' field - it's displayed in the queue column
-            return;
         } else {
             let formatted_value = format!("{:?}", value).trim_matches('"').to_string();
             let formatted_field = format!("{}{}={}{}", fixed_field_color, field.name(), formatted_value, reset);

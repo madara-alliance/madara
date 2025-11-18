@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error};
 
 pub struct ProofRegistrationJobTrigger;
 
