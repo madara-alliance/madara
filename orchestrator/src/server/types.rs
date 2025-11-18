@@ -35,7 +35,7 @@ pub struct JobId {
 /// ```
 /// // Success response
 /// use orchestrator::server::types::ApiResponse;
-/// let response = ApiResponse::success(None);
+/// let response: ApiResponse<()> = ApiResponse::success(None);
 /// assert_eq!(response.success, true);
 /// assert_eq!(response.message, None);
 ///
@@ -91,7 +91,7 @@ impl<T> ApiResponse<T> {
     /// # Examples
     /// ```
     /// use orchestrator::server::types::ApiResponse;
-    /// let response = ApiResponse::success(None);
+    /// let response: ApiResponse<()> = ApiResponse::success(None);
     /// assert_eq!(response.success, true);
     /// ```
     pub fn success(message: Option<String>) -> Self {
@@ -107,14 +107,15 @@ impl<T> ApiResponse<T> {
 /// # Examples
 /// ```
 /// use axum::Json;
+/// use axum::response::IntoResponse;
 /// use orchestrator::server::types::{ApiResponse, JobRouteResult};
+/// use orchestrator::server::error::JobRouteError;
 ///
-///  async fn handle_job() -> JobRouteResult {
+/// async fn handle_job() -> JobRouteResult {
 ///     // Success case
-///     Ok(Json(ApiResponse::success(None)).into_response())
-///
-///     // Error case
-///     Err(JobRouteError::NotFound("123".to_string()))
+///     Ok(Json(ApiResponse::<()>::success(None)).into_response())
+///     // Error case would be:
+///     // Err(JobRouteError::NotFound("123".to_string()))
 /// }
 /// ```
 pub type JobRouteResult = Result<Response<axum::body::Body>, JobRouteError>;

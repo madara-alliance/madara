@@ -601,7 +601,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .context("There is no current preconfirmed block")?
             .get_full_block_with_classes()?;
 
-        if let Some(state_diff) = state_diff {
+        if let Some(mut state_diff) = state_diff {
+            state_diff.old_declared_contracts =
+                std::mem::replace(&mut block.state_diff.old_declared_contracts, state_diff.old_declared_contracts);
             block.state_diff = state_diff;
         }
 
@@ -673,14 +675,11 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::info!("🙇 Block hash {:?} computed for #{}", block_hash, block.header.block_number);
 
-        match self.inner.get_custom_header_with_clear(true) {
-            Some(header) => {
-                let is_valid = header.is_block_hash_as_expected(&block_hash);
-                if !is_valid {
-                    tracing::warn!("Block hash not as expected for {}", block.header.block_number);
-                }
+        if let Some(header) = self.inner.get_custom_header_with_clear(true) {
+            let is_valid = header.is_block_hash_as_expected(&block_hash);
+            if !is_valid {
+                tracing::warn!("Block hash not as expected for {}", block.header.block_number);
             }
-            None => {}
         }
 
         // Save the block.

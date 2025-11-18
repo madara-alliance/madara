@@ -49,7 +49,7 @@ pub enum ExecutorMessage {
         exec_ctx: BlockExecutionContext,
     },
     BatchExecuted(BatchExecutionResult),
-    EndBlock(BlockExecutionSummary),
+    EndBlock(Box<BlockExecutionSummary>),
 }
 
 #[derive(Default, Debug)]
