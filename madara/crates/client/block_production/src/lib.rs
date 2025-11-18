@@ -392,8 +392,8 @@ impl BlockProductionTask {
         bouncer_weights: &blockifier::bouncer::BouncerWeights,
         state_diff: mp_state_update::StateDiff,
     ) -> anyhow::Result<()> {
-        // Clone bouncer_weights to move into the closure
-        let bouncer_weights = bouncer_weights.clone();
+        // Copy bouncer_weights to move into the closure (BouncerWeights implements Copy)
+        let bouncer_weights = *bouncer_weights;
         global_spawn_rayon_task(move || {
             // Remove consumed L1 to L2 message nonces
             for l1_nonce in consumed_core_contract_nonces {
