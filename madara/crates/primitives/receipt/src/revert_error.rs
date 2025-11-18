@@ -207,6 +207,7 @@ fn has_nested_call_contract_after(error_stack: &ErrorStack, vm_index: usize) -> 
 /// Returns true only if:
 /// 1. The next EntryPoint is a CallContract
 /// 2. There are no more EntryPoints after it (just error messages)
+///
 /// This specifically handles the case where CallContract chain ends in error without LibraryCall.
 fn is_next_call_contract_last(error_stack: &ErrorStack, vm_index: usize) -> bool {
     let mut found_next_entry = false;
