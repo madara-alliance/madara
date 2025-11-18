@@ -211,7 +211,7 @@ impl ApplyStateSteps {
                 backend.write_snap_sync_latest_block(block_number)?;
 
                 if let Some(block_num) = block_number {
-                    tracing::info!("Global State Root till block {} is {:#x}", block_num, global_state_root);
+                    tracing::info!("🌐 Global State Root for block {} is {:#x}", block_num, global_state_root);
                 }
                 Ok::<(), anyhow::Error>(())
             })
