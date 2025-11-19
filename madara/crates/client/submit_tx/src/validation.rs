@@ -1,8 +1,7 @@
 use crate::{
-    RejectedTransactionError, RejectedTransactionErrorKind, SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError,
-    SubmitValidatedTransaction,
+    RejectedTransactionError, RejectedTransactionErrorKind, SubmitL1HandlerTransaction, SubmitTransaction,
+    SubmitTransactionError, SubmitValidatedTransaction,
 };
-use mc_exec::execution::TxInfo;
 use async_trait::async_trait;
 use blockifier::{
     blockifier::{stateful_validator::StatefulValidatorError, transaction_executor::TransactionExecutorError},
@@ -14,6 +13,7 @@ use blockifier::{
     },
 };
 use mc_db::{MadaraBackend, MadaraBlockView};
+use mc_exec::execution::TxInfo;
 use mc_exec::MadaraBlockViewExecutionExt;
 use mc_mempool::{MempoolInsertionError, TxInsertionError};
 use mp_class::ConvertedClass;
@@ -25,7 +25,7 @@ use mp_rpc::v0_9_0::{
 };
 use mp_transactions::{
     validated::{TxTimestamp, ValidatedTransaction},
-    IntoStarknetApiExt, ToBlockifierError, L1HandlerTransactionResult, L1HandlerTransactionWithFee
+    IntoStarknetApiExt, L1HandlerTransactionResult, L1HandlerTransactionWithFee, ToBlockifierError,
 };
 use starknet_api::{
     executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
@@ -318,17 +318,14 @@ impl SubmitL1HandlerTransaction for TransactionValidator {
         &self,
         tx: L1HandlerTransactionWithFee,
     ) -> Result<L1HandlerTransactionResult, SubmitTransactionError> {
-
         let (api_tx, class) = tx.clone().into_blockifier(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let response = L1HandlerTransactionResult {
-            transaction_hash : api_tx.tx_hash().to_felt(),
-        };
+        let response = L1HandlerTransactionResult { transaction_hash: api_tx.tx_hash().to_felt() };
 
-        let contract_address = tx.tx.contract_address.clone();
+        let contract_address = tx.tx.contract_address;
 
         let validated_txn = ValidatedTransaction {
             transaction: mp_transactions::Transaction::L1Handler(tx.tx),
@@ -337,7 +334,7 @@ impl SubmitL1HandlerTransaction for TransactionValidator {
             arrived_at: TxTimestamp::now(),
             declared_class: class,
             hash: api_tx.tx_hash().to_felt(),
-            charge_fee: true
+            charge_fee: true,
         };
 
         self.inner.submit_validated_transaction(validated_txn).await?;
