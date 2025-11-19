@@ -19,42 +19,87 @@ use serde_json::Value;
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
-impl GatewayProvider {
-    pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlock, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_uri_segment("get_block")
-            .expect("Failed to add URI segment. This should not fail in prod.")
-            .with_block_id(&block_id);
+/// Maximum number of retry attempts for failed API requests.
+/// When an API request fails due to transient errors (such as network issues,
+/// rate limits, or temporary service unavailability), the client will
+/// automatically retry the request up to this many times before raising an
+/// exception.
+/// Retries use exponential backoff to avoid overwhelming the service
+const MAX_RETRIES: usize = 5;
+const BASE_DELAY_MS: u64 = 100;
+const BACKOFF_BASE: u32 = 2;
 
-        request.send_get::<ProviderBlock>().await
+impl GatewayProvider {
+    /// Generic retry mechanism for GET requests
+    async fn retry_get<T, F, Fut>(&self, request_fn: F) -> Result<T, SequencerError>
+    where
+        T: DeserializeOwned,
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T, SequencerError>>,
+    {
+        let mut last_error = None;
+
+        for attempt in 0..MAX_RETRIES {
+            match request_fn().await {
+                Ok(result) => return Ok(result),
+                Err(e) => {
+                    if attempt < MAX_RETRIES - 1 {
+                        tracing::warn!("Failed to get with {:?}, retrying", e);
+                        // Exponential backoff: BASE_DELAY_MS * BACKOFF_BASE^attempt
+                        // attempt 0: 100ms, attempt 1: 200ms, attempt 2: 400ms, attempt 3: 800ms, attempt 4: 1600ms
+                        let delay_ms = BASE_DELAY_MS * (BACKOFF_BASE as u64).pow(attempt as u32);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    }
+                    last_error = Some(e);
+                }
+            }
+        }
+        Err(last_error.expect("last_error should be Some after retry loop"))
+    }
+
+    pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlock, SequencerError> {
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_block")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .with_block_id(&block_id);
+
+            request.send_get::<ProviderBlock>().await
+        }).await
     }
 
     pub async fn get_preconfirmed_block(&self, block_number: u64) -> Result<ProviderBlockPreConfirmed, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_uri_segment("get_preconfirmed_block")
-            .expect("Failed to add URI segment. This should not fail in prod.")
-            .with_block_id(&BlockId::Number(block_number));
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_preconfirmed_block")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .with_block_id(&BlockId::Number(block_number));
 
-        request.send_get::<ProviderBlockPreConfirmed>().await
+            request.send_get::<ProviderBlockPreConfirmed>().await
+        }).await
     }
 
     pub async fn get_header(&self, block_id: BlockId) -> Result<ProviderBlockHeader, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_uri_segment("get_block")
-            .expect("Failed to add URI segment. This should not fail in prod.")
-            .with_block_id(&block_id)
-            .add_param("headerOnly", "true");
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_block")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .with_block_id(&block_id)
+                .add_param("headerOnly", "true");
 
-        request.send_get::<ProviderBlockHeader>().await
+            request.send_get::<ProviderBlockHeader>().await
+        }).await
     }
 
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdate, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_uri_segment("get_state_update")
-            .expect("Failed to add URI segment. This should not fail in prod")
-            .with_block_id(&block_id);
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_state_update")
+                .expect("Failed to add URI segment. This should not fail in prod")
+                .with_block_id(&block_id);
 
-        request.send_get::<ProviderStateUpdate>().await
+            request.send_get::<ProviderStateUpdate>().await
+        }).await
     }
 
     pub async fn get_block_bouncer_weights(&self, block_number: u64) -> Result<BouncerWeights, SequencerError> {
@@ -70,13 +115,15 @@ impl GatewayProvider {
         &self,
         block_id: BlockId,
     ) -> Result<ProviderStateUpdateWithBlock, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_uri_segment("get_state_update")
-            .expect("Failed to add URI segment. This should not fail in prod")
-            .with_block_id(&block_id)
-            .add_param(Cow::from("includeBlock"), "true");
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_state_update")
+                .expect("Failed to add URI segment. This should not fail in prod")
+                .with_block_id(&block_id)
+                .add_param(Cow::from("includeBlock"), "true");
 
-        request.send_get::<ProviderStateUpdateWithBlock>().await
+            request.send_get::<ProviderStateUpdateWithBlock>().await
+        }).await
     }
 
     pub async fn get_signature(&self, block_id: BlockId) -> Result<ProviderBlockSignature, SequencerError> {
@@ -84,12 +131,14 @@ impl GatewayProvider {
             return Err(StarknetError::no_signature_for_pending_block().into());
         }
 
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_uri_segment("get_signature")
-            .expect("Failed to add URI segment. This should not fail in prod")
-            .with_block_id(&block_id);
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_signature")
+                .expect("Failed to add URI segment. This should not fail in prod")
+                .with_block_id(&block_id);
 
-        request.send_get::<ProviderBlockSignature>().await
+            request.send_get::<ProviderBlockSignature>().await
+        }).await
     }
 
     pub async fn get_class_by_hash(
@@ -97,24 +146,26 @@ impl GatewayProvider {
         class_hash: Felt,
         block_id: BlockId,
     ) -> Result<ContractClass, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_uri_segment("get_class_by_hash")
-            .expect("Failed to add URI segment. This should not fail in prod.")
-            .with_block_id(&block_id)
-            .with_class_hash(class_hash);
+        self.retry_get(|| async {
+            let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                .add_uri_segment("get_class_by_hash")
+                .expect("Failed to add URI segment. This should not fail in prod.")
+                .with_block_id(&block_id)
+                .with_class_hash(class_hash);
 
-        let value = request.send_get::<Value>().await?;
+            let value = request.send_get::<Value>().await?;
 
-        if value.get("sierra_program").is_some() {
-            let sierra: FlattenedSierraClass = serde_json::from_value(value)?;
-            Ok(ContractClass::Sierra(Arc::new(sierra)))
-        } else if value.get("program").is_some() {
-            let legacy: mp_gateway::class::LegacyContractClass = serde_json::from_value(value)?;
-            Ok(ContractClass::Legacy(Arc::new(LegacyContractClass::from(legacy).compress()?.into())))
-        } else {
-            let err = serde::de::Error::custom("Unknown contract type".to_string());
-            Err(SequencerError::DeserializeBody { serde_error: err })
-        }
+            if value.get("sierra_program").is_some() {
+                let sierra: FlattenedSierraClass = serde_json::from_value(value)?;
+                Ok(ContractClass::Sierra(Arc::new(sierra)))
+            } else if value.get("program").is_some() {
+                let legacy: mp_gateway::class::LegacyContractClass = serde_json::from_value(value)?;
+                Ok(ContractClass::Legacy(Arc::new(LegacyContractClass::from(legacy).compress()?.into())))
+            } else {
+                let err = serde::de::Error::custom("Unknown contract type".to_string());
+                Err(SequencerError::DeserializeBody { serde_error: err })
+            }
+        }).await
     }
 
     async fn add_transaction<T>(&self, transaction: UserTransaction) -> Result<T, SequencerError>
