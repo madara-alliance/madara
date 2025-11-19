@@ -712,6 +712,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_handle_sierra_class_cache_miss_async_mode(
         sierra_class: SierraConvertedClass,
         _temp_dir: TempDir,
@@ -779,6 +780,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_handle_sierra_class_disk_cache_error(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
@@ -1042,6 +1044,7 @@ mod tests {
     /// - Timeout events are logged appropriately
     #[rstest]
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_handle_sierra_class_disk_cache_timeout(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
@@ -1108,6 +1111,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_compilation_in_progress_prevents_duplicate(
         sierra_class: SierraConvertedClass,
         _temp_dir: TempDir,
@@ -1191,6 +1195,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_async_mode_retry_enabled(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
@@ -1266,6 +1271,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_async_mode_retry_disabled(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
         let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let _metrics_guard = test_counters::acquire_and_reset();
@@ -1398,6 +1404,7 @@ mod tests {
     /// - Blocking mode: Returns error when compilation fails or times out
     #[rstest]
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_handle_sierra_class_async_compilation_failure_fallback_to_vm(
         sierra_class: SierraConvertedClass,
         temp_dir: TempDir,

@@ -554,7 +554,7 @@ mod tests {
             assert_eq!(exec_config.memory_cache_timeout.as_millis(), DEFAULT_MEMORY_CACHE_TIMEOUT_MS as u128);
             assert_eq!(exec_config.disk_cache_load_timeout.as_secs(), DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS);
             assert_eq!(exec_config.compilation_mode, NativeCompilationMode::Async);
-            assert_eq!(exec_config.enable_retry, true);
+            assert!(exec_config.enable_retry);
             assert_eq!(exec_config.cache_dir, PathBuf::from(DEFAULT_CACHE_DIR));
         } else {
             panic!("Expected Enabled variant");

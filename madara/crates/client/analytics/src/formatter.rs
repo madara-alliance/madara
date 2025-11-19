@@ -315,11 +315,11 @@ impl CustomFormatter {
         write!(writer, "{} {}", self.timestamp_fmt(ts), cairo_native_prefix)?;
 
         // Level prefix shown for WARN and ERROR only
-        match level {
-            &Level::WARN => {
+        match *level {
+            Level::WARN => {
                 write!(writer, " {}", Style::new().yellow().apply_to("WARN"))?;
             }
-            &Level::ERROR => {
+            Level::ERROR => {
                 write!(writer, " {}", Style::new().red().apply_to("ERROR"))?;
             }
             _ => {} // INFO and DEBUG don't show level prefix

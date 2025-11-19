@@ -419,17 +419,22 @@ impl CairoNativeParams {
             Some(self.native_max_disk_cache_bytes) // User specified a numeric limit in bytes
         };
 
-        mc_class_exec::config::NativeConfig::new()
-            .with_native_execution(self.enable_native_execution)
-            .with_cache_dir(self.cache_dir())
-            .with_max_memory_cache_size(max_memory_cache_size)
-            .with_max_disk_cache_size(max_disk_cache_size)
-            .with_max_concurrent_compilations(self.native_max_concurrent_compilations)
-            .with_compilation_timeout(self.compilation_timeout())
-            .with_memory_cache_timeout(Duration::from_millis(self.native_memory_cache_timeout_ms))
-            .with_disk_cache_load_timeout(Duration::from_secs(self.native_disk_cache_load_timeout_secs))
-            .with_compilation_mode(mode)
-            .with_enable_retry(self.native_enable_retry)
-            .with_max_failed_compilations(self.native_max_failed_compilations)
+        let mut builder = mc_class_exec::config::NativeConfig::builder();
+
+        if self.enable_native_execution {
+            builder = builder
+                .with_cache_dir(self.cache_dir())
+                .with_max_memory_cache_size(max_memory_cache_size)
+                .with_max_disk_cache_size(max_disk_cache_size)
+                .with_max_concurrent_compilations(self.native_max_concurrent_compilations)
+                .with_compilation_timeout(self.compilation_timeout())
+                .with_memory_cache_timeout(Duration::from_millis(self.native_memory_cache_timeout_ms))
+                .with_disk_cache_load_timeout(Duration::from_secs(self.native_disk_cache_load_timeout_secs))
+                .with_compilation_mode(mode)
+                .with_enable_retry(self.native_enable_retry)
+                .with_max_failed_compilations(self.native_max_failed_compilations);
+        }
+
+        builder.build()
     }
 }

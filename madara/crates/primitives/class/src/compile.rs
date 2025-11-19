@@ -160,7 +160,7 @@ impl FlattenedSierraClass {
     /// # Arguments
     ///
     /// * `path` - File system path where the compiled native binary (`.so` file) will be stored.
-    ///            The file must not be locked by another process, or compilation will fail.
+    ///   The file must not be locked by another process, or compilation will fail.
     ///
     /// # Returns
     ///

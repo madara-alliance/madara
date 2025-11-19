@@ -52,7 +52,7 @@ pub(crate) fn mark_compilation_in_progress(class_hash: ClassHash) -> Option<Arc<
     use dashmap::mapref::entry::Entry;
     use std::sync::Arc;
     use tokio::sync::RwLock;
-    
+
     match COMPILATION_IN_PROGRESS.entry(class_hash) {
         Entry::Vacant(entry) => {
             // Not compiling - mark as in progress atomically
@@ -568,7 +568,7 @@ pub(crate) fn spawn_compilation_if_needed(
             return;
         }
     };
-    
+
     // Lock is now held, proceed with compilation setup
     // Note: We don't need to wait on the lock here since this is async compilation
     let _ = lock;
@@ -676,9 +676,8 @@ pub(crate) fn spawn_compilation_if_needed(
         // Use existing compile_to_native function in a blocking task with timeout
         let sierra_clone = sierra.clone();
         let path_clone = path.clone();
-        let compilation_future = tokio::task::spawn_blocking(move || {
-            sierra_clone.info.contract_class.compile_to_native(&path_clone)
-        });
+        let compilation_future =
+            tokio::task::spawn_blocking(move || sierra_clone.info.contract_class.compile_to_native(&path_clone));
 
         let compilation_result = tokio::time::timeout(compilation_timeout, compilation_future).await;
 
@@ -699,15 +698,7 @@ pub(crate) fn spawn_compilation_if_needed(
                 );
             }
             Ok(Err(e)) => {
-                handle_async_compilation_failure(
-                    class_hash,
-                    "panic",
-                    format!("{:#}", e),
-                    &path,
-                    timer,
-                    false,
-                    &config,
-                );
+                handle_async_compilation_failure(class_hash, "panic", format!("{:#}", e), &path, timer, false, &config);
             }
             Err(_) => {
                 handle_async_compilation_failure(
@@ -738,6 +729,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_compilation_semaphore_limit() {
         // Use a simple mutex guard pattern similar to execution.rs tests
         static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());

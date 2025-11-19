@@ -12,8 +12,6 @@ use starknet_api::core::ClassHash;
 #[cfg(test)]
 use starknet_types_core::felt::Felt;
 #[cfg(test)]
-use std::path::PathBuf;
-#[cfg(test)]
 use std::sync::{atomic::AtomicU64, Arc, OnceLock};
 #[cfg(test)]
 use tempfile::TempDir;
@@ -137,9 +135,7 @@ pub fn create_test_config(
         crate::compilation::init_compilation_semaphore(max_concurrent);
     }
 
-    let config = builder.build();
-
-    config
+    builder.build()
 }
 
 /// Create a test configuration as Arc (convenience wrapper).
@@ -164,7 +160,7 @@ pub fn create_test_config_arc(
 #[cfg(test)]
 pub fn create_native_class_internal(
     sierra: &SierraConvertedClass,
-    so_path: &PathBuf,
+    so_path: &std::path::Path,
 ) -> Result<crate::native_class::NativeCompiledClass, Box<dyn std::error::Error>> {
     // Compile Sierra to native
     let executor = sierra.info.contract_class.compile_to_native(so_path)?;
@@ -236,7 +232,7 @@ macro_rules! assert_counters {
     ) => {
         $(
             assert_eq!(
-                crate::metrics::test_counters::$counter.load(std::sync::atomic::Ordering::Relaxed),
+                $crate::metrics::test_counters::$counter.load(std::sync::atomic::Ordering::Relaxed),
                 $expected,
                 "Counter {} should be {}",
                 stringify!($counter),

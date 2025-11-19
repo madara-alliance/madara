@@ -32,9 +32,8 @@ use mp_class::SierraConvertedClass;
 /// This is different from CASM file loading in the sequencer, which doesn't have
 /// explicit timeouts because RocksDB handles timeouts internally. For disk files,
 /// we need explicit timeout protection.
-// Timeout constants are now configurable via NativeConfig
-// Default values: memory_cache_timeout = 100ms, disk_cache_load_timeout = 2s
-
+/// Timeout constants are now configurable via NativeConfig
+/// Default values: memory_cache_timeout = 100ms, disk_cache_load_timeout = 2s
 /// In-memory cache for compiled native classes.
 ///
 /// Uses DashMap for concurrent access without locking.
@@ -137,7 +136,7 @@ pub(crate) fn enforce_disk_cache_limit(cache_dir: &PathBuf, max_size: Option<u64
                 .accessed()
                 .ok()
                 .or_else(|| metadata.modified().ok())
-                .unwrap_or_else(|| std::time::SystemTime::UNIX_EPOCH);
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
 
             let size = metadata.len();
             entries.push((entry.path(), access_time, size));
@@ -545,12 +544,11 @@ pub(crate) fn try_get_from_disk_cache(
             // This helps the cache eviction system know which files are actively being used
             // When the cache needs to free up space, it will remove files that haven't been
             // accessed recently, keeping frequently used classes available
-            let _ = std::fs::OpenOptions::new().write(true).open(&path).and_then(|f| {
+            let _ = std::fs::OpenOptions::new().write(true).open(&path).map(|f| {
                 // Update the file timestamp without changing its contents
                 if let Ok(metadata) = f.metadata() {
                     f.set_len(metadata.len()).ok();
                 }
-                Ok(())
             });
 
             let load_elapsed = start.elapsed();
