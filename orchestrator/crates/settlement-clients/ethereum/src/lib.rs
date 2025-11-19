@@ -93,6 +93,7 @@ pub struct EthereumSettlementClient {
     wallet: EthereumWallet,
     wallet_address: Address,
     provider: Arc<DefaultHttpProvider>,
+    #[allow(unused)]
     impersonate_account: Option<Address>,
     tx_finality_retry_wait_in_seconds: u64,
     max_gas_price_mul_factor: f64,

@@ -126,7 +126,7 @@ impl Default for OrchestratorConfig {
 
             max_block_to_process: None,
             min_block_to_process: None,
-            madara_version: "0.13.3".to_string(),
+            madara_version: "0.14.0".to_string(),
             logs: (false, true),
         }
     }
@@ -322,6 +322,7 @@ impl OrchestratorConfig {
         }
 
         command.arg("--madara-version").arg(&self.madara_version);
+        command.arg("--disable-peerdas");
 
         // Add prover flags
         if self.sharp {

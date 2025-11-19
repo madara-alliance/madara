@@ -14,7 +14,7 @@ use orchestrator_sharp_service::SharpProverService;
 use orchestrator_starknet_da_client::StarknetDaClient;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::JsonRpcClient;
+use starknet::providers::{JsonRpcClient, Provider};
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -243,7 +243,17 @@ impl Config {
         }
 
         // External Clients Initialization
-        let prover_client = Self::build_prover_service(&prover_config, &params);
+        let prover_client = Self::build_prover_service(
+            &prover_config,
+            &params,
+            Some(
+                rpc_client
+                    .chain_id()
+                    .await
+                    .map_err(|e| OrchestratorError::ConfigError(format!("Failed to get Chain ID from RPC: {}", e)))?
+                    .to_fixed_hex_string(),
+            ),
+        );
         let da_client = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
@@ -313,14 +323,17 @@ impl Config {
     pub(crate) fn build_prover_service(
         prover_params: &ProverConfig,
         params: &ConfigParam,
+        chain_id_hex: Option<String>,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => {
                 Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
             }
-            ProverConfig::Atlantic(atlantic_params) => {
-                Box::new(AtlanticProverService::new_with_args(atlantic_params, &params.prover_layout_name))
-            }
+            ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(
+                atlantic_params,
+                &params.prover_layout_name,
+                chain_id_hex,
+            )),
         }
     }
 
