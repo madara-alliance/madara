@@ -185,6 +185,7 @@ impl StateDiffMap {
     }
 }
 
+// TODO(heemankv, 19-11-25):  Check if it's possible to optimise this even further.
 /// Compress a single contract's storage entries by checking against pre_range_block
 async fn compress_single_contract(
     contract_addr: Felt,
@@ -331,8 +332,7 @@ pub async fn check_contract_existed_at_block(
     contract_address: Felt,
     block_number: u64,
 ) -> anyhow::Result<bool> {
-    let x = get_class_hash_at(backend.clone(), block_number, contract_address).await?.is_some();
-    Ok(x)
+    Ok(get_class_hash_at(backend, block_number, contract_address).await?.is_some())
 }
 
 /// This function returns the class hash of a contract at a given block number

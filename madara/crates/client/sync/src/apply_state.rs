@@ -196,9 +196,9 @@ impl ApplyStateSteps {
 
         self.importer
             .run_in_rayon_pool_global(move |_| {
-                // Use latest_block - 1 as the block number for trie commit
-                // The squashed state diff represents the FINAL state at this block
-                // Fallback lookups in contract_state_leaf_hash need to query at this block number
+                // TODO(heemankv, 19-11-25): Consider using RangeInclusive instead of Range to avoid confusion
+                // latest_block is block_range.end (exclusive), so actual last processed block is latest_block - 1
+                // This ensures fallback DB queries in contract_state_leaf_hash fetch state at the correct block number
                 let trie_block_number = latest_block.saturating_sub(1);
                 let global_state_root = backend
                     .write_access()
