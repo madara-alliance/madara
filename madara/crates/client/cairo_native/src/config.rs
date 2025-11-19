@@ -54,7 +54,7 @@ pub const DEFAULT_MAX_CONCURRENT_COMPILATIONS: usize = 4;
 
 /// Default maximum number of failed compilation entries to keep before evicting oldest.
 /// This prevents unbounded growth while still allowing retry for recently failed classes.
-pub const DEFAULT_MAX_FAILED_COMPILATIONS: usize = 10_000;
+pub const DEFAULT_MAX_FAILED_COMPILATIONS: usize = 1_000_000;
 
 /// Default cache directory path for compiled native classes
 pub const DEFAULT_CACHE_DIR: &str = "/usr/share/madara/data/classes";

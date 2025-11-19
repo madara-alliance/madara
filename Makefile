@@ -80,6 +80,7 @@ Targets:
   Runs various code quality checks including formatting and linting.
 
   - check              Run code quality checks (fmt, clippy)
+                       Use NO_CAIRO_SETUP=1 to skip Cairo setup (e.g., make check NO_CAIRO_SETUP=1)
   - fmt                Format code using taplo and cargo fmt
   - pre-push         Run formatting and checks before committing / Pushing
 
@@ -245,7 +246,10 @@ build-orchestrator: setup-cairo
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: check
-check: setup-cairo
+check:
+	@if [ -z "$(NO_CAIRO_SETUP)" ]; then \
+		$(MAKE) --silent setup-cairo; \
+	fi
 	@echo -e "$(DIM)Running code quality checks...$(RESET)"
 	@echo -e "$(INFO)Running prettier check...$(RESET)"
 	@npm install

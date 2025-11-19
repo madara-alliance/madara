@@ -95,6 +95,12 @@ pub(crate) fn get_current_compilations_count() -> usize {
     COMPILATION_IN_PROGRESS.len()
 }
 
+/// Clear all compilation in progress markers (for tests only).
+#[cfg(test)]
+pub(crate) fn clear_compilations_in_progress() {
+    COMPILATION_IN_PROGRESS.clear();
+}
+
 /// Tracks classes that failed compilation in async mode.
 ///
 /// **Purpose**: When a compilation fails in async mode, the class hash is added here with
@@ -622,8 +628,8 @@ pub(crate) fn spawn_compilation_if_needed(
 
         // Get the lock that was already created above
         // The entry should always exist here since it was atomically inserted before spawning this task
-        let lock = match COMPILATION_IN_PROGRESS.get(&class_hash) {
-            Some(entry) => entry.value().clone(),
+        let lock = match get_compilation_lock(&class_hash) {
+            Some(lock) => lock,
             None => {
                 // Entry was removed (shouldn't happen, but handle gracefully)
                 tracing::warn!(
@@ -737,7 +743,7 @@ mod tests {
         let _metrics_guard = crate::metrics::test_counters::acquire_and_reset();
 
         // Clear any existing state
-        COMPILATION_IN_PROGRESS.clear();
+        clear_compilations_in_progress();
         cache::cache_clear();
         clear_failed_compilations();
 
@@ -778,7 +784,7 @@ mod tests {
 
         // Verify that at most `max_concurrent` compilations are in progress
         // (The semaphore should limit how many compilations actually start)
-        let in_progress_count = COMPILATION_IN_PROGRESS.len();
+        let in_progress_count = get_current_compilations_count();
         assert!(
             in_progress_count <= max_concurrent,
             "Should have at most {} compilations in progress (semaphore limit), got {}",
@@ -790,14 +796,14 @@ mod tests {
         let start = std::time::Instant::now();
         let timeout = Duration::from_secs(60);
         while start.elapsed() < timeout {
-            if COMPILATION_IN_PROGRESS.is_empty() {
+            if get_current_compilations_count() == 0 {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
         // Verify all compilations completed
-        assert!(COMPILATION_IN_PROGRESS.is_empty(), "All compilations should have completed");
+        assert_eq!(get_current_compilations_count(), 0, "All compilations should have completed");
 
         // Verify config has valid max_concurrent_compilations
         let exec_config = config.execution_config().expect("test should use enabled config");

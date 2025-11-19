@@ -436,7 +436,7 @@ mod tests {
     // Import test utilities from test_utils
     // Note: assert_counters is a macro exported at crate root due to #[macro_export]
     use crate::assert_counters;
-    use crate::test_utils::assert_is_vm_class;
+    use crate::test_utils::{assert_is_native_class, assert_is_vm_class};
 
     use crate::metrics::test_counters;
     use mp_class::SierraConvertedClass;
@@ -545,7 +545,9 @@ mod tests {
 
         assert!(result.is_ok(), "Should successfully retrieve from memory cache");
         let runnable = result.unwrap();
-        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Assert that the returned class IS Native (from memory cache)
+        assert_is_native_class(&runnable);
 
         // Verify it's still in cache after call
         assert!(cache::cache_contains(&class_hash), "Class should remain in memory cache after call");
@@ -592,7 +594,9 @@ mod tests {
 
         assert!(result.is_ok(), "Should successfully retrieve from disk cache");
         let runnable = result.unwrap();
-        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Assert that the returned class IS Native (from disk cache)
+        assert_is_native_class(&runnable);
 
         // Verify it was loaded into memory cache after disk hit
         assert!(cache::cache_contains(&class_hash), "Should be loaded into memory cache after disk hit");
@@ -630,13 +634,9 @@ mod tests {
 
         assert!(result.is_ok(), "Should return VM class when native is disabled");
         let runnable = result.unwrap();
-        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
 
-        // Assert that the returned class is NOT Cairo Native (should be VM)
-        assert!(
-            !matches!(runnable, RunnableCompiledClass::V1Native(_)),
-            "Returned class should NOT be Cairo Native when native is disabled (VM class expected)"
-        );
+        // Assert that the returned class IS VM (native is disabled)
+        assert_is_vm_class(&runnable);
 
         // Metrics assertions - native disabled
         assert_counters!(
@@ -686,10 +686,8 @@ mod tests {
 
         assert!(result.is_ok(), "Should successfully compile in blocking mode");
         let runnable = result.unwrap();
-        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
 
         // Assert that the returned class IS Cairo Native (not VM)
-        use crate::test_utils::assert_is_native_class;
         assert_is_native_class(&runnable);
         // Compilation should be complete, so not in progress
         assert!(
@@ -746,7 +744,9 @@ mod tests {
 
         assert!(result.is_ok(), "Should return VM class immediately in async mode");
         let runnable = result.unwrap();
-        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Assert that the returned class IS VM (not Native) in async mode
+        assert_is_vm_class(&runnable);
 
         // Wait for compilation completion with 20 second timeout
         let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;
@@ -772,8 +772,6 @@ mod tests {
             CACHE_DISK_MISS: 1,
             VM_FALLBACKS: 1,
             COMPILATIONS_STARTED: 1,
-        );
-        assert_counters!(
             COMPILATIONS_SUCCEEDED: 1,
         );
     }
@@ -1013,7 +1011,9 @@ mod tests {
 
         assert!(result.is_ok(), "Should successfully retrieve from disk cache after memory miss");
         let runnable = result.unwrap();
-        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Assert that the returned class IS Native (from disk cache)
+        assert_is_native_class(&runnable);
 
         // Verify it was loaded into memory cache after disk hit
         assert!(cache::cache_contains(&class_hash), "Should be loaded into memory cache after disk hit");
@@ -1082,7 +1082,9 @@ mod tests {
         // Async mode returns VM immediately while compilation happens in background
         assert!(result.is_ok(), "Should return VM class immediately in async mode");
         let runnable = result.unwrap();
-        assert!(std::mem::size_of_val(&runnable) > 0, "Should return valid RunnableCompiledClass");
+
+        // Assert that the returned class IS VM (not Native) in async mode
+        assert_is_vm_class(&runnable);
 
         // Wait for compilation completion with 20 second timeout
         let compilation_completed = wait_for_compilation_completion_async(&class_hash, 20).await;

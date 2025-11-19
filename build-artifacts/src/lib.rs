@@ -151,14 +151,7 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     // Clean up old artifact extractor containers to prevent accumulation
     // Match containers with pattern: madara-artifacts-extractor-v{version} or madara-artifacts-extractor-v{version}-{timestamp}
     let mut docker = std::process::Command::new("docker");
-    docker.args([
-        "ps",
-        "-a",
-        "--filter",
-        &format!("name=madara-artifacts-extractor-v{}", version),
-        "--format",
-        "{{.Names}}",
-    ]);
+    docker.args(["ps", "-a", "--format", "{{.Names}}"]);
     if let Ok(output) = docker.output() {
         if output.status.success() {
             let containers = String::from_utf8_lossy(&output.stdout);
