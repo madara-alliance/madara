@@ -330,7 +330,6 @@ impl TestConfigBuilder {
 
         let using_actual_queue = matches!(queue_type, ConfigType::Actual);
         let using_actual_database = matches!(database_type, ConfigType::Actual);
-        let using_actual_storage = matches!(storage_type, ConfigType::Actual);
         let using_actual_alerts = matches!(alerts_type, ConfigType::Actual);
 
         // init alerts

@@ -7,7 +7,6 @@ use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
 use std::time::Duration;
 use tokio::time::sleep;
-use uuid::Uuid;
 
 pub const SNS_ALERT_TEST_QUEUE: &str = "orchestrator_sns_alert_testing_queue";
 
