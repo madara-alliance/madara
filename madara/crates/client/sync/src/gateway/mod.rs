@@ -24,6 +24,7 @@ pub struct ForwardSyncConfig {
     pub apply_state_parallelization: usize,
     pub apply_state_batch_size: usize,
     pub disable_tries: bool,
+    pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
     pub enable_bouncer_config_sync: bool,
 }
@@ -38,6 +39,7 @@ impl Default for ForwardSyncConfig {
             apply_state_parallelization: 16,
             apply_state_batch_size: 4,
             disable_tries: false,
+            snap_sync: false,
             keep_pre_v0_13_2_hashes: false,
             enable_bouncer_config_sync: false,
         }
@@ -51,6 +53,10 @@ impl ForwardSyncConfig {
     pub fn keep_pre_v0_13_2_hashes(self, val: bool) -> Self {
         Self { keep_pre_v0_13_2_hashes: val, ..self }
     }
+    pub fn snap_sync(self, val: bool) -> Self {
+        Self { snap_sync: val, ..self }
+    }
+
     pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
         Self { enable_bouncer_config_sync: val, ..self }
     }
@@ -120,6 +126,7 @@ impl GatewayForwardSync {
             config.apply_state_parallelization,
             config.apply_state_batch_size,
             config.disable_tries,
+            config.snap_sync
         );
         (blocks_pipeline, classes_pipeline, apply_state_pipeline)
     }
@@ -193,7 +200,7 @@ impl GatewayForwardSync {
         PipelineStatus {
             blocks: self.blocks_pipeline.last_applied_block_n(),
             classes: self.classes_pipeline.last_applied_block_n(),
-            apply_state: self.apply_state_pipeline.last_applied_block_n(),
+            apply_state: self.backend.get_latest_applied_trie_update().ok().flatten(),
         }
     }
 }
@@ -220,6 +227,8 @@ impl ForwardPipeline for GatewayForwardSync {
     ) -> anyhow::Result<()> {
         tracing::debug!("Run pipeline to height={target_height:?}");
 
+        self.apply_state_pipeline.set_target_block(target_height);
+
         let mut done = false;
         while !done {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
@@ -228,8 +237,6 @@ impl ForwardPipeline for GatewayForwardSync {
 
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
-
-            let start_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
 
             tokio::select! {
                 Some(res) = self.apply_state_pipeline.next() => {
@@ -270,7 +277,15 @@ impl ForwardPipeline for GatewayForwardSync {
                 else => done = true,
             }
 
+            // Calculate the range of blocks to seal based on:
+            // - start_next_block: The block after the current chain tip (last sealed block)
+            // - new_next_block: The block after the minimum of all pipeline completions
+            // This ensures we only seal blocks that have been fully processed by ALL pipelines
+            let start_next_block = self.backend.latest_confirmed_block_n()
+                .map(|n| n + 1)
+                .unwrap_or(0);
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
+
             for block_n in start_next_block..new_next_block {
                 // Mark the block as fully imported.
                 self.backend.write_access().new_confirmed_block(block_n)?;
@@ -294,7 +309,7 @@ impl ForwardPipeline for GatewayForwardSync {
             "📥 Blocks: {} | Classes: {} | State: {}",
             self.blocks_pipeline.status(),
             self.classes_pipeline.status(),
-            self.apply_state_pipeline.status(),
+            self.apply_state_pipeline.trie_state_status(),
         );
     }
 
@@ -311,6 +326,7 @@ impl GatewayLatestProbe {
     pub fn new(client: Arc<GatewayProvider>) -> Self {
         Self { client }
     }
+
     async fn probe(
         self: Arc<Self>,
         _highest_known_block: Option<ProviderBlockHeader>,
