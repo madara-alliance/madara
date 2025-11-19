@@ -58,13 +58,6 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
-    // Set up mock job handler (needed for queue_job_for_verification which calls get_job_handler)
-    let mut job_handler = MockJobHandlerTrait::new();
-    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
-    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context_safe();
-    ctx.expect().with(eq(job_type.clone())).times(0..).returning(move |_| Arc::clone(&job_handler));
-
     let client = hyper::Client::new();
     let response = client
         .request(
@@ -174,13 +167,6 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     let job_item = build_job_item(job_type.clone(), JobStatus::Failed, 1);
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
-
-    // Set up mock job handler (needed for retry_job and queue_job_for_verification)
-    let mut job_handler = MockJobHandlerTrait::new();
-    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
-    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context_safe();
-    ctx.expect().with(eq(job_type.clone())).times(0..).returning(move |_| Arc::clone(&job_handler));
 
     let client = hyper::Client::new();
     let response = client

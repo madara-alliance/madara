@@ -289,12 +289,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     let ctx_guard = get_job_handler_context_safe();
     ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure process_job succeeds
-    let process_result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &process_result {
-        panic!("process_job failed: {:?}", e);
-    }
-    assert!(process_result.is_ok());
+    assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_ok());
     // Getting the updated job.
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     // checking if job_status is updated in db
@@ -323,7 +318,6 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 /// 2. The job is moved to failed state
 /// 3. Appropriate error message is set in the job metadata
 #[rstest]
-#[ignore] // Temporarily ignored: panics in mock handler may poison mutex in parallel tests
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn process_job_handles_panic() {
@@ -581,12 +575,7 @@ async fn verify_job_with_verified_status_works() {
     // Mocking the `get_job_handler` call - verify_job calls it exactly once
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure verify_job succeeds
-    let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &verify_result {
-        panic!("verify_job failed: {:?}", e);
-    }
-    assert!(verify_result.is_ok());
+    assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
 
     // DB checks.
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
@@ -644,12 +633,7 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     // Mocking the `get_job_handler` call - verify_job calls it exactly once
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure verify_job succeeds
-    let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &verify_result {
-        panic!("verify_job failed: {:?}", e);
-    }
-    assert!(verify_result.is_ok());
+    assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
 
     // DB checks.
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
@@ -710,12 +694,7 @@ async fn verify_job_with_rejected_status_works() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure verify_job succeeds
-    let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &verify_result {
-        panic!("verify_job failed: {:?}", e);
-    }
-    assert!(verify_result.is_ok());
+    assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
 
     // DB checks - verify the job was moved to a failed state
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
@@ -771,12 +750,7 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     let ctx = get_job_handler_context_safe();
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
-    // Ensure verify_job succeeds
-    let verify_result = JobHandlerService::verify_job(job_item.id, services.config.clone()).await;
-    if let Err(e) = &verify_result {
-        panic!("verify_job failed: {:?}", e);
-    }
-    assert!(verify_result.is_ok());
+    assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
 
     // DB checks - verify the job status remains PendingVerification and verification attempt is
     // incremented
