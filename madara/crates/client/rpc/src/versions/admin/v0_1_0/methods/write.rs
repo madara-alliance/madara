@@ -99,15 +99,20 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         // Get the block number for the target hash
-        let target_block_n = self.backend.db.find_block_hash(&block_hash)
+        let target_block_n = self
+            .backend
+            .db
+            .find_block_hash(&block_hash)
             .context("Failed to find block number for revert target")
             .map_err(StarknetRpcApiError::from)?
             .ok_or_else(|| StarknetRpcApiError::ErrUnexpectedError {
-                error: format!("Block with hash {:#x} not found", block_hash).into()
+                error: format!("Block with hash {:#x} not found", block_hash).into(),
             })?;
 
         // Check if snap sync was used and if target block is before snap sync range
-        if let Some(snap_sync_latest_block) = self.backend.get_snap_sync_latest_block()
+        if let Some(snap_sync_latest_block) = self
+            .backend
+            .get_snap_sync_latest_block()
             .context("Failed to check snap sync status")
             .map_err(StarknetRpcApiError::from)?
         {
