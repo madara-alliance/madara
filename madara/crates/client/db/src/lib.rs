@@ -755,7 +755,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// Write a state diff to the global tries.
     /// Returns the new state root.
     ///
-    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// **Warning**: The caller must ensure no block parts are saved on top of an existing confirmed block.
     /// You are only allowed to write block parts past the latest confirmed block.
     pub fn apply_to_global_trie<'a>(
         &self,
@@ -823,6 +823,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
         self.db.get_latest_applied_trie_update()
     }
+    pub fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
+        self.db.get_snap_sync_latest_block()
+    }
 }
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
@@ -849,6 +852,9 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_latest_applied_trie_update(block_n)
+    }
+    pub fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
+        self.db.write_snap_sync_latest_block(block_n)
     }
 
     /// Revert the blockchain to a specific block hash.
