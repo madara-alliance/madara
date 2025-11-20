@@ -134,6 +134,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
         &self,
         backend_chain_config: &mp_chain_config::ChainConfig,
     ) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>>;
+    fn get_snap_sync_latest_block(&self) -> Result<Option<u64>>;
 
     // L1 to L2 messages
 
@@ -171,6 +172,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()>;
     fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()>;
     fn clear_runtime_exec_config(&self) -> Result<()>;
+    fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()>;
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
@@ -190,6 +192,9 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     /// Remove all blocks in the database from this block_n inclusive. This includes partially imported blocks as well.
     fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()>;
+
+    /// Fetches the latest global state root.
+    fn get_state_root_hash(&self) -> Result<Felt>;
 
     /// Revert the blockchain state to a specific block hash.
     fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)>;

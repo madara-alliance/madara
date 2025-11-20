@@ -8,7 +8,8 @@ use crate::{
         metrics::DbMetrics,
         options::rocksdb_global_options,
         snapshots::Snapshots,
-        update_global_trie::apply_to_global_trie,
+        global_trie::apply_to_global_trie,
+        global_trie::get_state_root
     },
     storage::{
         ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
@@ -47,7 +48,7 @@ mod state;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
 pub mod trie;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
-pub mod update_global_trie;
+pub mod global_trie;
 
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
@@ -324,6 +325,8 @@ impl MadaraStorageRead for RocksDBStorage {
         backend_chain_config: &mp_chain_config::ChainConfig,
     ) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>> {
         self.inner.get_runtime_exec_config(backend_chain_config).context("Getting runtime execution config from db")
+    fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
+        self.inner.get_snap_sync_latest_block().context("Getting snap sync latest block from db")
     }
 
     // L1 to L2 messages
@@ -465,6 +468,9 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn clear_runtime_exec_config(&self) -> Result<()> {
         tracing::debug!("Clearing runtime execution config");
         self.inner.clear_runtime_exec_config().context("Clearing runtime execution config")
+    fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
+        tracing::debug!("Write snap sync latest block block_n={block_n:?}");
+        self.inner.write_snap_sync_latest_block(block_n).context("Writing snap sync latest block")
     }
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
@@ -477,6 +483,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .write_mempool_transaction(tx)
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
+    }
+
+    fn get_state_root_hash(&self) -> Result<Felt> {
+        get_state_root(self)
     }
 
     fn apply_to_global_trie<'a>(
