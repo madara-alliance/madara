@@ -14,6 +14,7 @@ Targets:
 
   [ SETUP ]
 
+  - setup-cairo             Setup Cairo 0 environment for building
   - setup-l2                Setup orchestrator with L2 layer
   - setup-l2-localstack     Setup orchestrator with L2 layer and Localstack
   - setup-l3                Setup orchestrator with L3 layer
@@ -69,6 +70,11 @@ Targets:
   - clean-db           Perform clean and remove local database
   - fclean             Perform clean-db and remove local images
 
+  [ BUILDING ]
+
+  - build-madara                  Build Madara with Cairo 0 environment setup
+  - build-orchestrator            Build Orchestrator with Cairo 0 environment setup
+
   [ CODE QUALITY ]
 
   Runs various code quality checks including formatting and linting.
@@ -103,6 +109,8 @@ DOCKER_TAG     := madara:latest
 DOCKER_IMAGE   := ghcr.io/madara-alliance/$(DOCKER_TAG)
 DOCKER_GZ      := image.tar.gz
 ARTIFACTS      := ./build-artifacts
+VENV           := sequencer_venv
+VENV_ACTIVATE  := . $(VENV)/bin/activate
 
 # Configuration for E2E bridge tests
 CARGO_TARGET_DIR ?= target
@@ -195,9 +203,48 @@ artifacts:
 	@git submodule update --init --recursive
 	./scripts/artifacts.sh
 
+.PHONY: setup-cairo
+setup-cairo:
+	@echo -e "$(DIM)Setting up Cairo 0 environment...$(RESET)"
+	@if [ ! -d "$(VENV)" ]; then \
+		echo -e "$(INFO)Creating Python virtual environment...$(RESET)"; \
+		python3 -m venv $(VENV); \
+	else \
+		echo -e "$(PASS)✅ Virtual environment already exists$(RESET)"; \
+	fi
+	@echo -e "$(INFO)Installing Cairo 0 dependencies...$(RESET)"
+	@if [ ! -f sequencer_requirements.txt ]; then \
+		CARGO_HOME=$${CARGO_HOME:-$$HOME/.cargo}; \
+		GIT_CHECKOUTS=$$(readlink -f "$$CARGO_HOME/git" 2>/dev/null || echo "$$CARGO_HOME/git"); \
+		SEQUENCER_REV=$$(grep -A 2 'name = "blockifier"' Cargo.lock | grep 'sequencer?rev=' | sed -E 's/.*rev=([a-f0-9]+).*/\1/' | cut -c1-7); \
+		REQUIREMENTS_PATH=$$(find "$$GIT_CHECKOUTS/checkouts" -type f -path "*/sequencer*/$$SEQUENCER_REV*/scripts/requirements.txt" 2>/dev/null | head -n 1); \
+		if [ -n "$$REQUIREMENTS_PATH" ]; then \
+			sed 's/numpy==2.0.2/numpy<2.0/' "$$REQUIREMENTS_PATH" > sequencer_requirements.txt; \
+			echo -e "$(INFO)Found requirements.txt at: $$REQUIREMENTS_PATH$(RESET)"; \
+		else \
+			echo -e "$(WARN)⚠️  WARNING: Could not find requirements.txt from sequencer checkout$(RESET)"; \
+			echo -e "$(INFO)Creating basic requirements with cairo-lang...$(RESET)"; \
+			echo "cairo-lang==0.14.0.1" > sequencer_requirements.txt; \
+			echo "numpy<2.0" >> sequencer_requirements.txt; \
+		fi; \
+	fi
+	@$(VENV_ACTIVATE) && pip install --upgrade pip > /dev/null 2>&1 && pip install -r sequencer_requirements.txt > /dev/null 2>&1
+	@$(VENV_ACTIVATE) && cairo-compile --version > /dev/null 2>&1 && echo -e "$(PASS)✅ Cairo 0 environment ready (cairo-compile $$($(VENV_ACTIVATE) && cairo-compile --version 2>&1))$(RESET)" || (echo -e "$(WARN)❌ Cairo setup failed$(RESET)" && exit 1)
+
+.PHONY: build-madara
+build-madara:
+	@echo -e "$(DIM)Building Madara with Cairo 0 environment...$(RESET)"
+	@$(VENV_ACTIVATE) && cargo build --manifest-path madara/Cargo.toml  --bin madara --release
+	@echo -e "$(PASS)✅ Build complete!$(RESET)"
+
+.PHONY: build-orchestrator
+build-orchestrator: setup-cairo
+	@echo -e "$(DIM)Building Orchestrator with Cairo 0 environment...$(RESET)"
+	@$(VENV_ACTIVATE) && cargo build --bin orchestrator --release
+	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: check
-check:
+check: setup-cairo
 	@echo -e "$(DIM)Running code quality checks...$(RESET)"
 	@echo -e "$(INFO)Running prettier check...$(RESET)"
 	@npm install
@@ -206,20 +253,23 @@ check:
 	@cargo fmt -- --check
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
-	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
+	@echo "Running cargo clippy..."
 	@cargo clippy --workspace --no-deps -- -D warnings
-	@echo -e "$(INFO)Running cargo clippy workspace tests...$(RESET)"
 	@cargo clippy --workspace --tests --no-deps -- -D warnings
-	@echo -e "$(INFO)Running cargo clippy with testing features...$(RESET)"
-	@cargo clippy --workspace --exclude madara --features testing --no-deps -- -D warnings
-	@echo -e "$(INFO)Running cargo clippy with testing features and tests...$(RESET)"
-	@cargo clippy --workspace --exclude madara --features testing --tests --no-deps -- -D warnings
+	@# TODO(mehul 14/11/2025, hotfix): This is a temporary fix to ensure that the madara is linted.
+	@# Madara does not belong to the toplevel workspace, so we need to lint it separately.
+	@# Remove this once we add madara back to toplevel workspace.
+	@echo "Running cargo clippy for madara..."
+	@cd madara && \
+	cargo clippy --workspace --no-deps -- -D warnings && \
+	cargo clippy --workspace --tests --no-deps -- -D warnings && \
+	cd ..
 	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
 	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
 
 .PHONY: fmt
-fmt:
+fmt: setup-cairo
 	@echo -e "$(DIM)Running code formatters...$(RESET)"
 	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
 	@npm install
@@ -421,10 +471,10 @@ test: test-e2e test-orchestrator
 	@echo -e "$(PASS)All tests completed!$(RESET)"
 
 .PHONY: pre-push
-pre-push:
+pre-push: setup-cairo
 	@echo -e "$(DIM)Running pre-push checks...$(RESET)"
 	@echo -e "$(INFO)Running code quality checks...$(RESET)"
-	@$(MAKE) --silent check
+	@$(VENV_ACTIVATE) && $(MAKE) --silent check
 	@echo -e "$(PASS)Pre-push checks completed successfully!$(RESET)"
 
 .PHONY: git-hook

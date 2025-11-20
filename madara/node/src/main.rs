@@ -220,6 +220,12 @@ async fn main() -> anyhow::Result<()> {
 
     let sys_info = SysInfo::probe();
     sys_info.show();
+    
+    // Config-based warnings shall be added here
+
+    if !run_cmd.is_sequencer() && run_cmd.l2_sync_params.snap_sync {
+        tracing::info!("🚨 Snap sync enabled; storage proofs are not guaranteed for every block");
+    }
 
     // ===================================================================== //
     //                             SERVICES (SETUP)                          //
@@ -333,17 +339,6 @@ async fn main() -> anyhow::Result<()> {
     let gateway_client = Arc::new(provider);
 
     // Block production
-
-    // Log preconfirmed block restart behavior configuration
-    // TODO(mohiiit, 12-11-25): what if the starknet-version have been updated?
-    // version constants or bouncer weights have changed?
-    if run_cmd.is_sequencer() {
-        if run_cmd.block_production_params.close_preconfirmed_block_upon_restart {
-            tracing::info!("🔄 Preconfirmed blocks will be closed on restart");
-        } else {
-            tracing::info!("🔄 Preconfirmed blocks will be resumed on restart");
-        }
-    }
 
     let service_block_production = BlockProductionService::new(
         &run_cmd.block_production_params,

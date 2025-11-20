@@ -3,9 +3,7 @@ use crate::{
     prelude::*,
     rocksdb::RocksDBStorage,
 };
-use mp_block::{
-    header::PreconfirmedHeader, FullBlockWithoutCommitments, MadaraPreconfirmedBlockInfo, TransactionWithReceipt,
-};
+use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, MadaraPreconfirmedBlockInfo, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{
@@ -513,6 +511,7 @@ mod tests {
                         },
                         declared_class: None,
                         arrived_at: Default::default(),
+                        paid_fee_on_l1: None,
                     },
                     // Tx #1 - Revert some changes, make additional changes
                     PreconfirmedExecutedTransaction {
@@ -545,6 +544,7 @@ mod tests {
                         },
                         declared_class: None,
                         arrived_at: Default::default(),
+                        paid_fee_on_l1: None,
                     },
                 ],
                 vec![], // no candidates

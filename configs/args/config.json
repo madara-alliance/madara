@@ -35,6 +35,7 @@
     "l2_sync_disabled": false,
     "unsafe_starting_block": null,
     "disable_tries": false,
+    "snap_sync": false,
     "gateway_key": null,
     "gateway_url": null,
     "warp_update_port_rpc": 9943,
@@ -107,7 +108,6 @@
   },
   "block_production_params": {
     "block_production_disabled": false,
-    "close_preconfirmed_block_upon_restart": false,
     "devnet_contracts": 10
   },
   "chain_config_override": {

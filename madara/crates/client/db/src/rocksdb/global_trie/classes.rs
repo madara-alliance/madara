@@ -47,7 +47,7 @@ pub fn class_trie_root(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{rocksdb::update_global_trie::tests::setup_test_backend, MadaraBackend};
+    use crate::{rocksdb::global_trie::tests::setup_test_backend, MadaraBackend};
     use rstest::*;
     use std::sync::Arc;
 
