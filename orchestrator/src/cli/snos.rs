@@ -10,8 +10,7 @@ use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STR
 fn parse_constants(path: &str) -> Result<VersionedConstants, String> {
     let path_buf = PathBuf::from(path);
     tracing::debug!(file_path = %path_buf.display(), "Loading versioned constants from file");
-    VersionedConstants::from_path(&path_buf)
-        .map_err(|e| format!("Failed to load versioned constants from file: {}", e))
+    VersionedConstants::from_path(&path_buf).map_err(|e| format!("Failed to load versioned constants from file: {}", e))
 }
 
 #[derive(Debug, Clone, Args)]
