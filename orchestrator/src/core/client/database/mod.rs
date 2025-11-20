@@ -388,4 +388,19 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         aggregator_index: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
+
+    // ================================================================================
+    // Health Check Methods
+    // ================================================================================
+
+    /// Perform a health check on the database connection
+    ///
+    /// This method verifies that the database is accessible and operational.
+    /// It should perform a lightweight operation that validates connectivity
+    /// and basic functionality without impacting performance.
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the database is healthy and accessible
+    /// * `Err(DatabaseError)` - If the health check fails
+    async fn health_check(&self) -> Result<(), DatabaseError>;
 }

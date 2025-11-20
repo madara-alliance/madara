@@ -434,4 +434,15 @@ impl QueueClient for SQS {
 
         Ok(delivery)
     }
+
+    async fn health_check(&self) -> Result<(), QueueError> {
+        // Verify SQS accessibility by getting queue attributes
+        // This checks both connectivity and permissions
+        let queue_name = self.get_queue_name(&QueueType::WorkerTrigger)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        self.inner.client().get_queue_attributes().queue_url(&queue_url).send().await?;
+
+        Ok(())
+    }
 }

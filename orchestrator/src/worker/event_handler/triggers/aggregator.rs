@@ -12,7 +12,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error};
 
 pub struct AggregatorJobTrigger;
 
@@ -22,8 +22,6 @@ impl JobTrigger for AggregatorJobTrigger {
     /// 2. Check if all the child jobs for this batch are Completed
     /// 3. Create the Aggregator job for all such Batches and update the Batch status
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        info!(log_type = "starting", "AggregatorWorker started");
-
         // Get all the closed batches
         let closed_batches =
             config.database().get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(10)).await?;
@@ -89,20 +87,19 @@ impl JobTrigger for AggregatorJobTrigger {
                             AggregatorBatchStatus::PendingAggregatorRun,
                         )
                         .await?;
-                    info!(batch_id = %batch.id, batch_index = %batch.index, "Successfully created new aggregator job")
                 }
-                Err(_) => {
-                    warn!(batch_id = %batch.id, batch_index = %batch.index, "Failed to create new aggregator job");
+                Err(e) => {
+                    error!(error = %e, "Failed to create new {:?} job for {}", JobType::Aggregator, batch.index);
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::Aggregator)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
                     ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                    return Err(e.into());
                 }
             }
         }
 
-        trace!(log_type = "completed", "AggregatorWorker completed");
         Ok(())
     }
 }

@@ -39,7 +39,7 @@ use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256, DefaultHttpPr
 use lazy_static::lazy_static;
 use mockall::automock;
 use tokio::time::sleep;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 // For more details on state update, refer to the core contract logic
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
@@ -256,7 +256,14 @@ impl SettlementClient for EthereumSettlementClient {
         state_diff: Vec<Vec<u8>>,
         _nonce: u64,
     ) -> Result<String> {
-        info!(log_type = "starting", category = "update_state", function_type = "blobs", "Updating state with blobs.");
+        // TODO(prakhar,20/11/2025): Update the logs to add custom formatter - https://github.com/madara-alliance/madara/blob/d2a1e8050a3d01ccf398f57616cbc4fb6386aaa6/madara/crates/client/analytics/src/formatter.rs#L288
+        info!(
+            log_type = "starting",
+            category = "update_state",
+            state_diff_len = %state_diff.len(),
+            program_output_len = %program_output.len(),
+            "Updating state with blob"
+        );
 
         let mut mul_factor = GAS_PRICE_MULTIPLIER_START;
 
@@ -266,11 +273,15 @@ impl SettlementClient for EthereumSettlementClient {
                 Result::Ok(pending_transaction) => pending_transaction,
                 Err(e) => match e {
                     SendTransactionError::ReplacementTransactionUnderpriced(e) => {
+                        let next_mul_factor = self.get_next_mul_factor(mul_factor)?;
                         warn!(
-                                "Failed to send the blob transaction: {:?} with {:?} multiplication factor, trying again...",
-                                e, mul_factor
-                            );
-                        mul_factor = self.get_next_mul_factor(mul_factor)?;
+                            current_multiplier = %mul_factor,
+                            next_multiplier = %next_mul_factor,
+                            max_multiplier = %self.max_gas_price_mul_factor,
+                            error = ?e,
+                            "Transaction rejected due to low gas price, retrying with higher multiplier"
+                        );
+                        mul_factor = next_mul_factor;
                         continue;
                     }
                     SendTransactionError::Other(_) => {
@@ -279,25 +290,30 @@ impl SettlementClient for EthereumSettlementClient {
                 },
             };
 
-            tracing::info!(
+            info!(
                 log_type = "completed",
                 category = "update_state",
                 function_type = "blobs",
                 tx_type = if self.disable_peerdas { "blob_proofs" } else { "cell_proofs" },
-                "State updated with blobs."
+                tx_hash = %pending_transaction.tx_hash(),
+                "State update transaction submitted to Ethereum with blobs"
             );
-
-            tracing::warn!("⏳ Waiting for txn finality...");
 
             // Waiting for transaction finality
             let res = self.wait_for_tx_finality(&pending_transaction.tx_hash().to_string()).await?;
 
             match res {
                 Some(_) => {
-                    tracing::info!("✅ Txn hash : {:?} finalized", pending_transaction.tx_hash().to_string());
+                    info!(
+                        tx_hash = %pending_transaction.tx_hash(),
+                        "Transaction finalized successfully"
+                    );
                 }
                 None => {
-                    tracing::error!("❌ Txn hash: {:?} not finalised", pending_transaction.tx_hash().to_string());
+                    error!(
+                        tx_hash = %pending_transaction.tx_hash(),
+                        "Transaction not finalized"
+                    );
                 }
             }
             return Ok(pending_transaction.tx_hash().to_string());
