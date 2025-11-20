@@ -1,4 +1,5 @@
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
+use crate::retry::{RetryConfig, RetryState};
 use blockifier::bouncer::BouncerWeights;
 use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
 use mp_gateway::block::ProviderBlockPreConfirmed;
@@ -19,42 +20,78 @@ use serde_json::Value;
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
-/// Maximum number of retry attempts for failed API requests.
-/// When an API request fails due to transient errors (such as network issues,
-/// rate limits, or temporary service unavailability), the client will
-/// automatically retry the request up to this many times before raising an
-/// exception.
-/// Retries use exponential backoff to avoid overwhelming the service
-const MAX_RETRIES: usize = 5;
-const BASE_DELAY_MS: u64 = 100;
-const BACKOFF_BASE: u32 = 2;
-
 impl GatewayProvider {
-    /// Generic retry mechanism for GET requests
-    async fn retry_get<T, F, Fut>(&self, request_fn: F) -> Result<T, SequencerError>
+    /// Hybrid retry mechanism for GET requests with phase-based backoff.
+    ///
+    /// This implements a sophisticated retry strategy that adapts to different failure scenarios:
+    /// - Phase 1 (0-5 min): Aggressive retry every 2 seconds for quick recovery
+    /// - Phase 2 (5-30 min): Exponential backoff for prolonged outages
+    /// - Phase 3 (30+ min): Steady polling at max backoff interval
+    ///
+    /// The strategy considers error types and uses clean, emoji-prefixed logging.
+    async fn retry_get<T, F, Fut>(&self, request_fn: F, operation: &str) -> Result<T, SequencerError>
     where
         T: DeserializeOwned,
         F: Fn() -> Fut,
         Fut: std::future::Future<Output = Result<T, SequencerError>>,
     {
-        let mut last_error = None;
+        let config = RetryConfig::default();
+        let state = RetryState::new(config.clone());
 
-        for attempt in 0..MAX_RETRIES {
+        loop {
             match request_fn().await {
-                Ok(result) => return Ok(result),
+                Ok(result) => {
+                    // Report success to global health tracker
+                    crate::health::GATEWAY_HEALTH.write().await.report_success();
+                    return Ok(result);
+                }
                 Err(e) => {
-                    if attempt < MAX_RETRIES - 1 {
-                        tracing::warn!("Failed to get with {:?}, retrying", e);
-                        // Exponential backoff: BASE_DELAY_MS * BACKOFF_BASE^attempt
-                        // attempt 0: 100ms, attempt 1: 200ms, attempt 2: 400ms, attempt 3: 800ms, attempt 4: 1600ms
-                        let delay_ms = BASE_DELAY_MS * (BACKOFF_BASE as u64).pow(attempt as u32);
-                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    let retry_count = state.increment_retry().await;
+
+                    // Report failure to global health tracker
+                    crate::health::GATEWAY_HEALTH.write().await.report_failure(operation);
+
+                    // Check if we should continue retrying
+                    if !config.infinite_retry {
+                        // For sequencers or other non-full-node modes, we might want to limit retries
+                        // This is currently always true for full nodes
+                        return Err(e);
                     }
-                    last_error = Some(e);
+
+                    // Per-operation logging at DEBUG level (detailed diagnostics)
+                    if state.should_log().await {
+                        let error_reason = RetryState::format_error_reason(&e);
+                        let phase = state.current_phase();
+
+                        tracing::debug!(
+                            target: "mc_gateway_client::retry",
+                            "⚠️  Gateway unavailable [operation={}, reason={}, retries={}, phase={:?}]",
+                            operation,
+                            error_reason,
+                            retry_count,
+                            phase
+                        );
+                    }
+
+                    // Calculate delay based on error type and current phase
+                    let delay = state.next_delay(&e);
+
+                    // Log phase transitions only once per operation (DEBUG level)
+                    let current_phase = state.current_phase();
+                    if retry_count == 1 {
+                        tracing::debug!(
+                            target: "mc_gateway_client::retry",
+                            operation = operation,
+                            phase = ?current_phase,
+                            interval_secs = delay.as_secs(),
+                            "Retry strategy initialized"
+                        );
+                    }
+
+                    tokio::time::sleep(delay).await;
                 }
             }
         }
-        Err(last_error.expect("last_error should be Some after retry loop"))
     }
 
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlock, SequencerError> {
@@ -65,7 +102,7 @@ impl GatewayProvider {
                 .with_block_id(&block_id);
 
             request.send_get::<ProviderBlock>().await
-        }).await
+        }, "get_block").await
     }
 
     pub async fn get_preconfirmed_block(&self, block_number: u64) -> Result<ProviderBlockPreConfirmed, SequencerError> {
@@ -76,7 +113,7 @@ impl GatewayProvider {
                 .with_block_id(&BlockId::Number(block_number));
 
             request.send_get::<ProviderBlockPreConfirmed>().await
-        }).await
+        }, "get_preconfirmed_block").await
     }
 
     pub async fn get_header(&self, block_id: BlockId) -> Result<ProviderBlockHeader, SequencerError> {
@@ -88,7 +125,7 @@ impl GatewayProvider {
                 .add_param("headerOnly", "true");
 
             request.send_get::<ProviderBlockHeader>().await
-        }).await
+        }, "get_header").await
     }
 
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdate, SequencerError> {
@@ -99,7 +136,7 @@ impl GatewayProvider {
                 .with_block_id(&block_id);
 
             request.send_get::<ProviderStateUpdate>().await
-        }).await
+        }, "get_state_update").await
     }
 
     pub async fn get_block_bouncer_weights(&self, block_number: u64) -> Result<BouncerWeights, SequencerError> {
@@ -123,7 +160,7 @@ impl GatewayProvider {
                 .add_param(Cow::from("includeBlock"), "true");
 
             request.send_get::<ProviderStateUpdateWithBlock>().await
-        }).await
+        }, "get_state_update_with_block").await
     }
 
     pub async fn get_signature(&self, block_id: BlockId) -> Result<ProviderBlockSignature, SequencerError> {
@@ -138,7 +175,7 @@ impl GatewayProvider {
                 .with_block_id(&block_id);
 
             request.send_get::<ProviderBlockSignature>().await
-        }).await
+        }, "get_signature").await
     }
 
     pub async fn get_class_by_hash(
@@ -165,7 +202,7 @@ impl GatewayProvider {
                 let err = serde::de::Error::custom("Unknown contract type".to_string());
                 Err(SequencerError::DeserializeBody { serde_error: err })
             }
-        }).await
+        }, "get_class_by_hash").await
     }
 
     async fn add_transaction<T>(&self, transaction: UserTransaction) -> Result<T, SequencerError>

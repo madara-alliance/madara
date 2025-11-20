@@ -107,3 +107,6 @@ s3
 
 sequencer_venv/
 sequencer_requirements.txt
+
+# Documentations of AI code gen chats
+AI_docs

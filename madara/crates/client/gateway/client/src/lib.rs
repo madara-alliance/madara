@@ -288,10 +288,17 @@
 //! [invoke transactions]: mp_gateway::user_transaction::UserTransaction::InvokeFunction
 
 mod builder;
+mod health;
 mod methods;
 mod request_builder;
+mod retry;
 mod submit_tx;
+
+#[cfg(test)]
+mod tests;
 
 pub use mp_rpc::v0_7_1::{BlockId, BlockTag};
 
 pub use builder::GatewayProvider;
+pub use health::{start_gateway_health_monitor, GATEWAY_HEALTH};
+pub use retry::{RetryConfig, RetryPhase, RetryState};

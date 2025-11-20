@@ -1,7 +1,7 @@
 use anyhow::Context;
 use http::HeaderName;
 use http::HeaderValue;
-use mc_gateway_client::GatewayProvider;
+use mc_gateway_client::{start_gateway_health_monitor, GatewayProvider};
 use mp_chain_config::ChainConfig;
 use mp_utils::parsers::parse_url;
 use serde::{Deserialize, Serialize};
@@ -107,6 +107,9 @@ impl L2SyncParams {
                 HeaderValue::from_str(api_key).with_context(|| "Invalid API key format")?,
             )
         }
+
+        // Start the gateway health monitor (runs in background)
+        start_gateway_health_monitor();
 
         Ok(Arc::new(client))
     }

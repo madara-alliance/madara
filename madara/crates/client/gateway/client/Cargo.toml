@@ -55,3 +55,4 @@ url.workspace = true
 rstest.workspace = true
 flate2.workspace = true
 reqwest = { workspace = true, features = ["json"] }
+httpmock.workspace = true
