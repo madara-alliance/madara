@@ -1,10 +1,18 @@
 use std::path::PathBuf;
 
+use blockifier::blockifier_versioned_constants::VersionedConstants;
 use clap::Args;
 use url::Url;
 
 // Getting the default fee token addresses from the SNOS
 use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STRK_FEE_TOKEN};
+
+fn parse_constants(path: &str) -> Result<VersionedConstants, String> {
+    let path_buf = PathBuf::from(path);
+    tracing::debug!(file_path = %path_buf.display(), "Loading versioned constants from file");
+    VersionedConstants::from_path(&path_buf)
+        .map_err(|e| format!("Failed to load versioned constants from file: {}", e))
+}
 
 #[derive(Debug, Clone, Args)]
 #[group(requires_all = ["rpc_for_snos"])]
@@ -28,6 +36,6 @@ pub struct SNOSCliArgs {
     /// Path to a JSON file containing versioned constants to override the default Starknet constants.
     /// By default, versioned constants are picked from the official Starknet constants loaded in blockifier.
     /// Use this argument to override those defaults with custom versioned constants from a file.
-    #[arg(env = "MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH", long, required = false)]
-    pub versioned_constants_path: Option<PathBuf>,
+    #[arg(env = "MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH", long, required = false, value_parser = parse_constants)]
+    pub versioned_constants: Option<VersionedConstants>,
 }

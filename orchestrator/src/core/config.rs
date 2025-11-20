@@ -233,7 +233,7 @@ impl Config {
                 .context("Failed to get prover layout name")?,
             store_audit_artifacts: run_cmd.store_audit_artifacts,
             bouncer_weights_limit: Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?,
-            versioned_constants,
+            versioned_constants: snos_config.versioned_constants,
             aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
@@ -501,37 +501,6 @@ impl Config {
     /// Returns the bouncer weights limit
     pub fn bouncer_weights_limit(&self) -> &BouncerWeights {
         &self.params.bouncer_weights_limit
-    }
-
-    /// Load versioned constants from file if path is provided.
-    /// If path is provided and loading fails, returns an error.
-    /// If no path is provided, returns None (will use blockifier defaults).
-    fn load_versioned_constants(
-        file_path: &Option<std::path::PathBuf>,
-    ) -> OrchestratorCoreResult<Option<VersionedConstants>> {
-        match file_path {
-            Some(path) => {
-                tracing::debug!(file_path = %path.display(), "Loading versioned constants from file");
-                match VersionedConstants::from_path(path) {
-                    Ok(constants) => {
-                        tracing::debug!(file_path = %path.display(), "Successfully loaded versioned constants from file");
-                        Ok(Some(constants))
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            error = %e,
-                            file_path = %path.display(),
-                            "Failed to load versioned constants from file"
-                        );
-                        Err(OrchestratorCoreError::InvalidVersionedConstantsFile(e))
-                    }
-                }
-            }
-            None => {
-                tracing::debug!("No versioned constants path provided, using defaults from blockifier");
-                Ok(None)
-            }
-        }
     }
 
     /// Load bouncer weights limit from file or use defaults
