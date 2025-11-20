@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::cli::snos::SNOSCliArgs;
 use blockifier::blockifier_versioned_constants::VersionedConstants;
 use url::Url;

@@ -22,7 +22,7 @@ use url::Url;
 
 use crate::core::client::lock::mongodb::MongoLockClient;
 use crate::core::client::lock::LockClient;
-use crate::core::error::{OrchestratorCoreError, OrchestratorCoreResult};
+use crate::core::error::OrchestratorCoreResult;
 use crate::types::params::batching::BatchingParams;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
@@ -213,6 +213,7 @@ impl Config {
         let layer = run_cmd.layer.clone();
 
         let snos_config = SNOSParams::from(run_cmd.snos_args.clone());
+        let versioned_constants = snos_config.versioned_constants.clone();
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
@@ -231,7 +232,7 @@ impl Config {
                 .context("Failed to get prover layout name")?,
             store_audit_artifacts: run_cmd.store_audit_artifacts,
             bouncer_weights_limit: Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?,
-            versioned_constants: snos_config.versioned_constants,
+            versioned_constants,
             aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
