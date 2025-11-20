@@ -171,10 +171,8 @@ pub fn prepare_sidecar_with_cells(
         // This returns ALL cell proofs (including extension cells)
         let (_, proofs) = trusted_setup.compute_cells_and_kzg_proofs(&blob)?;
         // Store all cell proofs for this blob (CELLS_PER_EXT_BLOB proofs, each 48 bytes)
-        let mut blob_cell_proofs = Vec::with_capacity(128);
-        for proof in proofs.iter() {
-            blob_cell_proofs.push(FixedBytes::new(proof.to_bytes().into_inner()));
-        }
+        let blob_cell_proofs: Vec<FixedBytes<48>> =
+            proofs.into_iter().map(|proof| FixedBytes::new(proof.to_bytes().into_inner())).collect();
         all_cell_proofs.push(blob_cell_proofs);
     }
 

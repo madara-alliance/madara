@@ -48,7 +48,7 @@ impl AccountActions for SingleOwnerAccount<&RpcClientProvider, LocalWallet> {
         let calls = vec![Call { to: address, selector: get_selector_from_name(method).unwrap(), calldata }];
         match nonce {
             Some(nonce) => self.execute_v3(calls).nonce(nonce.into()),
-            None => self.execute_v3(calls).l1_gas(0).l2_gas(0).l1_data_gas(0),
+            None => self.execute_v3(calls).l1_gas(0).l2_gas(0).l1_data_gas(0), // We need to send transactions with 0 fees since the account don't have any balance!
         }
     }
 

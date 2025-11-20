@@ -89,9 +89,9 @@ impl Default for MadaraConfig {
             charge_fee: false,
             block_time: None,
             l1_endpoint: None,
-            l1_gas_price: 1,
-            blob_gas_price: 1,
-            strk_per_eth: 1,
+            l1_gas_price: 1,   // We need to give non-zero gas price in Blockifier
+            blob_gas_price: 1, // We need to give non-zero gas price in Blockifier
+            strk_per_eth: 1,   // We need to give non-zero gas price in Blockifier
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
             logs: (true, true),
