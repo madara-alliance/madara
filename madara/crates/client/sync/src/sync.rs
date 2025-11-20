@@ -39,7 +39,7 @@ pub struct SyncControllerConfig {
     pub global_stop_on_sync: bool,
     /// Disable syncing the pending block.
     pub no_pending_block: bool,
-    /// Stop the service once fully synced, meaning the pipeline cannot be run again and the probe did not return
+    /// Stop the service once fully synced, meaning the pipeline cannot be run again, and the probe did not return
     /// any new block - or the sync arrived at the block_n specified by [`Self::stop_at_block_n`].
     /// By default, the sync process will not stop, and pending block task / the probe will continue to run, even if
     /// [`Self::stop_at_block_n`] is set.
@@ -137,6 +137,7 @@ impl<P: ForwardPipeline> SyncController<P> {
             }
         }
         self.show_status();
+
         if self.config.global_stop_on_sync {
             tracing::info!("🌐 Reached stop-on-sync condition, shutting down node...");
             ctx.cancel_global();
@@ -193,16 +194,17 @@ impl<P: ForwardPipeline> SyncController<P> {
                 self.set_status(ServiceEvent::Idle);
             }
 
-            if self.forward_pipeline.is_empty()
-                && self
-                    .config
-                    .stop_at_block_n
-                    .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
-                && !self.pending_block_task_is_running()
-            {
-                // End condition for stop_at_block_n.
-                tracing::debug!("End condition for stop_at");
-                break Ok(());
+            if self.config.stop_at_block_n.is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at) {
+                if self.get_pending_block.is_some() {
+                    tracing::debug!("Cancelling pending block task as stop_at reached");
+                    self.get_pending_block = None;
+                }
+
+                if self.forward_pipeline.is_empty() && !self.pending_block_task_is_running() {
+                    // End condition for stop_at_block_n.
+                    tracing::debug!("End condition for stop_at");
+                    break Ok(());
+                }
             }
 
             tokio::select! {
@@ -222,7 +224,7 @@ impl<P: ForwardPipeline> SyncController<P> {
                         && probe_height == new_probe_height
                         && !self.pending_block_task_is_running()
                     {
-                        // Probe returned the same thing as last time, and we cannot run the pipeline.
+                        // The Probe returned the same thing as last time, and we cannot run the pipeline.
                         // This is the exit condition when stop_on_sync is enabled,
                         // except if there is a stop_at_block_n.
                         break Ok(());
