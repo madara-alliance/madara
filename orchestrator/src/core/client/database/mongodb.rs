@@ -1024,7 +1024,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(batches)
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_snos_batches_without_jobs(
         &self,
         snos_batch_status: SnosBatchStatus,
@@ -1367,6 +1366,19 @@ impl DatabaseClient for MongoDbClient {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(updated_batches)
+    }
+
+    async fn health_check(&self) -> Result<(), DatabaseError> {
+        let start = Instant::now();
+
+        // Perform a simple ping operation to verify connectivity
+        // This is a lightweight operation that checks if the database is accessible
+        self.database.run_command(doc! { "ping": 1 }, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "health_check")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(())
     }
 }
 
