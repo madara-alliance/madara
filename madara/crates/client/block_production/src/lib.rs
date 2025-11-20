@@ -87,6 +87,7 @@ use mc_exec::LayeredStateAdapter;
 use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_block::TransactionWithReceipt;
+use mp_chain_config::RuntimeExecutionConfig;
 use mp_convert::{Felt, ToFelt};
 use mp_receipt::from_blockifier_execution_info;
 use mp_state_update::{ClassUpdateItem, DeclaredClassCompiledClass, TransactionStateUpdate};
@@ -390,6 +391,7 @@ impl BlockProductionTask {
         consumed_core_contract_nonces: HashSet<u64>,
         bouncer_weights: &blockifier::bouncer::BouncerWeights,
         state_diff: mp_state_update::StateDiff,
+        no_charge_fee: bool,
     ) -> anyhow::Result<()> {
         // Copy bouncer_weights to move into the closure (BouncerWeights implements Copy)
         let bouncer_weights = *bouncer_weights;
@@ -412,6 +414,27 @@ impl BlockProductionTask {
                 .write_access()
                 .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
                 .context("Closing preconfirmed block")?;
+
+            // Update runtime exec config with current configs for next block
+            // This ensures that if we restart before starting the next block, we have the current configs
+            let current_chain_config = backend.chain_config();
+            let current_exec_constants = current_chain_config
+                .exec_constants_by_protocol_version(current_chain_config.latest_protocol_version)
+                .context("Failed to resolve execution constants for latest protocol version")?;
+
+            // Update runtime exec config with current configs for next block
+            // This ensures that if we restart before starting the next block, we have the current configs
+            let runtime_config = RuntimeExecutionConfig::from_arc_chain_config(
+                current_chain_config,
+                current_exec_constants,
+                no_charge_fee,
+            )
+            .context("Failed to create runtime execution config")?;
+
+            backend
+                .write_access()
+                .write_runtime_exec_config(&runtime_config)
+                .context("Updating runtime execution config after block closing")?;
 
             anyhow::Ok(())
         })
@@ -460,6 +483,8 @@ impl BlockProductionTask {
     async fn reexecute_preconfirmed_block(
         &self,
         preconfirmed_view: &MadaraPreconfirmedBlockView,
+        saved_chain_config: Option<&Arc<mp_chain_config::ChainConfig>>,
+        saved_exec_constants: Option<&blockifier::blockifier_versioned_constants::VersionedConstants>,
     ) -> anyhow::Result<BlockExecutionSummary> {
         // Get all executed transactions
         let executed_txs: Vec<_> = preconfirmed_view.borrow_content().executed_transactions().cloned().collect();
@@ -490,11 +515,25 @@ impl BlockProductionTask {
             LayeredStateAdapter::new(self.backend.clone()).context("Creating LayeredStateAdapter for re-execution")?;
 
         // Create TransactionExecutor with block_n-10 handling
-        let mut executor =
-            crate::util::create_executor_with_block_n_min_10(&self.backend, &exec_ctx, state_adapter, |block_n| {
-                Self::wait_for_hash_of_block_min_10(&self.backend, block_n)
-            })
-            .context("Creating TransactionExecutor for re-execution")?;
+        // Use saved configs if available, otherwise use current backend configs
+        let chain_config = saved_chain_config.unwrap_or(self.backend.chain_config());
+        let exec_constants = if let Some(constants) = saved_exec_constants {
+            constants.clone()
+        } else {
+            chain_config
+                .exec_constants_by_protocol_version(exec_ctx.protocol_version)
+                .context("Failed to resolve execution constants for protocol version")?
+        };
+
+        let mut executor = crate::util::create_executor_with_block_n_min_10(
+            &self.backend,
+            &exec_ctx,
+            state_adapter,
+            chain_config,
+            &exec_constants,
+            |block_n| Self::wait_for_hash_of_block_min_10(&self.backend, block_n),
+        )
+        .context("Creating TransactionExecutor for re-execution")?;
 
         // Execute all transactions
         let execution_results = executor.execute_txs(&blockifier_txs, /* execution_deadline */ None);
@@ -592,9 +631,37 @@ impl BlockProductionTask {
             block_number
         );
 
+        // Load saved runtime execution config
+        let saved_config = self.backend.get_runtime_exec_config().context("Getting runtime execution config")?;
+
+        let (saved_chain_config, saved_exec_constants, saved_no_charge_fee) = if let Some(config) = saved_config {
+            tracing::info!("Using saved runtime execution config for re-execution");
+
+            // Log warning if saved config differs from current config (for debugging)
+            if config.chain_config.chain_id != self.backend.chain_config().chain_id {
+                tracing::warn!(
+                    "Saved chain_id ({}) differs from current chain_id ({})",
+                    config.chain_config.chain_id,
+                    self.backend.chain_config().chain_id
+                );
+            }
+
+            // Use saved no_charge_fee value
+            self.no_charge_fee = config.no_charge_fee;
+
+            (Some(Arc::new(config.chain_config)), Some(config.exec_constants), config.no_charge_fee)
+        } else {
+            tracing::warn!("No saved runtime execution config found, using current configs (backward compatibility)");
+            (None, None, self.no_charge_fee)
+        };
+
         // Re-execute transactions to get BlockExecutionSummary
         let block_exec_summary = self
-            .reexecute_preconfirmed_block(&preconfirmed_view)
+            .reexecute_preconfirmed_block(
+                &preconfirmed_view,
+                saved_chain_config.as_ref(),
+                saved_exec_constants.as_ref(),
+            )
             .await
             .context("Re-executing preconfirmed block to get execution summary")?;
 
@@ -613,6 +680,7 @@ impl BlockProductionTask {
             consumed_core_contract_nonces,
             &block_exec_summary.bouncer_weights,
             state_diff,
+            saved_no_charge_fee,
         )
         .await
         .context("Closing preconfirmed block on startup")?;
@@ -641,9 +709,31 @@ impl BlockProductionTask {
                     )
                 }
 
+                // Check if pre-confirmed block exists (it shouldn't at this point)
+                if self.backend.has_preconfirmed_block() {
+                    tracing::warn!("Unexpected pre-confirmed block exists when starting new block");
+                }
+
+                // Resolve exec_constants for the protocol_version being used
+                let exec_constants = self
+                    .backend
+                    .chain_config()
+                    .exec_constants_by_protocol_version(exec_ctx.protocol_version)
+                    .context("Failed to resolve execution constants for protocol version")?;
+
+                // Create and save runtime execution config
+                let runtime_config = RuntimeExecutionConfig::from_arc_chain_config(
+                    self.backend.chain_config(),
+                    exec_constants,
+                    self.no_charge_fee,
+                )
+                .context("Failed to create runtime execution config")?;
+
                 let backend = self.backend.clone();
                 global_spawn_rayon_task(move || {
-                    backend.write_access().new_preconfirmed(PreconfirmedBlock::new(exec_ctx.into_header()))
+                    let write_access = backend.write_access();
+                    write_access.write_runtime_exec_config(&runtime_config)?;
+                    write_access.new_preconfirmed(PreconfirmedBlock::new(exec_ctx.into_header()))
                 })
                 .await?;
 
@@ -688,6 +778,7 @@ impl BlockProductionTask {
                     state.consumed_core_contract_nonces,
                     &block_exec_summary.bouncer_weights,
                     state_diff,
+                    self.no_charge_fee,
                 )
                 .await
                 .context("Closing block")?;
@@ -1630,5 +1721,110 @@ pub(crate) mod tests {
                 data: vec![/* from_address */ Felt::THREE, /* arg1 */ Felt::ONE, /* arg2 */ Felt::TWO]
             }
         );
+    }
+
+    // This test verifies that runtime execution config is persisted and used during re-execution
+    // even when chain config changes between shutdown and restart.
+    //
+    // # Test Process
+    //
+    // 1. Start Madara, create block with transactions, stop before closing (leaving pre-confirmed block)
+    // 2. Verify runtime exec config is saved
+    // 3. Restart Madara and verify saved config is used for re-execution
+    // 4. Verify block closes successfully
+    // 5. Verify config is updated after closing
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(100))]
+    #[tokio::test]
+    async fn test_runtime_exec_config_persistence_across_restart(
+        #[future]
+        #[from(devnet_setup)]
+        original_devnet_setup: DevnetSetup,
+    ) {
+        let mut original_devnet_setup = original_devnet_setup.await;
+
+        // Step 1: Create a block with transactions and stop before closing
+        assert!(original_devnet_setup.mempool.is_empty().await);
+
+        // Add a transaction
+        sign_and_add_invoke_tx(
+            &original_devnet_setup.contracts.0[0],
+            &original_devnet_setup.contracts.0[1],
+            &original_devnet_setup.backend,
+            &original_devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        assert!(!original_devnet_setup.mempool.is_empty().await);
+
+        // Run block production to execute transactions and add them to preconfirmed block
+        let mut block_production_task = original_devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let restart_task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Wait for batch to be executed (transactions added to preconfirmed block)
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+
+        // Verify preconfirmed block exists with transactions
+        assert!(original_devnet_setup.backend.has_preconfirmed_block());
+        let preconfirmed_view = original_devnet_setup.backend.block_view_on_preconfirmed().unwrap();
+        assert_eq!(preconfirmed_view.num_executed_transactions(), 1);
+
+        // Step 2: Verify runtime exec config was saved
+        let saved_config = original_devnet_setup
+            .backend
+            .get_runtime_exec_config()
+            .expect("Should have saved runtime exec config")
+            .expect("Runtime exec config should exist");
+
+        // Verify saved config matches current config
+        assert_eq!(saved_config.chain_config.chain_id, original_devnet_setup.backend.chain_config().chain_id);
+        assert_eq!(saved_config.no_charge_fee, false); // Default value
+
+        // Stop the task before it closes the block
+        drop(restart_task);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Step 3: Restart and verify saved config is used for re-execution
+        let mut restart_block_production_task = BlockProductionTask::new(
+            original_devnet_setup.backend.clone(), // Use same backend (same DB)
+            original_devnet_setup.mempool.clone(),
+            original_devnet_setup.metrics.clone(),
+            Arc::new(original_devnet_setup.l1_client.clone()),
+            false, // no_charge_fee = false
+        );
+
+        // Verify saved config still exists and matches original
+        let reloaded_config = original_devnet_setup
+            .backend
+            .get_runtime_exec_config()
+            .expect("Should be able to read runtime exec config")
+            .expect("Runtime exec config should still exist");
+
+        assert_eq!(reloaded_config.chain_config.chain_id, saved_config.chain_config.chain_id);
+
+        // Step 4: Re-execute and close the block
+        restart_block_production_task
+            .close_preconfirmed_block_if_exists()
+            .await
+            .expect("Should close preconfirmed block");
+
+        // Step 5: Verify block was closed successfully
+        assert!(!original_devnet_setup.backend.has_preconfirmed_block());
+        assert_eq!(original_devnet_setup.backend.latest_confirmed_block_n(), Some(1));
+
+        // Verify the saved config was updated after closing
+        let updated_config = original_devnet_setup
+            .backend
+            .get_runtime_exec_config()
+            .expect("Should be able to read runtime exec config")
+            .expect("Runtime exec config should exist after closing");
+
+        // Config should be updated with current values (for next block)
+        assert_eq!(updated_config.chain_config.chain_id, original_devnet_setup.backend.chain_config().chain_id);
     }
 }

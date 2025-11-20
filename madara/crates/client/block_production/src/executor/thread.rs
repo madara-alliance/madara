@@ -221,10 +221,18 @@ impl ExecutorThread {
         )?;
 
         // Create the TransactionExecutor with block_n-10 handling, reusing the layered_state_adapter.
+        // Get chain_config and exec_constants for executor creation
+        let chain_config = self.backend.chain_config();
+        let exec_constants = chain_config
+            .exec_constants_by_protocol_version(exec_ctx.protocol_version)
+            .context("Failed to resolve execution constants for protocol version")?;
+
         let executor = crate::util::create_executor_with_block_n_min_10(
             &self.backend,
             &exec_ctx,
             state.state_adaptor,
+            chain_config,
+            &exec_constants,
             |block_n| self.wait_for_hash_of_block_min_10(block_n),
         )?;
 

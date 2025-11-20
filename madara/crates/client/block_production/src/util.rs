@@ -4,7 +4,7 @@ use blockifier::{
     transaction::transaction_execution::Transaction,
 };
 use mc_db::MadaraBackend;
-use mc_exec::{LayeredStateAdapter, MadaraBackendExecutionExt};
+use mc_exec::LayeredStateAdapter;
 use mp_block::header::{BlockTimestamp, GasPrices, PreconfirmedHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_class::ConvertedClass;
@@ -166,6 +166,23 @@ impl BlockExecutionContext {
             use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,
         })
     }
+
+    /// Create a BlockContext from this execution context with the given chain config and exec constants.
+    /// This is a helper function that encapsulates the BlockContext creation logic.
+    pub fn to_block_context(
+        &self,
+        chain_config: &Arc<mp_chain_config::ChainConfig>,
+        exec_constants: &blockifier::blockifier_versioned_constants::VersionedConstants,
+    ) -> anyhow::Result<blockifier::context::BlockContext> {
+        use blockifier::context::BlockContext;
+        let block_info = self.to_blockifier()?;
+        Ok(BlockContext::new(
+            block_info,
+            chain_config.blockifier_chain_info(),
+            exec_constants.clone(),
+            chain_config.bouncer_config.clone(),
+        ))
+    }
 }
 
 pub(crate) fn create_execution_context(
@@ -206,14 +223,29 @@ pub(crate) fn create_execution_context(
 /// This is a helper function to avoid code duplication between normal block production
 /// and re-execution scenarios.
 pub(crate) fn create_executor_with_block_n_min_10(
-    backend: &Arc<MadaraBackend>,
+    _backend: &Arc<MadaraBackend>,
     exec_ctx: &BlockExecutionContext,
     state_adaptor: LayeredStateAdapter,
+    chain_config: &Arc<mp_chain_config::ChainConfig>,
+    exec_constants: &blockifier::blockifier_versioned_constants::VersionedConstants,
     get_block_n_min_10_hash: impl FnOnce(u64) -> anyhow::Result<Option<(u64, Felt)>>,
 ) -> anyhow::Result<TransactionExecutor<LayeredStateAdapter>> {
-    let mut executor = backend
-        .new_executor_for_block_production(state_adaptor, exec_ctx.to_blockifier()?)
-        .context("Creating TransactionExecutor")?;
+    use blockifier::{
+        blockifier::transaction_executor::{TransactionExecutor, DEFAULT_STACK_SIZE},
+        state::cached_state::CachedState,
+    };
+
+    // Create BlockContext using the helper method - this reuses the to_blockifier() logic
+    let block_context = exec_ctx.to_block_context(chain_config, exec_constants)?;
+
+    let mut executor = TransactionExecutor::new(
+        CachedState::new(state_adaptor),
+        block_context.into(),
+        blockifier::blockifier::config::TransactionExecutorConfig {
+            concurrency_config: chain_config.block_production_concurrency.blockifier_config(),
+            stack_size: DEFAULT_STACK_SIZE,
+        },
+    );
 
     // Prepare the block_n-10 state diff entry on the 0x1 contract
     if let Some((block_n_min_10, block_hash_n_min_10)) = get_block_n_min_10_hash(exec_ctx.block_number)? {

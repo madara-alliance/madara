@@ -75,6 +75,8 @@ opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
 reqwest = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+url = { workspace = true }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }

@@ -473,6 +473,11 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn chain_config(&self) -> &Arc<ChainConfig> {
         &self.chain_config
     }
+
+    /// Get the runtime execution configuration from the database.
+    pub fn get_runtime_exec_config(&self) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>> {
+        self.db.get_runtime_exec_config(&self.chain_config)
+    }
 }
 
 /// Structure holding exclusive access to write the blocks and the tip of the chain.
@@ -599,6 +604,16 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
     pub fn clear_preconfirmed(&self) -> Result<()> {
         self.replace_chain_tip(ChainTip::on_confirmed_block_n_or_empty(self.inner.latest_confirmed_block_n()))
+    }
+
+    /// Write the runtime execution configuration to the database.
+    pub fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()> {
+        self.inner.db.write_runtime_exec_config(config)
+    }
+
+    /// Clear the runtime execution configuration from the database.
+    pub fn clear_runtime_exec_config(&self) -> Result<()> {
+        self.inner.db.clear_runtime_exec_config()
     }
 
     /// Start a new preconfirmed block on top of the latest confirmed block. Deletes and replaces the current preconfirmed block if present.
