@@ -213,8 +213,6 @@ impl Config {
         let layer = run_cmd.layer.clone();
 
         let snos_config = SNOSParams::from(run_cmd.snos_args.clone());
-        let versioned_constants = Self::load_versioned_constants(&snos_config.versioned_constants_path)
-            .context("Failed to load versioned constants")?;
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),

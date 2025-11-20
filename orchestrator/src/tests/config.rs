@@ -646,6 +646,14 @@ pub(crate) fn get_env_params() -> EnvParams {
             .expect("Invalid max gas price mul factor"),
     });
 
+    let versioned_constants_path = get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")
+        .expect("Couldn't get versioned constants path")
+        .map(|s| PathBuf::from(s));
+    
+    let versioned_constants = versioned_constants_path
+        .as_ref()
+        .map(|path| VersionedConstants::from_path(path).expect("Invalid versioned constant file"));
+
     let snos_config = SNOSParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
@@ -658,9 +666,7 @@ pub(crate) fn get_env_params() -> EnvParams {
             "MADARA_ORCHESTRATOR_ETH_NATIVE_FEE_TOKEN_ADDRESS",
             DEFAULT_SEPOLIA_ETH_FEE_TOKEN,
         ),
-        versioned_constants_path: get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")
-            .expect("Couldn't get versioned constants path")
-            .map(|s| PathBuf::from(s)),
+        versioned_constants,
     };
 
     let max_num_blobs = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_NUM_BLOBS", "6").parse::<usize>().unwrap();
@@ -721,11 +727,6 @@ pub(crate) fn get_env_params() -> EnvParams {
             .parse()
             .expect("Failed to parse MADARA_ORCHESTRATOR_PORT"),
     };
-
-    let versioned_constants_path = snos_config.versioned_constants_path.clone();
-    let versioned_constants = versioned_constants_path
-        .as_ref()
-        .map(|path| VersionedConstants::from_path(path).expect("Invalid versioned constant file"));
 
     let orchestrator_params = ConfigParam {
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
