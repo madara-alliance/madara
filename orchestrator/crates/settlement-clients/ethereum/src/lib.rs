@@ -263,6 +263,7 @@ impl SettlementClient for EthereumSettlementClient {
         state_diff: Vec<Vec<u8>>,
         _nonce: u64,
     ) -> Result<String> {
+        // TODO(prakhar,20/11/2025): Update the logs to add custom formatter - https://github.com/madara-alliance/madara/blob/d2a1e8050a3d01ccf398f57616cbc4fb6386aaa6/madara/crates/client/analytics/src/formatter.rs#L288
         info!(
             log_type = "starting",
             category = "update_state",
