@@ -17,7 +17,7 @@ use orchestrator_atlantic_service::constants::{CAIRO_PIE_FILE_NAME, PROOF_FILE_N
 use orchestrator_prover_client_interface::{Task, TaskStatus, TaskType};
 use starknet_core::types::Felt;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct AggregatorJobHandler;
 
@@ -38,7 +38,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     /// Now, we follow the following logic:
     /// 1. Call close batch for the bucket
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::Aggregator, internal_id);
 
         // Get aggregator metadata
@@ -70,7 +70,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::Aggregator, internal_id);
 
         // Get aggregator metadata
@@ -94,7 +94,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
         match task_status {
             TaskStatus::Processing => {
-                info!(job_id = %job.id, "{:?} job {} verification is pending, will retry in sometime", JobType::Aggregator, internal_id);
+                info!(job_id = %job.id, "{:?} job {} verification is pending, will be retried in sometime", JobType::Aggregator, internal_id);
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
@@ -181,7 +181,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                         AggregatorBatchStatus::VerificationFailed,
                     )
                     .await?;
-                info!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::Aggregator, internal_id);
+                warn!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::Aggregator, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Aggregator job #{} failed with error: {}",
                     job.internal_id, err

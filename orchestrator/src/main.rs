@@ -87,9 +87,7 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     debug!("Configuration initialized");
 
     // Run pre-flight health checks to ensure all dependencies are accessible
-    info!("Running pre-flight health checks for critical resources");
     run_preflight_checks(config.database(), config.storage(), config.queue(), config.alerts()).await?;
-    info!("Pre-flight health checks completed successfully");
 
     // Run the server in a separate tokio spawn task
     setup_server(config.clone()).await?;

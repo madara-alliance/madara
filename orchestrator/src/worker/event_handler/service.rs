@@ -187,7 +187,7 @@ impl JobHandlerService {
     pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         debug!(
             log_type = "starting",
             category = "general",
@@ -405,7 +405,7 @@ impl JobHandlerService {
     pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         if !matches!(job.external_id, ExternalId::Number(0)) {
             Span::current().record("external_id", format!("{:?}", job.external_id).as_str());
         }
@@ -626,7 +626,7 @@ impl JobHandlerService {
     /// * Updates metrics for failed jobs
     pub async fn handle_job_failure(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let job = JobService::get_job(id, config.clone()).await?.clone();
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         info!(log_type = "starting", category = "general", function_type = "handle_job_failure", block_no = %internal_id, "General handle job failure started for block");
 
         debug!(job_id = ?id, job_status = ?job.status, job_type = ?job.job_type, block_no = %internal_id, "Job details for failure handling for block");
@@ -658,7 +658,7 @@ impl JobHandlerService {
     /// * Uses standard process_job function after status update
     pub async fn retry_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let mut job = JobService::get_job(id, config.clone()).await?;
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
 
         info!(
             log_type = "starting",

@@ -55,6 +55,7 @@ impl JobService {
 
     /// Adds a job to its processing queue
     pub async fn add_job_to_process_queue(id: Uuid, job_type: &JobType, config: Arc<Config>) -> Result<(), JobError> {
+        tracing::debug!(job_id = %id, "Adding a {:?} job to processing queue", job_type);
         Self::add_job_to_queue(config, id, job_type.process_queue_name(), None).await
     }
 
@@ -165,7 +166,7 @@ impl JobService {
         }
 
         let mut job_metadata = job.metadata.clone();
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
 
         tracing::debug!(job_id = ?job.id, "Updating job status to Failed in database");
         // Update failure information in common metadata

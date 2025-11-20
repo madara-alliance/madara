@@ -5,7 +5,7 @@ use crate::error::OrchestratorError;
 use crate::OrchestratorResult;
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 /// Default timeout for each health check (in seconds)
 const DEFAULT_HEALTH_CHECK_TIMEOUT_SECS: u64 = 30;
@@ -116,25 +116,10 @@ async fn check_mongodb_health(database: &dyn DatabaseClient) -> bool {
                 error = %e,
                 "❌ MongoDB health check failed"
             );
-            warn!(
-                "💡 Troubleshooting tips:\n\
-                - Verify MongoDB connection string is correct\n\
-                - Ensure MongoDB server is running and accessible\n\
-                - Check network connectivity and firewall rules\n\
-                - Verify authentication credentials\n\
-                - Check MongoDB server logs for errors"
-            );
             false
         }
         Err(_) => {
             error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "❌ MongoDB health check timed out");
-            warn!(
-                "💡 Troubleshooting tips:\n\
-                - MongoDB server might be slow to respond\n\
-                - Check network latency to MongoDB server\n\
-                - Verify MongoDB server is not overloaded\n\
-                - Consider increasing health check timeout"
-            );
             false
         }
     }
@@ -157,26 +142,10 @@ async fn check_s3_health(storage: &dyn StorageClient) -> bool {
                 error = %e,
                 "❌ AWS S3 health check failed"
             );
-            warn!(
-                "💡 Troubleshooting tips:\n\
-                - Verify AWS credentials are configured correctly\n\
-                - Check IAM permissions for S3 operations\n\
-                - Ensure S3 bucket exists and is accessible\n\
-                - Verify bucket region matches configuration\n\
-                - Check VPC/network settings if using VPC endpoints\n\
-                - Review CloudTrail logs for access denied errors"
-            );
             false
         }
         Err(_) => {
             error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "❌ AWS S3 health check timed out");
-            warn!(
-                "💡 Troubleshooting tips:\n\
-                - AWS S3 service might be experiencing issues\n\
-                - Check network connectivity to AWS\n\
-                - Verify no rate limiting is occurring\n\
-                - Consider increasing health check timeout"
-            );
             false
         }
     }
@@ -199,26 +168,10 @@ async fn check_sqs_health(queue: &dyn QueueClient) -> bool {
                 error = %e,
                 "❌ AWS SQS health check failed"
             );
-            warn!(
-                "💡 Troubleshooting tips:\n\
-                - Verify AWS credentials are configured correctly\n\
-                - Check IAM permissions for SQS operations\n\
-                - Ensure SQS queues exist and are accessible\n\
-                - Verify queue URLs are correct\n\
-                - Check queue region matches configuration\n\
-                - Review CloudTrail logs for access denied errors"
-            );
             false
         }
         Err(_) => {
             error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "❌ AWS SQS health check timed out");
-            warn!(
-                "💡 Troubleshooting tips:\n\
-                - AWS SQS service might be experiencing issues\n\
-                - Check network connectivity to AWS\n\
-                - Verify no rate limiting is occurring\n\
-                - Consider increasing health check timeout"
-            );
             false
         }
     }
@@ -241,26 +194,10 @@ async fn check_sns_health(alerts: &dyn AlertClient) -> bool {
                 error = %e,
                 "❌ AWS SNS health check failed"
             );
-            warn!(
-                "💡 Troubleshooting tips:\n\
-                - Verify AWS credentials are configured correctly\n\
-                - Check IAM permissions for SNS operations\n\
-                - Ensure SNS topics exist and are accessible\n\
-                - Verify topic ARNs are correct\n\
-                - Check topic region matches configuration\n\
-                - Review CloudTrail logs for access denied errors"
-            );
             false
         }
         Err(_) => {
             error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "❌ AWS SNS health check timed out");
-            warn!(
-                "💡 Troubleshooting tips:\n\
-                - AWS SNS service might be experiencing issues\n\
-                - Check network connectivity to AWS\n\
-                - Verify no rate limiting is occurring\n\
-                - Consider increasing health check timeout"
-            );
             false
         }
     }

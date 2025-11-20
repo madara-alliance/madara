@@ -15,7 +15,7 @@ use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct ProvingJobHandler;
 
@@ -29,7 +29,7 @@ impl JobHandlerTrait for ProvingJobHandler {
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::ProofCreation, internal_id);
 
         // Get proving metadata
@@ -87,7 +87,7 @@ impl JobHandlerTrait for ProvingJobHandler {
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::ProofCreation, internal_id);
 
         // Get proving metadata
@@ -130,7 +130,7 @@ impl JobHandlerTrait for ProvingJobHandler {
             TaskStatus::Processing => {
                 info!(
                     job_id = %job.id,
-                    "{:?} job {} verification is pending, will retry in sometime",
+                    "{:?} job {} verification is pending, will be retried in sometime",
                     JobType::ProofCreation,
                     internal_id
                 );
@@ -152,7 +152,7 @@ impl JobHandlerTrait for ProvingJobHandler {
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
-                info!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::ProofCreation, internal_id);
+                warn!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::ProofCreation, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Prover job #{} failed with error: {}",
                     job.internal_id, err

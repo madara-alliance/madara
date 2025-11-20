@@ -71,7 +71,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     ///
     /// TODO: Update the code in the future releases to fix this.
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::StateTransition, internal_id);
 
         // Get the state transition metadata
@@ -192,7 +192,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// 2. The expected last settled block from our configuration is indeed the one found in the
     ///    provider.
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::StateTransition, internal_id);
 
         // Get state update metadata
@@ -204,7 +204,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         };
 
         // Get the status from the settlement contract
-        let result = Self::verify_through_contract(&config, &nums_settled, &job.id, &internal_id).await?;
+        let result = Self::verify_through_contract(&config, &nums_settled, &job.id, internal_id).await?;
         info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::StateTransition, internal_id);
         Ok(result)
     }

@@ -12,7 +12,7 @@ use color_eyre::eyre::eyre;
 use orchestrator_prover_client_interface::{TaskStatus, TaskType};
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub struct RegisterProofJobHandler;
 
@@ -26,7 +26,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::ProofRegistration, internal_id);
 
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
@@ -73,7 +73,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::ProofRegistration, internal_id);
 
         let task_id: String = job
@@ -112,7 +112,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             TaskStatus::Processing => {
                 info!(
                     job_id = %job.id,
-                    "{:?} job {} verification is pending, will retry in sometime",
+                    "{:?} job {} verification is pending, will be retried in sometime",
                     JobType::ProofRegistration,
                     internal_id
                 );
@@ -130,7 +130,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
-                info!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::ProofRegistration, internal_id);
+                warn!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::ProofRegistration, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Proof registration job #{} failed with error: {}",
                     job.internal_id, err

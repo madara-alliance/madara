@@ -372,21 +372,19 @@ pub fn init_logging() {
 
 /// Function used by the logger to display queue with pretty formatting
 pub fn queue_type_to_parts(queue_type: &str) -> (String, String) {
-    match queue_type {
-        "snos_job_processing" => (String::from("SNOS"), String::from("PROCESSING")),
-        "snos_job_verification" => (String::from("SNOS"), String::from("VERIFICATION")),
-        "proving_job_processing" => (String::from("PROVING"), String::from("PROCESSING")),
-        "proving_job_verification" => (String::from("PROVING"), String::from("VERIFICATION")),
-        "proof_registration_job_processing" => (String::from("PROOF_REGISTRATION"), String::from("PROCESSING")),
-        "proof_registration_job_verification" => (String::from("PROOF_REGISTRATION"), String::from("VERIFICATION")),
-        "data_submission_job_processing" => (String::from("DATA_SUBMISSION"), String::from("PROCESSING")),
-        "data_submission_job_verification" => (String::from("DATA_SUBMISSION"), String::from("VERIFICATION")),
-        "update_state_job_processing" => (String::from("UPDATE_STATE"), String::from("PROCESSING")),
-        "update_state_job_verification" => (String::from("UPDATE_STATE"), String::from("VERIFICATION")),
-        "aggregator_job_processing" => (String::from("AGGREGATOR"), String::from("PROCESSING")),
-        "aggregator_job_verification" => (String::from("AGGREGATOR"), String::from("VERIFICATION")),
-        "job_handle_failure" => (String::from("JOB_HANDLE_FAILURE"), String::from("-")),
-        "worker_trigger" => (String::from("WORKER_TRIGGER"), String::from("-")),
-        _ => (String::from("-"), String::from("-")),
+    // Special cases
+    if queue_type == "job_handle_failure" {
+        return ("JOB_HANDLE_FAILURE".into(), "-".into());
     }
+    if queue_type == "worker_trigger" {
+        return ("WORKER_TRIGGER".into(), "-".into());
+    }
+    // Split into prefix, suffix
+    let (prefix, suffix) = match queue_type.rsplit_once('_') {
+        Some(v) => v,
+        None => return ("-".into(), "-".into()),
+    };
+    // Remove "_job" or "_JOB" if present
+    let prefix = prefix.trim_end_matches("_job").trim_end_matches("_JOB");
+    (prefix.to_uppercase(), suffix.to_uppercase())
 }

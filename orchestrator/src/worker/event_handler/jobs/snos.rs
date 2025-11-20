@@ -91,7 +91,7 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::SnosRun, internal_id);
 
         // Get SNOS metadata
@@ -192,7 +192,7 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     async fn verify_job(&self, _config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
+        let internal_id = &job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::SnosRun, internal_id);
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
