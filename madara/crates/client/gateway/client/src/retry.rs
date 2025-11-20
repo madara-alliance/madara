@@ -9,7 +9,6 @@
 ///
 /// The strategy also considers error types (connection refused, timeout, rate limits)
 /// to optimize retry behavior.
-
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use std::sync::Arc;
 use std::time::Duration;
@@ -78,9 +77,7 @@ pub struct RetryState {
 
 impl std::fmt::Debug for RetryState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RetryState")
-            .field("config", &self.config)
-            .finish_non_exhaustive()
+        f.debug_struct("RetryState").field("config", &self.config).finish_non_exhaustive()
     }
 }
 
@@ -126,8 +123,8 @@ impl RetryState {
                 if self.is_rate_limited(error) {
                     self.extract_retry_after(error).unwrap_or(Duration::from_secs(10))
                 } else {
-                    let exponential_delay = self.config.phase2_min_delay
-                        .saturating_mul(2_u32.saturating_pow(attempt_in_phase));
+                    let exponential_delay =
+                        self.config.phase2_min_delay.saturating_mul(2_u32.saturating_pow(attempt_in_phase));
                     exponential_delay.min(self.config.max_backoff)
                 }
             }
@@ -241,12 +238,8 @@ impl RetryState {
                     "network error".to_string()
                 }
             }
-            SequencerError::StarknetError(e) if e.code == StarknetErrorCode::RateLimited => {
-                "rate limited".to_string()
-            }
-            SequencerError::StarknetError(e) => {
-                format!("{:?}", e.code).to_lowercase().replace('_', " ")
-            }
+            SequencerError::StarknetError(e) if e.code == StarknetErrorCode::RateLimited => "rate limited".to_string(),
+            SequencerError::StarknetError(e) => format!("{:?}", e.code).to_lowercase().replace('_', " "),
             SequencerError::HyperError(_) => "http client error".to_string(),
             _ => "unknown error".to_string(),
         }
@@ -268,10 +261,7 @@ mod tests {
 
     #[test]
     fn test_phase_determination() {
-        let config = RetryConfig {
-            phase1_duration: Duration::from_secs(10),
-            ..Default::default()
-        };
+        let config = RetryConfig { phase1_duration: Duration::from_secs(10), ..Default::default() };
         let state = RetryState::new(config);
 
         // Should start in aggressive phase
@@ -290,10 +280,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_log_throttling() {
-        let config = RetryConfig {
-            log_interval: Duration::from_millis(100),
-            ..Default::default()
-        };
+        let config = RetryConfig { log_interval: Duration::from_millis(100), ..Default::default() };
         let state = RetryState::new(config);
 
         // First log should always be allowed

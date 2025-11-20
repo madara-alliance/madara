@@ -131,8 +131,13 @@ impl<S: PipelineSteps> PipelineController<S> {
     ) -> SequentialStepFuture<S> {
         let steps = Arc::clone(&self.steps);
         let target_block = self.target_block;
-        async move { steps.sequential_step(retry_input.block_range.clone(), input, target_block).await.map(|el| (el, retry_input)) }
-            .boxed()
+        async move {
+            steps
+                .sequential_step(retry_input.block_range.clone(), input, target_block)
+                .await
+                .map(|el| (el, retry_input))
+        }
+        .boxed()
     }
 
     fn schedule_new_batch(&mut self) {

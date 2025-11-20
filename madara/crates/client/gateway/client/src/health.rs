@@ -10,10 +10,9 @@
 /// - Recovery confirmation (waits for stable connection before declaring healthy)
 /// - Per-operation failure tracking
 /// - State transition logging
-
 use std::collections::HashMap;
-use std::sync::LazyLock;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
@@ -65,6 +64,12 @@ pub struct GatewayHealth {
 
     /// Recovery attempts (successes since entering recovery)
     recovery_attempts: usize,
+}
+
+impl Default for GatewayHealth {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GatewayHealth {
@@ -146,14 +151,11 @@ impl GatewayHealth {
 
                 // Check if we're stable enough to declare healthy
                 // Require either 3 consecutive successes OR 10 attempts with <10% failure rate
-                let should_go_healthy = self.consecutive_successes >= 3
-                    || (self.recovery_attempts >= 10 && self.failure_rate() < 0.1);
+                let should_go_healthy =
+                    self.consecutive_successes >= 3 || (self.recovery_attempts >= 10 && self.failure_rate() < 0.1);
 
                 if should_go_healthy {
-                    let downtime = self
-                        .first_failure_time
-                        .map(|t| t.elapsed())
-                        .unwrap_or(Duration::from_secs(0));
+                    let downtime = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
                     let failed_ops = self.failed_requests;
 
                     self.state = HealthState::Healthy;
@@ -212,10 +214,7 @@ impl GatewayHealth {
             }
 
             HealthState::Degraded { failure_rate } => {
-                let duration = self
-                    .first_failure_time
-                    .map(|t| t.elapsed())
-                    .unwrap_or(Duration::from_secs(0));
+                let duration = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
                 let affected_ops: Vec<_> = self.failed_operations.keys().map(|s| s.as_str()).collect();
 
                 tracing::warn!(
@@ -227,10 +226,7 @@ impl GatewayHealth {
             }
 
             HealthState::Down => {
-                let duration = self
-                    .first_failure_time
-                    .map(|t| t.elapsed())
-                    .unwrap_or(Duration::from_secs(0));
+                let duration = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
                 let phase = get_retry_phase(duration);
 
                 tracing::info!(

@@ -220,7 +220,7 @@ async fn main() -> anyhow::Result<()> {
 
     let sys_info = SysInfo::probe();
     sys_info.show();
-    
+
     // Config-based warnings shall be added here
 
     if !run_cmd.is_sequencer() && run_cmd.l2_sync_params.snap_sync {

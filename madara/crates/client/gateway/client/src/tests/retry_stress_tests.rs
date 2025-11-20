@@ -8,7 +8,6 @@
 /// - Flapping gateway scenarios
 ///
 /// Run with: `cargo test --package mc-gateway-client -- --ignored --test-threads=1`
-
 use crate::retry::{RetryConfig, RetryPhase, RetryState};
 use crate::GatewayProvider;
 use httpmock::prelude::*;
@@ -29,7 +28,7 @@ fn create_test_gateway(server: &MockServer) -> GatewayProvider {
 /// Test 1: Quick recovery from temporary blip (Phase 1)
 /// Tests that retry intervals in Phase 1 are short (2 seconds)
 #[tokio::test(start_paused = true)]
- // Stress test - run explicitly
+// Stress test - run explicitly
 async fn test_quick_recovery_phase1() {
     let config = RetryConfig {
         phase1_duration: Duration::from_secs(300), // 5 minutes
@@ -41,7 +40,7 @@ async fn test_quick_recovery_phase1() {
     // Simulate 5 quick failures in Phase 1
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     let start = Instant::now();
@@ -82,18 +81,13 @@ async fn test_phase1_aggressive_polling() {
     // Simulate connection refused error
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     // Test multiple delays in Phase 1
     for i in 0..10 {
         let delay = state.next_delay(&error);
-        assert_eq!(
-            delay,
-            Duration::from_secs(2),
-            "Phase 1 should maintain constant 2s interval (attempt {})",
-            i
-        );
+        assert_eq!(delay, Duration::from_secs(2), "Phase 1 should maintain constant 2s interval (attempt {})", i);
 
         assert_eq!(state.current_phase(), RetryPhase::Aggressive);
 
@@ -118,7 +112,7 @@ async fn test_phase1_to_phase2_transition() {
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     // Should start in Phase 1
@@ -158,24 +152,18 @@ async fn test_phase2_exponential_backoff() {
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     // Advance to Phase 2
     tokio::time::advance(Duration::from_secs(1)).await;
 
     // Test exponential growth: 5s, 10s, 20s, 40s, 60s (capped)
-    let expected_delays = vec![5, 10, 20, 40, 60, 60, 60];
+    let expected_delays = [5, 10, 20, 40, 60, 60, 60];
 
     for (i, expected) in expected_delays.iter().enumerate() {
         let delay = state.next_delay(&error);
-        assert_eq!(
-            delay.as_secs(),
-            *expected,
-            "Attempt {} should have delay {}s",
-            i,
-            expected
-        );
+        assert_eq!(delay.as_secs(), *expected, "Attempt {} should have delay {}s", i, expected);
 
         tokio::time::advance(Duration::from_secs(5)).await;
     }
@@ -196,7 +184,7 @@ async fn test_max_backoff_cap() {
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     // Simulate many retries
@@ -214,7 +202,7 @@ async fn test_max_backoff_cap() {
 async fn test_connection_refused_error() {
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     assert!(RetryState::is_connection_error(&error));
@@ -228,7 +216,7 @@ async fn test_connection_refused_error() {
 async fn test_timeout_error() {
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::TimedOut,
-        "Operation timed out"
+        "Operation timed out",
     )));
 
     assert!(RetryState::is_timeout_error(&error));
@@ -255,10 +243,7 @@ async fn test_rate_limit_handling() {
 #[tokio::test(start_paused = true)]
 
 async fn test_phase1_log_throttling() {
-    let config = RetryConfig {
-        log_interval: Duration::from_secs(10),
-        ..Default::default()
-    };
+    let config = RetryConfig { log_interval: Duration::from_secs(10), ..Default::default() };
 
     let state = RetryState::new(config);
 
@@ -298,21 +283,15 @@ async fn test_error_message_formatting() {
         (
             SequencerError::HttpCallError(Box::new(std::io::Error::new(
                 std::io::ErrorKind::ConnectionRefused,
-                "Connection refused"
+                "Connection refused",
             ))),
-            "connection refused"
+            "connection refused",
         ),
         (
-            SequencerError::HttpCallError(Box::new(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "timeout"
-            ))),
-            "timeout"
+            SequencerError::HttpCallError(Box::new(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))),
+            "timeout",
         ),
-        (
-            SequencerError::StarknetError(mp_gateway::error::StarknetError::rate_limited()),
-            "rate limited"
-        ),
+        (SequencerError::StarknetError(mp_gateway::error::StarknetError::rate_limited()), "rate limited"),
     ];
 
     for (error, expected) in test_cases {
@@ -335,7 +314,7 @@ async fn test_eventual_success() {
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     // Simulate 10 failures, ensuring state persists correctly
@@ -362,7 +341,7 @@ async fn test_eventual_success() {
 #[tokio::test(start_paused = true)]
 async fn test_extended_outage_30min() {
     let config = RetryConfig {
-        phase1_duration: Duration::from_secs(5 * 60),  // 5 minutes
+        phase1_duration: Duration::from_secs(5 * 60), // 5 minutes
         phase1_interval: Duration::from_secs(2),
         phase2_min_delay: Duration::from_secs(5),
         max_backoff: Duration::from_secs(60),
@@ -373,7 +352,7 @@ async fn test_extended_outage_30min() {
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     // Simulate 30 minutes of retries
@@ -414,7 +393,7 @@ async fn test_flapping_gateway() {
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     // Simulate 5 flapping cycles (fail -> retry -> success -> fail -> retry -> success...)
@@ -446,12 +425,9 @@ async fn test_mixed_error_types() {
     let errors = vec![
         SequencerError::HttpCallError(Box::new(std::io::Error::new(
             std::io::ErrorKind::ConnectionRefused,
-            "Connection refused"
+            "Connection refused",
         ))),
-        SequencerError::HttpCallError(Box::new(std::io::Error::new(
-            std::io::ErrorKind::TimedOut,
-            "timeout"
-        ))),
+        SequencerError::HttpCallError(Box::new(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))),
         SequencerError::StarknetError(mp_gateway::error::StarknetError::rate_limited()),
     ];
 
@@ -476,16 +452,13 @@ async fn test_mixed_error_types() {
 #[tokio::test(start_paused = true)]
 
 async fn test_infinite_retry_stability() {
-    let config = RetryConfig {
-        infinite_retry: true,
-        ..Default::default()
-    };
+    let config = RetryConfig { infinite_retry: true, ..Default::default() };
 
     let state = RetryState::new(config);
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     // Simulate 1000 retries
@@ -510,7 +483,7 @@ async fn test_retry_performance_overhead() {
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
-        "Connection refused"
+        "Connection refused",
     )));
 
     let start = Instant::now();
