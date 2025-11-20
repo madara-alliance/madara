@@ -66,6 +66,7 @@ impl JobService {
         job_type: &JobType,
         delay: Option<Duration>,
     ) -> Result<(), JobError> {
+        tracing::debug!(job_id = %id, "Adding a {:?} job to verification queue", job_type);
         Self::add_job_to_queue(config, id, job_type.verify_queue_name(), delay).await
     }
 
