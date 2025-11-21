@@ -716,7 +716,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
 
     let versioned_constants_path = get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")
         .expect("Couldn't get versioned constants path")
-        .map(|s| PathBuf::from(s));
+        .map(PathBuf::from);
 
     let versioned_constants = versioned_constants_path
         .as_ref()

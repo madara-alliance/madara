@@ -42,7 +42,6 @@ jobs:
           cd madara
           cargo fmt -- --check
 
-
       - name: Python Cairo setup (before clippy)
         uses: ./.github/actions/setup-python-cairo
         with:
