@@ -1,5 +1,5 @@
 #[cfg(feature = "testing")]
-use alloy::providers::RootProvider;
+use alloy::providers::ProviderBuilder;
 
 use crate::utils::rest_client::RestClient;
 use anyhow::Context;
@@ -397,7 +397,7 @@ impl Config {
                 #[cfg(feature = "testing")]
                 {
                     Ok(Box::new(EthereumSettlementClient::with_test_params(
-                        RootProvider::new_http(ethereum_settlement_params.ethereum_rpc_url.clone()),
+                        ProviderBuilder::new().connect_http(ethereum_settlement_params.ethereum_rpc_url.clone()),
                         ethereum_settlement_params.l1_core_contract_address,
                         ethereum_settlement_params.ethereum_rpc_url.clone(),
                         Some(ethereum_settlement_params.starknet_operator_address),

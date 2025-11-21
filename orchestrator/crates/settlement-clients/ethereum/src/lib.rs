@@ -154,7 +154,7 @@ impl EthereumSettlementClient {
             impersonate_account,
             max_gas_price_mul_factor: 2f64,
             tx_finality_retry_wait_in_seconds: 10,
-            disable_peerdas: false, // for testing, default to sepolia/testnet behavior
+            disable_peerdas: true,
         }
     }
 
@@ -571,10 +571,29 @@ mod test_config {
     #[allow(dead_code)]
     pub async fn configure_transaction(
         provider: Arc<DefaultHttpProvider>,
-        tx_envelope: TxEnvelope,
+        tx_envelope: Signed<TxEip4844Variant<BlobTransactionSidecarVariant>>,
         impersonate_account: Option<Address>,
     ) -> TransactionRequest {
-        let mut txn_request: TransactionRequest = tx_envelope.into();
+        // Extract the base transaction from the variant and convert to TransactionRequest
+        // For testing, we convert the variant to a standard TransactionRequest
+        let mut txn_request: TransactionRequest = match tx_envelope.tx() {
+            TxEip4844Variant::TxEip4844(_) => {
+                panic!("Wrong transaction type")
+            }
+            TxEip4844Variant::TxEip4844WithSidecar(tx_with_sidecar) => {
+                let sidecar = match &tx_with_sidecar.sidecar {
+                    BlobTransactionSidecarVariant::Eip4844(sidecar) => sidecar,
+                    BlobTransactionSidecarVariant::Eip7594(_) => {
+                        panic!("Wrong sidecar type")
+                    }
+                };
+                let tx = TxEip4844WithSidecar { tx: tx_with_sidecar.tx.clone(), sidecar: sidecar.clone() };
+                match tx_with_sidecar {
+                    &_ => {}
+                }
+                <TransactionRequest as From<TxEip4844WithSidecar>>::from(tx)
+            }
+        };
 
         // IMPORTANT to understand #[cfg(test)], #[cfg(not(test))] and SHOULD_IMPERSONATE_ACCOUNT
         // Two tests :  `update_state_blob_with_dummy_contract_works` &

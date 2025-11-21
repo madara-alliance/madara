@@ -355,7 +355,7 @@ mod tests {
 
         let blob_data_vec = vec![hex_string_to_u8_vec(&blob_data).unwrap()];
 
-        match prepare_sidecar(&blob_data_vec, &trusted_setup, false) {
+        match prepare_sidecar(&blob_data_vec, &trusted_setup, true) {
             Ok(result) => {
                 match result {
                     BlobTransactionSidecarVariant::Eip4844(sidecar) => {
