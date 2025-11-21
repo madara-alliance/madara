@@ -65,7 +65,8 @@ impl GatewayProvider {
                 .with_block_id(&block_id);
 
             request.send_get::<ProviderBlock>().await
-        }).await
+        })
+        .await
     }
 
     pub async fn get_preconfirmed_block(&self, block_number: u64) -> Result<ProviderBlockPreConfirmed, SequencerError> {
@@ -76,7 +77,8 @@ impl GatewayProvider {
                 .with_block_id(&BlockId::Number(block_number));
 
             request.send_get::<ProviderBlockPreConfirmed>().await
-        }).await
+        })
+        .await
     }
 
     pub async fn get_header(&self, block_id: BlockId) -> Result<ProviderBlockHeader, SequencerError> {
@@ -88,7 +90,8 @@ impl GatewayProvider {
                 .add_param("headerOnly", "true");
 
             request.send_get::<ProviderBlockHeader>().await
-        }).await
+        })
+        .await
     }
 
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdate, SequencerError> {
@@ -99,7 +102,8 @@ impl GatewayProvider {
                 .with_block_id(&block_id);
 
             request.send_get::<ProviderStateUpdate>().await
-        }).await
+        })
+        .await
     }
 
     pub async fn get_block_bouncer_weights(&self, block_number: u64) -> Result<BouncerWeights, SequencerError> {
@@ -123,7 +127,8 @@ impl GatewayProvider {
                 .add_param(Cow::from("includeBlock"), "true");
 
             request.send_get::<ProviderStateUpdateWithBlock>().await
-        }).await
+        })
+        .await
     }
 
     pub async fn get_signature(&self, block_id: BlockId) -> Result<ProviderBlockSignature, SequencerError> {
@@ -138,7 +143,8 @@ impl GatewayProvider {
                 .with_block_id(&block_id);
 
             request.send_get::<ProviderBlockSignature>().await
-        }).await
+        })
+        .await
     }
 
     pub async fn get_class_by_hash(
@@ -165,7 +171,8 @@ impl GatewayProvider {
                 let err = serde::de::Error::custom("Unknown contract type".to_string());
                 Err(SequencerError::DeserializeBody { serde_error: err })
             }
-        }).await
+        })
+        .await
     }
 
     async fn add_transaction<T>(&self, transaction: UserTransaction) -> Result<T, SequencerError>
@@ -421,6 +428,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn get_preconfirmed_block(client_testnet_fixture: GatewayProvider) {
         let latest_block_number =
             client_testnet_fixture.get_header(BlockId::Tag(BlockTag::Latest)).await.unwrap().block_number;

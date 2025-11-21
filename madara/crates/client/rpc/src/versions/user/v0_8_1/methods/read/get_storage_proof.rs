@@ -5,8 +5,8 @@ use crate::{
 use anyhow::Context;
 use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
 use mc_db::rocksdb::{
-    trie::{BasicId, GlobalTrie, ProofNode},
     global_trie::bonsai_identifier,
+    trie::{BasicId, GlobalTrie, ProofNode},
 };
 use mp_rpc::v0_8_1::{
     BlockId, BlockTag, ContractLeavesDataItem, ContractStorageKeysItem, ContractsProof, GetStorageProofResult,
@@ -193,7 +193,7 @@ mod tests {
     use super::*;
     use crate::test_utils::rpc_test_setup;
     use bitvec::{bits, vec::BitVec, view::AsBits};
-    use mc_db::rocksdb::{trie::BasicId, global_trie::bonsai_identifier};
+    use mc_db::rocksdb::{global_trie::bonsai_identifier, trie::BasicId};
     use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
     use starknet_types_core::hash::Pedersen;
     use std::collections::HashMap;
