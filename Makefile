@@ -80,6 +80,7 @@ Targets:
   Runs various code quality checks including formatting and linting.
 
   - check              Run code quality checks (fmt, clippy)
+                       Use NO_CAIRO_SETUP=1 to skip Cairo setup (e.g., make check NO_CAIRO_SETUP=1)
   - fmt                Format code using taplo and cargo fmt
   - pre-push         Run formatting and checks before committing / Pushing
 
@@ -97,6 +98,7 @@ Targets:
   - help               Show this help message
   - git-hook           Setup git hooks path to .githooks
   - run-mock-atlantic-server  Run the mock Atlantic server (options: PORT=4002 FAILURE_RATE=0.1 MAX_CONCURRENT_JOBS=5 BIND_ADDR=0.0.0.0)
+  - install-llvm19     Install LLVM 19 for Cairo Native (Usage: make install-llvm19 [SUDO=sudo] [CODENAME=jammy|bookworm])
 
 endef
 export HELP
@@ -244,7 +246,10 @@ build-orchestrator: setup-cairo
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: check
-check: setup-cairo
+check:
+	@if [ -z "$(NO_CAIRO_SETUP)" ]; then \
+		$(MAKE) --silent setup-cairo; \
+	fi
 	@echo -e "$(DIM)Running code quality checks...$(RESET)"
 	@echo -e "$(INFO)Running prettier check...$(RESET)"
 	@npm install
@@ -552,3 +557,43 @@ setup-bootstrapper:
 	@cp -r ./build-artifacts/bootstrapper/solidity/out/ ./bootstrapper-v2/contracts/ethereum/out/
 	@cp -r ./build-artifacts/bootstrapper/cairo/target/ ./bootstrapper-v2/contracts/madara/target/
 	@echo -e "$(PASS)Bootstrapper setup complete!$(RESET)"
+
+# ============================================================================ #
+#                          LLVM 19 SETUP FOR CAIRO NATIVE                       #
+# ============================================================================ #
+
+# Install LLVM 19 for Cairo Native
+# Usage: make install-llvm19 [SUDO=sudo] [CODENAME=jammy|bookworm]
+#   SUDO=sudo - Use sudo for commands (default: empty, assumes root in Docker)
+#   CODENAME=jammy|bookworm - Override OS detection (optional)
+.PHONY: install-llvm19
+install-llvm19:
+	@echo "Installing LLVM 19 for Cairo Native..."
+	@# Detect codename if not provided
+	@if [ -z "$(CODENAME)" ]; then \
+		if [ -f /etc/os-release ]; then \
+			. /etc/os-release && CODENAME=$$VERSION_CODENAME; \
+		elif grep -q "bookworm" /etc/debian_version 2>/dev/null || (grep -q "bookworm" /etc/os-release 2>/dev/null); then \
+			CODENAME=bookworm; \
+		elif grep -q "jammy" /etc/os-release 2>/dev/null; then \
+			CODENAME=jammy; \
+		else \
+			CODENAME=jammy; \
+		fi; \
+	else \
+		CODENAME=$(CODENAME); \
+	fi; \
+	echo "Using LLVM repository codename: $$CODENAME"; \
+	$(if $(SUDO),sudo,) wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | $(if $(SUDO),sudo,) tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null; \
+	$(if $(SUDO),sudo,) add-apt-repository -y "deb http://apt.llvm.org/$$CODENAME/ llvm-toolchain-$$CODENAME-19 main"; \
+	$(if $(SUDO),sudo,) apt-get update -y; \
+	$(if $(SUDO),sudo,) apt-get install -y \
+		clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
+		libmlir-19-dev mlir-19-tools \
+		libpolly-19-dev \
+		liblld-19-dev \
+		libc6-dev \
+		$$(if [ "$$CODENAME" = "bookworm" ]; then echo "libstdc++-12-dev"; else echo "libstdc++-11-dev gcc-11 g++-11"; fi) \
+		libudev-dev protobuf-compiler build-essential \
+		libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd; \
+	echo "✅ LLVM 19 installed successfully"
