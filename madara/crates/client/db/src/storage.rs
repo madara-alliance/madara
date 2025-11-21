@@ -130,6 +130,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>>;
     fn get_latest_applied_trie_update(&self) -> Result<Option<u64>>;
+    fn get_snap_sync_latest_block(&self) -> Result<Option<u64>>;
 
     // L1 to L2 messages
 
@@ -165,6 +166,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()>;
     fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()>;
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()>;
+    fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()>;
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
@@ -184,6 +186,9 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     /// Remove all blocks in the database from this block_n inclusive. This includes partially imported blocks as well.
     fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()>;
+
+    /// Fetches the latest global state root.
+    fn get_state_root_hash(&self) -> Result<Felt>;
 
     /// Revert the blockchain state to a specific block hash.
     fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)>;
