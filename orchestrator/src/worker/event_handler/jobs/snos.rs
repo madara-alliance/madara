@@ -36,12 +36,22 @@ pub struct SnosJobHandler;
 
 #[async_trait]
 pub trait ChainConfigFromExt {
-    async fn get_chain_config(rpc_url: &str, layer: &Layer, strk_fee_token_address: &str) -> Result<ChainConfig>;
+    async fn get_chain_config(
+        rpc_url: &str,
+        layer: &Layer,
+        strk_fee_token_address: &str,
+        eth_fee_token_address: &str,
+    ) -> Result<ChainConfig>;
 }
 
 #[async_trait]
 impl ChainConfigFromExt for ChainConfig {
-    async fn get_chain_config(rpc_url: &str, layer: &Layer, strk_fee_token_address: &str) -> Result<ChainConfig> {
+    async fn get_chain_config(
+        rpc_url: &str,
+        layer: &Layer,
+        strk_fee_token_address: &str,
+        eth_fee_token_address: &str,
+    ) -> Result<ChainConfig> {
         let rpc_url = Url::parse(rpc_url)?;
         let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
         let chain_id_in_hex = provider.chain_id().await?.to_fixed_hex_string();
@@ -52,6 +62,7 @@ impl ChainConfigFromExt for ChainConfig {
         Ok(ChainConfig {
             chain_id,
             strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(strk_fee_token_address))?,
+            eth_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(eth_fee_token_address))?,
             is_l3: layer.is_l3(),
         })
     }
@@ -73,16 +84,16 @@ impl OsHintsConfigurationFromLayer for OsHintsConfiguration {
 #[async_trait]
 impl JobHandlerTrait for SnosJobHandler {
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(log_type = "starting", "SNOS job creation started.");
+        debug!(log_type = "starting", "{:?} job {} creation started", JobType::SnosRun, internal_id);
         let job_item = JobItem::create(internal_id.clone(), JobType::SnosRun, JobStatus::Created, metadata);
-        info!(log_type = "completed", "SNOS job creation completed.");
+        debug!(log_type = "completed", "{:?} job {} creation completed", JobType::SnosRun, internal_id);
         Ok(job_item)
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
-        info!(log_type = "starting", "SNOS job processing started.");
-        debug!("Processing SNOS job");
+        let internal_id = &job.internal_id;
+        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::SnosRun, internal_id);
+
         // Get SNOS metadata
         let snos_metadata: SnosMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
             error!(error = %e, "Failed to convert metadata to SnosMetadata");
@@ -107,14 +118,13 @@ impl JobHandlerTrait for SnosJobHandler {
                 snos_url,
                 config.layer(),
                 &config.params.snos_config.strk_fee_token_address,
+                &config.params.snos_config.eth_fee_token_address,
             )
             .await
             .map_err(|e| JobError::Other(OtherError(eyre!("Failed to get chain config: {}", e))))?,
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
-            strk_fee_token_address: config.params.snos_config.strk_fee_token_address.clone(),
-            eth_fee_token_address: config.params.snos_config.eth_fee_token_address.clone(),
         };
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
@@ -176,16 +186,17 @@ impl JobHandlerTrait for SnosJobHandler {
                 .await?;
         }
 
-        info!(log_type = "completed", "SNOS job processed successfully.");
+        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::SnosRun, internal_id);
 
         Ok(snos_metadata.snos_batch_index.to_string())
     }
 
-    async fn verify_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        info!(log_type = "starting", "SNOS job verification started.");
+    async fn verify_job(&self, _config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+        let internal_id = &job.internal_id;
+        debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::SnosRun, internal_id);
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
-        info!(log_type = "completed", "SNOS job verification completed.");
+        info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::SnosRun, internal_id);
         Ok(JobVerificationStatus::Verified)
     }
 

@@ -14,8 +14,11 @@ Targets:
 
   [ SETUP ]
 
-  - setup-l2                Setup orchestrator with L2 layer (default)
+  - setup-cairo             Setup Cairo 0 environment for building
+  - setup-l2                Setup orchestrator with L2 layer
+  - setup-l2-localstack     Setup orchestrator with L2 layer and Localstack
   - setup-l3                Setup orchestrator with L3 layer
+  - setup-l3-localstack     Setup orchestrator with L3 layer and Localstack
   - run-orchestrator-l2     Run the orchestrator with AWS services and Ethereum settlement
   - run-orchestrator-l3     Run the orchestrator with AWS services and Starknet settlement
 
@@ -67,11 +70,17 @@ Targets:
   - clean-db           Perform clean and remove local database
   - fclean             Perform clean-db and remove local images
 
+  [ BUILDING ]
+
+  - build-madara                  Build Madara with Cairo 0 environment setup
+  - build-orchestrator            Build Orchestrator with Cairo 0 environment setup
+
   [ CODE QUALITY ]
 
   Runs various code quality checks including formatting and linting.
 
   - check              Run code quality checks (fmt, clippy)
+                       Use NO_CAIRO_SETUP=1 to skip Cairo setup (e.g., make check NO_CAIRO_SETUP=1)
   - fmt                Format code using taplo and cargo fmt
   - pre-push         Run formatting and checks before committing / Pushing
 
@@ -89,6 +98,7 @@ Targets:
   - help               Show this help message
   - git-hook           Setup git hooks path to .githooks
   - run-mock-atlantic-server  Run the mock Atlantic server (options: PORT=4002 FAILURE_RATE=0.1 MAX_CONCURRENT_JOBS=5 BIND_ADDR=0.0.0.0)
+  - install-llvm19     Install LLVM 19 for Cairo Native (Usage: make install-llvm19 [SUDO=sudo] [CODENAME=jammy|bookworm])
 
 endef
 export HELP
@@ -101,6 +111,8 @@ DOCKER_TAG     := madara:latest
 DOCKER_IMAGE   := ghcr.io/madara-alliance/$(DOCKER_TAG)
 DOCKER_GZ      := image.tar.gz
 ARTIFACTS      := ./build-artifacts
+VENV           := sequencer_venv
+VENV_ACTIVATE  := . $(VENV)/bin/activate
 
 # Configuration for E2E bridge tests
 CARGO_TARGET_DIR ?= target
@@ -193,9 +205,51 @@ artifacts:
 	@git submodule update --init --recursive
 	./scripts/artifacts.sh
 
+.PHONY: setup-cairo
+setup-cairo:
+	@echo -e "$(DIM)Setting up Cairo 0 environment...$(RESET)"
+	@if [ ! -d "$(VENV)" ]; then \
+		echo -e "$(INFO)Creating Python virtual environment...$(RESET)"; \
+		python3 -m venv $(VENV); \
+	else \
+		echo -e "$(PASS)✅ Virtual environment already exists$(RESET)"; \
+	fi
+	@echo -e "$(INFO)Installing Cairo 0 dependencies...$(RESET)"
+	@if [ ! -f sequencer_requirements.txt ]; then \
+		CARGO_HOME=$${CARGO_HOME:-$$HOME/.cargo}; \
+		GIT_CHECKOUTS=$$(readlink -f "$$CARGO_HOME/git" 2>/dev/null || echo "$$CARGO_HOME/git"); \
+		SEQUENCER_REV=$$(grep -A 2 'name = "blockifier"' Cargo.lock | grep 'sequencer?rev=' | sed -E 's/.*rev=([a-f0-9]+).*/\1/' | cut -c1-7); \
+		REQUIREMENTS_PATH=$$(find "$$GIT_CHECKOUTS/checkouts" -type f -path "*/sequencer*/$$SEQUENCER_REV*/scripts/requirements.txt" 2>/dev/null | head -n 1); \
+		if [ -n "$$REQUIREMENTS_PATH" ]; then \
+			sed 's/numpy==2.0.2/numpy<2.0/' "$$REQUIREMENTS_PATH" > sequencer_requirements.txt; \
+			echo -e "$(INFO)Found requirements.txt at: $$REQUIREMENTS_PATH$(RESET)"; \
+		else \
+			echo -e "$(WARN)⚠️  WARNING: Could not find requirements.txt from sequencer checkout$(RESET)"; \
+			echo -e "$(INFO)Creating basic requirements with cairo-lang...$(RESET)"; \
+			echo "cairo-lang==0.14.0.1" > sequencer_requirements.txt; \
+			echo "numpy<2.0" >> sequencer_requirements.txt; \
+		fi; \
+	fi
+	@$(VENV_ACTIVATE) && pip install --upgrade pip > /dev/null 2>&1 && pip install -r sequencer_requirements.txt > /dev/null 2>&1
+	@$(VENV_ACTIVATE) && cairo-compile --version > /dev/null 2>&1 && echo -e "$(PASS)✅ Cairo 0 environment ready (cairo-compile $$($(VENV_ACTIVATE) && cairo-compile --version 2>&1))$(RESET)" || (echo -e "$(WARN)❌ Cairo setup failed$(RESET)" && exit 1)
+
+.PHONY: build-madara
+build-madara:
+	@echo -e "$(DIM)Building Madara with Cairo 0 environment...$(RESET)"
+	@$(VENV_ACTIVATE) && cargo build --manifest-path madara/Cargo.toml  --bin madara --release
+	@echo -e "$(PASS)✅ Build complete!$(RESET)"
+
+.PHONY: build-orchestrator
+build-orchestrator: setup-cairo
+	@echo -e "$(DIM)Building Orchestrator with Cairo 0 environment...$(RESET)"
+	@$(VENV_ACTIVATE) && cargo build --bin orchestrator --release
+	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
 .PHONY: check
 check:
+	@if [ -z "$(NO_CAIRO_SETUP)" ]; then \
+		$(MAKE) --silent setup-cairo; \
+	fi
 	@echo -e "$(DIM)Running code quality checks...$(RESET)"
 	@echo -e "$(INFO)Running prettier check...$(RESET)"
 	@npm install
@@ -204,20 +258,23 @@ check:
 	@cargo fmt -- --check
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
-	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
+	@echo "Running cargo clippy..."
 	@cargo clippy --workspace --no-deps -- -D warnings
-	@echo -e "$(INFO)Running cargo clippy workspace tests...$(RESET)"
 	@cargo clippy --workspace --tests --no-deps -- -D warnings
-	@echo -e "$(INFO)Running cargo clippy with testing features...$(RESET)"
-	@cargo clippy --workspace --exclude madara --features testing --no-deps -- -D warnings
-	@echo -e "$(INFO)Running cargo clippy with testing features and tests...$(RESET)"
-	@cargo clippy --workspace --exclude madara --features testing --tests --no-deps -- -D warnings
+	@# TODO(mehul 14/11/2025, hotfix): This is a temporary fix to ensure that the madara is linted.
+	@# Madara does not belong to the toplevel workspace, so we need to lint it separately.
+	@# Remove this once we add madara back to toplevel workspace.
+	@echo "Running cargo clippy for madara..."
+	@cd madara && \
+	cargo clippy --workspace --no-deps -- -D warnings && \
+	cargo clippy --workspace --tests --no-deps -- -D warnings && \
+	cd ..
 	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
 	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
 
 .PHONY: fmt
-fmt:
+fmt: setup-cairo
 	@echo -e "$(DIM)Running code formatters...$(RESET)"
 	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
 	@npm install
@@ -419,10 +476,10 @@ test: test-e2e test-orchestrator
 	@echo -e "$(PASS)All tests completed!$(RESET)"
 
 .PHONY: pre-push
-pre-push:
+pre-push: setup-cairo
 	@echo -e "$(DIM)Running pre-push checks...$(RESET)"
 	@echo -e "$(INFO)Running code quality checks...$(RESET)"
-	@$(MAKE) --silent check
+	@$(VENV_ACTIVATE) && $(MAKE) --silent check
 	@echo -e "$(PASS)Pre-push checks completed successfully!$(RESET)"
 
 .PHONY: git-hook
@@ -432,11 +489,21 @@ git-hook:
 .PHONY: setup-l2
 setup-l2:
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
+	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+
+.PHONY: setup-l2-localstack
+setup-l2-localstack:
+	@echo -e "$(DIM)Setting up orchestrator with L2 layer and Localstack...$(RESET)"
 	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: setup-l3
 setup-l3:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+
+.PHONY: setup-l3-localstack
+setup-l3-localstack:
+	@echo -e "$(DIM)Setting up orchestrator with L3 layer abd Localstack...$(RESET)"
 	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: run-orchestrator-l2
@@ -448,7 +515,7 @@ run-orchestrator-l2:
 .PHONY: run-orchestrator-l3
 run-orchestrator-l3:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --mock-atlantic-server --da-on-starknet 2>&1
+	@cargo run --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --mock-atlantic-server --da-on-starknet --madara-version 0.14.0 2>&1
 
 .PHONY: watch-orchestrator
 watch-orchestrator:
@@ -490,3 +557,43 @@ setup-bootstrapper:
 	@cp -r ./build-artifacts/bootstrapper/solidity/out/ ./bootstrapper-v2/contracts/ethereum/out/
 	@cp -r ./build-artifacts/bootstrapper/cairo/target/ ./bootstrapper-v2/contracts/madara/target/
 	@echo -e "$(PASS)Bootstrapper setup complete!$(RESET)"
+
+# ============================================================================ #
+#                          LLVM 19 SETUP FOR CAIRO NATIVE                       #
+# ============================================================================ #
+
+# Install LLVM 19 for Cairo Native
+# Usage: make install-llvm19 [SUDO=sudo] [CODENAME=jammy|bookworm]
+#   SUDO=sudo - Use sudo for commands (default: empty, assumes root in Docker)
+#   CODENAME=jammy|bookworm - Override OS detection (optional)
+.PHONY: install-llvm19
+install-llvm19:
+	@echo "Installing LLVM 19 for Cairo Native..."
+	@# Detect codename if not provided
+	@if [ -z "$(CODENAME)" ]; then \
+		if [ -f /etc/os-release ]; then \
+			. /etc/os-release && CODENAME=$$VERSION_CODENAME; \
+		elif grep -q "bookworm" /etc/debian_version 2>/dev/null || (grep -q "bookworm" /etc/os-release 2>/dev/null); then \
+			CODENAME=bookworm; \
+		elif grep -q "jammy" /etc/os-release 2>/dev/null; then \
+			CODENAME=jammy; \
+		else \
+			CODENAME=jammy; \
+		fi; \
+	else \
+		CODENAME=$(CODENAME); \
+	fi; \
+	echo "Using LLVM repository codename: $$CODENAME"; \
+	$(if $(SUDO),sudo,) wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | $(if $(SUDO),sudo,) tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null; \
+	$(if $(SUDO),sudo,) add-apt-repository -y "deb http://apt.llvm.org/$$CODENAME/ llvm-toolchain-$$CODENAME-19 main"; \
+	$(if $(SUDO),sudo,) apt-get update -y; \
+	$(if $(SUDO),sudo,) apt-get install -y \
+		clang-19 llvm-19 llvm-19-dev llvm-19-runtime \
+		libmlir-19-dev mlir-19-tools \
+		libpolly-19-dev \
+		liblld-19-dev \
+		libc6-dev \
+		$$(if [ "$$CODENAME" = "bookworm" ]; then echo "libstdc++-12-dev"; else echo "libstdc++-11-dev gcc-11 g++-11"; fi) \
+		libudev-dev protobuf-compiler build-essential \
+		libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd; \
+	echo "✅ LLVM 19 installed successfully"

@@ -44,6 +44,12 @@ impl BlockTimestamp {
     }
 }
 
+impl From<u64> for BlockTimestamp {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 impl From<SystemTime> for BlockTimestamp {
     fn from(value: SystemTime) -> Self {
         Self(value.duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime::now() < Unix epoch").as_secs())
@@ -115,6 +121,20 @@ pub struct GasPrices {
     pub strk_l1_data_gas_price: u128,
     pub eth_l2_gas_price: u128,
     pub strk_l2_gas_price: u128,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+pub struct CustomHeader {
+    pub block_n: u64,
+    pub timestamp: u64,
+    pub gas_prices: GasPrices,
+    pub expected_block_hash: Felt,
+}
+
+impl CustomHeader {
+    pub fn is_block_hash_as_expected(&self, block_hash: &Felt) -> bool {
+        self.expected_block_hash == *block_hash
+    }
 }
 
 // Starknet API can't have null gas prices, so the default null gas prices are set to 1.

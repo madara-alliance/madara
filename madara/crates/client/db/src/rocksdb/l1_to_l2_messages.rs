@@ -29,21 +29,21 @@ impl RocksDBStorageInner {
             batch.put_cf(&on_l2_cf, key, receipt.transaction_hash.to_bytes_be());
         }
 
-        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 
     /// If the message is already pending, this will overwrite it.
     pub(super) fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
         let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
-        self.db.put_cf_opt(&pending_cf, msg.tx.nonce.to_be_bytes(), super::serialize(&msg)?, &self.writeopts_no_wal)?;
+        self.db.put_cf_opt(&pending_cf, msg.tx.nonce.to_be_bytes(), super::serialize(&msg)?, &self.writeopts)?;
         Ok(())
     }
 
     /// If the message does not exist, this does nothing.
     pub(super) fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
         let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
-        self.db.delete_cf_opt(&pending_cf, core_contract_nonce.to_be_bytes(), &self.writeopts_no_wal)?;
+        self.db.delete_cf_opt(&pending_cf, core_contract_nonce.to_be_bytes(), &self.writeopts)?;
         Ok(())
     }
 
@@ -78,12 +78,7 @@ impl RocksDBStorageInner {
 
     pub(super) fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
-        self.db.put_cf_opt(
-            &on_l2_cf,
-            core_contract_nonce.to_be_bytes(),
-            txn_hash.to_bytes_be(),
-            &self.writeopts_no_wal,
-        )?;
+        self.db.put_cf_opt(&on_l2_cf, core_contract_nonce.to_be_bytes(), txn_hash.to_bytes_be(), &self.writeopts)?;
         Ok(())
     }
 

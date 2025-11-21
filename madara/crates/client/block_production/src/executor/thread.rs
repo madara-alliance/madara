@@ -2,10 +2,10 @@
 
 use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
-use blockifier::{blockifier::transaction_executor::TransactionExecutor, state::state_api::State};
+use blockifier::blockifier::transaction_executor::TransactionExecutor;
 use futures::future::OptionFuture;
 use mc_db::MadaraBackend;
-use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
+use mc_exec::{execution::TxInfo, LayeredStateAdapter};
 use mp_convert::{Felt, ToFelt};
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
@@ -220,29 +220,14 @@ impl ExecutorThread {
             previous_l2_gas_used,
         )?;
 
-        // Create the TransactionExecution, but reuse the layered_state_adapter.
-        let mut executor =
-            self.backend.new_executor_for_block_production(state.state_adaptor, exec_ctx.to_blockifier()?)?;
+        // Create the TransactionExecutor with block_n-10 handling, reusing the layered_state_adapter.
+        let executor = crate::util::create_executor_with_block_n_min_10(
+            &self.backend,
+            &exec_ctx,
+            state.state_adaptor,
+            |block_n| self.wait_for_hash_of_block_min_10(block_n),
+        )?;
 
-        // Prepare the block_n-10 state diff entry on the 0x1 contract.
-        if let Some((block_n_min_10, block_hash_n_min_10)) =
-            self.wait_for_hash_of_block_min_10(exec_ctx.block_number)?
-        {
-            let contract_address = 1u64.into();
-            let key = block_n_min_10.into();
-            executor
-                .block_state
-                .as_mut()
-                .expect("Blockifier block context has been taken")
-                .set_storage_at(contract_address, key, block_hash_n_min_10)
-                .context("Cannot set storage value in cache")?;
-
-            tracing::debug!(
-                "State diff inserted {:#x} {:#x} => {block_hash_n_min_10:#x}",
-                contract_address.to_felt(),
-                key.to_felt()
-            );
-        }
         Ok(ExecutorStateExecuting {
             exec_ctx,
             executor,
@@ -277,8 +262,8 @@ impl ExecutorThread {
         tracing::debug!("Starting executor thread.");
 
         // The goal here is to do the least possible between batches, as to maximize CPU usage. Any millisecond spent
-        //  outside of `TransactionExecutor::execute_txs` is a millisecond where we could have used every CPU cores, but are using only one.
-        // `blockifier` isn't really well optimized in this regard, but since we can't easily change its code (maybe we should?) we're
+        //  outside `TransactionExecutor::execute_txs` is a millisecond where we could have used every CPU core, but are using only one.
+        // `blockifier` isn't really well optimized in this regard, but since we can't easily change its code (maybe we should?), we're
         //  still optimizing everything we have a hand on here in madara.
         loop {
             // Take transactions to execute.
@@ -373,7 +358,7 @@ impl ExecutorThread {
             stats.exec_duration += exec_duration;
 
             // Doesn't process the results, it just inspects them for logging stats, and figures out which classes were declared.
-            // Results are processed async, outside of the executor.
+            // Results are processed async, outside the executor.
             for (btx, res) in executed_txs.txs.iter().zip(blockifier_results.iter()) {
                 match res {
                     Ok((execution_info, _state_diff)) => {
@@ -433,7 +418,11 @@ impl ExecutorThread {
                 );
                 let block_exec_summary = execution_state.executor.finalize()?;
 
-                if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock(block_exec_summary)).is_err() {
+                if self
+                    .replies_sender
+                    .blocking_send(super::ExecutorMessage::EndBlock(Box::new(block_exec_summary)))
+                    .is_err()
+                {
                     // Receiver closed
                     break Ok(());
                 }

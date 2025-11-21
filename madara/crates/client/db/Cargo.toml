@@ -20,6 +20,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 # Madara
 mc-analytics = { workspace = true }
+mc-class-exec = { workspace = true }
 mp-block = { workspace = true }
 mp-bloom-filter = { workspace = true }
 mp-chain-config = { workspace = true }
@@ -73,6 +74,8 @@ opentelemetry-otlp = { workspace = true, features = [
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }

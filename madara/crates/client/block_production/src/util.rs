@@ -1,17 +1,21 @@
 use anyhow::Context;
-use blockifier::transaction::transaction_execution::Transaction;
+use blockifier::{
+    blockifier::transaction_executor::TransactionExecutor, state::state_api::State,
+    transaction::transaction_execution::Transaction,
+};
 use mc_db::MadaraBackend;
+use mc_exec::{LayeredStateAdapter, MadaraBackendExecutionExt};
 use mp_block::header::{BlockTimestamp, GasPrices, PreconfirmedHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_class::ConvertedClass;
-use mp_convert::Felt;
+use mp_convert::{Felt, ToFelt};
 use mp_transactions::validated::TxTimestamp;
 use starknet_api::StarknetApiError;
 use std::{
     collections::VecDeque,
     ops::{Add, AddAssign},
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 // TODO: add these to metrics
@@ -170,15 +174,64 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u128,
 ) -> anyhow::Result<BlockExecutionContext> {
-    let l1_gas_quote = backend
-        .get_last_l1_gas_quote()
-        .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+    let (block_timestamp, gas_prices) = if let Some(custom_header) =
+        backend.get_custom_header().filter(|h| h.block_n == block_n)
+    {
+        // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
+        let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
+        let gas_prices = custom_header.gas_prices;
+        (block_timestamp, gas_prices)
+    } else {
+        let l1_gas_quote = backend
+            .get_last_l1_gas_quote()
+            .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+
+        let gas_prices = backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?;
+        (SystemTime::now(), gas_prices)
+    };
+
     Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
-        block_timestamp: SystemTime::now(),
+        block_timestamp,
         protocol_version: backend.chain_config().latest_protocol_version,
-        gas_prices: backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?,
+        gas_prices,
         l1_da_mode: backend.chain_config().l1_da_mode,
         block_number: block_n,
     })
+}
+
+/// Creates a TransactionExecutor with the given execution context and state adapter,
+/// and sets up the block_n-10 state diff entry if available.
+///
+/// This is a helper function to avoid code duplication between normal block production
+/// and re-execution scenarios.
+pub(crate) fn create_executor_with_block_n_min_10(
+    backend: &Arc<MadaraBackend>,
+    exec_ctx: &BlockExecutionContext,
+    state_adaptor: LayeredStateAdapter,
+    get_block_n_min_10_hash: impl FnOnce(u64) -> anyhow::Result<Option<(u64, Felt)>>,
+) -> anyhow::Result<TransactionExecutor<LayeredStateAdapter>> {
+    let mut executor = backend
+        .new_executor_for_block_production(state_adaptor, exec_ctx.to_blockifier()?)
+        .context("Creating TransactionExecutor")?;
+
+    // Prepare the block_n-10 state diff entry on the 0x1 contract
+    if let Some((block_n_min_10, block_hash_n_min_10)) = get_block_n_min_10_hash(exec_ctx.block_number)? {
+        let contract_address = 1u64.into();
+        let key = block_n_min_10.into();
+        executor
+            .block_state
+            .as_mut()
+            .expect("Blockifier block context has been taken")
+            .set_storage_at(contract_address, key, block_hash_n_min_10)
+            .context("Cannot set storage value in cache")?;
+
+        tracing::debug!(
+            "State diff inserted {:#x} {:#x} => {block_hash_n_min_10:#x}",
+            contract_address.to_felt(),
+            key.to_felt()
+        );
+    }
+
+    Ok(executor)
 }

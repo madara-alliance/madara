@@ -1,10 +1,11 @@
+config_version: 1
 chain_name: "Madara"
 chain_id: "MADARA_DEVNET"
 feeder_gateway_url: "http://localhost:8080/feeder_gateway/"
 gateway_url: "http://localhost:8080/gateway/"
 native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
 parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-latest_protocol_version: "0.13.2"
+latest_protocol_version: "0.14.0"
 block_time: "10s"
 pending_block_update_time: "2s"
 execution_batch_size: 16
@@ -36,6 +37,8 @@ eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
 mempool_max_transactions: 10000
 mempool_max_declare_transactions: 20
 mempool_ttl: null
-l2_gas_target: 2000000000
-min_l2_gas_price: 100000
-l2_gas_price_max_change_denominator: 48
+l2_gas_price:
+  type: eip1559
+  target: 2000000000
+  min_price: 100000
+  max_change_denominator: 48

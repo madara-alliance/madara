@@ -1,11 +1,13 @@
+#![allow(clippy::await_holding_lock)]
+
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
+use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::types::batch::{SnosBatch, SnosBatchStatus};
 use crate::types::jobs::types::JobType;
 use crate::types::queue::QueueType;
-use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::event_handler::triggers::JobTrigger;
 use httpmock::MockServer;
@@ -25,6 +27,9 @@ use uuid::Uuid;
 #[case(vec![1, 2, 3])]
 #[tokio::test]
 async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<(), Box<dyn Error>> {
+    // Acquire test lock to serialize this test with others that use mocks
+    let _test_lock = acquire_test_lock();
+
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
     // Setup mock server and clients
@@ -38,12 +43,12 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
 
     db.expect_get_snos_batches_without_jobs().with(eq(SnosBatchStatus::Closed)).returning({
         let completed_snos_batches = completed_snos_batches.clone();
-        move |_| Ok(completed_snos_batches.iter().map(|&index| SnosBatch::new(index, 1, index)).collect())
+        move |_| Ok(completed_snos_batches.iter().map(|&index| SnosBatch::new(index, Some(1), index)).collect())
     });
 
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
 
-    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, 1, 1)));
+    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, Some(1), 1)));
 
     // Mock job creation
     for &block_num in &completed_snos_batches {
@@ -73,7 +78,7 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
 
     // Setup job handler context
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // Mock queue operations
@@ -141,7 +146,7 @@ async fn test_create_snos_job_for_existing_batch(
     // Getting the list of snos batches without jobs should return the completed snos batches
     db.expect_get_snos_batches_without_jobs().times(1).with(eq(SnosBatchStatus::Closed)).returning({
         let completed_snos_batches = completed_snos_batches.clone();
-        move |_| Ok(completed_snos_batches.iter().map(|&index| SnosBatch::new(index, 1, index)).collect())
+        move |_| Ok(completed_snos_batches.iter().map(|&index| SnosBatch::new(index, Some(1), index)).collect())
     });
 
     // This is called to check if we have a job with the same internal_id and type
@@ -149,7 +154,7 @@ async fn test_create_snos_job_for_existing_batch(
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
 
     // Doesn't matter what we return here
-    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, 1, 1)));
+    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, Some(1), 1)));
 
     // Mock job creation for our test batch
     for snos_batch_num in completed_snos_batches {
@@ -176,7 +181,7 @@ async fn test_create_snos_job_for_existing_batch(
 
     // Setup job handler context
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context();
+    let ctx = get_job_handler_context_safe();
     ctx.expect().with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // Expecting 3 calls to send_message for the SNOS job trigger

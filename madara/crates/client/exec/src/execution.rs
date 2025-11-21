@@ -8,6 +8,7 @@ use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::ExecutableTransaction;
 use mc_db::MadaraStorageRead;
 use mp_convert::ToFelt;
+use mp_receipt::RevertErrorExt;
 use starknet_api::block::FeeType;
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::{ClassHash, ContractAddress, Nonce};
@@ -59,8 +60,10 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
 
                 let mut transactional_state = TransactionalState::create_transactional(&mut self.state);
                 // NB: We use execute_raw because execute already does transaactional state.
-                let execution_info =
+                let mut execution_info =
                     tx.execute_raw(&mut transactional_state, &self.block_context, false).map_err(make_reexec_error)?;
+
+                execution_info.revert_error = execution_info.revert_error.take().map(|e| e.format_for_receipt());
 
                 let state_diff = transactional_state
                     .to_state_diff()

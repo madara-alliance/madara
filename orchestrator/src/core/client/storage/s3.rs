@@ -134,4 +134,17 @@ impl StorageClient for AWSS3 {
 
         Ok(file_paths)
     }
+
+    async fn health_check(&self) -> Result<(), StorageError> {
+        // Verify S3 bucket accessibility by checking if it exists
+        // This operation requires ListBucket permission
+        self.client()
+            .head_bucket()
+            .bucket(self.bucket_name()?)
+            .send()
+            .await
+            .map_err(|e| StorageError::ObjectStreamError(format!("S3 health check failed: {}", e)))?;
+
+        Ok(())
+    }
 }

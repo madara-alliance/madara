@@ -1,6 +1,106 @@
-//! Madara node command line.
+//! Madara is a hybrid RPC node / sequencer for the [Starknet] network. As of the time of writing,
+//! it is the only node with full support for both state synchronization and state production in
+//! this way. Madara is designed to be performant, flexible and observable for your use, whether it
+//! be in a dev environment or a production-ready custom chain.
+//!
+//! This file serves as the entry point into the node software, which is organized into many
+//! different crates. The crates are separated into three different categories, made explicit by
+//! their own naming convention.
+//!
+//! # Specs
+//!
+//! The Madara node follows the [Starknet RPC specs] as well as the [Starknet P2P specs] in the
+//! implementations of its various components. Where seems fit, some extensions might be added to
+//! the specs, in particular in regards to any potential admin or privileged endpoints which might
+//! prove to be useful in prod.
+//!
+//! # Core Crates
+//! > `mc-*`
+//!
+//! These are crates which are responsible for the core (business) functionality of the node. They
+//! answer the question of _how_ the node transforms data.
+//!
+//! - [mc-analytics]
+//! - [mc-block-production]
+//! - [mc-db]
+//! - [mc-devnet]
+//! - [mc-exec]
+//! - [mc-gateway-client]
+//! - [mc-gateway-server]
+//! - [mc-mempool]
+//! - [mc-rpc]
+//! - [mc-settlement-client]
+//! - [mc-submit-tx]
+//! - [mc-sync]
+//! - [mc-telemetry]
+//! - [mc-e2e-tests]
+//!
+//! # Primitives Crates
+//! > `mp-*`
+//!
+//! Crates which are responsible for modelling the data in use by the node. These mostly don't
+//! contain any business logic (though some helper functions might be included) and instead focus on
+//! data types as well as serialization and deserialization. These crates answer the question of
+//! _what_ data the node transforms.
+//!
+//! - [mp-block]
+//! - [mp-bloom-filter]
+//! - [mp-chain-config]
+//! - [mp-class]
+//! - [mp-convert]
+//! - [mp-gateway]
+//! - [mp-oracle]
+//! - [mp-receipt]
+//! - [mp-rpc]
+//! - [mp-state-update]
+//! - [mp-transactions]
+//! - [mp-utils]
+//!
+//! # Helper Crates
+//!
+//! These are external crates with no real business logic or types definitions. They are used either
+//! in testing contexts or to make the developer's life easier with domain-specific macros.
+//!
+//! - [m-cairo-test-contracts]
+//! - [m-proc-macros]
+//!
+//! [Starknet]: https://www.starknet.io
+//! [Starknet RPC specs]: https://github.com/starkware-libs/starknet-specs
+//! [Starknet P2P specs]: https://github.com/starknet-io/starknet-p2p-specs
+//!
+//! [mc-analytics]: mc_analytics
+//! [mc-block-production]: mc_block_production
+//! [mc-db]: mc_db
+//! [mc-devnet]: mc_devnet
+//! [mc-exec]: mc_exec
+//! [mc-gateway-client]: mc_gateway_client
+//! [mc-gateway-server]: mc_gateway_server
+//! [mc-mempool]: mc_mempool
+//! [mc-rpc]: mc_rpc
+//! [mc-settlement-client]: mc_settlement_client
+//! [mc-submit-tx]: mc_submit_tx
+//! [mc-sync]: mc_sync
+//! [mc-telemetry]: mc_telemetry
+//! [mc-e2e-tests]: mc_e2e_tests
+//!
+//! [mp-block]: mp_block
+//! [mp-bloom-filter]: mp_bloom_filter
+//! [mp-chain-config]: mp_chain_config
+//! [mp-class]: mp_class
+//! [mp-convert]: mp_convert
+//! [mp-gateway]: mp_gateway
+//! [mp-oracle]: mp_oracle
+//! [mp-receipt]: mp_receipt
+//! [mp-rpc]: mp_rpc
+//! [mp-state-update]: mp_state_update
+//! [mp-transactions]: mp_transactions
+//! [mp-utils]: mp_utils
+//!
+//! [m-cairo-test-contracts]: m_cairo_test_contracts
+//! [m-proc-macros]: m_proc_macros
 #![warn(missing_docs)]
 
+use mc_db::MadaraStorageRead;
 mod cli;
 mod service;
 mod submit_tx;
@@ -10,6 +110,7 @@ use crate::service::{L1SyncConfig, MempoolService};
 use anyhow::{bail, Context};
 use clap::Parser;
 use cli::RunCmd;
+use dotenv::dotenv;
 use figment::{
     providers::{Format, Json, Serialized, Toml, Yaml},
     Figment,
@@ -25,6 +126,7 @@ use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService, WarpUpdateConfig};
 use starknet_api::core::ChainId;
 use std::sync::Arc;
+
 use std::{env, path::Path};
 use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch};
 
@@ -33,6 +135,7 @@ const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issue
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenv().ok();
     crate::util::setup_rayon_threadpool()?;
     crate::util::raise_fdlimit();
 
@@ -118,6 +221,25 @@ async fn main() -> anyhow::Result<()> {
     let sys_info = SysInfo::probe();
     sys_info.show();
 
+    // Config-based warnings shall be added here
+
+    if !run_cmd.is_sequencer() && run_cmd.l2_sync_params.snap_sync {
+        tracing::info!("🚨 Snap sync enabled; storage proofs are not guaranteed for every block");
+    }
+
+    // Initialize Cairo Native configuration
+    //
+    // The configuration is validated and passed through parameters (no global state).
+    // Native execution is opt-in and only enabled when the --enable-native-execution CLI flag
+    // is set to true (default: false). When disabled, all contracts will use Cairo VM execution
+    // regardless of cache state.
+    let cairo_native_config = run_cmd.cairo_native_params.to_runtime_config();
+
+    // Setup: validate, initialize semaphore, and log configuration
+    // Note: Validation happens inside setup_and_log() via NativeConfig::validate()
+    mc_class_exec::config::setup_and_log(&cairo_native_config)
+        .map_err(|e| anyhow::anyhow!("Cairo Native configuration setup failed: {}", e))?;
+
     // ===================================================================== //
     //                             SERVICES (SETUP)                          //
     // ===================================================================== //
@@ -131,13 +253,26 @@ async fn main() -> anyhow::Result<()> {
     // Database
 
     tracing::info!("💾 Opening database at: {}", run_cmd.backend_params.base_path.display());
+    let cairo_native_config_arc = Arc::new(cairo_native_config);
+
+    // Log preconfirmed block persistence configuration
+    if run_cmd.backend_params.no_save_preconfirmed {
+        tracing::info!("⚠️  Preconfirmed blocks will NOT be saved to database & lost on restart!");
+    } else {
+        tracing::info!("💾  Preconfirmed blocks will be saved to database");
+    }
+
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
         chain_config.clone(),
         run_cmd.backend_params.backend_config(),
         run_cmd.backend_params.rocksdb_config(),
+        cairo_native_config_arc.clone(),
     )
     .context("Starting madara backend")?;
+
+    let chain_tip = backend.db.get_chain_tip().expect("Chain tip should have been fetched.");
+    tracing::info!("💼 Starting chain with block: {}", chain_tip);
 
     let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 
@@ -225,6 +360,7 @@ async fn main() -> anyhow::Result<()> {
         &backend,
         service_mempool.mempool(),
         service_l1_sync.client(),
+        run_cmd.validator_params.no_charge_fee,
     )?;
 
     // Add transaction provider
@@ -336,5 +472,14 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::Telemetry);
     }
 
-    app.start().await
+    let result = app.start().await;
+
+    // Critical: Flush database before exit to ensure data persistence (WAL is disabled)
+    if let Err(e) = backend.flush() {
+        tracing::error!("Failed to flush database during shutdown: {}", e);
+    } else {
+        tracing::debug!("🔍 DEBUG: Database flush completed successfully");
+    }
+
+    result
 }

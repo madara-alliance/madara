@@ -1,12 +1,89 @@
-//! Block production service.
+//! Madara block production. This crate is responsible for _producing state_ when the node is
+//! running as a sequencer. Full node sync does _not_ use this crate. Instead, refer to [`mc_sync`].
+//!
+//! # Execution Model
+//!
+//! Block production works by processing transactions which are streamed to it from the [mempool].
+//! For performance reasons, this is separated into a **batching phase**, an **aggregation phase**
+//! and a **pending phase**, which are optimistically parallelized. Effectively, this allows block
+//! production to lag behind on certain tasks (on large blocks for example) while still being able
+//! to make progress wherever it can.
+//!
+//! ## Batching Phase
+//!
+//! Because efficient block production is complicated (help my head hurts), transaction aggregation
+//! is handled by a [`Batcher`] which consumes three transaction streams (this has the disadvantage
+//! of making the code quite hard to follow at times :/ ).
+//!
+//! - The `l1_tx_stream` sends all l1 transactions received as part of l1 sync (this is different
+//!   from l2 sync, l1 sync is always active even during block production because we need a way to
+//!   register l1 to l2 messages even as we are producing new blocks).
+//!
+//! - The `mempool_tx_stream` sends all validated transaction which have been added to the mempool,
+//!   following whichever mempool ordering policy is in use at the time of block production (this
+//!   can be first-come-first-served or fee-market).
+//!
+//! - The `bypass_txs_stream` allows transactions to be added to block production _without having
+//!   them be validated by the mempool_. This is used by certain _permisioned_ (admin) endpoints and
+//!   is useful when initially setting up a chain, where trying to deploy some genesis contracts
+//!   might result in an invalidation until they have been deployed. This kind of cyclical
+//!   invalidation requires a way to force-add transactions, and the bypass stream does just that.
+//!
+//! The batcher aggregates transactions from all these streams into a 'batch', which it sends back
+//! to the main block production task via message passing using channels, where the sending end
+//! is [`ExecutorThreadHandle::send_batch`] and the receiving end is
+//! [`ExecutorThread::incoming_batches`].
+//!
+//! ## Aggregation Phase
+//!
+//! Between transaction batches, updates to the block production state is handled by the
+//! [`BlockProductionTask`], which is responsible for starting, running and monitoring block
+//! production. The aggregation phase is used to drive updates to the block production state through
+//! an actor model implemented via message passing, where the block production task drives itself to
+//! completion by messaging itself across threads, state updates and method calls. This is handled
+//! by [`process_reply`], which needs to handle the following messages:
+//!
+//! - [`StartNewBlock`]: this message is sent whenever the [`ExecutorThread`] starts a new block and
+//!   it instructs the [`BlockProductionTask`] to clear its [`PendingBlockState`] in preparation for
+//!   the next batch.
+//!
+//! - [`BatchExecuted`]: this message is sent whenever the [`ExecutorThread`] has finished executing
+//!   a batch, marking it as ready to consume by the [`BlockProductionTask`]. When this is received,
+//!   the latest batch is added to the [`PendingBlockState`].
+//!
+//! - [`EndBlock`]: this message is sent by the [`ExecutorThread`] under one of several condition.
+//!   Either the block has been forcefully closed (for example by an admin endpoint), or it is full
+//!   as per the constraints set it the chain config, else the block time has elapsed as per the
+//!   constraints set in the chain config. In any of these cases, whenever the [`ExecutorThread`]
+//!   receives this message it will proceed to finalize (seal) the pending block and store it to db
+//!   as a full block.
+//!
+//! ## Pending Phase
+//!
+//! One important detail to note is that the [`PendingBlockState`] kept in the
+//! [`BlockProductionTask`] is stored in **RAM**. We periodically flush this value to db at an
+//! interval defined by the `pending tick` as set in the chain config.
+//! (TODO(mohit 13/10/2025): update this when 0.14.0 merges)
+//!
+//! [mempool]: mc_mempool
+//! [`StartNewBlock`]: ExecutorMessage::StartNewBlock
+//! [`BatchExecuted`]: ExecutorMessage::BatchExecuted
+//! [`EndBlock`]: ExecutorMessage::EndBlock
+//! [`ExecutorThreadHandle::send_batch`]: executor::ExecutorThreadHandle::send_batch
+//! [`ExecutorThread::incoming_batches`]: executor::thread::ExecutorThread::incoming_batches
+//! [`ExecutorThread`]: executor::thread::ExecutorThread
+//! [`process_reply`]: BlockProductionTask::process_reply
 
 use crate::batcher::Batcher;
 use crate::metrics::BlockProductionMetrics;
+use crate::util::BlockExecutionContext;
 use anyhow::Context;
+use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
 use executor::{BatchExecutionResult, ExecutorMessage};
 use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraPreconfirmedBlockView, MadaraStateView};
 use mc_exec::execution::TxInfo;
+use mc_exec::LayeredStateAdapter;
 use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_block::TransactionWithReceipt;
@@ -22,7 +99,7 @@ use opentelemetry::KeyValue;
 use std::collections::HashSet;
 use std::mem;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::sync::mpsc;
 
 mod batcher;
@@ -77,6 +154,14 @@ impl CurrentBlockState {
                 let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
                 let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
 
+                // Extract paid_fee_on_l1 from L1 handler transactions
+                let paid_fee_on_l1 = match &blockifier_tx {
+                    blockifier::transaction::transaction_execution::Transaction::L1Handler(l1_tx) => {
+                        Some(l1_tx.paid_fee_on_l1.0)
+                    }
+                    _ => None,
+                };
+
                 executed.push(PreconfirmedExecutedTransaction {
                     transaction: TransactionWithReceipt { transaction: converted_tx.transaction, receipt },
                     state_diff: TransactionStateUpdate {
@@ -121,6 +206,7 @@ impl CurrentBlockState {
                     },
                     declared_class,
                     arrived_at: additional_info.arrived_at,
+                    paid_fee_on_l1,
                 })
             }
         }
@@ -174,14 +260,23 @@ pub struct BlockProductionTask {
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
+    no_charge_fee: bool,
 }
 
 impl BlockProductionTask {
+    /// Creates a new BlockProductionTask.
+    ///
+    /// # Parameters
+    ///
+    /// * `no_charge_fee`: Determines whether fees are charged during transaction execution.
+    ///
+    /// # TODO(mohit 18/11/2025): Update the code to use config same as pre-close
     pub fn new(
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
+        no_charge_fee: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -190,11 +285,12 @@ impl BlockProductionTask {
             mempool,
             current_state: None,
             metrics,
-            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender),
+            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender, no_charge_fee),
             state_notifications: None,
             executor_commands_recv: Some(recv),
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
+            no_charge_fee,
         }
     }
 
@@ -215,23 +311,314 @@ impl BlockProductionTask {
         }
     }
 
-    /// Closes the last pending block store in db (if any).
+    /// Prepares a PreconfirmedExecutedTransaction for re-execution by converting it to blockifier format.
     ///
-    /// This avoids re-executing transaction by re-adding them to the [Mempool].
-    async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
-        if self.backend.has_preconfirmed_block() {
-            tracing::debug!("Close pending block on startup.");
-            let backend = self.backend.clone();
-            global_spawn_rayon_task(move || {
-                backend
-                    .write_access()
-                    .close_preconfirmed(
-                        /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
-                    )
-                    .context("Closing preconfirmed block on startup")
-            })
-            .await?;
+    /// This function converts a `PreconfirmedExecutedTransaction` (stored in the database) back into a
+    /// blockifier transaction format that can be re-executed. It handles all the necessary conversions
+    /// and ensures execution flags are properly set.
+    ///
+    /// # Process
+    ///
+    /// 1. Converts `PreconfirmedExecutedTransaction` to `ValidatedTransaction` using `to_validated()`
+    /// 2. Sets `charge_fee` based on the `no_charge_fee` configuration (`charge_fee = !no_charge_fee`)
+    /// 3. Fetches `declared_class` from state if missing (for Declare transactions)
+    /// 4. Converts to blockifier format using `into_blockifier_for_sequencing()` which properly applies execution flags
+    ///
+    /// # Important Notes
+    ///
+    /// - The `charge_fee` flag is determined by `self.no_charge_fee` configuration. Note that `new()` is
+    ///   called every time Madara starts, so there is no guarantee that the `no_charge_fee` value matches
+    ///   the value used during original execution. This is a limitation that should be addressed by storing
+    ///   execution configuration in the database (see TODO in `new()`).
+    /// - For L1 handler transactions, `paid_fee_on_l1` is preserved from `PreconfirmedExecutedTransaction`
+    ///   (stored during `append_batch`) and used during conversion via `to_validated()`
+    /// - Declare transactions may need their `declared_class` fetched from state if not already stored
+    /// - The conversion uses `into_blockifier_for_sequencing()` which properly sets all execution flags
+    ///   including `charge_fee`, `validate`, and `only_query`
+    fn prepare_preconfirmed_tx_for_reexecution(
+        &self,
+        preconfirmed_tx: &PreconfirmedExecutedTransaction,
+        state_view: &MadaraStateView,
+    ) -> anyhow::Result<blockifier::transaction::transaction_execution::Transaction> {
+        // Convert PreconfirmedExecutedTransaction to ValidatedTransaction
+        // Use the actual charge_fee value from configuration (charge_fee = !no_charge_fee)
+        let mut validated_tx = preconfirmed_tx.to_validated();
+        validated_tx.charge_fee = !self.no_charge_fee;
+
+        // If declared_class is missing and transaction is Declare, fetch it from state_view
+        // NOTE: For declare transactions in the preconfirmed block, declared_class MUST be stored
+        // during append_batch. If it's None here, that indicates data corruption - we should panic.
+        if validated_tx.declared_class.is_none() {
+            if let Some(declare_tx) = validated_tx.transaction.as_declare() {
+                // This should never happen for declare transactions in the preconfirmed block
+                // If it does, it indicates missing data that should have been stored during original execution
+                validated_tx.declared_class = Some(
+                    state_view
+                        .get_class_info_and_compiled(declare_tx.class_hash())
+                        .map_err(|e| {
+                            anyhow::anyhow!(
+                                "CRITICAL: Error fetching class for class_hash={:#x} in preconfirmed block. \
+                                 This indicates data corruption - declared_class should have been stored during append_batch. Error: {}",
+                                declare_tx.class_hash(),
+                                e
+                            )
+                        })?
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "CRITICAL: Class not found for class_hash={:#x} in parent state view. \
+                                 For declare transactions in the preconfirmed block, declared_class must be stored during append_batch.",
+                                declare_tx.class_hash()
+                            )
+                        })?,
+                );
+            }
         }
+
+        // Use into_blockifier_for_sequencing which properly sets execution flags including charge_fee
+        let (blockifier_tx, _, _) = validated_tx
+            .into_blockifier_for_sequencing()
+            .context("Error converting validated transaction to blockifier format for reexecution")?;
+
+        Ok(blockifier_tx)
+    }
+
+    /// Helper function to close a preconfirmed block with the given state_diff and bouncer weights.
+    /// This is used both during normal block closing (EndBlock case) and during restart recovery.
+    async fn close_preconfirmed_block_with_state_diff(
+        backend: Arc<MadaraBackend>,
+        block_number: u64,
+        consumed_core_contract_nonces: HashSet<u64>,
+        bouncer_weights: &blockifier::bouncer::BouncerWeights,
+        state_diff: mp_state_update::StateDiff,
+    ) -> anyhow::Result<()> {
+        // Copy bouncer_weights to move into the closure (BouncerWeights implements Copy)
+        let bouncer_weights = *bouncer_weights;
+        global_spawn_rayon_task(move || {
+            // Remove consumed L1 to L2 message nonces
+            for l1_nonce in consumed_core_contract_nonces {
+                backend
+                    .remove_pending_message_to_l2(l1_nonce)
+                    .context("Removing pending message to l2 from database")?;
+            }
+
+            // Save bouncer weights
+            backend
+                .write_access()
+                .write_bouncer_weights(block_number, &bouncer_weights)
+                .context("Saving Bouncer Weights for SNOS")?;
+
+            // Close the preconfirmed block with state_diff
+            backend
+                .write_access()
+                .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
+                .context("Closing preconfirmed block")?;
+
+            anyhow::Ok(())
+        })
+        .await
+    }
+
+    /// Helper function to get the hash of block_n-10 if it exists.
+    fn wait_for_hash_of_block_min_10(
+        backend: &Arc<MadaraBackend>,
+        block_n: u64,
+    ) -> anyhow::Result<Option<(u64, Felt)>> {
+        let Some(block_n_min_10) = block_n.checked_sub(10) else {
+            return Ok(None);
+        };
+
+        if let Some(view) = backend.block_view_on_confirmed(block_n_min_10) {
+            let block_hash = view.get_block_info().context("Getting block hash of block_n - 10")?.block_hash;
+            Ok(Some((block_n_min_10, block_hash)))
+        } else {
+            // This should be unreachable - if we're here, something is wrong
+            unreachable!("Block doesn't exist yet - this path should not be reachable")
+        }
+    }
+
+    /// Re-executes all transactions in a PreconfirmedBlock to obtain BlockExecutionSummary.
+    ///
+    /// This function is called when Madara restarts with a preconfirmed block in the database.
+    /// It recreates the execution context and re-executes all transactions to regenerate:
+    /// - `bouncer_weights`: Resource usage metrics required for block finalization
+    /// - `state_diff`: Aggregated state changes needed for block closing
+    ///
+    /// # Process
+    ///
+    /// 1. Retrieves all executed transactions from the preconfirmed block
+    /// 2. Converts them to blockifier format using `prepare_preconfirmed_tx_for_reexecution()`
+    /// 3. Creates `BlockExecutionContext` from the preconfirmed block's header (preserving timestamp, gas_prices, etc.)
+    /// 4. Sets up `LayeredStateAdapter` for state access
+    /// 5. Creates `TransactionExecutor` with proper `block_n-10` state diff handling (Starknet protocol requirement)
+    /// 6. Executes all transactions and calls `finalize()` to get `BlockExecutionSummary`
+    ///
+    /// # Important Notes
+    ///
+    /// - The execution context uses the exact header values from the preconfirmed block (timestamp, gas_prices, etc.)
+    /// - This ensures re-execution produces the same results as the original execution
+    /// - The `block_n-10` state diff entry is set on the `0x1` contract address for protocol compliance
+    async fn reexecute_preconfirmed_block(
+        &self,
+        preconfirmed_view: &MadaraPreconfirmedBlockView,
+    ) -> anyhow::Result<BlockExecutionSummary> {
+        // Get all executed transactions
+        let executed_txs: Vec<_> = preconfirmed_view.borrow_content().executed_transactions().cloned().collect();
+
+        // Get parent block state view
+        let parent_state_view = preconfirmed_view.state_view_on_parent();
+
+        // Convert transactions to blockifier format
+        let blockifier_txs: Vec<blockifier::transaction::transaction_execution::Transaction> = executed_txs
+            .iter()
+            .map(|preconfirmed_tx| self.prepare_preconfirmed_tx_for_reexecution(preconfirmed_tx, &parent_state_view))
+            .collect::<Result<Vec<_>, _>>()
+            .context("Converting preconfirmed transactions to blockifier format")?;
+
+        // Create BlockExecutionContext from PreconfirmedBlock header (preserving exact saved values)
+        let header = &preconfirmed_view.block().header;
+        let exec_ctx = BlockExecutionContext {
+            block_number: header.block_number,
+            sequencer_address: header.sequencer_address,
+            block_timestamp: UNIX_EPOCH + Duration::from_secs(header.block_timestamp.0),
+            protocol_version: header.protocol_version,
+            gas_prices: header.gas_prices.clone(),
+            l1_da_mode: header.l1_da_mode,
+        };
+
+        // Create LayeredStateAdapter
+        let state_adapter =
+            LayeredStateAdapter::new(self.backend.clone()).context("Creating LayeredStateAdapter for re-execution")?;
+
+        // Create TransactionExecutor with block_n-10 handling
+        let mut executor =
+            crate::util::create_executor_with_block_n_min_10(&self.backend, &exec_ctx, state_adapter, |block_n| {
+                Self::wait_for_hash_of_block_min_10(&self.backend, block_n)
+            })
+            .context("Creating TransactionExecutor for re-execution")?;
+
+        // Execute all transactions
+        let execution_results = executor.execute_txs(&blockifier_txs, /* execution_deadline */ None);
+
+        // Verify that re-execution produces matching receipts
+        for (i, (result, preconfirmed_tx)) in execution_results.iter().zip(executed_txs.iter()).enumerate() {
+            match result {
+                Ok((exec_info, _state_maps)) => {
+                    // Convert execution info to receipt
+                    let reexecuted_receipt = from_blockifier_execution_info(exec_info, &blockifier_txs[i]);
+
+                    // Compare receipts - they should match exactly
+                    assert_eq!(
+                        reexecuted_receipt.transaction_hash(),
+                        preconfirmed_tx.transaction.receipt.transaction_hash(),
+                        "Re-execution produced different receipt for transaction {} (hash: {:#x})",
+                        i,
+                        preconfirmed_tx.transaction.receipt.transaction_hash()
+                    );
+
+                    assert_eq!(
+                        reexecuted_receipt,
+                        preconfirmed_tx.transaction.receipt,
+                        "Re-execution produced different receipt content for transaction {} (hash: {:#x})",
+                        i,
+                        preconfirmed_tx.transaction.receipt.transaction_hash()
+                    );
+                }
+                Err(err) => {
+                    tracing::warn!("Transaction execution error during re-execution: {err:?}");
+                    // If execution failed, we can't compare receipts, but this is unexpected
+                    anyhow::bail!(
+                        "Transaction {} (hash: {:#x}) failed during re-execution: {err:?}",
+                        i,
+                        preconfirmed_tx.transaction.receipt.transaction_hash()
+                    );
+                }
+            }
+        }
+
+        // Call finalize() to get BlockExecutionSummary
+        let block_exec_summary = executor.finalize().context("Finalizing executor to get BlockExecutionSummary")?;
+
+        Ok(block_exec_summary)
+    }
+
+    /// Closes the last preconfirmed block stored in the database (if any).
+    ///
+    /// This function is called when Madara restarts and finds a preconfirmed block in the database.
+    /// It handles closing the block properly by re-executing transactions to regenerate execution context.
+    ///
+    /// # Process
+    ///
+    /// 1. Checks if a preconfirmed block exists, returns early if not
+    /// 2. Re-executes all transactions in the block using `reexecute_preconfirmed_block()` to obtain:
+    ///    - `bouncer_weights`: Required for block finalization
+    ///    - `state_diff`: Required for block closing
+    /// 3. Extracts consumed L1 handler nonces from transactions
+    /// 4. Removes consumed L1 to L2 message nonces from the database
+    /// 5. Saves bouncer weights to the database
+    /// 6. Closes the preconfirmed block with the regenerated state_diff
+    ///
+    /// # Why Re-execution is Necessary
+    ///
+    /// When Madara shuts down during block production, the preconfirmed block is saved with executed transactions
+    /// but without the `BlockExecutionSummary` (bouncer_weights and state_diff). These are only generated when
+    /// `finalize()` is called on the executor, which happens during normal block closing. On restart, we need to
+    /// recreate the execution context and re-execute transactions to obtain these values before closing the block.
+    ///
+    /// # Important Notes
+    ///
+    /// - The re-execution uses the exact header values from the preconfirmed block (timestamp, gas_prices, etc.)
+    /// - The `charge_fee` flag is determined by `self.no_charge_fee` configuration
+    /// - L1 handler transactions preserve their `paid_fee_on_l1` value (stored during `append_batch`)
+    ///
+    /// # TODO (mohit, 13/11/2025)
+    ///
+    /// - Handle cases where Starknet version has been updated between shutdown and restart
+    /// - Handle cases where version constants or bouncer weights have changed
+    async fn close_preconfirmed_block_if_exists(&mut self) -> anyhow::Result<()> {
+        if !self.backend.has_preconfirmed_block() {
+            return Ok(());
+        }
+
+        tracing::debug!("Close preconfirmed block on startup.");
+
+        let preconfirmed_view = self.backend.block_view_on_preconfirmed().context("Getting preconfirmed block view")?;
+
+        let block_number = preconfirmed_view.block_number();
+        let n_txs = preconfirmed_view.num_executed_transactions();
+
+        tracing::info!(
+            "Re-executing {} transaction(s) in preconfirmed block #{} to obtain bouncer_weights and state_diff",
+            n_txs,
+            block_number
+        );
+
+        // Re-execute transactions to get BlockExecutionSummary
+        let block_exec_summary = self
+            .reexecute_preconfirmed_block(&preconfirmed_view)
+            .await
+            .context("Re-executing preconfirmed block to get execution summary")?;
+
+        // Extract consumed L1 nonces from transactions
+        let consumed_core_contract_nonces: HashSet<u64> = preconfirmed_view
+            .borrow_content()
+            .executed_transactions()
+            .filter_map(|tx| tx.transaction.transaction.as_l1_handler().map(|l1_tx| l1_tx.nonce))
+            .collect();
+
+        // Convert state_diff and close block using helper function
+        let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+        Self::close_preconfirmed_block_with_state_diff(
+            self.backend.clone(),
+            block_number,
+            consumed_core_contract_nonces,
+            &block_exec_summary.bouncer_weights,
+            state_diff,
+        )
+        .await
+        .context("Closing preconfirmed block on startup")?;
+
+        tracing::info!("✅ Closed preconfirmed block #{} with {} transactions on startup", block_number, n_txs);
+
         Ok(())
     }
 
@@ -293,28 +680,17 @@ impl BlockProductionTask {
                     .context("No current pre-confirmed block")?
                     .num_executed_transactions();
 
-                let backend = self.backend.clone();
-                global_spawn_rayon_task(move || {
-                    for l1_nonce in state.consumed_core_contract_nonces {
-                        // This ensures we remove the nonces for rejected L1 to L2 message transactions. This avoids us from reprocessing them on restart.
-                        backend
-                            .remove_pending_message_to_l2(l1_nonce)
-                            .context("Removing pending message to l2 from database")?;
-                    }
-
-                    backend
-                        .write_access()
-                        .write_bouncer_weights(state.block_number, &block_exec_summary.bouncer_weights)
-                        .context("Saving Bouncer Weights for SNOS")?;
-
-                    let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
-                    backend
-                        .write_access()
-                        .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
-                        .context("Closing block")?;
-                    anyhow::Ok(())
-                })
-                .await?;
+                // Convert state_diff and close block using helper function
+                let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+                Self::close_preconfirmed_block_with_state_diff(
+                    self.backend.clone(),
+                    state.block_number,
+                    state.consumed_core_contract_nonces,
+                    &block_exec_summary.bouncer_weights,
+                    state_diff,
+                )
+                .await
+                .context("Closing block")?;
 
                 let time_to_close = start_time.elapsed();
                 tracing::info!(
@@ -343,7 +719,7 @@ impl BlockProductionTask {
     pub(crate) async fn setup_initial_state(&mut self) -> Result<(), anyhow::Error> {
         self.backend.chain_config().precheck_block_production()?;
 
-        self.close_pending_block_if_exists().await.context("Cannot close pending block on startup")?;
+        self.close_preconfirmed_block_if_exists().await.context("Cannot close preconfirmed block on startup")?;
 
         // initial state
         let latest_block_n = self.backend.latest_confirmed_block_n();
@@ -384,6 +760,11 @@ impl BlockProductionTask {
         // We will then see the anyhow::Ok(()) result in the stop channel, as per the implementation of [`StopErrorReceiver::recv`].
         // Note that for this to work, we need to make sure the `send_batch` channel is never aliased -
         //  otherwise it will never not be closed automatically.
+        //
+        // TODO(mohit 18/11/2025): Handle closing preconfirmed block on graceful shutdown.
+        // When shutting down gracefully, if there's an open preconfirmed block, we should close it using the executor's
+        // current state (by sending CloseBlock command and processing EndBlock message) rather than re-executing.
+        // This avoids unnecessary re-execution since we already have the executor running with the current state.
 
         loop {
             tokio::select! {
@@ -409,7 +790,6 @@ pub(crate) mod tests {
     use crate::BlockProductionStateNotification;
     use crate::{metrics::BlockProductionMetrics, BlockProductionTask};
     use blockifier::bouncer::{BouncerConfig, BouncerWeights};
-    use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
     use mc_db::MadaraBackend;
     use mc_devnet::{
         Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector, UDC_CONTRACT_ADDRESS,
@@ -417,16 +797,12 @@ pub(crate) mod tests {
     use mc_mempool::{Mempool, MempoolConfig};
     use mc_settlement_client::L1ClientMock;
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-    use mp_block::header::PreconfirmedHeader;
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_receipt::{Event, ExecutionResult};
     use mp_rpc::v0_9_0::{
         BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, DaMode,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
-    };
-    use mp_state_update::{
-        ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, StorageEntry,
     };
     use mp_transactions::compute_hash::calculate_contract_address;
     use mp_transactions::IntoStarknetApiExt;
@@ -468,6 +844,7 @@ pub(crate) mod tests {
                 self.mempool.clone(),
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
+                false, /* no_charge_fee = false */
             )
         }
     }
@@ -508,7 +885,7 @@ pub(crate) mod tests {
         let tx_validator = Arc::new(TransactionValidator::new(
             Arc::clone(&mempool) as _,
             Arc::clone(&backend),
-            TransactionValidatorConfig::default(),
+            TransactionValidatorConfig::default(), /* disable_fee = false, disable_validation = false */
         ));
 
         DevnetSetup {
@@ -776,97 +1153,272 @@ pub(crate) mod tests {
         validator.submit_invoke_transaction(tx).await.expect("Should accept the transaction");
     }
 
-    /// This test makes sure that if a pending block is already present in db
-    /// at startup, then it is closed and stored in db.
-    ///
-    /// This happens if a full node is shutdown (gracefully or not) midway
-    /// during block production.
+    //
+    // This test verifies that when Madara restarts with a preconfirmed block, `close_preconfirmed_block_if_exists`
+    // correctly re-executes transactions and produces the same global state root, state diff, and receipts as the original
+    // execution. This ensures correctness of the restart recovery mechanism.
+    //
+    // # Test Process
+    //
+    // **Phase 1: Normal Block Production**
+    // 1. Creates a block with various transaction types (invoke, declare, deploy, L1 handler)
+    // 2. Closes the block normally and captures:
+    //    - `global_state_root`
+    //    - `state_diff`
+    //    - `header` information
+    //    - Executed transactions
+    //
+    // # Transaction Types Tested
+    // - **Invoke transactions**: Standard contract calls
+    // - **Declare transactions**: Class declarations
+    // - **Deploy transactions**: Contract deployments via UDC
+    // - **L1 handler transactions**: L1 to L2 messages with `paid_fee_on_l1`
+    //
+    // # Key Assertions
+    //
+    // - Global state root must match exactly (ensures state consistency)
+    // - State diff must match (values are the same, order may differ)
+    // - Header fields must match the preconfirmed block (timestamp, gas_prices, etc.)
+    // - All transactions must match
+    // - All receipts must match exactly (ensures execution results are identical)
+    //
+    // # Important Notes
+    //
+    // - Uses two separate `DevnetSetup` fixtures to ensure clean state isolation
+    // - State diffs are sorted before comparison to handle ordering differences
+    // - The test verifies that `paid_fee_on_l1` is preserved for L1 handler transactions
+    // - The test ensures that re-execution produces deterministic results
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(30))]
+    #[timeout(Duration::from_secs(100))]
     #[tokio::test]
-    #[allow(clippy::too_many_arguments)]
-    async fn block_prod_pending_close_on_startup_pass(
-        #[future] devnet_setup: DevnetSetup,
-        #[with(Felt::ONE)] tx_invoke_v0: TxFixtureInfo,
-        #[from(converted_class_legacy)]
-        #[with(Felt::ZERO)]
-        converted_class_legacy_0: mp_class::ConvertedClass,
+    async fn test_close_preconfirmed_block_reexecution_matches_normal_closing(
+        #[future]
+        #[from(devnet_setup)]
+        original_devnet_setup: DevnetSetup,
+        #[future]
+        #[from(devnet_setup)]
+        restart_devnet_setup: DevnetSetup,
     ) {
-        let mut devnet_setup = devnet_setup.await;
+        // used for phase 1, where we close the block and note down its
+        // global_state_root, state_diff, and header info
+        let mut original_devnet_setup = original_devnet_setup.await;
 
-        let pending_state_diff = mp_state_update::StateDiff {
-            storage_diffs: vec![
-                ContractStorageDiffItem {
-                    address: Felt::TWO,
-                    storage_entries: vec![
-                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
-                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
-                    ],
+        // use for phase 2, where we compare the state of the block after re-execution with the state of the block before re-execution
+        let mut restart_devnet_setup = restart_devnet_setup.await;
+
+        // --------------------------------------------------------------
+        // | PHASE 1: Close the block and note down its state.          |
+        // --------------------------------------------------------------
+
+        // Step 1: Create a block normally with transactions in the original backend
+        assert!(original_devnet_setup.mempool.is_empty().await);
+
+        // Helper function to create and execute transactions for testing
+        async fn create_and_execute_transactions(setup: &DevnetSetup) -> Felt {
+            // 1. Declare a contract
+            let declare_res =
+                sign_and_add_declare_tx(&setup.contracts.0[0], &setup.backend, &setup.tx_validator, Felt::ZERO).await;
+
+            // 2. Deploy contract through UDC
+            let (contract_address, deploy_tx) = make_udc_call(
+                &setup.contracts.0[0],
+                &setup.backend,
+                /* nonce */ Felt::ONE,
+                declare_res.class_hash,
+                /* calldata (pubkey) */ &[Felt::TWO],
+            );
+            setup.tx_validator.submit_invoke_transaction(deploy_tx).await.unwrap();
+
+            // 3. Invoke transaction
+            sign_and_add_invoke_tx(
+                &setup.contracts.0[0],
+                &setup.contracts.0[1],
+                &setup.backend,
+                &setup.tx_validator,
+                Felt::TWO, // nonce after declare (ZERO) and deploy (ONE)
+            )
+            .await;
+
+            // 4. Declare transaction (for a different contract)
+            sign_and_add_declare_tx(
+                &setup.contracts.0[2],
+                &setup.backend,
+                &setup.tx_validator,
+                Felt::ZERO, // Different account, so nonce starts at ZERO
+            )
+            .await;
+
+            // 5. Another invoke transaction
+            sign_and_add_invoke_tx(
+                &setup.contracts.0[1],
+                &setup.contracts.0[3],
+                &setup.backend,
+                &setup.tx_validator,
+                Felt::ZERO, // Different account, so nonce starts at ZERO
+            )
+            .await;
+
+            // 6. Add L1 handler transaction
+            let paid_fee_on_l1 = 128328u128;
+            setup.l1_client.add_tx(L1HandlerTransactionWithFee::new(
+                L1HandlerTransaction {
+                    version: Felt::ZERO,
+                    nonce: 55, // core contract nonce
+                    contract_address,
+                    entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
+                    calldata: vec![
+                        /* from_address */ Felt::THREE,
+                        /* arg1 */ Felt::ONE,
+                        /* arg2 */ Felt::TWO,
+                    ]
+                    .into(),
                 },
-                ContractStorageDiffItem {
-                    address: Felt::THREE,
-                    storage_entries: vec![
-                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
-                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
-                    ],
-                },
-            ],
-            old_declared_contracts: vec![Felt::ZERO],
-            declared_classes: vec![
-                DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE },
-                DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::TWO },
-            ],
-            deployed_contracts: vec![
-                DeployedContractItem { address: Felt::TWO, class_hash: Felt::TWO },
-                DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE },
-            ],
-            replaced_classes: vec![],
-            nonces: vec![
-                NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
-                NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
-                NonceUpdate { contract_address: Felt::THREE, nonce: Felt::THREE },
-            ],
-        };
+                paid_fee_on_l1,
+            ));
 
-        let tx_1 = PreconfirmedExecutedTransaction {
-            transaction: mp_block::TransactionWithReceipt { transaction: tx_invoke_v0.0, receipt: tx_invoke_v0.1 },
-            state_diff: pending_state_diff.clone().into(),
-            declared_class: Some(converted_class_legacy_0.clone()),
-            arrived_at: Default::default(),
-        };
+            contract_address
+        }
 
-        devnet_setup
-            .backend
-            .write_access()
-            .new_preconfirmed(PreconfirmedBlock::new_with_content(
-                PreconfirmedHeader { block_number: 1, ..Default::default() },
-                [tx_1.clone()],
-                [],
-            ))
-            .unwrap();
+        // Add various transaction types to mempool to test re-execution handles all types correctly
+        // All transactions will be in a single block
+        let _contract_address = create_and_execute_transactions(&original_devnet_setup).await;
 
-        // This should load the pending block from db and close it
-        let mut block_production_task = devnet_setup.block_prod_task();
-        assert_eq!(devnet_setup.backend.latest_block_n(), Some(1));
-        assert_eq!(devnet_setup.backend.latest_confirmed_block_n(), Some(0));
-        block_production_task.close_pending_block_if_exists().await.unwrap();
+        assert!(!original_devnet_setup.mempool.is_empty().await);
 
-        // Now we check this was the case.
-        assert_eq!(devnet_setup.backend.latest_block_n(), Some(1));
-        assert_eq!(devnet_setup.backend.latest_confirmed_block_n(), Some(1));
-        assert!(!devnet_setup.backend.has_preconfirmed_block());
+        // Run block production to create and close a block with all transactions
+        let mut block_production_task = original_devnet_setup.block_prod_task();
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let control = block_production_task.handle();
+        let _task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
 
-        let block = devnet_setup.backend.block_view_on_latest().unwrap().into_confirmed().unwrap();
+        // Wait for batch to be executed
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
-        assert_eq!(block.get_executed_transactions(..).unwrap(), vec![tx_1.transaction]);
-        assert_eq!(block.get_state_diff().unwrap(), pending_state_diff);
+        // Manually close the block
+        control.close_block().await.unwrap();
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+
+        // Step 2: Capture global_state_root, state_diff, and header info from closed block
+        let block_number = original_devnet_setup.backend.latest_confirmed_block_n().unwrap();
+        let original_block = original_devnet_setup.backend.block_view_on_confirmed(block_number).unwrap();
+        let original_block_info = original_block.get_block_info().unwrap();
+        let expected_global_state_root = original_block_info.header.global_state_root;
+        let expected_state_diff = original_block.get_state_diff().unwrap();
+        let executed_transactions = original_block.get_executed_transactions(..).unwrap();
+
+        // --------------------------------------------------------------
+        // | PHASE 2: Re-execute the block and note down its state.    |
+        // --------------------------------------------------------------
+        //
+        // We'll add them in the same order using the same helper functions
+        // All transactions will be in a single block
+        // This ensures they're executed in the same context (clean genesis state)
+        assert!(restart_devnet_setup.mempool.is_empty().await);
+
+        // Create the same transactions using the helper function
+        let _restart_contract_address = create_and_execute_transactions(&restart_devnet_setup).await;
+
+        assert!(!restart_devnet_setup.mempool.is_empty().await);
+
+        // Step 4: Run block production to execute transactions and add them to preconfirmed block
+        // Use a very long block_time to prevent auto-closing, then stop manually after batch execution
+        let mut restart_block_production_task = restart_devnet_setup.block_prod_task();
+        let mut restart_notifications = restart_block_production_task.subscribe_state_notifications();
+        let restart_task = AbortOnDrop::spawn(async move {
+            restart_block_production_task.run(ServiceContext::new_for_testing()).await.unwrap()
+        });
+
+        // Wait for batch to be executed (transactions added to preconfirmed block)
+        assert_eq!(restart_notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+
+        // Fetch preconfirmed block view BEFORE dropping the task to avoid race conditions
+        let preconfirmed_view = restart_devnet_setup.backend.block_view_on_preconfirmed().unwrap();
+        assert_eq!(preconfirmed_view.num_executed_transactions(), executed_transactions.len());
+        let restart_preconfirmed_block = preconfirmed_view.block();
+
+        // Stop the task before it closes the block (drop the AbortOnDrop which will abort the task)
+        drop(restart_task);
+
+        // Give it a moment to finish current operations
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Verify preconfirmed block still exists with transactions and no confirmed blocks yet
+        assert!(restart_devnet_setup.backend.has_preconfirmed_block());
+        assert_eq!(restart_devnet_setup.backend.latest_confirmed_block_n(), Some(0));
+
+        // adding some delay to see if block_timestamp would differ in the reexecution or not
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Step 5: Now call close_preconfirmed_block_if_exists to re-execute and close the preconfirmed block
+        let mut reexec_block_production_task = restart_devnet_setup.block_prod_task();
+        reexec_block_production_task.close_preconfirmed_block_if_exists().await.unwrap();
+
+        // Step 6: Verify results match
+        assert!(!restart_devnet_setup.backend.has_preconfirmed_block());
+        assert_eq!(restart_devnet_setup.backend.latest_confirmed_block_n(), Some(block_number));
+
+        let reexecuted_block_info =
+            restart_devnet_setup.backend.block_view_on_confirmed(block_number).unwrap().get_block_info().unwrap();
+
+        // Verify the header fields match the pre-execution pre-confirmed block's header
+        assert_eq!(restart_preconfirmed_block.header.block_timestamp, reexecuted_block_info.header.block_timestamp);
+        assert_eq!(restart_preconfirmed_block.header.protocol_version, reexecuted_block_info.header.protocol_version);
+        assert_eq!(restart_preconfirmed_block.header.l1_da_mode, reexecuted_block_info.header.l1_da_mode);
+        assert_eq!(restart_preconfirmed_block.header.gas_prices, reexecuted_block_info.header.gas_prices);
+        assert_eq!(restart_preconfirmed_block.header.sequencer_address, reexecuted_block_info.header.sequencer_address);
+        assert_eq!(restart_preconfirmed_block.header.block_number, reexecuted_block_info.header.block_number);
+
+        let reexecuted_block = restart_devnet_setup.backend.block_view_on_confirmed(block_number).unwrap();
+        let reexecuted_block_info = reexecuted_block.get_block_info().unwrap();
+        let actual_global_state_root = reexecuted_block_info.header.global_state_root;
+        let mut actual_state_diff = reexecuted_block.get_state_diff().unwrap();
+        let mut expected_state_diff_sorted = expected_state_diff.clone();
+
+        // Sort both state diffs to normalize ordering before comparison
+        actual_state_diff.sort();
+        expected_state_diff_sorted.sort();
+
+        // Verify global state root matches
         assert_eq!(
-            block.state_view().get_class_info_and_compiled(&Felt::ZERO).unwrap(),
-            Some(converted_class_legacy_0)
+            actual_global_state_root, expected_global_state_root,
+            "Global state root should match between normal execution and re-execution"
         );
+
+        // Verify state diff matches (after sorting to ignore ordering differences)
+        assert_eq!(
+            actual_state_diff, expected_state_diff_sorted,
+            "State diff should match between normal execution and re-execution (values are the same, only order may differ)"
+        );
+
+        // Verify transactions match
+        let reexecuted_transactions = reexecuted_block.get_executed_transactions(..).unwrap();
+        assert_eq!(reexecuted_transactions, executed_transactions, "Transactions should match");
+
+        // Verify receipts match - re-execution should produce identical receipts
+        assert_eq!(executed_transactions.len(), reexecuted_transactions.len(), "Number of transactions should match");
+        for (i, (original_tx, reexecuted_tx)) in
+            executed_transactions.iter().zip(reexecuted_transactions.iter()).enumerate()
+        {
+            assert_eq!(
+                original_tx.receipt.transaction_hash(),
+                reexecuted_tx.receipt.transaction_hash(),
+                "Receipt transaction hash should match for transaction {}",
+                i
+            );
+            assert_eq!(
+                original_tx.receipt,
+                reexecuted_tx.receipt,
+                "Receipt should match exactly for transaction {} (hash: {:#x})",
+                i,
+                original_tx.receipt.transaction_hash()
+            );
+        }
     }
 
-    // This test makes sure that the pending tick closes the block
+    // This test makes sure that the preconfirmed tick closes the block
     // if the bouncer capacity is reached
     #[ignore] // FIXME: this test is complicated by the fact validation / actual execution fee may differ a bit. Ignore for now.
     #[rstest::rstest]
@@ -943,8 +1495,8 @@ pub(crate) mod tests {
     }
 
     // This test makes sure that the block time tick correctly
-    // adds the transaction to the pending block, closes it
-    // and creates a new empty pending block
+    // adds the transaction to the preconfirmed block, closes it
+    // and creates a new empty preconfirmed block
     #[rstest::rstest]
     #[timeout(Duration::from_secs(30))]
     #[tokio::test]

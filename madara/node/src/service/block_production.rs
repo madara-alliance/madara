@@ -21,12 +21,13 @@ impl BlockProductionService {
         backend: &Arc<MadaraBackend>,
         mempool: Arc<mc_mempool::Mempool>,
         l1_client: Arc<dyn SettlementClient>,
+        no_charge_fee: bool,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
 
         Ok(Self {
             backend: backend.clone(),
-            task: Some(BlockProductionTask::new(backend.clone(), mempool, metrics, l1_client)),
+            task: Some(BlockProductionTask::new(backend.clone(), mempool, metrics, l1_client, no_charge_fee)),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
         })

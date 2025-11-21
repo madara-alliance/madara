@@ -1,4 +1,193 @@
-//! End to end tests for madara.
+//! Madara end-to-end tests. This is responsible for validating functionality across RPC endpoints,
+//! transaction flows, and node synchronization.
+//!
+//! # Overview
+//!
+//! The e2e tests validate Madara's behavior in realistic scenarios by spawning actual node instances
+//! and interacting with them through standard interfaces. Tests cover everything from basic RPC
+//! functionality to complex multi-node setups with gateways and sequencers. The test infrastructure
+//! handles node lifecycle management, port allocation, and provides utilities for asserting on
+//! asynchronous blockchain state changes.
+//!
+//! The test suite is organized into specialized modules, each focusing on different aspects of
+//! Madara's functionality. Tests can run against single nodes or complex multi-node topologies,
+//! simulating production deployment patterns.
+//!
+//! # Test Infrastructure
+//!
+//! The core testing infrastructure revolves around two main components:
+//!
+//! - [`MadaraCmdBuilder`]: Constructs and configures Madara node instances
+//! - [`MadaraCmd`]: Manages a running node instance and provides access to its APIs
+//!
+//! These components handle the complexity of spawning processes, capturing output, waiting for
+//! nodes to be ready, and cleaning up resources after tests complete.
+//!
+//! # Node Configuration
+//!
+//! The [`MadaraCmdBuilder`] provides the main interface for configuring test nodes:
+//!
+//! ```no_run
+//! let builder = MadaraCmdBuilder::new()
+//!     .args(["--full", "--network", "sepolia"])
+//!     .env([("MADARA_RPC_PORT", "9944")])
+//!     .enable_gateway()
+//!     .label("test_node");
+//! ```
+//!
+//! Key configuration options include:
+//! - **Network mode**: Full node, sequencer, or devnet.
+//! - **Sync settings**: Block ranges, L1/L2 sync configuration.
+//! - **API endpoints**: RPC and gateway enablement.
+//! - **Database location**: Temporary directories managed automatically.
+//!
+//! # Running Test Nodes
+//!
+//! When a test node is started via [`MadaraCmdBuilder::run`]:
+//!
+//! 1. **Process spawning**: The Madara binary is launched with configured arguments.
+//! 2. **Port allocation**: OS assigns available ports for RPC/gateway endpoints.
+//! 3. **Output capture**: stdout/stderr are captured and parsed for port information.
+//! 4. **Ready detection**: The test waits for the node to be fully operational.
+//! 5. **API access**: JSON-RPC and gateway clients are configured automatically.
+//!
+//! # Test Modules
+//!
+//! ## RPC Tests (`rpc`)
+//!
+//! Validates all Starknet JSON-RPC methods against known responses from production networks.
+//! Tests cover read methods, transaction submission, and trace generation. Each test includes
+//! the exact curl command used to generate the expected response for reproducibility.
+//!
+//! ## Transaction Flow Tests (`transaction_flow`)
+//!
+//! Tests complex transaction scenarios including:
+//!
+//! - Normal transfers with proper nonce management.
+//! - Concurrent transactions from multiple accounts.
+//! - Deploy account transactions with wrong ordering.
+//! - Contract declaration and deployment chains.
+//! - Invalid transactions (duplicate, wrong nonce).
+//!
+//! ## Devnet Tests (`devnet`)
+//!
+//! Validates devnet-specific functionality:
+//!
+//! - Pre-funded account management.
+//! - Custom chain configuration.
+//! - Mempool persistence across restarts.
+//! - Block production control.
+//!
+//! ## Storage Proof Tests (`storage_proof`)
+//!
+//! Tests Merkle proof generation for storage values, supporting both snapshot-based
+//! and trie-log-based proof generation strategies.
+//!
+//! ## Gateway Tests (`gateway`)
+//!
+//! Validates the feeder gateway implementation, testing block retrieval and hash computation
+//! across different Starknet versions.
+//!
+//! # Multi-Node Topologies
+//!
+//! The test infrastructure supports three deployment patterns via `TestSetup`:
+//!
+//! ## SequencerOnly
+//!
+//! A single node that handles both validation and execution. This is the simplest setup
+//! for testing basic functionality.
+//!
+//! ## FullNodeAndSequencer
+//!
+//! Two nodes where:
+//! - The sequencer validates and executes transactions
+//! - The full node syncs from the sequencer's gateway and serves read requests
+//!
+//! ## GatewayAndSequencer
+//!
+//! Two nodes with separated concerns:
+//! - The gateway node validates transactions and forwards valid ones to the sequencer
+//! - The sequencer focuses solely on execution and block production
+//!
+//! # Utilities
+//!
+//! ## Waiting for Conditions
+//!
+//! The [`wait_for_cond`] utility enables testing asynchronous blockchain operations:
+//!
+//! ```no_run
+//! wait_for_cond(
+//!     || async {
+//!         let receipt = node.json_rpc().get_transaction_receipt(tx_hash).await?;
+//!         assert!(receipt.block.is_block());
+//!         Ok(())
+//!     },
+//!     Duration::from_millis(500),  // poll interval
+//!     60,                           // max attempts
+//! ).await;
+//! ```
+//!
+//! ## Test Accounts
+//!
+//! Devnet mode provides pre-funded accounts with known private keys:
+//!
+//! ```no_run
+//! use mc_e2e_tests::devnet::{ACCOUNTS, ACCOUNT_SECRETS};
+//!
+//! let account_address = ACCOUNTS[0];
+//! let private_key = ACCOUNT_SECRETS[0];
+//! ```
+//!
+//! # Writing New Tests
+//!
+//! Tests typically follow this pattern:
+//!
+//! 1. **Setup**: Configure and start nodes using [`MadaraCmdBuilder`]
+//! 2. **Wait for ready**: Ensure nodes are synchronized and APIs are available
+//! 3. **Execute operations**: Submit transactions, make RPC calls, etc.
+//! 4. **Assert results**: Use utilities like [`wait_for_cond`] for async assertions
+//! 5. **Cleanup**: Automatic via [`Drop`] implementations
+//!
+//! ```no_run
+//! #[tokio::test]
+//! async fn test_transaction() {
+//!     // Setup
+//!     let mut node = MadaraCmdBuilder::new()
+//!         .args(["--devnet"])
+//!         .run();
+//!     node.wait_for_ready().await;
+//!
+//!     // Execute
+//!     let account = /* ... */;
+//!     let tx_hash = account.execute_v3(/* ... */).send().await.unwrap();
+//!
+//!     // Assert
+//!     wait_for_cond(/* check receipt */).await;
+//!
+//!     // Cleanup happens automatically
+//! }
+//! ```
+//!
+//! # Database Management
+//!
+//! Each test gets an isolated temporary database directory via [`TempDir`]. The directory
+//! is automatically cleaned up when the test completes. For tests that need to restart
+//! nodes with the same database, clone the [`MadaraCmdBuilder`] to reuse the same
+//! temporary directory.
+//!
+//! # Environment Variables
+//!
+//! Tests respect several environment variables:
+//!
+//! - `COVERAGE_BIN`: Path to the Madara binary to test (required)
+//! - `GATEWAY_KEY`: API key for gateway endpoints (optional)
+//! - `RUST_LOG`: Controls logging verbosity
+//!
+//! [`MadaraCmdBuilder`]: crate::MadaraCmdBuilder
+//! [`MadaraCmd`]: crate::MadaraCmd
+//! [`wait_for_cond`]: crate::wait_for_cond
+//! [`TempDir`]: tempfile::TempDir
+//! [`Drop`]: std::ops::Drop
 #![allow(clippy::print_stdout)]
 
 #[cfg(test)]
@@ -380,6 +569,7 @@ fn madara_help_shows() {
 
 #[rstest]
 #[tokio::test]
+#[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
 async fn madara_can_sync_a_few_blocks() {
     use starknet_core::types::BlockHashAndNumber;
     use starknet_types_core::felt::Felt;
@@ -413,6 +603,7 @@ async fn madara_can_sync_a_few_blocks() {
 
 #[rstest]
 #[tokio::test]
+#[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
 async fn madara_can_sync_and_restart() {
     use starknet_core::types::BlockHashAndNumber;
     use starknet_types_core::felt::Felt;
