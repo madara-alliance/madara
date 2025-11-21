@@ -19,7 +19,28 @@ ENV RUSTC_WRAPPER=/bin/sccache
 
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
 
-RUN apt-get update -y && apt-get install -y wget clang
+# Copy Makefile for LLVM installation
+COPY Makefile /tmp/Makefile
+
+# Install LLVM 19 for Cairo Native support using Makefile target
+RUN apt-get update -y && apt-get install -y wget gnupg software-properties-common make && \
+    cd /tmp && make -f Makefile install-llvm19 CODENAME=bookworm && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Set LLVM environment variables for Cairo Native
+ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
+ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
+ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
+ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
+
+# Set explicit compilers for Cairo Native runtime compilation
+# Note: clang-19 handles both C and C++ compilation
+ENV CC=clang-19
+ENV CXX=clang-19
+
+# Configure linker search paths for Cairo Native runtime compilation
+ENV LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
 
 # Install Python 3.9
 RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
