@@ -28,10 +28,10 @@ pub fn block_with_state_update_pipeline(
     batch_size: usize,
     keep_pre_v0_13_2_hashes: bool,
     sync_bouncer_config: bool,
-    no_reorg: bool,
+    disable_reorg: bool,
 ) -> GatewayBlockSync {
     PipelineController::new(
-        GatewaySyncSteps { _backend: backend, importer, client, keep_pre_v0_13_2_hashes, sync_bouncer_config, no_reorg },
+        GatewaySyncSteps { _backend: backend, importer, client, keep_pre_v0_13_2_hashes, sync_bouncer_config, disable_reorg },
         parallelization,
         batch_size,
         starting_block_n,
@@ -45,7 +45,7 @@ pub struct GatewaySyncSteps {
     client: Arc<GatewayProvider>,
     keep_pre_v0_13_2_hashes: bool,
     sync_bouncer_config: bool,
-    no_reorg: bool,
+    disable_reorg: bool,
 }
 
 impl GatewaySyncSteps {
@@ -294,20 +294,20 @@ impl PipelineSteps for GatewaySyncSteps {
                                 );
 
                                 // Check if reorg is disabled
-                                if self.no_reorg {
-                                    tracing::error!("❌ REORG DETECTED but --no-reorg flag is enabled!");
+                                if self.disable_reorg {
+                                    tracing::error!("❌ REORG DETECTED but reorg is explicitly denied by config!");
                                     tracing::error!("   Block number: {}", block_n);
                                     tracing::error!("   Expected parent hash: {:#x}", local_parent_hash);
                                     tracing::error!("   Incoming parent hash: {:#x}", incoming_parent_hash);
                                     tracing::error!("");
                                     tracing::error!("⚠️  Divergent state detected - the local chain has diverged from the upstream chain.");
-                                    tracing::error!("⚠️  Blockchain reorganization is required but disabled by --no-reorg flag.");
+                                    tracing::error!("⚠️  Blockchain reorganization is required but disabled by reorg is explicitly denied by config.");
                                     tracing::error!("");
                                     tracing::error!("To resolve this issue, you can:");
-                                    tracing::error!("  1. Remove the --no-reorg flag to allow automatic reorganization");
+                                    tracing::error!("  1. Allow auto reorgs using the config");
                                     tracing::error!("  2. Manually investigate the divergence and wipe the database if needed");
                                     anyhow::bail!(
-                                        "Reorg required but disabled by --no-reorg flag. Parent hash mismatch at block {}: expected {:#x}, got {:#x}",
+                                        "Reorg required but disabled by config. Parent hash mismatch at block {}: expected {:#x}, got {:#x}",
                                         block_n, local_parent_hash, incoming_parent_hash
                                     );
                                 }

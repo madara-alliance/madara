@@ -86,8 +86,8 @@ pub struct L2SyncParams {
     /// Disable blockchain reorganization. When enabled, if a divergent state is discovered,
     /// the node will stop with an error instead of performing a reorg. This is useful for
     /// operators who want to manually handle chain divergences.
-    #[clap(env = "MADARA_NO_REORG", long, default_value_t = true)]
-    pub no_reorg: bool,
+    #[clap(env = "MADARA_DISABLE_REORG", long, default_value_t = true)]
+    pub disable_reorg: bool,
 }
 
 impl L2SyncParams {

@@ -27,7 +27,7 @@ pub struct ForwardSyncConfig {
     pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
     pub enable_bouncer_config_sync: bool,
-    pub no_reorg: bool,
+    pub disable_reorg: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -43,7 +43,7 @@ impl Default for ForwardSyncConfig {
             snap_sync: false,
             keep_pre_v0_13_2_hashes: false,
             enable_bouncer_config_sync: false,
-            no_reorg: false,
+            disable_reorg: false,
         }
     }
 }
@@ -62,8 +62,8 @@ impl ForwardSyncConfig {
     pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
         Self { enable_bouncer_config_sync: val, ..self }
     }
-    pub fn no_reorg(self, val: bool) -> Self {
-        Self { no_reorg: val, ..self }
+    pub fn disable_reorg(self, val: bool) -> Self {
+        Self { disable_reorg: val, ..self }
     }
 }
 
@@ -115,7 +115,7 @@ impl GatewayForwardSync {
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
             config.enable_bouncer_config_sync,
-            config.no_reorg,
+            config.disable_reorg,
         );
         let classes_pipeline = classes::classes_pipeline(
             backend.clone(),

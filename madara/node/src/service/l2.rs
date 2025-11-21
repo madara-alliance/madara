@@ -125,7 +125,7 @@ impl Service for SyncService {
                         .snap_sync(this.params.snap_sync)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
                         .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable)
-                        .no_reorg(this.params.no_reorg),
+                        .disable_reorg(this.params.disable_reorg),
                 )
                 .run(ctx.clone())
                 .await?;
@@ -162,7 +162,7 @@ impl Service for SyncService {
                     .snap_sync(this.params.snap_sync)
                     .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes())
                     .enable_bouncer_config_sync(this.params.bouncer_config_sync_enable)
-                    .no_reorg(this.params.no_reorg),
+                    .disable_reorg(this.params.disable_reorg),
             )
             .run(ctx)
             .await
