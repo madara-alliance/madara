@@ -111,7 +111,7 @@ impl JobHandlerTrait for SnosJobHandler {
         debug!("Calling generate_pie function");
 
         // Use pre-loaded versioned constants from config (loaded at startup)
-        let versioned_constants = config.params.versioned_constants.clone();
+        let versioned_constants = config.snos_config().versioned_constants.clone();
 
         let input = PieGenerationInput {
             rpc_url: snos_url.to_string(),

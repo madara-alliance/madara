@@ -734,7 +734,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
             "MADARA_ORCHESTRATOR_ETH_NATIVE_FEE_TOKEN_ADDRESS",
             DEFAULT_SEPOLIA_ETH_FEE_TOKEN,
         ),
-        versioned_constants: versioned_constants.clone(),
+        versioned_constants,
     };
 
     let max_num_blobs = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_NUM_BLOBS", "6").parse::<usize>().unwrap();
@@ -819,7 +819,6 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
             .parse::<bool>()
             .unwrap_or(false),
         bouncer_weights_limit: Default::default(), // Use default bouncer weights for tests
-        versioned_constants,
         aggregator_batch_weights_limit: AggregatorBatchWeights::from(&BouncerWeights::default()),
     };
 

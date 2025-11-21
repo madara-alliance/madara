@@ -43,7 +43,6 @@ use crate::{
 };
 
 use crate::types::batch::AggregatorBatchWeights;
-use blockifier::blockifier_versioned_constants::VersionedConstants;
 use blockifier::bouncer::BouncerWeights;
 
 /// Starknet versions supported by the service
@@ -121,8 +120,6 @@ pub struct ConfigParam {
     /// * Aggregator Proof
     pub store_audit_artifacts: bool,
     pub bouncer_weights_limit: BouncerWeights,
-    /// Optional versioned constants loaded from file. If None, defaults from blockifier will be used.
-    pub versioned_constants: Option<VersionedConstants>,
     pub aggregator_batch_weights_limit: AggregatorBatchWeights,
 }
 
@@ -212,9 +209,6 @@ impl Config {
 
         let layer = run_cmd.layer.clone();
 
-        let snos_config = SNOSParams::from(run_cmd.snos_args.clone());
-        let versioned_constants = snos_config.versioned_constants.clone();
-
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
             madara_feeder_gateway_url: run_cmd
@@ -222,7 +216,7 @@ impl Config {
                 .clone()
                 .unwrap_or_else(|| run_cmd.madara_rpc_url.clone()),
             madara_version: run_cmd.madara_version,
-            snos_config,
+            snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
@@ -231,9 +225,8 @@ impl Config {
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())
                 .context("Failed to get prover layout name")?,
             store_audit_artifacts: run_cmd.store_audit_artifacts,
-            bouncer_weights_limit: Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?,
-            versioned_constants,
             aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
+            bouncer_weights_limit,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
