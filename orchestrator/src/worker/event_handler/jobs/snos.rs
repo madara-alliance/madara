@@ -75,7 +75,7 @@ trait OsHintsConfigurationFromLayer {
 impl OsHintsConfigurationFromLayer for OsHintsConfiguration {
     fn with_layer(layer: Layer) -> OsHintsConfiguration {
         match layer {
-            Layer::L2 => OsHintsConfiguration { debug_mode: true, full_output: true, use_kzg_da: true },
+            Layer::L2 => OsHintsConfiguration { debug_mode: true, full_output: true, use_kzg_da: false },
             Layer::L3 => OsHintsConfiguration { debug_mode: true, full_output: false, use_kzg_da: true },
         }
     }
