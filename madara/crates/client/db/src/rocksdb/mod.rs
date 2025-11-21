@@ -8,7 +8,8 @@ use crate::{
         metrics::DbMetrics,
         options::rocksdb_global_options,
         snapshots::Snapshots,
-        update_global_trie::apply_to_global_trie,
+        global_trie::apply_to_global_trie,
+        global_trie::get_state_root
     },
     storage::{
         ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
@@ -47,12 +48,12 @@ mod state;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
 pub mod trie;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
-pub mod update_global_trie;
+pub mod global_trie;
 
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
 
-pub use options::{RocksDBConfig, StatsLevel};
+pub use options::{DbWriteMode, RocksDBConfig, StatsLevel};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
@@ -80,14 +81,14 @@ fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Resul
 
 struct RocksDBStorageInner {
     db: DB,
-    writeopts_no_wal: WriteOptions,
+    writeopts: WriteOptions,
     config: RocksDBConfig,
 }
 
 impl Drop for RocksDBStorageInner {
     fn drop(&mut self) {
         tracing::debug!("⏳ Gracefully closing the database...");
-        self.flush().expect("Error when flushing the database"); // flush :)
+        self.flush().expect("Error when flushing the database");
         self.db.cancel_all_background_work(/* wait */ true);
     }
 }
@@ -191,9 +192,9 @@ impl RocksDBStorage {
             ALL_COLUMNS.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name, col.rocksdb_options(&config))),
         )?;
 
-        let mut writeopts_no_wal = WriteOptions::new();
-        writeopts_no_wal.disable_wal(true);
-        let inner = Arc::new(RocksDBStorageInner { writeopts_no_wal, db, config: config.clone() });
+        let writeopts = config.write_mode.to_write_options();
+        tracing::info!("📝 Database write mode: {}", config.write_mode);
+        let inner = Arc::new(RocksDBStorageInner { writeopts, db, config: config.clone() });
 
         let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
             StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
@@ -208,6 +209,12 @@ impl RocksDBStorage {
             metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         })
+    }
+
+    /// Flush all pending writes to disk. This is important when WAL is disabled.
+    /// Should be called before shutdown to ensure data persistence.
+    pub fn flush(&self) -> Result<()> {
+        self.inner.flush()
     }
 }
 
@@ -312,6 +319,9 @@ impl MadaraStorageRead for RocksDBStorage {
     }
     fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
         self.inner.get_latest_applied_trie_update().context("Getting latest applied trie update info from db")
+    }
+    fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
+        self.inner.get_snap_sync_latest_block().context("Getting snap sync latest block from db")
     }
 
     // L1 to L2 messages
@@ -446,6 +456,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Write latest applied trie update block_n={block_n:?}");
         self.inner.write_latest_applied_trie_update(block_n).context("Writing latest applied trie update block_n")
     }
+    fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
+        tracing::debug!("Write snap sync latest block block_n={block_n:?}");
+        self.inner.write_snap_sync_latest_block(block_n).context("Writing snap sync latest block")
+    }
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
         tracing::debug!("Remove mempool transactions");
@@ -457,6 +471,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .write_mempool_transaction(tx)
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
+    }
+
+    fn get_state_root_hash(&self) -> Result<Felt> {
+        get_state_root(self)
     }
 
     fn apply_to_global_trie<'a>(

@@ -13,6 +13,10 @@ pub struct PreconfirmedExecutedTransaction {
     /// The earliest known timestamp for this transaction.
     /// This field is used when putting the pre-confirmed transaction back into mempool.
     pub arrived_at: TxTimestamp,
+
+    /// Fee paid on L1 for L1 handler transactions. Only Some(u128) for L1HandlerTransaction, None for all other types.
+    /// This field is required for proper re-execution and mempool re-insertion of L1 handler transactions.
+    pub paid_fee_on_l1: Option<u128>,
 }
 
 impl PreconfirmedExecutedTransaction {
@@ -21,7 +25,7 @@ impl PreconfirmedExecutedTransaction {
     pub fn to_validated(&self) -> ValidatedTransaction {
         ValidatedTransaction {
             transaction: self.transaction.transaction.clone(),
-            paid_fee_on_l1: None,
+            paid_fee_on_l1: self.paid_fee_on_l1,
             contract_address: *self.transaction.contract_address(),
             arrived_at: self.arrived_at,
             declared_class: self.declared_class.clone(),
@@ -143,5 +147,11 @@ impl PreconfirmedBlock {
             block.append_executed(executed);
             block.append_candidates(replace_candidates)
         });
+    }
+
+    /// Get the total number of transactions (executed + candidates) in this preconfirmed block.
+    pub fn transaction_count(&self) -> usize {
+        let content = self.content.borrow();
+        content.txs.len()
     }
 }

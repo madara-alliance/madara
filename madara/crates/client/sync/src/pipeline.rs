@@ -40,12 +40,13 @@ pub trait PipelineSteps: Sync + Send + 'static {
         self: Arc<Self>,
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
+        target_block: Option<u64>,
     ) -> impl Future<Output = anyhow::Result<ApplyOutcome<Self::Output>>> + Send;
 }
 
 /// The pipeline controller is used to drive and execute the [`PipelineSteps`].
 pub struct PipelineController<S: PipelineSteps> {
-    steps: Arc<S>,
+    pub(crate) steps: Arc<S>,
     /// Every parallel step currently being run. Polling it will poll every future, it will return the results as FCFS.
     queue: FuturesOrdered<ParallelStepFuture<S>>,
     /// The currently being run sequential step. There can only be one at a time.
@@ -56,6 +57,8 @@ pub struct PipelineController<S: PipelineSteps> {
     next_inputs: VecDeque<S::InputItem>,
     next_block_n_to_batch: u64,
     last_applied_block_n: Option<u64>,
+    /// Target block for the pipeline, used by steps that need to make decisions based on sync progress
+    target_block: Option<u64>,
 }
 
 type ParallelStepFuture<S> = BoxFuture<
@@ -81,7 +84,14 @@ impl<S: PipelineSteps> PipelineController<S> {
             next_inputs: VecDeque::with_capacity(2 * batch_size),
             next_block_n_to_batch: starting_block_n,
             last_applied_block_n: starting_block_n.checked_sub(1),
+            target_block: None,
         }
+    }
+
+    /// Set the target block for this pipeline. Steps can use this to make decisions
+    /// based on how far they are from the sync target.
+    pub fn set_target_block(&mut self, target_block: u64) {
+        self.target_block = Some(target_block);
     }
 
     pub fn next_input_block_n(&self) -> u64 {
@@ -102,10 +112,10 @@ impl<S: PipelineSteps> PipelineController<S> {
     pub fn is_empty(&self) -> bool {
         self.applying.is_none() && self.queue.is_empty() && self.next_inputs.is_empty()
     }
-    fn queue_len(&self) -> usize {
+    pub(crate) fn queue_len(&self) -> usize {
         self.queue.len()
     }
-    fn is_applying(&self) -> bool {
+    pub(crate) fn is_applying(&self) -> bool {
         self.applying.is_some()
     }
 
@@ -120,7 +130,8 @@ impl<S: PipelineSteps> PipelineController<S> {
         retry_input: RetryInput<S::InputItem>,
     ) -> SequentialStepFuture<S> {
         let steps = Arc::clone(&self.steps);
-        async move { steps.sequential_step(retry_input.block_range.clone(), input).await.map(|el| (el, retry_input)) }
+        let target_block = self.target_block;
+        async move { steps.sequential_step(retry_input.block_range.clone(), input, target_block).await.map(|el| (el, retry_input)) }
             .boxed()
     }
 

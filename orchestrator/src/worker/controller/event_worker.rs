@@ -117,7 +117,6 @@ impl EventWorker {
     /// It returns a Result<Delivery, EventSystemError> - never returns None
     pub async fn get_message(&self) -> EventSystemResult<Delivery> {
         loop {
-            debug!("Polling for message from queue {:?}", self.queue_type);
             match self.config.clone().queue().consume_message_from_queue(self.queue_type.clone()).await {
                 Ok(delivery) => return Ok(delivery),
                 Err(crate::core::client::queue::QueueError::ErrorFromQueueError(omniqueue::QueueError::NoData)) => {
@@ -210,7 +209,7 @@ impl EventWorker {
     /// # Errors
     /// * Returns an EventSystemError if the message cannot be handled
     async fn handle_job_queue(&self, queue_message: &JobQueueMessage, job_state: JobState) -> EventSystemResult<()> {
-        info!("Received message: {:?}, state: {:?}", queue_message, job_state);
+        debug!("Received message: {:?}, state: {:?}", queue_message, job_state);
         let span = info_span!("job_queue", q = %self.queue_type, id = %queue_message.id);
 
         async move {
@@ -342,7 +341,7 @@ impl EventWorker {
             let result = self.handle_message(&parsed_message).await;
             match self.post_processing(result, message, &parsed_message).await {
                 Ok(_) => {
-                    info!("Message processed successfully");
+                    debug!("Message processed successfully");
                     Ok(())
                 }
                 Err(e) => {
