@@ -266,6 +266,9 @@ impl RocksDBStorageInner {
     #[tracing::instrument(skip(self))]
     pub(super) fn clear_runtime_exec_config(&self) -> Result<()> {
         self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_RUNTIME_EXEC_CONFIG_KEY, &self.writeopts)?;
+        Ok(())
+    }
+
     /// Get the latest block number where snap sync computed the trie.
     /// Returns None if snap sync was never used.
     #[tracing::instrument(skip(self))]

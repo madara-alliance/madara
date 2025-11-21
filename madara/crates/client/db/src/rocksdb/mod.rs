@@ -325,6 +325,7 @@ impl MadaraStorageRead for RocksDBStorage {
         backend_chain_config: &mp_chain_config::ChainConfig,
     ) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>> {
         self.inner.get_runtime_exec_config(backend_chain_config).context("Getting runtime execution config from db")
+    }
     fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
         self.inner.get_snap_sync_latest_block().context("Getting snap sync latest block from db")
     }
@@ -468,6 +469,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn clear_runtime_exec_config(&self) -> Result<()> {
         tracing::debug!("Clearing runtime execution config");
         self.inner.clear_runtime_exec_config().context("Clearing runtime execution config")
+    }
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write snap sync latest block block_n={block_n:?}");
         self.inner.write_snap_sync_latest_block(block_n).context("Writing snap sync latest block")
