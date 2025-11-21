@@ -167,7 +167,7 @@ impl BatchingTrigger {
                 )))?;
 
                 // Check if there is a status conflict between the latest snos and aggregator batch
-                if aggregator_batch.is_batch_ready && snos_batch.status != SnosBatchStatus::Closed {
+                if aggregator_batch.is_batch_ready && snos_batch.status == SnosBatchStatus::Open {
                     return Err(JobError::BatchingNotInSync(format!(
                         "Latest SNOS batch {} is {} but Latest Aggregator batch {} is {}",
                         snos_batch.snos_batch_id, snos_batch.status, aggregator_batch.index, aggregator_batch.status
@@ -408,7 +408,7 @@ impl BatchingTrigger {
                                     snos_batch: &current_snos_batch,
                                     close_aggregator_batch: true, // Close the aggregator batch
                                     snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
-                                    state_update: &squashed_state_update,
+                                    state_update: &prev_state_update,
                                 },
                                 config,
                                 provider,
@@ -441,7 +441,7 @@ impl BatchingTrigger {
                                     snos_batch: &current_snos_batch,
                                     close_aggregator_batch: false, // Don't close the aggregator batch
                                     snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
-                                    state_update: &squashed_state_update,
+                                    state_update: &prev_state_update,
                                 },
                                 config,
                                 provider,

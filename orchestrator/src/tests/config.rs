@@ -508,7 +508,9 @@ pub mod implement_client {
     pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => Config::build_prover_service(&params.prover_params, &params.orchestrator_params),
+            ConfigType::Actual => {
+                Config::build_prover_service(&params.prover_params, &params.orchestrator_params, None)
+            }
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }
@@ -712,6 +714,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
             .parse()
             .expect("Invalid max gas price mul factor"),
+        disable_peerdas: false, // for tests, default to sepolia/testnet behavior
     });
 
     let versioned_constants_path = get_env_var_optional("MADARA_ORCHESTRATOR_VERSIONED_CONSTANTS_PATH")

@@ -1,5 +1,5 @@
 use crate::core::config::Config;
-use crate::types::batch::{SnosBatchStatus, SnosBatchUpdates};
+use crate::types::batch::SnosBatchStatus;
 use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -9,7 +9,7 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
-use color_eyre::eyre::{eyre, Result, WrapErr};
+use color_eyre::eyre::{eyre, Result};
 use opentelemetry::KeyValue;
 use std::sync::Arc;
 use tracing::{debug, error};
@@ -67,9 +67,7 @@ impl JobTrigger for SnosJobTrigger {
             )
                 .await
             {
-                Ok(_) => {
-                    config.database().update_or_create_snos_batch(&snos_batch, &SnosBatchUpdates {end_block: None, status: Some(SnosBatchStatus::SnosJobCreated)}).await?;
-                },
+                Ok(_) => {}
                 Err(e) => {
                     error!(error = %e,"Failed to create new {:?} job for {}", JobType::SnosRun, snos_batch.snos_batch_id);
                     let attributes = [
@@ -114,7 +112,7 @@ pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u6
     let block = provider
         .get_block_with_tx_hashes(BlockId::Number(block_number))
         .await
-        .wrap_err(format!("Failed to fetch block {} from sequencer", block_number))?;
+        .map_err(|e| eyre!("Failed to fetch block {} from sequencer: {}", block_number, e))?;
 
     let starknet_version = match block {
         starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,

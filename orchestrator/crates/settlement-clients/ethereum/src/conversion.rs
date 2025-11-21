@@ -1,11 +1,16 @@
 use std::fmt::Write;
 
+use alloy::consensus::BlobTransactionSidecar;
 use alloy::dyn_abi::parser::Error;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
+use alloy::eips::eip7594::BlobTransactionSidecarVariant;
 use alloy::primitives::{FixedBytes, U256};
-use c_kzg::{Blob, KzgCommitment, KzgProof, KzgSettings};
+use c_kzg::{Blob, KzgSettings};
 use color_eyre::eyre::{eyre, ContextCompat};
 use color_eyre::Result as EyreResult;
+
+pub const CELLS_PER_EXT_BLOB: usize = 128; // Extended blob has 128 cells
+pub const BYTES_PER_CELL: usize = 2048; // Each cell is 2KB
 
 /// Converts a `&[[u8; 32]]` to `Vec<U256>`.
 /// Pads with zeros if any inner slice is shorter than 32 bytes.
@@ -100,11 +105,23 @@ pub(crate) fn u8_48_to_hex_string(data: [u8; 48]) -> String {
     first_hex + &second_hex
 }
 
-/// To prepare the sidecar for EIP 4844 transaction
-pub(crate) async fn prepare_sidecar(
+pub(crate) fn prepare_sidecar(
     state_diff: &[Vec<u8>],
     trusted_setup: &KzgSettings,
-) -> EyreResult<(Vec<FixedBytes<BYTES_PER_BLOB>>, Vec<FixedBytes<48>>, Vec<FixedBytes<48>>)> {
+    disable_peerdas: bool,
+) -> EyreResult<BlobTransactionSidecarVariant> {
+    if disable_peerdas {
+        prepare_sidecar_with_proof(state_diff, trusted_setup)
+    } else {
+        prepare_sidecar_with_cells(state_diff, trusted_setup)
+    }
+}
+
+/// Function to prepare the sidecar for EIP 4844 transaction
+pub(crate) fn prepare_sidecar_with_proof(
+    state_diff: &[Vec<u8>],
+    trusted_setup: &KzgSettings,
+) -> EyreResult<BlobTransactionSidecarVariant> {
     let mut sidecar_blobs = vec![];
     let mut sidecar_commitments = vec![];
     let mut sidecar_proofs = vec![];
@@ -114,16 +131,60 @@ pub(crate) async fn prepare_sidecar(
 
         let blob = Blob::new(fixed_size_blob);
 
-        let commitment = KzgCommitment::blob_to_kzg_commitment(&blob, trusted_setup)?;
+        let commitment = trusted_setup.blob_to_kzg_commitment(&blob)?;
 
-        let proof = KzgProof::compute_blob_kzg_proof(&blob, &commitment.to_bytes(), trusted_setup)?;
+        let proof = trusted_setup.compute_blob_kzg_proof(&blob, &commitment.to_bytes())?;
 
         sidecar_blobs.push(FixedBytes::new(fixed_size_blob));
         sidecar_commitments.push(FixedBytes::new(commitment.to_bytes().into_inner()));
         sidecar_proofs.push(FixedBytes::new(proof.to_bytes().into_inner()));
     }
 
-    Ok((sidecar_blobs, sidecar_commitments, sidecar_proofs))
+    Ok(BlobTransactionSidecarVariant::from(BlobTransactionSidecar::new(
+        sidecar_blobs,
+        sidecar_commitments,
+        sidecar_proofs,
+    )))
+}
+
+// Function to prepare sidecar for EIP 7594 transaction
+pub fn prepare_sidecar_with_cells(
+    state_diff: &[Vec<u8>],
+    trusted_setup: &KzgSettings,
+) -> EyreResult<BlobTransactionSidecarVariant> {
+    let mut sidecar_blobs = vec![];
+    let mut sidecar_commitments = vec![];
+    let mut all_cell_proofs = vec![]; // Vec of Vec because each blob has CELLS_PER_EXT_BLOB proofs
+
+    for blob_data in state_diff {
+        let fixed_size_blob: [u8; BYTES_PER_BLOB] = blob_data.as_slice().try_into()?;
+
+        let blob = Blob::new(fixed_size_blob);
+
+        let commitment = trusted_setup.blob_to_kzg_commitment(&blob)?;
+
+        sidecar_blobs.push(FixedBytes::new(fixed_size_blob));
+        sidecar_commitments.push(FixedBytes::new(commitment.to_bytes().into_inner()));
+
+        // Compute cells and KZG proofs for this blob
+        // This returns ALL cell proofs (including extension cells)
+        let (_, proofs) = trusted_setup.compute_cells_and_kzg_proofs(&blob)?;
+        // Store all cell proofs for this blob (CELLS_PER_EXT_BLOB proofs, each 48 bytes)
+        let blob_cell_proofs: Vec<FixedBytes<48>> =
+            proofs.into_iter().map(|proof| FixedBytes::new(proof.to_bytes().into_inner())).collect();
+        all_cell_proofs.push(blob_cell_proofs);
+    }
+
+    // Flatten all cell proofs into a single vector
+    // Format: all proofs for blob 0, then all proofs for blob 1, etc.
+    let flat_cell_proofs: Vec<FixedBytes<48>> = all_cell_proofs.into_iter().flatten().collect();
+
+    // Create the sidecar with cell proofs
+    Ok(BlobTransactionSidecarVariant::from(BlobTransactionSidecar::new(
+        sidecar_blobs,
+        sidecar_commitments,
+        flat_cell_proofs, // These are now cell proofs, not blob proofs
+    )))
 }
 
 /// Convert hex string data into Vec<u8>
@@ -273,7 +334,7 @@ mod tests {
         let current_path = std::env::current_dir().unwrap().to_str().unwrap().to_string();
 
         let trusted_setup_file_path = current_path.clone() + "/src/trusted_setup.txt";
-        let trusted_setup = KzgSettings::load_trusted_setup_file(Path::new(trusted_setup_file_path.as_str()))
+        let trusted_setup = KzgSettings::load_trusted_setup_file(Path::new(trusted_setup_file_path.as_str()), 0)
             .expect("issue while loading the trusted setup");
 
         // Blob Data
@@ -294,12 +355,19 @@ mod tests {
 
         let blob_data_vec = vec![hex_string_to_u8_vec(&blob_data).unwrap()];
 
-        match prepare_sidecar(&blob_data_vec, &trusted_setup).await {
+        match prepare_sidecar(&blob_data_vec, &trusted_setup, true) {
             Ok(result) => {
-                let (_, sidecar_commitments, sidecar_proofs) = result;
-                // Assumption: since only 1 blob, thus only 1 commitment and proof
-                assert_eq!(blob_commitment, sidecar_commitments[0].to_string());
-                assert_eq!(blob_proof, sidecar_proofs[0].to_string());
+                match result {
+                    BlobTransactionSidecarVariant::Eip4844(sidecar) => {
+                        // Assumption: since only 1 blob, thus only 1 commitment and proof
+                        assert_eq!(blob_commitment, sidecar.commitments[0].to_string());
+                        assert_eq!(blob_proof, sidecar.proofs[0].to_string());
+                    }
+                    BlobTransactionSidecarVariant::Eip7594(_) => {
+                        panic!("Unexpected transaction variant")
+                    }
+                }
+                // let (_, sidecar_commitments, sidecar_proofs) = result;
             }
             Err(err) => {
                 panic!("{}", err.to_string())
