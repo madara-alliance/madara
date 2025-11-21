@@ -33,7 +33,15 @@ jobs:
         run: yes | make artifacts
 
       - name: Cargo fmt
-        run: cargo fmt -- --check
+        run: |
+          cargo fmt -- --check
+
+          # TODO(mehul 21/11/2025, hotfix): This is a temporary fix to ensure that the madara is fmt checked.
+          # Madara does not belong to the toplevel workspace, so we need to lint it separately.
+          # Remove this once we add madara back to toplevel workspace. 
+          cd madara
+          cargo fmt -- --check
+
 
       - name: Python Cairo setup (before clippy)
         uses: ./.github/actions/setup-python-cairo
