@@ -31,7 +31,14 @@ pub fn block_with_state_update_pipeline(
     disable_reorg: bool,
 ) -> GatewayBlockSync {
     PipelineController::new(
-        GatewaySyncSteps { _backend: backend, importer, client, keep_pre_v0_13_2_hashes, sync_bouncer_config, disable_reorg },
+        GatewaySyncSteps {
+            _backend: backend,
+            importer,
+            client,
+            keep_pre_v0_13_2_hashes,
+            sync_bouncer_config,
+            disable_reorg,
+        },
         parallelization,
         batch_size,
         starting_block_n,
