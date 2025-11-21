@@ -240,7 +240,7 @@ pub(crate) fn create_executor_with_block_n_min_10(
 
     let mut executor = TransactionExecutor::new(
         CachedState::new(state_adaptor),
-        block_context.into(),
+        block_context,
         blockifier::blockifier::config::TransactionExecutorConfig {
             concurrency_config: chain_config.block_production_concurrency.blockifier_config(),
             stack_size: DEFAULT_STACK_SIZE,
