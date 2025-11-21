@@ -1,10 +1,13 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use anyhow::Context;
 use futures::{stream, StreamExt, TryStreamExt};
-use mp_convert::Felt;
-use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry};
 use mc_db::{MadaraBackend, MadaraStorageRead};
+use mp_convert::Felt;
+use mp_state_update::{
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
+    StorageEntry,
+};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 400;
 const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 10000;
@@ -16,18 +19,13 @@ pub async fn compress_state_diff(
     pre_range_block: Option<u64>,
     backend: Arc<MadaraBackend>,
 ) -> anyhow::Result<StateDiff> {
-
     // Process storage diffs with pre_range checks
     let storage_diffs = stream::iter(raw_state_diff.storage_diffs.into_iter().enumerate())
         .map(|(_idx, contract_diff)| {
             let backend = backend.clone();
             async move {
-                compress_single_contract(
-                    contract_diff.address,
-                    contract_diff.storage_entries,
-                    backend,
-                    pre_range_block
-                ).await
+                compress_single_contract(contract_diff.address, contract_diff.storage_entries, backend, pre_range_block)
+                    .await
             }
         })
         .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
@@ -36,24 +34,19 @@ pub async fn compress_state_diff(
         .await?;
 
     // Process deployed contracts and replaced classes
-    let deployed_contracts_map: HashMap<Felt, Felt> = raw_state_diff
-        .deployed_contracts
-        .into_iter()
-        .map(|item| (item.address, item.class_hash))
-        .collect();
+    let deployed_contracts_map: HashMap<Felt, Felt> =
+        raw_state_diff.deployed_contracts.into_iter().map(|item| (item.address, item.class_hash)).collect();
 
-    let replaced_classes_map: HashMap<Felt, Felt> = raw_state_diff
-        .replaced_classes
-        .into_iter()
-        .map(|item| (item.contract_address, item.class_hash))
-        .collect();
+    let replaced_classes_map: HashMap<Felt, Felt> =
+        raw_state_diff.replaced_classes.into_iter().map(|item| (item.contract_address, item.class_hash)).collect();
 
     let (replaced_classes, deployed_contracts) = process_deployed_contracts_and_replaced_classes(
         backend.clone(),
         pre_range_block,
         deployed_contracts_map,
         replaced_classes_map,
-    ).await?;
+    )
+    .await?;
 
     let mut compressed_diff = StateDiff {
         storage_diffs,
@@ -69,8 +62,6 @@ pub async fn compress_state_diff(
     Ok(compressed_diff)
 }
 
-
-
 #[derive(Default)]
 pub struct StateDiffMap {
     storage_diffs: HashMap<Felt, HashMap<Felt, Felt>>,
@@ -83,10 +74,8 @@ pub struct StateDiffMap {
 }
 
 impl StateDiffMap {
-
     /// Apply a single state diff to the existing StateDiffMap
     pub fn apply_state_diff(&mut self, state_diff: &StateDiff) {
-
         // Process storage diffs
         for contract_diff in &state_diff.storage_diffs {
             let contract_addr = contract_diff.address;
@@ -127,47 +116,46 @@ impl StateDiffMap {
     /// Convert to raw StateDiff without any pre_range filtering
     /// This is MUCH faster as it does no DB lookups
     pub fn to_raw_state_diff(&self) -> StateDiff {
-
         // Convert storage diffs - only include touched contracts
-        let storage_diffs: Vec<ContractStorageDiffItem> = self.touched_contracts.clone()
+        let storage_diffs: Vec<ContractStorageDiffItem> = self
+            .touched_contracts
+            .clone()
             .into_iter()
             .filter_map(|contract_addr| {
                 self.storage_diffs.get(&contract_addr).map(|storage_map| {
-                    let storage_entries: Vec<StorageEntry> = storage_map
-                        .iter()
-                        .map(|(key, value)| StorageEntry { key: *key, value: *value })
-                        .collect();
+                    let storage_entries: Vec<StorageEntry> =
+                        storage_map.iter().map(|(key, value)| StorageEntry { key: *key, value: *value }).collect();
 
-                    ContractStorageDiffItem {
-                        address: contract_addr,
-                        storage_entries,
-                    }
+                    ContractStorageDiffItem { address: contract_addr, storage_entries }
                 })
             })
             .filter(|item| !item.storage_entries.is_empty())
             .collect();
 
-
         let deployed_contracts = self
-            .deployed_contracts.clone()
+            .deployed_contracts
+            .clone()
             .into_iter()
             .map(|(address, class_hash)| DeployedContractItem { address, class_hash })
             .collect();
 
         let declared_classes = self
-            .declared_classes.clone()
+            .declared_classes
+            .clone()
             .into_iter()
             .map(|(class_hash, compiled_class_hash)| DeclaredClassItem { class_hash, compiled_class_hash })
             .collect();
 
         let nonces = self
-            .nonces.clone()
+            .nonces
+            .clone()
             .into_iter()
             .map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce })
             .collect();
 
         let replaced_classes = self
-            .replaced_classes.clone()
+            .replaced_classes
+            .clone()
             .into_iter()
             .map(|(contract_address, class_hash)| ReplacedClassItem { contract_address, class_hash })
             .collect();
@@ -196,7 +184,8 @@ async fn compress_single_contract(
     let storage_entries = match pre_range_block_option {
         Some(pre_range_block) => {
             // Check if contract existed at pre_range_block
-            let contract_existed = check_contract_existed_at_block(backend.clone(), contract_addr, pre_range_block).await?;
+            let contract_existed =
+                check_contract_existed_at_block(backend.clone(), contract_addr, pre_range_block).await?;
 
             let compressed_entries = if contract_existed {
                 // Contract existed - check each storage entry against pre_range value
@@ -204,12 +193,8 @@ async fn compress_single_contract(
                     .map(|entry| {
                         let backend = backend.clone();
                         async move {
-                            let pre_range_value = check_pre_range_storage_value(
-                                backend,
-                                contract_addr,
-                                entry.key,
-                                pre_range_block
-                            ).await;
+                            let pre_range_value =
+                                check_pre_range_storage_value(backend, contract_addr, entry.key, pre_range_block).await;
                             (entry, pre_range_value)
                         }
                     })
@@ -226,20 +211,14 @@ async fn compress_single_contract(
                     .await
             } else {
                 // Contract didn't exist - filter out zero values (default state)
-                storage_entries
-                    .into_iter()
-                    .filter(|entry| entry.value != Felt::ZERO)
-                    .collect()
+                storage_entries.into_iter().filter(|entry| entry.value != Felt::ZERO).collect()
             };
 
             compressed_entries
         }
         None => {
             // No pre_range_block - filter out zero values (default state)
-            storage_entries
-                .into_iter()
-                .filter(|entry| entry.value != Felt::ZERO)
-                .collect()
+            storage_entries.into_iter().filter(|entry| entry.value != Felt::ZERO).collect()
         }
     };
 
@@ -280,9 +259,7 @@ async fn process_deployed_contracts_and_replaced_classes(
             stream::iter(replaced_class_hashes)
                 .map(|(contract_address, class_hash)| {
                     let backend = backend.clone();
-                    async move {
-                        process_class(backend, pre_range_block, contract_address, class_hash).await
-                    }
+                    async move { process_class(backend, pre_range_block, contract_address, class_hash).await }
                 })
                 .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
                 .try_filter_map(|(contract_address, class_hash)| async move {
@@ -344,13 +321,9 @@ pub async fn get_class_hash_at(
     block_number: u64,
     contract_address: Felt,
 ) -> anyhow::Result<Option<Felt>> {
-    backend.db.get_contract_class_hash_at(block_number, &contract_address)
-        .with_context(|| {
-            format!(
-                "Failed to get class hash for contract: {} at block {}",
-                contract_address, block_number
-            )
-        })
+    backend.db.get_contract_class_hash_at(block_number, &contract_address).with_context(|| {
+        format!("Failed to get class hash for contract: {} at block {}", contract_address, block_number)
+    })
 }
 
 pub async fn check_pre_range_storage_value(
@@ -362,7 +335,7 @@ pub async fn check_pre_range_storage_value(
     tokio::task::spawn_blocking(move || {
         backend.db.get_storage_at(pre_range_block, &contract_address, &key).ok().flatten()
     })
-        .await
-        .ok()
-        .flatten()
+    .await
+    .ok()
+    .flatten()
 }

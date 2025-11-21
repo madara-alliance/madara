@@ -295,11 +295,7 @@ impl RocksDBStorageInner {
             )?;
         } else {
             tracing::debug!("🗑️  Clearing snap_sync_latest_block (set to None)");
-            self.db.delete_cf_opt(
-                &self.get_column(META_COLUMN),
-                META_SNAP_SYNC_LATEST_BLOCK,
-                &self.writeopts,
-            )?;
+            self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_SNAP_SYNC_LATEST_BLOCK, &self.writeopts)?;
         }
         Ok(())
     }

@@ -171,6 +171,7 @@ pub use blockifier_state_adapter::BlockifierStateAdapter;
 pub use layered_state_adapter::LayeredStateAdapter;
 
 /// Blockifier does not support execution for versions earlier than that.
+///
 pub const EXECUTION_UNSUPPORTED_BELOW_VERSION: StarknetVersion = StarknetVersion::V0_13_0;
 
 #[derive(thiserror::Error, Debug)]
