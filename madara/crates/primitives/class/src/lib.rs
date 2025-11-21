@@ -1,3 +1,18 @@
+//! Starknet contract class handling and compilation
+//!
+//! This crate provides types and utilities for working with Starknet contract classes,
+//! including compilation to various formats (CASM, Cairo Native) and conversion between
+//! different class representations.
+//!
+//! # Key Modules
+//!
+//! - [`compile`]: Compilation utilities for CASM
+//!
+//! # Cairo Native Execution
+//!
+//! Cairo Native execution functionality has been moved to the `mc-cairo-native` crate.
+//! See that crate for Cairo Native execution, compilation, caching, and metrics.
+
 use class_hash::ComputeClassHashError;
 use compile::ClassCompilationError;
 use starknet_types_core::felt::Felt;
@@ -10,7 +25,6 @@ pub mod convert;
 mod into_starknet_core;
 mod into_starknet_types;
 pub mod mainnet_legacy_class_hashes;
-mod to_blockifier;
 mod to_starknet_api;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
