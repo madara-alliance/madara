@@ -1,3 +1,5 @@
+use crate::pipeline::PipelineStatus;
+use crate::sync_utils::compress_state_diff;
 use crate::{
     import::BlockImporter,
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
@@ -7,8 +9,6 @@ use mc_db::MadaraBackend;
 use mp_state_update::StateDiff;
 use std::{ops::Range, sync::Arc};
 use tokio::sync::Mutex;
-use crate::pipeline::PipelineStatus;
-use crate::sync_utils::compress_state_diff;
 
 // TODO(heemankv, 2025-10-26): Should be driven from env for hardware-based customisations
 /// Batch size for snap sync state accumulation before flushing to the global trie.
@@ -41,16 +41,10 @@ pub fn apply_state_pipeline(
     snap_sync: bool,
 ) -> ApplyStateSync {
     PipelineController::new(
-        ApplyStateSteps {
-            importer,
-            backend,
-            disable_tries,
-            snap_sync,
-            state_diff_map: Mutex::new(Default::default()),
-        },
+        ApplyStateSteps { importer, backend, disable_tries, snap_sync, state_diff_map: Mutex::new(Default::default()) },
         parallelization,
         batch_size,
-        starting_block_n
+        starting_block_n,
     )
 }
 
@@ -63,7 +57,6 @@ pub struct ApplyStateSteps {
 }
 
 impl PipelineController<ApplyStateSteps> {
-
     pub fn trie_state_status(&self) -> PipelineStatus {
         PipelineStatus {
             jobs: self.queue_len(),
@@ -77,7 +70,7 @@ impl ApplyStateSteps {
     pub async fn sync_each_block(
         self: Arc<Self>,
         block_range: Range<u64>,
-        input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput
+        input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<()>> {
         let block_range_clone = block_range.clone();
         self.importer
@@ -91,7 +84,7 @@ impl ApplyStateSteps {
         self: Arc<Self>,
         block_range: Range<u64>,
         input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput,
-        target_block: Option<u64>
+        target_block: Option<u64>,
     ) -> anyhow::Result<ApplyOutcome<()>> {
         let current_first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
         let latest_block = block_range.end;
@@ -123,13 +116,9 @@ impl ApplyStateSteps {
         Ok(ApplyOutcome::Success(()))
     }
 
-
     /// Flushes accumulated state diffs to the global trie when transitioning from snap sync
     /// to block-by-block sync mode.
-    async fn flush_accumulated_state_diffs(
-        self: Arc<Self>,
-        up_to_block: u64,
-    ) -> anyhow::Result<()> {
+    async fn flush_accumulated_state_diffs(self: Arc<Self>, up_to_block: u64) -> anyhow::Result<()> {
         let current_first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
         self.apply_accumulated_diffs(current_first_block, up_to_block).await
     }
@@ -140,23 +129,21 @@ impl ApplyStateSteps {
         self: Arc<Self>,
         block_range: Range<u64>,
         input: <ApplyStateSteps as PipelineSteps>::SequentialStepInput,
-        target_block: Option<u64>
+        target_block: Option<u64>,
     ) -> anyhow::Result<ApplyOutcome<()>> {
         let distance_to_target = target_block.map(|t| t.saturating_sub(block_range.start));
         // Use snap sync if:
         // 1. Snap sync is enabled, AND
         // 2. We're far enough from the target (distance >= APPLY_STATE_SNAP_BATCH_SIZE)
-        let should_use_snap_sync = self.snap_sync
-            && distance_to_target.map(|d| d >= APPLY_STATE_SNAP_BATCH_SIZE).unwrap_or(false);
+        let should_use_snap_sync =
+            self.snap_sync && distance_to_target.map(|d| d >= APPLY_STATE_SNAP_BATCH_SIZE).unwrap_or(false);
         if should_use_snap_sync {
             self.sync_snap(block_range, input, target_block).await
         } else {
             // Before switching to block-by-block sync, we need to flush any accumulated state diffs
             // from snap sync to avoid losing data or computing incorrect state roots
             if self.snap_sync {
-                let has_accumulated_diffs = !self.state_diff_map.lock().await
-                    .to_raw_state_diff()
-                    .is_empty();
+                let has_accumulated_diffs = !self.state_diff_map.lock().await.to_raw_state_diff().is_empty();
 
                 if has_accumulated_diffs {
                     self.clone().flush_accumulated_state_diffs(block_range.start).await?;
@@ -179,17 +166,11 @@ impl ApplyStateSteps {
             state_diff
         };
 
-        let pre_range_block_check = if current_first_block == 0 {
-            None
-        } else {
-            Some(current_first_block.saturating_sub(1))
-        };
+        let pre_range_block_check =
+            if current_first_block == 0 { None } else { Some(current_first_block.saturating_sub(1)) };
 
-        let accumulated_state_diff = compress_state_diff(
-            state_diff,
-            pre_range_block_check,
-            self.backend.clone()
-        ).await?;
+        let accumulated_state_diff =
+            compress_state_diff(state_diff, pre_range_block_check, self.backend.clone()).await?;
 
         // Move the trie computation to rayon pool
         let backend = self.backend.clone();
@@ -200,9 +181,8 @@ impl ApplyStateSteps {
                 // latest_block is block_range.end (exclusive), so actual last processed block is latest_block - 1
                 // This ensures fallback DB queries in contract_state_leaf_hash fetch state at the correct block number
                 let trie_block_number = latest_block.saturating_sub(1);
-                let global_state_root = backend
-                    .write_access()
-                    .apply_to_global_trie(trie_block_number, [accumulated_state_diff].iter())?;
+                let global_state_root =
+                    backend.write_access().apply_to_global_trie(trie_block_number, [accumulated_state_diff].iter())?;
 
                 let block_number = &latest_block.checked_sub(1);
                 backend.write_latest_applied_trie_update(block_number)?;
@@ -223,7 +203,6 @@ impl ApplyStateSteps {
 
         Ok(())
     }
-
 }
 
 impl PipelineSteps for ApplyStateSteps {

@@ -4,12 +4,12 @@ use crate::{
     rocksdb::{
         backup::BackupManager,
         column::{Column, ALL_COLUMNS},
+        global_trie::apply_to_global_trie,
+        global_trie::get_state_root,
         meta::StoredChainTipWithoutContent,
         metrics::DbMetrics,
         options::rocksdb_global_options,
         snapshots::Snapshots,
-        global_trie::apply_to_global_trie,
-        global_trie::get_state_root
     },
     storage::{
         ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
