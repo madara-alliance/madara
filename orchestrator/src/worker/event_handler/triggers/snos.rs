@@ -1,5 +1,5 @@
 use crate::core::config::Config;
-use crate::types::batch::{SnosBatchStatus, SnosBatchUpdates};
+use crate::types::batch::SnosBatchStatus;
 use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -67,9 +67,7 @@ impl JobTrigger for SnosJobTrigger {
             )
                 .await
             {
-                Ok(_) => {
-                    config.database().update_or_create_snos_batch(&snos_batch, &SnosBatchUpdates {end_block: None, status: Some(SnosBatchStatus::SnosJobCreated)}).await?;
-                },
+                Ok(_) => {}
                 Err(e) => {
                     error!(error = %e,"Failed to create new {:?} job for {}", JobType::SnosRun, snos_batch.snos_batch_id);
                     let attributes = [
