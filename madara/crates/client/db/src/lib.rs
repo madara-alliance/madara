@@ -119,8 +119,10 @@ use crate::rocksdb::RocksDBStorage;
 use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
+use mc_class_exec::config::NativeConfig;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
+use mp_block::header::CustomHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
 use mp_block::TransactionWithReceipt;
@@ -133,7 +135,6 @@ use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use mp_block::header::CustomHeader;
 mod db_version;
 mod prelude;
 pub mod storage;
@@ -264,6 +265,12 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
 
+    /// Cairo Native execution configuration.
+    ///
+    /// This config is passed through to BlockifierStateAdapter for execution.
+    /// The `enable_native_execution` flag in the config controls whether native execution is used.
+    pub cairo_native_config: Arc<NativeConfig>,
+
     /// Keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
@@ -291,7 +298,12 @@ pub struct MadaraBackendConfig {
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
-    fn new_and_init(db: D, chain_config: Arc<ChainConfig>, config: MadaraBackendConfig) -> Result<Self> {
+    fn new_and_init(
+        db: D,
+        chain_config: Arc<ChainConfig>,
+        config: MadaraBackendConfig,
+        cairo_native_config: Arc<NativeConfig>,
+    ) -> Result<Self> {
         let mut backend = Self {
             db,
             // db_metrics: DbMetrics::register().context("Registering db metrics")?,
@@ -300,6 +312,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             config,
             sync_status: SyncStatusCell::default(),
             watch_gas_quote: L1GasQuoteCell::default(),
+            cairo_native_config,
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
@@ -399,6 +412,11 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         *guard = Some(custom_header);
     }
 
+    /// Flush all pending writes to disk. Critical for databases with WAL disabled.
+    /// Must be called before shutdown to ensure data persistence.
+    pub fn flush(&self) -> Result<()> {
+        self.db.flush()
+    }
 }
 
 impl MadaraBackend<RocksDBStorage> {
@@ -408,9 +426,17 @@ impl MadaraBackend<RocksDBStorage> {
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
+
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).unwrap();
-        let mut backend = Self::new_and_init(db, chain_config, Default::default()).unwrap();
+        // For tests, use default (disabled) Cairo Native config (no native execution)
+        // Initialize compilation semaphore for tests (required even if native execution is disabled)
+        let builder = mc_class_exec::config::NativeConfig::builder();
+        let max_concurrent = builder.max_concurrent_compilations();
+        mc_class_exec::init_compilation_semaphore(max_concurrent);
+        let test_config = builder.build();
+        let cairo_native_config = Arc::new(test_config);
+        let mut backend = Self::new_and_init(db, chain_config, Default::default(), cairo_native_config).unwrap();
         backend._temp_dir = Some(temp_dir);
         Arc::new(backend)
     }
@@ -421,6 +447,7 @@ impl MadaraBackend<RocksDBStorage> {
         chain_config: Arc<ChainConfig>,
         config: MadaraBackendConfig,
         rocksdb_config: RocksDBConfig,
+        cairo_native_config: Arc<NativeConfig>,
     ) -> Result<Arc<Self>> {
         // check if the db version is compatible with the current binary
         tracing::debug!("checking db version");
@@ -429,7 +456,7 @@ impl MadaraBackend<RocksDBStorage> {
         }
         let db_path = base_path.join("db");
         let db = RocksDBStorage::open(&db_path, rocksdb_config).context("Opening rocksdb storage")?;
-        Ok(Arc::new(Self::new_and_init(db, chain_config, config)?))
+        Ok(Arc::new(Self::new_and_init(db, chain_config, config, cairo_native_config)?))
     }
 }
 
@@ -456,7 +483,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         *self.latest_l1_confirmed.borrow()
     }
 
-    fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
+    pub fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
         self.chain_tip.borrow().as_preconfirmed().cloned()
     }
 
@@ -524,6 +551,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &new_tip
         } else {
             // Remove the pre-confirmed case: we save the parent confirmed in that case.
+            // Log when we're dropping a preconfirmed block
+            if let ChainTip::Preconfirmed(preconfirmed_block) = &new_tip {
+                tracing::info!(
+                    "⚠️  Preconfirmed block #{} NOT saved to database. Block will be lost on restart.",
+                    preconfirmed_block.header.block_number
+                );
+            }
             &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
         };
         // Write to db if needed.
@@ -569,7 +603,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .context("There is no current preconfirmed block")?
             .get_full_block_with_classes()?;
 
-        if let Some(state_diff) = state_diff {
+        if let Some(mut state_diff) = state_diff {
+            state_diff.old_declared_contracts =
+                std::mem::replace(&mut block.state_diff.old_declared_contracts, state_diff.old_declared_contracts);
             block.state_diff = state_diff;
         }
 
@@ -639,20 +675,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        tracing::info!(
-            "🙇 Block hash {:?} computed for #{}",
-            block_hash,
-            block.header.block_number
-        );
+        tracing::info!("🙇 Block hash {:?} computed for #{}", block_hash, block.header.block_number);
 
-        match self.inner.get_custom_header_with_clear(true) {
-            Some(header) => {
-                let is_valid = header.is_block_hash_as_expected(&block_hash);
-                if !is_valid {
-                    tracing::warn!("Block hash not as expected for {}", block.header.block_number);
-                }
+        if let Some(header) = self.inner.get_custom_header_with_clear(true) {
+            let is_valid = header.is_block_hash_as_expected(&block_hash);
+            if !is_valid {
+                tracing::warn!("Block hash not as expected for {}", block.header.block_number);
             }
-            None => {}
         }
 
         // Save the block.
@@ -726,7 +755,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// Write a state diff to the global tries.
     /// Returns the new state root.
     ///
-    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// **Warning**: The caller must ensure no block parts are saved on top of an existing confirmed block.
     /// You are only allowed to write block parts past the latest confirmed block.
     pub fn apply_to_global_trie<'a>(
         &self,
@@ -745,7 +774,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
     /// parts.
     pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
-        // Also flush based on the configured interval if set
+        // Flush the most latest state to db to reduce data loss
         if self
             .inner
             .config
@@ -756,7 +785,8 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             self.inner.db.flush().context("Periodic database flush")?;
         }
 
-        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
+        // Update snapshots for storage proofs. (TODO (heemank 10/11/2025): decouple this logic)
+        self.inner.db.on_new_confirmed_head(block_number)?;
 
         // Advance chain & clear preconfirmed atomically
         self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
@@ -793,6 +823,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
         self.db.get_latest_applied_trie_update()
     }
+    pub fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
+        self.db.get_snap_sync_latest_block()
+    }
 }
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
@@ -819,6 +852,9 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_latest_applied_trie_update(block_n)
+    }
+    pub fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
+        self.db.write_snap_sync_latest_block(block_n)
     }
 
     /// Revert the blockchain to a specific block hash.

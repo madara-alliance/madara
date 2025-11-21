@@ -8,8 +8,6 @@ const KiB: usize = 1024;
 #[allow(non_upper_case_globals)]
 const MiB: usize = 1024 * KiB;
 
-
-
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum StatsLevel {
     /// Disable all metrics
@@ -54,7 +52,7 @@ pub struct BackendParams {
     pub backup_dir: Option<PathBuf>,
 
     /// Disable saving the preconfirmed block to database. This may speed up block production a bit.
-    #[clap(env = "MADARA_SAVE_PRECONFIRMED", long)]
+    #[clap(env = "MADARA_NO_SAVE_PRECONFIRMED", long)]
     #[serde(default)]
     pub no_save_preconfirmed: bool,
 
@@ -170,10 +168,7 @@ impl BackendParams {
             snapshot_interval: self.db_snapshot_interval,
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
-            write_mode: DbWriteMode {
-                wal: self.db_wal,
-                fsync: self.db_fsync,
-            },
+            write_mode: DbWriteMode { wal: self.db_wal, fsync: self.db_fsync },
         }
     }
 }
