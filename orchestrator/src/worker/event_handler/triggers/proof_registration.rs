@@ -10,15 +10,13 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error};
 
 pub struct ProofRegistrationJobTrigger;
 
 #[async_trait]
 impl JobTrigger for ProofRegistrationJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        trace!(log_type = "starting", "ProofRegistrationWorker started.");
-
         // Self-healing: recover any orphaned ProofRegistration jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofRegistration).await {
             error!(error = %e, "Failed to heal orphaned ProofRegistration jobs, continuing with normal processing");
@@ -32,7 +30,7 @@ impl JobTrigger for ProofRegistrationJobTrigger {
 
         let successful_proving_jobs = filter_jobs_by_orchestrator_version(successful_proving_jobs);
 
-        info!("Found {} successful proving jobs without proof registration jobs", successful_proving_jobs.len());
+        debug!("Found {} successful proving jobs without proof registration jobs", successful_proving_jobs.len());
 
         for job in successful_proving_jobs {
             // Extract proving metadata to get relevant information
@@ -63,19 +61,19 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             )
             .await
             {
-                Ok(_) => info!(block_id = %job.internal_id, "Successfully created new proof registration job"),
+                Ok(_) => {}
                 Err(e) => {
-                    warn!(job_id = %job.internal_id, error = %e, "Failed to create new proof registration job");
+                    error!(error = %e, "Failed to create new {:?} job for {}", JobType::ProofRegistration, job.internal_id);
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::ProofRegistration)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
                     ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                    return Err(e.into());
                 }
             }
         }
 
-        trace!(log_type = "completed", "ProofRegistrationWorker completed.");
         Ok(())
     }
 }

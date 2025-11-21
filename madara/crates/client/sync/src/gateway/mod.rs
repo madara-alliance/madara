@@ -126,7 +126,7 @@ impl GatewayForwardSync {
             config.apply_state_parallelization,
             config.apply_state_batch_size,
             config.disable_tries,
-            config.snap_sync
+            config.snap_sync,
         );
         (blocks_pipeline, classes_pipeline, apply_state_pipeline)
     }
@@ -281,9 +281,7 @@ impl ForwardPipeline for GatewayForwardSync {
             // - start_next_block: The block after the current chain tip (last sealed block)
             // - new_next_block: The block after the minimum of all pipeline completions
             // This ensures we only seal blocks that have been fully processed by ALL pipelines
-            let start_next_block = self.backend.latest_confirmed_block_n()
-                .map(|n| n + 1)
-                .unwrap_or(0);
+            let start_next_block = self.backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
 
             for block_n in start_next_block..new_next_block {
