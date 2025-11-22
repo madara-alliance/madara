@@ -65,6 +65,38 @@
 //! interval defined by the `pending tick` as set in the chain config.
 //! (TODO(mohit 13/10/2025): update this when 0.14.0 merges)
 //!
+//! ## Graceful Shutdown and Error Handling
+//!
+//! The [`BlockProductionTask::run`] method implements graceful shutdown and error handling for
+//! batcher and executor tasks. The main loop tracks completion of both tasks, which only complete
+//! during shutdown scenarios (cancellation, error, or panic).
+//!
+//! ### Graceful Shutdown
+//!
+//! When a cancellation signal is received:
+//! 1. The batcher detects cancellation and exits gracefully, closing the `send_batch` channel
+//! 2. The executor detects the channel closure and finalizes any open block
+//! 3. The executor sends an `EndBlock` message and then completes
+//! 4. The main loop processes the `EndBlock`, closes the block, and exits when both tasks complete
+//!
+//! ### Batcher Panic/Error
+//!
+//! If the batcher encounters an error or panics:
+//! - **With preconfirmed block**: The error is saved and graceful shutdown is attempted. The batcher
+//!   closes the channel, executor closes the block, and shutdown completes with the saved error.
+//! - **Without preconfirmed block**: The error is returned immediately (no need to wait for executor).
+//!
+//! ### Executor Panic
+//!
+//! If the executor thread panics:
+//! - The panic is caught and propagated via the `stop` channel
+//! - The main loop resumes the panic, causing the block to remain preconfirmed
+//! - The preconfirmed block will be handled on restart
+//!
+//! The loop exits when:
+//! - Both batcher and executor have completed → returns `Ok(())` or the saved batcher error
+//! - Batcher errored without a preconfirmed block → returns the error immediately
+//!
 //! [mempool]: mc_mempool
 //! [`StartNewBlock`]: ExecutorMessage::StartNewBlock
 //! [`BatchExecuted`]: ExecutorMessage::BatchExecuted
@@ -742,7 +774,6 @@ impl BlockProductionTask {
         let batch_sender = executor.send_batch.take().context("Channel sender already taken")?;
         let bypass_tx_input = self.bypass_tx_input.take().context("Bypass tx channel already taken")?;
         // Clone ctx to check for cancellation in the main loop
-        let mut ctx_for_cancellation = ctx.clone();
         let mut batcher_task = AbortOnDrop::spawn(
             Batcher::new(
                 self.backend.clone(),
@@ -755,226 +786,62 @@ impl BlockProductionTask {
             .run(),
         );
 
-        // Graceful shutdown flow:
-        //
-        // ┌─────────────────────────────────────────────────────────────────────────────┐
-        // │                      Graceful Shutdown Flow                                 │
-        // └─────────────────────────────────────────────────────────────────────────────┘
-        //
-        // 1. Cancellation Signal (ctx.cancel_global())
-        //    │
-        //    ├─> Main loop detects cancellation → marks shutting_down = true
-        //    │
-        //    └─> Batcher detects cancellation → exits → closes send_batch channel
-        //
-        // 2. Batcher Task Completion
-        //    │
-        //    ├─> Normal completion (Ok):
-        //    │   └─> batcher_completed = true → continue loop (wait for EndBlock)
-        //    │
-        //    └─> Error completion (Err):
-        //        │
-        //        ├─> If preconfirmed block exists:
-        //        │   ├─> shutting_down = true
-        //        │   ├─> batcher_completed = true
-        //        │   └─> Continue loop (attempt graceful shutdown)
-        //        │
-        //        └─> If no preconfirmed block:
-        //            └─> Return error immediately
-        //
-        // 3. Executor detects send_batch channel closure (WaitTxBatchOutcome::Exit)
-        //    │
-        //    ├─> Check: Is there an executing block?
-        //    │   │
-        //    │   ├─> YES: Finalize block → send EndBlock message → exit
-        //    │   │   └─> Uses executor's existing state (no re-execution needed)
-        //    │   │
-        //    │   └─> NO: Just exit (nothing to close)
-        //
-        // 4. Main loop receives EndBlock message
-        //    │
-        //    ├─> process_reply(EndBlock) → closes block (DB responsibility)
-        //    │
-        //    └─> Check shutdown conditions:
-        //        │
-        //        ├─> shutting_down = true ✓
-        //        ├─> is_end_block = true ✓
-        //        └─> batcher_completed = true ✓
-        //            │
-        //            └─> If all true → shutdown complete ✅
-        //            └─> If batcher_completed = false → continue loop (wait for batcher)
-        //
-        // 5. Race Condition Handling
-        //    │
-        //    └─> If EndBlock received before batcher completes:
-        //        ├─> Block closes (normal operation or block time deadline)
-        //        ├─> EndBlock processed but batcher_completed = false
-        //        └─> Loop continues until batcher_completed = true
-        //
-        // 6. Executor Panic Handling
-        //    │
-        //    └─> If executor panics, the panic propagates naturally
-        //        Block remains preconfirmed and will be handled on restart
-        //
-        // Key Benefits:
-        // - Simpler flow: Executor handles block closing automatically
-        // - Error handling: Batcher errors handled gracefully if block exists
-        // - Race condition: EndBlock before batcher completion handled correctly
-        // - No re-execution: Uses executor's existing state (unless executor panics)
-        // - No timeout: Madara's graceful shutdown timeout is sufficient
-        // - Panic handling: Attempts to close block if executor panics
-        //
-        // Note: CloseBlock command is still supported for explicit shutdown requests,
-        // but the Exit path (batcher shutdown) automatically closes blocks.
-
-        // Track if we're shutting down to detect when EndBlock completes shutdown
-        let mut shutting_down = false;
+        // Track shutdown state: both batcher and executor must complete before shutdown finishes.
+        // Both tasks only complete during shutdown scenarios (cancellation, error, or panic).
         let mut batcher_completed = false;
+        let mut executor_completed = false;
+        let mut batcher_error: Option<anyhow::Error> = None; // Store batcher error to return after graceful shutdown
 
         // Main loop: handles normal operation and graceful shutdown
         loop {
             tokio::select! {
-                // ============================================================
-                // Path 1: Cancellation detected
-                // ============================================================
-                // When cancellation is requested, we mark shutting down and wait for
-                // the executor to automatically close any open block when it detects
-                // the send_batch channel closure.
-                _ = ctx_for_cancellation.cancelled(), if !shutting_down => {
-                    shutting_down = true;
-                    tracing::debug!("Cancellation detected, waiting for executor to close block");
-                    // Continue loop to wait for EndBlock or batcher completion
-                }
-
-                // ============================================================
-                // Path 2: Batcher task completed
-                // ============================================================
-                // The batcher task can complete in two ways:
-                //
-                // 1. Normal completion (Ok):
-                //    - Cancellation detected → batcher exits gracefully
-                //    - Closes send_batch channel → signals executor to shut down
-                //    - Sets batcher_completed = true
-                //    - If shutting_down, continue loop to wait for EndBlock
-                //
-                // 2. Error completion (Err):
-                //    - Batcher encounters error (e.g., database error, network error)
-                //    - Sets batcher_completed = true
-                //    - If preconfirmed block exists:
-                //      * Mark shutting_down = true
-                //      * Attempt graceful shutdown (batcher dropping closes send_batch channel)
-                //      * Continue loop to wait for EndBlock
-                //    - If no preconfirmed block:
-                //      * Propagate error immediately (no graceful shutdown needed)
-                //
-                // The executor will automatically close any open block when it detects
-                // the send_batch channel closure (if a block exists).
+                // Path 1: Batcher task completed (cancellation, error, or channel closure)
                 res = &mut batcher_task, if !batcher_completed => {
                     batcher_completed = true;
-
-                    // Handle batcher result
                     match res {
-                        Ok(()) => {
-                            // Normal completion (cancellation or natural completion)
-                            if shutting_down {
-                                // We're shutting down, continue waiting for EndBlock from executor
-                                continue;
-                            }
-                            // Normal batcher completion (not during shutdown)
-                            // This shouldn't happen normally, but handle gracefully
-                        }
+                        Ok(()) => tracing::debug!("Batcher task completed normally"),
                         Err(e) => {
-                            // Batcher errored - attempt graceful shutdown if we have a preconfirmed block
-                            tracing::warn!("Batcher task errored: {e:?}");
-
-                            // Check if we have a preconfirmed block that needs closing
+                            let error = e.context("In batcher task");
+                            tracing::warn!("Batcher task errored: {error:?}");
                             if self.backend.has_preconfirmed_block() {
-                                shutting_down = true;
+                                batcher_error = Some(error);
                                 tracing::warn!("Batcher errored with preconfirmed block, attempting graceful shutdown");
-                                // Batcher task dropping will close send_batch channel automatically
-                                // Executor will detect channel closure and send EndBlock
-                                // Continue loop to wait for EndBlock
-                                continue;
                             } else {
-                                // No block to close, propagate error immediately
-                                return Err(e).context("In batcher task");
+                                batcher_error = Some(error);
                             }
                         }
                     }
                 }
 
-                // ============================================================
-                // Path 3: Executor replies (EndBlock message)
-                // ============================================================
-                // The executor thread sends messages back via the replies channel. When we
-                // receive an EndBlock message, it means the executor has finalized the block
-                // and we can close it using the execution summary.
-                //
-                // EndBlock can be received in two scenarios:
-                //
-                // 1. During graceful shutdown:
-                //    - Executor detects send_batch channel closure
-                //    - Executor finalizes block and sends EndBlock
-                //    - Main loop processes EndBlock and checks shutdown conditions
-                //
-                // 2. Normal block closing (not shutdown):
-                //    - Block closes due to block time deadline, block full, or explicit CloseBlock
-                //    - Executor sends EndBlock as part of normal operation
-                //    - Main loop processes EndBlock normally (shutting_down = false)
-                //
-                // Race Condition Handling:
-                // - If EndBlock received during shutdown but batcher_completed = false:
-                //   * This can happen if block closes due to block time deadline before batcher
-                //     detects cancellation
-                //   * Continue loop to wait for batcher completion
-                //   * Shutdown only completes when both EndBlock processed AND batcher_completed = true
+                // Path 2: Executor replies (EndBlock message during normal operation or shutdown)
                 Some(reply) = executor.replies.recv() => {
-                    let is_end_block = matches!(reply, ExecutorMessage::EndBlock(_));
-
-                    // Process the reply (this will close the block if it's EndBlock)
                     self.process_reply(reply).await.context("Processing reply from executor thread")?;
-
-                    // If we're shutting down and just processed EndBlock, check if shutdown is complete
-                    if shutting_down && is_end_block {
-                        // Ensure batcher has completed before finishing shutdown
-                        // This handles the race condition where EndBlock is received before batcher
-                        // detects cancellation (e.g., when block closes due to block time deadline)
-                        if !batcher_completed {
-                            tracing::debug!("EndBlock received during shutdown, waiting for batcher to complete");
-                            continue;
-                        }
-                        tracing::debug!("EndBlock processed during graceful shutdown, shutdown complete");
-                        return Ok(());
-                    }
                 }
 
-                // ============================================================
-                // Path 4: Executor thread stopped
-                // ============================================================
-                // The executor thread signals completion via the stop channel. This happens
-                // when the executor detects the send_batch channel closure and exits.
-                //
-                // With the new implementation, the executor should send EndBlock before exiting
-                // (if a block exists). If we reach here during shutdown, it means either:
-                // - No block existed (executor exited without sending EndBlock)
-                // - Executor panicked before sending EndBlock
-                //
-                // If executor panicked, the panic propagates naturally (handled by StopErrorReceiver).
-                // Block remains preconfirmed and will be handled on restart.
+                // Path 3: Executor thread stopped (normal completion or panic)
                 res = executor.stop.recv() => {
-                    if shutting_down {
-                        // Executor exited during shutdown
-                        // If there was a block, executor should have sent EndBlock before exiting
-                        // If we're here, either no block existed or executor panicked
-                        // In case of panic, it will propagate naturally
-                        tracing::debug!("Executor shut down during graceful shutdown");
-                        return Ok(());
-                    }
-                    // Normal executor completion (not during shutdown)
-                    // If executor panicked, recv() will resume the panic (handled by StopErrorReceiver)
+                    executor_completed = true;
                     res.context("In executor thread")?;
-                    return Ok(());
+                    tracing::debug!("Executor thread stopped");
                 }
+            }
+
+            // Exit conditions:
+            // 1. Both completed → shutdown done (return error if any, otherwise success)
+            // 2. Batcher errored without preconfirmed block → exit immediately with error
+            if batcher_completed && executor_completed {
+                tracing::debug!("Shutdown complete: batcher completed, executor completed");
+                return batcher_error
+                    .map(|e| {
+                        tracing::warn!("Shutdown completed but batcher had error: {e:?}");
+                        Err(e)
+                    })
+                    .unwrap_or(Ok(()));
+            }
+
+            if batcher_error.is_some() && !self.backend.has_preconfirmed_block() {
+                tracing::debug!("Batcher errored without preconfirmed block, exiting");
+                return Err(batcher_error.take().unwrap());
             }
         }
     }
