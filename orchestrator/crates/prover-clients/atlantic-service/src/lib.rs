@@ -50,6 +50,7 @@ pub struct AtlanticProverService {
     pub cairo_vm: AtlanticCairoVm,
     pub result: AtlanticQueryStep,
     pub cairo_verifier_program_hash: Option<String>,
+    pub chain_id_hex: Option<String>,
 }
 
 #[async_trait]
@@ -80,6 +81,7 @@ impl ProverClient for AtlanticProverService {
                             cairo_vm: self.cairo_vm.clone(),
                             result: self.result.clone(),
                             network: self.atlantic_network.clone(),
+                            chain_id_hex: self.chain_id_hex.clone(),
                         },
                         AtlanticBucketInfo { bucket_id, bucket_job_index },
                         self.atlantic_api_key.clone(),
@@ -91,8 +93,10 @@ impl ProverClient for AtlanticProverService {
                 Ok(atlantic_job_response.atlantic_query_id)
             }
             Task::CreateBucket => {
-                let response =
-                    self.atlantic_client.create_bucket(self.atlantic_api_key.clone(), self.should_mock_proof()).await?;
+                let response = self
+                    .atlantic_client
+                    .create_bucket(self.atlantic_api_key.clone(), self.should_mock_proof(), self.chain_id_hex.clone())
+                    .await?;
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
@@ -283,6 +287,7 @@ impl AtlanticProverService {
             atlantic_network: job_config.network,
             result: job_config.result,
             cairo_verifier_program_hash,
+            chain_id_hex: job_config.chain_id_hex,
         }
     }
 
@@ -295,7 +300,11 @@ impl AtlanticProverService {
     ///
     /// # Returns
     /// * `AtlanticProverService` - A new instance of the service.
-    pub fn new_with_args(atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn new_with_args(
+        atlantic_params: &AtlanticValidatedArgs,
+        proof_layout: &LayoutName,
+        chain_id_hex: Option<String>,
+    ) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
 
@@ -309,6 +318,7 @@ impl AtlanticProverService {
                 cairo_vm: atlantic_params.atlantic_cairo_vm.clone(),
                 result: atlantic_params.atlantic_result.clone(),
                 network: atlantic_params.atlantic_network.clone(),
+                chain_id_hex,
             },
             fact_checker,
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
@@ -330,6 +340,7 @@ impl AtlanticProverService {
                 cairo_vm: AtlanticCairoVm::Rust,
                 result: AtlanticQueryStep::ProofVerificationOnL1,
                 network: "TESTNET".to_string(),
+                chain_id_hex: None,
             },
             fact_checker,
             atlantic_params.atlantic_mock_fact_hash.eq("true"),

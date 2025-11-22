@@ -414,7 +414,7 @@ build-e2e-binaries:
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package orchestrator --bin orchestrator --release
 	@# Build Bootstrapper
 	@echo -e "$(INFO)Building Bootstrapper...$(RESET)"
-	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --package bootstrapper --bin bootstrapper --release
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper/Cargo.toml --bin bootstrapper --release
 	@# Build E2E test package
 	@echo -e "$(INFO)Building E2E test package...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p e2e

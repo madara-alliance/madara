@@ -4,19 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-# TODO: update this to the workspace
-alloy = { git = "https://github.com/alloy-rs/alloy", rev = "68952c0", features = [
-  "consensus",
-  "providers",
-  "rpc-client",
-  "transport-http",
-  "network",
-  "eips",
-  "signers",
-  "signer-wallet",
-] }
+alloy = { workspace = true }
 async-trait = { workspace = true }
-c-kzg = { workspace = true }
 color-eyre = { workspace = true }
 dotenvy.workspace = true
 mockall = { workspace = true }

@@ -134,6 +134,8 @@ pub struct AtlanticClient {
 pub struct AtlanticAggregatorParams {
     pub(crate) use_kzg_da: bool,
     pub(crate) full_output: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) chain_id_hex: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +153,8 @@ pub enum AtlanticAggregatorVersion {
     SnosAggregator0_13_2,
     #[serde(rename = "snos_aggregator_0.13.3")]
     SnosAggregator0_13_3,
+    #[serde(rename = "snos_aggregator_0.14.1")]
+    SnosAggregator0_14_1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

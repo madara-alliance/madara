@@ -3,14 +3,13 @@ pub mod utils;
 use crate::setup::SetupConfig;
 use alloy::network::EthereumWallet;
 use alloy::primitives::Address;
-use alloy::providers::ProviderBuilder;
+use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use rstest::*;
 use starknet::accounts::Account;
-use starknet::accounts::Call;
 use starknet::accounts::ConnectedAccount;
-use starknet_core::types::BlockId;
 use starknet_core::types::BlockTag;
+use starknet_core::types::{BlockId, Call};
 use starknet_core::utils::get_selector_from_name;
 use starknet_signers::{LocalWallet, SigningKey};
 use std::str::FromStr;
@@ -20,13 +19,13 @@ use utils::*;
 
 use alloy::{primitives::U256, sol};
 
+use crate::services::constants::ANVIL_CHAIN_ID;
+use crate::setup::ChainSetup;
 use starknet::{
     accounts::{ExecutionEncoding, SingleOwnerAccount},
     core::types::Felt,
     providers::jsonrpc::{HttpTransport, JsonRpcClient},
 };
-
-use crate::setup::ChainSetup;
 
 #[allow(unused_imports)]
 use crate::tests::setup::setup_chain;
@@ -140,7 +139,7 @@ async fn setup_l2_context(test_config: &SetupConfig) -> TestResult<L2Context> {
     let signer = LocalWallet::from(signing_key);
 
     let mut account = SingleOwnerAccount::new(provider, signer, address, chain_id, ExecutionEncoding::New);
-    account.set_block_id(BlockId::Tag(BlockTag::Pending));
+    account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
 
     Ok(L2Context { account, address, eth_token_address, eth_bridge_address, erc20_token_address, erc20_bridge_address })
 }
@@ -231,7 +230,6 @@ async fn test_erc20_deposit_flow(
     Ok(())
 }
 
-#[allow(dead_code)]
 async fn execute_eth_l1_deposit(
     l1_context: &L1Context,
     deposit_amount: U256,
@@ -244,9 +242,9 @@ async fn execute_eth_l1_deposit(
     let wallet = EthereumWallet::from(signer.clone());
 
     let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
+        .disable_recommended_fillers()
         .wallet(wallet)
-        .on_http(test_config.get_anvil_config().endpoint());
+        .connect_http(test_config.get_anvil_config().endpoint());
 
     // Create contracts - compiler infers the complex types
     let eth_bridge_contract = StarknetEthBridge::new(l1_context.eth_bridge_address, &provider);
@@ -262,6 +260,16 @@ async fn execute_eth_l1_deposit(
     let deposit_txn = eth_bridge_contract
         .deposit(deposit_amount, l2_recipient)
         .value(total_amount)
+        .chain_id(ANVIL_CHAIN_ID)
+        .nonce(
+            provider
+                .get_transaction_count(signer.address())
+                .await
+                .map_err(|e| format!("Failed to get nonce: {}", e))?,
+        )
+        .gas(500_000)
+        .max_fee_per_gas(100_000_000)
+        .max_priority_fee_per_gas(100_000_000)
         .send()
         .await
         .map_err(|e| format!("Failed to send deposit transaction: {}", e))?;
@@ -290,9 +298,9 @@ async fn execute_erc20_l1_deposit(
     let wallet = EthereumWallet::from(signer.clone());
 
     let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
+        .disable_recommended_fillers()
         .wallet(wallet)
-        .on_http(test_config.get_anvil_config().endpoint());
+        .connect_http(test_config.get_anvil_config().endpoint());
 
     // Create contracts - compiler infers the complex types
     let erc20_token_contract = ERC20Token::new(l1_context.erc20_token_address, &provider);
@@ -307,6 +315,16 @@ async fn execute_erc20_l1_deposit(
     println!("🔐 Approving ERC20 tokens...");
     let approve_txn = erc20_token_contract
         .approve(l1_context.erc20_bridge_address, deposit_amount)
+        .chain_id(ANVIL_CHAIN_ID)
+        .nonce(
+            provider
+                .get_transaction_count(signer.address())
+                .await
+                .map_err(|e| format!("Failed to get nonce: {}", e))?,
+        )
+        .gas(500_000)
+        .max_fee_per_gas(100_000_000)
+        .max_priority_fee_per_gas(100_000_000)
         .send()
         .await
         .map_err(|e| format!("Failed to send approve transaction: {}", e))?;
@@ -324,6 +342,16 @@ async fn execute_erc20_l1_deposit(
     let deposit_txn = erc20_bridge_contract
         .deposit(l1_context.erc20_token_address, deposit_amount, l2_recipient)
         .value(fee_amount)
+        .chain_id(ANVIL_CHAIN_ID)
+        .nonce(
+            provider
+                .get_transaction_count(signer.address())
+                .await
+                .map_err(|e| format!("Failed to get nonce: {}", e))?,
+        )
+        .gas(500_000)
+        .max_fee_per_gas(100_000_000)
+        .max_priority_fee_per_gas(100_000_000)
         .send()
         .await
         .map_err(|e| format!("Failed to send deposit transaction: {}", e))?;
@@ -411,9 +439,10 @@ async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
 
     let result = l2_context
         .account
-        .execute_v1(vec![call])
-        .nonce(l2_context.account.get_nonce().await?)
-        .max_fee(Felt::ZERO)
+        .execute_v3(vec![call])
+        .l1_gas(0)
+        .l2_gas(0)
+        .l1_data_gas(0)
         .send()
         .await
         .map_err(|e| format!("Failed to execute withdrawal transaction: {}", e))?;
@@ -448,9 +477,10 @@ async fn execute_erc20_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt>
 
     let result = l2_context
         .account
-        .execute_v1(vec![call])
-        .nonce(l2_context.account.get_nonce().await?)
-        .max_fee(Felt::ZERO)
+        .execute_v3(vec![call])
+        .l1_gas(0)
+        .l2_gas(0)
+        .l1_data_gas(0)
         .send()
         .await
         .map_err(|e| format!("Failed to execute withdrawal transaction: {}", e))?;
