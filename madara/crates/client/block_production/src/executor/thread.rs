@@ -297,10 +297,10 @@ impl ExecutorThread {
                                 // This uses the executor's current state - no re-execution needed
                                 match execution_state.executor.finalize() {
                                     Ok(block_exec_summary) => {
-                                        // Send EndBlock message so main loop can close the block
+                                        // Send EndFinalBlock message so main loop can close the block during shutdown
                                         if self
                                             .replies_sender
-                                            .blocking_send(super::ExecutorMessage::EndBlock(Box::new(
+                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(Box::new(
                                                 block_exec_summary,
                                             )))
                                             .is_err()
@@ -308,7 +308,7 @@ impl ExecutorThread {
                                             // Receiver closed - main loop already shut down
                                             // Block will remain preconfirmed and be handled on restart
                                             tracing::warn!(
-                                                "Could not send EndBlock during shutdown, block will remain preconfirmed"
+                                                "Could not send EndFinalBlock during shutdown, block will remain preconfirmed"
                                             );
                                         }
                                     }

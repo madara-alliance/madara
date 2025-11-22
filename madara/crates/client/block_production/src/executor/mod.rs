@@ -49,7 +49,10 @@ pub enum ExecutorMessage {
         exec_ctx: BlockExecutionContext,
     },
     BatchExecuted(BatchExecutionResult),
+    /// Normal block closing (block time reached, block full, or explicit CloseBlock).
     EndBlock(Box<BlockExecutionSummary>),
+    /// Final block closing during graceful shutdown. Only sent when executor detects shutdown.
+    EndFinalBlock(Box<BlockExecutionSummary>),
 }
 
 #[derive(Default, Debug)]
