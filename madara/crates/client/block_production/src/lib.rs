@@ -463,7 +463,6 @@ impl BlockProductionTask {
         &self,
         preconfirmed_view: &MadaraPreconfirmedBlockView,
         saved_chain_config: Option<&Arc<mp_chain_config::ChainConfig>>,
-        saved_exec_constants: Option<&blockifier::blockifier_versioned_constants::VersionedConstants>,
         saved_no_charge_fee: bool,
     ) -> anyhow::Result<BlockExecutionSummary> {
         // Get all executed transactions
@@ -499,22 +498,14 @@ impl BlockProductionTask {
 
         // Create TransactionExecutor with block_n-10 handling
         // Use saved configs if available, otherwise use current backend configs
-        let chain_config = saved_chain_config.unwrap_or(self.backend.chain_config());
-        let exec_constants = if let Some(constants) = saved_exec_constants {
-            constants.clone()
-        } else {
-            chain_config
-                .exec_constants_by_protocol_version(exec_ctx.protocol_version)
-                .context("Failed to resolve execution constants for protocol version")?
-        };
+        let custom_chain_config = saved_chain_config;
 
         let mut executor = crate::util::create_executor_with_block_n_min_10(
             &self.backend,
             &exec_ctx,
             state_adapter,
-            chain_config,
-            &exec_constants,
             |block_n| Self::wait_for_hash_of_block_min_10(&self.backend, block_n),
+            custom_chain_config, // Use saved chain_config if available (re-execution)
         )
         .context("Creating TransactionExecutor for re-execution")?;
 
@@ -646,8 +637,7 @@ impl BlockProductionTask {
         let saved_config = self.backend.get_runtime_exec_config().context("Getting runtime execution config")?;
 
         // Extract saved values for re-execution without modifying self
-        let (saved_chain_config, saved_exec_constants, saved_no_charge_fee) = if let Some(config) = saved_config {
-
+        let (saved_chain_config, saved_no_charge_fee) = if let Some(config) = saved_config {
             // Log warning if saved config differs from current config (for debugging)
             if config.chain_config.chain_id != self.backend.chain_config().chain_id {
                 tracing::warn!(
@@ -657,21 +647,16 @@ impl BlockProductionTask {
                 );
             }
 
-            (Some(Arc::new(config.chain_config)), Some(config.exec_constants), config.no_charge_fee)
+            (Some(Arc::new(config.chain_config)), config.no_charge_fee)
         } else {
             tracing::warn!("No saved runtime execution config found, using current configs (backward compatibility)");
-            (None, None, self.no_charge_fee)
+            (None, self.no_charge_fee)
         };
 
         // Re-execute transactions to get BlockExecutionSummary
         // Use saved_no_charge_fee for re-execution without modifying self.no_charge_fee
         let block_exec_summary = self
-            .reexecute_preconfirmed_block(
-                &preconfirmed_view,
-                saved_chain_config.as_ref(),
-                saved_exec_constants.as_ref(),
-                saved_no_charge_fee,
-            )
+            .reexecute_preconfirmed_block(&preconfirmed_view, saved_chain_config.as_ref(), saved_no_charge_fee)
             .await
             .context("Re-executing preconfirmed block to get execution summary")?;
 
@@ -1725,7 +1710,6 @@ pub(crate) mod tests {
         );
     }
 
-
     /// Test that re-execution uses the saved `no_charge_fee` value, not the current value.
     ///
     /// This test verifies the critical behavior that when a node restarts with a pre-confirmed block,
@@ -1858,8 +1842,7 @@ pub(crate) mod tests {
             .expect("Runtime exec config should exist after closing");
 
         assert_eq!(
-            updated_config.no_charge_fee,
-            restart_no_charge_fee,
+            updated_config.no_charge_fee, restart_no_charge_fee,
             "Config should be updated with current value after re-execution completes"
         );
     }

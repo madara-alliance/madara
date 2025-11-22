@@ -221,31 +221,38 @@ pub(crate) fn create_execution_context(
 /// and sets up the block_n-10 state diff entry if available.
 ///
 /// This is a helper function to avoid code duplication between normal block production
-/// and re-execution scenarios.
+/// and re-execution scenarios. It reuses `backend.new_executor_for_block_production()`
+/// but allows using a custom chain_config (e.g., saved config for re-execution).
 pub(crate) fn create_executor_with_block_n_min_10(
-    _backend: &Arc<MadaraBackend>,
+    backend: &Arc<MadaraBackend>,
     exec_ctx: &BlockExecutionContext,
     state_adaptor: LayeredStateAdapter,
-    chain_config: &Arc<mp_chain_config::ChainConfig>,
-    exec_constants: &blockifier::blockifier_versioned_constants::VersionedConstants,
     get_block_n_min_10_hash: impl FnOnce(u64) -> anyhow::Result<Option<(u64, Felt)>>,
+    custom_chain_config: Option<&Arc<mp_chain_config::ChainConfig>>,
 ) -> anyhow::Result<TransactionExecutor<LayeredStateAdapter>> {
-    use blockifier::{
-        blockifier::transaction_executor::{TransactionExecutor, DEFAULT_STACK_SIZE},
-        state::cached_state::CachedState,
-    };
+    use mc_exec::MadaraBackendExecutionExt;
 
-    // Create BlockContext using the helper method - this reuses the to_blockifier() logic
-    let block_context = exec_ctx.to_block_context(chain_config, exec_constants)?;
+    // Use backend.new_executor_for_block_production() to create executor (reuses existing logic)
+    let block_info = exec_ctx.to_blockifier()?;
+    let mut executor = backend
+        .clone()
+        .new_executor_for_block_production(state_adaptor, block_info.clone())
+        .context("Creating TransactionExecutor")?;
 
-    let mut executor = TransactionExecutor::new(
-        CachedState::new(state_adaptor),
-        block_context,
-        blockifier::blockifier::config::TransactionExecutorConfig {
-            concurrency_config: chain_config.block_production_concurrency.blockifier_config(),
-            stack_size: DEFAULT_STACK_SIZE,
-        },
-    );
+    // If custom_chain_config is provided, override BlockContext to use it instead of backend's config
+    // This is needed for re-execution scenarios where we want to use saved config
+    if let Some(chain_config) = custom_chain_config {
+        // Get exec_constants from custom chain_config
+        let exec_constants = chain_config
+            .exec_constants_by_protocol_version(exec_ctx.protocol_version)
+            .context("Failed to resolve execution constants for protocol version")?;
+
+        // Use to_block_context helper to create BlockContext (reuses existing logic)
+        let block_context = exec_ctx.to_block_context(chain_config, &exec_constants)?;
+        executor.block_context = Arc::new(block_context);
+        // Override concurrency config as well
+        executor.config.concurrency_config = chain_config.block_production_concurrency.blockifier_config();
+    }
 
     // Prepare the block_n-10 state diff entry on the 0x1 contract
     if let Some((block_n_min_10, block_hash_n_min_10)) = get_block_n_min_10_hash(exec_ctx.block_number)? {

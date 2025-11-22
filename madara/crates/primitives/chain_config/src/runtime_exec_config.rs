@@ -336,8 +336,8 @@ mod tests {
         // Save current directory and restore it after loading
         let original_dir = std::env::current_dir().expect("Failed to get current directory");
         std::env::set_current_dir("../../../../").expect("Failed to change directory");
-        let config = ChainConfig::from_yaml(Path::new("configs/presets/mainnet.yaml"))
-            .expect("Failed to load mainnet config");
+        let config =
+            ChainConfig::from_yaml(Path::new("configs/presets/mainnet.yaml")).expect("Failed to load mainnet config");
         std::env::set_current_dir(original_dir).expect("Failed to restore directory");
         config
     }
@@ -379,5 +379,4 @@ mod tests {
         assert_eq!(deserialized.chain_config.block_time, runtime_config.chain_config.block_time);
         assert_eq!(deserialized.no_charge_fee, runtime_config.no_charge_fee);
     }
-
 }
