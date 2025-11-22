@@ -58,6 +58,7 @@ impl From<mp_rpc::v0_7_1::StateDiff> for StateDiff {
                 .map(|replaced_class| replaced_class.into())
                 .collect(),
             nonces: state_diff.nonces.into_iter().map(|nonce| nonce.into()).collect(),
+            migrated_compiled_classes: vec![], // v0.7.1 doesn't have migrated classes
         }
     }
 }
@@ -168,6 +169,61 @@ impl From<mp_rpc::v0_7_1::NonceUpdate> for NonceUpdate {
 impl From<NonceUpdate> for mp_rpc::v0_7_1::NonceUpdate {
     fn from(nonce_update: NonceUpdate) -> Self {
         Self { contract_address: nonce_update.contract_address, nonce: nonce_update.nonce }
+    }
+}
+
+// v0.10.0 conversions
+impl From<StateDiff> for mp_rpc::v0_10_0::StateDiff {
+    fn from(state_diff: StateDiff) -> Self {
+        Self {
+            storage_diffs: state_diff
+                .storage_diffs
+                .into_iter()
+                .map(|diff| mp_rpc::v0_10_0::ContractStorageDiffItem {
+                    address: diff.address,
+                    storage_entries: diff
+                        .storage_entries
+                        .into_iter()
+                        .map(|entry| mp_rpc::v0_10_0::KeyValuePair { key: entry.key, value: entry.value })
+                        .collect(),
+                })
+                .collect(),
+            deprecated_declared_classes: state_diff.old_declared_contracts,
+            declared_classes: state_diff
+                .declared_classes
+                .into_iter()
+                .map(|item| mp_rpc::v0_10_0::NewClasses {
+                    class_hash: item.class_hash,
+                    compiled_class_hash: item.compiled_class_hash,
+                })
+                .collect(),
+            deployed_contracts: state_diff
+                .deployed_contracts
+                .into_iter()
+                .map(|item| mp_rpc::v0_10_0::DeployedContractItem { address: item.address, class_hash: item.class_hash })
+                .collect(),
+            replaced_classes: state_diff
+                .replaced_classes
+                .into_iter()
+                .map(|item| mp_rpc::v0_10_0::ReplacedClass {
+                    contract_address: item.contract_address,
+                    class_hash: item.class_hash,
+                })
+                .collect(),
+            nonces: state_diff
+                .nonces
+                .into_iter()
+                .map(|item| mp_rpc::v0_10_0::NonceUpdate { contract_address: item.contract_address, nonce: item.nonce })
+                .collect(),
+            migrated_compiled_classes: state_diff
+                .migrated_compiled_classes
+                .into_iter()
+                .map(|item| mp_rpc::v0_10_0::MigratedClassItem {
+                    class_hash: item.class_hash,
+                    compiled_class_hash: item.compiled_class_hash,
+                })
+                .collect(),
+        }
     }
 }
 
