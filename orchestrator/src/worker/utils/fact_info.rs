@@ -95,16 +95,6 @@ pub fn get_fact_l2(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> color_ey
     Ok(B256::from_slice(&fact_hash.to_bytes_be()))
 }
 
-pub fn build_on_chain_data(cairo_pie: &CairoPie) -> color_eyre::Result<OnChainData> {
-    let program_output = get_program_output(cairo_pie, false)?;
-    let fact_topology = get_fact_topology(cairo_pie, program_output.len())?;
-    let fact_root = generate_merkle_root(&program_output, &fact_topology)?;
-
-    let da_child = fact_root.children.last().expect("fact_root is empty");
-
-    Ok(OnChainData { on_chain_data_hash: da_child.node_hash, on_chain_data_size: da_child.page_size })
-}
-
 pub fn get_fact_info(
     cairo_pie: &CairoPie,
     program_hash: Option<Felt>,
@@ -291,7 +281,7 @@ mod tests {
     use cairo_vm::vm::runners::cairo_pie::CairoPie;
     use rstest::rstest;
 
-    use super::get_fact_info;
+    use super::{get_fact_info, get_program_output};
 
     #[rstest]
     #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782")]
@@ -304,5 +294,17 @@ mod tests {
         let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
         let fact_info = get_fact_info(&cairo_pie, None, false).unwrap();
         assert_eq!(expected_fact, fact_info.fact.to_string());
+    }
+
+    #[ignore]
+    #[rstest]
+    #[case("0.zip")]
+    async fn test_program_output(#[case] cairo_pie_path: &str) {
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
+        let cairo_pie_path: PathBuf =
+            [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_path].iter().collect();
+        let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
+        let program_output = get_program_output(&cairo_pie, false).unwrap();
+        println!("the program output is {:?}", program_output);
     }
 }
