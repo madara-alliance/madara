@@ -46,9 +46,12 @@ impl JobTrigger for ProvingJobTrigger {
                 Layer::L2 => {
                     // Set the bucket_id and bucket_job_index for Applicative Recursion
                     match config.database().get_aggregator_batch_for_block(snos_metadata.start_block).await? {
-                        Some(batch) => {
-                            (None, None, Some(batch.bucket_id), Some(snos_metadata.start_block - batch.start_block + 1))
-                        }
+                        Some(batch) => (
+                            None,
+                            None,
+                            Some(batch.bucket_id),
+                            Some(snos_metadata.snos_batch_index - batch.start_snos_batch + 1),
+                        ),
                         None => {
                             warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.start_block);
                             continue;
