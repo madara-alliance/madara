@@ -144,6 +144,7 @@ impl TransactionStateUpdate {
                 self.nonces.iter().map(|(&contract_address, &nonce)| NonceUpdate { contract_address, nonce }).collect(),
                 |entry| entry.contract_address,
             ),
+            migrated_compiled_classes: Vec::new(), // TODO(prakhar,22/11/2025): Add migrated compiled classes here
         }
     }
 }
@@ -188,6 +189,8 @@ pub struct StateDiff {
     pub replaced_classes: Vec<ReplacedClassItem>,
     /// New contract nonce. Mapping contract_address => nonce.
     pub nonces: Vec<NonceUpdate>,
+    /// Classes that were migrated from Poseidon to BLAKE hash (SNIP-34). Mapping class_hash => compiled_class_hash.
+    pub migrated_compiled_classes: Vec<MigratedClassItem>,
 }
 
 impl StateDiff {
@@ -198,6 +201,7 @@ impl StateDiff {
             && self.nonces.is_empty()
             && self.replaced_classes.is_empty()
             && self.storage_diffs.is_empty()
+            && self.migrated_compiled_classes.is_empty()
     }
 
     pub fn len(&self) -> usize {
@@ -207,6 +211,7 @@ impl StateDiff {
         result += self.old_declared_contracts.len();
         result += self.nonces.len();
         result += self.replaced_classes.len();
+        result += self.migrated_compiled_classes.len();
 
         for storage_diff in &self.storage_diffs {
             result += storage_diff.len();
@@ -222,6 +227,7 @@ impl StateDiff {
         self.deployed_contracts.sort_by_key(|deployed_contract| deployed_contract.address);
         self.replaced_classes.sort_by_key(|replaced_class| replaced_class.contract_address);
         self.nonces.sort_by_key(|nonce| nonce.contract_address);
+        self.migrated_compiled_classes.sort_by_key(|migrated_class| migrated_class.class_hash);
     }
 
     pub fn compute_hash(&self) -> Felt {
@@ -265,11 +271,18 @@ impl StateDiff {
             storage_diffs
         };
 
+        let migrated_compiled_classes_sorted = {
+            let mut migrated_compiled_classes = self.migrated_compiled_classes.clone();
+            migrated_compiled_classes.sort_by_key(|migrated_class| migrated_class.class_hash);
+            migrated_compiled_classes
+        };
+
         let updated_contracts_len_as_felt = (updated_contracts_sorted.len() as u64).into();
         let declared_classes_len_as_felt = (declared_classes_sorted.len() as u64).into();
         let deprecated_declared_classes_len_as_felt = (deprecated_declared_classes_sorted.len() as u64).into();
         let nonces_len_as_felt = (nonces_sorted.len() as u64).into();
         let storage_diffs_len_as_felt = (storage_diffs_sorted.len() as u64).into();
+        let migrated_compiled_classes_len_as_felt = (migrated_compiled_classes_sorted.len() as u64).into();
 
         let elements: Vec<Felt> = std::iter::once(Felt::from_bytes_be_slice(b"STARKNET_STATE_DIFF0"))
             .chain(std::iter::once(updated_contracts_len_as_felt))
@@ -297,6 +310,12 @@ impl StateDiff {
             }))
             .chain(std::iter::once(nonces_len_as_felt))
             .chain(nonces_sorted.into_iter().flat_map(|nonce| vec![nonce.contract_address, nonce.nonce]))
+            .chain(std::iter::once(migrated_compiled_classes_len_as_felt))
+            .chain(
+                migrated_compiled_classes_sorted
+                    .into_iter()
+                    .flat_map(|migrated_class| vec![migrated_class.class_hash, migrated_class.compiled_class_hash]),
+            )
             .collect();
 
         Poseidon::hash_array(&elements)
@@ -360,6 +379,7 @@ impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {
             deployed_contracts,
             replaced_classes,
             nonces,
+            migrated_compiled_classes: Vec::new(), // Migrated classes are handled separately
         }
     }
 }
@@ -405,6 +425,13 @@ pub struct DeployedContractItem {
 pub struct ReplacedClassItem {
     pub contract_address: Felt,
     pub class_hash: Felt,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MigratedClassItem {
+    pub class_hash: Felt,
+    pub compiled_class_hash: Felt,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -499,6 +526,7 @@ mod tests {
                 NonceUpdate { contract_address: Felt::from(25), nonce: Felt::from(26) },
                 NonceUpdate { contract_address: Felt::from(27), nonce: Felt::from(28) },
             ],
+            migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Add value here and update the test
         }
     }
 }
