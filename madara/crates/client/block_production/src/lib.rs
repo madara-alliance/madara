@@ -763,11 +763,26 @@ impl BlockProductionTask {
         //
         // 1. Cancellation Signal (ctx.cancel_global())
         //    │
-        //    ├─> Batcher detects cancellation → exits → closes send_batch channel
+        //    ├─> Main loop detects cancellation → marks shutting_down = true
         //    │
-        //    └─> Main loop detects cancellation → marks shutting down → waits for EndBlock
+        //    └─> Batcher detects cancellation → exits → closes send_batch channel
         //
-        // 2. Executor detects send_batch channel closure (WaitTxBatchOutcome::Exit)
+        // 2. Batcher Task Completion
+        //    │
+        //    ├─> Normal completion (Ok):
+        //    │   └─> batcher_completed = true → continue loop (wait for EndBlock)
+        //    │
+        //    └─> Error completion (Err):
+        //        │
+        //        ├─> If preconfirmed block exists:
+        //        │   ├─> shutting_down = true
+        //        │   ├─> batcher_completed = true
+        //        │   └─> Continue loop (attempt graceful shutdown)
+        //        │
+        //        └─> If no preconfirmed block:
+        //            └─> Return error immediately
+        //
+        // 3. Executor detects send_batch channel closure (WaitTxBatchOutcome::Exit)
         //    │
         //    ├─> Check: Is there an executing block?
         //    │   │
@@ -776,18 +791,35 @@ impl BlockProductionTask {
         //    │   │
         //    │   └─> NO: Just exit (nothing to close)
         //
-        // 3. Main loop receives EndBlock message
+        // 4. Main loop receives EndBlock message
         //    │
-        //    └─> process_reply(EndBlock) → closes block (DB responsibility) → shutdown complete
+        //    ├─> process_reply(EndBlock) → closes block (DB responsibility)
+        //    │
+        //    └─> Check shutdown conditions:
+        //        │
+        //        ├─> shutting_down = true ✓
+        //        ├─> is_end_block = true ✓
+        //        └─> batcher_completed = true ✓
+        //            │
+        //            └─> If all true → shutdown complete ✅
+        //            └─> If batcher_completed = false → continue loop (wait for batcher)
         //
-        // 4. Executor Panic Handling
+        // 5. Race Condition Handling
+        //    │
+        //    └─> If EndBlock received before batcher completes:
+        //        ├─> Block closes (normal operation or block time deadline)
+        //        ├─> EndBlock processed but batcher_completed = false
+        //        └─> Loop continues until batcher_completed = true
+        //
+        // 6. Executor Panic Handling
         //    │
         //    └─> If executor panics, the panic propagates naturally
         //        Block remains preconfirmed and will be handled on restart
         //
         // Key Benefits:
         // - Simpler flow: Executor handles block closing automatically
-        // - No race conditions: Executor has all state needed
+        // - Error handling: Batcher errors handled gracefully if block exists
+        // - Race condition: EndBlock before batcher completion handled correctly
         // - No re-execution: Uses executor's existing state (unless executor panics)
         // - No timeout: Madara's graceful shutdown timeout is sufficient
         // - Panic handling: Attempts to close block if executor panics
@@ -817,12 +849,26 @@ impl BlockProductionTask {
                 // ============================================================
                 // Path 2: Batcher task completed
                 // ============================================================
-                // The batcher task completes when cancellation is detected. When it completes,
-                // it closes the send_batch channel, which signals the executor to shut down.
-                // The executor will automatically close any open block before exiting.
+                // The batcher task can complete in two ways:
                 //
-                // If the batcher errors (not cancellation), we still attempt graceful shutdown
-                // if there's a preconfirmed block that needs closing.
+                // 1. Normal completion (Ok):
+                //    - Cancellation detected → batcher exits gracefully
+                //    - Closes send_batch channel → signals executor to shut down
+                //    - Sets batcher_completed = true
+                //    - If shutting_down, continue loop to wait for EndBlock
+                //
+                // 2. Error completion (Err):
+                //    - Batcher encounters error (e.g., database error, network error)
+                //    - Sets batcher_completed = true
+                //    - If preconfirmed block exists:
+                //      * Mark shutting_down = true
+                //      * Attempt graceful shutdown (batcher dropping closes send_batch channel)
+                //      * Continue loop to wait for EndBlock
+                //    - If no preconfirmed block:
+                //      * Propagate error immediately (no graceful shutdown needed)
+                //
+                // The executor will automatically close any open block when it detects
+                // the send_batch channel closure (if a block exists).
                 res = &mut batcher_task, if !batcher_completed => {
                     batcher_completed = true;
 
@@ -864,8 +910,24 @@ impl BlockProductionTask {
                 // receive an EndBlock message, it means the executor has finalized the block
                 // and we can close it using the execution summary.
                 //
-                // During graceful shutdown, the executor automatically sends EndBlock when
-                // it detects the send_batch channel closure (if a block exists).
+                // EndBlock can be received in two scenarios:
+                //
+                // 1. During graceful shutdown:
+                //    - Executor detects send_batch channel closure
+                //    - Executor finalizes block and sends EndBlock
+                //    - Main loop processes EndBlock and checks shutdown conditions
+                //
+                // 2. Normal block closing (not shutdown):
+                //    - Block closes due to block time deadline, block full, or explicit CloseBlock
+                //    - Executor sends EndBlock as part of normal operation
+                //    - Main loop processes EndBlock normally (shutting_down = false)
+                //
+                // Race Condition Handling:
+                // - If EndBlock received during shutdown but batcher_completed = false:
+                //   * This can happen if block closes due to block time deadline before batcher
+                //     detects cancellation
+                //   * Continue loop to wait for batcher completion
+                //   * Shutdown only completes when both EndBlock processed AND batcher_completed = true
                 Some(reply) = executor.replies.recv() => {
                     let is_end_block = matches!(reply, ExecutorMessage::EndBlock(_));
 
