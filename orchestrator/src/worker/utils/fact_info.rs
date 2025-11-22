@@ -95,16 +95,6 @@ pub fn get_fact_l2(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> color_ey
     Ok(B256::from_slice(&fact_hash.to_bytes_be()))
 }
 
-pub fn build_on_chain_data(cairo_pie: &CairoPie) -> color_eyre::Result<OnChainData> {
-    let program_output = get_program_output(cairo_pie, false)?;
-    let fact_topology = get_fact_topology(cairo_pie, program_output.len())?;
-    let fact_root = generate_merkle_root(&program_output, &fact_topology)?;
-
-    let da_child = fact_root.children.last().expect("fact_root is empty");
-
-    Ok(OnChainData { on_chain_data_hash: da_child.node_hash, on_chain_data_size: da_child.page_size })
-}
-
 pub fn get_fact_info(
     cairo_pie: &CairoPie,
     program_hash: Option<Felt>,
