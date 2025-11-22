@@ -281,7 +281,7 @@ mod tests {
     use cairo_vm::vm::runners::cairo_pie::CairoPie;
     use rstest::rstest;
 
-    use super::get_fact_info;
+    use super::{get_fact_info, get_program_output};
 
     #[rstest]
     #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782")]
@@ -294,5 +294,17 @@ mod tests {
         let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
         let fact_info = get_fact_info(&cairo_pie, None, false).unwrap();
         assert_eq!(expected_fact, fact_info.fact.to_string());
+    }
+
+    #[ignore]
+    #[rstest]
+    #[case("0.zip")]
+    async fn test_program_output(#[case] cairo_pie_path: &str) {
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
+        let cairo_pie_path: PathBuf =
+            [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_path].iter().collect();
+        let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
+        let program_output = get_program_output(&cairo_pie, false).unwrap();
+        println!("the program output is {:?}", program_output);
     }
 }

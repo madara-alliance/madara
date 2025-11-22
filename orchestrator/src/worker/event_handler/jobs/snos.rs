@@ -180,11 +180,8 @@ impl JobHandlerTrait for SnosJobHandler {
         }
 
         debug!("Storing SNOS outputs");
-        if config.layer() == &Layer::L2 {
-            // Store the Cairo Pie path
-            self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output)
-                .await?;
-        }
+        // Store the Cairo Pie path
+        self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
 
         info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::SnosRun, internal_id);
 
