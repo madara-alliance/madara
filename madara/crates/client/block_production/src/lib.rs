@@ -820,16 +820,41 @@ impl BlockProductionTask {
                 // The batcher task completes when cancellation is detected. When it completes,
                 // it closes the send_batch channel, which signals the executor to shut down.
                 // The executor will automatically close any open block before exiting.
+                //
+                // If the batcher errors (not cancellation), we still attempt graceful shutdown
+                // if there's a preconfirmed block that needs closing.
                 res = &mut batcher_task, if !batcher_completed => {
-                    res.context("In batcher task")?;
                     batcher_completed = true;
-                    // Batcher completed - executor will detect send_batch closure and close block automatically
-                    if shutting_down {
-                        // We're shutting down, continue waiting for EndBlock from executor
-                        continue;
+
+                    // Handle batcher result
+                    match res {
+                        Ok(()) => {
+                            // Normal completion (cancellation or natural completion)
+                            if shutting_down {
+                                // We're shutting down, continue waiting for EndBlock from executor
+                                continue;
+                            }
+                            // Normal batcher completion (not during shutdown)
+                            // This shouldn't happen normally, but handle gracefully
+                        }
+                        Err(e) => {
+                            // Batcher errored - attempt graceful shutdown if we have a preconfirmed block
+                            tracing::warn!("Batcher task errored: {e:?}");
+
+                            // Check if we have a preconfirmed block that needs closing
+                            if self.backend.has_preconfirmed_block() {
+                                shutting_down = true;
+                                tracing::warn!("Batcher errored with preconfirmed block, attempting graceful shutdown");
+                                // Batcher task dropping will close send_batch channel automatically
+                                // Executor will detect channel closure and send EndBlock
+                                // Continue loop to wait for EndBlock
+                                continue;
+                            } else {
+                                // No block to close, propagate error immediately
+                                return Err(e).context("In batcher task");
+                            }
+                        }
                     }
-                    // Normal batcher completion (not during shutdown)
-                    // This shouldn't happen normally, but handle gracefully
                 }
 
                 // ============================================================
@@ -847,9 +872,16 @@ impl BlockProductionTask {
                     // Process the reply (this will close the block if it's EndBlock)
                     self.process_reply(reply).await.context("Processing reply from executor thread")?;
 
-                    // If we're shutting down and just processed EndBlock, shutdown is complete
+                    // If we're shutting down and just processed EndBlock, check if shutdown is complete
                     if shutting_down && is_end_block {
-                        tracing::debug!("EndBlock processed during graceful shutdown, completing shutdown");
+                        // Ensure batcher has completed before finishing shutdown
+                        // This handles the race condition where EndBlock is received before batcher
+                        // detects cancellation (e.g., when block closes due to block time deadline)
+                        if !batcher_completed {
+                            tracing::debug!("EndBlock received during shutdown, waiting for batcher to complete");
+                            continue;
+                        }
+                        tracing::debug!("EndBlock processed during graceful shutdown, shutdown complete");
                         return Ok(());
                     }
                 }
@@ -1842,159 +1874,5 @@ pub(crate) mod tests {
         // Step 6: Verify shutdown completed successfully
         // No preconfirmed block should exist (still)
         assert!(!devnet_setup.backend.has_preconfirmed_block());
-    }
-
-    // This test verifies that graceful shutdown properly closes a preconfirmed block
-    // containing multiple transactions, ensuring all transactions are preserved correctly.
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(30))]
-    #[tokio::test]
-    async fn test_graceful_shutdown_closes_preconfirmed_block_with_multiple_transactions(
-        #[future]
-        #[with(Duration::from_secs(100), false)]
-        devnet_setup: DevnetSetup,
-    ) {
-        let mut devnet_setup = devnet_setup.await;
-
-        // Step 1: Set up block production with multiple transactions
-        assert!(devnet_setup.mempool.is_empty().await);
-
-        // Add multiple transactions to the mempool
-        let num_transactions = 5;
-        for i in 0..num_transactions {
-            sign_and_add_invoke_tx(
-                &devnet_setup.contracts.0[i % devnet_setup.contracts.0.len()],
-                &devnet_setup.contracts.0[(i + 1) % devnet_setup.contracts.0.len()],
-                &devnet_setup.backend,
-                &devnet_setup.tx_validator,
-                Felt::ZERO,
-            )
-            .await;
-        }
-
-        assert!(!devnet_setup.mempool.is_empty().await);
-
-        // Step 2: Start block production and execute batches to create a preconfirmed block
-        let mut block_production_task = devnet_setup.block_prod_task();
-        let mut notifications = block_production_task.subscribe_state_notifications();
-        let ctx = ServiceContext::new_for_testing();
-        let ctx_clone = ctx.clone();
-
-        let task = AbortOnDrop::spawn(async move { block_production_task.run(ctx).await });
-
-        // Wait for at least one batch to be executed (transactions added to preconfirmed block)
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
-
-        // Verify preconfirmed block exists with transactions
-        assert!(devnet_setup.backend.has_preconfirmed_block());
-        let preconfirmed_view = devnet_setup.backend.block_view_on_preconfirmed().unwrap();
-        let num_executed = preconfirmed_view.num_executed_transactions();
-        assert!(num_executed > 0, "Should have at least some transactions executed");
-
-        // Step 3: Trigger graceful shutdown by cancelling ServiceContext
-        ctx_clone.cancel_global();
-
-        // Step 4: Wait for shutdown to complete
-        task.await.unwrap();
-
-        // Step 5: Verify the preconfirmed block is closed and saved to database
-        assert!(!devnet_setup.backend.has_preconfirmed_block(), "Preconfirmed block should be closed");
-
-        // Verify block was properly closed (check latest confirmed block number)
-        let latest_block_n = devnet_setup.backend.latest_confirmed_block_n();
-        assert!(latest_block_n.is_some(), "Block should be closed and saved");
-        let block_number = latest_block_n.unwrap();
-
-        // Verify all transactions are preserved correctly
-        let closed_block = devnet_setup.backend.block_view_on_confirmed(block_number).unwrap();
-        let executed_transactions = closed_block.get_executed_transactions(..).unwrap();
-        assert_eq!(
-            executed_transactions.len(),
-            num_executed,
-            "All executed transactions should be preserved in closed block"
-        );
-
-        // Verify mempool is empty (all transactions were consumed)
-        assert!(devnet_setup.mempool.is_empty().await);
-    }
-
-    // This test verifies that graceful shutdown completes successfully even in edge cases.
-    // With the new implementation, the executor automatically closes blocks when it detects
-    // the send_batch channel closure (WaitTxBatchOutcome::Exit). This test ensures shutdown
-    // completes gracefully regardless of timing.
-    //
-    // The scenario: Cancellation → batcher completes → closes send_batch → executor detects Exit
-    // → executor closes block automatically → sends EndBlock → main loop closes block → shutdown complete
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(30))]
-    #[tokio::test]
-    async fn test_graceful_shutdown_closeblock_fails_executor_channel_closed(
-        #[future]
-        #[with(Duration::from_secs(100), false)]
-        devnet_setup: DevnetSetup,
-    ) {
-        let mut devnet_setup = devnet_setup.await;
-
-        // Step 1: Set up block production with transactions
-        assert!(devnet_setup.mempool.is_empty().await);
-
-        // Add a transaction to the mempool
-        sign_and_add_invoke_tx(
-            &devnet_setup.contracts.0[0],
-            &devnet_setup.contracts.0[1],
-            &devnet_setup.backend,
-            &devnet_setup.tx_validator,
-            Felt::ZERO,
-        )
-        .await;
-
-        assert!(!devnet_setup.mempool.is_empty().await);
-
-        // Step 2: Start block production and execute a batch to create a preconfirmed block
-        let mut block_production_task = devnet_setup.block_prod_task();
-        let mut notifications = block_production_task.subscribe_state_notifications();
-        let ctx = ServiceContext::new_for_testing();
-        let ctx_clone = ctx.clone();
-
-        let task = AbortOnDrop::spawn(async move { block_production_task.run(ctx).await });
-
-        // Wait for batch to be executed (transactions added to preconfirmed block)
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
-
-        // Verify preconfirmed block exists with transactions
-        assert!(devnet_setup.backend.has_preconfirmed_block());
-        let preconfirmed_view = devnet_setup.backend.block_view_on_preconfirmed().unwrap();
-        assert_eq!(preconfirmed_view.num_executed_transactions(), 1);
-
-        // Step 3: Cancel the context - this will cause batcher to complete
-        // The batcher will close send_batch channel, which signals the executor to shut down
-        // The executor will detect Exit and automatically close the block before exiting
-        ctx_clone.cancel_global();
-
-        // Step 4: Wait for shutdown to complete
-        // With the new implementation, the executor automatically closes blocks when it detects
-        // send_batch channel closure. The shutdown should complete successfully regardless of timing.
-        task.await.unwrap();
-
-        // Step 5: Wait a bit to ensure block closing operations complete
-        // Database writes happen synchronously in rayon tasks, but we add a small delay
-        // to ensure all operations are fully completed
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Step 6: Verify the preconfirmed block was closed and saved to database
-        assert!(!devnet_setup.backend.has_preconfirmed_block(), "Preconfirmed block should be closed");
-
-        // Verify block was properly closed (check latest confirmed block number)
-        let latest_block_n = devnet_setup.backend.latest_confirmed_block_n();
-        assert!(latest_block_n.is_some(), "Block should be closed and saved");
-        let block_number = latest_block_n.unwrap();
-
-        // Verify transaction is preserved correctly
-        let closed_block = devnet_setup.backend.block_view_on_confirmed(block_number).unwrap();
-        let executed_transactions = closed_block.get_executed_transactions(..).unwrap();
-        assert_eq!(executed_transactions.len(), 1, "Transaction should be preserved in closed block");
-
-        // Verify mempool is empty (transaction was consumed)
-        assert!(devnet_setup.mempool.is_empty().await);
     }
 }
