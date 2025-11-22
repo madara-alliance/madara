@@ -87,6 +87,7 @@ use mc_exec::LayeredStateAdapter;
 use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_block::TransactionWithReceipt;
+use mp_chain_config::RuntimeExecutionConfig;
 use mp_convert::{Felt, ToFelt};
 use mp_receipt::from_blockifier_execution_info;
 use mp_state_update::{ClassUpdateItem, DeclaredClassCompiledClass, TransactionStateUpdate};
@@ -339,11 +340,12 @@ impl BlockProductionTask {
         &self,
         preconfirmed_tx: &PreconfirmedExecutedTransaction,
         state_view: &MadaraStateView,
+        no_charge_fee: bool,
     ) -> anyhow::Result<blockifier::transaction::transaction_execution::Transaction> {
         // Convert PreconfirmedExecutedTransaction to ValidatedTransaction
         // Use the actual charge_fee value from configuration (charge_fee = !no_charge_fee)
         let mut validated_tx = preconfirmed_tx.to_validated();
-        validated_tx.charge_fee = !self.no_charge_fee;
+        validated_tx.charge_fee = !no_charge_fee;
 
         // If declared_class is missing and transaction is Declare, fetch it from state_view
         // NOTE: For declare transactions in the preconfirmed block, declared_class MUST be stored
@@ -460,6 +462,8 @@ impl BlockProductionTask {
     async fn reexecute_preconfirmed_block(
         &self,
         preconfirmed_view: &MadaraPreconfirmedBlockView,
+        saved_chain_config: Option<&Arc<mp_chain_config::ChainConfig>>,
+        saved_no_charge_fee: bool,
     ) -> anyhow::Result<BlockExecutionSummary> {
         // Get all executed transactions
         let executed_txs: Vec<_> = preconfirmed_view.borrow_content().executed_transactions().cloned().collect();
@@ -468,9 +472,12 @@ impl BlockProductionTask {
         let parent_state_view = preconfirmed_view.state_view_on_parent();
 
         // Convert transactions to blockifier format
+        // Note: saved_no_charge_fee is passed here to ensure re-execution uses the saved value
         let blockifier_txs: Vec<blockifier::transaction::transaction_execution::Transaction> = executed_txs
             .iter()
-            .map(|preconfirmed_tx| self.prepare_preconfirmed_tx_for_reexecution(preconfirmed_tx, &parent_state_view))
+            .map(|preconfirmed_tx| {
+                self.prepare_preconfirmed_tx_for_reexecution(preconfirmed_tx, &parent_state_view, saved_no_charge_fee)
+            })
             .collect::<Result<Vec<_>, _>>()
             .context("Converting preconfirmed transactions to blockifier format")?;
 
@@ -490,11 +497,17 @@ impl BlockProductionTask {
             LayeredStateAdapter::new(self.backend.clone()).context("Creating LayeredStateAdapter for re-execution")?;
 
         // Create TransactionExecutor with block_n-10 handling
-        let mut executor =
-            crate::util::create_executor_with_block_n_min_10(&self.backend, &exec_ctx, state_adapter, |block_n| {
-                Self::wait_for_hash_of_block_min_10(&self.backend, block_n)
-            })
-            .context("Creating TransactionExecutor for re-execution")?;
+        // Use saved configs if available, otherwise use current backend configs
+        let custom_chain_config = saved_chain_config;
+
+        let mut executor = crate::util::create_executor_with_block_n_min_10(
+            &self.backend,
+            &exec_ctx,
+            state_adapter,
+            |block_n| Self::wait_for_hash_of_block_min_10(&self.backend, block_n),
+            custom_chain_config, // Use saved chain_config if available (re-execution)
+        )
+        .context("Creating TransactionExecutor for re-execution")?;
 
         // Execute all transactions
         let execution_results = executor.execute_txs(&blockifier_txs, /* execution_deadline */ None);
@@ -541,6 +554,29 @@ impl BlockProductionTask {
         Ok(block_exec_summary)
     }
 
+    /// Saves the current runtime execution config to the database.
+    /// This ensures the config is persisted for future restarts.
+    fn save_current_runtime_exec_config(&self) -> anyhow::Result<()> {
+        let current_chain_config = self.backend.chain_config();
+        let current_exec_constants = current_chain_config
+            .exec_constants_by_protocol_version(current_chain_config.latest_protocol_version)
+            .context("Failed to resolve execution constants for latest protocol version")?;
+
+        let runtime_config = RuntimeExecutionConfig::from_arc_chain_config(
+            current_chain_config,
+            current_exec_constants,
+            self.no_charge_fee,
+        )
+        .context("Failed to create runtime execution config")?;
+
+        self.backend
+            .write_access()
+            .write_runtime_exec_config(&runtime_config)
+            .context("Saving runtime execution config")?;
+
+        Ok(())
+    }
+
     /// Closes the last preconfirmed block stored in the database (if any).
     ///
     /// This function is called when Madara restarts and finds a preconfirmed block in the database.
@@ -548,7 +584,7 @@ impl BlockProductionTask {
     ///
     /// # Process
     ///
-    /// 1. Checks if a preconfirmed block exists, returns early if not
+    /// 1. Checks if a preconfirmed block exists, returns early if not (but still saves runtime exec config)
     /// 2. Re-executes all transactions in the block using `reexecute_preconfirmed_block()` to obtain:
     ///    - `bouncer_weights`: Required for block finalization
     ///    - `state_diff`: Required for block closing
@@ -556,6 +592,7 @@ impl BlockProductionTask {
     /// 4. Removes consumed L1 to L2 message nonces from the database
     /// 5. Saves bouncer weights to the database
     /// 6. Closes the preconfirmed block with the regenerated state_diff
+    /// 7. Updates runtime exec config with current values after re-execution
     ///
     /// # Why Re-execution is Necessary
     ///
@@ -567,8 +604,9 @@ impl BlockProductionTask {
     /// # Important Notes
     ///
     /// - The re-execution uses the exact header values from the preconfirmed block (timestamp, gas_prices, etc.)
-    /// - The `charge_fee` flag is determined by `self.no_charge_fee` configuration
+    /// - The `charge_fee` flag is determined by the saved `no_charge_fee` value (not current value)
     /// - L1 handler transactions preserve their `paid_fee_on_l1` value (stored during `append_batch`)
+    /// - Runtime exec config is always saved (even when no preconfirmed block exists) to ensure persistence
     ///
     /// # TODO (mohit, 13/11/2025)
     ///
@@ -576,6 +614,9 @@ impl BlockProductionTask {
     /// - Handle cases where version constants or bouncer weights have changed
     async fn close_preconfirmed_block_if_exists(&mut self) -> anyhow::Result<()> {
         if !self.backend.has_preconfirmed_block() {
+            // Even if there's no preconfirmed block, save the current runtime exec config
+            // This ensures the config is persisted for future restarts
+            self.save_current_runtime_exec_config()?;
             return Ok(());
         }
 
@@ -586,15 +627,36 @@ impl BlockProductionTask {
         let block_number = preconfirmed_view.block_number();
         let n_txs = preconfirmed_view.num_executed_transactions();
 
-        tracing::info!(
+        tracing::debug!(
             "Re-executing {} transaction(s) in preconfirmed block #{} to obtain bouncer_weights and state_diff",
             n_txs,
             block_number
         );
 
+        // Load saved runtime execution config
+        let saved_config = self.backend.get_runtime_exec_config().context("Getting runtime execution config")?;
+
+        // Extract saved values for re-execution without modifying self
+        let (saved_chain_config, saved_no_charge_fee) = if let Some(config) = saved_config {
+            // Log warning if saved config differs from current config (for debugging)
+            if config.chain_config.chain_id != self.backend.chain_config().chain_id {
+                tracing::warn!(
+                    "Saved chain_id ({}) differs from current chain_id ({})",
+                    config.chain_config.chain_id,
+                    self.backend.chain_config().chain_id
+                );
+            }
+
+            (Some(Arc::new(config.chain_config)), config.no_charge_fee)
+        } else {
+            tracing::warn!("No saved runtime execution config found, using current configs (backward compatibility)");
+            (None, self.no_charge_fee)
+        };
+
         // Re-execute transactions to get BlockExecutionSummary
+        // Use saved_no_charge_fee for re-execution without modifying self.no_charge_fee
         let block_exec_summary = self
-            .reexecute_preconfirmed_block(&preconfirmed_view)
+            .reexecute_preconfirmed_block(&preconfirmed_view, saved_chain_config.as_ref(), saved_no_charge_fee)
             .await
             .context("Re-executing preconfirmed block to get execution summary")?;
 
@@ -616,6 +678,12 @@ impl BlockProductionTask {
         )
         .await
         .context("Closing preconfirmed block on startup")?;
+
+        // Update runtime exec config with current configs after re-execution is complete
+        // This ensures that if we restart again before starting the next block, we have the current configs
+        // Note: Use self.no_charge_fee (current value) not saved_no_charge_fee (saved value)
+        self.save_current_runtime_exec_config()
+            .context("Updating runtime execution config after restart re-execution")?;
 
         tracing::info!("✅ Closed preconfirmed block #{} with {} transactions on startup", block_number, n_txs);
 
@@ -641,9 +709,16 @@ impl BlockProductionTask {
                     )
                 }
 
+                // Check if pre-confirmed block exists (it shouldn't at this point)
+                if self.backend.has_preconfirmed_block() {
+                    tracing::warn!("Unexpected pre-confirmed block exists when starting new block");
+                }
+
+                // Create new preconfirmed block
                 let backend = self.backend.clone();
                 global_spawn_rayon_task(move || {
-                    backend.write_access().new_preconfirmed(PreconfirmedBlock::new(exec_ctx.into_header()))
+                    let write_access = backend.write_access();
+                    write_access.new_preconfirmed(PreconfirmedBlock::new(exec_ctx.into_header()))
                 })
                 .await?;
 
@@ -1210,6 +1285,8 @@ pub(crate) mod tests {
         // | PHASE 1: Close the block and note down its state.          |
         // --------------------------------------------------------------
 
+        tracing::info!("PHASE 1: Close the block and note down its state.");
+
         // Step 1: Create a block normally with transactions in the original backend
         assert!(original_devnet_setup.mempool.is_empty().await);
 
@@ -1316,6 +1393,7 @@ pub(crate) mod tests {
         // We'll add them in the same order using the same helper functions
         // All transactions will be in a single block
         // This ensures they're executed in the same context (clean genesis state)
+        tracing::info!("PHASE 2: Re-execute the block and note down its state.");
         assert!(restart_devnet_setup.mempool.is_empty().await);
 
         // Create the same transactions using the helper function
@@ -1629,6 +1707,143 @@ pub(crate) mod tests {
                 keys: vec![get_selector_from_name("CalledFromL1").unwrap()],
                 data: vec![/* from_address */ Felt::THREE, /* arg1 */ Felt::ONE, /* arg2 */ Felt::TWO]
             }
+        );
+    }
+
+    /// Test that re-execution uses the saved `no_charge_fee` value, not the current value.
+    ///
+    /// This test verifies the critical behavior that when a node restarts with a pre-confirmed block,
+    /// re-execution must use the exact same `no_charge_fee` value that was used during original execution,
+    /// even if the node's current configuration has changed. This ensures transaction receipts remain
+    /// consistent between original execution and re-execution.
+    ///
+    /// # Test Flow
+    ///
+    /// 1. **Initial execution**: Start with `no_charge_fee = true`, execute a transaction, stop before closing
+    ///    - Transaction is executed without charging fees
+    ///    - Runtime exec config is saved with `no_charge_fee = true`
+    ///
+    /// 2. **Restart**: Restart with `no_charge_fee = false` (different value)
+    ///    - Node's current config is `no_charge_fee = false`
+    ///    - But saved config has `no_charge_fee = true`
+    ///
+    /// 3. **Re-execution**: When closing the pre-confirmed block, re-execution uses saved value
+    ///    - Re-execution uses `saved_no_charge_fee = true` (from saved config)
+    ///    - NOT `restart_no_charge_fee = false` (from current config)
+    ///    - This ensures receipts match between original and re-execution
+    ///
+    /// 4. **Post re-execution**: After re-execution completes, config is updated with current value
+    ///    - Config is updated to `no_charge_fee = false` for future blocks
+    ///    - This ensures next block uses the current configuration
+    ///
+    /// # Why This Matters
+    ///
+    /// If re-execution used the current `no_charge_fee` value instead of the saved one:
+    /// - Transaction receipts would differ between original execution and re-execution
+    /// - State diffs would be inconsistent
+    /// - Block validation would fail
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(100))]
+    #[tokio::test]
+    async fn test_reexecution_uses_saved_no_charge_fee_value(
+        #[future]
+        #[from(devnet_setup)]
+        original_devnet_setup: DevnetSetup,
+    ) {
+        let original_devnet_setup = original_devnet_setup.await;
+
+        // Phase 1: Initial execution with no_charge_fee = true
+        let initial_no_charge_fee = true;
+        assert!(original_devnet_setup.mempool.is_empty().await);
+
+        // Create a transaction validator that matches our no_charge_fee setting.
+        // This ensures transactions are validated with charge_fee = !no_charge_fee.
+        // Without this, transactions would be validated with charge_fee = true (default),
+        // causing a mismatch between validation and execution.
+        let tx_validator_with_no_fee = Arc::new(TransactionValidator::new(
+            Arc::clone(&original_devnet_setup.mempool) as _,
+            Arc::clone(&original_devnet_setup.backend),
+            TransactionValidatorConfig { disable_validation: false, disable_fee: initial_no_charge_fee },
+        ));
+
+        sign_and_add_invoke_tx(
+            &original_devnet_setup.contracts.0[0],
+            &original_devnet_setup.contracts.0[1],
+            &original_devnet_setup.backend,
+            &tx_validator_with_no_fee,
+            Felt::ZERO,
+        )
+        .await;
+
+        assert!(!original_devnet_setup.mempool.is_empty().await);
+
+        // Start block production task with no_charge_fee = true.
+        // This will execute the transaction and add it to the pre-confirmed block.
+        let mut block_production_task = BlockProductionTask::new(
+            original_devnet_setup.backend.clone(),
+            original_devnet_setup.mempool.clone(),
+            original_devnet_setup.metrics.clone(),
+            Arc::new(original_devnet_setup.l1_client.clone()),
+            initial_no_charge_fee,
+        );
+
+        let mut notifications = block_production_task.subscribe_state_notifications();
+        let restart_task =
+            AbortOnDrop::spawn(
+                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
+            );
+
+        // Wait for transaction to be executed and added to pre-confirmed block
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+
+        // Verify pre-confirmed block exists with our transaction
+        assert!(original_devnet_setup.backend.has_preconfirmed_block());
+        let preconfirmed_view = original_devnet_setup.backend.block_view_on_preconfirmed().unwrap();
+        assert_eq!(preconfirmed_view.num_executed_transactions(), 1);
+
+        // Stop the task before it closes the block.
+        // This simulates a node crash/restart scenario where a pre-confirmed block exists.
+        drop(restart_task);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Phase 2: Restart with different no_charge_fee value
+        // This simulates a configuration change between shutdown and restart.
+        let restart_no_charge_fee = false;
+        let restart_block_production_task = BlockProductionTask::new(
+            original_devnet_setup.backend.clone(), // Same backend = same database
+            original_devnet_setup.mempool.clone(),
+            original_devnet_setup.metrics.clone(),
+            Arc::new(original_devnet_setup.l1_client.clone()),
+            restart_no_charge_fee, // Current config: no_charge_fee = false
+        );
+
+        // Start the block production task.
+        // This will call setup_initial_state() which calls close_preconfirmed_block_if_exists().
+        // During re-execution, it will use saved_no_charge_fee = true (from saved config),
+        // NOT restart_no_charge_fee = false (from current config).
+        let _restart_task = AbortOnDrop::spawn(async move {
+            restart_block_production_task.run(ServiceContext::new_for_testing()).await.unwrap()
+        });
+
+        // Give time for setup_initial_state to complete and close the pre-confirmed block
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        // Phase 3: Verify block was closed successfully
+        assert!(!original_devnet_setup.backend.has_preconfirmed_block());
+        assert_eq!(original_devnet_setup.backend.latest_confirmed_block_n(), Some(1));
+
+        // Phase 4: Verify config was updated with CURRENT value after re-execution
+        // After re-execution completes, the config is updated to the current value.
+        // This ensures that the next block will use the current configuration.
+        let updated_config = original_devnet_setup
+            .backend
+            .get_runtime_exec_config()
+            .expect("Should be able to read runtime exec config")
+            .expect("Runtime exec config should exist after closing");
+
+        assert_eq!(
+            updated_config.no_charge_fee, restart_no_charge_fee,
+            "Config should be updated with current value after re-execution completes"
         );
     }
 }

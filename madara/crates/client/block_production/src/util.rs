@@ -4,7 +4,7 @@ use blockifier::{
     transaction::transaction_execution::Transaction,
 };
 use mc_db::MadaraBackend;
-use mc_exec::{LayeredStateAdapter, MadaraBackendExecutionExt};
+use mc_exec::LayeredStateAdapter;
 use mp_block::header::{BlockTimestamp, GasPrices, PreconfirmedHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_class::ConvertedClass;
@@ -166,6 +166,23 @@ impl BlockExecutionContext {
             use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,
         })
     }
+
+    /// Create a BlockContext from this execution context with the given chain config and exec constants.
+    /// This is a helper function that encapsulates the BlockContext creation logic.
+    pub fn to_block_context(
+        &self,
+        chain_config: &Arc<mp_chain_config::ChainConfig>,
+        exec_constants: &blockifier::blockifier_versioned_constants::VersionedConstants,
+    ) -> anyhow::Result<blockifier::context::BlockContext> {
+        use blockifier::context::BlockContext;
+        let block_info = self.to_blockifier()?;
+        Ok(BlockContext::new(
+            block_info,
+            chain_config.blockifier_chain_info(),
+            exec_constants.clone(),
+            chain_config.bouncer_config.clone(),
+        ))
+    }
 }
 
 pub(crate) fn create_execution_context(
@@ -204,16 +221,38 @@ pub(crate) fn create_execution_context(
 /// and sets up the block_n-10 state diff entry if available.
 ///
 /// This is a helper function to avoid code duplication between normal block production
-/// and re-execution scenarios.
+/// and re-execution scenarios. It reuses `backend.new_executor_for_block_production()`
+/// but allows using a custom chain_config (e.g., saved config for re-execution).
 pub(crate) fn create_executor_with_block_n_min_10(
     backend: &Arc<MadaraBackend>,
     exec_ctx: &BlockExecutionContext,
     state_adaptor: LayeredStateAdapter,
     get_block_n_min_10_hash: impl FnOnce(u64) -> anyhow::Result<Option<(u64, Felt)>>,
+    custom_chain_config: Option<&Arc<mp_chain_config::ChainConfig>>,
 ) -> anyhow::Result<TransactionExecutor<LayeredStateAdapter>> {
+    use mc_exec::MadaraBackendExecutionExt;
+
+    // Use backend.new_executor_for_block_production() to create executor (reuses existing logic)
+    let block_info = exec_ctx.to_blockifier()?;
     let mut executor = backend
-        .new_executor_for_block_production(state_adaptor, exec_ctx.to_blockifier()?)
+        .clone()
+        .new_executor_for_block_production(state_adaptor, block_info.clone())
         .context("Creating TransactionExecutor")?;
+
+    // If custom_chain_config is provided, override BlockContext to use it instead of backend's config
+    // This is needed for re-execution scenarios where we want to use saved config
+    if let Some(chain_config) = custom_chain_config {
+        // Get exec_constants from custom chain_config
+        let exec_constants = chain_config
+            .exec_constants_by_protocol_version(exec_ctx.protocol_version)
+            .context("Failed to resolve execution constants for protocol version")?;
+
+        // Use to_block_context helper to create BlockContext (reuses existing logic)
+        let block_context = exec_ctx.to_block_context(chain_config, &exec_constants)?;
+        executor.block_context = Arc::new(block_context);
+        // Override concurrency config as well
+        executor.config.concurrency_config = chain_config.block_production_concurrency.blockifier_config();
+    }
 
     // Prepare the block_n-10 state diff entry on the 0x1 contract
     if let Some((block_n_min_10, block_hash_n_min_10)) = get_block_n_min_10_hash(exec_ctx.block_number)? {

@@ -6739,6 +6739,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
+ "serde_yaml",
  "siphasher",
  "smallvec",
  "starknet-types-core",
@@ -6750,6 +6751,7 @@ dependencies = [
  "tracing-core",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
