@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub mod analytics;
 pub mod backend;
 pub mod block_production;
+pub mod cairo_native;
 pub mod chain_config_overrides;
 pub mod gateway;
 pub mod l1;
@@ -22,6 +23,7 @@ pub mod validator;
 pub use analytics::*;
 pub use backend::*;
 pub use block_production::*;
+pub use cairo_native::*;
 pub use chain_config_overrides::*;
 pub use gateway::*;
 pub use l1::*;
@@ -187,6 +189,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub block_production_params: BlockProductionParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub cairo_native_params: CairoNativeParams,
 
     /// The node will run as a sequencer and produce its own state.
     #[arg(env = "MADARA_SEQUENCER", long, group = "mode")]

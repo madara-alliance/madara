@@ -35,6 +35,7 @@
     "l2_sync_disabled": false,
     "unsafe_starting_block": null,
     "disable_tries": false,
+    "snap_sync": false,
     "gateway_key": null,
     "gateway_url": null,
     "warp_update_port_rpc": 9943,
@@ -47,7 +48,8 @@
     "n_blocks_to_sync": null,
     "stop_on_sync": false,
     "backup_every_n_blocks": null,
-    "bouncer_config_sync_enable": false
+    "bouncer_config_sync_enable": false,
+    "disable_reorg": false
   },
   "l1_sync_params": {
     "l1_sync_disabled": true,
@@ -111,5 +113,16 @@
   },
   "chain_config_override": {
     "overrides": []
+  },
+  "cairo_native_params": {
+    "enable_native_execution": false,
+    "native_max_memory_cache_size": 1000,
+    "native_max_concurrent_compilations": 4,
+    "native_compilation_timeout_secs": 300,
+    "native_memory_cache_timeout_ms": 100,
+    "native_disk_cache_load_timeout_secs": 2,
+    "native_compilation_mode": "async",
+    "native_enable_retry": true,
+    "native_max_failed_compilations": 10000
   }
 }

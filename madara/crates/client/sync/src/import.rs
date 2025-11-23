@@ -563,12 +563,6 @@ impl BlockImporterCtx {
 
         self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
-        tracing::debug!(
-            "✅ State diff applied successfully for blocks {:?}, latest_applied_trie_update set to {}",
-            block_range,
-            last_block_n
-        );
-
         // Sanity check: verify state root.
         if !self.config.no_check && !self.config.trust_state_root {
             let expected = self

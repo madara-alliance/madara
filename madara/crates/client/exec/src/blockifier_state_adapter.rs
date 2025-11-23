@@ -133,7 +133,8 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
 
         tracing::debug!("get_compiled_contract_class: on={}, class_hash={:#x}", self.view, class_hash.to_felt());
 
-        (&converted_class).try_into().map_err(|err| {
+        let cairo_native_config = self.view.backend().cairo_native_config.clone();
+        mc_class_exec::to_blockifier::convert_to_runnable(&converted_class, &cairo_native_config).map_err(|err| {
             tracing::error!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
             StateError::StateReadError(format!("Failed to convert class {class_hash:#}"))
         })

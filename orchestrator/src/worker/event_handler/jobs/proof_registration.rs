@@ -19,18 +19,19 @@ pub struct RegisterProofJobHandler;
 #[async_trait]
 impl JobHandlerTrait for RegisterProofJobHandler {
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(log_type = "starting", "Proof Registry job creation started.");
+        debug!(log_type = "starting", "{:?} job {} creation started", JobType::ProofRegistration, internal_id);
         let job_item = JobItem::create(internal_id.clone(), JobType::ProofRegistration, JobStatus::Created, metadata);
-        info!(log_type = "completed", "Proving job created.");
+        debug!(log_type = "completed", "{:?} job {} creation completed", JobType::ProofRegistration, internal_id);
         Ok(job_item)
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
+        let internal_id = &job.internal_id;
+        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::ProofRegistration, internal_id);
+
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
             error!(error = %e, "Failed to convert metadata to ProvingMetadata");
         })?;
-
-        info!(log_type = "starting", "Proof registration job processing started.");
 
         // Get the proof path from input_path
         let proof_key = match proving_metadata.input_path {
@@ -62,22 +63,18 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             .prover_client()
             .submit_l2_query(&task_id, &formatted_proof, proving_metadata.n_steps)
             .await
-            .context(format!(
-                "Failed to submit proof for L2 verification for job_id: {}, task_id: {}",
-                job.internal_id, task_id
-            ))?;
+            .inspect_err(|e| {
+                error!(error = %e, "Failed to submit proof for L2 verification for job {}",
+                job.internal_id);
+            })?;
 
-        info!(
-            log_type = "completed",
-            %external_id,
-            "Proof registration job processed successfully."
-        );
+        info!(log_type = "completed", job_id = %job.id, external_id = %external_id, "✅ {:?} job {} processed successfully", JobType::ProofRegistration, internal_id);
         Ok(external_id)
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
-        info!(log_type = "starting", "Proof registration job verification started.");
+        let internal_id = &job.internal_id;
+        debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::ProofRegistration, internal_id);
 
         let task_id: String = job
             .external_id
@@ -99,33 +96,41 @@ impl JobHandlerTrait for RegisterProofJobHandler {
         };
 
         debug!(%task_id, "Getting task status from prover client");
-        let task_status =
-            config.prover_client().get_task_status(TaskType::Job, &task_id, fact.clone(), cross_verify).await.context(
-                format!(
-                    "Failed to get task status from prover client for job_id: {}, task_id: {}",
-                    job.internal_id, task_id
-                ),
-            )?;
+        let task_status = config
+            .prover_client()
+            .get_task_status(TaskType::Job, &task_id, fact.clone(), cross_verify)
+            .await
+            .inspect_err(|e| {
+                error!(
+                    error = %e,
+                    "Failed to get task status from prover client for job {}",
+                    job.internal_id
+                )
+            })?;
 
         match task_status {
             TaskStatus::Processing => {
-                info!("Proof registration job verification pending.");
+                info!(
+                    job_id = %job.id,
+                    "{:?} job {} verification is pending, will be retried in sometime",
+                    JobType::ProofRegistration,
+                    internal_id
+                );
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
                 if let Some(download_path) = &proving_metadata.download_proof {
-                    let fetched_proof = config.prover_client().get_proof(&task_id).await.context(format!(
-                        "Failed to fetch proof from prover client for job_id: {}, task_id: {}",
-                        job.internal_id, task_id
-                    ))?;
+                    let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
+                        error!(error = %e, "Failed to fetch proof from prover client for job {}", job.internal_id);
+                    })?;
                     debug!("Downloading and storing bridge proof to path: {}", download_path);
                     config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
                 }
-                info!("Proof registration job verification completed.");
+                info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::ProofRegistration, internal_id);
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
-                warn!("Proof registration job verification failed.");
+                warn!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::ProofRegistration, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Proof registration job #{} failed with error: {}",
                     job.internal_id, err

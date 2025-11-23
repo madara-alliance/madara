@@ -38,6 +38,8 @@ pub struct AtlanticJobConfig {
     pub result: AtlanticQueryStep,
     /// Network being used
     pub network: String,
+    /// ID of the chain from which PIE is generated
+    pub chain_id_hex: Option<String>,
 }
 
 /// Struct to store bucket info
@@ -185,8 +187,9 @@ impl AtlanticClient {
         &self,
         atlantic_api_key: impl AsRef<str>,
         mock_proof: bool,
+        chain_id_hex: Option<String>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
-        // TODO: Use the aggregator version calculated from Madara Version being passed through ENV
+        // TODO(prakhar,19/11/2025): Use the aggregator version calculated from Madara Version being passed through ENV
         let response = self
             .client
             .request()
@@ -202,6 +205,7 @@ impl AtlanticClient {
                 aggregator_params: AtlanticAggregatorParams {
                     use_kzg_da: AGGREGATOR_USE_KZG_DA,
                     full_output: AGGREGATOR_FULL_OUTPUT,
+                    chain_id_hex,
                 },
                 mock_proof,
             })

@@ -1,6 +1,6 @@
 {
   "app_chain_id": "MADARA_DEVNET",
-  "config_hash_version": "StarknetOsConfig2",
+  "config_hash_version": "StarknetOsConfig3",
   "core_contract_address": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
   "core_contract_implementation_address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
   "core_contract_mode": "Dev",
@@ -24,6 +24,6 @@
   "rollup_declare_v0_seq_url": "http://127.0.0.1:9943",
   "rollup_priv_key": "0xabcd",
   "rollup_seq_url": "http://127.0.0.1:9944",
-  "sn_os_program_hash": "0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d",
+  "sn_os_program_hash": "0x0555444da05154c46b4828affa18b90c38a333e98fee633fda0af05441eceb24",
   "verifier_address": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
 }

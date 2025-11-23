@@ -15,7 +15,7 @@ use itertools::Itertools;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, warn};
 
 pub struct UpdateStateJobTrigger;
 
@@ -27,8 +27,6 @@ impl JobTrigger for UpdateStateJobTrigger {
     /// 3. Sanitize and Trim this list of batches
     /// 4. Create a StateTransition job for doing state transitions for all the batches in this list
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        trace!(log_type = "starting", "UpdateStateWorker started.");
-
         // Self-healing: recover any orphaned StateTransition jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::StateTransition).await {
             error!(error = %e, "Failed to heal orphaned StateTransition jobs, continuing with normal processing");
@@ -46,9 +44,11 @@ impl JobTrigger for UpdateStateJobTrigger {
             Some(job) => {
                 if job.status != JobStatus::Completed {
                     // If we already have a StateTransition job which is not completed, don't start a new job as it can cause issues
-                    warn!(
-                        "There's already a pending update state job. Parallel jobs can cause nonce issues or can \
-                         completely fail as the update logic needs to be strictly ordered. Returning safely..."
+                    info!(
+                        "{:?} jobs need to be processed sequentially. {} job is pending. \
+                        Parallel jobs can cause nonce issues or can  completely fail. Returning safely.",
+                        JobType::StateTransition,
+                        job.internal_id
                     );
                     return Ok(());
                 }
@@ -101,24 +101,27 @@ impl JobTrigger for UpdateStateJobTrigger {
 
         // no parent jobs completed after the last settled block
         if to_process.is_empty() {
-            warn!("No parent jobs completed after the last settled block/batch. Returning safely...");
+            info!(
+                "No parent job of {:?} completed after the last settled batch ({:?}). Returning safely.",
+                JobType::StateTransition,
+                last_processed
+            );
             return Ok(());
         }
 
-        // Verify block continuity
+        // Verify batch continuity
         match last_processed {
-            Some(last_block) => {
-                if to_process[0] != last_block + 1 {
-                    warn!(
-                        "Parent job for the block/batch just after the last settled block/batch ({}) is not yet completed. Returning safely...", last_block
-                    );
+            Some(last_batch) => {
+                if to_process[0] != last_batch + 1 {
+                    // Keeping the info log here since it can be confusing for the user why state transition job is not being created
+                    info!("{:?} jobs need to be processed sequentially. Parent job for {} is not yet completed, hence not creating corresponding {:?} job. Returning safely.", JobType::StateTransition, last_batch + 1, JobType::StateTransition);
                     return Ok(());
                 }
             }
             None => {
                 // if the last processed batch is not there, (i.e., this is the first StateTransition job), check if the batch being processed is equal to 1
                 if to_process[0] != 1 {
-                    warn!("Parent job (Aggregator/DA) for the first batch is not yet completed. Can't proceed with batch {}, Returning safely...", to_process[0]);
+                    info!("{:?} jobs need to be processed sequentially. Parent job for {} is not yet completed, hence not creating corresponding {:?} job. Returning safely.", JobType::StateTransition, 1, JobType::StateTransition);
                     return Ok(());
                 }
             }
@@ -152,9 +155,9 @@ impl JobTrigger for UpdateStateJobTrigger {
         match JobHandlerService::create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone())
             .await
         {
-            Ok(_) => info!(job_id = %new_job_id, "Successfully created new state transition job"),
+            Ok(_) => {}
             Err(e) => {
-                error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");
+                error!(error = %e, "Failed to create new {:?} job for {}", JobType::StateTransition, new_job_id);
                 let attributes = [
                     KeyValue::new("operation_job_type", format!("{:?}", JobType::StateTransition)),
                     KeyValue::new("operation_type", format!("{:?}", "create_job")),
@@ -164,7 +167,6 @@ impl JobTrigger for UpdateStateJobTrigger {
             }
         }
 
-        trace!(log_type = "completed", "UpdateStateWorker completed.");
         Ok(())
     }
 }

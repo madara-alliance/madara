@@ -1,0 +1,48 @@
+[package]
+description = "Contract class execution for Madara - supports both Cairo Native (AOT compiled) and Cairo VM execution"
+name = "mc-class-exec"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+
+# Madara
+mc-analytics = { workspace = true }
+mp-class = { workspace = true }
+mp-convert = { workspace = true }
+
+# Starknet
+blockifier = { workspace = true }
+cairo-native = { workspace = true }
+cairo-vm = { workspace = true }
+casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "2.12.0-dev.1" }
+starknet-types-core = { workspace = true }
+starknet_api = { workspace = true }
+
+# Other
+dashmap = { workspace = true }
+lazy_static = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync"] }
+tracing = { workspace = true }
+
+# Instrumentation
+opentelemetry = { workspace = true, features = ["metrics"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+m-cairo-test-contracts = { path = "../../../crates/cairo-test-contracts" }
+rstest = "0.18"

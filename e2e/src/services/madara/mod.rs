@@ -29,6 +29,7 @@ impl MadaraService {
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
             rpc_port: Some(config.rpc_port()),
+            rpc_admin: Some(config.rpc_admin_port()),
             service_name: format!("Madara-{}", config.mode()),
             connection_attempts: 60, // Madara might take time to start
             connection_delay_ms: 2000,
@@ -51,6 +52,11 @@ impl MadaraService {
     /// Get the RPC endpoint URL
     pub fn rpc_endpoint(&self) -> Url {
         Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.config().rpc_port())).unwrap()
+    }
+
+    /// Get the RPC admin endpoint URL
+    pub fn admin_rpc_endpoint(&self) -> Url {
+        Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.config().rpc_admin_port())).unwrap()
     }
 
     /// Get the main endpoint URL (alias for rpc_endpoint)
@@ -99,6 +105,11 @@ impl MadaraService {
         Ok(())
     }
 
+    pub async fn stop_block_production_madara(&self) -> Result<(), MadaraError> {
+        println!("✋🏽 Stopping Madara block production");
+        self.stop_block_production().await.map_err(MadaraError::RpcError)
+    }
+
     /// Get the process ID
     pub fn pid(&self) -> Option<u32> {
         self.server.pid()
@@ -117,5 +128,9 @@ impl MadaraService {
 impl NodeRpcMethods for MadaraService {
     fn get_endpoint(&self) -> Url {
         self.endpoint().clone()
+    }
+
+    fn get_admin_endpoint(&self) -> Url {
+        self.admin_rpc_endpoint()
     }
 }

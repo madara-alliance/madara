@@ -311,7 +311,6 @@ impl QueueClient for SQS {
             .queue_url(&queue_url)
             .max_number_of_messages(1)
             .message_attribute_names("All")
-            .visibility_timeout(30)
             .send()
             .await?;
 
@@ -434,5 +433,16 @@ impl QueueClient for SQS {
         let delivery = consumer.wrap_message(messages_vec.first().unwrap());
 
         Ok(delivery)
+    }
+
+    async fn health_check(&self) -> Result<(), QueueError> {
+        // Verify SQS accessibility by getting queue attributes
+        // This checks both connectivity and permissions
+        let queue_name = self.get_queue_name(&QueueType::WorkerTrigger)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        self.inner.client().get_queue_attributes().queue_url(&queue_url).send().await?;
+
+        Ok(())
     }
 }

@@ -1624,7 +1624,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.12.1",
  "lazy_static",
  "lazycell",
  "proc-macro2",
@@ -1644,7 +1644,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -6509,6 +6509,7 @@ dependencies = [
  "jsonrpsee",
  "mc-analytics",
  "mc-block-production",
+ "mc-class-exec",
  "mc-db",
  "mc-devnet",
  "mc-e2e-tests",
@@ -6627,6 +6628,7 @@ dependencies = [
  "async-trait",
  "bitvec",
  "blockifier",
+ "criterion",
  "futures",
  "lazy_static",
  "m-cairo-test-contracts",
@@ -6669,6 +6671,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "mc-class-exec"
+version = "0.8.0"
+dependencies = [
+ "blockifier",
+ "cairo-lang-starknet-classes",
+ "cairo-native",
+ "cairo-vm",
+ "dashmap",
+ "lazy_static",
+ "m-cairo-test-contracts",
+ "mc-analytics",
+ "mp-class",
+ "mp-convert",
+ "opentelemetry",
+ "rstest 0.18.2",
+ "serde",
+ "serde_json",
+ "starknet-types-core",
+ "starknet_api",
+ "tempfile",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "mc-db"
 version = "0.8.0"
 dependencies = [
@@ -6685,6 +6713,7 @@ dependencies = [
  "lazy_static",
  "librocksdb-sys",
  "mc-analytics",
+ "mc-class-exec",
  "mp-block",
  "mp-bloom-filter",
  "mp-chain-config",
@@ -6805,6 +6834,7 @@ dependencies = [
  "blockifier",
  "cairo-vm",
  "itertools 0.13.0",
+ "mc-class-exec",
  "mc-db",
  "mp-block",
  "mp-chain-config",
@@ -7390,6 +7420,7 @@ dependencies = [
  "starknet_api",
  "thiserror 2.0.12",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -8508,7 +8539,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.101",

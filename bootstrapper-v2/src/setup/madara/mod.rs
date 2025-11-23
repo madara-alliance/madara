@@ -79,7 +79,7 @@ impl MadaraSetup {
 
         // Declare all contracts using the data array
         for class_enum in MadaraClass::iter() {
-            log::info!("Declaring contract...");
+            log::info!("Declaring contract {}...", class_enum);
             let class_hash = declare_contract(class_enum.get_sierra_path(), class_enum.get_casm_path(), &acc).await?;
 
             log::info!("Contract declared successfully! Class Hash: 0x{:x}", class_hash);

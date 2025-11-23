@@ -1,9 +1,28 @@
+//! Contract class compilation utilities
+//!
+//! This module provides functions for compiling Starknet contract classes from various
+//! formats (legacy, Sierra) to executable formats (CASM, Cairo Native).
+//!
+//! # Compilation Targets
+//!
+//! - **CASM**: Cairo Assembly format used by Cairo VM
+//! - **Cairo Native**: Ahead-of-time compiled native code (`.so` files) for faster execution
+//!
+//! # Key Functions
+//!
+//! - `compile_to_casm()`: Compiles Sierra to CASM for VM execution
+//! - `compile_to_native()`: Compiles Sierra to native code for Cairo Native execution
+//!
+//! # Error Handling
+//!
+//! All compilation functions return `Result<T, ClassCompilationError>` with detailed
+//! error messages for debugging compilation failures.
+
 use crate::{CompiledSierra, CompressedLegacyContractClass, FlattenedSierraClass, LegacyContractAbiEntry};
 use casm_classes_v2::casm_contract_class::CasmContractClass;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_types_core::felt::Felt;
 
-#[cfg(feature = "cairo_native")]
 use cairo_native::executor::AotContractExecutor;
 
 #[derive(Debug, thiserror::Error)]
@@ -22,10 +41,8 @@ pub enum ClassCompilationError {
     BlockifierClassConstructionFailed(#[from] cairo_vm::types::errors::program_errors::ProgramError),
     #[error("Compiled class hash mismatch, expected {expected:#x} got {got:#x}")]
     CompiledClassHashMismatch { expected: Felt, got: Felt },
-    #[cfg(feature = "cairo_native")]
     #[error("Failed to compile sierra to cairo native: {0}")]
     NativeCompilationFailed(cairo_native::error::Error),
-    #[cfg(feature = "cairo_native")]
     #[error("Failed to extract sierra program")]
     ExtractSierraProgramFailed(String), // use String due to original error type Felt252SerdeError not being available publicly
 }
@@ -134,8 +151,39 @@ impl FlattenedSierraClass {
         Ok((compiled_class_hash, compiled_class))
     }
 
-    #[cfg(feature = "cairo_native")]
-    pub fn compile_to_native(&self) -> Result<AotContractExecutor, ClassCompilationError> {
+    /// Compile this Sierra class to Cairo Native format.
+    ///
+    /// This function performs ahead-of-time compilation of the Sierra program to native
+    /// code, writing the compiled binary to the specified path. The resulting executor
+    /// can be used for native execution instead of the Cairo VM.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - File system path where the compiled native binary (`.so` file) will be stored.
+    ///   The file must not be locked by another process, or compilation will fail.
+    ///
+    /// # Returns
+    ///
+    /// Returns an `AotContractExecutor` that can execute the contract natively, or a
+    /// `ClassCompilationError` if compilation fails.
+    ///
+    /// # Errors
+    ///
+    /// - `NativeCompilationFailed`: Cairo Native compilation failed
+    /// - `ExtractSierraProgramFailed`: Failed to extract Sierra program from class
+    /// - `ParsingSierraVersion`: Failed to parse Sierra version
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::path::PathBuf;
+    /// # use mp_class::CompiledSierra;
+    ///
+    /// # let sierra_class: CompiledSierra = todo!();
+    /// let path = PathBuf::from("/tmp/contract.so");
+    /// let executor = sierra_class.compile_to_native(&path)?;
+    /// ```
+    pub fn compile_to_native(&self, path: &std::path::Path) -> Result<AotContractExecutor, ClassCompilationError> {
         let sierra_version = parse_sierra_version(&self.sierra_program)?;
         let sierra_version = casm_classes_v2::compiler_version::VersionId {
             major: sierra_version.0 as _,
@@ -143,17 +191,22 @@ impl FlattenedSierraClass {
             patch: sierra_version.2 as _,
         };
         let sierra = v2::to_cairo_lang(self);
-        let program = sierra
-            .extract_sierra_program()
-            .map_err(|e| ClassCompilationError::ExtractSierraProgramFailed(e.to_string()))?;
+        let program = sierra.extract_sierra_program().map_err(|e| {
+            ClassCompilationError::ExtractSierraProgramFailed(format!("Failed to extract Sierra program: {}", e))
+        })?;
 
-        let executor = AotContractExecutor::new(
+        let executor = AotContractExecutor::new_into(
             &program,
             &sierra.entry_points_by_type,
             sierra_version,
+            path,
             cairo_native::OptLevel::Default,
+            None, // Statistics
         )
-        .map_err(ClassCompilationError::NativeCompilationFailed)?;
+        .map_err(ClassCompilationError::NativeCompilationFailed)?
+        .ok_or(ClassCompilationError::ExtractSierraProgramFailed(
+            "Cairo native compilation returned None (file lock held by another process)".into(),
+        ))?;
 
         Ok(executor)
     }

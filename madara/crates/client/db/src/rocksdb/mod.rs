@@ -4,11 +4,12 @@ use crate::{
     rocksdb::{
         backup::BackupManager,
         column::{Column, ALL_COLUMNS},
+        global_trie::apply_to_global_trie,
+        global_trie::get_state_root,
         meta::StoredChainTipWithoutContent,
         metrics::DbMetrics,
         options::rocksdb_global_options,
         snapshots::Snapshots,
-        update_global_trie::apply_to_global_trie,
     },
     storage::{
         ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
@@ -47,7 +48,7 @@ mod state;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
 pub mod trie;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
-pub mod update_global_trie;
+pub mod global_trie;
 
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
@@ -319,6 +320,9 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
         self.inner.get_latest_applied_trie_update().context("Getting latest applied trie update info from db")
     }
+    fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
+        self.inner.get_snap_sync_latest_block().context("Getting snap sync latest block from db")
+    }
 
     // L1 to L2 messages
 
@@ -452,6 +456,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Write latest applied trie update block_n={block_n:?}");
         self.inner.write_latest_applied_trie_update(block_n).context("Writing latest applied trie update block_n")
     }
+    fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
+        tracing::debug!("Write snap sync latest block block_n={block_n:?}");
+        self.inner.write_snap_sync_latest_block(block_n).context("Writing snap sync latest block")
+    }
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
         tracing::debug!("Remove mempool transactions");
@@ -463,6 +471,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .write_mempool_transaction(tx)
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
+    }
+
+    fn get_state_root_hash(&self) -> Result<Felt> {
+        get_state_root(self)
     }
 
     fn apply_to_global_trie<'a>(

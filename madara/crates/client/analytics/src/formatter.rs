@@ -82,6 +82,122 @@ impl RpcCallEventVisitor {
     }
 }
 
+#[derive(Default)]
+struct CairoNativeEventVisitor {
+    message: String,
+    class_hash: Option<String>,
+    elapsed: Option<String>,
+    elapsed_ms: Option<u64>,
+    conversion_ms: Option<u64>,
+    load_ms: Option<u64>,
+    convert_ms: Option<u64>,
+    error: Option<String>,
+    native_enabled: Option<bool>,
+}
+
+impl Visit for CairoNativeEventVisitor {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        match field.name() {
+            "message" => {
+                // Remove quotes from Debug formatting
+                let formatted = format!("{:?}", value);
+                self.message = formatted.trim_matches('"').to_string();
+            }
+            "class_hash" => {
+                let formatted = format!("{:?}", value);
+                self.class_hash = Some(formatted.trim_matches('"').to_string());
+            }
+            "elapsed" | "duration" | "compile" | "load" | "convert" | "total" => {
+                // Format Duration nicely (remove quotes, keep the formatted duration)
+                let formatted = format!("{:?}", value);
+                self.elapsed = Some(formatted.trim_matches('"').to_string());
+            }
+            "error" => {
+                let formatted = format!("{:?}", value);
+                self.error = Some(formatted.trim_matches('"').to_string());
+            }
+            _ => {}
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        match field.name() {
+            "message" => {
+                self.message = value.to_string();
+            }
+            "class_hash" => {
+                self.class_hash = Some(value.to_string());
+            }
+            "error" => {
+                self.error = Some(value.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        match field.name() {
+            "elapsed_ms" => {
+                self.elapsed_ms = Some(value);
+            }
+            "conversion_ms" => {
+                self.conversion_ms = Some(value);
+            }
+            "load_ms" => {
+                self.load_ms = Some(value);
+            }
+            "convert_ms" => {
+                self.convert_ms = Some(value);
+            }
+            _ => {}
+        }
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        if field.name() == "native_enabled" {
+            self.native_enabled = Some(value);
+        }
+    }
+}
+
+impl CairoNativeEventVisitor {
+    pub fn get_message(&self) -> &str {
+        &self.message
+    }
+
+    pub fn get_class_hash(&self) -> Option<&str> {
+        self.class_hash.as_deref()
+    }
+
+    pub fn get_elapsed(&self) -> Option<&str> {
+        self.elapsed.as_deref()
+    }
+
+    pub fn get_error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
+    pub fn get_elapsed_ms(&self) -> Option<u64> {
+        self.elapsed_ms
+    }
+
+    pub fn get_conversion_ms(&self) -> Option<u64> {
+        self.conversion_ms
+    }
+
+    pub fn get_load_ms(&self) -> Option<u64> {
+        self.load_ms
+    }
+
+    pub fn get_convert_ms(&self) -> Option<u64> {
+        self.convert_ms
+    }
+
+    pub fn get_native_enabled(&self) -> Option<bool> {
+        self.native_enabled
+    }
+}
+
 pub fn visit_message(event: &tracing::Event<'_>, f: impl FnOnce(&dyn fmt::Debug) -> fmt::Result) -> fmt::Result {
     struct Visitor<F>(Option<F>, fmt::Result);
     impl<F: FnOnce(&dyn fmt::Debug) -> fmt::Result> Visit for Visitor<F> {
@@ -169,6 +285,172 @@ impl CustomFormatter {
         })
     }
 
+    fn format_cairo_native(
+        &self,
+        writer: &mut Writer<'_>,
+        event: &tracing::Event<'_>,
+        ts: &SystemTime,
+        level: &Level,
+    ) -> fmt::Result {
+        let mut visitor = CairoNativeEventVisitor::default();
+        event.record(&mut visitor);
+
+        let message = visitor.get_message();
+        let class_hash = visitor.get_class_hash();
+        let elapsed = visitor.get_elapsed();
+        let elapsed_ms = visitor.get_elapsed_ms();
+        let conversion_ms = visitor.get_conversion_ms();
+        let load_ms = visitor.get_load_ms();
+        let convert_ms = visitor.get_convert_ms();
+        let error = visitor.get_error();
+        let native_enabled = visitor.get_native_enabled();
+
+        // Darker cyan for CAIRO_NATIVE prefix (more subtle)
+        let cairo_native_prefix = Style::new().cyan().dim().apply_to("CAIRO_NATIVE");
+        // Muted color for class_hash (less prominent than CAIRO_NATIVE)
+        let class_hash_style = Style::new().dim();
+        let error_style = Style::new().red();
+
+        // Format: timestamp + CAIRO_NATIVE + [WARN/ERROR] + message + class_hash + native_enabled + (optional error) + (optional timing)
+        write!(writer, "{} {}", self.timestamp_fmt(ts), cairo_native_prefix)?;
+
+        // Level prefix shown for WARN and ERROR only
+        match *level {
+            Level::WARN => {
+                write!(writer, " {}", Style::new().yellow().apply_to("WARN"))?;
+            }
+            Level::ERROR => {
+                write!(writer, " {}", Style::new().red().apply_to("ERROR"))?;
+            }
+            _ => {} // INFO and DEBUG don't show level prefix
+        }
+
+        // Message formatting improves clarity by capitalizing and replacing underscores
+        let formatted_message = Self::format_message(message);
+        write!(writer, " {}", formatted_message)?;
+
+        if let Some(hash) = class_hash {
+            // class_hash displayed with full hash value, less prominent styling
+            // Quotes removed if present from Debug formatting
+            let hash_clean = hash.trim_matches('"');
+            write!(writer, " {}", class_hash_style.apply_to(format!("class_hash={}", hash_clean)))?;
+        }
+
+        // Display native_enabled if present
+        if let Some(enabled) = native_enabled {
+            write!(writer, " {}", class_hash_style.apply_to(format!("native_enabled={}", enabled)))?;
+        }
+
+        if let Some(err) = error {
+            write!(writer, " {}", error_style.apply_to(format!("error={}", err)))?;
+        }
+
+        // Format timing - prefer elapsed_ms if available, otherwise use elapsed Duration string
+        let timing_str = Self::format_timing(elapsed_ms, conversion_ms, load_ms, convert_ms, elapsed);
+        if let Some(timing) = timing_str {
+            let elapsed_style = Self::get_timing_style(&timing);
+            write!(writer, " {}", elapsed_style.apply_to(format!("- {}", timing)))?;
+        }
+
+        writeln!(writer)
+    }
+
+    /// Format timing information from various sources
+    /// Prefers elapsed_ms if available, shows breakdown if multiple components exist
+    fn format_timing(
+        elapsed_ms: Option<u64>,
+        conversion_ms: Option<u64>,
+        load_ms: Option<u64>,
+        convert_ms: Option<u64>,
+        elapsed: Option<&str>,
+    ) -> Option<String> {
+        // If we have elapsed_ms, use it as primary timing
+        if let Some(total_ms) = elapsed_ms {
+            let mut parts = Vec::new();
+
+            // Format total time
+            let total_str =
+                if total_ms >= 1000 { format!("{:.3}s", total_ms as f64 / 1000.0) } else { format!("{}ms", total_ms) };
+            parts.push(total_str);
+
+            // Add breakdown if we have component timings
+            let mut breakdown = Vec::new();
+            if let Some(load) = load_ms {
+                breakdown.push(format!("load: {}ms", load));
+            }
+            if let Some(convert) = convert_ms {
+                breakdown.push(format!("convert: {}ms", convert));
+            }
+            if let Some(conv) = conversion_ms {
+                breakdown.push(format!("conversion: {}ms", conv));
+            }
+
+            if !breakdown.is_empty() {
+                parts.push(format!("({})", breakdown.join(", ")));
+            }
+
+            return Some(parts.join(" "));
+        }
+
+        // Fall back to elapsed Duration string if available
+        elapsed.map(|s| s.to_string())
+    }
+
+    /// Format message for better clarity
+    fn format_message(message: &str) -> String {
+        // Remove quotes if present from Debug formatting
+        let cleaned = message.trim_matches('"');
+
+        // Replace underscores with spaces for readability
+        let spaced = cleaned.replace("_", " ");
+
+        // Capitalize first letter
+        if let Some(first) = spaced.chars().next() {
+            format!("{}{}", first.to_uppercase(), &spaced[1..])
+        } else {
+            spaced
+        }
+    }
+
+    /// Get style for timing based on duration value
+    /// Duration Debug format: "15.833µs", "1.732s", "234ms", "123ns"
+    fn get_timing_style(timing_str: &str) -> Style {
+        // Parse timing string to extract numeric value and unit
+        let timing_clean = timing_str.trim();
+
+        // Handle different time units (check longer units first)
+        if timing_clean.ends_with("ns") {
+            // Nanoseconds - always very fast, use dim
+            return Style::new().dim();
+        } else if timing_clean.ends_with("µs") || timing_clean.ends_with("us") {
+            // Microseconds - always fast, use dim
+            return Style::new().dim();
+        } else if timing_clean.ends_with("ms") {
+            // Milliseconds
+            if let Ok(val) = timing_clean.trim_end_matches("ms").trim().parse::<f64>() {
+                if val > 1000.0 {
+                    return Style::new().red(); // Very slow (>1s)
+                } else if val > 100.0 {
+                    return Style::new().yellow(); // Slow (>100ms)
+                }
+            }
+            return Style::new().dim(); // <100ms, normal
+        } else if timing_clean.ends_with("s") {
+            // Seconds - yellow/red for slower operations
+            if let Ok(val) = timing_clean.trim_end_matches("s").trim().parse::<f64>() {
+                if val > 5.0 {
+                    return Style::new().red(); // Very slow (>5s)
+                } else if val > 1.0 {
+                    return Style::new().yellow(); // Slow (>1s)
+                }
+            }
+            return Style::new().dim(); // <1s, normal
+        }
+
+        // Default: dim for unknown format
+        Style::new().dim()
+    }
+
     fn format_http_call(
         &self,
         writer: &mut Writer<'_>,
@@ -240,6 +522,7 @@ where
             (&Level::INFO, "rpc_calls" | "gateway_calls") => {
                 self.format_http_call(&mut writer, event, target, &ts, level)
             }
+            (_, "madara_cairo_native") => self.format_cairo_native(&mut writer, event, &ts, level),
             (&Level::INFO, _) => self.format_without_target(&mut writer, event, &ts, level, &Style::new().green()),
             (&Level::WARN, _) => {
                 self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().yellow())

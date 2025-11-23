@@ -2,10 +2,12 @@ use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use alloy::network::EthereumWallet;
 use alloy::node_bindings::{Anvil, AnvilInstance};
 use alloy::primitives::Address;
 use alloy::providers::ext::AnvilApi;
 use alloy::providers::ProviderBuilder;
+use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 // Using the Pipe trait to write chained operations easier
@@ -66,7 +68,8 @@ pub struct EthereumTestBuilder {
 #[allow(dead_code)]
 pub struct EthereumTest {
     _anvil: AnvilInstance,
-    provider: alloy::providers::RootProvider<alloy::transports::http::Http<reqwest::Client>>,
+    provider: crate::types::DefaultHttpProvider,
+    wallet_provider: crate::types::LocalWalletSignerMiddleware,
     pub rpc_url: Url,
 }
 
@@ -103,8 +106,16 @@ impl EthereumTestBuilder {
             None => Anvil::new().block_time(BLOCK_TIME).try_spawn().expect("Could not spawn Anvil."),
         };
 
-        // Setup Provider
-        let provider = ProviderBuilder::new().on_http(anvil.endpoint_url());
+        // Setup wallet for the wallet_provider
+        let private_key = get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY");
+        let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
+        let wallet = EthereumWallet::from(signer);
+
+        // Setup Provider without wallet (for general operations)
+        let provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
+
+        // Setup Provider with wallet (for contract deployment and write operations)
+        let wallet_provider = ProviderBuilder::new().wallet(wallet).connect_http(anvil.endpoint_url());
 
         if let Some(impersonator) = self.impersonator {
             provider.anvil_impersonate_account(impersonator).await.expect("Unable to impersonate account.");
@@ -112,7 +123,7 @@ impl EthereumTestBuilder {
 
         let rpc_url = anvil.endpoint_url();
 
-        EthereumTest { _anvil: anvil, provider, rpc_url }
+        EthereumTest { _anvil: anvil, provider, wallet_provider, rpc_url }
     }
 }
 
@@ -127,10 +138,9 @@ mod settlement_client_tests {
 
     use alloy::consensus::Transaction;
     use alloy::eips::eip4844::BYTES_PER_BLOB;
-    use alloy::primitives::Address;
+    use alloy::primitives::{Address, TxHash};
     use alloy::providers::Provider;
     use alloy::sol_types::private::U256;
-    use alloy_primitives::B256;
     use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
     use orchestrator_utils::env_utils::get_env_var_or_panic;
     use rstest::rstest;
@@ -204,10 +214,11 @@ mod settlement_client_tests {
             max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
                 .parse()
                 .expect("Invalid max gas price mul factor"),
+            disable_peerdas: true,
         };
 
         // Deploying a dummy contract
-        let contract = DummyCoreContract::deploy(&setup.provider).await.expect("Unable to deploy address");
+        let contract = DummyCoreContract::deploy(&setup.wallet_provider).await.expect("Unable to deploy address");
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
             setup.provider.clone(),
             *contract.address(),
@@ -236,7 +247,7 @@ mod settlement_client_tests {
 
         let txn = setup
             .provider
-            .get_transaction_by_hash(B256::from_str(update_state_result.as_str()).expect("Unable to convert txn"))
+            .get_transaction_by_hash(TxHash::from_str(update_state_result.as_str()).expect("Invalid tx hash"))
             .await
             .expect("did not get txn from hash")
             .unwrap();
@@ -288,6 +299,7 @@ mod settlement_client_tests {
             max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
                 .parse()
                 .expect("Invalid max gas price mul factor"),
+            disable_peerdas: false, // for tests, default to sepolia/testnet behavior
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
@@ -339,7 +351,7 @@ mod settlement_client_tests {
         let latest_block_number = contract.stateBlockNumber().call().await.unwrap();
 
         let expected_latest_block_number = bytes_to_u32(program_output[3].as_slice()).unwrap();
-        assert_eq!(expected_latest_block_number, latest_block_number._0.as_u32());
+        assert_eq!(expected_latest_block_number, latest_block_number.as_u32());
     }
 
     #[rstest]
@@ -364,6 +376,7 @@ mod settlement_client_tests {
             max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
                 .parse()
                 .expect("Invalid max gas price mul factor"),
+            disable_peerdas: false, // for tests, default to sepolia/testnet behavior
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(

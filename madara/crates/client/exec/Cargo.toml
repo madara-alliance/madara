@@ -17,6 +17,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
+mc-class-exec = { workspace = true }
 mc-db = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }

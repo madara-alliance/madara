@@ -33,7 +33,7 @@ use std::cmp::{max, min};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::try_join;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct BatchingTrigger;
 
@@ -73,8 +73,6 @@ impl JobTrigger for BatchingTrigger {
     /// Finally, we can do the state update for multiple blocks (which are present in the snos batch)
     /// at once.
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        info!(log_type = "starting", "BatchingWorker started");
-
         // Trying to acquire lock on Batching Worker (Taking a lock for 1 hr)
         match config
             .lock()
@@ -88,12 +86,12 @@ impl JobTrigger for BatchingTrigger {
         {
             Ok(_) => {
                 // Lock acquired successfully
-                info!("BatchingWorker acquired lock");
+                debug!("BatchingWorker acquired lock");
             }
             Err(err) => {
                 // Failed to acquire lock
                 // Returning safely
-                info!("BatchingWorker failed to acquire lock, returning safely: {}", err);
+                debug!("BatchingWorker failed to acquire lock, returning safely: {}", err);
                 return Ok(());
             }
         }
@@ -115,7 +113,6 @@ impl JobTrigger for BatchingTrigger {
         // Releasing the lock
         config.lock().release_lock("BatchingWorker", None).await?;
 
-        trace!(log_type = "completed", "BatchingWorker completed.");
         Ok(())
     }
 }
@@ -170,7 +167,7 @@ impl BatchingTrigger {
                 )))?;
 
                 // Check if there is a status conflict between the latest snos and aggregator batch
-                if aggregator_batch.is_batch_ready && snos_batch.status != SnosBatchStatus::Closed {
+                if aggregator_batch.is_batch_ready && snos_batch.status == SnosBatchStatus::Open {
                     return Err(JobError::BatchingNotInSync(format!(
                         "Latest SNOS batch {} is {} but Latest Aggregator batch {} is {}",
                         snos_batch.snos_batch_id, snos_batch.status, aggregator_batch.index, aggregator_batch.status
@@ -327,6 +324,15 @@ impl BatchingTrigger {
                 )
                 .await?;
 
+            info!(
+                old_batch_index = %current_aggregator_batch.index,
+                old_batch_end_block = %current_aggregator_batch.end_block,
+                new_batch_index = %new_aggregator_batch.index,
+                new_batch_start_block = %new_aggregator_batch.start_block,
+                new_version = %current_block_starknet_version,
+                "Started new batches due to Starknet version change"
+            );
+
             // Get state update for the current block
             let current_state_update = provider
                 .get_state_update(BlockId::Number(block_number))
@@ -386,6 +392,15 @@ impl BatchingTrigger {
                         ) {
                             // We cannot add the current block in this batch
 
+                            info!(
+                                batch_index = %current_aggregator_batch.index,
+                                current_blocks = %current_aggregator_batch.num_blocks,
+                                max_blocks = %config.params.batching_config.max_batch_size,
+                                current_size = %compressed_state_update.len(),
+                                max_size = %config.params.batching_config.max_blob_size,
+                                "Closing aggregator batch due to size or weight limits"
+                            );
+
                             // Close the current batches (both aggregator and SNOS) and save the state
                             self.save_batch_state(
                                 BatchState {
@@ -393,7 +408,7 @@ impl BatchingTrigger {
                                     snos_batch: &current_snos_batch,
                                     close_aggregator_batch: true, // Close the aggregator batch
                                     snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
-                                    state_update: &squashed_state_update,
+                                    state_update: &prev_state_update,
                                 },
                                 config,
                                 provider,
@@ -412,13 +427,21 @@ impl BatchingTrigger {
                             Ok((Some(state_update), new_aggregator_batch, new_snos_batch))
                         } else if self.should_close_snos_batch(config, &current_snos_batch).await? {
                             // Close the current SNOS batch and start a new one
+
+                            info!(
+                                snos_batch_id = %current_snos_batch.snos_batch_id,
+                                num_blocks = %current_snos_batch.num_blocks,
+                                end_block = %current_snos_batch.end_block,
+                                "Closing SNOS batch, starting new batch within same aggregator batch"
+                            );
+
                             self.save_batch_state(
                                 BatchState {
                                     aggregator_batch: &current_aggregator_batch,
                                     snos_batch: &current_snos_batch,
                                     close_aggregator_batch: false, // Don't close the aggregator batch
                                     snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
-                                    state_update: &squashed_state_update,
+                                    state_update: &prev_state_update,
                                 },
                                 config,
                                 provider,
@@ -663,7 +686,7 @@ impl BatchingTrigger {
             error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
             JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", start_block, e)))
         })?;
-        info!(
+        debug!(
             index = %index,
             start_block = %start_block,
             starknet_version = %starknet_version,
@@ -678,7 +701,7 @@ impl BatchingTrigger {
                 e
             )))
         })?;
-        info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
+        debug!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
 
         // Getting the builtin weights for the start_block and adding it in the DB
         let weights = AggregatorBatchWeights::from(&self.get_block_builtin_weights(config, start_block).await?);
@@ -708,7 +731,7 @@ impl BatchingTrigger {
         // This is a simple counter that will be used to calculate rate in Grafana
         ORCHESTRATOR_METRICS.batching_rate.record(1.0, &attributes);
 
-        info!(
+        debug!(
             index = %index,
             duration_seconds = %duration.as_secs_f64(),
             "Batch created successfully"
@@ -984,7 +1007,6 @@ impl BatchingTrigger {
         combined_weights: &mut AggregatorBatchWeights,
         batch: &AggregatorBatch,
     ) -> bool {
-        debug!("checking if we need to close the aggregator batch");
         *combined_weights = match batch.builtin_weights.checked_add(current_weights) {
             Some(weights) => weights,
             None => {
@@ -1008,11 +1030,10 @@ impl BatchingTrigger {
     /// NOTE: This will check if the builtin weights are overflowing for blocks from start block
     /// till end block + 1
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
-        debug!("checking if we need to close the snos batch");
         if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
             // If the MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env is set, we use that value
             // Mostly, it'll be used for testing purposes
-            warn!("Using MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {}", max_blocks_per_snos_batch);
+            debug!("Using MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {}", max_blocks_per_snos_batch);
             return Ok(batch.num_blocks >= max_blocks_per_snos_batch);
         }
 
@@ -1025,7 +1046,6 @@ impl BatchingTrigger {
         let mut current_builtins = Some(BouncerWeights::empty());
         for block_number in batch.start_block..=(batch.end_block + 1) {
             // Get the bouncer weights for this block
-            info!("getting the bouncer weights for block number: {:?}", block_number);
             let bouncer_weights = self
                 .get_block_builtin_weights(config, block_number)
                 .await

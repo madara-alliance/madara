@@ -147,4 +147,19 @@ impl AlertClient for SNS {
         self.client().publish().topic_arn(self.get_topic_arn().await?).message(message_body).send().await?;
         Ok(())
     }
+
+    async fn health_check(&self) -> Result<(), AlertError> {
+        // Verify SNS accessibility by getting topic attributes
+        // This checks both connectivity and permissions
+        let topic_arn = self.get_topic_arn().await?;
+
+        self.client()
+            .get_topic_attributes()
+            .topic_arn(topic_arn)
+            .send()
+            .await
+            .map_err(|e| AlertError::TopicARNInvalid(format!("SNS health check failed: {}", e)))?;
+
+        Ok(())
+    }
 }

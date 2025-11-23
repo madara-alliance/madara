@@ -19,4 +19,14 @@ pub trait StorageClient: Send + Sync {
 
     /// List files in a directory
     async fn list_files_in_dir(&self, dir_path: &str) -> Result<Vec<String>, StorageError>;
+
+    /// Perform a health check on the storage service
+    ///
+    /// This method verifies that the storage service (e.g., AWS S3) is accessible
+    /// and the necessary permissions are in place.
+    ///
+    /// # Returns
+    /// * `Ok(())` - If the storage service is healthy and accessible
+    /// * `Err(StorageError)` - If the health check fails
+    async fn health_check(&self) -> Result<(), StorageError>;
 }

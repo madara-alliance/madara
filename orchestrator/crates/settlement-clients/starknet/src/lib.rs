@@ -24,6 +24,7 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use starknet::signers::{LocalWallet, SigningKey};
 use tokio::time::{sleep, Duration};
+use tracing::info;
 
 use crate::conversion::{slice_slice_u8_to_vec_field, u64_from_felt};
 use crate::utils::LocalWalletSignerMiddleware;
@@ -122,11 +123,12 @@ impl SettlementClient for StarknetSettlementClient {
         _onchain_data_hash: [u8; 32],
         _onchain_data_size: [u8; 32],
     ) -> Result<String> {
-        tracing::info!(
+        info!(
             log_type = "starting",
             category = "update_state",
-            function_type = "calldata",
-            "Updating state with calldata."
+            snos_output_len = %snos_output.len(),
+            program_output_len = %program_output.len(),
+            "Updating state with calldata"
         );
         let snos_output = slice_slice_u8_to_vec_field(snos_output.as_slice());
         let layout_bridge_output = slice_slice_u8_to_vec_field(program_output.as_slice());
@@ -136,13 +138,16 @@ impl SettlementClient for StarknetSettlementClient {
             .update_state(snos_output, layout_bridge_output)
             .await
             .map_err(|e| eyre!("Failed to update state with calldata: {:?}", e))?;
-        tracing::info!(
+
+        let tx_hash = invoke_result.transaction_hash.to_hex_string();
+        info!(
             log_type = "completed",
             category = "update_state",
             function_type = "calldata",
-            "State updated with calldata."
+            tx_hash = %tx_hash,
+            "State update transaction submitted to Starknet with calldata"
         );
-        Ok(invoke_result.transaction_hash.to_hex_string())
+        Ok(tx_hash)
     }
 
     /// Should verify the inclusion of a tx in the settlement layer

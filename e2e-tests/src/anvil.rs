@@ -55,7 +55,8 @@ impl AnvilSetup {
         let wallet = EthereumWallet::from(
             PrivateKeySigner::from_str(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY")).unwrap(),
         );
-        let provider = ProviderBuilder::new().with_recommended_fillers().wallet(wallet).on_http(self.rpc_url.clone());
+        let provider =
+            ProviderBuilder::new().disable_recommended_fillers().wallet(wallet).connect_http(self.rpc_url.clone());
 
         let starknet_core_contract_client = StarknetCoreContract::deploy(&provider).await.unwrap();
         log::info!("📦 Deployed starknet_core_contract at address: {}", starknet_core_contract_client.address());
@@ -68,7 +69,7 @@ impl AnvilSetup {
         let fact_hash = fixed_bytes!("b39f2de70bdf515138173a43ebc783273e5b2329d7325e887fbd1c0b1cac53a4");
         let _ = verifier_client.setValid(fact_hash).send().await.expect("Failed to set fact as valid");
         sleep(Duration::from_secs(10)).await;
-        let _is_fact_valid = verifier_client.isValid(fact_hash).call().await.unwrap()._0;
+        let _is_fact_valid = verifier_client.isValid(fact_hash).call().await.unwrap();
         assert!(_is_fact_valid, "Fact should be valid");
         log::debug!("Is fact valid? {:?}", _is_fact_valid);
 

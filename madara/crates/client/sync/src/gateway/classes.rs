@@ -125,6 +125,7 @@ impl PipelineSteps for ClassesSyncSteps {
         self: Arc<Self>,
         block_range: Range<u64>,
         input: Self::SequentialStepInput,
+        _target_block: Option<u64>,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
         if input.iter().all(|i| i.is_empty()) {
             return Ok(ApplyOutcome::Success(()));

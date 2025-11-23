@@ -18,6 +18,7 @@ use crate::services::{
 };
 use std::env;
 use std::time::Duration;
+use url::Url;
 
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub enum DBState {
@@ -384,6 +385,7 @@ impl SetupConfigBuilder {
             .port(get_free_port().await?)
             .gateway_url(Some(madara_config.gateway_endpoint()))
             .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
+            .ethereum_url(Url::parse(&env::var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL").unwrap()).unwrap())
             .logs((true, true))
             .build();
 
@@ -399,6 +401,7 @@ impl SetupConfigBuilder {
             // .atlantic_service_url(mock_prover_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", madara_config.feeder_gateway_endpoint())
             .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
@@ -442,9 +445,10 @@ impl SetupConfigBuilder {
 
         let pathfinder_config = PathfinderConfigBuilder::new()
             .port(get_free_port().await?)
-            .gateway_url(Some(madara_config.gateway_endpoint()))
             .database_path(get_database_path(test_name, PATHFINDER_DATABASE_DIR))
+            .gateway_url(Some(madara_config.gateway_endpoint()))
             .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
+            .ethereum_url(Url::parse(&env::var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL").unwrap()).unwrap())
             .logs((true, true))
             .build();
 
@@ -456,6 +460,7 @@ impl SetupConfigBuilder {
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", madara_config.feeder_gateway_endpoint())
             .env_var(
                 "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY",
                 env::var("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY").unwrap_or_default(),

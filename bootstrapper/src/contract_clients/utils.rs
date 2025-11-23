@@ -64,10 +64,10 @@ pub fn field_element_to_u256(input: Felt) -> U256 {
 pub fn generate_config_hash(
     config_hash_version: Felt,
     chain_id: Felt,
-    fee_token_address: Felt,
+    _fee_token_address: Felt, // Fee token is not needed to compute config hash in 0.14.0 and above
     native_fee_token_address: Felt,
 ) -> Felt {
-    let values = [config_hash_version, chain_id, fee_token_address, native_fee_token_address]
+    let values = [config_hash_version, chain_id, native_fee_token_address]
         .map(|f| starknet_types_core::felt::Felt::from_bytes_be(&f.to_bytes_be()));
     Felt::from_bytes_be(&Pedersen::hash_array(&values).to_bytes_be())
 }

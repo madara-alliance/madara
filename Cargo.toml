@@ -118,17 +118,18 @@ starknet-types-core = { version = "0.2.1", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "e04617e0581d5ec93a035ec0e15419b4c201b629", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "57052466290163f95ec085fc5ad877c4e04d5e2d", features = [
   "testing",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "e04617e0581d5ec93a035ec0e15419b4c201b629", features = [
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "57052466290163f95ec085fc5ad877c4e04d5e2d", features = [
   "testing",
 ] }
 cairo-lang-starknet-classes = "=2.12.3"
 cairo-lang-utils = "=2.12.3"
 
-alloy = { version = "0.8.3", features = [
+alloy = { version = "1.1.0", features = [
   "node-bindings",
+  "eips",
   "rpc-types",
   "provider-http",
   "contract",
@@ -285,7 +286,7 @@ aws-sdk-sqs = "1.36.0"
 axum = { version = "0.7.4" }
 color-eyre = "0.6.2"
 chrono = { version = "0.4", features = ["serde"] }
-c-kzg = "1.0.3"
+c-kzg = "2.1.5"
 dotenvy = "0.15.7"
 log = "0.4.21"
 mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
@@ -302,7 +303,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos", tag = "v0.14.0-alpha.1" }
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos", tag = "v0.14.0-alpha.3" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }

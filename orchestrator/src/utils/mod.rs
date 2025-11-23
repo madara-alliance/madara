@@ -9,6 +9,7 @@ pub mod job_status_metrics;
 pub mod logging;
 pub mod metrics;
 pub mod metrics_recorder;
+pub mod preflight;
 pub mod rest_client;
 pub mod signal_handler;
 

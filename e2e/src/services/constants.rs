@@ -31,6 +31,7 @@ pub const ANVIL_DATABASE_FILE: &str = "anvil.json";
 pub const ANVIL_BLOCK_TIME: f64 = 1_f64;
 pub const ANVIL_PORT: u16 = 8545;
 pub const ANVIL_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+pub const ANVIL_CHAIN_ID: u64 = 31337;
 
 // =============================================================================
 // BOOTSTRAPPER SERVICE
