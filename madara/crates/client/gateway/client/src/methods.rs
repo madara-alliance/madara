@@ -46,6 +46,12 @@ impl GatewayProvider {
                     return Ok(result);
                 }
                 Err(e) => {
+                    // Check if this error is retryable
+                    // Non-retryable errors (like NoBlockHeader, BlockNotFound) should be returned immediately
+                    if !GatewayRetryState::is_retryable(&e) {
+                        return Err(e);
+                    }
+
                     let retry_count = state.increment_retry();
 
                     // Report failure to health tracker

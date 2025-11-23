@@ -55,6 +55,28 @@ impl GatewayRetryState {
         self.inner.elapsed()
     }
 
+    /// Check if an error is retryable
+    ///
+    /// Retryable errors are transient network issues that may succeed on retry:
+    /// - HTTP/network errors (connection refused, timeout, etc.)
+    /// - Rate limiting errors
+    ///
+    /// Non-retryable errors are valid API responses that won't change on retry:
+    /// - NoBlockHeader, BlockNotFound, UndeclaredClass, etc.
+    pub fn is_retryable(error: &SequencerError) -> bool {
+        match error {
+            // Network-level errors are always retryable
+            SequencerError::HttpCallError(_) | SequencerError::HyperError(_) => true,
+
+            // For StarknetError, only rate limits are retryable
+            // All other StarknetErrors are valid API responses
+            SequencerError::StarknetError(e) => matches!(e.code, StarknetErrorCode::RateLimited),
+
+            // Other error types are retryable by default
+            _ => true,
+        }
+    }
+
     /// Check if error is a rate limit error
     fn is_rate_limited(&self, error: &SequencerError) -> bool {
         matches!(
@@ -169,5 +191,43 @@ mod tests {
         // After interval, should log again
         tokio::time::sleep(Duration::from_millis(150)).await;
         assert!(state.should_log());
+    }
+
+    #[test]
+    fn test_is_retryable_rate_limit() {
+        use mp_gateway::error::StarknetError;
+
+        let rate_limit_error = SequencerError::StarknetError(StarknetError {
+            code: StarknetErrorCode::RateLimited,
+            message: "Rate limited".to_string(),
+        });
+
+        assert!(GatewayRetryState::is_retryable(&rate_limit_error), "Rate limit errors should be retryable");
+    }
+
+    #[test]
+    fn test_is_retryable_non_retryable_starknet_errors() {
+        use mp_gateway::error::StarknetError;
+
+        // Test various non-retryable Starknet errors
+        let test_cases = vec![
+            (StarknetErrorCode::NoBlockHeader, "NoBlockHeader"),
+            (StarknetErrorCode::BlockNotFound, "BlockNotFound"),
+            (StarknetErrorCode::UndeclaredClass, "UndeclaredClass"),
+            (StarknetErrorCode::NoSignatureForPendingBlock, "NoSignatureForPendingBlock"),
+        ];
+
+        for (code, name) in test_cases {
+            let error = SequencerError::StarknetError(StarknetError {
+                code,
+                message: format!("{} error", name),
+            });
+
+            assert!(
+                !GatewayRetryState::is_retryable(&error),
+                "{} should not be retryable",
+                name
+            );
+        }
     }
 }
