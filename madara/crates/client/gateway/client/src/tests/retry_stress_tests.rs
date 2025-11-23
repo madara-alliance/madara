@@ -76,7 +76,7 @@ async fn test_phase1_aggressive_polling() {
         ..Default::default()
     };
 
-    let mut state = RetryState::new(config);
+    let state = RetryState::new(config);
 
     // Simulate connection refused error
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
@@ -108,7 +108,7 @@ async fn test_phase1_to_phase2_transition() {
         ..Default::default()
     };
 
-    let mut state = RetryState::new(config.clone());
+    let state = RetryState::new(config.clone());
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -234,7 +234,7 @@ async fn test_rate_limit_handling() {
 
     let error = SequencerError::StarknetError(StarknetError::rate_limited());
 
-    let mut state = RetryState::new(RetryConfig::default());
+    let state = RetryState::new(RetryConfig::default());
     let delay = state.next_delay(&error);
 
     // Should respect rate limiting
@@ -350,7 +350,7 @@ async fn test_extended_outage_30min() {
         ..Default::default()
     };
 
-    let mut state = RetryState::new(config);
+    let state = RetryState::new(config);
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -433,7 +433,7 @@ async fn test_mixed_error_types() {
         SequencerError::StarknetError(mp_gateway::error::StarknetError::rate_limited()),
     ];
 
-    let mut state = RetryState::new(RetryConfig::default());
+    let state = RetryState::new(RetryConfig::default());
 
     for error in errors {
         let delay = state.next_delay(&error);
