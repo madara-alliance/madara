@@ -139,6 +139,71 @@ impl BlockViewResolvable for mp_rpc::v0_9_0::BlockId {
     }
 }
 
+// v0.10 rpc
+
+impl StateViewResolvable for mp_rpc::v0_10_0::BlockId {
+    fn resolve_state_view(&self, starknet: &Starknet) -> Result<MadaraStateView, StarknetRpcApiError> {
+        match self {
+            Self::Tag(mp_rpc::v0_10_0::BlockTag::PreConfirmed) => Ok(starknet.backend.view_on_latest()),
+            Self::Tag(mp_rpc::v0_10_0::BlockTag::Latest) => Ok(starknet.backend.view_on_latest_confirmed()),
+            Self::Tag(mp_rpc::v0_10_0::BlockTag::L1Accepted) => starknet
+                .backend
+                .latest_l1_confirmed_block_n()
+                .and_then(|block_number| starknet.backend.view_on_confirmed(block_number))
+                .ok_or(StarknetRpcApiError::NoBlocks),
+            Self::Hash(hash) => {
+                if let Some(block_n) = starknet.backend.view_on_latest().find_block_by_hash(hash)? {
+                    Ok(starknet.backend.view_on_confirmed(block_n).with_context(|| {
+                        format!("Block with hash {hash:#x} was found at {block_n} but no such block exists")
+                    })?)
+                } else {
+                    Err(StarknetRpcApiError::BlockNotFound)
+                }
+            }
+            Self::Number(block_n) => {
+                starknet.backend.view_on_confirmed(*block_n).ok_or(StarknetRpcApiError::BlockNotFound)
+            }
+        }
+    }
+}
+
+impl BlockViewResolvable for mp_rpc::v0_10_0::BlockId {
+    fn resolve_block_view(&self, starknet: &Starknet) -> Result<MadaraBlockView, StarknetRpcApiError> {
+        match self {
+            Self::Tag(mp_rpc::v0_10_0::BlockTag::PreConfirmed) => {
+                Ok(starknet.backend.block_view_on_preconfirmed_or_fake()?.into())
+            }
+            Self::Tag(mp_rpc::v0_10_0::BlockTag::Latest) => {
+                starknet.backend.block_view_on_last_confirmed().map(|b| b.into()).ok_or(StarknetRpcApiError::NoBlocks)
+            }
+            Self::Tag(mp_rpc::v0_10_0::BlockTag::L1Accepted) => starknet
+                .backend
+                .latest_l1_confirmed_block_n()
+                .and_then(|block_number| starknet.backend.block_view_on_confirmed(block_number))
+                .map(|b| b.into())
+                .ok_or(StarknetRpcApiError::NoBlocks),
+            Self::Hash(hash) => {
+                if let Some(block_n) = starknet.backend.db.find_block_hash(hash)? {
+                    Ok(starknet
+                        .backend
+                        .block_view_on_confirmed(block_n)
+                        .with_context(|| {
+                            format!("Block with hash {hash:#x} was found at {block_n} but no such block exists")
+                        })?
+                        .into())
+                } else {
+                    Err(StarknetRpcApiError::BlockNotFound)
+                }
+            }
+            Self::Number(block_n) => starknet
+                .backend
+                .block_view_on_confirmed(*block_n)
+                .map(Into::into)
+                .ok_or(StarknetRpcApiError::BlockNotFound),
+        }
+    }
+}
+
 impl Starknet {
     pub fn resolve_block_view<R: BlockViewResolvable>(
         &self,
