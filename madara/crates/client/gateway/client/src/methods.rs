@@ -65,11 +65,11 @@ impl GatewayProvider {
 
                         tracing::debug!(
                             target: "mc_gateway_client::retry",
-                            "⚠️  Gateway unavailable [operation={}, reason={}, retries={}, phase={:?}]",
-                            operation,
-                            error_reason,
-                            retry_count,
-                            phase
+                            operation = operation,
+                            reason = error_reason,
+                            retries = retry_count,
+                            phase = ?phase,
+                            "Gateway unavailable"
                         );
                     }
 

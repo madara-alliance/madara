@@ -22,6 +22,10 @@ const CONSECUTIVE_SUCCESSES_FOR_RECOVERY: usize = 3;
 const RECOVERY_ATTEMPTS_THRESHOLD: usize = 10;
 const FAILURE_RATE_HEALTHY_THRESHOLD: f32 = 0.1;
 
+// Minimum time to stay in Degraded state before transitioning to Healthy
+// This prevents rapid state oscillations if connection is flaky
+const MIN_TIME_IN_DEGRADED: Duration = Duration::from_secs(2);
+
 // Heartbeat intervals
 const HEARTBEAT_INTERVAL_DEGRADED: Duration = Duration::from_secs(10);
 const HEARTBEAT_INTERVAL_DOWN_PHASE1: Duration = Duration::from_secs(5); // 0-5 minutes
@@ -107,6 +111,14 @@ impl ConnectionHealth {
         self.consecutive_successes = 0;
 
         *self.failed_operations.entry(operation.to_string()).or_insert(0) += 1;
+
+        // Prevent unbounded memory growth: limit to top 50 failing operations
+        if self.failed_operations.len() > 50 {
+            // Keep only the 20 most frequently failing operations
+            let mut ops: Vec<_> = self.failed_operations.iter().map(|(k, v)| (k.clone(), *v)).collect();
+            ops.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by failure count descending
+            self.failed_operations = ops.into_iter().take(20).collect();
+        }
 
         self.transition_on_failure();
     }
@@ -207,6 +219,12 @@ impl ConnectionHealth {
     }
 
     fn should_transition_to_healthy(&self) -> bool {
+        // Ensure we've been in Degraded state for minimum time to avoid flapping
+        // This prevents rapid Down -> Degraded -> Healthy -> Down cycles on flaky connections
+        if self.last_state_change.elapsed() < MIN_TIME_IN_DEGRADED {
+            return false;
+        }
+
         // Immediate transition if we have enough consecutive successes
         if self.consecutive_successes >= CONSECUTIVE_SUCCESSES_FOR_RECOVERY {
             return true;
@@ -318,11 +336,14 @@ impl ConnectionHealth {
 /// Start a background health monitor task
 ///
 /// This spawns a tokio task that periodically logs connection health status.
-/// The task will run until the health Arc is dropped or the program exits.
+/// The returned JoinHandle can be used to stop the monitor during graceful shutdown.
 ///
 /// # Arguments
 /// * `health` - Arc to the ConnectionHealth instance to monitor
-pub fn start_health_monitor(health: Arc<RwLock<ConnectionHealth>>) {
+///
+/// # Returns
+/// A JoinHandle that can be awaited or aborted to stop the monitor
+pub fn start_health_monitor(health: Arc<RwLock<ConnectionHealth>>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let service_name = {
             let guard = health.read().await;
@@ -332,15 +353,18 @@ pub fn start_health_monitor(health: Arc<RwLock<ConnectionHealth>>) {
         tracing::debug!("{} health monitor started", service_name);
 
         loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            // Use tokio::select! to make the sleep cancellable
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                    let mut health_guard = health.write().await;
 
-            let mut health_guard = health.write().await;
-
-            if health_guard.should_log_heartbeat() {
-                health_guard.log_status();
+                    if health_guard.should_log_heartbeat() {
+                        health_guard.log_status();
+                    }
+                }
             }
         }
-    });
+    })
 }
 
 /// Format duration in human-readable form
@@ -422,7 +446,14 @@ mod tests {
         }
         assert!(matches!(health.state, HealthState::Down));
 
-        // First success -> Immediately transitions to Healthy (since no ongoing failures)
+        // First success -> Transitions to Degraded (recovery started)
+        health.report_success();
+        assert!(matches!(health.state, HealthState::Degraded { .. }));
+
+        // Wait for minimum time in state
+        std::thread::sleep(std::time::Duration::from_secs(3));
+
+        // Another success after minimum time -> Transitions to Healthy
         health.report_success();
         assert!(matches!(health.state, HealthState::Healthy));
     }

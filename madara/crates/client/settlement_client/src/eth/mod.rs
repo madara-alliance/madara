@@ -252,7 +252,11 @@ impl SettlementLayerProvider for EthereumClient {
         worker: StateUpdateWorker,
     ) -> Result<(), SettlementClientError> {
         let config = RetryConfig::default();
-        let mut retry_state = RetryState::new(config);
+        // Separate retry states for different failure modes:
+        // - stream_creation_retry: Tracks failures when creating the event stream connection
+        // - event_processing_retry: Tracks failures when processing events from an active stream
+        let mut stream_creation_retry = RetryState::new(config.clone());
+        let mut event_processing_retry = RetryState::new(config);
 
         // Infinite retry loop for creating and maintaining the event stream
         loop {
@@ -275,8 +279,8 @@ impl SettlementLayerProvider for EthereumClient {
                     // This shouldn't happen since retry_l1_call has infinite retry,
                     // but handle it just in case
                     tracing::error!("Failed to create event stream: {e}");
-                    let delay = retry_state.next_delay();
-                    retry_state.increment_retry();
+                    let delay = stream_creation_retry.next_delay();
+                    stream_creation_retry.increment_retry();
                     tokio::time::sleep(delay).await;
                     continue;
                 }
@@ -308,8 +312,8 @@ impl SettlementLayerProvider for EthereumClient {
                         tracing::warn!("Event stream error: {e:#} - will recreate stream");
                         self.health.write().await.report_failure("event_stream");
 
-                        let delay = retry_state.next_delay();
-                        retry_state.increment_retry();
+                        let delay = event_processing_retry.next_delay();
+                        event_processing_retry.increment_retry();
                         tokio::time::sleep(delay).await;
                         break; // Break inner loop to recreate stream
                     }
@@ -318,8 +322,8 @@ impl SettlementLayerProvider for EthereumClient {
                         tracing::warn!("Event stream ended unexpectedly - will recreate stream");
                         self.health.write().await.report_failure("event_stream");
 
-                        let delay = retry_state.next_delay();
-                        retry_state.increment_retry();
+                        let delay = event_processing_retry.next_delay();
+                        event_processing_retry.increment_retry();
                         tokio::time::sleep(delay).await;
                         break; // Break inner loop to recreate stream
                     }

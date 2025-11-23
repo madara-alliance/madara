@@ -109,8 +109,11 @@ pub async fn sync(
                 }
 
                 let delay = retry_state.next_delay();
-                tokio::time::sleep(delay).await;
-                // Continue to next iteration of the loop
+
+                // Check for cancellation during sleep to ensure fast shutdown
+                if ctx.run_until_cancelled(tokio::time::sleep(delay)).await.is_none() {
+                    return Ok(()); // Cancelled during sleep
+                }
             }
             None => {
                 // Context was cancelled
@@ -188,7 +191,12 @@ async fn sync_inner(
             let notify_consumer = notify_consumer.clone();
             async move {
                 match block_n {
-                    Err(err) => tracing::debug!("Error while parsing the next ethereum message: {err:#}"),
+                    Err(err) => {
+                        tracing::warn!(
+                            error = %err,
+                            "Failed to parse L1 message - this message will be skipped but sync continues"
+                        );
+                    }
                     Ok((tx_hash, block_n)) => {
                         tracing::debug!("Processed {tx_hash:#x} {block_n}");
                         tracing::debug!("Set l1_messaging_sync_tip={block_n}");

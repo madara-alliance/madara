@@ -3,9 +3,46 @@
 /// This module implements a sophisticated retry mechanism that adapts to different
 /// failure scenarios:
 ///
-/// - **Phase 1 (Aggressive)**: 0-5 minutes - Quick recovery for temporary blips
-/// - **Phase 2 (Backoff)**: 5-30 minutes - Exponential backoff for prolonged outages
-/// - **Phase 3 (Steady)**: 30+ minutes - Fixed polling for extended maintenance
+/// - **Phase 1 (Aggressive)**: 0-5 minutes - Quick recovery for temporary blips (2s intervals)
+/// - **Phase 2 (Backoff)**: 5-30 minutes - Exponential backoff for prolonged outages (5s → 60s)
+/// - **Phase 3 (Steady)**: 30+ minutes - Fixed polling for extended maintenance (60s intervals)
+///
+/// # Design Trade-offs
+///
+/// - **Infinite retry by default**: Full nodes MUST sync eventually, so we never give up on external services
+/// - **Phase-based backoff**: Balances fast recovery during brief outages vs. resource efficiency during extended downtime
+/// - **No jitter**: Simplified implementation, acceptable for single-instance full nodes where thundering herd isn't a concern
+/// - **Separate retry states**: Different operations (RPC calls, stream creation, event processing) maintain independent retry contexts
+///
+/// # Performance Characteristics
+///
+/// - **Phase 1 (0-5min)**: ~150 retry attempts (2s interval)
+/// - **Phase 2 (5-30min)**: ~25 retry attempts (exponential: 5s → 60s)
+/// - **Phase 3 (30min+)**: 1 retry per minute indefinitely
+///
+/// Total attempts in first hour: ~150 + 25 + 30 = ~205 attempts
+///
+/// # Usage Example
+///
+/// ```rust,ignore
+/// use mp_resilience::{RetryConfig, RetryState};
+///
+/// let config = RetryConfig::default();
+/// let mut state = RetryState::new(config);
+///
+/// loop {
+///     match risky_operation().await {
+///         Ok(result) => return Ok(result),
+///         Err(e) => {
+///             let retry_count = state.increment_retry();
+///             if state.should_log() {
+///                 tracing::warn!("Operation failed (attempt {}): {}", retry_count, e);
+///             }
+///             tokio::time::sleep(state.next_delay()).await;
+///         }
+///     }
+/// }
+/// ```
 use std::time::Duration;
 
 // Use tokio::time::Instant for tests (allows time manipulation)
