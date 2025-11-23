@@ -283,45 +283,6 @@ impl ExecutorThread {
                             let _ = callback.send(Ok(()));
                             Default::default()
                         }
-                        super::ExecutorCommand::ResetState(callback) => {
-                            tracing::info!("🔄 Resetting executor state after reorg");
-                            // Reinitialize the state adapter from the current database state
-                            let new_state_adaptor = match mc_exec::LayeredStateAdapter::new(self.backend.clone()) {
-                                Ok(adaptor) => adaptor,
-                                Err(e) => {
-                                    tracing::error!("Failed to reinitialize state adapter after reorg: {:#}", e);
-                                    let _ = callback.send(Err(super::ExecutorCommandError::ChannelClosed));
-                                    return Err(e.into());
-                                }
-                            };
-
-                            let latest_block_n = new_state_adaptor.previous_block_n();
-                            tracing::info!("✅ State adapter reinitialized to block_n={}", new_state_adaptor.block_n());
-
-                            // Reset the executor state to NewBlock with the fresh state adapter
-                            state = ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
-                                state_adaptor: new_state_adaptor,
-                                consumed_l1_to_l2_nonces: HashSet::new(),
-                            });
-
-                            // Clear any pending transactions by clearing both fields
-                            to_exec.txs.clear();
-                            to_exec.additional_info.clear();
-
-                            // Reset block state flags
-                            block_empty = true;
-                            force_close = false;
-                            l2_gas_consumed_block = 0;
-
-                            // Notify the main task that state was reset
-                            if self.replies_sender.blocking_send(super::ExecutorMessage::StateReset { latest_block_n }).is_err() {
-                                tracing::error!("Failed to send StateReset message to block production task");
-                            }
-
-                            let _ = callback.send(Ok(()));
-                            // Continue the loop to wait for new transactions - don't return a batch
-                            continue;
-                        }
                     },
                     // Channel closed. Exit gracefully.
                     // Before exiting, check if we have an executing block that needs to be closed.

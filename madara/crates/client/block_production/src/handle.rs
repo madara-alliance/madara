@@ -70,15 +70,6 @@ impl BlockProductionHandle {
         recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
     }
 
-    /// Reset the executor state after a reorg. This reinitializes the state adapter from the current database state.
-    pub async fn reset_state(&self) -> Result<(), ExecutorCommandError> {
-        let (sender, recv) = oneshot::channel();
-        self.executor_commands
-            .send(ExecutorCommand::ResetState(sender))
-            .map_err(|_| ExecutorCommandError::ChannelClosed)?;
-        recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
-    }
-
     /// Send a transaction through the bypass channel to bypass mempool and validation.
     pub async fn send_tx_raw(&self, tx: ValidatedTransaction) -> Result<(), ExecutorCommandError> {
         self.bypass_input.send(tx).await.map_err(|_| ExecutorCommandError::ChannelClosed)

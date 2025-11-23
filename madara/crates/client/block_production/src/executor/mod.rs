@@ -34,8 +34,6 @@ pub enum ExecutorCommandError {
 pub enum ExecutorCommand {
     /// Force close the current block.
     CloseBlock(oneshot::Sender<Result<(), ExecutorCommandError>>),
-    /// Reset executor state after a reorg. This reinitializes the state adapter from the current database state.
-    ResetState(oneshot::Sender<Result<(), ExecutorCommandError>>),
 }
 
 #[derive(Debug)]
@@ -57,10 +55,6 @@ pub enum ExecutorMessage {
     /// - Some(summary): Block exists and was finalized, close it
     /// - None: No block exists, executor is just signaling completion
     EndFinalBlock(Option<Box<BlockExecutionSummary>>),
-    /// Notifies the task that executor state was reset after a reorg
-    StateReset {
-        latest_block_n: Option<u64>,
-    },
 }
 
 #[derive(Default, Debug)]

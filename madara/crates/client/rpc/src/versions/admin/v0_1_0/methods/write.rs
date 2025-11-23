@@ -11,7 +11,8 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use mp_utils::service::MadaraServiceId;
+use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
+use std::time::Duration;
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
@@ -126,7 +127,26 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             }
         }
 
+        // Check if block production is currently running (sequencer mode)
+        let bp_was_running = matches!(
+            self.ctx.service_status(MadaraServiceId::BlockProduction),
+            MadaraServiceStatus::On
+        );
+
+        // If running, shut down block production cleanly before reorg
+        if bp_was_running {
+            tracing::info!("🔌 Stopping block production service for reorg...");
+            self.ctx.service_remove(MadaraServiceId::BlockProduction);
+            // Allow time for clean shutdown of executor threads and channels
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            tracing::info!("✅ Block production service stopped");
+        }
+
+        // Perform the blockchain reorg
+        tracing::info!("🔄 Reverting blockchain to block {}", target_block_n);
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
+
+        // Update chain tip cache
         let fresh_chain_tip = self
             .backend
             .db
@@ -135,19 +155,13 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
         self.backend.chain_tip.send_replace(backend_chain_tip);
+        tracing::info!("✅ Blockchain reverted successfully");
 
-        // Reset block production executor state if block production is enabled
-        let bp_status = self.ctx.service_status(MadaraServiceId::BlockProduction);
-        if matches!(bp_status, mp_utils::service::MadaraServiceStatus::On) {
-          if let Some(block_prod_handle) = &self.block_prod_handle {
-              tracing::debug!("revertTo: resetting block production state");
-              block_prod_handle
-                  .reset_state()
-                  .await
-                  .context("Resetting block production executor state after reorg")
-                  .map_err(StarknetRpcApiError::from)?;
-              tracing::debug!("revertTo: block production state reset complete");
-          }
+        // Restart block production if it was running before
+        if bp_was_running {
+            tracing::info!("🔌 Restarting block production service after reorg...");
+            self.ctx.service_add(MadaraServiceId::BlockProduction);
+            tracing::info!("✅ Block production service restarted with fresh state");
         }
 
         Ok(())
