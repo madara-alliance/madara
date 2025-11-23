@@ -41,15 +41,15 @@ impl GatewayProvider {
         loop {
             match request_fn().await {
                 Ok(result) => {
-                    // Report success to global health tracker
-                    crate::health::GATEWAY_HEALTH.write().await.report_success();
+                    // Report success to health tracker
+                    self.health.write().await.report_success();
                     return Ok(result);
                 }
                 Err(e) => {
                     let retry_count = state.increment_retry();
 
-                    // Report failure to global health tracker
-                    crate::health::GATEWAY_HEALTH.write().await.report_failure(operation);
+                    // Report failure to health tracker
+                    self.health.write().await.report_failure(operation);
 
                     // Check if we should continue retrying
                     if !config.infinite_retry {

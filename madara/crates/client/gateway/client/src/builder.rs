@@ -28,13 +28,24 @@ type BodyTy = Full<Bytes>;
 type HttpsClient = Client<HttpsConnector<HttpConnector>, BodyTy>;
 type TimeoutRetryClient = Retry<RetryPolicy, Timeout<HttpsClient>>;
 pub type PausedClient = PauseLayerMiddleware<TimeoutRetryClient>;
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GatewayProvider {
     pub(crate) client: PausedClient,
     pub(crate) headers: HeaderMap,
     pub(crate) gateway_url: Url,
     pub(crate) feeder_gateway_url: Url,
     pub(crate) madara_specific_url: Option<Url>,
+    pub(crate) health: Arc<RwLock<crate::health::GatewayHealth>>,
+}
+
+impl std::fmt::Debug for GatewayProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GatewayProvider")
+            .field("gateway_url", &self.gateway_url)
+            .field("feeder_gateway_url", &self.feeder_gateway_url)
+            .field("madara_specific_url", &self.madara_specific_url)
+            .finish()
+    }
 }
 
 impl GatewayProvider {
@@ -64,7 +75,19 @@ impl GatewayProvider {
         let retry_layer = Retry::new(retry_policy, timeout_layer);
         let client = PauseLayerMiddleware::new(retry_layer, Arc::clone(&pause_until));
 
-        Self { client, gateway_url, feeder_gateway_url, madara_specific_url: None, headers: HeaderMap::new() }
+        Self {
+            client,
+            gateway_url,
+            feeder_gateway_url,
+            madara_specific_url: None,
+            headers: HeaderMap::new(),
+            health: Arc::new(RwLock::new(crate::health::GatewayHealth::new())),
+        }
+    }
+
+    /// Get a reference to the health tracker for this gateway
+    pub fn health(&self) -> Arc<RwLock<crate::health::GatewayHealth>> {
+        Arc::clone(&self.health)
     }
 
     pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {

@@ -109,7 +109,7 @@ impl L2SyncParams {
         }
 
         // Start the gateway health monitor (runs in background)
-        start_gateway_health_monitor();
+        start_gateway_health_monitor(client.health());
 
         Ok(Arc::new(client))
     }

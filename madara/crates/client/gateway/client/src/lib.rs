@@ -300,5 +300,5 @@ mod tests;
 pub use mp_rpc::v0_7_1::{BlockId, BlockTag};
 
 pub use builder::GatewayProvider;
-pub use health::{start_gateway_health_monitor, GATEWAY_HEALTH};
+pub use health::{start_gateway_health_monitor, GatewayHealth, HealthState};
 pub use retry::{RetryConfig, RetryPhase, RetryState};

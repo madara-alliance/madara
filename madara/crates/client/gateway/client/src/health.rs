@@ -12,7 +12,6 @@
 /// - State transition logging
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
@@ -33,9 +32,8 @@ const HEARTBEAT_INTERVAL_DOWN_PHASE3: Duration = Duration::from_secs(60); // 30+
 const PHASE1_DURATION: Duration = Duration::from_secs(5 * 60); // 5 minutes
 const PHASE2_DURATION: Duration = Duration::from_secs(30 * 60); // 30 minutes
 
-/// Global gateway health tracker singleton
-pub static GATEWAY_HEALTH: LazyLock<Arc<RwLock<GatewayHealth>>> =
-    LazyLock::new(|| Arc::new(RwLock::new(GatewayHealth::new())));
+// Note: The global singleton has been removed in favor of dependency injection.
+// Each GatewayProvider now owns its own GatewayHealth instance.
 
 /// Gateway health state
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +49,7 @@ pub enum HealthState {
 }
 
 /// Gateway health tracker
+#[derive(Debug)]
 pub struct GatewayHealth {
     /// Current health state
     state: HealthState,
@@ -281,27 +280,24 @@ impl GatewayHealth {
 
 /// Start the background health monitor task
 ///
-/// This should be called once at application startup.
-/// It spawns a tokio task that periodically logs gateway health status.
-/// Safe to call multiple times - only starts once.
-pub fn start_gateway_health_monitor() {
-    use std::sync::Once;
-    static START: Once = Once::new();
-
-    START.call_once(|| {
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-
-                let mut health = GATEWAY_HEALTH.write().await;
-
-                if health.should_log_heartbeat() {
-                    health.log_status();
-                }
-            }
-        });
-
+/// This spawns a tokio task that periodically logs gateway health status.
+/// The task will run until the health Arc is dropped or the program exits.
+///
+/// # Arguments
+/// * `health` - Arc to the GatewayHealth instance to monitor
+pub fn start_gateway_health_monitor(health: Arc<RwLock<GatewayHealth>>) {
+    tokio::spawn(async move {
         tracing::debug!("Gateway health monitor started");
+
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            let mut health_guard = health.write().await;
+
+            if health_guard.should_log_heartbeat() {
+                health_guard.log_status();
+            }
+        }
     });
 }
 
