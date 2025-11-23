@@ -36,7 +36,7 @@ impl GatewayProvider {
         Fut: std::future::Future<Output = Result<T, SequencerError>>,
     {
         let config = RetryConfig::default();
-        let state = RetryState::new(config.clone());
+        let mut state = RetryState::new(config.clone());
 
         loop {
             match request_fn().await {
@@ -46,7 +46,7 @@ impl GatewayProvider {
                     return Ok(result);
                 }
                 Err(e) => {
-                    let retry_count = state.increment_retry().await;
+                    let retry_count = state.increment_retry();
 
                     // Report failure to global health tracker
                     crate::health::GATEWAY_HEALTH.write().await.report_failure(operation);
@@ -59,7 +59,7 @@ impl GatewayProvider {
                     }
 
                     // Per-operation logging at DEBUG level (detailed diagnostics)
-                    if state.should_log().await {
+                    if state.should_log() {
                         let error_reason = RetryState::format_error_reason(&e);
                         let phase = state.current_phase();
 

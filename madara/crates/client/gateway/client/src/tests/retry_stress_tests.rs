@@ -35,7 +35,7 @@ async fn test_quick_recovery_phase1() {
         phase1_interval: Duration::from_secs(2),   // 2 seconds
         ..Default::default()
     };
-    let state = RetryState::new(config.clone());
+    let mut state = RetryState::new(config.clone());
 
     // Simulate 5 quick failures in Phase 1
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
@@ -46,7 +46,7 @@ async fn test_quick_recovery_phase1() {
     let start = Instant::now();
 
     for i in 0..5 {
-        state.increment_retry().await;
+        state.increment_retry();
         let delay = state.next_delay(&error);
 
         // In Phase 1, delay should be 2 seconds
@@ -76,7 +76,7 @@ async fn test_phase1_aggressive_polling() {
         ..Default::default()
     };
 
-    let state = RetryState::new(config);
+    let mut state = RetryState::new(config);
 
     // Simulate connection refused error
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
@@ -108,7 +108,7 @@ async fn test_phase1_to_phase2_transition() {
         ..Default::default()
     };
 
-    let state = RetryState::new(config.clone());
+    let mut state = RetryState::new(config.clone());
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -148,7 +148,7 @@ async fn test_phase2_exponential_backoff() {
         ..Default::default()
     };
 
-    let state = RetryState::new(config);
+    let mut state = RetryState::new(config);
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -162,6 +162,7 @@ async fn test_phase2_exponential_backoff() {
     let expected_delays = [5, 10, 20, 40, 60, 60, 60];
 
     for (i, expected) in expected_delays.iter().enumerate() {
+        state.increment_retry();
         let delay = state.next_delay(&error);
         assert_eq!(delay.as_secs(), *expected, "Attempt {} should have delay {}s", i, expected);
 
@@ -180,7 +181,7 @@ async fn test_max_backoff_cap() {
         ..Default::default()
     };
 
-    let state = RetryState::new(config.clone());
+    let mut state = RetryState::new(config.clone());
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -189,6 +190,7 @@ async fn test_max_backoff_cap() {
 
     // Simulate many retries
     for _ in 0..20 {
+        state.increment_retry();
         tokio::time::advance(Duration::from_secs(5)).await;
     }
 
@@ -232,7 +234,7 @@ async fn test_rate_limit_handling() {
 
     let error = SequencerError::StarknetError(StarknetError::rate_limited());
 
-    let state = RetryState::new(RetryConfig::default());
+    let mut state = RetryState::new(RetryConfig::default());
     let delay = state.next_delay(&error);
 
     // Should respect rate limiting
@@ -245,34 +247,34 @@ async fn test_rate_limit_handling() {
 async fn test_phase1_log_throttling() {
     let config = RetryConfig { log_interval: Duration::from_secs(10), ..Default::default() };
 
-    let state = RetryState::new(config);
+    let mut state = RetryState::new(config);
 
     // First log should be allowed
-    assert!(state.should_log().await, "First log should be allowed");
+    assert!(state.should_log(), "First log should be allowed");
 
     // Immediate second log should be throttled
-    assert!(!state.should_log().await, "Second immediate log should be throttled");
+    assert!(!state.should_log(), "Second immediate log should be throttled");
 
     // Advance time by 5 seconds (less than log_interval)
     tokio::time::advance(Duration::from_secs(5)).await;
-    assert!(!state.should_log().await, "Still should be throttled");
+    assert!(!state.should_log(), "Still should be throttled");
 
     // Advance past the log interval
     tokio::time::advance(Duration::from_secs(6)).await;
-    assert!(state.should_log().await, "Should log after interval");
+    assert!(state.should_log(), "Should log after interval");
 }
 
 /// Test 10: Retry counter increments correctly
 #[tokio::test]
 async fn test_retry_counter() {
-    let state = RetryState::new(RetryConfig::default());
+    let mut state = RetryState::new(RetryConfig::default());
 
-    assert_eq!(state.get_retry_count().await, 0);
+    assert_eq!(state.get_retry_count(), 0);
 
     for i in 1..=10 {
-        let count = state.increment_retry().await;
+        let count = state.increment_retry();
         assert_eq!(count, i);
-        assert_eq!(state.get_retry_count().await, i);
+        assert_eq!(state.get_retry_count(), i);
     }
 }
 
@@ -310,7 +312,7 @@ async fn test_eventual_success() {
         infinite_retry: true,
         ..Default::default()
     };
-    let state = RetryState::new(config.clone());
+    let mut state = RetryState::new(config.clone());
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -319,7 +321,7 @@ async fn test_eventual_success() {
 
     // Simulate 10 failures, ensuring state persists correctly
     for i in 0..10 {
-        let retry_count = state.increment_retry().await;
+        let retry_count = state.increment_retry();
         assert_eq!(retry_count, i + 1, "Retry count should increment correctly");
 
         let delay = state.next_delay(&error);
@@ -328,7 +330,7 @@ async fn test_eventual_success() {
         tokio::time::advance(delay).await;
     }
 
-    let final_count = state.get_retry_count().await;
+    let final_count = state.get_retry_count();
     assert_eq!(final_count, 10, "Should have tracked 10 retries");
 
     // Verify still in Phase 1 after 20 seconds (10 retries * 2s)
@@ -348,7 +350,7 @@ async fn test_extended_outage_30min() {
         ..Default::default()
     };
 
-    let state = RetryState::new(config);
+    let mut state = RetryState::new(config);
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -398,17 +400,17 @@ async fn test_flapping_gateway() {
 
     // Simulate 5 flapping cycles (fail -> retry -> success -> fail -> retry -> success...)
     for cycle in 0..5 {
-        let state = RetryState::new(config.clone());
+        let mut state = RetryState::new(config.clone());
 
         // Fail once
-        state.increment_retry().await;
+        state.increment_retry();
         let delay = state.next_delay(&error);
         assert_eq!(delay, Duration::from_secs(2), "Phase 1 should use 2s interval");
 
         tokio::time::advance(delay).await;
 
         // After 1 failure + 2s delay, should succeed (simulated)
-        let retry_count = state.get_retry_count().await;
+        let retry_count = state.get_retry_count();
         assert_eq!(retry_count, 1, "Should have 1 retry in cycle {}", cycle);
 
         println!("Flapping cycle {}: failed once, then succeeded (1 retry, 2s total)", cycle);
@@ -431,7 +433,7 @@ async fn test_mixed_error_types() {
         SequencerError::StarknetError(mp_gateway::error::StarknetError::rate_limited()),
     ];
 
-    let state = RetryState::new(RetryConfig::default());
+    let mut state = RetryState::new(RetryConfig::default());
 
     for error in errors {
         let delay = state.next_delay(&error);
@@ -454,7 +456,7 @@ async fn test_mixed_error_types() {
 async fn test_infinite_retry_stability() {
     let config = RetryConfig { infinite_retry: true, ..Default::default() };
 
-    let state = RetryState::new(config);
+    let mut state = RetryState::new(config);
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -464,7 +466,7 @@ async fn test_infinite_retry_stability() {
     // Simulate 1000 retries
     for i in 0..1000 {
         let delay = state.next_delay(&error);
-        state.increment_retry().await;
+        state.increment_retry();
         tokio::time::advance(delay).await;
 
         if i % 100 == 0 {
@@ -473,13 +475,13 @@ async fn test_infinite_retry_stability() {
     }
 
     // Should complete without panic
-    assert_eq!(state.get_retry_count().await, 1000);
+    assert_eq!(state.get_retry_count(), 1000);
 }
 
 /// Test 17: Performance test - measure retry overhead
 #[tokio::test]
 async fn test_retry_performance_overhead() {
-    let state = RetryState::new(RetryConfig::default());
+    let mut state = RetryState::new(RetryConfig::default());
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -492,7 +494,7 @@ async fn test_retry_performance_overhead() {
     for _ in 0..1000 {
         let _delay = state.next_delay(&error);
         let _formatted = RetryState::format_error_reason(&error);
-        state.increment_retry().await;
+        state.increment_retry();
     }
 
     let elapsed = start.elapsed();

@@ -10,15 +10,15 @@
 /// The strategy also considers error types (connection refused, timeout, rate limits)
 /// to optimize retry behavior.
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 
+// Use tokio::time::Instant for tests (allows time manipulation)
+// Use std::time::Instant for production (more efficient)
 #[cfg(not(test))]
-use std::time::Instant;
+type InstantProvider = std::time::Instant;
 
 #[cfg(test)]
-use tokio::time::Instant as TokioInstant;
+type InstantProvider = tokio::time::Instant;
 
 /// Configuration for the hybrid retry strategy
 #[derive(Debug, Clone)]
@@ -56,7 +56,7 @@ pub enum RetryPhase {
     /// Phase 1: Aggressive retry (0-5 minutes)
     Aggressive,
     /// Phase 2: Exponential backoff (5-30 minutes)
-    Backoff { attempt_in_phase: u32 },
+    Backoff,
     /// Phase 3: Steady state polling (30+ minutes)
     Steady,
 }
@@ -64,34 +64,23 @@ pub enum RetryPhase {
 /// State tracker for retry attempts
 pub struct RetryState {
     config: RetryConfig,
-    #[cfg(not(test))]
-    start_time: Instant,
-    #[cfg(test)]
-    start_time: TokioInstant,
-    #[cfg(not(test))]
-    last_log_time: Arc<RwLock<Option<Instant>>>,
-    #[cfg(test)]
-    last_log_time: Arc<RwLock<Option<TokioInstant>>>,
-    retry_count: Arc<RwLock<usize>>,
+    start_time: InstantProvider,
+    last_log_time: Option<InstantProvider>,
+    retry_count: usize,
 }
 
 impl std::fmt::Debug for RetryState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RetryState").field("config", &self.config).finish_non_exhaustive()
+        f.debug_struct("RetryState")
+            .field("config", &self.config)
+            .field("retry_count", &self.retry_count)
+            .finish()
     }
 }
 
 impl RetryState {
     pub fn new(config: RetryConfig) -> Self {
-        Self {
-            config,
-            #[cfg(not(test))]
-            start_time: Instant::now(),
-            #[cfg(test)]
-            start_time: TokioInstant::now(),
-            last_log_time: Arc::new(RwLock::new(None)),
-            retry_count: Arc::new(RwLock::new(0)),
-        }
+        Self { config, start_time: InstantProvider::now(), last_log_time: None, retry_count: 0 }
     }
 
     /// Determine current retry phase based on elapsed time
@@ -100,66 +89,43 @@ impl RetryState {
 
         if elapsed < self.config.phase1_duration {
             RetryPhase::Aggressive
+        } else if elapsed < Duration::from_secs(30 * 60) {
+            // 30 minutes total (Phase 1 + Phase 2)
+            RetryPhase::Backoff
         } else {
-            let time_in_phase2 = elapsed - self.config.phase1_duration;
-            let phase2_attempts = (time_in_phase2.as_secs() / self.config.phase2_min_delay.as_secs()) as u32;
-            RetryPhase::Backoff { attempt_in_phase: phase2_attempts }
+            RetryPhase::Steady
         }
     }
 
     /// Calculate delay for next retry based on current phase and error type
     pub fn next_delay(&self, error: &SequencerError) -> Duration {
+        // Handle rate limiting separately
+        if self.is_rate_limited(error) {
+            return self.extract_retry_after(error).unwrap_or(Duration::from_secs(10));
+        }
+
         match self.current_phase() {
-            RetryPhase::Aggressive => {
-                // Phase 1: Fixed interval, but respect rate limiting
-                if self.is_rate_limited(error) {
-                    self.extract_retry_after(error).unwrap_or(Duration::from_secs(10))
-                } else {
-                    self.config.phase1_interval
-                }
+            RetryPhase::Aggressive => self.config.phase1_interval,
+            RetryPhase::Backoff => {
+                // Exponential backoff: 5s * 2^retry_count (cap exponent at 5 to prevent overflow)
+                let exponent = self.retry_count.saturating_sub(1).min(5) as u32;
+                let exponential_delay = self.config.phase2_min_delay.saturating_mul(2_u32.saturating_pow(exponent));
+                exponential_delay.min(self.config.max_backoff)
             }
-            RetryPhase::Backoff { attempt_in_phase } => {
-                // Phase 2: Exponential backoff with cap
-                if self.is_rate_limited(error) {
-                    self.extract_retry_after(error).unwrap_or(Duration::from_secs(10))
-                } else {
-                    let exponential_delay =
-                        self.config.phase2_min_delay.saturating_mul(2_u32.saturating_pow(attempt_in_phase));
-                    exponential_delay.min(self.config.max_backoff)
-                }
-            }
-            RetryPhase::Steady => {
-                // Phase 3: Fixed max backoff
-                self.config.max_backoff
-            }
+            RetryPhase::Steady => self.config.max_backoff,
         }
     }
 
     /// Check if we should log this retry attempt (throttled logging)
-    pub async fn should_log(&self) -> bool {
-        let mut last_log = self.last_log_time.write().await;
-        match *last_log {
+    pub fn should_log(&mut self) -> bool {
+        match self.last_log_time {
             None => {
-                #[cfg(not(test))]
-                {
-                    *last_log = Some(Instant::now());
-                }
-                #[cfg(test)]
-                {
-                    *last_log = Some(TokioInstant::now());
-                }
+                self.last_log_time = Some(InstantProvider::now());
                 true
             }
             Some(last) => {
                 if last.elapsed() >= self.config.log_interval {
-                    #[cfg(not(test))]
-                    {
-                        *last_log = Some(Instant::now());
-                    }
-                    #[cfg(test)]
-                    {
-                        *last_log = Some(TokioInstant::now());
-                    }
+                    self.last_log_time = Some(InstantProvider::now());
                     true
                 } else {
                     false
@@ -169,15 +135,14 @@ impl RetryState {
     }
 
     /// Increment retry counter and return current count
-    pub async fn increment_retry(&self) -> usize {
-        let mut count = self.retry_count.write().await;
-        *count += 1;
-        *count
+    pub fn increment_retry(&mut self) -> usize {
+        self.retry_count += 1;
+        self.retry_count
     }
 
     /// Get current retry count
-    pub async fn get_retry_count(&self) -> usize {
-        *self.retry_count.read().await
+    pub fn get_retry_count(&self) -> usize {
+        self.retry_count
     }
 
     /// Check if error is a rate limit error
@@ -268,29 +233,29 @@ mod tests {
         assert_eq!(state.current_phase(), RetryPhase::Aggressive);
     }
 
-    #[tokio::test]
-    async fn test_retry_count() {
-        let state = RetryState::new(RetryConfig::default());
-        assert_eq!(state.get_retry_count().await, 0);
+    #[test]
+    fn test_retry_count() {
+        let mut state = RetryState::new(RetryConfig::default());
+        assert_eq!(state.get_retry_count(), 0);
 
-        assert_eq!(state.increment_retry().await, 1);
-        assert_eq!(state.increment_retry().await, 2);
-        assert_eq!(state.get_retry_count().await, 2);
+        assert_eq!(state.increment_retry(), 1);
+        assert_eq!(state.increment_retry(), 2);
+        assert_eq!(state.get_retry_count(), 2);
     }
 
     #[tokio::test]
     async fn test_log_throttling() {
         let config = RetryConfig { log_interval: Duration::from_millis(100), ..Default::default() };
-        let state = RetryState::new(config);
+        let mut state = RetryState::new(config);
 
         // First log should always be allowed
-        assert!(state.should_log().await);
+        assert!(state.should_log());
 
         // Immediate second log should be throttled
-        assert!(!state.should_log().await);
+        assert!(!state.should_log());
 
         // After interval, should log again
         tokio::time::sleep(Duration::from_millis(150)).await;
-        assert!(state.should_log().await);
+        assert!(state.should_log());
     }
 }

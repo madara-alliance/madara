@@ -16,6 +16,23 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
+// Health state transition thresholds
+const CONSECUTIVE_FAILURES_TO_DOWN: usize = 10;
+const FAILURE_RATE_DEGRADED_THRESHOLD: f32 = 0.5;
+const CONSECUTIVE_SUCCESSES_FOR_RECOVERY: usize = 3;
+const RECOVERY_ATTEMPTS_THRESHOLD: usize = 10;
+const FAILURE_RATE_HEALTHY_THRESHOLD: f32 = 0.1;
+
+// Heartbeat intervals
+const HEARTBEAT_INTERVAL_DEGRADED: Duration = Duration::from_secs(10);
+const HEARTBEAT_INTERVAL_DOWN_PHASE1: Duration = Duration::from_secs(5); // 0-5 minutes
+const HEARTBEAT_INTERVAL_DOWN_PHASE2: Duration = Duration::from_secs(10); // 5-30 minutes
+const HEARTBEAT_INTERVAL_DOWN_PHASE3: Duration = Duration::from_secs(60); // 30+ minutes
+
+// Phase durations for adaptive logging
+const PHASE1_DURATION: Duration = Duration::from_secs(5 * 60); // 5 minutes
+const PHASE2_DURATION: Duration = Duration::from_secs(30 * 60); // 30 minutes
+
 /// Global gateway health tracker singleton
 pub static GATEWAY_HEALTH: LazyLock<Arc<RwLock<GatewayHealth>>> =
     LazyLock::new(|| Arc::new(RwLock::new(GatewayHealth::new())));
@@ -97,35 +114,35 @@ impl GatewayHealth {
 
         *self.failed_operations.entry(operation.to_string()).or_insert(0) += 1;
 
-        // Update state machine
-        let old_state = self.state.clone();
+        self.transition_on_failure();
+    }
+
+    /// Handle state transitions on failure
+    fn transition_on_failure(&mut self) {
         match &self.state {
-            HealthState::Healthy => {
-                // First failure - transition to degraded
-                self.state = HealthState::Degraded { failure_rate: self.failure_rate() };
-                self.first_failure_time = Some(Instant::now());
-                self.last_state_change = Instant::now();
-
-                tracing::warn!("🟡 Gateway experiencing intermittent errors");
-            }
-            HealthState::Degraded { .. } => {
-                // Check if we should transition to Down
-                if self.consecutive_failures >= 10 || self.failure_rate() > 0.5 {
-                    self.state = HealthState::Down;
-                    self.last_state_change = Instant::now();
-
-                    tracing::info!("🔴 Gateway connection lost - retrying...");
-                }
-            }
-            HealthState::Down => {
-                // Already down, no state change
-            }
+            HealthState::Healthy => self.transition_healthy_to_degraded(),
+            HealthState::Degraded { .. } if self.should_transition_to_down() => self.transition_degraded_to_down(),
+            _ => {}
         }
+    }
 
-        // Reset recovery tracking if we went backwards
-        if !matches!(old_state, HealthState::Down) && matches!(self.state, HealthState::Down) {
-            self.recovery_attempts = 0;
-        }
+    fn transition_healthy_to_degraded(&mut self) {
+        self.state = HealthState::Degraded { failure_rate: self.failure_rate() };
+        self.first_failure_time = Some(Instant::now());
+        self.last_state_change = Instant::now();
+        tracing::warn!("🟡 Gateway experiencing intermittent errors");
+    }
+
+    fn transition_degraded_to_down(&mut self) {
+        self.state = HealthState::Down;
+        self.last_state_change = Instant::now();
+        self.recovery_attempts = 0;
+        tracing::info!("🔴 Gateway connection lost - retrying...");
+    }
+
+    fn should_transition_to_down(&self) -> bool {
+        self.consecutive_failures >= CONSECUTIVE_FAILURES_TO_DOWN
+            || self.failure_rate() > FAILURE_RATE_DEGRADED_THRESHOLD
     }
 
     /// Report a successful operation
@@ -134,43 +151,49 @@ impl GatewayHealth {
         self.consecutive_successes += 1;
         self.consecutive_failures = 0;
 
+        self.transition_on_success();
+    }
+
+    /// Handle state transitions on success
+    fn transition_on_success(&mut self) {
         match &self.state {
-            HealthState::Healthy => {
-                // Already healthy, stay healthy
-            }
-            HealthState::Down => {
-                // First success after being down - transition to degraded
-                self.state = HealthState::Degraded { failure_rate: self.failure_rate() };
-                self.recovery_attempts = 1;
-                self.last_state_change = Instant::now();
-
-                tracing::info!("🟡 Gateway partially restored - monitoring stability...");
-            }
-            HealthState::Degraded { .. } => {
-                self.recovery_attempts += 1;
-
-                // Check if we're stable enough to declare healthy
-                // Require either 3 consecutive successes OR 10 attempts with <10% failure rate
-                let should_go_healthy =
-                    self.consecutive_successes >= 3 || (self.recovery_attempts >= 10 && self.failure_rate() < 0.1);
-
-                if should_go_healthy {
-                    let downtime = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
-                    let failed_ops = self.failed_requests;
-
-                    self.state = HealthState::Healthy;
-                    self.last_state_change = Instant::now();
-
-                    tracing::info!(
-                        "🟢 Gateway UP - Restored after {} ({} operations failed during outage)",
-                        format_duration(downtime),
-                        failed_ops
-                    );
-
-                    self.reset_metrics();
-                }
-            }
+            HealthState::Healthy => {}
+            HealthState::Down => self.transition_down_to_degraded(),
+            HealthState::Degraded { .. } => self.try_transition_to_healthy(),
         }
+    }
+
+    fn transition_down_to_degraded(&mut self) {
+        self.state = HealthState::Degraded { failure_rate: self.failure_rate() };
+        self.recovery_attempts = 1;
+        self.last_state_change = Instant::now();
+        tracing::info!("🟡 Gateway partially restored - monitoring stability...");
+    }
+
+    fn try_transition_to_healthy(&mut self) {
+        self.recovery_attempts += 1;
+
+        if self.should_transition_to_healthy() {
+            let downtime = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
+            let failed_ops = self.failed_requests;
+
+            self.state = HealthState::Healthy;
+            self.last_state_change = Instant::now();
+
+            tracing::info!(
+                "🟢 Gateway UP - Restored after {} ({} operations failed during outage)",
+                format_duration(downtime),
+                failed_ops
+            );
+
+            self.reset_metrics();
+        }
+    }
+
+    fn should_transition_to_healthy(&self) -> bool {
+        self.consecutive_successes >= CONSECUTIVE_SUCCESSES_FOR_RECOVERY
+            || (self.recovery_attempts >= RECOVERY_ATTEMPTS_THRESHOLD
+                && self.failure_rate() < FAILURE_RATE_HEALTHY_THRESHOLD)
     }
 
     /// Calculate current failure rate
@@ -186,23 +209,26 @@ impl GatewayHealth {
     pub fn should_log_heartbeat(&self) -> bool {
         let interval = match &self.state {
             HealthState::Healthy => return false, // Don't log when healthy
-            HealthState::Degraded { .. } => Duration::from_secs(10),
-            HealthState::Down => {
-                // Adaptive interval based on outage duration
-                let elapsed = self.first_failure_time.unwrap().elapsed();
-                if elapsed < Duration::from_secs(5 * 60) {
-                    Duration::from_secs(5) // Phase 1: 5s
-                } else if elapsed < Duration::from_secs(30 * 60) {
-                    Duration::from_secs(10) // Phase 2: 10s
-                } else {
-                    Duration::from_secs(60) // Phase 3: 60s
-                }
-            }
+            HealthState::Degraded { .. } => HEARTBEAT_INTERVAL_DEGRADED,
+            HealthState::Down => self.get_down_heartbeat_interval(),
         };
 
         match self.last_heartbeat_log {
             None => true,
             Some(last) => last.elapsed() >= interval,
+        }
+    }
+
+    /// Get adaptive heartbeat interval for Down state based on outage duration
+    fn get_down_heartbeat_interval(&self) -> Duration {
+        let elapsed = self.first_failure_time.unwrap().elapsed();
+
+        if elapsed < PHASE1_DURATION {
+            HEARTBEAT_INTERVAL_DOWN_PHASE1
+        } else if elapsed < PHASE2_DURATION {
+            HEARTBEAT_INTERVAL_DOWN_PHASE2
+        } else {
+            HEARTBEAT_INTERVAL_DOWN_PHASE3
         }
     }
 
@@ -257,20 +283,26 @@ impl GatewayHealth {
 ///
 /// This should be called once at application startup.
 /// It spawns a tokio task that periodically logs gateway health status.
+/// Safe to call multiple times - only starts once.
 pub fn start_gateway_health_monitor() {
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+    use std::sync::Once;
+    static START: Once = Once::new();
 
-            let mut health = GATEWAY_HEALTH.write().await;
+    START.call_once(|| {
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
 
-            if health.should_log_heartbeat() {
-                health.log_status();
+                let mut health = GATEWAY_HEALTH.write().await;
+
+                if health.should_log_heartbeat() {
+                    health.log_status();
+                }
             }
-        }
-    });
+        });
 
-    tracing::debug!("Gateway health monitor started");
+        tracing::debug!("Gateway health monitor started");
+    });
 }
 
 /// Format duration in human-readable form
