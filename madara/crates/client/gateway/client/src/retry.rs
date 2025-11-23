@@ -218,16 +218,9 @@ mod tests {
         ];
 
         for (code, name) in test_cases {
-            let error = SequencerError::StarknetError(StarknetError {
-                code,
-                message: format!("{} error", name),
-            });
+            let error = SequencerError::StarknetError(StarknetError { code, message: format!("{} error", name) });
 
-            assert!(
-                !GatewayRetryState::is_retryable(&error),
-                "{} should not be retryable",
-                name
-            );
+            assert!(!GatewayRetryState::is_retryable(&error), "{} should not be retryable", name);
         }
     }
 }
