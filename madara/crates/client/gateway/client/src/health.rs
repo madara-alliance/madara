@@ -136,7 +136,7 @@ impl GatewayHealth {
         self.state = HealthState::Down;
         self.last_state_change = Instant::now();
         self.recovery_attempts = 0;
-        tracing::info!("🔴 Gateway connection lost - retrying...");
+        tracing::warn!("🔴 Gateway connection lost - retrying...");
     }
 
     fn should_transition_to_down(&self) -> bool {
@@ -254,7 +254,7 @@ impl GatewayHealth {
                 let duration = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
                 let phase = get_retry_phase(duration);
 
-                tracing::info!(
+                tracing::warn!(
                     "🔴 Gateway down ({}) - Phase: {} → {} failed operations",
                     format_duration(duration),
                     phase,
