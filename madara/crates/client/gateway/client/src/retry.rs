@@ -188,9 +188,13 @@ mod tests {
         // Immediate second log should be throttled
         assert!(!state.should_log());
 
-        // After interval, should log again
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        assert!(state.should_log());
+        // Wait for less than log_interval
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!state.should_log(), "Still should be throttled");
+
+        // Wait for the rest of the interval
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(state.should_log(), "Should log after interval");
     }
 
     #[test]

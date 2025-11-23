@@ -43,15 +43,7 @@
 ///     }
 /// }
 /// ```
-use std::time::Duration;
-
-// Use tokio::time::Instant for tests (allows time manipulation)
-// Use std::time::Instant for production (more efficient)
-#[cfg(not(test))]
-type InstantProvider = std::time::Instant;
-
-#[cfg(test)]
-type InstantProvider = tokio::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Configuration for the hybrid retry strategy
 #[derive(Debug, Clone)]
@@ -97,9 +89,9 @@ pub enum RetryPhase {
 /// State tracker for retry attempts
 pub struct RetryState {
     config: RetryConfig,
-    start_time: InstantProvider,
-    last_log_time: Option<InstantProvider>,
+    start_time: Instant,
     retry_count: usize,
+    last_log_time: Option<Instant>,
 }
 
 impl std::fmt::Debug for RetryState {
@@ -110,7 +102,12 @@ impl std::fmt::Debug for RetryState {
 
 impl RetryState {
     pub fn new(config: RetryConfig) -> Self {
-        Self { config, start_time: InstantProvider::now(), last_log_time: None, retry_count: 0 }
+        Self {
+            config,
+            start_time: Instant::now(),
+            retry_count: 0,
+            last_log_time: None,
+        }
     }
 
     /// Determine current retry phase based on elapsed time
@@ -145,12 +142,13 @@ impl RetryState {
     pub fn should_log(&mut self) -> bool {
         match self.last_log_time {
             None => {
-                self.last_log_time = Some(InstantProvider::now());
+                // First log - always allow
+                self.last_log_time = Some(Instant::now());
                 true
             }
-            Some(last) => {
-                if last.elapsed() >= self.config.log_interval {
-                    self.last_log_time = Some(InstantProvider::now());
+            Some(last_log) => {
+                if last_log.elapsed() >= self.config.log_interval {
+                    self.last_log_time = Some(Instant::now());
                     true
                 } else {
                     false
@@ -219,8 +217,12 @@ mod tests {
         // Immediate second log should be throttled
         assert!(!state.should_log());
 
-        // After interval, should log again
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        assert!(state.should_log());
+        // Wait for less than log_interval
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!state.should_log(), "Still should be throttled");
+
+        // Wait for the rest of the interval
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(state.should_log(), "Should log after interval");
     }
 }
