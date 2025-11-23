@@ -227,6 +227,19 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("🚨 Snap sync enabled; storage proofs are not guaranteed for every block");
     }
 
+    // Initialize Cairo Native configuration
+    //
+    // The configuration is validated and passed through parameters (no global state).
+    // Native execution is opt-in and only enabled when the --enable-native-execution CLI flag
+    // is set to true (default: false). When disabled, all contracts will use Cairo VM execution
+    // regardless of cache state.
+    let cairo_native_config = run_cmd.cairo_native_params.to_runtime_config();
+
+    // Setup: validate, initialize semaphore, and log configuration
+    // Note: Validation happens inside setup_and_log() via NativeConfig::validate()
+    mc_class_exec::config::setup_and_log(&cairo_native_config)
+        .map_err(|e| anyhow::anyhow!("Cairo Native configuration setup failed: {}", e))?;
+
     // ===================================================================== //
     //                             SERVICES (SETUP)                          //
     // ===================================================================== //
@@ -240,6 +253,7 @@ async fn main() -> anyhow::Result<()> {
     // Database
 
     tracing::info!("💾 Opening database at: {}", run_cmd.backend_params.base_path.display());
+    let cairo_native_config_arc = Arc::new(cairo_native_config);
 
     // Log preconfirmed block persistence configuration
     if run_cmd.backend_params.no_save_preconfirmed {
@@ -255,6 +269,7 @@ async fn main() -> anyhow::Result<()> {
         chain_config.clone(),
         run_cmd.backend_params.backend_config(),
         run_cmd.backend_params.rocksdb_config(),
+        cairo_native_config_arc.clone(),
     )
     .context("Starting madara backend")?;
 

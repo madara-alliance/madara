@@ -10,7 +10,7 @@ use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadat
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::fact_info::{build_on_chain_data, get_fact_info, get_fact_l2, get_program_output};
+use crate::worker::utils::fact_info::{get_fact_info, get_fact_l2, get_program_output};
 use async_trait::async_trait;
 use bytes::Bytes;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
@@ -76,7 +76,7 @@ impl OsHintsConfigurationFromLayer for OsHintsConfiguration {
     fn with_layer(layer: Layer) -> OsHintsConfiguration {
         match layer {
             Layer::L2 => OsHintsConfiguration { debug_mode: true, full_output: true, use_kzg_da: false },
-            Layer::L3 => OsHintsConfiguration { debug_mode: true, full_output: false, use_kzg_da: false },
+            Layer::L3 => OsHintsConfiguration { debug_mode: true, full_output: false, use_kzg_da: true },
         }
     }
 }
@@ -84,16 +84,16 @@ impl OsHintsConfigurationFromLayer for OsHintsConfiguration {
 #[async_trait]
 impl JobHandlerTrait for SnosJobHandler {
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(log_type = "starting", "SNOS job creation started.");
+        debug!(log_type = "starting", "{:?} job {} creation started", JobType::SnosRun, internal_id);
         let job_item = JobItem::create(internal_id.clone(), JobType::SnosRun, JobStatus::Created, metadata);
-        info!(log_type = "completed", "SNOS job creation completed.");
+        debug!(log_type = "completed", "{:?} job {} creation completed", JobType::SnosRun, internal_id);
         Ok(job_item)
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
-        info!(log_type = "starting", "SNOS job processing started.");
-        debug!("Processing SNOS job");
+        let internal_id = &job.internal_id;
+        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::SnosRun, internal_id);
+
         // Get SNOS metadata
         let snos_metadata: SnosMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
             error!(error = %e, "Failed to convert metadata to SnosMetadata");
@@ -110,6 +110,9 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_url = snos_url.trim_end_matches('/');
         debug!("Calling generate_pie function");
 
+        // Use pre-loaded versioned constants from config (loaded at startup)
+        let versioned_constants = config.snos_config().versioned_constants.clone();
+
         let input = PieGenerationInput {
             rpc_url: snos_url.to_string(),
             blocks: (start_block_number..=end_block_number).collect(),
@@ -125,6 +128,7 @@ impl JobHandlerTrait for SnosJobHandler {
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
+            versioned_constants,
         };
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
@@ -176,26 +180,20 @@ impl JobHandlerTrait for SnosJobHandler {
         }
 
         debug!("Storing SNOS outputs");
-        if config.layer() == &Layer::L3 {
-            // Store the on-chain data path
-            self.store_l2(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output)
-                .await?;
-        } else if config.layer() == &Layer::L2 {
-            // Store the Cairo Pie path
-            self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output)
-                .await?;
-        }
+        // Store the Cairo Pie path
+        self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
 
-        info!(log_type = "completed", "SNOS job processed successfully.");
+        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::SnosRun, internal_id);
 
         Ok(snos_metadata.snos_batch_index.to_string())
     }
 
-    async fn verify_job(&self, _config: Arc<Config>, _job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        info!(log_type = "starting", "SNOS job verification started.");
+    async fn verify_job(&self, _config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
+        let internal_id = &job.internal_id;
+        debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::SnosRun, internal_id);
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
-        info!(log_type = "completed", "SNOS job verification completed.");
+        info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::SnosRun, internal_id);
         Ok(JobVerificationStatus::Verified)
     }
 
@@ -213,38 +211,6 @@ impl JobHandlerTrait for SnosJobHandler {
 }
 
 impl SnosJobHandler {
-    /// Stores the [CairoPie] and the [StarknetOsOutput] and [OnChainData] in the Data Storage.
-    /// The paths will be:
-    ///     - [block_number]/cairo_pie.zip
-    ///     - [block_number]/snos_output.json
-    ///     - [block_number]/onchain_data.json
-    ///     - [block_number]/program_output.json
-    async fn store_l2(
-        &self,
-        internal_id: String,
-        data_storage: &dyn StorageClient,
-        snos_metadata: &SnosMetadata,
-        cairo_pie: CairoPie,
-        snos_output: Vec<Felt>,
-        program_output: Vec<Felt252>,
-    ) -> Result<(), SnosError> {
-        let on_chain_data = build_on_chain_data(&cairo_pie)
-            .map_err(|_e| SnosError::FactCalculationError(FactError::OnChainDataCompute))?;
-
-        self.store(internal_id.clone(), data_storage, snos_metadata, cairo_pie, snos_output, program_output).await?;
-        let on_chain_data_key = snos_metadata
-            .on_chain_data_path
-            .as_ref()
-            .ok_or_else(|| SnosError::Other(OtherError(eyre!("OnChain data path is not found"))))?;
-
-        let on_chain_data_vec = serde_json::to_vec(&on_chain_data).map_err(|e| {
-            SnosError::OnChainDataUnserializable { internal_id: internal_id.to_string(), message: e.to_string() }
-        })?;
-        data_storage.put_data(on_chain_data_vec.into(), on_chain_data_key).await.map_err(|e| {
-            SnosError::OnChainDataUnstorable { internal_id: internal_id.to_string(), message: e.to_string() }
-        })?;
-        Ok(())
-    }
     /// Stores the [CairoPie] and the [StarknetOsOutput] in the Data Storage.
     /// The paths will be:
     ///     - [block_number]/cairo_pie.zip

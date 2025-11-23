@@ -24,6 +24,9 @@ on:
         description: "Hash used to retrieve the cairo artifacts"
         required: true
         type: string
+    secrets:
+      ETHEREUM_SEPOLIA_RPC:
+        required: true
 
 jobs:
   test-end-to-end:
@@ -141,6 +144,7 @@ jobs:
         env:
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
+          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_RPC }}
           MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: ${{ secrets.MADARA_ORCHESTRATOR_ATLANTIC_API_KEY }}
         run: |
           RUST_LOG=info cargo test \
