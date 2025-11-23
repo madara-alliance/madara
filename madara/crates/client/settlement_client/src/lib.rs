@@ -160,9 +160,10 @@ use futures::{
     StreamExt,
 };
 use mc_db::MadaraBackend;
+use mp_resilience::ConnectionHealth;
 use mp_transactions::L1HandlerTransactionWithFee;
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, RwLock};
 use url::Url;
 
 mod client;
@@ -186,15 +187,21 @@ pub struct L1ClientImpl {
     provider: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_new_message_to_l2: Arc<Notify>,
+    health: Arc<RwLock<ConnectionHealth>>,
 }
 
 impl L1ClientImpl {
-    fn new(backend: Arc<MadaraBackend>, provider: Arc<dyn SettlementLayerProvider>) -> Self {
-        Self { provider, backend, notify_new_message_to_l2: Default::default() }
+    fn new(backend: Arc<MadaraBackend>, provider: Arc<dyn SettlementLayerProvider>, health: Arc<RwLock<ConnectionHealth>>) -> Self {
+        Self { provider, backend, notify_new_message_to_l2: Default::default(), health }
     }
 
     pub fn provider(&self) -> Arc<dyn SettlementLayerProvider> {
         self.provider.clone()
+    }
+
+    /// Get a reference to the L1 health tracker
+    pub fn provider_health(&self) -> Arc<RwLock<ConnectionHealth>> {
+        Arc::clone(&self.health)
     }
 
     pub async fn new_ethereum(
@@ -205,7 +212,8 @@ impl L1ClientImpl {
         let provider = EthereumClient::new(EthereumClientConfig { rpc_url, core_contract_address })
             .await
             .context("Creating ethereum client")?;
-        Ok(Self::new(backend, Arc::new(provider)))
+        let health = provider.health();
+        Ok(Self::new(backend, Arc::new(provider), health))
     }
 
     pub async fn new_starknet(
@@ -216,7 +224,8 @@ impl L1ClientImpl {
         let provider = StarknetClient::new(StarknetClientConfig { rpc_url, core_contract_address })
             .await
             .context("Creating starknet client")?;
-        Ok(Self::new(backend, Arc::new(provider)))
+        let health = provider.health();
+        Ok(Self::new(backend, Arc::new(provider), health))
     }
 }
 

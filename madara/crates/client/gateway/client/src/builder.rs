@@ -81,7 +81,7 @@ impl GatewayProvider {
             feeder_gateway_url,
             madara_specific_url: None,
             headers: HeaderMap::new(),
-            health: Arc::new(RwLock::new(crate::health::GatewayHealth::new())),
+            health: Arc::new(RwLock::new(crate::health::GatewayHealth::new("Gateway"))),
         }
     }
 

@@ -22,6 +22,7 @@ members = [
   "crates/primitives/gateway",
   "crates/primitives/rpc",
   "crates/primitives/receipt",
+  "crates/primitives/resilience",
   "crates/primitives/state_update",
   "crates/primitives/chain_config",
   "crates/primitives/utils",
@@ -93,6 +94,7 @@ mp-state-update = { path = "crates/primitives/state_update", default-features = 
 mp-utils = { path = "crates/primitives/utils", default-features = false }
 mp-chain-config = { path = "crates/primitives/chain_config", default-features = false }
 mp-oracle = { path = "crates/primitives/oracle", default-features = false }
+mp-resilience = { path = "crates/primitives/resilience", default-features = false }
 
 # Madara client
 mc-analytics = { path = "crates/client/analytics" }

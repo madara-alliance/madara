@@ -1,5 +1,5 @@
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
-use crate::retry::{RetryConfig, RetryState};
+use crate::retry::{GatewayRetryState, RetryConfig};
 use blockifier::bouncer::BouncerWeights;
 use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
 use mp_gateway::block::ProviderBlockPreConfirmed;
@@ -36,7 +36,7 @@ impl GatewayProvider {
         Fut: std::future::Future<Output = Result<T, SequencerError>>,
     {
         let config = RetryConfig::default();
-        let mut state = RetryState::new(config.clone());
+        let mut state = GatewayRetryState::new(config.clone());
 
         loop {
             match request_fn().await {
@@ -60,7 +60,7 @@ impl GatewayProvider {
 
                     // Per-operation logging at DEBUG level (detailed diagnostics)
                     if state.should_log() {
-                        let error_reason = RetryState::format_error_reason(&e);
+                        let error_reason = GatewayRetryState::format_error_reason(&e);
                         let phase = state.current_phase();
 
                         tracing::debug!(
@@ -156,12 +156,18 @@ impl GatewayProvider {
     }
 
     pub async fn get_block_bouncer_weights(&self, block_number: u64) -> Result<BouncerWeights, SequencerError> {
-        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_uri_segment("get_block_bouncer_weights")
-            .expect("Failed to add URI segment. This should not fail in prod")
-            .with_block_id(&BlockId::Number(block_number));
+        self.retry_get(
+            || async {
+                let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+                    .add_uri_segment("get_block_bouncer_weights")
+                    .expect("Failed to add URI segment. This should not fail in prod")
+                    .with_block_id(&BlockId::Number(block_number));
 
-        request.send_get::<BouncerWeights>().await
+                request.send_get::<BouncerWeights>().await
+            },
+            "get_block_bouncer_weights",
+        )
+        .await
     }
 
     pub async fn get_state_update_with_block(

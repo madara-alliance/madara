@@ -197,13 +197,18 @@ pub async fn gas_price_worker(
             }
         }
 
-        if SystemTime::now().duration_since(last_update_timestamp).expect("SystemTime::now() < last_update_timestamp")
-            > gas_provider_config.poll_interval * 10
-        {
-            return Err(SettlementClientError::GasPrice(format!(
-                "Failed to update gas prices for more than 10x poll interval: {:?}",
-                gas_provider_config.poll_interval
-            )));
+        // Note: Removed the panic condition that would kill the worker after 10x poll interval
+        // The gas price worker now retries infinitely, relying on the underlying L1 calls' retry logic
+        // to handle transient failures. The health monitor tracks L1 connection status separately.
+        let time_since_last_update = SystemTime::now()
+            .duration_since(last_update_timestamp)
+            .expect("SystemTime::now() < last_update_timestamp");
+
+        if time_since_last_update > gas_provider_config.poll_interval * 10 {
+            tracing::warn!(
+                "Gas prices haven't been updated for {:?} (>10x poll interval) - L1 may be down, continuing to retry...",
+                time_since_last_update
+            );
         }
     }
     Ok(())

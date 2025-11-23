@@ -76,7 +76,6 @@ impl Service for SyncService {
             BlockValidationConfig::default()
                 .trust_parent_hash(this.unsafe_starting_block_enabled)
                 .trust_state_root(this.unsafe_starting_block_enabled)
-                .all_verifications_disabled(true),
         ));
 
         let config = SyncControllerConfig::default()

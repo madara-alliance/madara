@@ -1,100 +1,22 @@
-/// Hybrid retry strategy with phase-based backoff for gateway requests.
+/// Gateway-specific retry strategy with error handling
 ///
-/// This module implements a sophisticated retry mechanism that adapts to different
-/// failure scenarios:
-///
-/// - **Phase 1 (Aggressive)**: 0-5 minutes - Quick recovery for temporary blips
-/// - **Phase 2 (Backoff)**: 5-30 minutes - Exponential backoff for prolonged outages
-/// - **Phase 3 (Steady)**: 30+ minutes - Fixed polling for extended maintenance
-///
-/// The strategy also considers error types (connection refused, timeout, rate limits)
-/// to optimize retry behavior.
+/// This module wraps the generic mp-resilience retry logic with gateway-specific
+/// error type handling for SequencerError.
+
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use std::time::Duration;
 
-// Use tokio::time::Instant for tests (allows time manipulation)
-// Use std::time::Instant for production (more efficient)
-#[cfg(not(test))]
-type InstantProvider = std::time::Instant;
+// Re-export the generic retry types
+pub use mp_resilience::{RetryConfig, RetryPhase, RetryState};
 
-#[cfg(test)]
-type InstantProvider = tokio::time::Instant;
-
-/// Configuration for the hybrid retry strategy
-#[derive(Debug, Clone)]
-pub struct RetryConfig {
-    /// Duration of Phase 1 (aggressive retry phase)
-    pub phase1_duration: Duration,
-    /// Retry interval during Phase 1
-    pub phase1_interval: Duration,
-    /// Minimum delay for Phase 2 exponential backoff
-    pub phase2_min_delay: Duration,
-    /// Maximum backoff delay (cap for exponential growth)
-    pub max_backoff: Duration,
-    /// Interval for logging warnings during retries
-    pub log_interval: Duration,
-    /// Whether to enable infinite retries (true for full nodes)
-    pub infinite_retry: bool,
+/// Gateway-specific retry state extensions
+pub struct GatewayRetryState {
+    inner: RetryState,
 }
 
-impl Default for RetryConfig {
-    fn default() -> Self {
-        Self {
-            phase1_duration: Duration::from_secs(5 * 60), // 5 minutes
-            phase1_interval: Duration::from_secs(2),      // 2 seconds
-            phase2_min_delay: Duration::from_secs(5),     // 5 seconds
-            max_backoff: Duration::from_secs(60),         // 60 seconds (1 minute)
-            log_interval: Duration::from_secs(10),        // Log every 10 seconds
-            infinite_retry: true,                         // Full nodes should retry indefinitely
-        }
-    }
-}
-
-/// Represents the current phase of the retry strategy
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RetryPhase {
-    /// Phase 1: Aggressive retry (0-5 minutes)
-    Aggressive,
-    /// Phase 2: Exponential backoff (5-30 minutes)
-    Backoff,
-    /// Phase 3: Steady state polling (30+ minutes)
-    Steady,
-}
-
-/// State tracker for retry attempts
-pub struct RetryState {
-    config: RetryConfig,
-    start_time: InstantProvider,
-    last_log_time: Option<InstantProvider>,
-    retry_count: usize,
-}
-
-impl std::fmt::Debug for RetryState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RetryState")
-            .field("config", &self.config)
-            .field("retry_count", &self.retry_count)
-            .finish()
-    }
-}
-
-impl RetryState {
+impl GatewayRetryState {
     pub fn new(config: RetryConfig) -> Self {
-        Self { config, start_time: InstantProvider::now(), last_log_time: None, retry_count: 0 }
-    }
-
-    /// Determine current retry phase based on elapsed time
-    pub fn current_phase(&self) -> RetryPhase {
-        let elapsed = self.start_time.elapsed();
-
-        if elapsed < self.config.phase1_duration {
-            RetryPhase::Aggressive
-        } else if elapsed < Duration::from_secs(30 * 60) {
-            // 30 minutes total (Phase 1 + Phase 2)
-            RetryPhase::Backoff
-        } else {
-            RetryPhase::Steady
-        }
+        Self { inner: RetryState::new(config) }
     }
 
     /// Calculate delay for next retry based on current phase and error type
@@ -104,45 +26,32 @@ impl RetryState {
             return self.extract_retry_after(error).unwrap_or(Duration::from_secs(10));
         }
 
-        match self.current_phase() {
-            RetryPhase::Aggressive => self.config.phase1_interval,
-            RetryPhase::Backoff => {
-                // Exponential backoff: 5s * 2^retry_count (cap exponent at 5 to prevent overflow)
-                let exponent = self.retry_count.saturating_sub(1).min(5) as u32;
-                let exponential_delay = self.config.phase2_min_delay.saturating_mul(2_u32.saturating_pow(exponent));
-                exponential_delay.min(self.config.max_backoff)
-            }
-            RetryPhase::Steady => self.config.max_backoff,
-        }
+        self.inner.next_delay()
     }
 
     /// Check if we should log this retry attempt (throttled logging)
     pub fn should_log(&mut self) -> bool {
-        match self.last_log_time {
-            None => {
-                self.last_log_time = Some(InstantProvider::now());
-                true
-            }
-            Some(last) => {
-                if last.elapsed() >= self.config.log_interval {
-                    self.last_log_time = Some(InstantProvider::now());
-                    true
-                } else {
-                    false
-                }
-            }
-        }
+        self.inner.should_log()
     }
 
     /// Increment retry counter and return current count
     pub fn increment_retry(&mut self) -> usize {
-        self.retry_count += 1;
-        self.retry_count
+        self.inner.increment_retry()
     }
 
     /// Get current retry count
     pub fn get_retry_count(&self) -> usize {
-        self.retry_count
+        self.inner.get_retry_count()
+    }
+
+    /// Determine current retry phase based on elapsed time
+    pub fn current_phase(&self) -> RetryPhase {
+        self.inner.current_phase()
+    }
+
+    /// Get elapsed time since first retry
+    pub fn elapsed(&self) -> Duration {
+        self.inner.elapsed()
     }
 
     /// Check if error is a rate limit error
@@ -227,7 +136,7 @@ mod tests {
     #[test]
     fn test_phase_determination() {
         let config = RetryConfig { phase1_duration: Duration::from_secs(10), ..Default::default() };
-        let state = RetryState::new(config);
+        let state = GatewayRetryState::new(config);
 
         // Should start in aggressive phase
         assert_eq!(state.current_phase(), RetryPhase::Aggressive);
@@ -235,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_retry_count() {
-        let mut state = RetryState::new(RetryConfig::default());
+        let mut state = GatewayRetryState::new(RetryConfig::default());
         assert_eq!(state.get_retry_count(), 0);
 
         assert_eq!(state.increment_retry(), 1);
@@ -246,7 +155,7 @@ mod tests {
     #[tokio::test]
     async fn test_log_throttling() {
         let config = RetryConfig { log_interval: Duration::from_millis(100), ..Default::default() };
-        let mut state = RetryState::new(config);
+        let mut state = GatewayRetryState::new(config);
 
         // First log should always be allowed
         assert!(state.should_log());

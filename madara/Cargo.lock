@@ -6529,6 +6529,7 @@ dependencies = [
  "mp-gateway",
  "mp-oracle",
  "mp-receipt",
+ "mp-resilience",
  "mp-rpc",
  "mp-transactions",
  "mp-utils",
@@ -6853,6 +6854,7 @@ dependencies = [
  "mp-block",
  "mp-class",
  "mp-gateway",
+ "mp-resilience",
  "mp-rpc",
  "mp-transactions",
  "reqwest",
@@ -7010,6 +7012,7 @@ dependencies = [
  "mp-class",
  "mp-convert",
  "mp-oracle",
+ "mp-resilience",
  "mp-transactions",
  "mp-utils",
  "opentelemetry",
@@ -7465,6 +7468,15 @@ dependencies = [
  "starknet-types-core",
  "starknet_api",
  "thiserror 2.0.12",
+ "tracing",
+]
+
+[[package]]
+name = "mp-resilience"
+version = "0.8.0"
+dependencies = [
+ "rstest 0.18.2",
+ "tokio",
  "tracing",
 ]
 

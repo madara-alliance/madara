@@ -39,6 +39,7 @@ pub struct StarknetClient {
     pub provider: Arc<JsonRpcClient<HttpTransport>>,
     pub core_contract_address: Felt,
     pub processed_update_state_block: AtomicU64,
+    pub health: Arc<tokio::sync::RwLock<mp_resilience::ConnectionHealth>>,
 }
 
 #[derive(Clone)]
@@ -53,6 +54,7 @@ impl Clone for StarknetClient {
             provider: Arc::clone(&self.provider),
             core_contract_address: self.core_contract_address,
             processed_update_state_block: AtomicU64::new(self.processed_update_state_block.load(Ordering::Relaxed)),
+            health: Arc::clone(&self.health),
         }
     }
 }
@@ -65,19 +67,24 @@ impl StarknetClient {
             Felt::from_hex(&config.core_contract_address).map_err(|e| -> SettlementClientError {
                 StarknetClientError::Conversion(format!("Invalid core contract address: {e}")).into()
             })?;
-        // Check if l2 contract exists
-        provider.get_class_at(BlockId::Tag(BlockTag::Latest), core_contract_address).await.map_err(
-            |e| -> SettlementClientError {
-                StarknetClientError::NetworkConnection { message: format!("Failed to connect to L2 contract: {}", e) }
-                    .into()
-            },
-        )?;
+
+        // Note: We no longer check if the contract exists here to avoid blocking startup
+        // The contract existence will be verified on the first RPC call, with retry logic
+        let health = Arc::new(tokio::sync::RwLock::new(mp_resilience::ConnectionHealth::new("L1 Endpoint")));
+
+        tracing::info!("L1 client initialized (lazy mode) - will connect on first use");
 
         Ok(Self {
             provider: Arc::new(provider),
             core_contract_address,
             processed_update_state_block: AtomicU64::new(0), // Keeping this as 0 initially when client is initialized.
+            health,
         })
+    }
+
+    /// Get a reference to the health tracker for this L1 client
+    pub fn health(&self) -> Arc<tokio::sync::RwLock<mp_resilience::ConnectionHealth>> {
+        Arc::clone(&self.health)
     }
 }
 

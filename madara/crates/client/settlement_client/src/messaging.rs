@@ -76,9 +76,48 @@ pub async fn sync(
     notify_consumer: Arc<Notify>,
     mut ctx: ServiceContext,
 ) -> Result<(), SettlementClientError> {
-    // sync inner is cancellation safe.
-    ctx.run_until_cancelled(sync_inner(settlement_client, backend, notify_consumer)).await.transpose()?;
-    Ok(())
+    use mp_resilience::{RetryConfig, RetryState};
+
+    let config = RetryConfig::default();
+    let mut retry_state = RetryState::new(config);
+
+    // Infinite retry loop for message syncing
+    loop {
+        let result = ctx.run_until_cancelled(sync_inner(
+            Arc::clone(&settlement_client),
+            Arc::clone(&backend),
+            Arc::clone(&notify_consumer),
+        )).await;
+
+        match result {
+            Some(Ok(())) => {
+                // Sync completed successfully (shouldn't normally happen as sync_inner runs indefinitely)
+                return Ok(());
+            }
+            Some(Err(e)) => {
+                // Sync failed - log and retry
+                retry_state.increment_retry();
+
+                if retry_state.should_log() {
+                    let phase = retry_state.current_phase();
+                    tracing::warn!(
+                        error = %e,
+                        retries = retry_state.get_retry_count(),
+                        phase = ?phase,
+                        "L1 message sync failed - retrying"
+                    );
+                }
+
+                let delay = retry_state.next_delay();
+                tokio::time::sleep(delay).await;
+                // Continue to next iteration of the loop
+            }
+            None => {
+                // Context was cancelled
+                return Ok(());
+            }
+        }
+    }
 }
 
 async fn sync_inner(

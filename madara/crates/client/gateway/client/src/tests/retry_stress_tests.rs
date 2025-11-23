@@ -8,7 +8,7 @@
 /// - Flapping gateway scenarios
 ///
 /// Run with: `cargo test --package mc-gateway-client -- --ignored --test-threads=1`
-use crate::retry::{RetryConfig, RetryPhase, RetryState};
+use crate::retry::{GatewayRetryState, RetryConfig, RetryPhase};
 use crate::GatewayProvider;
 use httpmock::prelude::*;
 use mp_gateway::error::SequencerError;
@@ -35,7 +35,7 @@ async fn test_quick_recovery_phase1() {
         phase1_interval: Duration::from_secs(2),   // 2 seconds
         ..Default::default()
     };
-    let mut state = RetryState::new(config.clone());
+    let mut state = GatewayRetryState::new(config.clone());
 
     // Simulate 5 quick failures in Phase 1
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
@@ -76,7 +76,7 @@ async fn test_phase1_aggressive_polling() {
         ..Default::default()
     };
 
-    let state = RetryState::new(config);
+    let state = GatewayRetryState::new(config);
 
     // Simulate connection refused error
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
@@ -108,7 +108,7 @@ async fn test_phase1_to_phase2_transition() {
         ..Default::default()
     };
 
-    let state = RetryState::new(config.clone());
+    let state = GatewayRetryState::new(config.clone());
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -148,7 +148,7 @@ async fn test_phase2_exponential_backoff() {
         ..Default::default()
     };
 
-    let mut state = RetryState::new(config);
+    let mut state = GatewayRetryState::new(config);
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -181,7 +181,7 @@ async fn test_max_backoff_cap() {
         ..Default::default()
     };
 
-    let mut state = RetryState::new(config.clone());
+    let mut state = GatewayRetryState::new(config.clone());
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -207,9 +207,9 @@ async fn test_connection_refused_error() {
         "Connection refused",
     )));
 
-    assert!(RetryState::is_connection_error(&error));
+    assert!(GatewayRetryState::is_connection_error(&error));
 
-    let reason = RetryState::format_error_reason(&error);
+    let reason = GatewayRetryState::format_error_reason(&error);
     assert_eq!(reason, "connection refused");
 }
 
@@ -221,9 +221,9 @@ async fn test_timeout_error() {
         "Operation timed out",
     )));
 
-    assert!(RetryState::is_timeout_error(&error));
+    assert!(GatewayRetryState::is_timeout_error(&error));
 
-    let reason = RetryState::format_error_reason(&error);
+    let reason = GatewayRetryState::format_error_reason(&error);
     assert_eq!(reason, "timeout");
 }
 
@@ -234,7 +234,7 @@ async fn test_rate_limit_handling() {
 
     let error = SequencerError::StarknetError(StarknetError::rate_limited());
 
-    let state = RetryState::new(RetryConfig::default());
+    let state = GatewayRetryState::new(RetryConfig::default());
     let delay = state.next_delay(&error);
 
     // Should respect rate limiting
@@ -247,7 +247,7 @@ async fn test_rate_limit_handling() {
 async fn test_phase1_log_throttling() {
     let config = RetryConfig { log_interval: Duration::from_secs(10), ..Default::default() };
 
-    let mut state = RetryState::new(config);
+    let mut state = GatewayRetryState::new(config);
 
     // First log should be allowed
     assert!(state.should_log(), "First log should be allowed");
@@ -267,7 +267,7 @@ async fn test_phase1_log_throttling() {
 /// Test 10: Retry counter increments correctly
 #[tokio::test]
 async fn test_retry_counter() {
-    let mut state = RetryState::new(RetryConfig::default());
+    let mut state = GatewayRetryState::new(RetryConfig::default());
 
     assert_eq!(state.get_retry_count(), 0);
 
@@ -297,7 +297,7 @@ async fn test_error_message_formatting() {
     ];
 
     for (error, expected) in test_cases {
-        let formatted = RetryState::format_error_reason(&error);
+        let formatted = GatewayRetryState::format_error_reason(&error);
         assert_eq!(formatted, expected, "Error formatting mismatch for: {:?}", error);
     }
 }
@@ -312,7 +312,7 @@ async fn test_eventual_success() {
         infinite_retry: true,
         ..Default::default()
     };
-    let mut state = RetryState::new(config.clone());
+    let mut state = GatewayRetryState::new(config.clone());
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -350,7 +350,7 @@ async fn test_extended_outage_30min() {
         ..Default::default()
     };
 
-    let state = RetryState::new(config);
+    let state = GatewayRetryState::new(config);
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -400,7 +400,7 @@ async fn test_flapping_gateway() {
 
     // Simulate 5 flapping cycles (fail -> retry -> success -> fail -> retry -> success...)
     for cycle in 0..5 {
-        let mut state = RetryState::new(config.clone());
+        let mut state = GatewayRetryState::new(config.clone());
 
         // Fail once
         state.increment_retry();
@@ -433,13 +433,13 @@ async fn test_mixed_error_types() {
         SequencerError::StarknetError(mp_gateway::error::StarknetError::rate_limited()),
     ];
 
-    let state = RetryState::new(RetryConfig::default());
+    let state = GatewayRetryState::new(RetryConfig::default());
 
     for error in errors {
         let delay = state.next_delay(&error);
-        let is_conn_error = RetryState::is_connection_error(&error);
-        let is_timeout = RetryState::is_timeout_error(&error);
-        let formatted = RetryState::format_error_reason(&error);
+        let is_conn_error = GatewayRetryState::is_connection_error(&error);
+        let is_timeout = GatewayRetryState::is_timeout_error(&error);
+        let formatted = GatewayRetryState::format_error_reason(&error);
 
         println!(
             "Error: {:?}, Delay: {:?}, ConnErr: {}, Timeout: {}, Formatted: {}",
@@ -456,7 +456,7 @@ async fn test_mixed_error_types() {
 async fn test_infinite_retry_stability() {
     let config = RetryConfig { infinite_retry: true, ..Default::default() };
 
-    let mut state = RetryState::new(config);
+    let mut state = GatewayRetryState::new(config);
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -481,7 +481,7 @@ async fn test_infinite_retry_stability() {
 /// Test 17: Performance test - measure retry overhead
 #[tokio::test]
 async fn test_retry_performance_overhead() {
-    let mut state = RetryState::new(RetryConfig::default());
+    let mut state = GatewayRetryState::new(RetryConfig::default());
 
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
@@ -493,7 +493,7 @@ async fn test_retry_performance_overhead() {
     // Measure overhead of 1000 delay calculations
     for _ in 0..1000 {
         let _delay = state.next_delay(&error);
-        let _formatted = RetryState::format_error_reason(&error);
+        let _formatted = GatewayRetryState::format_error_reason(&error);
         state.increment_retry();
     }
 
