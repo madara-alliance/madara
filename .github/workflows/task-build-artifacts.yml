@@ -76,7 +76,7 @@ jobs:
           echo "artifacts-pr=$ARTIFACTS_PR" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: useblacksmith/setup-docker-builder@v1
 
       - name: Build Docker image
         id: push

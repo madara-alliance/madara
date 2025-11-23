@@ -95,6 +95,11 @@ pub trait NodeRpcMethods: Send + Sync {
     /// Returns the RPC endpoint URL for this node
     fn get_endpoint(&self) -> Url;
 
+    /// Returns the admin RPC endpoint, if applicable
+    fn get_admin_endpoint(&self) -> Url {
+        self.get_endpoint()
+    }
+
     /// Fetches the latest block number from the Starknet RPC endpoint.
     ///
     /// # Returns
@@ -104,7 +109,7 @@ pub trait NodeRpcMethods: Send + Sync {
     /// * `Err(NodeRpcError::InvalidResponse)` - For parsing failures or unexpected responses
     /// * `Err(NodeRpcError::RpcError)` - For network or other RPC errors
     async fn get_latest_block_number(&self) -> Result<Option<u64>, NodeRpcError> {
-        match self.make_rpc_request("starknet_blockNumber", json!([])).await {
+        match self.make_rpc_request("starknet_blockNumber", json!([]), false).await {
             Ok(response) => Ok(self.extract_block_number_from_response(&response)?),
             Err(NodeRpcError::BlockNotFound) => Ok(None),
             Err(other_error) => Err(other_error),
@@ -210,7 +215,7 @@ pub trait NodeRpcMethods: Send + Sync {
             BlockId::Pending => json!(["pending"]),
         };
 
-        let response = self.make_rpc_request("starknet_getBlockWithTxHashes", params).await?;
+        let response = self.make_rpc_request("starknet_getBlockWithTxHashes", params, false).await?;
 
         self.extract_block_status_from_response(&response)
     }
@@ -245,9 +250,23 @@ pub trait NodeRpcMethods: Send + Sync {
         &self,
         transaction_hash: &str,
     ) -> Result<TransactionFinalityStatus, NodeRpcError> {
-        let response = self.make_rpc_request("starknet_getTransactionReceipt", json!([transaction_hash])).await?;
+        let response =
+            self.make_rpc_request("starknet_getTransactionReceipt", json!([transaction_hash]), false).await?;
 
         self.extract_transaction_finality_from_response(&response)
+    }
+
+    async fn stop_block_production(&self) -> Result<(), NodeRpcError> {
+        self.make_rpc_request(
+            "madara_service",
+            json!( {
+              "service": ["block_production"],
+              "status": "stop"
+            }),
+            true,
+        )
+        .await?;
+        Ok(())
     }
 
     /// Makes an RPC request to the Starknet node
@@ -265,8 +284,9 @@ pub trait NodeRpcMethods: Send + Sync {
         &self,
         method: &str,
         params: serde_json::Value,
+        to_admin: bool,
     ) -> Result<serde_json::Value, NodeRpcError> {
-        let url = self.get_endpoint();
+        let url = if to_admin { self.get_admin_endpoint() } else { self.get_endpoint() };
         let client = reqwest::Client::new();
 
         let request_body = json!({

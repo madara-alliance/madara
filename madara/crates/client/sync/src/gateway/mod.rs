@@ -27,6 +27,7 @@ pub struct ForwardSyncConfig {
     pub snap_sync: bool,
     pub keep_pre_v0_13_2_hashes: bool,
     pub enable_bouncer_config_sync: bool,
+    pub disable_reorg: bool,
 }
 
 impl Default for ForwardSyncConfig {
@@ -42,6 +43,7 @@ impl Default for ForwardSyncConfig {
             snap_sync: false,
             keep_pre_v0_13_2_hashes: false,
             enable_bouncer_config_sync: false,
+            disable_reorg: false,
         }
     }
 }
@@ -59,6 +61,9 @@ impl ForwardSyncConfig {
 
     pub fn enable_bouncer_config_sync(self, val: bool) -> Self {
         Self { enable_bouncer_config_sync: val, ..self }
+    }
+    pub fn disable_reorg(self, val: bool) -> Self {
+        Self { disable_reorg: val, ..self }
     }
 }
 
@@ -110,6 +115,7 @@ impl GatewayForwardSync {
             config.block_batch_size,
             config.keep_pre_v0_13_2_hashes,
             config.enable_bouncer_config_sync,
+            config.disable_reorg,
         );
         let classes_pipeline = classes::classes_pipeline(
             backend.clone(),
@@ -126,7 +132,7 @@ impl GatewayForwardSync {
             config.apply_state_parallelization,
             config.apply_state_batch_size,
             config.disable_tries,
-            config.snap_sync
+            config.snap_sync,
         );
         (blocks_pipeline, classes_pipeline, apply_state_pipeline)
     }
@@ -281,9 +287,7 @@ impl ForwardPipeline for GatewayForwardSync {
             // - start_next_block: The block after the current chain tip (last sealed block)
             // - new_next_block: The block after the minimum of all pipeline completions
             // This ensures we only seal blocks that have been fully processed by ALL pipelines
-            let start_next_block = self.backend.latest_confirmed_block_n()
-                .map(|n| n + 1)
-                .unwrap_or(0);
+            let start_next_block = self.backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
 
             for block_n in start_next_block..new_next_block {

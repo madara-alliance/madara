@@ -31,4 +31,12 @@ pub struct EthereumSettlementCliArgs {
 
     #[arg(env = "MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR", long, default_value = "1.5")]
     pub max_gas_price_mul_factor: f64,
+
+    /// Disable PeerDAS (PeerDAS is a feature introduced in Fusaka upgrade which changes the way we settle on Ethereum).
+    /// https://ethereum.org/roadmap/fusaka
+    /// https://notes.ethereum.org/@fradamt/das-fork-choice
+    /// Whether settling on Ethereum mainnet (true) or Sepolia testnet (false).
+    /// Mainnet uses blob proofs (pre-Fusaka), Sepolia uses cell proofs (post-Fusaka).
+    #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_DISABLE_PEERDAS", long, default_value = "false")]
+    pub disable_peerdas: bool,
 }
