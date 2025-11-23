@@ -219,20 +219,21 @@ impl ConnectionHealth {
     }
 
     fn should_transition_to_healthy(&self) -> bool {
-        // Ensure we've been in Degraded state for minimum time to avoid flapping
-        // This prevents rapid Down -> Degraded -> Healthy -> Down cycles on flaky connections
-        if self.last_state_change.elapsed() < MIN_TIME_IN_DEGRADED {
-            return false;
-        }
-
         // Immediate transition if we have enough consecutive successes
         if self.consecutive_successes >= CONSECUTIVE_SUCCESSES_FOR_RECOVERY {
             return true;
         }
 
-        // Also transition if no operations are failing anymore (0% failure rate with no active failures)
+        // Also transition immediately if no operations are failing (clean recovery)
+        // This allows fast transition from Down -> Degraded -> Healthy when L1 comes back up
         if self.failed_operations.is_empty() && self.failure_rate() == 0.0 && self.recovery_attempts > 0 {
             return true;
+        }
+
+        // For ongoing partial failures, ensure we've been in Degraded state for minimum time
+        // This prevents rapid Down -> Degraded -> Healthy -> Down cycles on flaky connections
+        if self.last_state_change.elapsed() < MIN_TIME_IN_DEGRADED {
+            return false;
         }
 
         // Standard recovery: enough attempts with low failure rate
@@ -446,14 +447,7 @@ mod tests {
         }
         assert!(matches!(health.state, HealthState::Down));
 
-        // First success -> Transitions to Degraded (recovery started)
-        health.report_success();
-        assert!(matches!(health.state, HealthState::Degraded { .. }));
-
-        // Wait for minimum time in state
-        std::thread::sleep(std::time::Duration::from_secs(3));
-
-        // Another success after minimum time -> Transitions to Healthy
+        // First success -> Immediately transitions to Healthy (clean recovery with no ongoing failures)
         health.report_success();
         assert!(matches!(health.state, HealthState::Healthy));
     }
