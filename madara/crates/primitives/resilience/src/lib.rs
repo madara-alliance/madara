@@ -34,10 +34,9 @@
 ///     }
 /// }
 /// ```
-
 pub mod health;
 pub mod retry;
 
 // Re-export main types for convenience
-pub use health::{ConnectionHealth, HealthState, start_health_monitor};
+pub use health::{start_health_monitor, ConnectionHealth, HealthState};
 pub use retry::{RetryConfig, RetryPhase, RetryState};

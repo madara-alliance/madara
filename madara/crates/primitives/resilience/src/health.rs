@@ -237,8 +237,7 @@ impl ConnectionHealth {
         }
 
         // Standard recovery: enough attempts with low failure rate
-        self.recovery_attempts >= RECOVERY_ATTEMPTS_THRESHOLD
-            && self.failure_rate() < FAILURE_RATE_HEALTHY_THRESHOLD
+        self.recovery_attempts >= RECOVERY_ATTEMPTS_THRESHOLD && self.failure_rate() < FAILURE_RATE_HEALTHY_THRESHOLD
     }
 
     /// Calculate current failure rate

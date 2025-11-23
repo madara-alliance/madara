@@ -2,7 +2,6 @@
 ///
 /// This module wraps the generic mp-resilience retry logic with gateway-specific
 /// error type handling for SequencerError.
-
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use std::time::Duration;
 

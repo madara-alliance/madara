@@ -179,9 +179,9 @@ impl SettlementLayerProvider for EthereumClient {
                 logs.into_iter().rev().map(|log| log.log_decode::<StarknetCoreContract::LogStateUpdate>()).next();
 
             match latest_logs {
-                Some(Ok(log)) => log
-                    .block_number
-                    .ok_or_else(|| -> SettlementClientError { EthereumClientError::MissingField("block_number").into() }),
+                Some(Ok(log)) => log.block_number.ok_or_else(|| -> SettlementClientError {
+                    EthereumClientError::MissingField("block_number").into()
+                }),
                 Some(Err(e)) => Err(SettlementClientError::Ethereum(EthereumClientError::Contract(e.to_string()))),
                 None => Err(SettlementClientError::Ethereum(EthereumClientError::EventProcessing {
                     message: format!("no LogStateUpdate event found in block range [None, {}]", latest_block),
@@ -263,18 +263,20 @@ impl SettlementLayerProvider for EthereumClient {
             // Try to create the event stream with retry logic
             let event_filter = self.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
-            let event_stream_result = ctx.run_until_cancelled(async {
-                self.retry_l1_call("watch_events", || async {
-                    event_filter.watch().await.map_err(|e| -> SettlementClientError {
-                        EthereumClientError::EventStream { message: format!("Failed to watch events: {}", e) }.into()
+            let event_stream_result = ctx
+                .run_until_cancelled(async {
+                    self.retry_l1_call("watch_events", || async {
+                        event_filter.watch().await.map_err(|e| -> SettlementClientError {
+                            EthereumClientError::EventStream { message: format!("Failed to watch events: {}", e) }
+                                .into()
+                        })
                     })
-                }).await
-            }).await;
+                    .await
+                })
+                .await;
 
             let mut event_stream = match event_stream_result {
-                Some(Ok(stream)) => {
-                    stream.into_stream()
-                },
+                Some(Ok(stream)) => stream.into_stream(),
                 Some(Err(e)) => {
                     // This shouldn't happen since retry_l1_call has infinite retry,
                     // but handle it just in case
@@ -474,18 +476,20 @@ impl SettlementLayerProvider for EthereumClient {
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
         // Wrap the watch call with retry logic to handle L1 being down
         // Note: We need to recreate the filter inside the closure to avoid move issues
-        let event_stream = self.retry_l1_call("watch_message_events", || async {
-            let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
-            filter.from_block(from_l1_block_n).to_block(BlockNumberOrTag::Finalized).watch().await.map_err(
-                |e| -> SettlementClientError {
-                    EthereumClientError::ArchiveRequired(format!(
-                        "Could not fetch events, archive node may be required: {}",
-                        e
-                    ))
-                    .into()
-                },
-            )
-        }).await?;
+        let event_stream = self
+            .retry_l1_call("watch_message_events", || async {
+                let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
+                filter.from_block(from_l1_block_n).to_block(BlockNumberOrTag::Finalized).watch().await.map_err(
+                    |e| -> SettlementClientError {
+                        EthereumClientError::ArchiveRequired(format!(
+                            "Could not fetch events, archive node may be required: {}",
+                            e
+                        ))
+                        .into()
+                    },
+                )
+            })
+            .await?;
 
         Ok(EthereumEventStream::new(event_stream).boxed())
     }
@@ -645,14 +649,14 @@ mod l1_messaging_tests {
         transports::http::{Client, Http},
     };
     use mc_db::MadaraBackend;
-    use mp_resilience::ConnectionHealth;
-    use tokio::sync::RwLock;
     use mp_chain_config::ChainConfig;
+    use mp_resilience::ConnectionHealth;
     use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
     use mp_utils::service::ServiceContext;
     use rstest::*;
     use starknet_types_core::felt::Felt;
     use std::{sync::Arc, time::Duration};
+    use tokio::sync::RwLock;
     use tracing_test::traced_test;
     use url::Url;
 

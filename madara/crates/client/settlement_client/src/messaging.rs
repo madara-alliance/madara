@@ -83,11 +83,13 @@ pub async fn sync(
 
     // Infinite retry loop for message syncing
     loop {
-        let result = ctx.run_until_cancelled(sync_inner(
-            Arc::clone(&settlement_client),
-            Arc::clone(&backend),
-            Arc::clone(&notify_consumer),
-        )).await;
+        let result = ctx
+            .run_until_cancelled(sync_inner(
+                Arc::clone(&settlement_client),
+                Arc::clone(&backend),
+                Arc::clone(&notify_consumer),
+            ))
+            .await;
 
         match result {
             Some(Ok(())) => {

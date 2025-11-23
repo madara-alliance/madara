@@ -104,10 +104,7 @@ pub struct RetryState {
 
 impl std::fmt::Debug for RetryState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RetryState")
-            .field("config", &self.config)
-            .field("retry_count", &self.retry_count)
-            .finish()
+        f.debug_struct("RetryState").field("config", &self.config).field("retry_count", &self.retry_count).finish()
     }
 }
 

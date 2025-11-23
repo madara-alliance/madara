@@ -2,7 +2,6 @@
 ///
 /// This module provides gateway-specific health monitoring by wrapping the generic
 /// mp-resilience ConnectionHealth with gateway-specific context.
-
 use mp_resilience::ConnectionHealth;
 use std::sync::Arc;
 use tokio::sync::RwLock;

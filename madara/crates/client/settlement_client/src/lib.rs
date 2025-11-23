@@ -191,7 +191,11 @@ pub struct L1ClientImpl {
 }
 
 impl L1ClientImpl {
-    fn new(backend: Arc<MadaraBackend>, provider: Arc<dyn SettlementLayerProvider>, health: Arc<RwLock<ConnectionHealth>>) -> Self {
+    fn new(
+        backend: Arc<MadaraBackend>,
+        provider: Arc<dyn SettlementLayerProvider>,
+        health: Arc<RwLock<ConnectionHealth>>,
+    ) -> Self {
         Self { provider, backend, notify_new_message_to_l2: Default::default(), health }
     }
 
