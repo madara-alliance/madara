@@ -128,7 +128,7 @@ async fn test_phase1_to_phase2_transition() {
 
     // Should now be in Phase 2
     match state.current_phase() {
-        RetryPhase::Backoff { .. } => {
+        RetryPhase::Backoff => {
             // Success - we're in backoff phase
             let delay = state.next_delay(&error);
             assert!(delay >= Duration::from_secs(5), "Phase 2 should use exponential backoff");

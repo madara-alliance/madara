@@ -39,6 +39,7 @@ impl GatewayRetryState {
     }
 
     /// Get current retry count
+    #[allow(dead_code)]
     pub fn get_retry_count(&self) -> usize {
         self.inner.get_retry_count()
     }
@@ -49,6 +50,7 @@ impl GatewayRetryState {
     }
 
     /// Get elapsed time since first retry
+    #[allow(dead_code)]
     pub fn elapsed(&self) -> Duration {
         self.inner.elapsed()
     }
@@ -69,6 +71,7 @@ impl GatewayRetryState {
     }
 
     /// Check if error is a connection error (network-level failure)
+    #[allow(dead_code)]
     pub fn is_connection_error(error: &SequencerError) -> bool {
         match error {
             SequencerError::HttpCallError(e) => {
@@ -84,6 +87,7 @@ impl GatewayRetryState {
     }
 
     /// Check if error is a timeout
+    #[allow(dead_code)]
     pub fn is_timeout_error(error: &SequencerError) -> bool {
         match error {
             SequencerError::HttpCallError(e) => {
