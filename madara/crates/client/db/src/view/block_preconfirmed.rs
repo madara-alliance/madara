@@ -462,7 +462,7 @@ mod tests {
                         }],
                         old_declared_contracts: vec![Felt::from(400u64)],
                         replaced_classes: vec![],
-                        migrated_compiled_classes: vec![] // TODO(prakhar,22/11/2025): Add value here and update tests
+                        migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Add value here and update tests
                     },
                     transactions: vec![],
                     events: vec![],

@@ -14,26 +14,22 @@ use starknet_types_core::felt::Felt;
 /// Extract contract address from a broadcasted transaction for validation
 fn get_contract_address_from_tx(tx: &BroadcastedTxn) -> Option<Felt> {
     match tx {
-        BroadcastedTxn::Invoke(invoke_tx) => {
-            match invoke_tx {
-                mp_rpc::v0_10_0::BroadcastedInvokeTxn::V0(tx) => Some(tx.contract_address),
-                mp_rpc::v0_10_0::BroadcastedInvokeTxn::V1(tx) => Some(tx.sender_address),
-                mp_rpc::v0_10_0::BroadcastedInvokeTxn::V3(tx) => Some(tx.sender_address),
-                mp_rpc::v0_10_0::BroadcastedInvokeTxn::QueryV0(tx) => Some(tx.contract_address),
-                mp_rpc::v0_10_0::BroadcastedInvokeTxn::QueryV1(tx) => Some(tx.sender_address),
-                mp_rpc::v0_10_0::BroadcastedInvokeTxn::QueryV3(tx) => Some(tx.sender_address),
-            }
-        }
-        BroadcastedTxn::Declare(declare_tx) => {
-            match declare_tx {
-                mp_rpc::v0_10_0::BroadcastedDeclareTxn::V1(tx) => Some(tx.sender_address),
-                mp_rpc::v0_10_0::BroadcastedDeclareTxn::V2(tx) => Some(tx.sender_address),
-                mp_rpc::v0_10_0::BroadcastedDeclareTxn::V3(tx) => Some(tx.sender_address),
-                mp_rpc::v0_10_0::BroadcastedDeclareTxn::QueryV1(tx) => Some(tx.sender_address),
-                mp_rpc::v0_10_0::BroadcastedDeclareTxn::QueryV2(tx) => Some(tx.sender_address),
-                mp_rpc::v0_10_0::BroadcastedDeclareTxn::QueryV3(tx) => Some(tx.sender_address),
-            }
-        }
+        BroadcastedTxn::Invoke(invoke_tx) => match invoke_tx {
+            mp_rpc::v0_10_0::BroadcastedInvokeTxn::V0(tx) => Some(tx.contract_address),
+            mp_rpc::v0_10_0::BroadcastedInvokeTxn::V1(tx) => Some(tx.sender_address),
+            mp_rpc::v0_10_0::BroadcastedInvokeTxn::V3(tx) => Some(tx.sender_address),
+            mp_rpc::v0_10_0::BroadcastedInvokeTxn::QueryV0(tx) => Some(tx.contract_address),
+            mp_rpc::v0_10_0::BroadcastedInvokeTxn::QueryV1(tx) => Some(tx.sender_address),
+            mp_rpc::v0_10_0::BroadcastedInvokeTxn::QueryV3(tx) => Some(tx.sender_address),
+        },
+        BroadcastedTxn::Declare(declare_tx) => match declare_tx {
+            mp_rpc::v0_10_0::BroadcastedDeclareTxn::V1(tx) => Some(tx.sender_address),
+            mp_rpc::v0_10_0::BroadcastedDeclareTxn::V2(tx) => Some(tx.sender_address),
+            mp_rpc::v0_10_0::BroadcastedDeclareTxn::V3(tx) => Some(tx.sender_address),
+            mp_rpc::v0_10_0::BroadcastedDeclareTxn::QueryV1(tx) => Some(tx.sender_address),
+            mp_rpc::v0_10_0::BroadcastedDeclareTxn::QueryV2(tx) => Some(tx.sender_address),
+            mp_rpc::v0_10_0::BroadcastedDeclareTxn::QueryV3(tx) => Some(tx.sender_address),
+        },
         // DeployAccount transactions are deploying new contracts, so we don't check for existence
         BroadcastedTxn::DeployAccount(_) => None,
     }

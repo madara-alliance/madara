@@ -1,5 +1,6 @@
-use crate::versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server as V0_8_1Impl;
 use crate::versions::user::v0_10_0::StarknetReadRpcApiV0_10_0Server;
+use crate::versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server as V0_8_1Impl;
+use crate::versions::user::v0_9_0::StarknetReadRpcApiV0_9_0Server as V0_9_0Impl;
 use crate::{Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_chain_config::RpcVersion;
@@ -12,29 +13,22 @@ use mp_rpc::v0_10_0::{
     TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
 };
 
-pub mod call;
+// Only implement functions that have v0.10.0-specific changes:
+// - spec_version: different return value
+// - get_state_update: PreConfirmedStateUpdate structure changed (no old_root)
+// - get_events: EmittedEvent structure changed (has transaction_index and event_index)
+// - estimate_fee: needs CONTRACT_NOT_FOUND error check
+// - estimate_message_fee: needs CONTRACT_NOT_FOUND error check
+// - get_storage_proof: ContractStorageKeysItem uses StorageKey instead of Felt
 pub mod estimate_fee;
 pub mod estimate_message_fee;
-pub mod get_block_transaction_count;
-pub mod get_block_with_receipts;
-pub mod get_block_with_tx_hashes;
-pub mod get_block_with_txs;
-pub mod get_class;
-pub mod get_class_at;
-pub mod get_class_hash_at;
 pub mod get_events;
-pub mod get_nonce;
 pub mod get_state_update;
-pub mod get_storage_at;
-pub mod get_transaction_by_block_id_and_index;
-pub mod get_transaction_by_hash;
-pub mod get_transaction_receipt;
-pub mod get_transaction_status;
 
 #[async_trait]
 impl StarknetReadRpcApiV0_10_0Server for Starknet {
     fn spec_version(&self) -> RpcResult<String> {
-        Ok(RpcVersion::RPC_VERSION_0_9_0.to_string())
+        Ok(RpcVersion::RPC_VERSION_0_10_0.to_string())
     }
 
     fn block_number(&self) -> RpcResult<u64> {
@@ -54,11 +48,12 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
     }
 
     async fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<Felt>> {
-        Ok(call::call(self, request, block_id).await?)
+        // BlockId is the same type as v0.9.0 (via type alias), so we can delegate directly
+        V0_9_0Impl::call(self, request, block_id).await
     }
 
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {
-        Ok(get_block_transaction_count::get_block_transaction_count(self, block_id)?)
+        V0_9_0Impl::get_block_transaction_count(self, block_id)
     }
 
     async fn estimate_fee(
@@ -75,27 +70,28 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
     }
 
     fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
-        Ok(get_block_with_receipts::get_block_with_receipts(self, block_id)?)
+        // BlockId is the same type as v0.9.0 (via type alias), so we can delegate directly
+        V0_9_0Impl::get_block_with_receipts(self, block_id)
     }
 
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedBlockWithTxHashes> {
-        Ok(get_block_with_tx_hashes::get_block_with_tx_hashes(self, block_id)?)
+        V0_9_0Impl::get_block_with_tx_hashes(self, block_id)
     }
 
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedBlockWithTxs> {
-        Ok(get_block_with_txs::get_block_with_txs(self, block_id)?)
+        V0_9_0Impl::get_block_with_txs(self, block_id)
     }
 
     fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<MaybeDeprecatedContractClass> {
-        Ok(get_class_at::get_class_at(self, block_id, contract_address)?)
+        V0_9_0Impl::get_class_at(self, block_id, contract_address)
     }
 
     fn get_class_hash_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt> {
-        Ok(get_class_hash_at::get_class_hash_at(self, block_id, contract_address)?)
+        V0_9_0Impl::get_class_hash_at(self, block_id, contract_address)
     }
 
     fn get_class(&self, block_id: BlockId, class_hash: Felt) -> RpcResult<MaybeDeprecatedContractClass> {
-        Ok(get_class::get_class(self, block_id, class_hash)?)
+        V0_9_0Impl::get_class(self, block_id, class_hash)
     }
 
     fn get_events(&self, filter: EventFilterWithPageRequest) -> RpcResult<EventsChunk> {
@@ -103,27 +99,27 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
     }
 
     fn get_nonce(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<Felt> {
-        Ok(get_nonce::get_nonce(self, block_id, contract_address)?)
+        V0_9_0Impl::get_nonce(self, block_id, contract_address)
     }
 
     fn get_storage_at(&self, contract_address: Felt, key: Felt, block_id: BlockId) -> RpcResult<Felt> {
-        Ok(get_storage_at::get_storage_at(self, contract_address, key, block_id)?)
+        V0_9_0Impl::get_storage_at(self, contract_address, key, block_id)
     }
 
     fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<TxnWithHash> {
-        Ok(get_transaction_by_block_id_and_index::get_transaction_by_block_id_and_index(self, block_id, index)?)
+        V0_9_0Impl::get_transaction_by_block_id_and_index(self, block_id, index)
     }
 
     fn get_transaction_by_hash(&self, transaction_hash: Felt) -> RpcResult<TxnWithHash> {
-        Ok(get_transaction_by_hash::get_transaction_by_hash(self, transaction_hash)?)
+        V0_9_0Impl::get_transaction_by_hash(self, transaction_hash)
     }
 
     fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TxnReceiptWithBlockInfo> {
-        Ok(get_transaction_receipt::get_transaction_receipt(self, transaction_hash)?)
+        V0_9_0Impl::get_transaction_receipt(self, transaction_hash)
     }
 
     async fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus> {
-        Ok(get_transaction_status::get_transaction_status(self, transaction_hash).await?)
+        V0_9_0Impl::get_transaction_status(self, transaction_hash).await
     }
 
     fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedStateUpdate> {

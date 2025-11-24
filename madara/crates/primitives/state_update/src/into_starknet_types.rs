@@ -200,7 +200,10 @@ impl From<StateDiff> for mp_rpc::v0_10_0::StateDiff {
             deployed_contracts: state_diff
                 .deployed_contracts
                 .into_iter()
-                .map(|item| mp_rpc::v0_10_0::DeployedContractItem { address: item.address, class_hash: item.class_hash })
+                .map(|item| mp_rpc::v0_10_0::DeployedContractItem {
+                    address: item.address,
+                    class_hash: item.class_hash,
+                })
                 .collect(),
             replaced_classes: state_diff
                 .replaced_classes

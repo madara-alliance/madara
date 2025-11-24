@@ -39,9 +39,7 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
             state_diff: state_diff.into(),
         }))
     } else {
-        Ok(MaybePreConfirmedStateUpdate::PreConfirmed(PreConfirmedStateUpdate {
-            state_diff: state_diff.into(),
-        }))
+        Ok(MaybePreConfirmedStateUpdate::PreConfirmed(PreConfirmedStateUpdate { state_diff: state_diff.into() }))
     }
 }
 
