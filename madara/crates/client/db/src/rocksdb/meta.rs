@@ -259,7 +259,7 @@ impl RocksDBStorageInner {
             return Ok(None);
         };
         let serializable: RuntimeExecutionConfigSerializable = super::deserialize(&res)?;
-        Ok(Some(RuntimeExecutionConfig::from_serializable(serializable, backend_chain_config)?))
+        Ok(Some(RuntimeExecutionConfig::from_saved_config(serializable, backend_chain_config)?))
     }
 
     /// Get the latest block number where snap sync computed the trie.

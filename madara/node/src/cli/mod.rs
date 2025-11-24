@@ -2,7 +2,6 @@ use anyhow::Context;
 use clap::ArgGroup;
 use l2::L2SyncParams;
 use mp_chain_config::ChainConfig;
-use mp_utils::crypto::ZeroingPrivateKey;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -301,8 +300,8 @@ impl RunCmd {
         };
 
         chain_config.private_key = match self.private_key.take() {
-            Some(s) => s.try_into().context("Failed to parse private key")?,
-            None => ZeroingPrivateKey::default(),
+            Some(s) => Some(s.try_into().context("Failed to parse private key")?),
+            None => None,
         };
 
         Ok(Arc::new(chain_config))

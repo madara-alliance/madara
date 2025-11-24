@@ -576,7 +576,7 @@ impl BlockProductionTask {
             .exec_constants_by_protocol_version(current_chain_config.latest_protocol_version)
             .context("Failed to resolve execution constants for latest protocol version")?;
 
-        let runtime_config = RuntimeExecutionConfig::from_arc_chain_config(
+        let runtime_config = RuntimeExecutionConfig::from_current_config(
             current_chain_config,
             current_exec_constants,
             self.no_charge_fee,
