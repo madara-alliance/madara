@@ -446,7 +446,14 @@ impl StateUpdateJobHandler {
         blob_data: Vec<Vec<u8>>,
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
-        let last_tx_hash_executed = if snos.get(8) == Some(&Felt::ZERO) {
+
+        // NOTE: State updates are performed using call data, even when the KZG DA flag is enabled.
+        // The core contract for L3 chains does not support blobs, requiring the use of call data
+        // for state updates regardless of the KZG DA configuration.
+        // An interesting use case emerges when running with KZG DA enabled but performing state
+        // updates with call data: this configuration effectively replicates private DA functionality,
+        // as the state diff is not in the snos_output while still maintaining the ability to update state.
+        let last_tx_hash_executed = if snos.get(8) == Some(&Felt::ZERO) || snos.get(8) == Some(&Felt::ONE) {
             let proof_key = format!("{block_no}/{PROOF_FILE_NAME}");
             debug!(%proof_key, "Fetching snos proof file");
 
@@ -488,11 +495,6 @@ impl StateUpdateJobHandler {
                     onchain_data.on_chain_data_hash.0,
                     usize_to_bytes(onchain_data.on_chain_data_size),
                 )
-                .await
-                .map_err(|e| JobError::Other(OtherError(e)))?
-        } else if snos.get(8) == Some(&Felt::ONE) {
-            settlement_client
-                .update_state_with_blobs(program_output, blob_data, nonce)
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
         } else {
