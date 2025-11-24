@@ -7,8 +7,7 @@ use mp_rpc::v0_10_0::{
 };
 use starknet_types_core::felt::Felt;
 
-// All trace types are re-exported from v0.9.0, and BlockId is a type alias to v0.9.0::BlockId,
-// so we can delegate all trace functions to v0.9.0 implementations
+// Trace types unchanged in v0.10.0, delegating to v0.9.0
 
 #[async_trait]
 impl StarknetTraceRpcApiV0_10_0Server for Starknet {

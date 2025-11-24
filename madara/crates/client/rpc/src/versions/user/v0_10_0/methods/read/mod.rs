@@ -17,10 +17,8 @@ use mp_rpc::v0_10_0::{
 // - spec_version: different return value
 // - get_state_update: PreConfirmedStateUpdate structure changed (no old_root)
 // - get_events: EmittedEvent structure changed (has transaction_index and event_index)
-// - estimate_fee: needs CONTRACT_NOT_FOUND error check
-// - estimate_message_fee: needs CONTRACT_NOT_FOUND error check
+// - estimate_message_fee: needs CONTRACT_NOT_FOUND error check for L1 handler contract
 // - get_storage_proof: ContractStorageKeysItem uses StorageKey instead of Felt
-pub mod estimate_fee;
 pub mod estimate_message_fee;
 pub mod get_events;
 pub mod get_state_update;
@@ -48,7 +46,6 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
     }
 
     async fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<Felt>> {
-        // BlockId is the same type as v0.9.0 (via type alias), so we can delegate directly
         V0_9_0Impl::call(self, request, block_id).await
     }
 
@@ -62,7 +59,7 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
         simulation_flags: Vec<SimulationFlagForEstimateFee>,
         block_id: BlockId,
     ) -> RpcResult<Vec<FeeEstimate>> {
-        Ok(estimate_fee::estimate_fee(self, request, simulation_flags, block_id).await?)
+        V0_9_0Impl::estimate_fee(self, request, simulation_flags, block_id).await
     }
 
     async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<MessageFeeEstimate> {
@@ -70,7 +67,6 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
     }
 
     fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
-        // BlockId is the same type as v0.9.0 (via type alias), so we can delegate directly
         V0_9_0Impl::get_block_with_receipts(self, block_id)
     }
 
@@ -132,10 +128,9 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
         contract_addresses: Option<Vec<Felt>>,
         contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult> {
-        // support the new block id transparently (preconfirmed blocks are not allowed).
         let block_view = self.resolve_view_on(block_id)?;
 
-        // Convert v0_10_0 ContractStorageKeysItem (with Vec<StorageKey>) to v0_8_1 (with Vec<Felt>)
+        // Convert StorageKey to Felt for v0.8.1 compatibility
         let contracts_storage_keys_v0_8_1 = contracts_storage_keys.map(|keys| {
             keys.into_iter()
                 .map(|item| mp_rpc::v0_8_1::ContractStorageKeysItem {

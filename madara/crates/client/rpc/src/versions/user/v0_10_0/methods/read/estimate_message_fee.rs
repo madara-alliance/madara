@@ -10,22 +10,9 @@ use mp_rpc::v0_10_0::{BlockId, MessageFeeEstimate, MsgFromL1};
 use mp_transactions::L1HandlerTransaction;
 use starknet_api::transaction::{fields::Fee, TransactionHash};
 
-/// Estimate the L2 fee of a message sent on L1
+/// Estimates the L2 fee for an L1 message.
 ///
-/// # Arguments
-///
-/// * `message` - the message to estimate
-/// * `block_id` - hash, number (height), or tag of the requested block
-///
-/// # Returns
-///
-/// * `MessageFeeEstimate` - the fee estimation (gas consumed, gas price, overall fee, unit)
-///
-/// # Errors
-///
-/// BlockNotFound : If the specified block does not exist.
-/// ContractNotFound : If the specified contract address does not exist.
-/// ContractError : If there is an error with the contract.
+/// v0.10.0: Returns `CONTRACT_NOT_FOUND` if the L1 handler contract (`to_address`) doesn't exist on L2.
 pub async fn estimate_message_fee(
     starknet: &Starknet,
     message: MsgFromL1,
@@ -39,7 +26,6 @@ pub async fn estimate_message_fee(
         return Err(StarknetRpcApiError::unsupported_txn_version());
     }
 
-    // RPC 0.10.0: Check if the L1 handler contract exists
     let state_view = view.state_view();
     if state_view.get_contract_class_hash(&message.to_address)?.is_none() {
         return Err(StarknetRpcApiError::ContractNotFound {
@@ -63,7 +49,6 @@ pub async fn estimate_message_fee(
     );
 
     let tip = transaction.tip().unwrap_or_default();
-    // spawn_blocking: avoid starving the tokio workers during execution.
     let (mut execution_results, exec_context) = mp_utils::spawn_blocking(move || {
         Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], [transaction])?, exec_context))
     })

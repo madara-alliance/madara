@@ -7,26 +7,9 @@ use mc_db::EventFilter;
 use mp_block::EventWithInfo;
 use mp_rpc::v0_10_0::{EventFilterWithPageRequest, EventsChunk};
 
-/// Returns all events matching the given filter.
+/// Returns events matching the filter with pagination support.
 ///
-/// This function retrieves all event objects that match the conditions specified in the
-/// provided event filter. The filter can include various criteria such as contract addresses,
-/// event types, and block ranges. The function supports pagination through the result page
-/// request schema.
-///
-/// ### Arguments
-///
-/// * `filter` - The conditions used to filter the returned events. The filter is a combination of
-///   an event filter and a result page request, allowing for precise control over which events are
-///   returned and in what quantity.
-///
-/// ### Returns
-///
-/// Returns a chunk of event objects that match the filter criteria, encapsulated in an
-/// `EventsChunk` type. The chunk includes details about the events, such as their data, the
-/// block in which they occurred, and the transaction that triggered them. In case of
-/// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
-/// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
+/// v0.10.0: Events include `transaction_index` and `event_index`.
 pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
     let from_address = filter.address;
     let keys = filter.keys;
@@ -40,8 +23,6 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
     if chunk_size > MAX_EVENTS_CHUNK_SIZE {
         return Err(StarknetRpcApiError::PageSizeTooBig);
     }
-
-    // Get the block numbers for the requested range
 
     let from_block_n = match filter.from_block {
         Some(block_id) => starknet.resolve_view_on(block_id)?.latest_block_n().unwrap_or(0),
@@ -57,7 +38,6 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
         None => ContinuationToken { block_number: from_block_n, event_n: 0 },
     };
 
-    // Verify that the requested range is valid
     if from_block_n > to_block_n {
         return Ok(EventsChunk { events: vec![], continuation_token: None });
     }

@@ -3,24 +3,9 @@ use crate::Starknet;
 use mp_rpc::v0_10_0::{BlockId, MaybePreConfirmedStateUpdate, PreConfirmedStateUpdate, StateUpdate};
 use starknet_types_core::felt::Felt;
 
-/// Get the information about the result of executing the requested block.
+/// Returns the state update for the requested block.
 ///
-/// This function fetches details about the state update resulting from executing a specific
-/// block in the StarkNet network. The block is identified using its unique block id, which can
-/// be the block's hash, its number (height), or a block tag.
-///
-/// ### Arguments
-///
-/// * `block_id` - The hash of the requested block, or number (height) of the requested block, or a
-///   block tag. This parameter specifies the block for which the state update information is
-///   required.
-///
-/// ### Returns
-///
-/// Returns information about the state update of the requested block, including any changes to
-/// the state of the network as a result of the block's execution. This can include a confirmed
-/// state update or a pending state update. If the block is not found, returns a
-/// `StarknetRpcApiError` with `BlockNotFound`.
+/// v0.10.0: PreConfirmedStateUpdate no longer includes `old_root`.
 pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePreConfirmedStateUpdate> {
     let view = starknet.resolve_block_view(block_id)?;
     let state_diff = view.get_state_diff()?;
