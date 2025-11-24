@@ -1761,12 +1761,23 @@ pub(crate) mod tests {
         // Step 3: Trigger graceful shutdown by cancelling ServiceContext
         ctx_clone.cancel_global();
 
-        // Step 4: Wait for shutdown to complete
+        // Step 4: Wait for EndFinalBlock to be processed (indicated by ClosedBlock notification)
+        // During graceful shutdown:
+        // - Batcher detects cancellation and exits, closing the send_batch channel
+        // - Executor detects channel closure and sends EndFinalBlock message
+        // - Main loop processes EndFinalBlock and closes the block (sends ClosedBlock notification)
+        assert_eq!(
+            notifications.recv().await.unwrap(),
+            BlockProductionStateNotification::ClosedBlock,
+            "Expected ClosedBlock notification after EndFinalBlock was processed during graceful shutdown"
+        );
+
+        // Step 5: Wait for shutdown to complete
         // All database writes and chain tip updates complete synchronously within the awaited rayon task,
         // so by the time task.await completes, the state is already updated. No delay needed.
         task.await.unwrap();
 
-        // Step 5: Verify the preconfirmed block is closed and saved to database
+        // Step 6: Verify the preconfirmed block is closed and saved to database
         assert!(!devnet_setup.backend.has_preconfirmed_block(), "Preconfirmed block should be closed");
 
         // Verify block was properly closed (check latest confirmed block number)
