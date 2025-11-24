@@ -88,10 +88,6 @@ async fn test_mixed_error_types() {
         assert!(delay > Duration::from_secs(0), "Should have non-zero delay");
 
         // At least one classification should match
-        assert!(
-            is_conn_error || is_timeout || !formatted.is_empty(),
-            "Error should be classified: {:?}",
-            error
-        );
+        assert!(is_conn_error || is_timeout || !formatted.is_empty(), "Error should be classified: {:?}", error);
     }
 }

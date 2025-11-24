@@ -102,12 +102,7 @@ impl std::fmt::Debug for RetryState {
 
 impl RetryState {
     pub fn new(config: RetryConfig) -> Self {
-        Self {
-            config,
-            start_time: Instant::now(),
-            retry_count: 0,
-            last_log_time: None,
-        }
+        Self { config, start_time: Instant::now(), retry_count: 0, last_log_time: None }
     }
 
     /// Determine current retry phase based on elapsed time
