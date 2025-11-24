@@ -300,9 +300,9 @@ impl ExecutorThread {
                                         // Send EndFinalBlock message so main loop can close the block during shutdown
                                         if self
                                             .replies_sender
-                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(Box::new(
+                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(Some(Box::new(
                                                 block_exec_summary,
-                                            )))
+                                            ))))
                                             .is_err()
                                         {
                                             // Receiver closed - main loop already shut down
@@ -323,8 +323,16 @@ impl ExecutorThread {
                                 }
                             }
                             ExecutorThreadState::NewBlock(_) => {
-                                // No block to close, just exit
+                                // No block to close, send EndFinalBlock(None) to signal completion
                                 tracing::debug!("Shutting down executor, no block to close");
+                                if self
+                                    .replies_sender
+                                    .blocking_send(super::ExecutorMessage::EndFinalBlock(None))
+                                    .is_err()
+                                {
+                                    // Receiver closed - main loop already shut down
+                                    tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
+                                }
                             }
                         }
 

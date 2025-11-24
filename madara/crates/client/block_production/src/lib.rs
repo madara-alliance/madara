@@ -707,7 +707,14 @@ impl BlockProductionTask {
             }
             ExecutorMessage::EndFinalBlock(block_exec_summary) => {
                 tracing::debug!("Received ExecutorMessage::EndFinalBlock (shutdown)");
-                self.close_block(block_exec_summary).await?;
+                match block_exec_summary {
+                    Some(summary) => {
+                        self.close_block(summary).await?;
+                    }
+                    None => {
+                        tracing::debug!("EndFinalBlock(None) received - executor completed without block");
+                    }
+                }
             }
         }
 
@@ -839,23 +846,18 @@ impl BlockProductionTask {
                 }
 
                 // Path 3: Executor thread stopped (normal completion or panic)
-                // This fires when executor exits. If EndFinalBlock was already processed, executor is done.
-                // If not, executor exited without a block (no EndFinalBlock sent) - continue loop to check exit conditions.
+                // This fires when executor exits. EndFinalBlock should have already been processed
+                // (executor always sends EndFinalBlock during shutdown - Some(summary) if block exists, None if no block).
                 res = executor.stop.recv() => {
                     res.context("In executor thread")?;
                 }
             }
 
             // Exit conditions (checked after each select iteration):
-            // Shutdown is complete when batcher completed AND:
-            // - EndFinalBlock was processed (block case), OR
-            // - No preconfirmed block exists (executor stopped without block)
-            if batcher_completed && (end_final_block_received || !self.backend.has_preconfirmed_block()) {
-                tracing::debug!(
-                    "Shutdown complete: batcher completed, end_final_block_received={}, has_preconfirmed_block={}",
-                    end_final_block_received,
-                    self.backend.has_preconfirmed_block()
-                );
+            // Shutdown is complete when batcher completed AND EndFinalBlock was processed.
+            // Executor always sends EndFinalBlock during shutdown (Some(summary) if block exists, None if no block).
+            if batcher_completed && end_final_block_received {
+                tracing::debug!("Shutdown complete: batcher completed, EndFinalBlock processed");
                 return batcher_error
                     .map(|e| {
                         tracing::warn!("Shutdown completed but batcher had error: {e:?}");

@@ -52,7 +52,9 @@ pub enum ExecutorMessage {
     /// Normal block closing (block time reached, block full, or explicit CloseBlock).
     EndBlock(Box<BlockExecutionSummary>),
     /// Final block closing during graceful shutdown. Only sent when executor detects shutdown.
-    EndFinalBlock(Box<BlockExecutionSummary>),
+    /// - Some(summary): Block exists and was finalized, close it
+    /// - None: No block exists, executor is just signaling completion
+    EndFinalBlock(Option<Box<BlockExecutionSummary>>),
 }
 
 #[derive(Default, Debug)]
