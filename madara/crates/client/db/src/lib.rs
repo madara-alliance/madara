@@ -633,11 +633,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.inner.db.write_runtime_exec_config(config)
     }
 
-    /// Clear the runtime execution configuration from the database.
-    pub fn clear_runtime_exec_config(&self) -> Result<()> {
-        self.inner.db.clear_runtime_exec_config()
-    }
-
     /// Start a new preconfirmed block on top of the latest confirmed block. Deletes and replaces the current preconfirmed block if present.
     /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
     pub fn new_preconfirmed(&self, block: PreconfirmedBlock) -> Result<()> {

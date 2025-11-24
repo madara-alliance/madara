@@ -58,12 +58,27 @@
 //!   receives this message it will proceed to finalize (seal) the pending block and store it to db
 //!   as a full block.
 //!
-//! ## Pending Phase
+//! ## Pending Phase & Persistence
 //!
-//! One important detail to note is that the [`PendingBlockState`] kept in the
-//! [`BlockProductionTask`] is stored in **RAM**. We periodically flush this value to db at an
-//! interval defined by the `pending tick` as set in the chain config.
-//! (TODO(mohit 13/10/2025): update this when 0.14.0 merges)
+//! The [`PendingBlockState`] is primarily kept in RAM but is also flushed to the database as a
+//! **pre-confirmed block**. This ensures that if the node crashes or restarts during block
+//! production, we can recover the work done so far.
+//!
+//! Currently, we flush the pending block state to the database whenever a new batch of transactions
+//! is executed (`BatchExecuted` message). This persistence allows us to recover the pre-confirmed
+//! block upon restart.
+//!
+//! ### Restart Recovery
+//!
+//! When Madara starts, it checks for an existing pre-confirmed block. If found:
+//! 1. It loads the saved **runtime execution configuration** (ChainConfig, VersionedConstants, etc.)
+//!    to ensure re-execution uses the exact same parameters as the original execution.
+//! 2. It **re-executes** all transactions in the pre-confirmed block. This is necessary because
+//!    intermediate execution artifacts (like bouncer weights and state diffs) are not fully persisted.
+//! 3. It closes the block immediately, effectively resuming the chain from where it left off.
+//!
+//! This mechanism guarantees consistency (e.g., transaction receipts match exactly) even if the
+//! node's configuration changes between restarts (e.g., toggling fee charging).
 //!
 //! [mempool]: mc_mempool
 //! [`StartNewBlock`]: ExecutorMessage::StartNewBlock
@@ -554,8 +569,7 @@ impl BlockProductionTask {
         Ok(block_exec_summary)
     }
 
-    /// Saves the current runtime execution config to the database.
-    /// This ensures the config is persisted for future restarts.
+    /// Saves current runtime config for future restarts.
     fn save_current_runtime_exec_config(&self) -> anyhow::Result<()> {
         let current_chain_config = self.backend.chain_config();
         let current_exec_constants = current_chain_config
@@ -584,34 +598,14 @@ impl BlockProductionTask {
     ///
     /// # Process
     ///
-    /// 1. Checks if a preconfirmed block exists, returns early if not (but still saves runtime exec config)
-    /// 2. Re-executes all transactions in the block using `reexecute_preconfirmed_block()` to obtain:
-    ///    - `bouncer_weights`: Required for block finalization
-    ///    - `state_diff`: Required for block closing
-    /// 3. Extracts consumed L1 handler nonces from transactions
-    /// 4. Removes consumed L1 to L2 message nonces from the database
-    /// 5. Saves bouncer weights to the database
-    /// 6. Closes the preconfirmed block with the regenerated state_diff
-    /// 7. Updates runtime exec config with current values after re-execution
+    /// 1. Checks if a preconfirmed block exists.
+    /// 2. Re-executes transactions to obtain `bouncer_weights` and `state_diff`.
+    /// 3. Extracts L1 handler nonces and cleans up L1-L2 message nonces.
+    /// 4. Saves bouncer weights and closes the block.
+    /// 5. Updates runtime config for future blocks.
     ///
-    /// # Why Re-execution is Necessary
-    ///
-    /// When Madara shuts down during block production, the preconfirmed block is saved with executed transactions
-    /// but without the `BlockExecutionSummary` (bouncer_weights and state_diff). These are only generated when
-    /// `finalize()` is called on the executor, which happens during normal block closing. On restart, we need to
-    /// recreate the execution context and re-execute transactions to obtain these values before closing the block.
-    ///
-    /// # Important Notes
-    ///
-    /// - The re-execution uses the exact header values from the preconfirmed block (timestamp, gas_prices, etc.)
-    /// - The `charge_fee` flag is determined by the saved `no_charge_fee` value (not current value)
-    /// - L1 handler transactions preserve their `paid_fee_on_l1` value (stored during `append_batch`)
-    /// - Runtime exec config is always saved (even when no preconfirmed block exists) to ensure persistence
-    ///
-    /// # TODO (mohit, 13/11/2025)
-    ///
-    /// - Handle cases where Starknet version has been updated between shutdown and restart
-    /// - Handle cases where version constants or bouncer weights have changed
+    /// Note: Re-execution uses saved config values (e.g. `no_charge_fee`) to ensure consistency with original execution.
+    /// Runtime config is always saved for persistence.
     async fn close_preconfirmed_block_if_exists(&mut self) -> anyhow::Result<()> {
         if !self.backend.has_preconfirmed_block() {
             // Even if there's no preconfirmed block, save the current runtime exec config
@@ -710,15 +704,10 @@ impl BlockProductionTask {
                 }
 
                 // Check if pre-confirmed block exists (it shouldn't at this point)
-                if self.backend.has_preconfirmed_block() {
-                    tracing::warn!("Unexpected pre-confirmed block exists when starting new block");
-                }
-
                 // Create new preconfirmed block
                 let backend = self.backend.clone();
                 global_spawn_rayon_task(move || {
-                    let write_access = backend.write_access();
-                    write_access.new_preconfirmed(PreconfirmedBlock::new(exec_ctx.into_header()))
+                    backend.write_access().new_preconfirmed(PreconfirmedBlock::new(exec_ctx.into_header()))
                 })
                 .await?;
 
@@ -1285,8 +1274,6 @@ pub(crate) mod tests {
         // | PHASE 1: Close the block and note down its state.          |
         // --------------------------------------------------------------
 
-        tracing::info!("PHASE 1: Close the block and note down its state.");
-
         // Step 1: Create a block normally with transactions in the original backend
         assert!(original_devnet_setup.mempool.is_empty().await);
 
@@ -1393,7 +1380,6 @@ pub(crate) mod tests {
         // We'll add them in the same order using the same helper functions
         // All transactions will be in a single block
         // This ensures they're executed in the same context (clean genesis state)
-        tracing::info!("PHASE 2: Re-execute the block and note down its state.");
         assert!(restart_devnet_setup.mempool.is_empty().await);
 
         // Create the same transactions using the helper function
@@ -1710,38 +1696,13 @@ pub(crate) mod tests {
         );
     }
 
-    /// Test that re-execution uses the saved `no_charge_fee` value, not the current value.
+    /// Verifies that re-execution uses the saved `no_charge_fee` value.
     ///
-    /// This test verifies the critical behavior that when a node restarts with a pre-confirmed block,
-    /// re-execution must use the exact same `no_charge_fee` value that was used during original execution,
-    /// even if the node's current configuration has changed. This ensures transaction receipts remain
-    /// consistent between original execution and re-execution.
-    ///
-    /// # Test Flow
-    ///
-    /// 1. **Initial execution**: Start with `no_charge_fee = true`, execute a transaction, stop before closing
-    ///    - Transaction is executed without charging fees
-    ///    - Runtime exec config is saved with `no_charge_fee = true`
-    ///
-    /// 2. **Restart**: Restart with `no_charge_fee = false` (different value)
-    ///    - Node's current config is `no_charge_fee = false`
-    ///    - But saved config has `no_charge_fee = true`
-    ///
-    /// 3. **Re-execution**: When closing the pre-confirmed block, re-execution uses saved value
-    ///    - Re-execution uses `saved_no_charge_fee = true` (from saved config)
-    ///    - NOT `restart_no_charge_fee = false` (from current config)
-    ///    - This ensures receipts match between original and re-execution
-    ///
-    /// 4. **Post re-execution**: After re-execution completes, config is updated with current value
-    ///    - Config is updated to `no_charge_fee = false` for future blocks
-    ///    - This ensures next block uses the current configuration
-    ///
-    /// # Why This Matters
-    ///
-    /// If re-execution used the current `no_charge_fee` value instead of the saved one:
-    /// - Transaction receipts would differ between original execution and re-execution
-    /// - State diffs would be inconsistent
-    /// - Block validation would fail
+    /// # Flow
+    /// 1. **Initial**: `no_charge_fee = true`. Exec tx, stop before closing. Saved: `true`.
+    /// 2. **Restart**: `no_charge_fee = false`.
+    /// 3. **Re-execution**: Uses saved `true` value. Receipts match.
+    /// 4. **Post**: Config updates to `false` for next block.
     #[rstest::rstest]
     #[timeout(Duration::from_secs(100))]
     #[tokio::test]

@@ -14,7 +14,7 @@ use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
 use mp_utils::serde::{deserialize_duration, deserialize_optional_duration};
 use serde::de::{MapAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_types_core::felt::Felt;
 use std::fmt;
@@ -191,7 +191,7 @@ impl L2GasPrice {
 }
 
 /// Chain config version 1 structure (without config_version field - it's in the enum tag)
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ChainConfigV1 {
     /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
@@ -213,16 +213,16 @@ pub struct ChainConfigV1 {
     /// For starknet, this is the ETH ERC-20 contract on starknet.
     pub parent_fee_token_address: ContractAddress,
 
-    #[serde(default)]
+    #[serde(default, skip)]
     pub versioned_constants: ChainVersionedConstants,
 
     /// Produce blocks using for this starknet protocol version.
-    #[serde(default = "starknet_version_latest", deserialize_with = "deserialize_starknet_version")]
+    #[serde(default = "starknet_version_latest", deserialize_with = "deserialize_starknet_version", serialize_with = "serialize_starknet_version")]
     pub latest_protocol_version: StarknetVersion,
 
     /// Only used for block production.
     /// Default: 30s.
-    #[serde(default = "default_block_time", deserialize_with = "deserialize_duration")]
+    #[serde(default = "default_block_time", deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub block_time: Duration,
 
     /// Do not produce empty blocks.
@@ -268,7 +268,7 @@ pub struct ChainConfigV1 {
     /// Transaction limit in the mempool, we have an additional limit for declare transactions.
     pub mempool_max_declare_transactions: Option<usize>,
     /// Max age of a transaction in the mempool.
-    #[serde(deserialize_with = "deserialize_optional_duration")]
+    #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
     /// L2 gas price configuration - either fixed or EIP-1559 dynamic pricing
     pub l2_gas_price: L2GasPrice,
@@ -278,12 +278,12 @@ pub struct ChainConfigV1 {
     pub block_production_concurrency: BlockProductionConfig,
 
     /// Configuration for l1 messages max replay duration.
-    #[serde(default = "default_l1_messages_replay_max_duration", deserialize_with = "deserialize_duration")]
+    #[serde(default = "default_l1_messages_replay_max_duration", deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub l1_messages_replay_max_duration: Duration,
 }
 
 /// Versioned chain config enum that handles different config versions
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "config_version")]
 pub enum ChainConfigVersioned {
     #[serde(rename = "1")]
@@ -291,7 +291,7 @@ pub enum ChainConfigVersioned {
 }
 
 /// Canonical chain config structure used throughout the codebase
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ChainConfig {
     /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
@@ -317,16 +317,16 @@ pub struct ChainConfig {
     /// For starknet, this is the ETH ERC-20 contract on starknet.
     pub parent_fee_token_address: ContractAddress,
 
-    #[serde(default)]
+    #[serde(default, skip)]
     pub versioned_constants: ChainVersionedConstants,
 
     /// Produce blocks using for this starknet protocol version.
-    #[serde(default = "starknet_version_latest", deserialize_with = "deserialize_starknet_version")]
+    #[serde(default = "starknet_version_latest", deserialize_with = "deserialize_starknet_version", serialize_with = "serialize_starknet_version")]
     pub latest_protocol_version: StarknetVersion,
 
     /// Only used for block production.
     /// Default: 30s.
-    #[serde(default = "default_block_time", deserialize_with = "deserialize_duration")]
+    #[serde(default = "default_block_time", deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub block_time: Duration,
 
     /// Do not produce empty blocks.
@@ -372,7 +372,7 @@ pub struct ChainConfig {
     /// Transaction limit in the mempool, we have an additional limit for declare transactions.
     pub mempool_max_declare_transactions: Option<usize>,
     /// Max age of a transaction in the mempool.
-    #[serde(deserialize_with = "deserialize_optional_duration")]
+    #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
     /// L2 gas price configuration - either fixed or EIP-1559 dynamic pricing
     pub l2_gas_price: L2GasPrice,
@@ -382,7 +382,7 @@ pub struct ChainConfig {
     pub block_production_concurrency: BlockProductionConfig,
 
     /// Configuration for l1 messages max replay duration.
-    #[serde(default = "default_l1_messages_replay_max_duration", deserialize_with = "deserialize_duration")]
+    #[serde(default = "default_l1_messages_replay_max_duration", deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub l1_messages_replay_max_duration: Duration,
 }
 
@@ -731,6 +731,27 @@ where
     S: serde::Serializer,
 {
     version.to_string().serialize(serializer)
+}
+
+pub fn serialize_duration<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if duration.subsec_nanos() == 0 {
+        format!("{}s", duration.as_secs()).serialize(serializer)
+    } else {
+        format!("{}ms", duration.as_millis()).serialize(serializer)
+    }
+}
+
+pub fn serialize_optional_duration<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match duration {
+        Some(d) => serialize_duration(d, serializer),
+        None => serializer.serialize_none(),
+    }
 }
 
 #[cfg(test)]

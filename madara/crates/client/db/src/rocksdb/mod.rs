@@ -466,10 +466,6 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Writing runtime execution config");
         self.inner.write_runtime_exec_config(config).context("Writing runtime execution config")
     }
-    fn clear_runtime_exec_config(&self) -> Result<()> {
-        tracing::debug!("Clearing runtime execution config");
-        self.inner.clear_runtime_exec_config().context("Clearing runtime execution config")
-    }
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write snap sync latest block block_n={block_n:?}");
         self.inner.write_snap_sync_latest_block(block_n).context("Writing snap sync latest block")

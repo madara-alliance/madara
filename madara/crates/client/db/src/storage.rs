@@ -171,7 +171,6 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()>;
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()>;
     fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()>;
-    fn clear_runtime_exec_config(&self) -> Result<()>;
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()>;
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
