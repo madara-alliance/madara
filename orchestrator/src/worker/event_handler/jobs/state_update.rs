@@ -381,7 +381,6 @@ impl StateUpdateJobHandler {
         Ok(())
     }
 
-
     /// Parent method to update state based on the layer being used
     /// The layer decides if we want to update the state using Blob or DA
     async fn update_state(
@@ -478,14 +477,8 @@ impl StateUpdateJobHandler {
             let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof.clone()));
             let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof));
 
-            let onchain_data = self.fetch_onchain_data_for_block(block_no, config.clone()).await;
             settlement_client
-                .update_state_calldata(
-                    snos_output,
-                    program_output,
-                    [0u8; 32],
-                    [0u8; 32],
-                )
+                .update_state_calldata(snos_output, program_output, [0u8; 32], [0u8; 32])
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
         } else {
