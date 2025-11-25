@@ -3,7 +3,7 @@ use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
-use crate::types::constant::{ON_CHAIN_DATA_FILE_NAME, PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
+use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
     JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
@@ -11,7 +11,6 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::fact_info::OnChainData;
 use crate::worker::utils::{
     fetch_blob_data_for_batch, fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block,
 };
@@ -382,14 +381,6 @@ impl StateUpdateJobHandler {
         Ok(())
     }
 
-    /// Retrieves the OnChain data for the corresponding block.
-    async fn fetch_onchain_data_for_block(&self, block_number: u64, config: Arc<Config>) -> OnChainData {
-        let storage_client = config.storage();
-        let key = block_number.to_string() + "/" + ON_CHAIN_DATA_FILE_NAME;
-        let onchain_data_bytes = storage_client.get_data(&key).await.expect("Unable to fetch onchain data for block");
-        serde_json::from_slice(onchain_data_bytes.iter().as_slice())
-            .expect("Unable to convert the data into onchain data")
-    }
 
     /// Parent method to update state based on the layer being used
     /// The layer decides if we want to update the state using Blob or DA
@@ -441,9 +432,9 @@ impl StateUpdateJobHandler {
         config: Arc<Config>,
         block_no: u64,
         snos: Vec<Felt>,
-        nonce: u64,
-        program_output: Vec<[u8; 32]>,
-        blob_data: Vec<Vec<u8>>,
+        _nonce: u64,
+        _program_output: Vec<[u8; 32]>,
+        _blob_data: Vec<Vec<u8>>,
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
 
@@ -484,7 +475,7 @@ impl StateUpdateJobHandler {
                 JobError::Other(OtherError(eyre!("{}", e)))
             })?;
 
-            let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof));
+            let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof.clone()));
             let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof));
 
             let onchain_data = self.fetch_onchain_data_for_block(block_no, config.clone()).await;
@@ -492,8 +483,8 @@ impl StateUpdateJobHandler {
                 .update_state_calldata(
                     snos_output,
                     program_output,
-                    onchain_data.on_chain_data_hash.0,
-                    usize_to_bytes(onchain_data.on_chain_data_size),
+                    [0u8; 32],
+                    [0u8; 32],
                 )
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
@@ -528,10 +519,4 @@ pub fn vec_felt_to_vec_bytes32(felts: Vec<Felt>) -> Vec<[u8; 32]> {
             bytes
         })
         .collect()
-}
-
-fn usize_to_bytes(n: usize) -> [u8; 32] {
-    let mut bytes = [0u8; 32];
-    bytes[..8].copy_from_slice(&n.to_le_bytes());
-    bytes
 }
