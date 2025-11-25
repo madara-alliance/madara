@@ -824,11 +824,9 @@ impl BlockProductionTask {
                         Err(e) => {
                             let error = e.context("In batcher task");
                             tracing::warn!("Batcher task errored: {error:?}");
+                            batcher_error = Some(error);
                             if self.backend.has_preconfirmed_block() {
-                                batcher_error = Some(error);
                                 tracing::warn!("Batcher errored with preconfirmed block, attempting graceful shutdown");
-                            } else {
-                                batcher_error = Some(error);
                             }
                         }
                     }

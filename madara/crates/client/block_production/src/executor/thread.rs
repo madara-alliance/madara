@@ -315,6 +315,13 @@ impl ExecutorThread {
                                     Err(e) => {
                                         // Finalization failed - log error but continue shutdown
                                         // Block will remain preconfirmed and be handled on restart
+                                        if self
+                                            .replies_sender
+                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(None))
+                                            .is_err()
+                                        {
+                                            tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
+                                        }
                                         tracing::warn!(
                                             "Failed to finalize block during shutdown: {:?}. Block will remain preconfirmed",
                                             e
