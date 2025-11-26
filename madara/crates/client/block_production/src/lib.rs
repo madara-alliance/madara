@@ -809,6 +809,7 @@ impl BlockProductionTask {
         // Both tasks only complete during shutdown scenarios (cancellation, error, or panic).
         let mut batcher_completed = false;
         let mut end_final_block_received = false; // Track if EndFinalBlock has been processed (executor completed with block)
+        let mut executor_stopped = false; // Track if executor.stop has been received (oneshot - can only poll once)
         let mut batcher_error: Option<anyhow::Error> = None; // Store batcher error to return after graceful shutdown
 
         // Main loop: handles normal operation and graceful shutdown
@@ -842,9 +843,11 @@ impl BlockProductionTask {
                 }
 
                 // Path 3: Executor thread stopped (normal completion or panic)
-                // This fires when executor exits. EndFinalBlock should have already been processed
+                // This fires when executor exits. EndFinalBlock should have been emitted by executor
                 // (executor always sends EndFinalBlock during shutdown - Some(summary) if block exists, None if no block).
-                res = executor.stop.recv() => {
+                // Guard: oneshot channel can only be polled once - polling after completion causes panic.
+                res = executor.stop.recv(), if !executor_stopped => {
+                    executor_stopped = true;
                     res.context("In executor thread")?;
                 }
             }
