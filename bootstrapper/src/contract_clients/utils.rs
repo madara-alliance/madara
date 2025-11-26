@@ -260,3 +260,80 @@ pub(crate) async fn init_governance_proxy(account: &'_ RpcAccount<'_>, contract_
     let txn = invoke_contract(contract_address, "init_governance", vec![], account).await;
     wait_for_transaction(account.provider(), txn.transaction_hash, tag).await.unwrap();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_config_hash() {
+        // Correct for Paradex Testnet
+        // Define input values as strings
+        const CONFIG_HASH_VERSION: &str = "StarknetOsConfig3"; // Will be hex-encoded
+        const CHAIN_ID: &str = "PRIVATE_SN_POTC_SEPOLIA"; // Will be hex-encoded
+
+        const NATIVE_FEE_TOKEN_ADDRESS: &str = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+
+        // is not used !
+        const FEE_TOKEN_ADDRESS: &str =
+            // "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+            "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+
+        let expected = Felt::from_hex("0x2150d1df98ee7ecfbeb5191f666bb2340629818f14f45731d2e00dfbc95618d")
+            .expect("error in expected hash");
+
+        // Convert strings to Felt values (mimicking get_bridge_init_configs logic)
+        let config_hash_version = Felt::from_hex(&encode(CONFIG_HASH_VERSION)).expect("error in config_hash_version");
+        let chain_id = Felt::from_hex(&encode(CHAIN_ID)).expect("error in chain_id");
+        let fee_token_address = Felt::from_hex(FEE_TOKEN_ADDRESS).expect("error in fee_token_address");
+        let native_fee_token_address =
+            Felt::from_hex(NATIVE_FEE_TOKEN_ADDRESS).expect("error in native_fee_token_address");
+
+        // Generate the config hash
+        let result = generate_config_hash(config_hash_version, chain_id, fee_token_address, native_fee_token_address);
+
+        // Print the result for visibility
+        println!("Config Hash Version (hex-encoded): 0x{}", encode(CONFIG_HASH_VERSION));
+        println!("Chain ID (hex-encoded): 0x{}", encode(CHAIN_ID));
+        println!("Fee Token Address: {}", FEE_TOKEN_ADDRESS);
+        println!("Native Fee Token Address: {}", NATIVE_FEE_TOKEN_ADDRESS);
+        println!("Generated Config Hash: {:#066x}", result);
+
+        // Define expected value - update this with the actual expected hash
+        // You can get the expected value by running the test once and copying the output
+
+        // Uncomment the assertion once you have the expected value
+        assert_eq!(expected, result, "Config hash mismatch");
+    }
+
+    // #[test]
+    // fn test_generate_config_hash_with_known_values() {
+    //     // Test with simple known values to verify the hash function works correctly
+    //     const VERSION: &str = "0x1";
+    //     const CHAIN: &str = "0x2";
+    //     const FEE_TOKEN: &str = "0x3";
+    //     const NATIVE_TOKEN: &str = "0x4";
+
+    //     let config_hash_version = Felt::from_hex(VERSION).unwrap();
+    //     let chain_id = Felt::from_hex(CHAIN).unwrap();
+    //     let fee_token_address = Felt::from_hex(FEE_TOKEN).unwrap();
+    //     let native_fee_token_address = Felt::from_hex(NATIVE_TOKEN).unwrap();
+
+    //     let result = generate_config_hash(
+    //         config_hash_version,
+    //         chain_id,
+    //         fee_token_address,
+    //         native_fee_token_address,
+    //     );
+
+    //     println!("Input values:");
+    //     println!("  config_hash_version: {}", VERSION);
+    //     println!("  chain_id: {}", CHAIN);
+    //     println!("  fee_token_address (unused): {}", FEE_TOKEN);
+    //     println!("  native_fee_token_address: {}", NATIVE_TOKEN);
+    //     println!("Generated Config Hash: {:#066x}", result);
+
+    //     // The hash is computed over [config_hash_version, chain_id, native_fee_token_address]
+    //     // i.e., [0x1, 0x2, 0x4] - note that fee_token_address (0x3) is ignored
+    // }
+}

@@ -134,6 +134,7 @@ pub struct AtlanticClient {
 pub struct AtlanticAggregatorParams {
     pub(crate) use_kzg_da: bool,
     pub(crate) full_output: bool,
+    pub(crate) fee_token_address: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) chain_id_hex: Option<String>,
 }

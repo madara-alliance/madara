@@ -205,6 +205,7 @@ impl AtlanticClient {
                 aggregator_params: AtlanticAggregatorParams {
                     use_kzg_da: AGGREGATOR_USE_KZG_DA,
                     full_output: AGGREGATOR_FULL_OUTPUT,
+                    fee_token_address: "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
                     chain_id_hex,
                 },
                 mock_proof,
