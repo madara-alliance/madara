@@ -58,9 +58,8 @@
 //!   receives this message it will proceed to finalize (seal) the pending block and store it to db
 //!   as a full block.
 //!
-//! - [`EndFinalBlock`]: this message is sent by the [`ExecutorThread`] only during graceful shutdown
-//!   when it detects the batch channel closure. It signals the final block closing and the executor
-//!   thread exits immediately after sending it.
+//! - [`EndFinalBlock`]: sent during graceful shutdown when batch channel closes. Contains
+//!   `Some(summary)` to close an existing block, or `None` to signal completion without a block.
 //!
 //! ## Pending Phase
 //!
@@ -98,8 +97,7 @@
 //! - The preconfirmed block will be handled on restart
 //!
 //! The loop exits when:
-//! - Both batcher and executor have completed → returns `Ok(())` or the saved batcher error
-//! - Batcher errored without a preconfirmed block → returns the error immediately
+//! - Batcher completed AND `EndFinalBlock` was processed → returns `Ok(())` or saved batcher error
 //!
 //! [mempool]: mc_mempool
 //! [`StartNewBlock`]: ExecutorMessage::StartNewBlock
