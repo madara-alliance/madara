@@ -38,7 +38,7 @@ mod events_bloom_filter;
 mod iter_pinned;
 mod l1_to_l2_messages;
 mod mempool;
-pub mod meta;
+mod meta;
 mod metrics;
 mod options;
 mod rocksdb_snapshot;
