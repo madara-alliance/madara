@@ -14,3 +14,8 @@ orchestrator/build/
 orchestrator/node_modules/
 lib/
 s3/
+
+*.rs
+*.toml
+Cargo.toml
+Cargo.lock
