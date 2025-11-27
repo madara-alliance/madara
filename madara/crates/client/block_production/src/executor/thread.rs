@@ -284,7 +284,68 @@ impl ExecutorThread {
                         }
                     },
                     // Channel closed. Exit gracefully.
-                    WaitTxBatchOutcome::Exit => return Ok(()),
+                    // Before exiting, check if we have an executing block that needs to be closed.
+                    // This ensures graceful shutdown closes the block using the executor's existing state.
+                    WaitTxBatchOutcome::Exit => {
+                        match state {
+                            ExecutorThreadState::Executing(mut execution_state) => {
+                                tracing::debug!(
+                                    "Shutting down executor, closing block block_n={}",
+                                    execution_state.exec_ctx.block_number
+                                );
+
+                                // Finalize the block to get execution summary
+                                // This uses the executor's current state - no re-execution needed
+                                match execution_state.executor.finalize() {
+                                    Ok(block_exec_summary) => {
+                                        // Send EndFinalBlock message so main loop can close the block during shutdown
+                                        if self
+                                            .replies_sender
+                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(Some(Box::new(
+                                                block_exec_summary,
+                                            ))))
+                                            .is_err()
+                                        {
+                                            // Receiver closed - main loop already shut down
+                                            // Block will remain preconfirmed and be handled on restart
+                                            tracing::warn!(
+                                                "Could not send EndFinalBlock during shutdown, block will remain preconfirmed"
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        // Finalization failed - log error but continue shutdown
+                                        // Block will remain preconfirmed and be handled on restart
+                                        if self
+                                            .replies_sender
+                                            .blocking_send(super::ExecutorMessage::EndFinalBlock(None))
+                                            .is_err()
+                                        {
+                                            tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
+                                        }
+                                        tracing::warn!(
+                                            "Failed to finalize block during shutdown: {:?}. Block will remain preconfirmed",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            ExecutorThreadState::NewBlock(_) => {
+                                // No block to close, send EndFinalBlock(None) to signal completion
+                                tracing::debug!("Shutting down executor, no block to close");
+                                if self
+                                    .replies_sender
+                                    .blocking_send(super::ExecutorMessage::EndFinalBlock(None))
+                                    .is_err()
+                                {
+                                    // Receiver closed - main loop already shut down
+                                    tracing::warn!("Could not send EndFinalBlock(None) during shutdown");
+                                }
+                            }
+                        }
+
+                        return Ok(());
+                    }
                 };
 
                 for (tx, additional_info) in taken {
