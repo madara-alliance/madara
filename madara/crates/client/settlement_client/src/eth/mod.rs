@@ -345,7 +345,7 @@ impl SettlementLayerProvider for EthereumClient {
         let base_stream = EthereumEventStream::new(event_stream);
         let filtered_stream = event::new_eth_confirmation_depth_filtered_stream(
             base_stream,
-            Arc::clone(&self.provider),
+            Arc::new(self.clone()),
             block_poll_interval,
             l1_msg_min_confirmations,
         );

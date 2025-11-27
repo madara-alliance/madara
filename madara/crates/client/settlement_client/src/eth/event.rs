@@ -1,10 +1,11 @@
+use crate::client::SettlementLayerProvider;
 use crate::error::SettlementClientError;
 use crate::eth::error::EthereumClientError;
+use crate::eth::EthereumClient;
 use crate::eth::StarknetCoreContract::LogMessageToL2;
 use crate::messaging::depth_filtered_stream::ConfirmationDepthFilteredStream;
 use crate::messaging::MessageToL2WithMetadata;
 use alloy::contract::EventPoller;
-use alloy::providers::Provider;
 use alloy::rpc::types::Log;
 use alloy::transports::http::{Client, Http};
 use futures::Stream;
@@ -95,20 +96,20 @@ pub type EthConfirmationDepthFilteredStream<S> = ConfirmationDepthFilteredStream
 /// Create a new `EthConfirmationDepthFilteredStream` for Ethereum
 pub fn new_eth_confirmation_depth_filtered_stream<S>(
     inner: S,
-    provider: Arc<alloy::providers::ReqwestProvider>,
+    client: Arc<EthereumClient>,
     polling_interval: Duration,
     l1_msg_min_confirmations: u64,
 ) -> EthConfirmationDepthFilteredStream<S>
 where
     S: Stream<Item = Result<MessageToL2WithMetadata, SettlementClientError>> + Unpin,
 {
-    let provider_clone = Arc::clone(&provider);
+    let client_clone = Arc::clone(&client);
     ConfirmationDepthFilteredStream::new(
         inner,
         move || {
-            let provider = Arc::clone(&provider_clone);
+            let client = Arc::clone(&client_clone);
             async move {
-                match provider.get_block_number().await {
+                match client.get_latest_block_number().await {
                     Ok(block) => Some(block),
                     Err(e) => {
                         tracing::warn!("Failed to get Ethereum block number: {}", e);
