@@ -88,15 +88,13 @@ where
         let latest = this.latest_block.load(Ordering::Relaxed);
         let threshold = latest.saturating_sub(this.l1_msg_min_confirmations);
 
-        // First, check if any buffered events now meet the threshold
-        while let Some(event) = this.buffered_events.front() {
+        // First, check if the first buffered event now meets the threshold
+        // Events are buffered in order, so if the first one meets the threshold, we can return it.
+        // If it doesn't, none of the remaining ones will either (since they're older/higher block numbers).
+        if let Some(event) = this.buffered_events.front() {
             if event.l1_block_number <= threshold {
                 let event = this.buffered_events.pop_front().unwrap();
                 return Poll::Ready(Some(Ok(event)));
-            } else {
-                // Events are buffered in order, so if this one doesn't meet threshold,
-                // none of the remaining ones will either
-                break;
             }
         }
 
@@ -118,21 +116,21 @@ where
                 this.buffered_events.push_back(event);
                 // Return Pending to allow other tasks (like block number updates) to run
                 // On the next poll, we'll check buffered events first
-                return Poll::Pending;
+                Poll::Pending
             }
             Poll::Ready(Some(Err(e))) => {
                 // Pass through errors
-                return Poll::Ready(Some(Err(e)));
+                Poll::Ready(Some(Err(e)))
             }
             Poll::Ready(None) => {
                 // Stream ended - check if we have any buffered events left
                 if let Some(event) = this.buffered_events.pop_front() {
                     return Poll::Ready(Some(Ok(event)));
                 }
-                return Poll::Ready(None);
+                Poll::Ready(None)
             }
             Poll::Pending => {
-                return Poll::Pending;
+                Poll::Pending
             }
         }
     }
