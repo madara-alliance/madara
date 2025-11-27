@@ -331,7 +331,6 @@ impl TestConfigBuilder {
 
         let using_actual_queue = matches!(queue_type, ConfigType::Actual);
         let using_actual_database = matches!(database_type, ConfigType::Actual);
-        let using_actual_storage = matches!(storage_type, ConfigType::Actual);
         let using_actual_alerts = matches!(alerts_type, ConfigType::Actual);
 
         // init alerts
@@ -762,6 +761,12 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         .unwrap(),
         max_num_blobs,
         max_blob_size: max_num_blobs * BLOB_LEN,
+        default_empty_block_proving_gas: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_DEFAULT_EMPTY_BLOCK_PROVING_GAS",
+            "1500000",
+        )
+        .parse::<u64>()
+        .unwrap(),
     };
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");

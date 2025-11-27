@@ -18,7 +18,7 @@ use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobS
 use crate::types::jobs::types::JobStatus::Created;
 use crate::types::jobs::types::JobType::DataSubmission;
 use crate::types::params::database::DatabaseArgs;
-use crate::types::params::{AWSResourceIdentifier, AlertArgs, QueueArgs, StorageArgs};
+use crate::types::params::{AlertArgs, QueueArgs, StorageArgs};
 use crate::types::queue::QueueType;
 use ::uuid::Uuid;
 use aws_config::SdkConfig;

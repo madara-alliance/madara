@@ -30,4 +30,11 @@ pub struct BatchingCliArgs {
     /// Maximum number of SNOS batches that can be children of one aggregator batch.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH", long, default_value = "50")]
     pub max_snos_batches_per_aggregator_batch: u64,
+
+    /// Default proving gas to use for empty blocks.
+    /// Empty blocks return zero proving_gas from the bouncer weights API, but every block
+    /// has some proving cost (~4,775 steps = ~477,500 gas). We use 1.5M gas (~3x safety margin).
+    /// This value is used when proving_gas is zero.
+    #[arg(env = "MADARA_ORCHESTRATOR_DEFAULT_EMPTY_BLOCK_PROVING_GAS", long, default_value = "1500000")]
+    pub default_empty_block_proving_gas: u64,
 }
