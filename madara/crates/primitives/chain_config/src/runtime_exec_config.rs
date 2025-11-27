@@ -131,7 +131,6 @@ impl RuntimeExecutionConfig {
 
         ChainConfig::try_from(versioned).context("Failed to convert saved config to ChainConfig")
     }
-
 }
 
 #[cfg(test)]
