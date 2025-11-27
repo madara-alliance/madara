@@ -410,6 +410,42 @@ pub struct ChainConfig {
     pub l1_messages_replay_max_duration: Duration,
 }
 
+impl Clone for ChainConfig {
+    /// Clones all fields except `private_key` which is set to `None`.
+    /// This is intentional: `ZeroingPrivateKey` doesn't implement Clone for security reasons
+    /// (to prevent multiple copies of sensitive key material in memory).
+    fn clone(&self) -> Self {
+        Self {
+            chain_name: self.chain_name.clone(),
+            chain_id: self.chain_id.clone(),
+            config_version: self.config_version,
+            l1_da_mode: self.l1_da_mode,
+            settlement_chain_kind: self.settlement_chain_kind,
+            feeder_gateway_url: self.feeder_gateway_url.clone(),
+            gateway_url: self.gateway_url.clone(),
+            native_fee_token_address: self.native_fee_token_address,
+            parent_fee_token_address: self.parent_fee_token_address,
+            versioned_constants: self.versioned_constants.clone(),
+            latest_protocol_version: self.latest_protocol_version,
+            block_time: self.block_time,
+            no_empty_blocks: self.no_empty_blocks,
+            bouncer_config: self.bouncer_config.clone(),
+            sequencer_address: self.sequencer_address,
+            eth_core_contract_address: self.eth_core_contract_address.clone(),
+            eth_gps_statement_verifier: self.eth_gps_statement_verifier.clone(),
+            private_key: None, // Intentionally not cloned for security
+            mempool_mode: self.mempool_mode,
+            mempool_min_tip_bump: self.mempool_min_tip_bump,
+            mempool_max_transactions: self.mempool_max_transactions,
+            mempool_max_declare_transactions: self.mempool_max_declare_transactions,
+            mempool_ttl: self.mempool_ttl,
+            l2_gas_price: self.l2_gas_price.clone(),
+            block_production_concurrency: self.block_production_concurrency.clone(),
+            l1_messages_replay_max_duration: self.l1_messages_replay_max_duration,
+        }
+    }
+}
+
 // Conversion implementations for versioned configs
 
 impl TryFrom<ChainConfigV1> for ChainConfig {
@@ -653,7 +689,7 @@ impl ChainConfig {
 // TODO: the motivation for these doc comments is to move them into a proper app chain developer documentation, with a
 // proper page about tuning the block production performance.
 /// BTreeMap ensures order.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
 
 impl<'de> Deserialize<'de> for ChainVersionedConstants {

@@ -8,7 +8,6 @@
 //! - `chain_config` fields (via YAML serialization)
 //! - `protocol_version` (string, e.g., "0.13.2") - used to look up versioned constants on restart
 //! - `no_charge_fee` flag
-//! - `config_version` - for compatibility validation
 //!
 //! ## What Does NOT Get Saved (and why)
 //!
@@ -23,8 +22,7 @@
 //!   4. Madara saves protocol_version <> versioned_constants_version <> block_no mapping
 //!      for downstream actions (orchestrator and SNOS)
 //!
-//! - **`private_key`**: Set to `None` in saved configs. Re-execution doesn't require signing;
-//!   the current node's private key (from CLI/chain-config) is used for any signing operations.
+//! - **`private_key`**: Set to `None` in cloned configs (ChainConfig::clone() intentionally skips it).
 //!
 //! ## Important Assumption
 //!
@@ -33,17 +31,14 @@
 //!   across all node versions and restarts.
 //! - If you use custom `versioned_constants` (via `versioned_constants_path` in chain config),
 //!   you must ensure they remain consistent across restarts.
-//! - **Important:** If you need to update custom versioned constants, you MUST also bump the
-//!   protocol version to maintain the immutability guarantee.
-//! - If this assumption is violated (e.g., custom constants change between runs), re-execution
-//!   may produce different results than the original execution.
-//!
-//! ## Round-Trip Serialization
-//!
-//! `ChainConfig` does not implement `Clone`, so we use YAML round-trip serialization to create
-//! copies. This also automatically excludes `#[serde(skip)]` fields (`private_key`, `versioned_constants`).
+//! - **Updating versioned_constants on the same protocol version:** The only safe ways to do this are:
+//!   1. Graceful shutdown (ensures no pre-confirmed block exists), or
+//!   2. Call the `close_block` admin endpoint to close any open block before updating.
+//!      In short: there must be no pre-confirmed block when updating versioned_constants.
+//! - If this assumption is violated (e.g., custom constants change between runs with an open
+//!   pre-confirmed block), re-execution may produce different results than the original execution.
 
-use crate::{ChainConfig, ChainConfigVersioned, ChainVersionedConstants, StarknetVersion};
+use crate::{ChainConfig, ChainConfigVersioned, StarknetVersion};
 use anyhow::{Context, Result};
 use blockifier::blockifier_versioned_constants::VersionedConstants;
 use serde::{Deserialize, Serialize};
@@ -55,7 +50,7 @@ use std::sync::Arc;
 /// that re-execution uses the exact same parameters as the original execution.
 #[derive(Debug)]
 pub struct RuntimeExecutionConfig {
-    /// Chain config used during execution (without private_key and versioned_constants)
+    /// Chain config used during execution (private_key is None, versioned_constants from current node)
     pub chain_config: ChainConfig,
     /// Execution constants resolved from protocol_version
     pub exec_constants: VersionedConstants,
@@ -66,9 +61,9 @@ pub struct RuntimeExecutionConfig {
 /// Serializable form for database storage.
 #[derive(Serialize, Deserialize)]
 pub struct RuntimeExecutionConfigSerializable {
-    /// Config version for validation on restart
+    /// Config version (stored for reference, not validated - ChainConfigVersioned handles migrations)
     config_version: u32,
-    /// YAML-serialized chain config (excludes private_key and versioned_constants)
+    /// YAML-serialized chain config (excludes private_key and versioned_constants via #[serde(skip)])
     chain_config_yaml: String,
     /// Protocol version string (e.g., "0.13.2") - used to look up exec_constants on restart
     protocol_version: String,
@@ -85,20 +80,8 @@ impl RuntimeExecutionConfig {
         exec_constants: VersionedConstants,
         no_charge_fee: bool,
     ) -> Result<Self> {
-        // Create a copy of chain_config for saving
-        // Note: private_key and versioned_constants will be excluded during serialization
-        let config_for_saving = Self::prepare_chain_config_for_saving(chain_config)?;
-
-        Ok(Self { chain_config: config_for_saving, exec_constants, no_charge_fee })
-    }
-
-    /// Creates a copy of chain config via YAML round-trip (ChainConfig doesn't implement Clone).
-    /// Fields with #[serde(skip)] (private_key, versioned_constants) are automatically excluded.
-    fn prepare_chain_config_for_saving(config: &ChainConfig) -> Result<ChainConfig> {
-        let yaml_str = serde_yaml::to_string(config).context("Failed to serialize ChainConfig to YAML")?;
-        let versioned: ChainConfigVersioned =
-            serde_yaml::from_str(&yaml_str).context("Failed to deserialize ChainConfig from YAML")?;
-        ChainConfig::try_from(versioned).context("Failed to convert to ChainConfig")
+        // Clone chain_config for saving (private_key is set to None by Clone impl)
+        Ok(Self { chain_config: chain_config.as_ref().clone(), exec_constants, no_charge_fee })
     }
 
     /// Serializes this config for database storage.
@@ -122,7 +105,7 @@ impl RuntimeExecutionConfig {
         let mut chain_config = Self::deserialize_saved_chain_config(&saved.chain_config_yaml)?;
 
         // Reconstruct versioned_constants from current node (not serializable)
-        chain_config.versioned_constants = Self::copy_versioned_constants_from_current(current_backend_config);
+        chain_config.versioned_constants = current_backend_config.versioned_constants.clone();
 
         // Look up exec_constants using saved protocol_version
         let protocol_version: StarknetVersion =
@@ -149,14 +132,6 @@ impl RuntimeExecutionConfig {
         ChainConfig::try_from(versioned).context("Failed to convert saved config to ChainConfig")
     }
 
-    /// Copies versioned_constants from the current node's config.
-    fn copy_versioned_constants_from_current(current: &ChainConfig) -> ChainVersionedConstants {
-        let mut vc = ChainVersionedConstants::default();
-        for (version, constants) in &current.versioned_constants.0 {
-            vc.add(*version, constants.clone());
-        }
-        vc
-    }
 }
 
 #[cfg(test)]
