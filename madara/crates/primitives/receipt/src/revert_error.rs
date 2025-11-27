@@ -490,19 +490,20 @@ mod tests {
     #[test]
     fn test_format_for_receipt_filters_redundant_tracebacks_3() {
         // Build the ErrorStack structure that represents the unfiltered error
-        let mut error_stack = ErrorStack {
-            header: ErrorStackHeader::Execution,
-            stack: vec![],
-        };
+        let mut error_stack = ErrorStack { header: ErrorStackHeader::Execution, stack: vec![] };
 
         // Entry 0: CallContract with VM traceback (should be kept - last before error)
         error_stack.push(
             EntryPointErrorFrame {
                 depth: 0,
                 preamble_type: PreambleType::CallContract,
-                storage_address: test_contract_address!("0x01f062c02ee674cc7a88dd94e0b230b76decf76aff55b83ec32a90936e7569ab"),
+                storage_address: test_contract_address!(
+                    "0x01f062c02ee674cc7a88dd94e0b230b76decf76aff55b83ec32a90936e7569ab"
+                ),
                 class_hash: test_class_hash!("0x073414441639dcd11d1846f287650a00c60c416b9d3ba45d31c651672125b2c2"),
-                selector: Some(EntryPointSelector(test_felt!("0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x015d40a3d6ca2ac30f4031e42be28da9b056fef9bb7357ac5e85627ee876e5ad"
+                ))),
             }
             .into(),
         );
@@ -520,9 +521,13 @@ mod tests {
             EntryPointErrorFrame {
                 depth: 1,
                 preamble_type: PreambleType::CallContract,
-                storage_address: test_contract_address!("0x02953d14869a4f634e02272ac288713dc514bfd018857569252b74f4a96e91fc"),
+                storage_address: test_contract_address!(
+                    "0x02953d14869a4f634e02272ac288713dc514bfd018857569252b74f4a96e91fc"
+                ),
                 class_hash: test_class_hash!("0x05e4b69d808cd273b7d84ea27f1954c1eb8b61211036d293b1a0d5e9f34726e8"),
-                selector: Some(EntryPointSelector(test_felt!("0x00aceca4cf913a062eea8c1609ce381630d82808d51e757d7b2b68c961933fa8"))),
+                selector: Some(EntryPointSelector(test_felt!(
+                    "0x00aceca4cf913a062eea8c1609ce381630d82808d51e757d7b2b68c961933fa8"
+                ))),
             }
             .into(),
         );
@@ -536,9 +541,9 @@ mod tests {
         );
 
         // Final error message
-        error_stack.push(
-            ErrorStackSegment::StringFrame("Exceeded the maximum number of events, number events: 1001, max number events: 1000.".to_string()),
-        );
+        error_stack.push(ErrorStackSegment::StringFrame(
+            "Exceeded the maximum number of events, number events: 1001, max number events: 1000.".to_string(),
+        ));
 
         let revert_error = RevertError::Execution(error_stack);
 
@@ -553,6 +558,4 @@ mod tests {
 
         assert_eq!(result, expected);
     }
-
-
 }
