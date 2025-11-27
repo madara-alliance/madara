@@ -271,18 +271,19 @@ impl StateDiff {
             storage_diffs
         };
 
-        let migrated_compiled_classes_sorted = {
-            let mut migrated_compiled_classes = self.migrated_compiled_classes.clone();
-            migrated_compiled_classes.sort_by_key(|migrated_class| migrated_class.class_hash);
-            migrated_compiled_classes
-        };
+        // Note: migrated_compiled_classes is NOT included as a separate section in the hash.
+        // Per the official Starknet implementation, migrated classes are MERGED into
+        // declared_classes (class_hash_to_compiled_class_hash) before hashing.
+        // TODO (mohit 27/11/2025): When SNIP-34 migration is implemented, merge
+        // migrated_compiled_classes into declared_classes before computing the hash.
+        // See: from_state_diff() in official sequencer where migrated classes are chained
+        // into class_hash_to_compiled_class_hash before hash computation.
 
         let updated_contracts_len_as_felt = (updated_contracts_sorted.len() as u64).into();
         let declared_classes_len_as_felt = (declared_classes_sorted.len() as u64).into();
         let deprecated_declared_classes_len_as_felt = (deprecated_declared_classes_sorted.len() as u64).into();
         let nonces_len_as_felt = (nonces_sorted.len() as u64).into();
         let storage_diffs_len_as_felt = (storage_diffs_sorted.len() as u64).into();
-        let migrated_compiled_classes_len_as_felt = (migrated_compiled_classes_sorted.len() as u64).into();
 
         let elements: Vec<Felt> = std::iter::once(Felt::from_bytes_be_slice(b"STARKNET_STATE_DIFF0"))
             .chain(std::iter::once(updated_contracts_len_as_felt))
@@ -310,12 +311,6 @@ impl StateDiff {
             }))
             .chain(std::iter::once(nonces_len_as_felt))
             .chain(nonces_sorted.into_iter().flat_map(|nonce| vec![nonce.contract_address, nonce.nonce]))
-            .chain(std::iter::once(migrated_compiled_classes_len_as_felt))
-            .chain(
-                migrated_compiled_classes_sorted
-                    .into_iter()
-                    .flat_map(|migrated_class| vec![migrated_class.class_hash, migrated_class.compiled_class_hash]),
-            )
             .collect();
 
         Poseidon::hash_array(&elements)
