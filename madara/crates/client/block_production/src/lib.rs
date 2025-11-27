@@ -1881,7 +1881,7 @@ pub(crate) mod tests {
             "Config should be updated with current value after re-execution completes"
         );
     }
-    
+
     // This test verifies that graceful shutdown properly closes any open preconfirmed block
     // without requiring re-execution. When shutdown is triggered, the block production service
     // should close the preconfirmed block using the executor's existing state.
@@ -1908,76 +1908,6 @@ pub(crate) mod tests {
         )
         .await;
 
-        assert!(!original_devnet_setup.mempool.is_empty().await);
-
-        // Start block production task with no_charge_fee = true.
-        // This will execute the transaction and add it to the pre-confirmed block.
-        let mut block_production_task = BlockProductionTask::new(
-            original_devnet_setup.backend.clone(),
-            original_devnet_setup.mempool.clone(),
-            original_devnet_setup.metrics.clone(),
-            Arc::new(original_devnet_setup.l1_client.clone()),
-            initial_no_charge_fee,
-        );
-
-        let mut notifications = block_production_task.subscribe_state_notifications();
-        let restart_task =
-            AbortOnDrop::spawn(
-                async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
-            );
-
-        // Wait for transaction to be executed and added to pre-confirmed block
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
-
-        // Verify pre-confirmed block exists with our transaction
-        assert!(original_devnet_setup.backend.has_preconfirmed_block());
-        let preconfirmed_view = original_devnet_setup.backend.block_view_on_preconfirmed().unwrap();
-        assert_eq!(preconfirmed_view.num_executed_transactions(), 1);
-
-        // Stop the task before it closes the block.
-        // This simulates a node crash/restart scenario where a pre-confirmed block exists.
-        drop(restart_task);
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        // Phase 2: Restart with different no_charge_fee value
-        // This simulates a configuration change between shutdown and restart.
-        let restart_no_charge_fee = false;
-        let restart_block_production_task = BlockProductionTask::new(
-            original_devnet_setup.backend.clone(), // Same backend = same database
-            original_devnet_setup.mempool.clone(),
-            original_devnet_setup.metrics.clone(),
-            Arc::new(original_devnet_setup.l1_client.clone()),
-            restart_no_charge_fee, // Current config: no_charge_fee = false
-        );
-
-        // Start the block production task.
-        // This will call setup_initial_state() which calls close_preconfirmed_block_if_exists().
-        // During re-execution, it will use saved_no_charge_fee = true (from saved config),
-        // NOT restart_no_charge_fee = false (from current config).
-        let _restart_task = AbortOnDrop::spawn(async move {
-            restart_block_production_task.run(ServiceContext::new_for_testing()).await.unwrap()
-        });
-
-        // Give time for setup_initial_state to complete and close the pre-confirmed block
-        tokio::time::sleep(Duration::from_secs(1)).await;
-
-        // Phase 3: Verify block was closed successfully
-        assert!(!original_devnet_setup.backend.has_preconfirmed_block());
-        assert_eq!(original_devnet_setup.backend.latest_confirmed_block_n(), Some(1));
-
-        // Phase 4: Verify config was updated with CURRENT value after re-execution
-        // After re-execution completes, the config is updated to the current value.
-        // This ensures that the next block will use the current configuration.
-        let updated_config = original_devnet_setup
-            .backend
-            .get_runtime_exec_config()
-            .expect("Should be able to read runtime exec config")
-            .expect("Runtime exec config should exist after closing");
-
-        assert_eq!(
-            updated_config.no_charge_fee, restart_no_charge_fee,
-            "Config should be updated with current value after re-execution completes"
-        );
         assert!(!devnet_setup.mempool.is_empty().await);
 
         // Step 2: Start block production and execute a batch to create a preconfirmed block

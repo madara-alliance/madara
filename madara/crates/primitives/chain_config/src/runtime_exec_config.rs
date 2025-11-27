@@ -151,7 +151,7 @@ impl RuntimeExecutionConfig {
 
     /// Copies versioned_constants from the current node's config.
     fn copy_versioned_constants_from_current(current: &ChainConfig) -> ChainVersionedConstants {
-            let mut vc = ChainVersionedConstants::default();
+        let mut vc = ChainVersionedConstants::default();
         for (version, constants) in &current.versioned_constants.0 {
             vc.add(*version, constants.clone());
         }
