@@ -632,15 +632,6 @@ impl BlockProductionTask {
 
         // Extract saved values for re-execution without modifying self
         let (saved_chain_config, saved_no_charge_fee) = if let Some(config) = saved_config {
-            // Log warning if saved config differs from current config (for debugging)
-            if config.chain_config.chain_id != self.backend.chain_config().chain_id {
-                tracing::warn!(
-                    "Saved chain_id ({}) differs from current chain_id ({})",
-                    config.chain_config.chain_id,
-                    self.backend.chain_config().chain_id
-                );
-            }
-
             (Some(Arc::new(config.chain_config)), config.no_charge_fee)
         } else {
             tracing::warn!("No saved runtime execution config found, using current configs (backward compatibility)");

@@ -16,6 +16,13 @@
 //!   `Serialize`, so it cannot be persisted directly. Instead, we save the `protocol_version` and
 //!   reconstruct the constants from the current node's configuration on restart.
 //!
+//!   TODO (mohit 27/11/2025): Add versioning support for versioned_constants:
+//!   1. Add an internal version field within versioned_constants
+//!   2. Same protocol_version can have multiple versioned_constants, selected by version
+//!   3. chain_config could have a `versioned_constants_version` field
+//!   4. Madara saves protocol_version <> versioned_constants_version <> block_no mapping
+//!      for downstream actions (orchestrator and SNOS)
+//!
 //! - **`private_key`**: Set to `None` in saved configs. Re-execution doesn't require signing;
 //!   the current node's private key (from CLI/chain-config) is used for any signing operations.
 //!
@@ -26,6 +33,8 @@
 //!   across all node versions and restarts.
 //! - If you use custom `versioned_constants` (via `versioned_constants_path` in chain config),
 //!   you must ensure they remain consistent across restarts.
+//! - **Important:** If you need to update custom versioned constants, you MUST also bump the
+//!   protocol version to maintain the immutability guarantee.
 //! - If this assumption is violated (e.g., custom constants change between runs), re-execution
 //!   may produce different results than the original execution.
 //!
@@ -83,36 +92,13 @@ impl RuntimeExecutionConfig {
         Ok(Self { chain_config: config_for_saving, exec_constants, no_charge_fee })
     }
 
-    /// Prepares a chain config for saving by creating a copy.
-    ///
-    /// Uses YAML round-trip serialization because `ChainConfig` doesn't implement `Clone`.
-    /// This approach also automatically:
-    /// - Excludes `private_key` (has `#[serde(skip)]`)
-    /// - Excludes `versioned_constants` (has `#[serde(skip)]`)
+    /// Creates a copy of chain config via YAML round-trip (ChainConfig doesn't implement Clone).
+    /// Fields with #[serde(skip)] (private_key, versioned_constants) are automatically excluded.
     fn prepare_chain_config_for_saving(config: &ChainConfig) -> Result<ChainConfig> {
-        // Serialize to YAML - this excludes #[serde(skip)] fields
         let yaml_str = serde_yaml::to_string(config).context("Failed to serialize ChainConfig to YAML")?;
-
-        // Deserialize back through versioned enum (handles any version migrations)
         let versioned: ChainConfigVersioned =
             serde_yaml::from_str(&yaml_str).context("Failed to deserialize ChainConfig from YAML")?;
-
-        // Convert to canonical ChainConfig
-        let mut chain_config = ChainConfig::try_from(versioned).context("Failed to convert to ChainConfig")?;
-
-        // Copy versioned_constants back (needed for in-memory operations, not persisted)
-        chain_config.versioned_constants = {
-            let mut vc = ChainVersionedConstants::default();
-            for (version, constants) in &config.versioned_constants.0 {
-                vc.add(*version, constants.clone());
-            }
-            vc
-        };
-
-        // Explicitly set private_key to None for clarity
-        chain_config.private_key = None;
-
-        Ok(chain_config)
+        ChainConfig::try_from(versioned).context("Failed to convert to ChainConfig")
     }
 
     /// Serializes this config for database storage.
@@ -128,28 +114,17 @@ impl RuntimeExecutionConfig {
     }
 
     /// Reconstructs a runtime config from saved data.
-    ///
-    /// This is called on restart to load the saved execution parameters.
-    /// It validates the saved config and reconstructs the missing pieces from the current node.
+    /// Called on restart to load saved execution parameters and reconstruct missing pieces.
     pub fn from_saved_config(
         saved: RuntimeExecutionConfigSerializable,
         current_backend_config: &ChainConfig,
     ) -> Result<Self> {
-        // Step 1: Deserialize saved chain config first (needed for validation)
         let mut chain_config = Self::deserialize_saved_chain_config(&saved.chain_config_yaml)?;
 
-        // Step 2: Validate saved config against current node (includes chain ID check)
-        Self::validate_saved_config(&saved, current_backend_config, &chain_config)?;
-
-        // Step 3: Reconstruct versioned_constants from current node
-        // Note: versioned_constants cannot be serialized (external type), so we reconstruct
-        // from current node's config using the saved protocol_version
+        // Reconstruct versioned_constants from current node (not serializable)
         chain_config.versioned_constants = Self::copy_versioned_constants_from_current(current_backend_config);
 
-        // Step 4: Set private_key to None (re-execution doesn't need it)
-        chain_config.private_key = None;
-
-        // Step 5: Look up exec_constants using saved protocol_version
+        // Look up exec_constants using saved protocol_version
         let protocol_version: StarknetVersion =
             saved.protocol_version.parse().context("Failed to parse saved protocol version")?;
 
@@ -166,35 +141,6 @@ impl RuntimeExecutionConfig {
         Ok(Self { chain_config, exec_constants, no_charge_fee: saved.no_charge_fee })
     }
 
-    /// Validates that the saved config is compatible with the current node.
-    fn validate_saved_config(
-        saved: &RuntimeExecutionConfigSerializable,
-        current: &ChainConfig,
-        saved_chain_config: &ChainConfig,
-    ) -> Result<()> {
-        // Check config version - must match exactly
-        if saved.config_version != current.config_version {
-            anyhow::bail!(
-                "Config version mismatch: saved config has version {}, but current node expects version {}. \
-                 You may need to migrate your database or use a compatible node version.",
-                saved.config_version,
-                current.config_version
-            );
-        }
-
-        // Check chain ID - must match exactly
-        if saved_chain_config.chain_id != current.chain_id {
-            anyhow::bail!(
-                "Chain ID mismatch: saved config has chain_id={}, but current node has chain_id={}. \
-                 Cannot re-execute blocks from a different chain.",
-                saved_chain_config.chain_id,
-                current.chain_id
-            );
-        }
-
-        Ok(())
-    }
-
     /// Deserializes a saved chain config from YAML.
     fn deserialize_saved_chain_config(yaml: &str) -> Result<ChainConfig> {
         let versioned: ChainConfigVersioned =
@@ -205,7 +151,7 @@ impl RuntimeExecutionConfig {
 
     /// Copies versioned_constants from the current node's config.
     fn copy_versioned_constants_from_current(current: &ChainConfig) -> ChainVersionedConstants {
-        let mut vc = ChainVersionedConstants::default();
+            let mut vc = ChainVersionedConstants::default();
         for (version, constants) in &current.versioned_constants.0 {
             vc.add(*version, constants.clone());
         }

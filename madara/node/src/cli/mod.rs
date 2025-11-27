@@ -301,7 +301,11 @@ impl RunCmd {
 
         chain_config.private_key = match self.private_key.take() {
             Some(s) => Some(s.try_into().context("Failed to parse private key")?),
-            None => None,
+            None => {
+                // Auto-generate a private key for block signing if none provided
+                tracing::info!("No private key provided, auto-generating one for block signing");
+                Some(mp_utils::crypto::ZeroingPrivateKey::default())
+            }
         };
 
         Ok(Arc::new(chain_config))
