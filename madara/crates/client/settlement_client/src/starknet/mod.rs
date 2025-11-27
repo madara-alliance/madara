@@ -362,7 +362,8 @@ impl SettlementLayerProvider for StarknetClient {
     async fn messages_to_l2_stream(
         &self,
         from_l1_block_n: u64,
-        min_settlement_blocks: u64
+        l1_msg_min_confirmations: u64,
+        block_poll_interval: std::time::Duration,
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
         let base_stream = watch_events(
             self.provider.clone(),
@@ -383,14 +384,15 @@ impl SettlementLayerProvider for StarknetClient {
         )
         .map_err(|e| SettlementClientError::from(StarknetClientError::Provider(format!("Provider error: {e:#}"))))
         .map(|r| r.and_then(MessageToL2WithMetadata::try_from))
-        .boxed();  // Box it to make it Unpin
-        
-        let filtered_stream = event::ConfirmationDepthFilteredStream::new(
+        .boxed(); // Box it to make it Unpin
+
+        let filtered_stream = event::new_starknet_confirmation_depth_filtered_stream(
             base_stream,
             self.provider.clone(),
-            min_settlement_blocks,
+            block_poll_interval,
+            l1_msg_min_confirmations,
         );
-        
+
         Ok(filtered_stream.boxed())
     }
 }
@@ -754,9 +756,16 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing(), 0)
-                    .await
-                    .unwrap();
+                sync(
+                    Arc::new(starknet_client),
+                    Arc::clone(&db),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                    0,
+                    Duration::from_secs(6),
+                )
+                .await
+                .unwrap();
                 tracing::debug!("messaging worker stopped");
             })
         };
@@ -788,8 +797,15 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing(), 0)
-                    .await
+                sync(
+                    Arc::new(starknet_client),
+                    Arc::clone(&db),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                    0,
+                    Duration::from_secs(6),
+                )
+                .await
             })
         };
 

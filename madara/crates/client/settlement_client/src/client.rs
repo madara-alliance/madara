@@ -118,10 +118,12 @@ pub trait SettlementLayerProvider: Send + Sync {
     ///
     /// # Arguments
     /// * `from_l1_block_n` - Start returning events from this block_n.
-    /// * `min_settlement_blocks` - Min no of settlement blocks after which to return messages. 
+    /// * `l1_msg_min_confirmations` - Minimum number of block confirmations required before processing messages.
+    /// * `block_poll_interval` - Polling interval for fetching the latest block number for confirmation depth filtering.
     async fn messages_to_l2_stream(
         &self,
         from_l1_block_n: u64,
-        min_settlement_blocks: u64
+        l1_msg_min_confirmations: u64,
+        block_poll_interval: std::time::Duration,
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError>;
 }

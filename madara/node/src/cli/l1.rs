@@ -123,8 +123,19 @@ pub struct L1SyncParams {
     )]
     pub settlement_layer: MadaraSettlementLayer,
 
-    /// Minimum settlement blocks for L1 sync.
-    /// This is the minimum number of blocks that must be settled on L1 before the node can sync/process the messages.
-    #[clap(env = "MADARA_MIN_SETTLEMENT_BLOCKS", long, default_value = "10")]
-    pub min_settlement_blocks: u64, 
+    /// Minimum number of block confirmations required before an L1 to L2 message can be processed.
+    /// This ensures messages are only processed after they have sufficient confirmations on the settlement layer.
+    #[clap(env = "MADARA_L1_MSG_MIN_CONFIRMATIONS", long, default_value = "10")]
+    pub l1_msg_min_confirmations: u64,
+
+    /// Polling interval for fetching the latest block number from the settlement layer.
+    /// This is used for confirmation depth filtering of L1 to L2 messages.
+    /// Default is 12 seconds (Ethereum block time). For Starknet settlement, consider using 6 seconds.
+    #[clap(
+        env = "MADARA_L1_MSG_POLL_INTERVAL",
+        long,
+        default_value = "12s",
+        value_parser = parse_duration,
+    )]
+    pub l1_msg_poll_interval: Duration,
 }

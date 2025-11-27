@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::gas_price::{gas_price_worker, GasPriceProviderConfig, L1BlockMetrics};
 use crate::messaging::sync;
@@ -9,7 +10,8 @@ use mp_utils::service::ServiceContext;
 
 pub struct SyncWorkerConfig {
     pub gas_provider_config: GasPriceProviderConfig,
-    pub min_settlement_blocks: u64,
+    pub l1_msg_min_confirmations: u64,
+    pub block_poll_interval: Duration,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
     pub l1_head_sender: L1HeadSender,
 }
@@ -31,7 +33,8 @@ impl L1ClientImpl {
             Arc::clone(&self.backend),
             self.notify_new_message_to_l2.clone(),
             ctx.clone(),
-            config.min_settlement_blocks,
+            config.l1_msg_min_confirmations,
+            config.block_poll_interval,
         ));
 
         if !config.gas_provider_config.all_is_fixed() {

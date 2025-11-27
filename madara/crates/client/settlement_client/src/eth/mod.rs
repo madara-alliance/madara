@@ -327,7 +327,8 @@ impl SettlementLayerProvider for EthereumClient {
     async fn messages_to_l2_stream(
         &self,
         from_l1_block_n: u64,
-        min_settlement_blocks: u64
+        l1_msg_min_confirmations: u64,
+        block_poll_interval: std::time::Duration,
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
         let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
         let event_stream =
@@ -342,12 +343,13 @@ impl SettlementLayerProvider for EthereumClient {
             )?;
 
         let base_stream = EthereumEventStream::new(event_stream);
-        let filtered_stream = event::ConfirmationDepthFilteredStream::new(
+        let filtered_stream = event::new_eth_confirmation_depth_filtered_stream(
             base_stream,
             Arc::clone(&self.provider),
-            min_settlement_blocks,
+            block_poll_interval,
+            l1_msg_min_confirmations,
         );
-        
+
         Ok(filtered_stream.boxed())
     }
 }
@@ -660,7 +662,15 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(Arc::new(eth_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing(), 0).await
+                sync(
+                    Arc::new(eth_client),
+                    Arc::clone(&db),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                    0,
+                    Duration::from_secs(12),
+                )
+                .await
             })
         };
 

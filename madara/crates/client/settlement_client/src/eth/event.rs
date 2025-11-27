@@ -1,6 +1,7 @@
 use crate::error::SettlementClientError;
 use crate::eth::error::EthereumClientError;
 use crate::eth::StarknetCoreContract::LogMessageToL2;
+use crate::messaging::depth_filtered_stream::ConfirmationDepthFilteredStream;
 use crate::messaging::MessageToL2WithMetadata;
 use alloy::contract::EventPoller;
 use alloy::providers::Provider;
@@ -11,7 +12,6 @@ use mp_convert::{Felt, ToFelt};
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use std::iter;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -89,96 +89,37 @@ impl Stream for EthereumEventStream {
     }
 }
 
-/// A stream wrapper that filters events based on dynamic block confirmation depth
-/// 
-/// This uses a background task to periodically update the latest block number,
-/// making the stream implementation much simpler. It's generic and works with any
-/// settlement layer provider.
-pub struct ConfirmationDepthFilteredStream<S> {
+/// A stream wrapper that filters events based on dynamic block confirmation depth for Ethereum
+pub type EthConfirmationDepthFilteredStream<S> = ConfirmationDepthFilteredStream<S>;
+
+/// Create a new `EthConfirmationDepthFilteredStream` for Ethereum
+pub fn new_eth_confirmation_depth_filtered_stream<S>(
     inner: S,
-    min_confirmations: u64,
-    latest_block: Arc<AtomicU64>,
-    _update_task: tokio::task::JoinHandle<()>,
-}
-
-impl<S> ConfirmationDepthFilteredStream<S>
+    provider: Arc<alloy::providers::ReqwestProvider>,
+    polling_interval: Duration,
+    l1_msg_min_confirmations: u64,
+) -> EthConfirmationDepthFilteredStream<S>
 where
     S: Stream<Item = Result<MessageToL2WithMetadata, SettlementClientError>> + Unpin,
 {
-    pub fn new(inner: S, provider: Arc<alloy::providers::ReqwestProvider>, min_confirmations: u64) -> Self {
-        let latest_block = Arc::new(AtomicU64::new(0));
-        
-        // Spawn background task to periodically update the latest block number
-        let latest_block_clone = Arc::clone(&latest_block);
-        let update_task = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(12));
-            loop {
-                interval.tick().await;
+    let provider_clone = Arc::clone(&provider);
+    ConfirmationDepthFilteredStream::new(
+        inner,
+        move || {
+            let provider = Arc::clone(&provider_clone);
+            async move {
                 match provider.get_block_number().await {
-                    Ok(block) => {
-                        latest_block_clone.store(block, Ordering::Relaxed);
-                        tracing::trace!("Updated latest L1 block number to {}", block);
-                    }
+                    Ok(block) => Some(block),
                     Err(e) => {
-                        tracing::warn!("Failed to update latest L1 block number: {}", e);
+                        tracing::warn!("Failed to get Ethereum block number: {}", e);
+                        None
                     }
                 }
             }
-        });
-        
-        Self { inner, min_confirmations, latest_block, _update_task: update_task }
-    }
-}
-
-impl<S> Drop for ConfirmationDepthFilteredStream<S> {
-    fn drop(&mut self) {
-        // Abort the background task when the stream is dropped
-        self._update_task.abort();
-    }
-}
-
-impl<S> Stream for ConfirmationDepthFilteredStream<S>
-where
-    S: Stream<Item = Result<MessageToL2WithMetadata, SettlementClientError>> + Unpin,
-{
-    type Item = Result<MessageToL2WithMetadata, SettlementClientError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // Poll the inner stream for the next event
-        loop {
-            match Pin::new(&mut self.inner).poll_next(cx) {
-                Poll::Ready(Some(Ok(event))) => {
-                    // Check if this event meets the confirmation depth requirement
-                    let latest = self.latest_block.load(Ordering::Relaxed);
-                    let threshold = latest.saturating_sub(self.min_confirmations);
-                    
-                    if event.l1_block_number <= threshold {
-                        return Poll::Ready(Some(Ok(event)));
-                    }
-                    
-                    // Event doesn't have enough confirmations yet, skip it and continue polling
-                    tracing::debug!(
-                        "Skipping event at block {} (needs {} confirmations, latest L1 block: {})",
-                        event.l1_block_number,
-                        self.min_confirmations,
-                        latest
-                    );
-                    // Continue the loop to get the next event
-                }
-                Poll::Ready(Some(Err(e))) => {
-                    // Pass through errors
-                    return Poll::Ready(Some(Err(e)));
-                }
-                Poll::Ready(None) => {
-                    // Stream ended
-                    return Poll::Ready(None);
-                }
-                Poll::Pending => {
-                    return Poll::Pending;
-                }
-            }
-        }
-    }
+        },
+        polling_interval,
+        l1_msg_min_confirmations,
+    )
 }
 
 #[cfg(test)]
