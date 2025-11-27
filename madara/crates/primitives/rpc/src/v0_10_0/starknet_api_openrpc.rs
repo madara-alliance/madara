@@ -34,7 +34,7 @@ use starknet_types_core::felt::Felt;
 /// 2. PreConfirmedStateUpdate: Removed `old_root` field
 /// 3. EmittedEvent: Added `transaction_index` and `event_index` fields
 /// 4. ContractStorageKeysItem: Changed `storage_keys` type from `Vec<Felt>` to `Vec<StorageKey>`
-
+///
 /// The change in state applied in this block, given as a mapping of addresses to the new values and/or new contracts
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct StateDiff {
