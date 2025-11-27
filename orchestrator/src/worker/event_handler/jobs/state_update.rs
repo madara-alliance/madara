@@ -3,7 +3,7 @@ use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
-use crate::types::constant::{ON_CHAIN_DATA_FILE_NAME, PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
+use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
     JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
@@ -11,7 +11,6 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::fact_info::OnChainData;
 use crate::worker::utils::{
     fetch_blob_data_for_batch, fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block,
 };
@@ -36,7 +35,7 @@ pub struct StateUpdateJobHandler;
 #[async_trait]
 impl JobHandlerTrait for StateUpdateJobHandler {
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(log_type = "starting", "State update job creation started.");
+        debug!(log_type = "starting", "{:?} job {} creation started", JobType::StateTransition, internal_id);
 
         // Extract state transition metadata
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
@@ -51,11 +50,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         }
         let job_item = JobItem::create(internal_id.clone(), JobType::StateTransition, JobStatus::Created, metadata);
 
-        info!(
-            log_type = "completed",
-            context = ?state_metadata.context,
-            "State update job created."
-        );
+        debug!(log_type = "completed", "{:?} job {} creation completed", JobType::StateTransition, internal_id);
 
         Ok(job_item)
     }
@@ -75,8 +70,8 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     ///
     /// TODO: Update the code in the future releases to fix this.
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
-        info!(log_type = "starting", "State update job processing started.");
+        let internal_id = &job.internal_id;
+        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::StateTransition, internal_id);
 
         // Get the state transition metadata
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
@@ -84,7 +79,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let (blocks_or_batches_to_settle, last_failed_block_or_batch) = match state_metadata.context.clone() {
             SettlementContext::Block(data) => {
                 self.validate_block_numbers(config.clone(), &data.to_settle).await?;
-                debug!(blocks = ?data.to_settle, "Validated block numbers");
                 if !data.to_settle.is_empty() {
                     tracing::Span::current().record("block_start", data.to_settle[0]);
                     tracing::Span::current().record("block_end", data.to_settle[data.to_settle.len() - 1]);
@@ -163,7 +157,12 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 }
             };
 
-            debug!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, "Validating transaction receipt");
+            info!(
+                job_id = %job.id,
+                tx_hash = %txn_hash,
+                nonce = %nonce,
+                "State update transaction submitted successfully for job {}. Validating transaction receipt", job.internal_id
+            );
 
             config.settlement_client()
                 .wait_for_tx_finality(&txn_hash)
@@ -181,11 +180,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         let val = blocks_or_batches_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;
 
-        info!(
-            log_type = "completed",
-            last_settled_block = %val,
-            "State update job processed successfully."
-        );
+        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::StateTransition, internal_id);
 
         Ok(val.to_string())
     }
@@ -196,106 +191,21 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// 2. The expected last settled block from our configuration is indeed the one found in the
     ///    provider.
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
-        info!(log_type = "starting", "State update job verification started.");
+        let internal_id = &job.internal_id;
+        debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::StateTransition, internal_id);
 
         // Get state update metadata
-        let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
-        // Get transaction hashes
-        let tx_hashes = state_metadata.tx_hashes.clone();
+        let state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
         let nums_settled = match state_metadata.context.clone() {
             SettlementContext::Block(data) => data.to_settle,
             SettlementContext::Batch(data) => data.to_settle,
         };
 
-        // Return the status from the settlement contract if the layer is L2
-        // TODO: Remove this check from here and use the same logic (checking the core contract for
-        //       verification rather than the txn status) for both L2s and L3s
-        if config.layer() == &Layer::L2 {
-            // Get the status from the settlement contract
-            return Self::verify_through_contract(&config, &nums_settled, &job.id, &internal_id).await;
-        }
-
-        // Check the transaction status if the layer is not L2
-        debug!(job_id = %job.internal_id, "Retrieved block numbers from metadata");
-        let settlement_client = config.settlement_client();
-
-        for (tx_hash, num_settled) in tx_hashes.iter().zip(nums_settled.iter()) {
-            debug!(
-                tx_hash = %tx_hash,
-                num = %num_settled,
-                "Verifying transaction inclusion"
-            );
-
-            let tx_inclusion_status =
-                settlement_client.verify_tx_inclusion(tx_hash).await.map_err(|e| JobError::Other(OtherError(e)))?;
-
-            match tx_inclusion_status {
-                SettlementVerificationStatus::Rejected(_) => {
-                    warn!(
-                        tx_hash = %tx_hash,
-                        num = %num_settled,
-                        "Transaction rejected"
-                    );
-                    state_metadata.context = self.update_last_failed(state_metadata.context.clone(), *num_settled);
-                    job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-                    return Ok(tx_inclusion_status.into());
-                }
-                // If the tx is still pending, we wait for it to be finalized and check again the status.
-                SettlementVerificationStatus::Pending => {
-                    debug!(
-                        tx_hash = %tx_hash,
-                        "Transaction pending, waiting for finality"
-                    );
-                    settlement_client
-                        .wait_for_tx_finality(tx_hash)
-                        .await
-                        .map_err(|e| JobError::Other(OtherError(e)))?;
-
-                    let new_status = settlement_client
-                        .verify_tx_inclusion(tx_hash)
-                        .await
-                        .map_err(|e| JobError::Other(OtherError(e)))?;
-
-                    match new_status {
-                        SettlementVerificationStatus::Rejected(_) => {
-                            warn!(
-                                tx_hash = %tx_hash,
-                                num = %num_settled,
-                                "Transaction rejected after finality"
-                            );
-                            state_metadata.context =
-                                self.update_last_failed(state_metadata.context.clone(), *num_settled);
-                            job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-                            return Ok(new_status.into());
-                        }
-                        SettlementVerificationStatus::Pending => {
-                            error!(
-                                tx_hash = %tx_hash,
-                                "Transaction still pending after finality check"
-                            );
-                            Err(StateUpdateError::TxnShouldNotBePending { tx_hash: tx_hash.to_string() })?
-                        }
-                        SettlementVerificationStatus::Verified => {
-                            debug!(
-                                tx_hash = %tx_hash,
-                                "Transaction verified after finality"
-                            );
-                        }
-                    }
-                }
-                SettlementVerificationStatus::Verified => {
-                    debug!(
-                        tx_hash = %tx_hash,
-                        "Transaction verified"
-                    );
-                }
-            }
-        }
-
-        // Finally, check the status of the settlement-contract
-        Self::verify_through_contract(&config, &nums_settled, &job.id, &internal_id).await
+        // Get the status from the settlement contract
+        let result = Self::verify_through_contract(&config, &nums_settled, &job.id, internal_id).await?;
+        info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::StateTransition, internal_id);
+        Ok(result)
     }
 
     fn max_process_attempts(&self) -> u64 {
@@ -417,15 +327,18 @@ impl StateUpdateJobHandler {
             config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?
         {
             if last_settled_block >= to_block_num {
-                warn!(
-                    "Contract state ({}) already ahead of the block to be settled ({}). Skipping update state call.",
-                    last_settled_block, to_block_num
+                info!(
+                    last_settled_block = %last_settled_block,
+                    to_block_num = %to_block_num,
+                    "Contract state already ahead of the block to be settled, skipping update state call"
                 );
                 Ok(false)
             } else {
                 Ok(true)
             }
         } else {
+            // None implies that no state update has happened yet in the core contract
+            // So, we should send a state update transaction
             Ok(true)
         }
     }
@@ -466,15 +379,6 @@ impl StateUpdateJobHandler {
         }
 
         Ok(())
-    }
-
-    /// Retrieves the OnChain data for the corresponding block.
-    async fn fetch_onchain_data_for_block(&self, block_number: u64, config: Arc<Config>) -> OnChainData {
-        let storage_client = config.storage();
-        let key = block_number.to_string() + "/" + ON_CHAIN_DATA_FILE_NAME;
-        let onchain_data_bytes = storage_client.get_data(&key).await.expect("Unable to fetch onchain data for block");
-        serde_json::from_slice(onchain_data_bytes.iter().as_slice())
-            .expect("Unable to convert the data into onchain data")
     }
 
     /// Parent method to update state based on the layer being used
@@ -527,12 +431,19 @@ impl StateUpdateJobHandler {
         config: Arc<Config>,
         block_no: u64,
         snos: Vec<Felt>,
-        nonce: u64,
-        program_output: Vec<[u8; 32]>,
-        blob_data: Vec<Vec<u8>>,
+        _nonce: u64,
+        _program_output: Vec<[u8; 32]>,
+        _blob_data: Vec<Vec<u8>>,
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
-        let last_tx_hash_executed = if snos.get(8) == Some(&Felt::ZERO) {
+
+        // NOTE: State updates are performed using call data, even when the KZG DA flag is enabled.
+        // The core contract for L3 chains does not support blobs, requiring the use of call data
+        // for state updates regardless of the KZG DA configuration.
+        // An interesting use case emerges when running with KZG DA enabled but performing state
+        // updates with call data: this configuration effectively replicates private DA functionality,
+        // as the state diff is not in the snos_output while still maintaining the ability to update state.
+        let last_tx_hash_executed = if snos.get(8) == Some(&Felt::ZERO) || snos.get(8) == Some(&Felt::ONE) {
             let proof_key = format!("{block_no}/{PROOF_FILE_NAME}");
             debug!(%proof_key, "Fetching snos proof file");
 
@@ -563,22 +474,11 @@ impl StateUpdateJobHandler {
                 JobError::Other(OtherError(eyre!("{}", e)))
             })?;
 
-            let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof));
+            let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof.clone()));
             let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof));
 
-            let onchain_data = self.fetch_onchain_data_for_block(block_no, config.clone()).await;
             settlement_client
-                .update_state_calldata(
-                    snos_output,
-                    program_output,
-                    onchain_data.on_chain_data_hash.0,
-                    usize_to_bytes(onchain_data.on_chain_data_size),
-                )
-                .await
-                .map_err(|e| JobError::Other(OtherError(e)))?
-        } else if snos.get(8) == Some(&Felt::ONE) {
-            settlement_client
-                .update_state_with_blobs(program_output, blob_data, nonce)
+                .update_state_calldata(snos_output, program_output, [0u8; 32], [0u8; 32])
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
         } else {
@@ -612,10 +512,4 @@ pub fn vec_felt_to_vec_bytes32(felts: Vec<Felt>) -> Vec<[u8; 32]> {
             bytes
         })
         .collect()
-}
-
-fn usize_to_bytes(n: usize) -> [u8; 32] {
-    let mut bytes = [0u8; 32];
-    bytes[..8].copy_from_slice(&n.to_le_bytes());
-    bytes
 }

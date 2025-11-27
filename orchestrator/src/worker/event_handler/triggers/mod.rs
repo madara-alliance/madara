@@ -41,6 +41,11 @@ pub trait JobTrigger: Send + Sync {
             .await?;
 
         if !failed_jobs.is_empty() {
+            tracing::warn!(
+                "There are {} {} jobs in the DB. Not creating new jobs to prevent inconsistencies (existing jobs will be processed). Please manually fix the failed jobs before continuing!",
+                failed_jobs.len(),
+                JobStatus::Failed
+            );
             return Ok(false);
         }
 

@@ -24,6 +24,14 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_DISABLE_TRIES", long)]
     pub disable_tries: bool,
 
+    /// Enables snap sync.
+    /// When importing a block, the state root computation is the most expensive operation.
+    /// This feature batches the state root computation, which can significantly speed up syncing.
+    /// If enabled, storage proofs for each block would not be available!
+    /// While maintaining the global tries.
+    #[clap(env = "MADARA_SNAP_SYNC", long)]
+    pub snap_sync: bool,
+
     /// Gateway api key to avoid rate limiting (optional).
     #[clap(env = "MADARA_GATEWAY_KEY", long, value_name = "API KEY")]
     pub gateway_key: Option<String>,
@@ -74,6 +82,12 @@ pub struct L2SyncParams {
     /// Enable bouncer config syncing.
     #[arg(env = "MADARA_ENABLE_BOUNCER_CONFIG_SYNCING", long, default_value_t = false)]
     pub bouncer_config_sync_enable: bool,
+
+    /// Disable blockchain reorganization. When enabled, if a divergent state is discovered,
+    /// the node will stop with an error instead of performing a reorg. This is useful for
+    /// operators who want to manually handle chain divergences.
+    #[clap(env = "MADARA_DISABLE_REORG", long, default_value_t = false)]
+    pub disable_reorg: bool,
 }
 
 impl L2SyncParams {

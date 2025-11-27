@@ -32,6 +32,7 @@ pub enum ServerError {
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub rpc_port: Option<u16>,
+    pub rpc_admin: Option<u16>, // Used for Madara Admin Port
     pub connection_attempts: usize,
     pub connection_delay_ms: u64,
     pub buffer_capacity: usize,
@@ -47,6 +48,7 @@ impl Default for ServerConfig {
         Self {
             service_name: String::from(""),
             rpc_port: None,
+            rpc_admin: None,
             connection_attempts: CONNECTION_ATTEMPTS,
             connection_delay_ms: CONNECTION_DELAY_MS,
             buffer_capacity: BUFFER_CAPACITY,

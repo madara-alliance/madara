@@ -1,3 +1,4 @@
+use crate::rocksdb::trie::WrappedBonsaiError;
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use mp_state_update::StateDiff;
 use starknet_types_core::{
@@ -55,6 +56,18 @@ fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> F
     } else {
         Poseidon::hash_array(&[STARKNET_STATE_PREFIX, contracts_trie_root, classes_trie_root])
     }
+}
+
+pub fn get_state_root(backend: &RocksDBStorage) -> Result<Felt> {
+    let contract_trie = backend.contract_trie();
+    let contract_trie_root_hash = contract_trie.root_hash(bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
+
+    let class_trie = backend.class_trie();
+    let class_trie_root_hash = class_trie.root_hash(bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
+
+    let state_root = calculate_state_root(contract_trie_root_hash, class_trie_root_hash);
+
+    Ok(state_root)
 }
 
 #[cfg(test)]

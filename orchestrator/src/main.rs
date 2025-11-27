@@ -22,6 +22,7 @@ use orchestrator::setup::setup;
 use orchestrator::types::params::OTELConfig;
 use orchestrator::utils::instrument::OrchestratorInstrumentation;
 use orchestrator::utils::logging::init_logging;
+use orchestrator::utils::preflight::run_preflight_checks;
 use orchestrator::utils::signal_handler::SignalHandler;
 use orchestrator::worker::initialize_worker;
 use orchestrator::OrchestratorResult;
@@ -73,9 +74,10 @@ async fn main() {
 /// It does the following:
 /// 1. Start instrumentation
 /// 2. Generate [Config] from [RunCmd]
-/// 3. Starts the server for sending manual requests
-/// 4. Initialize worker
-/// 5. Setup signal handling for graceful shutdown
+/// 3. Run pre-flight health checks for all critical resources
+/// 4. Starts the server for sending manual requests
+/// 5. Initialize worker
+/// 6. Setup signal handling for graceful shutdown
 async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
     let instrumentation = OrchestratorInstrumentation::new(&config)?;
@@ -83,6 +85,9 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
 
     let config = Arc::new(Config::from_run_cmd(run_cmd).await?);
     debug!("Configuration initialized");
+
+    // Run pre-flight health checks to ensure all dependencies are accessible
+    run_preflight_checks(config.database(), config.storage(), config.queue(), config.alerts()).await?;
 
     // Run the server in a separate tokio spawn task
     setup_server(config.clone()).await?;
