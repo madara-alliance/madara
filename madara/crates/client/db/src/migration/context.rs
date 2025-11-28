@@ -2,9 +2,12 @@
 //!
 //! The context provides access to the database and utilities needed during migration.
 
-use rocksdb::DB;
+use rocksdb::{DBWithThreadMode, MultiThreaded};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+/// Type alias for the RocksDB instance (multi-threaded).
+type DB = DBWithThreadMode<MultiThreaded>;
 
 /// Progress information for long-running migrations.
 #[derive(Debug, Clone)]

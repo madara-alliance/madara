@@ -1,4 +1,7 @@
 current_version: 8
+# Minimum version that can be migrated from.
+# Databases older than this must be re-synced.
+base_version: 8
 versions:
   - version: 8
     pr: 790

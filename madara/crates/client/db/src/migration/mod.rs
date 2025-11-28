@@ -74,11 +74,14 @@ pub use context::{MigrationContext, MigrationProgress, ProgressCallback};
 pub use error::MigrationError;
 pub use registry::{get_migrations, get_migrations_for_range, validate_registry, Migration, MigrationFn};
 
-use rocksdb::DB;
+use rocksdb::{DBWithThreadMode, MultiThreaded};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+/// Type alias for the RocksDB instance (multi-threaded).
+type DB = DBWithThreadMode<MultiThreaded>;
 
 /// File name for database version.
 const DB_VERSION_FILE: &str = ".db-version";
@@ -177,6 +180,29 @@ impl MigrationRunner {
     /// Set the abort flag to signal migration should stop.
     pub fn abort(&self) {
         self.abort_flag.store(true, Ordering::Relaxed);
+    }
+
+    /// Initialize a fresh database by writing the version file.
+    ///
+    /// This should only be called when `check_status` returns `MigrationStatus::FreshDatabase`.
+    pub fn initialize_fresh_database(&self) -> Result<(), MigrationError> {
+        tracing::info!("📦 Initializing fresh database at version {}", self.required_version);
+        self.write_version_file(self.required_version)
+    }
+
+    /// Run migrations using RocksDBStorage.
+    ///
+    /// This is the main entry point for running migrations when using the
+    /// wrapped RocksDBStorage type instead of the raw RocksDB DB.
+    pub fn run_migrations_with_storage(
+        &self,
+        storage: &crate::rocksdb::RocksDBStorage,
+    ) -> Result<(), MigrationError> {
+        // For now, migrations work with the inner DB directly.
+        // We access it through the storage's inner field.
+        // Note: This will need to be updated when we have actual migrations
+        // that need direct DB access.
+        self.run_migrations(storage.inner_db())
     }
 
     /// Check migration status without running anything.
