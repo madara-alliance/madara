@@ -1029,6 +1029,12 @@ impl BatchingTrigger {
     ///
     /// NOTE: This will check if the builtin weights are overflowing for blocks from start block
     /// till end block + 1
+    ///
+    /// TODO(mohit 28/11/2025): Optimize this function - currently re-fetching weights for all blocks
+    /// in the batch on every call. Fix by:
+    /// 1. Add `accumulated_bouncer_weights: BouncerWeights` field to `SnosBatch`
+    /// 2. Update it incrementally when adding each block
+    /// 3. Here, only fetch the next block's weights (end_block + 1) and check overflow
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
         if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
             // If the MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env is set, we use that value

@@ -375,7 +375,9 @@ RUST_LOG=info cargo run --release --bin orchestrator run \
     - `--batching-worker-lock-duration`: Lock duration for batching worker (default: 3600s)
     - `--max-blocks-per-snos-batch`: Hard limit on blocks per SNOS batch (optional)
     - `--max-snos-batches-per-aggregator-batch`: Max SNOS batches per aggregator batch (default: 50)
-    - `--default-empty-block-proving-gas`: Default proving gas for empty blocks (default: 1500000). Empty blocks still incur ~477,500 proving gas (~4,775 steps). This 1.5M default provides a ~3x safety margin and is used when a block returns zero `proving_gas` from the bouncer weights API.
+    - `--default-empty-block-proving-gas`: Default proving gas for empty blocks (default: 1500000).
+      Empty blocks still incur ~477,500 proving gas (~4,775 steps). This 1.5M default provides a ~3x
+      safety margin and is used when a block returns zero `proving_gas` from the bouncer weights API.
 
 ## ⚙️ Configuration
 
