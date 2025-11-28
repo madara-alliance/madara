@@ -2,3 +2,4 @@
 node_modules/**/*.md
 **/target/**/*.md
 docs/**/*.md
+AI_docs/*.md

@@ -1,0 +1,26 @@
+[package]
+description = "Generic resilience primitives for connection health and retry logic"
+name = "mp-resilience"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true, features = ["sync", "time", "macros"] }
+
+# Logging
+tracing.workspace = true
+
+# Serialization (for HashMap)
+[dev-dependencies]
+rstest.workspace = true

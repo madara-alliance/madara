@@ -85,6 +85,10 @@ impl L1SyncService {
             }
         };
 
+        // Start the health monitor for L1 endpoint
+        mp_resilience::start_health_monitor(client.provider_health());
+        tracing::info!("L1 health monitor started");
+
         if !gas_provider_config.all_is_fixed() {
             tracing::info!("⏳ Getting initial L1 gas prices");
             // Gas prices are needed before starting the block producer

@@ -76,9 +76,53 @@ pub async fn sync(
     notify_consumer: Arc<Notify>,
     mut ctx: ServiceContext,
 ) -> Result<(), SettlementClientError> {
-    // sync inner is cancellation safe.
-    ctx.run_until_cancelled(sync_inner(settlement_client, backend, notify_consumer)).await.transpose()?;
-    Ok(())
+    use mp_resilience::{RetryConfig, RetryState};
+
+    let config = RetryConfig::default();
+    let mut retry_state = RetryState::new(config);
+
+    // Infinite retry loop for message syncing
+    loop {
+        let result = ctx
+            .run_until_cancelled(sync_inner(
+                Arc::clone(&settlement_client),
+                Arc::clone(&backend),
+                Arc::clone(&notify_consumer),
+            ))
+            .await;
+
+        match result {
+            Some(Ok(())) => {
+                // Sync completed successfully (shouldn't normally happen as sync_inner runs indefinitely)
+                return Ok(());
+            }
+            Some(Err(e)) => {
+                // Sync failed - log and retry
+                retry_state.increment_retry();
+
+                if retry_state.should_log() {
+                    let phase = retry_state.current_phase();
+                    tracing::warn!(
+                        error = %e,
+                        retries = retry_state.get_retry_count(),
+                        phase = ?phase,
+                        "L1 message sync failed - retrying"
+                    );
+                }
+
+                let delay = retry_state.next_delay();
+
+                // Check for cancellation during sleep to ensure fast shutdown
+                if ctx.run_until_cancelled(tokio::time::sleep(delay)).await.is_none() {
+                    return Ok(()); // Cancelled during sleep
+                }
+            }
+            None => {
+                // Context was cancelled
+                return Ok(());
+            }
+        }
+    }
 }
 
 async fn sync_inner(
@@ -149,7 +193,12 @@ async fn sync_inner(
             let notify_consumer = notify_consumer.clone();
             async move {
                 match block_n {
-                    Err(err) => tracing::debug!("Error while parsing the next ethereum message: {err:#}"),
+                    Err(err) => {
+                        tracing::warn!(
+                            error = %err,
+                            "Failed to parse L1 message - this message will be skipped but sync continues"
+                        );
+                    }
                     Ok((tx_hash, block_n)) => {
                         tracing::debug!("Processed {tx_hash:#x} {block_n}");
                         tracing::debug!("Set l1_messaging_sync_tip={block_n}");
