@@ -127,15 +127,4 @@ pub struct L1SyncParams {
     /// This ensures messages are only processed after they have sufficient confirmations on the settlement layer.
     #[clap(env = "MADARA_L1_MSG_MIN_CONFIRMATIONS", long, default_value = "10")]
     pub l1_msg_min_confirmations: u64,
-
-    /// Polling interval for fetching the latest block number from the settlement layer.
-    /// This is used for confirmation depth filtering of L1 to L2 messages.
-    /// Default is 12 seconds (Ethereum block time). For Starknet settlement, consider using 6 seconds.
-    #[clap(
-        env = "MADARA_L1_MSG_POLL_INTERVAL",
-        long,
-        default_value = "12s",
-        value_parser = parse_duration,
-    )]
-    pub l1_msg_poll_interval: Duration,
 }

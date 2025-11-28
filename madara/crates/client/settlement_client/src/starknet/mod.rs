@@ -363,7 +363,6 @@ impl SettlementLayerProvider for StarknetClient {
         &self,
         from_l1_block_n: u64,
         l1_msg_min_confirmations: u64,
-        block_poll_interval: std::time::Duration,
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
         let base_stream = watch_events(
             self.provider.clone(),
@@ -389,7 +388,7 @@ impl SettlementLayerProvider for StarknetClient {
         let filtered_stream = event::new_starknet_confirmation_depth_filtered_stream(
             base_stream,
             Arc::new(self.clone()),
-            block_poll_interval,
+            Duration::from_millis(100),
             l1_msg_min_confirmations,
         );
 
@@ -762,7 +761,6 @@ mod starknet_client_messaging_test {
                     Default::default(),
                     ServiceContext::new_for_testing(),
                     0,
-                    Duration::from_secs(6),
                 )
                 .await
                 .unwrap();
@@ -802,8 +800,7 @@ mod starknet_client_messaging_test {
                     Arc::clone(&db),
                     Default::default(),
                     ServiceContext::new_for_testing(),
-                    0,
-                    Duration::from_secs(6),
+                    0
                 )
                 .await
             })

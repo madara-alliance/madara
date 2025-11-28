@@ -124,6 +124,5 @@ pub trait SettlementLayerProvider: Send + Sync {
         &self,
         from_l1_block_n: u64,
         l1_msg_min_confirmations: u64,
-        block_poll_interval: std::time::Duration,
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError>;
 }

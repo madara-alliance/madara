@@ -22,6 +22,7 @@ use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use url::Url;
 
 pub mod error;
@@ -328,7 +329,6 @@ impl SettlementLayerProvider for EthereumClient {
         &self,
         from_l1_block_n: u64,
         l1_msg_min_confirmations: u64,
-        block_poll_interval: std::time::Duration,
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
         let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
         let event_stream =
@@ -346,7 +346,7 @@ impl SettlementLayerProvider for EthereumClient {
         let filtered_stream = event::new_eth_confirmation_depth_filtered_stream(
             base_stream,
             Arc::new(self.clone()),
-            block_poll_interval,
+            Duration::from_millis(100),
             l1_msg_min_confirmations,
         );
 
@@ -667,8 +667,7 @@ mod l1_messaging_tests {
                     Arc::clone(&db),
                     Default::default(),
                     ServiceContext::new_for_testing(),
-                    0,
-                    Duration::from_secs(12),
+                    0
                 )
                 .await
             })
