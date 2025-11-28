@@ -136,6 +136,7 @@ use prelude::*;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 mod db_version;
+pub mod migration;
 mod prelude;
 pub mod storage;
 
