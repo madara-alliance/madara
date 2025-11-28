@@ -123,13 +123,171 @@ where
                 Poll::Ready(Some(Err(e)))
             }
             Poll::Ready(None) => {
-                // Stream ended - check if we have any buffered events left
-                if let Some(event) = this.buffered_events.pop_front() {
-                    return Poll::Ready(Some(Ok(event)));
+                // Stream ended - check if we have any buffered events that meet the threshold
+                // Only return events that satisfy the minimum confirmation requirement
+                if let Some(event) = this.buffered_events.front() {
+                    if event.l1_block_number <= threshold {
+                        let event = this.buffered_events.pop_front().unwrap();
+                        return Poll::Ready(Some(Ok(event)));
+                    } else {
+                        // There are buffered events but they don't meet the threshold yet
+                        // Return Pending to allow the background task to update the block number
+                        // The stream will be polled again later
+                        return Poll::Pending;
+                    }
                 }
+                // No buffered events left, stream is truly ended
                 Poll::Ready(None)
             }
             Poll::Pending => Poll::Pending,
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::messaging::MessageToL2WithMetadata;
+    use alloy::primitives::U256;
+    use futures::stream;
+    use futures::StreamExt;
+    use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
+    use starknet_types_core::felt::Felt;
+
+    // Helper function to create a mock event
+    fn create_mock_event(l1_block_number: u64, nonce: u64) -> MessageToL2WithMetadata {
+        MessageToL2WithMetadata {
+            l1_block_number,
+            l1_transaction_hash: U256::from(nonce),
+            message: L1HandlerTransactionWithFee::new(
+                L1HandlerTransaction {
+                    version: Felt::ZERO,
+                    nonce,
+                    contract_address: Felt::from(456),
+                    entry_point_selector: Felt::from(789),
+                    calldata: vec![Felt::from(123), Felt::from(1), Felt::from(2)].into(),
+                },
+                1000,
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_event_buffered_until_confirmation_threshold_met() {
+        let min_confirmations = 10;
+        let event1_block = 100;
+        let event2_block = 101;
+        let initial_latest_block = 109; // threshold = 99, events at 100 and 101 should be buffered
+        let final_latest_block = 110; // threshold = 100, event at 100 should pass, 101 still buffered
+        let final_latest_block2 = 111; // threshold = 101, event at 101 should pass
+
+        let event1 = create_mock_event(event1_block, 1);
+        let event2 = create_mock_event(event2_block, 2);
+        let base_stream = stream::iter(vec![Ok(event1.clone()), Ok(event2.clone())]);
+
+        let latest_block_state = Arc::new(AtomicU64::new(initial_latest_block));
+        let latest_block_for_callback = latest_block_state.clone();
+
+        let mut filtered_stream = ConfirmationDepthFilteredStream::new(
+            base_stream,
+            move || {
+                let latest_block = latest_block_for_callback.clone();
+                async move { Some(latest_block.load(Ordering::Relaxed)) }
+            },
+            Duration::from_millis(50),
+            min_confirmations,
+        );
+
+        // Wait a bit for the background task to initialize
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Initially, events should be buffered (latest_block = 109, threshold = 99, events at 100 and 101 > 99)
+        // Use timeout to verify they don't return immediately
+        let result = tokio::time::timeout(Duration::from_millis(50), filtered_stream.next()).await;
+        assert!(result.is_err(), "Events should be buffered and not returned immediately");
+
+        // Update latest block to meet threshold for first event
+        latest_block_state.store(final_latest_block, Ordering::Relaxed);
+
+        // Wait for background task to update and poll again
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Now the first event should be released (latest_block = 110, threshold = 100, event at 100 <= 100)
+        let result = filtered_stream.next().await;
+        assert!(result.is_some(), "First event should be released after threshold is met");
+        let released_event = result.unwrap().unwrap();
+        assert_eq!(released_event.l1_block_number, event1_block);
+
+        // Second event should still be buffered (threshold = 100, event at 101 > 100)
+        let result = tokio::time::timeout(Duration::from_millis(50), filtered_stream.next()).await;
+        assert!(result.is_err(), "Second event should still be buffered");
+
+        // Update latest block to meet threshold for second event
+        latest_block_state.store(final_latest_block2, Ordering::Relaxed);
+
+        // Wait for background task to update
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Now the second event should be released (latest_block = 111, threshold = 101, event at 101 <= 101)
+        let result = filtered_stream.next().await;
+        assert!(result.is_some(), "Second event should be released after threshold is met");
+        let released_event = result.unwrap().unwrap();
+        assert_eq!(released_event.l1_block_number, event2_block);
+    }
+
+    #[tokio::test]
+    async fn test_stream_ends_with_buffered_events() {
+        let min_confirmations = 10;
+        let event_block = 100;
+        let initial_latest_block = 109; // threshold = 99, event at 100 should be buffered
+        let final_latest_block = 110; // threshold = 100, event at 100 should pass
+
+        let event = create_mock_event(event_block, 1);
+        // Create a stream that ends immediately after emitting the event
+        let base_stream = stream::iter(vec![Ok(event.clone())]);
+
+        let latest_block_state = Arc::new(AtomicU64::new(initial_latest_block));
+        let latest_block_for_callback = latest_block_state.clone();
+
+        let mut filtered_stream = ConfirmationDepthFilteredStream::new(
+            base_stream,
+            move || {
+                let latest_block = latest_block_for_callback.clone();
+                async move { Some(latest_block.load(Ordering::Relaxed)) }
+            },
+            Duration::from_millis(50),
+            min_confirmations,
+        );
+
+        // Wait a bit for the background task to initialize
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // First poll: event gets buffered, inner stream ends, but event doesn't meet threshold
+        // Should timeout because it returns Pending (line 136)
+        let result = tokio::time::timeout(Duration::from_millis(50), filtered_stream.next()).await;
+        assert!(
+            result.is_err(),
+            "Should return Pending when stream ends with buffered event that doesn't meet threshold"
+        );
+
+        // Update latest block to meet threshold
+        latest_block_state.store(final_latest_block, Ordering::Relaxed);
+
+        // Wait for background task to update
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Now should return the buffered event (line 130-131)
+        let result = filtered_stream.next().await;
+        assert!(result.is_some(), "Should return buffered event when it meets threshold");
+        let released_event = result.unwrap().unwrap();
+        assert_eq!(released_event.l1_block_number, event_block);
+
+        // Next poll should return None (line 140) - stream is truly ended
+        let result = filtered_stream.next().await;
+        assert!(
+            result.is_none(),
+            "Should return None when stream ends and no buffered events remain"
+        );
+    }
+}
+
