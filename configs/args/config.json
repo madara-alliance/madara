@@ -65,7 +65,7 @@
       "nanos": 0
     },
     "settlement_layer": "Eth",
-    "l1_msg_min_confirmations": "5"
+    "l1_msg_min_confirmations": 5
   },
   "analytics_params": {
     "analytics_service_name": "madara_analytics",
