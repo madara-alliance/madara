@@ -274,7 +274,10 @@ check:
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
 
 .PHONY: fmt
-fmt: setup-cairo
+fmt:
+	@if [ -z "$(NO_CAIRO_SETUP)" ]; then \
+		$(MAKE) --silent setup-cairo; \
+	fi
 	@echo -e "$(DIM)Running code formatters...$(RESET)"
 	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
 	@npm install
