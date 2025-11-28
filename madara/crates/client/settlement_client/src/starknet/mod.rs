@@ -800,7 +800,7 @@ mod starknet_client_messaging_test {
                     Arc::clone(&db),
                     Default::default(),
                     ServiceContext::new_for_testing(),
-                    0
+                    0,
                 )
                 .await
             })

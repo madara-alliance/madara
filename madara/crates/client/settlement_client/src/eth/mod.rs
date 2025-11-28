@@ -662,14 +662,8 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(
-                    Arc::new(eth_client),
-                    Arc::clone(&db),
-                    Default::default(),
-                    ServiceContext::new_for_testing(),
-                    0
-                )
-                .await
+                sync(Arc::new(eth_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing(), 0)
+                    .await
             })
         };
 

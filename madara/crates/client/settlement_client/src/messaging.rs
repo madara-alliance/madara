@@ -79,14 +79,9 @@ pub async fn sync(
     l1_msg_min_confirmations: u64,
 ) -> Result<(), SettlementClientError> {
     // sync inner is cancellation safe.
-    ctx.run_until_cancelled(sync_inner(
-        settlement_client,
-        backend,
-        notify_consumer,
-        l1_msg_min_confirmations,
-    ))
-    .await
-    .transpose()?;
+    ctx.run_until_cancelled(sync_inner(settlement_client, backend, notify_consumer, l1_msg_min_confirmations))
+        .await
+        .transpose()?;
     Ok(())
 }
 
@@ -95,7 +90,6 @@ async fn sync_inner(
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
     l1_msg_min_confirmations: u64,
-
 ) -> Result<(), SettlementClientError> {
     // Note: Reprocessing events.
     // It's really important to make sure we don't mess up, we really want a strong guarantee we can't, in any circumstance, include an
@@ -291,8 +285,7 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle =
-            tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, 0).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, 0).await });
 
         // Wait sufficient time for event to be processed
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -359,8 +352,7 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle =
-            tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, 0).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, 0).await });
 
         // Wait sufficient time for event to be processed
         tokio::time::sleep(Duration::from_secs(5)).await;

@@ -284,10 +284,7 @@ mod tests {
 
         // Next poll should return None (line 140) - stream is truly ended
         let result = filtered_stream.next().await;
-        assert!(
-            result.is_none(),
-            "Should return None when stream ends and no buffered events remain"
-        );
+
+        assert!(result.is_none(), "Should return None when stream ends and no buffered events remain");
     }
 }
-
