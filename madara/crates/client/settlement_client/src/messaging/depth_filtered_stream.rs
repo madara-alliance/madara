@@ -4,8 +4,8 @@ use futures::Stream;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 /// A stream wrapper that filters events based on dynamic block confirmation depth
@@ -20,6 +20,7 @@ pub struct ConfirmationDepthFilteredStream<S> {
     inner: S,
     l1_msg_min_confirmations: u64,
     latest_block: Arc<AtomicU64>,
+    waker: Arc<Mutex<Option<Waker>>>,
     _update_task: tokio::task::JoinHandle<()>,
     buffered_events: VecDeque<MessageToL2WithMetadata>,
 }
@@ -45,17 +46,27 @@ where
         Fut: std::future::Future<Output = Option<u64>> + Send,
     {
         let latest_block = Arc::new(AtomicU64::new(0));
+        let waker = Arc::new(Mutex::new(None::<Waker>));
 
         // Spawn background task to periodically update the latest block number
         let latest_block_clone = Arc::clone(&latest_block);
+        let waker_clone = Arc::clone(&waker);
         let update_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(polling_interval);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 interval.tick().await;
                 if let Some(block) = get_block_number().await {
-                    latest_block_clone.store(block, Ordering::Relaxed);
-                    tracing::trace!("Updated latest block number to {}", block);
+                    if block != latest_block_clone.load(Ordering::Relaxed) {
+                        latest_block_clone.store(block, Ordering::Relaxed);
+                        tracing::trace!("Updated latest block number to {:?}", latest_block_clone);
+                        // Wake the stream waker if registered
+                        if let Ok(mut waker_guard) = waker_clone.lock() {
+                            if let Some(w) = waker_guard.take() {
+                                w.wake();
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -64,6 +75,7 @@ where
             inner,
             l1_msg_min_confirmations,
             latest_block,
+            waker,
             _update_task: update_task,
             buffered_events: VecDeque::new(),
         }
@@ -114,6 +126,11 @@ where
                     latest
                 );
                 this.buffered_events.push_back(event);
+                // Register waker so we get notified when block number updates
+                // Store the waker instead of spawning a task
+                if let Ok(mut waker_guard) = this.waker.lock() {
+                    *waker_guard = Some(cx.waker().clone());
+                }
                 // Return Pending to allow other tasks (like block number updates) to run
                 // On the next poll, we'll check buffered events first
                 Poll::Pending
@@ -131,6 +148,10 @@ where
                         return Poll::Ready(Some(Ok(event)));
                     } else {
                         // There are buffered events but they don't meet the threshold yet
+                        // Register waker so we get notified when block number updates
+                        if let Ok(mut waker_guard) = this.waker.lock() {
+                            *waker_guard = Some(cx.waker().clone());
+                        }
                         // Return Pending to allow the background task to update the block number
                         // The stream will be polled again later
                         return Poll::Pending;
@@ -139,7 +160,16 @@ where
                 // No buffered events left, stream is truly ended
                 Poll::Ready(None)
             }
-            Poll::Pending => Poll::Pending,
+            Poll::Pending => {
+                // Inner stream is pending, but we might have buffered events that now meet the threshold
+                // Register waker so we get notified when block number updates
+                if !this.buffered_events.is_empty() {
+                    if let Ok(mut waker_guard) = this.waker.lock() {
+                        *waker_guard = Some(cx.waker().clone());
+                    }
+                }
+                Poll::Pending
+            }
         }
     }
 }
