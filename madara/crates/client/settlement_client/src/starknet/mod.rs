@@ -388,7 +388,7 @@ impl SettlementLayerProvider for StarknetClient {
 
         let filtered_stream = event::new_starknet_confirmation_depth_filtered_stream(
             base_stream,
-            self.provider.clone(),
+            Arc::new(self.clone()),
             block_poll_interval,
             l1_msg_min_confirmations,
         );

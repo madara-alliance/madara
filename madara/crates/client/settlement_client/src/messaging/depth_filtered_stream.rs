@@ -98,7 +98,7 @@ where
             }
         }
 
-        // Poll the inner stream for new events (only once per poll to be cooperative)
+        // Poll the inner stream for new events
         match Pin::new(&mut this.inner).poll_next(cx) {
             Poll::Ready(Some(Ok(event))) => {
                 // Check if this event meets the confirmation depth requirement
@@ -129,9 +129,7 @@ where
                 }
                 Poll::Ready(None)
             }
-            Poll::Pending => {
-                Poll::Pending
-            }
+            Poll::Pending => Poll::Pending,
         }
     }
 }
