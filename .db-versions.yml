@@ -1,10 +1,39 @@
+# =============================================================================
+# Madara Database Version Configuration
+# =============================================================================
+#
+# This file tracks database schema versions and is used by the build system
+# to inject version constants into the binary.
+#
+# IMPORTANT: When making breaking database changes:
+# 1. Increment current_version
+# 2. Add a migration in madara/crates/client/db/src/migration/revisions/
+# 3. Register the migration in migration/registry.rs
+# 4. Add an entry below with version, pr, and description
+#
+# For more details, see: madara/crates/client/db/src/migration/MIGRATION.md
+#
+# =============================================================================
+
+# Current database schema version.
+# This is the version that new databases will be created with,
+# and the version that existing databases will be migrated to.
 current_version: 8
+
 # Minimum version that can be migrated from.
-# Databases older than this must be re-synced.
+# Databases older than this must be deleted and re-synced from scratch.
+# When adding migrations, ensure there's a migration path from base_version.
 base_version: 8
+
+# Version history (newest first)
+# Each entry should have:
+#   - version: The schema version number
+#   - pr: The PR number that introduced this version
+#   - description: (optional) Brief description of changes
 versions:
   - version: 8
     pr: 790
+    description: "Current schema with migration support"
   - version: 7
     pr: 772
   - version: 6
@@ -21,3 +50,4 @@ versions:
     pr: 450
   - version: 0
     pr: 372
+    description: "Initial schema"
