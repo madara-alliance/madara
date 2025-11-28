@@ -226,6 +226,7 @@ impl ExecutorThread {
             &exec_ctx,
             state.state_adaptor,
             |block_n| self.wait_for_hash_of_block_min_10(block_n),
+            None, // Use backend's chain_config (normal execution)
         )?;
 
         Ok(ExecutorStateExecuting {

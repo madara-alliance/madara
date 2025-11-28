@@ -145,7 +145,7 @@ pub async fn handle_get_signature(
 
     let block_info = confirmed.get_block_info()?;
 
-    let private_key = &backend.chain_config().private_key;
+    let private_key = backend.chain_config().private_key.as_ref().context("Private key not available for signing")?;
     let signature = private_key.sign(&block_info.block_hash).context("Failed to sign block hash")?;
     let signature =
         ProviderBlockSignature { block_hash: block_info.block_hash, signature: vec![signature.r, signature.s] };
@@ -275,7 +275,8 @@ pub async fn handle_get_contract_addresses(backend: Arc<MadaraBackend>) -> Resul
 }
 
 pub async fn handle_get_public_key(backend: Arc<MadaraBackend>) -> Result<Response<String>, GatewayError> {
-    let public_key = &backend.chain_config().private_key.public;
+    let public_key =
+        backend.chain_config().private_key.as_ref().map(|pk| pk.public).context("Public key not available")?;
     Ok(create_string_response(hyper::StatusCode::OK, format!("\"{:#x}\"", public_key)))
 }
 

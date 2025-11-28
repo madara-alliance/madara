@@ -14,7 +14,7 @@ use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
 use mp_utils::serde::{deserialize_duration, deserialize_optional_duration};
 use serde::de::{MapAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
 use starknet_types_core::felt::Felt;
 use std::fmt;
@@ -191,7 +191,7 @@ impl L2GasPrice {
 }
 
 /// Chain config version 1 structure (without config_version field - it's in the enum tag)
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ChainConfigV1 {
     /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
@@ -213,16 +213,24 @@ pub struct ChainConfigV1 {
     /// For starknet, this is the ETH ERC-20 contract on starknet.
     pub parent_fee_token_address: ContractAddress,
 
-    #[serde(default)]
+    #[serde(default, skip)]
     pub versioned_constants: ChainVersionedConstants,
 
     /// Produce blocks using for this starknet protocol version.
-    #[serde(default = "starknet_version_latest", deserialize_with = "deserialize_starknet_version")]
+    #[serde(
+        default = "starknet_version_latest",
+        deserialize_with = "deserialize_starknet_version",
+        serialize_with = "serialize_starknet_version"
+    )]
     pub latest_protocol_version: StarknetVersion,
 
     /// Only used for block production.
     /// Default: 30s.
-    #[serde(default = "default_block_time", deserialize_with = "deserialize_duration")]
+    #[serde(
+        default = "default_block_time",
+        deserialize_with = "deserialize_duration",
+        serialize_with = "serialize_duration"
+    )]
     pub block_time: Duration,
 
     /// Do not produce empty blocks.
@@ -253,7 +261,7 @@ pub struct ChainConfigV1 {
     /// > This key will be auto-generated on startup if none is provided.
     /// > This also means the private key is by default regenerated on boot
     #[serde(skip)]
-    pub private_key: ZeroingPrivateKey,
+    pub private_key: Option<ZeroingPrivateKey>,
 
     #[serde(default)]
     pub mempool_mode: MempoolMode,
@@ -268,7 +276,7 @@ pub struct ChainConfigV1 {
     /// Transaction limit in the mempool, we have an additional limit for declare transactions.
     pub mempool_max_declare_transactions: Option<usize>,
     /// Max age of a transaction in the mempool.
-    #[serde(deserialize_with = "deserialize_optional_duration")]
+    #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
     /// L2 gas price configuration - either fixed or EIP-1559 dynamic pricing
     pub l2_gas_price: L2GasPrice,
@@ -278,12 +286,16 @@ pub struct ChainConfigV1 {
     pub block_production_concurrency: BlockProductionConfig,
 
     /// Configuration for l1 messages max replay duration.
-    #[serde(default = "default_l1_messages_replay_max_duration", deserialize_with = "deserialize_duration")]
+    #[serde(
+        default = "default_l1_messages_replay_max_duration",
+        deserialize_with = "deserialize_duration",
+        serialize_with = "serialize_duration"
+    )]
     pub l1_messages_replay_max_duration: Duration,
 }
 
 /// Versioned chain config enum that handles different config versions
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "config_version")]
 pub enum ChainConfigVersioned {
     #[serde(rename = "1")]
@@ -291,7 +303,7 @@ pub enum ChainConfigVersioned {
 }
 
 /// Canonical chain config structure used throughout the codebase
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ChainConfig {
     /// Human-readable chain name, for displaying to the console.
     pub chain_name: String,
@@ -317,16 +329,24 @@ pub struct ChainConfig {
     /// For starknet, this is the ETH ERC-20 contract on starknet.
     pub parent_fee_token_address: ContractAddress,
 
-    #[serde(default)]
+    #[serde(default, skip)]
     pub versioned_constants: ChainVersionedConstants,
 
     /// Produce blocks using for this starknet protocol version.
-    #[serde(default = "starknet_version_latest", deserialize_with = "deserialize_starknet_version")]
+    #[serde(
+        default = "starknet_version_latest",
+        deserialize_with = "deserialize_starknet_version",
+        serialize_with = "serialize_starknet_version"
+    )]
     pub latest_protocol_version: StarknetVersion,
 
     /// Only used for block production.
     /// Default: 30s.
-    #[serde(default = "default_block_time", deserialize_with = "deserialize_duration")]
+    #[serde(
+        default = "default_block_time",
+        deserialize_with = "deserialize_duration",
+        serialize_with = "serialize_duration"
+    )]
     pub block_time: Duration,
 
     /// Do not produce empty blocks.
@@ -357,7 +377,7 @@ pub struct ChainConfig {
     /// > This key will be auto-generated on startup if none is provided.
     /// > This also means the private key is by default regenerated on boot
     #[serde(skip)]
-    pub private_key: ZeroingPrivateKey,
+    pub private_key: Option<ZeroingPrivateKey>,
 
     #[serde(default)]
     pub mempool_mode: MempoolMode,
@@ -372,7 +392,7 @@ pub struct ChainConfig {
     /// Transaction limit in the mempool, we have an additional limit for declare transactions.
     pub mempool_max_declare_transactions: Option<usize>,
     /// Max age of a transaction in the mempool.
-    #[serde(deserialize_with = "deserialize_optional_duration")]
+    #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
     /// L2 gas price configuration - either fixed or EIP-1559 dynamic pricing
     pub l2_gas_price: L2GasPrice,
@@ -382,8 +402,48 @@ pub struct ChainConfig {
     pub block_production_concurrency: BlockProductionConfig,
 
     /// Configuration for l1 messages max replay duration.
-    #[serde(default = "default_l1_messages_replay_max_duration", deserialize_with = "deserialize_duration")]
+    #[serde(
+        default = "default_l1_messages_replay_max_duration",
+        deserialize_with = "deserialize_duration",
+        serialize_with = "serialize_duration"
+    )]
     pub l1_messages_replay_max_duration: Duration,
+}
+
+impl Clone for ChainConfig {
+    /// Clones all fields except `private_key` which is set to `None`.
+    /// This is intentional: `ZeroingPrivateKey` doesn't implement Clone for security reasons
+    /// (to prevent multiple copies of sensitive key material in memory).
+    fn clone(&self) -> Self {
+        Self {
+            chain_name: self.chain_name.clone(),
+            chain_id: self.chain_id.clone(),
+            config_version: self.config_version,
+            l1_da_mode: self.l1_da_mode,
+            settlement_chain_kind: self.settlement_chain_kind,
+            feeder_gateway_url: self.feeder_gateway_url.clone(),
+            gateway_url: self.gateway_url.clone(),
+            native_fee_token_address: self.native_fee_token_address,
+            parent_fee_token_address: self.parent_fee_token_address,
+            versioned_constants: self.versioned_constants.clone(),
+            latest_protocol_version: self.latest_protocol_version,
+            block_time: self.block_time,
+            no_empty_blocks: self.no_empty_blocks,
+            bouncer_config: self.bouncer_config.clone(),
+            sequencer_address: self.sequencer_address,
+            eth_core_contract_address: self.eth_core_contract_address.clone(),
+            eth_gps_statement_verifier: self.eth_gps_statement_verifier.clone(),
+            private_key: None, // Intentionally not cloned for security
+            mempool_mode: self.mempool_mode,
+            mempool_min_tip_bump: self.mempool_min_tip_bump,
+            mempool_max_transactions: self.mempool_max_transactions,
+            mempool_max_declare_transactions: self.mempool_max_declare_transactions,
+            mempool_ttl: self.mempool_ttl,
+            l2_gas_price: self.l2_gas_price.clone(),
+            block_production_concurrency: self.block_production_concurrency.clone(),
+            l1_messages_replay_max_duration: self.l1_messages_replay_max_duration,
+        }
+    }
 }
 
 // Conversion implementations for versioned configs
@@ -529,7 +589,7 @@ impl ChainConfig {
                 .unwrap(),
             ),
 
-            private_key: ZeroingPrivateKey::default(),
+            private_key: Some(ZeroingPrivateKey::default()),
 
             mempool_mode: MempoolMode::Timestamp,
             mempool_max_transactions: 10_000,
@@ -629,7 +689,7 @@ impl ChainConfig {
 // TODO: the motivation for these doc comments is to move them into a proper app chain developer documentation, with a
 // proper page about tuning the block production performance.
 /// BTreeMap ensures order.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
 
 impl<'de> Deserialize<'de> for ChainVersionedConstants {
@@ -731,6 +791,27 @@ where
     S: serde::Serializer,
 {
     version.to_string().serialize(serializer)
+}
+
+pub fn serialize_duration<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if duration.subsec_nanos() == 0 {
+        format!("{}s", duration.as_secs()).serialize(serializer)
+    } else {
+        format!("{}ms", duration.as_millis()).serialize(serializer)
+    }
+}
+
+pub fn serialize_optional_duration<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match duration {
+        Some(d) => serialize_duration(d, serializer),
+        None => serializer.serialize_none(),
+    }
 }
 
 #[cfg(test)]

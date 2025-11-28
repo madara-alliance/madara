@@ -5,6 +5,7 @@ use crate::{
     storage::{DevnetPredeployedKeys, StorageChainTip, StoredChainInfo},
 };
 use mp_block::header::PreconfirmedHeader;
+use mp_chain_config::{ChainConfig, RuntimeExecutionConfig, RuntimeExecutionConfigSerializable};
 use rocksdb::{IteratorMode, ReadOptions};
 
 pub const META_COLUMN: Column = Column::new("meta").set_point_lookup();
@@ -16,6 +17,7 @@ const META_CONFIRMED_ON_L1_TIP_KEY: &[u8] = b"CONFIRMED_ON_L1_TIP";
 const META_CHAIN_TIP_KEY: &[u8] = b"CHAIN_TIP";
 const META_CHAIN_INFO_KEY: &[u8] = b"CHAIN_INFO";
 const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
+const META_RUNTIME_EXEC_CONFIG_KEY: &[u8] = b"RUNTIME_EXEC_CONFIG";
 const META_SNAP_SYNC_LATEST_BLOCK: &[u8] = b"SNAP_SYNC_LATEST_BLOCK";
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -231,6 +233,33 @@ impl RocksDBStorageInner {
             self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_LATEST_APPLIED_TRIE_UPDATE, &self.writeopts)?;
         }
         Ok(())
+    }
+
+    /// Write the runtime execution configuration to the database.
+    #[tracing::instrument(skip(self, config))]
+    pub(super) fn write_runtime_exec_config(&self, config: &RuntimeExecutionConfig) -> Result<()> {
+        let serializable = config.to_serializable()?;
+        self.db.put_cf_opt(
+            &self.get_column(META_COLUMN),
+            META_RUNTIME_EXEC_CONFIG_KEY,
+            super::serialize(&serializable)?,
+            &self.writeopts,
+        )?;
+        Ok(())
+    }
+
+    /// Get the runtime execution configuration from the database.
+    /// Note: This requires a backend_chain_config to reconstruct the full ChainConfig.
+    #[tracing::instrument(skip(self))]
+    pub(super) fn get_runtime_exec_config(
+        &self,
+        backend_chain_config: &ChainConfig,
+    ) -> Result<Option<RuntimeExecutionConfig>> {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_RUNTIME_EXEC_CONFIG_KEY)? else {
+            return Ok(None);
+        };
+        let serializable: RuntimeExecutionConfigSerializable = super::deserialize(&res)?;
+        Ok(Some(RuntimeExecutionConfig::from_saved_config(serializable, backend_chain_config)?))
     }
 
     /// Get the latest block number where snap sync computed the trie.
