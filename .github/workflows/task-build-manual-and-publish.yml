@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   build-manual-and-publish:
-    runs-on: blacksmith-16vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     outputs:
       manual-sha: ${{ steps.tag.outputs.manual-sha }}
 
