@@ -320,6 +320,12 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
         self.inner.get_latest_applied_trie_update().context("Getting latest applied trie update info from db")
     }
+    fn get_runtime_exec_config(
+        &self,
+        backend_chain_config: &mp_chain_config::ChainConfig,
+    ) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>> {
+        self.inner.get_runtime_exec_config(backend_chain_config).context("Getting runtime execution config from db")
+    }
     fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
         self.inner.get_snap_sync_latest_block().context("Getting snap sync latest block from db")
     }
@@ -455,6 +461,10 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write latest applied trie update block_n={block_n:?}");
         self.inner.write_latest_applied_trie_update(block_n).context("Writing latest applied trie update block_n")
+    }
+    fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()> {
+        tracing::debug!("Writing runtime execution config");
+        self.inner.write_runtime_exec_config(config).context("Writing runtime execution config")
     }
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write snap sync latest block block_n={block_n:?}");

@@ -130,6 +130,10 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>>;
     fn get_latest_applied_trie_update(&self) -> Result<Option<u64>>;
+    fn get_runtime_exec_config(
+        &self,
+        backend_chain_config: &mp_chain_config::ChainConfig,
+    ) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>>;
     fn get_snap_sync_latest_block(&self) -> Result<Option<u64>>;
 
     // L1 to L2 messages
@@ -166,6 +170,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()>;
     fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()>;
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()>;
+    fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()>;
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()>;
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
