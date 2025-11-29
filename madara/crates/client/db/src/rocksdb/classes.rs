@@ -12,6 +12,9 @@ use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 pub const CLASS_INFO_COLUMN: Column = Column::new("class_info").set_point_lookup();
 /// <compiled_class_hash 32 bytes> => bincode(class_info)
 pub const CLASS_COMPILED_COLUMN: Column = Column::new("class_compiled").set_point_lookup();
+/// <class_hash 32 bytes> => <blake_compiled_class_hash 32 bytes>
+/// Stores SNIP-34 migration mappings: class_hash -> BLAKE compiled_class_hash
+pub const CLASS_MIGRATION_COLUMN: Column = Column::new("class_migration").set_point_lookup();
 
 impl RocksDBStorageInner {
     #[tracing::instrument(skip(self))]
@@ -35,6 +38,42 @@ impl RocksDBStorageInner {
     #[tracing::instrument(skip(self))]
     pub(super) fn contains_class(&self, class_hash: &Felt) -> Result<bool> {
         Ok(self.db.get_pinned_cf(&self.get_column(CLASS_INFO_COLUMN), class_hash.to_bytes_be())?.is_some())
+    }
+
+    /// Get the BLAKE compiled_class_hash for a class that was migrated under SNIP-34.
+    /// Returns None if the class has not been migrated.
+    #[tracing::instrument(skip(self))]
+    pub(super) fn get_class_migration(&self, class_hash: &Felt) -> Result<Option<Felt>> {
+        let Some(res) =
+            self.db.get_pinned_cf(&self.get_column(CLASS_MIGRATION_COLUMN), class_hash.to_bytes_be())?
+        else {
+            return Ok(None);
+        };
+        // The value is stored as raw 32 bytes
+        if res.len() != 32 {
+            anyhow::bail!("Invalid migration hash length: expected 32, got {}", res.len());
+        }
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&res);
+        Ok(Some(Felt::from_bytes_be(&bytes)))
+    }
+
+    /// Store SNIP-34 migration mappings (class_hash -> BLAKE compiled_class_hash).
+    /// These are classes that were migrated from Poseidon to BLAKE hash.
+    #[tracing::instrument(skip(self, migrations))]
+    pub(crate) fn store_class_migrations(
+        &self,
+        migrations: impl IntoIterator<Item = (Felt, Felt)>,
+    ) -> Result<()> {
+        let col = self.get_column(CLASS_MIGRATION_COLUMN);
+        let mut batch = WriteBatchWithTransaction::default();
+
+        for (class_hash, blake_compiled_class_hash) in migrations {
+            batch.put_cf(&col, class_hash.to_bytes_be(), blake_compiled_class_hash.to_bytes_be());
+        }
+
+        self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, converted_classes))]

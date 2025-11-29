@@ -117,6 +117,9 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
     fn get_class(&self, class_hash: &Felt) -> Result<Option<ClassInfoWithBlockN>>;
     fn get_class_compiled(&self, compiled_class_hash: &Felt) -> Result<Option<CompiledSierraWithBlockN>>;
+    /// Get the BLAKE compiled_class_hash for a class that was migrated under SNIP-34.
+    /// Returns None if the class has not been migrated.
+    fn get_class_migration(&self, class_hash: &Felt) -> Result<Option<Felt>>;
 
     // Events
 
@@ -155,6 +158,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()>;
     fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()>;
     fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()>;
+    /// Store SNIP-34 migration mappings (class_hash -> BLAKE compiled_class_hash).
+    fn write_class_migrations(&self, migrations: Vec<(Felt, Felt)>) -> Result<()>;
 
     fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()>;
     fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()>;

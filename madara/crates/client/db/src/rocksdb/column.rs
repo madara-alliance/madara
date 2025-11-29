@@ -26,6 +26,7 @@ pub const ALL_COLUMNS: &[Column] = &[
     super::state::CONTRACT_CLASS_HASH_COLUMN,
     super::classes::CLASS_INFO_COLUMN,
     super::classes::CLASS_COMPILED_COLUMN,
+    super::classes::CLASS_MIGRATION_COLUMN,
     super::events::EVENTS_BLOOM_COLUMN,
     super::meta::META_COLUMN,
     super::meta::PRECONFIRMED_COLUMN,
