@@ -23,6 +23,7 @@ mc-gateway-client.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
 mp-convert.workspace = true
+mp-state-update.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 rstest.workspace = true

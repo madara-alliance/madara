@@ -6774,6 +6774,7 @@ dependencies = [
  "mp-block",
  "mp-class",
  "mp-convert",
+ "mp-state-update",
  "rand 0.8.5",
  "reqwest",
  "rstest 0.18.2",
