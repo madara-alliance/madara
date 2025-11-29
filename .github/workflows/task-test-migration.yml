@@ -10,8 +10,13 @@
 name: Task - Test Migration
 
 on:
-  workflow_call:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the madara binary artifact"
+        required: true
+        type: string
 
 jobs:
   migration-test:
@@ -31,14 +36,6 @@ jobs:
           echo "current_version=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
           echo "📊 Versions: base=${BASE_VERSION}, current=${CURRENT_VERSION}"
 
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: madara
-
       - name: Download base DB fixture
         run: |
           VERSION="${{ steps.versions.outputs.base_version }}"
@@ -56,9 +53,14 @@ jobs:
           tar -xzf db.tar.gz -C /tmp/migration-test
           echo "✅ DB version: $(cat /tmp/migration-test/.db-version)"
 
-      - name: Build madara
-        working-directory: madara
-        run: cargo build --release -p madara
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: madara/target/release/
+
+      - name: Make binary executable
+        run: chmod +x madara/target/release/madara
 
       - name: Start madara
         run: |
@@ -86,6 +88,14 @@ jobs:
           echo "Actual version: v${ACTUAL}"
           [ "$ACTUAL" = "$EXPECTED" ] || { echo "❌ Migration failed!"; exit 1; }
           echo "✅ Migration verified"
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: madara
 
       - name: Run migration tests
         working-directory: madara
