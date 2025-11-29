@@ -51,15 +51,19 @@ where
         // Spawn background task to periodically update the latest block number
         let latest_block_clone = Arc::clone(&latest_block);
         let waker_clone = Arc::clone(&waker);
+
         let update_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(polling_interval);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+            // Keep updating the latest block 
             loop {
                 interval.tick().await;
                 if let Some(block) = get_block_number().await {
                     if block != latest_block_clone.load(Ordering::Relaxed) {
                         latest_block_clone.store(block, Ordering::Relaxed);
                         tracing::trace!("Updated latest block number to {:?}", latest_block_clone);
+
                         // Wake the stream waker if registered
                         if let Ok(mut waker_guard) = waker_clone.lock() {
                             if let Some(w) = waker_guard.take() {
