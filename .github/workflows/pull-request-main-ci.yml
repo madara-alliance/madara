@@ -105,6 +105,12 @@ jobs:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
+  # Run migration tests
+  test-migration:
+    needs: test-madara
+    uses: ./.github/workflows/task-test-migration.yml
+    secrets: inherit
+
   # Run JavaScript tests against the built binary
   test-js:
     needs: build-madara

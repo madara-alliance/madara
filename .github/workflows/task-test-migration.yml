@@ -1,39 +1,17 @@
 # Migration Testing Workflow
 #
 # Tests database migrations by:
-# 1. Downloading base DB fixture from GitHub releases
-# 2. Running madara (migration executes on startup)
-# 3. Verifying migration completed
-# 4. Running validation tests
-#
-# Prerequisite: Base DB fixture must exist at:
-#   releases/db-fixtures-v{VERSION}/base-db-v{VERSION}-sepolia.tar.gz
+# 1. Reading versions from .db-versions.yml
+# 2. Downloading base DB fixture from GitHub releases
+# 3. Running madara (migration executes on startup)
+# 4. Verifying migration completed
+# 5. Running validation tests
 
 name: Task - Test Migration
 
 on:
   workflow_call:
-    inputs:
-      base_db_version:
-        description: 'Base DB version to migrate from'
-        required: false
-        type: string
-        default: '8'
-      expected_db_version:
-        description: 'Expected DB version after migration'
-        required: false
-        type: string
-        default: '8'
   workflow_dispatch:
-    inputs:
-      base_db_version:
-        description: 'Base DB version to migrate from'
-        required: false
-        default: '8'
-      expected_db_version:
-        description: 'Expected DB version after migration'
-        required: false
-        default: '8'
 
 jobs:
   migration-test:
@@ -43,6 +21,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read versions from .db-versions.yml
+        id: versions
+        run: |
+          BASE_VERSION=$(grep 'base_version:' .db-versions.yml | awk '{print $2}')
+          CURRENT_VERSION=$(grep 'current_version:' .db-versions.yml | awk '{print $2}')
+          echo "base_version=${BASE_VERSION}" >> $GITHUB_OUTPUT
+          echo "current_version=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+          echo "📊 Versions: base=${BASE_VERSION}, current=${CURRENT_VERSION}"
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -54,7 +41,7 @@ jobs:
 
       - name: Download base DB fixture
         run: |
-          VERSION="${{ inputs.base_db_version || '8' }}"
+          VERSION="${{ steps.versions.outputs.base_version }}"
           DB_URL="https://github.com/${{ github.repository }}/releases/download/db-fixtures-v${VERSION}/base-db-v${VERSION}-sepolia.tar.gz"
           
           echo "📦 Downloading base DB v${VERSION}..."
@@ -62,8 +49,7 @@ jobs:
           
           if ! curl -fsSL "$DB_URL" -o db.tar.gz; then
             echo "❌ Base DB fixture not found!"
-            echo "Please create and upload the fixture first."
-            echo "See: scripts/create-base-db.sh"
+            echo "Please run: ./scripts/create-base-db.sh ${VERSION}"
             exit 1
           fi
           
@@ -94,8 +80,10 @@ jobs:
       - name: Verify migration
         run: |
           ACTUAL=$(cat /tmp/migration-test/.db-version)
-          EXPECTED="${{ inputs.expected_db_version || '8' }}"
-          echo "Base: ${{ inputs.base_db_version || '8' }} → Expected: $EXPECTED → Actual: $ACTUAL"
+          EXPECTED="${{ steps.versions.outputs.current_version }}"
+          BASE="${{ steps.versions.outputs.base_version }}"
+          echo "Migration: v${BASE} → v${EXPECTED}"
+          echo "Actual version: v${ACTUAL}"
           [ "$ACTUAL" = "$EXPECTED" ] || { echo "❌ Migration failed!"; exit 1; }
           echo "✅ Migration verified"
 
