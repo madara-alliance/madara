@@ -1,6 +1,9 @@
 # Migration Test on PR
 #
 # Triggers migration testing when migration-related files are changed.
+# Flow:
+#   1. create-base-db: Downloads existing fixture or creates new one
+#   2. migration-test: Uses the DB to test migration works correctly
 
 name: PR - Migration Test
 
@@ -16,11 +19,180 @@ concurrency:
   group: migration-test-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+env:
+  BASE_DB_VERSION: '8'
+  EXPECTED_DB_VERSION: '8'  # Update when adding actual migration
+  BLOCKS_TO_SYNC: '50'
+
 jobs:
+  # Job 1: Get or create the base DB
+  create-base-db:
+    name: Prepare Base DB
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    outputs:
+      db_source: ${{ steps.get-db.outputs.db_source }}
+      db_version: ${{ steps.get-db.outputs.db_version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: madara
+
+      - name: Get or create base DB
+        id: get-db
+        run: |
+          echo "📦 Getting base DB v${{ env.BASE_DB_VERSION }}..."
+          
+          mkdir -p /tmp/madara-base-db
+          
+          # Try to download from GitHub releases
+          DB_URL="https://github.com/${{ github.repository }}/releases/download/db-fixtures-v${{ env.BASE_DB_VERSION }}/base-db-v${{ env.BASE_DB_VERSION }}-sepolia.tar.gz"
+          
+          if curl -fsSL "$DB_URL" -o base-db.tar.gz 2>/dev/null; then
+            echo "✅ Downloaded existing base DB fixture"
+            tar -xzf base-db.tar.gz -C /tmp/madara-base-db
+            echo "db_source=downloaded" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Base DB fixture not found, creating from scratch..."
+            
+            # Build madara
+            cd madara
+            cargo build --release -p madara
+            
+            # Sync blocks to create DB
+            echo "🔄 Syncing ${{ env.BLOCKS_TO_SYNC }} blocks..."
+            timeout 600 ./target/release/madara \
+              --name base-db-creator \
+              --base-path /tmp/madara-base-db \
+              --network sepolia \
+              --full \
+              --no-l1-sync \
+              --sync-stop-at ${{ env.BLOCKS_TO_SYNC }} 2>&1 || true
+            
+            if [ ! -f "/tmp/madara-base-db/.db-version" ]; then
+              echo "❌ Failed to create base DB"
+              exit 1
+            fi
+            
+            echo "✅ Base DB created"
+            echo "db_source=created" >> $GITHUB_OUTPUT
+          fi
+          
+          DB_VERSION=$(cat /tmp/madara-base-db/.db-version)
+          echo "DB version: $DB_VERSION"
+          echo "db_version=$DB_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Package and upload base DB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-db-${{ github.run_id }}
+          path: /tmp/madara-base-db
+          retention-days: 1
+
+  # Job 2: Run migration tests
   migration-test:
     name: Test Migration
-    uses: ./.github/workflows/task-test-migration.yml
-    with:
-      base_db_version: '8'
-      expected_db_version: '8'  # Update when adding actual migration
+    runs-on: ubuntu-latest
+    needs: create-base-db
+    timeout-minutes: 30
 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: madara
+
+      - name: Download base DB artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: base-db-${{ github.run_id }}
+          path: /tmp/madara-migration-test
+
+      - name: Show base DB info
+        run: |
+          echo "📊 Base DB info:"
+          echo "   Source: ${{ needs.create-base-db.outputs.db_source }}"
+          echo "   Version: ${{ needs.create-base-db.outputs.db_version }}"
+          ls -la /tmp/madara-migration-test/
+
+      - name: Build madara
+        working-directory: madara
+        run: cargo build --release -p madara
+
+      - name: Start madara (migration runs on startup)
+        run: |
+          echo "🚀 Starting madara..."
+          
+          cd madara
+          ./target/release/madara \
+            --name migration-test \
+            --base-path /tmp/madara-migration-test \
+            --network sepolia \
+            --no-l1-sync \
+            --rpc-port 9944 \
+            --rpc-cors all \
+            2>&1 | tee /tmp/madara.log &
+          
+          echo "⏳ Waiting for madara..."
+          for i in {1..90}; do
+            if curl -s "http://localhost:9944" \
+              -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"starknet_chainId","params":[],"id":1}' \
+              > /dev/null 2>&1; then
+              echo "✅ Madara ready (attempt $i)"
+              break
+            fi
+            [ $i -eq 90 ] && { cat /tmp/madara.log; exit 1; }
+            sleep 2
+          done
+
+      - name: Verify migration
+        run: |
+          ACTUAL_VERSION=$(cat /tmp/madara-migration-test/.db-version)
+          
+          echo "📊 Migration verification:"
+          echo "   Base version: ${{ needs.create-base-db.outputs.db_version }}"
+          echo "   Expected: ${{ env.EXPECTED_DB_VERSION }}"
+          echo "   Actual: $ACTUAL_VERSION"
+          
+          if [ "$ACTUAL_VERSION" != "${{ env.EXPECTED_DB_VERSION }}" ]; then
+            echo "❌ Migration failed! Expected v${{ env.EXPECTED_DB_VERSION }}, got v$ACTUAL_VERSION"
+            exit 1
+          fi
+          
+          echo "✅ Migration verified"
+
+      - name: Run migration tests
+        working-directory: madara
+        run: |
+          echo "🧪 Running migration validation tests..."
+          cargo test -p mc-e2e-tests migration_validation -- --ignored --nocapture
+        env:
+          MIGRATION_TEST_RPC_URL: "http://localhost:9944"
+
+      - name: Stop madara
+        if: always()
+        run: pkill -f "madara.*migration-test" || true
+
+      - name: Show logs on failure
+        if: failure()
+        run: cat /tmp/madara.log || true
