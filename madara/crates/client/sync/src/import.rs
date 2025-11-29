@@ -466,6 +466,26 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_state_diff(&self, block_n: u64, state_diff: StateDiff) -> Result<(), BlockImportError> {
+        // Store SNIP-34 class migrations if present
+        if !state_diff.migrated_compiled_classes.is_empty() {
+            let migrations: Vec<(Felt, Felt)> = state_diff
+                .migrated_compiled_classes
+                .iter()
+                .map(|m| (m.class_hash, m.compiled_class_hash))
+                .collect();
+            tracing::debug!(
+                "Storing {} class migrations for block {}",
+                migrations.len(),
+                block_n
+            );
+            self.backend.write_access().write_class_migrations(migrations).map_err(|error| {
+                BlockImportError::InternalDb {
+                    error,
+                    context: format!("Storing class migrations for {block_n}").into(),
+                }
+            })?;
+        }
+
         self.backend.write_access().write_state_diff(block_n, &state_diff).map_err(|error| {
             BlockImportError::InternalDb { error, context: format!("Storing state_diff for {block_n}").into() }
         })?;

@@ -759,6 +759,12 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.inner.db.write_classes(block_n, converted_classes)
     }
 
+    /// Store SNIP-34 migration mappings (class_hash -> BLAKE compiled_class_hash).
+    /// These are classes that were migrated from Poseidon to BLAKE hash under SNIP-34.
+    pub fn write_class_migrations(&self, migrations: Vec<(Felt, Felt)>) -> Result<()> {
+        self.inner.db.write_class_migrations(migrations)
+    }
+
     /// Lower level access to writing primitives. This is only used by the sync process, which
     /// saves block parts separately for performance reasons.
     ///
