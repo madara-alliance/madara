@@ -138,6 +138,9 @@ fn default_block_time() -> Duration {
 fn default_l1_messages_replay_max_duration() -> Duration {
     Duration::from_secs(3 * 24 * 60 * 60)
 }
+fn default_l1_messages_finality_blocks() -> u64 {
+    10 // Default: wait for 10 L1 blocks before processing messages (~2 minutes on Ethereum)
+}
 fn default_mempool_min_tip_bump() -> f64 {
     0.1
 }
@@ -292,6 +295,13 @@ pub struct ChainConfigV1 {
         serialize_with = "serialize_duration"
     )]
     pub l1_messages_replay_max_duration: Duration,
+
+    /// Number of L1 blocks to wait before considering a message finalized.
+    /// This provides protection against L1 chain reorganizations.
+    /// Default: 0 (rely on L1's "finalized" block tag).
+    /// Recommended: 12 for Ethereum mainnet (~2.5 minutes).
+    #[serde(default = "default_l1_messages_finality_blocks")]
+    pub l1_messages_finality_blocks: u64,
 }
 
 /// Versioned chain config enum that handles different config versions
@@ -408,6 +418,13 @@ pub struct ChainConfig {
         serialize_with = "serialize_duration"
     )]
     pub l1_messages_replay_max_duration: Duration,
+
+    /// Number of L1 blocks to wait before considering a message finalized.
+    /// This provides protection against L1 chain reorganizations.
+    /// Default: 0 (rely on L1's "finalized" block tag).
+    /// Recommended: 12 for Ethereum mainnet (~2.5 minutes).
+    #[serde(default = "default_l1_messages_finality_blocks")]
+    pub l1_messages_finality_blocks: u64,
 }
 
 impl Clone for ChainConfig {
@@ -442,6 +459,7 @@ impl Clone for ChainConfig {
             l2_gas_price: self.l2_gas_price.clone(),
             block_production_concurrency: self.block_production_concurrency.clone(),
             l1_messages_replay_max_duration: self.l1_messages_replay_max_duration,
+            l1_messages_finality_blocks: self.l1_messages_finality_blocks,
         }
     }
 }
@@ -479,6 +497,7 @@ impl TryFrom<ChainConfigV1> for ChainConfig {
             l2_gas_price: v1.l2_gas_price,
             block_production_concurrency: v1.block_production_concurrency,
             l1_messages_replay_max_duration: v1.l1_messages_replay_max_duration,
+            l1_messages_finality_blocks: v1.l1_messages_finality_blocks,
         })
     }
 }
@@ -601,6 +620,7 @@ impl ChainConfig {
             block_production_concurrency: BlockProductionConfig::default(),
 
             l1_messages_replay_max_duration: default_l1_messages_replay_max_duration(),
+            l1_messages_finality_blocks: default_l1_messages_finality_blocks(),
         }
     }
 

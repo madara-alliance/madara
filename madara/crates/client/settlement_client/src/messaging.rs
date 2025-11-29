@@ -1,13 +1,14 @@
 use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
 use alloy::primitives::{B256, U256};
-use anyhow::Context;
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
+use std::collections::VecDeque;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Notify;
 
 mod find_start_block;
@@ -96,73 +97,188 @@ async fn sync_inner(
     // Thus, it's fine to reprocess some events :) there are caught during process message AND during block production.
     // In fact, we rely on that to restart sequencing on a clean database, or switch from full-node to sequencing.
 
-    let replay_max_duration = backend.chain_config().l1_messages_replay_max_duration;
+    let chain_config = backend.chain_config();
+    let replay_max_duration = chain_config.l1_messages_replay_max_duration;
+    let finality_blocks = chain_config.l1_messages_finality_blocks;
 
-    let from_l1_block_n = if let Some(block_n) = backend
+    let from_l1_block_n = determine_start_block(&settlement_client, &backend, replay_max_duration).await?;
+
+    tracing::info!("⟠  Starting L1 Messages Syncing from block #{from_l1_block_n} (finality: {finality_blocks} blocks)...");
+
+    // Create the event stream
+    let mut stream = settlement_client
+        .messages_to_l2_stream(from_l1_block_n)
+        .await
+        .map_err(|e| SettlementClientError::StreamProcessing(format!("Failed to create messaging stream: {}", e)))?;
+
+    // Buffer for events waiting for finality
+    let mut pending_events: VecDeque<MessageToL2WithMetadata> = VecDeque::new();
+    let mut stream_exhausted = false;
+
+    loop {
+        // Step 1: Receive new events from stream OR wait for finality check interval
+        if !stream_exhausted {
+            // Try to receive from stream with a short timeout
+            let timeout = tokio::time::sleep(Duration::from_millis(100));
+            tokio::select! {
+                biased; // Prioritize receiving new events
+
+                event = stream.next() => {
+                    match event {
+                        Some(Ok(msg)) => {
+                            tracing::debug!(
+                                "Received event from L1 block {}, tx {:#x}",
+                                msg.l1_block_number,
+                                msg.l1_transaction_hash
+                            );
+                            pending_events.push_back(msg);
+                        }
+                        Some(Err(e)) => {
+                            tracing::warn!("Error from L1 event stream: {e:#}");
+                        }
+                        None => {
+                            // Stream exhausted
+                            tracing::debug!("L1 event stream exhausted");
+                            stream_exhausted = true;
+                        }
+                    }
+                }
+
+                _ = timeout => {
+                    // Timeout - proceed to check finality on pending events
+                }
+            }
+        } else {
+            // Stream exhausted - wait before checking for new blocks
+            // This prevents busy-looping when caught up
+            tokio::time::sleep(Duration::from_secs(12)).await;
+
+            // Restart stream from current sync tip
+            let current_tip = backend
+                .get_l1_messaging_sync_tip()
+                .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to get sync tip: {}", e)))?
+                .unwrap_or(from_l1_block_n);
+
+            stream = settlement_client
+                .messages_to_l2_stream(current_tip)
+                .await
+                .map_err(|e| {
+                    SettlementClientError::StreamProcessing(format!("Failed to recreate messaging stream: {}", e))
+                })?;
+            stream_exhausted = false;
+            tracing::debug!("Restarted L1 event stream from block {}", current_tip);
+        }
+
+        // Step 2: Process all finalized events from the front of the queue
+        let processed_count = process_finalized_events(
+            &settlement_client,
+            &backend,
+            &notify_consumer,
+            &mut pending_events,
+            finality_blocks,
+        )
+        .await?;
+
+        if processed_count > 0 {
+            tracing::debug!("Processed {} finalized events", processed_count);
+        }
+    }
+}
+
+/// Determines the L1 block to start syncing from.
+async fn determine_start_block(
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
+    backend: &MadaraBackend,
+    replay_max_duration: Duration,
+) -> Result<u64, SettlementClientError> {
+    // Check if we have a saved sync tip
+    if let Some(block_n) = backend
         .get_l1_messaging_sync_tip()
         .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e)))?
     {
-        block_n
-    } else if !replay_max_duration.is_zero() {
+        return Ok(block_n);
+    }
+
+    // No saved tip - determine start block based on replay config
+    if !replay_max_duration.is_zero() {
         tracing::debug!("Getting latest block_n from settlement layer.");
         let latest_block_n = settlement_client.get_latest_block_number().await?;
         tracing::debug!("Find start, latest {latest_block_n}...");
-        find_start_block::find_replay_block_n_start(&settlement_client, replay_max_duration, latest_block_n).await?
+        find_start_block::find_replay_block_n_start(settlement_client, replay_max_duration, latest_block_n).await
     } else {
-        settlement_client.get_latest_block_number().await?
-    };
+        settlement_client.get_latest_block_number().await
+    }
+}
 
-    tracing::info!("⟠  Starting L1 Messages Syncing from block #{from_l1_block_n}...");
+/// Processes events from the queue that have reached finality.
+/// Returns the number of events processed.
+async fn process_finalized_events(
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
+    backend: &MadaraBackend,
+    notify_consumer: &Notify,
+    pending_events: &mut VecDeque<MessageToL2WithMetadata>,
+    finality_blocks: u64,
+) -> Result<usize, SettlementClientError> {
+    if pending_events.is_empty() {
+        return Ok(0);
+    }
 
-    settlement_client
-        .messages_to_l2_stream(from_l1_block_n)
-        .await
-        .map_err(|e| SettlementClientError::StreamProcessing(format!("Failed to create messaging stream: {}", e)))?
-        .map(|message| {
-            let (backend, settlement_client) = (backend.clone(), settlement_client.clone());
-            let fut = async move {
-                let message = message?;
-                tracing::debug!(
-                    "Processing Message from block: {:?}, transaction_hash: {:#x}, fromAddress: {:#x}",
-                    message.l1_block_number,
-                    message.l1_transaction_hash,
-                    message.message.tx.calldata[0],
-                );
+    // Get latest L1 block to check finality
+    let latest_l1_block = settlement_client.get_latest_block_number().await?;
+    let mut processed_count = 0;
 
-                if check_message_to_l2_validity(&settlement_client, &backend, &message.message).await
-                    .with_context(|| format!("Checking validity for message in {}, {}", message.l1_transaction_hash, message.l1_block_number))? {
-                    // Add the pending message to db.
-                    backend
-                        .write_pending_message_to_l2(&message.message)
-                        .map_err(|e| SettlementClientError::DatabaseError(format!("Adding l1 to l2 message to db: {}", e)))?;
-                }
-                anyhow::Ok((message.l1_transaction_hash, message.l1_block_number))
-            };
-            async move {
-                Ok(fut.await)
-            }
-        })
-        .buffered(/* concurrency */ 5) // add a bit of concurrency to speed up the catch up time if needed.
-        // sequentially, update l1_messaging_sync_tip
-        .try_for_each(|block_n| {
-            let backend = backend.clone();
-            let notify_consumer = notify_consumer.clone();
-            async move {
-                match block_n {
-                    Err(err) => tracing::debug!("Error while parsing the next ethereum message: {err:#}"),
-                    Ok((tx_hash, block_n)) => {
-                        tracing::debug!("Processed {tx_hash:#x} {block_n}");
-                        tracing::debug!("Set l1_messaging_sync_tip={block_n}");
-                        backend.write_l1_messaging_sync_tip(Some(block_n)).map_err(|e| {
-                            SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e))
-                        })?;
-                        notify_consumer.notify_waiters(); // notify
-                    }
-                }
-                Ok(())
-            }
-        })
-        .await
+    // Process events from the front (oldest first) that have reached finality
+    while let Some(event) = pending_events.front() {
+        let blocks_since_event = latest_l1_block.saturating_sub(event.l1_block_number);
+
+        // Check if event has reached required finality
+        if blocks_since_event < finality_blocks {
+            tracing::debug!(
+                "Event at L1 block {} not finalized yet ({} < {} blocks required)",
+                event.l1_block_number,
+                blocks_since_event,
+                finality_blocks
+            );
+            break; // Events are ordered, so all remaining events are also not finalized
+        }
+
+        // Event is finalized - pop and process it
+        let event = pending_events.pop_front().unwrap();
+
+        tracing::debug!(
+            "Processing finalized event from L1 block {}, tx {:#x}, from_address: {:#x}",
+            event.l1_block_number,
+            event.l1_transaction_hash,
+            event.message.tx.calldata[0],
+        );
+
+        // Check validity and store if valid
+        let is_valid = check_message_to_l2_validity(settlement_client, backend, &event.message)
+            .await
+            .map_err(|e| {
+                SettlementClientError::InvalidResponse(format!(
+                    "Checking validity for message in tx {}, block {}: {}",
+                    event.l1_transaction_hash, event.l1_block_number, e
+                ))
+            })?;
+
+        if is_valid
+        {
+            backend
+                .write_pending_message_to_l2(&event.message)
+                .map_err(|e| SettlementClientError::DatabaseError(format!("Adding l1 to l2 message to db: {}", e)))?;
+        }
+
+        // Update sync tip - only for finalized events
+        backend.write_l1_messaging_sync_tip(Some(event.l1_block_number)).map_err(|e| {
+            SettlementClientError::DatabaseError(format!("Failed to update l1 messaging sync tip: {}", e))
+        })?;
+
+        notify_consumer.notify_waiters();
+        processed_count += 1;
+    }
+
+    Ok(processed_count)
 }
 
 #[cfg(test)]
@@ -255,15 +371,18 @@ mod messaging_module_tests {
         let mock_event1 = create_mock_event(100, 1);
         let notify = Arc::new(Notify::new());
 
-        // Setup mock for last synced block
+        // Setup mock for last synced block (avoids calling find_replay_block_n_start)
         db.write_l1_messaging_sync_tip(Some(99))?;
 
         // Mock get_messaging_stream
         let events = vec![mock_event1.clone()];
         client
             .expect_messages_to_l2_stream()
-            .times(1)
             .returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
+
+        // Mock get_latest_block_number (needed for finality check)
+        // Event is at block 100, latest is 200, so finality check passes (default finality_blocks=10)
+        client.expect_get_latest_block_number().returning(|| Ok(200));
 
         // nonce 1, is pending, not being cancelled, not consumed in db. => OK
         mock_l1_handler_tx(&mut client, 1, true, false);
@@ -282,12 +401,10 @@ mod messaging_module_tests {
         // Spawn the sync task in a separate thread
         let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
 
-        // Wait sufficient time for event to be processed
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        // Wait for event to be processed (short wait since stream returns immediately)
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
         // Verify the message was processed
-
-        // nonce 1, is pending, not being cancelled, not consumed in db. => OK
         assert_eq!(db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(), mock_event1.message);
 
         // Clean up: cancel context and abort task
@@ -330,7 +447,6 @@ mod messaging_module_tests {
         client
             .expect_messages_to_l2_stream()
             .with(predicate::eq(from_l1_block_n))
-            .times(1)
             .returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
 
         // nonce 1, is pending, not being cancelled, not consumed in db. => OK
@@ -349,14 +465,128 @@ mod messaging_module_tests {
         // Spawn the sync task in a separate thread
         let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
 
-        // Wait sufficient time for event to be processed
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        // Wait for event to be processed (short wait since stream returns immediately)
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
         // Verify the message was processed
-
-        // nonce 1, is pending, not being cancelled, not consumed in db. => OK
         assert_eq!(db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(), mock_event1.message);
+
         // Clean up: cancel context and abort task
+        ctx_clone.cancel_global();
+        sync_handle.abort();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_finality_blocks_delays_processing() -> anyhow::Result<()> {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
+
+        // Set up chain config with finality requirement of 10 blocks
+        let mut chain_config = ChainConfig::madara_test();
+        chain_config.l1_messages_finality_blocks = 10;
+        let chain_config = Arc::new(chain_config);
+
+        let db = MadaraBackend::open_for_testing(chain_config.clone());
+
+        // Set sync tip to avoid calling find_replay_block_n_start
+        db.write_l1_messaging_sync_tip(Some(99))?;
+
+        let mut mock_client = MockSettlementLayerProvider::new();
+
+        // Event at block 100
+        let mock_event = create_mock_event(100, 1);
+
+        // Mock get_messaging_stream
+        let events = vec![mock_event.clone()];
+        mock_client
+            .expect_messages_to_l2_stream()
+            .returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
+
+        // Latest block is 105 - only 5 blocks after event, less than 10 required
+        // Event should NOT be processed yet
+        mock_client.expect_get_latest_block_number().returning(|| Ok(105));
+
+        mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+
+        let client = Arc::new(mock_client) as Arc<dyn SettlementLayerProvider>;
+        let ctx = ServiceContext::new_for_testing();
+        let ctx_clone = ctx.clone();
+        let notify = Arc::new(Notify::new());
+        let db_clone = db.clone();
+
+        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx).await });
+
+        // Wait for processing attempt (short wait)
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Event should NOT be processed (not finalized yet)
+        assert!(
+            db.get_pending_message_to_l2(mock_event.message.tx.nonce).unwrap().is_none(),
+            "Event should not be processed before finality threshold"
+        );
+
+        ctx_clone.cancel_global();
+        sync_handle.abort();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_finality_blocks_processes_after_threshold() -> anyhow::Result<()> {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
+
+        // Set up chain config with finality requirement of 10 blocks
+        let mut chain_config = ChainConfig::madara_test();
+        chain_config.l1_messages_finality_blocks = 10;
+        let chain_config = Arc::new(chain_config);
+
+        let db = MadaraBackend::open_for_testing(chain_config.clone());
+
+        // Set sync tip to avoid calling find_replay_block_n_start
+        db.write_l1_messaging_sync_tip(Some(99))?;
+
+        let mut mock_client = MockSettlementLayerProvider::new();
+
+        // Event at block 100
+        let mock_event = create_mock_event(100, 1);
+
+        // Mock get_messaging_stream
+        let events = vec![mock_event.clone()];
+        mock_client
+            .expect_messages_to_l2_stream()
+            .returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
+
+        // Latest block is 115 - 15 blocks after event, more than 10 required
+        // Event SHOULD be processed
+        mock_client.expect_get_latest_block_number().returning(|| Ok(115));
+
+        mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+        mock_l1_handler_tx(&mut mock_client, 1, true, false);
+
+        let client = Arc::new(mock_client) as Arc<dyn SettlementLayerProvider>;
+        let ctx = ServiceContext::new_for_testing();
+        let ctx_clone = ctx.clone();
+        let notify = Arc::new(Notify::new());
+        let db_clone = db.clone();
+
+        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx).await });
+
+        // Wait for processing (short wait)
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Event SHOULD be processed (finalized)
+        assert!(
+            db.get_pending_message_to_l2(mock_event.message.tx.nonce).unwrap().is_some(),
+            "Event should be processed after finality threshold"
+        );
+
         ctx_clone.cancel_global();
         sync_handle.abort();
 

@@ -32,7 +32,7 @@ bouncer_config:
       mul_mod: 604
       range_check96: 56
 sequencer_address: "0x123"
-eth_core_contract_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512"
+eth_core_contract_address: "0x003f5ea0ec5fad0b020839fec467a872a620e6be6093801a5ac92b1e58d0d33a"
 eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
 mempool_max_transactions: 10000
 mempool_max_declare_transactions: 20
