@@ -1,15 +1,12 @@
 # Migration Test on PR
 #
-# Triggers migration testing when migration-related files are changed.
+# Runs migration testing on every PR to main.
 # Requires base DB fixture to exist in GitHub releases.
 
 name: PR - Migration Test
 
 on:
   pull_request:
-    paths:
-      - 'madara/crates/client/db/src/migration/revisions/**'
-      - '.db-versions.yml'
     branches:
       - main
 
