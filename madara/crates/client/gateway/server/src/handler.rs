@@ -50,13 +50,21 @@ pub async fn handle_get_preconfirmed_block(
         .parse()
         .map_err(|e: std::num::ParseIntError| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
 
-    let mut block =
-        backend.block_view_on_preconfirmed().filter(|block| block.block_number() == block_number).ok_or_else(|| {
-            StarknetError::new(
-                StarknetErrorCode::BlockNotFound,
-                format!("Pre-confirmed block with number {block_number} was not found."),
-            )
-        })?;
+    tracing::info!(target: "feeder_gateway", "Requesting pre-confirmed block with number: {block_number}");
+
+    // Use block_view_on_preconfirmed_or_fake() - this always returns a block
+    let mut block = backend
+        .block_view_on_preconfirmed_or_fake()
+        .map_err(|e| StarknetError::new(StarknetErrorCode::BlockNotFound, e.to_string()))?;
+
+    // Check if the requested block number matches the pre-confirmed block number
+    if block.block_number() != block_number {
+        return Err(StarknetError::new(
+            StarknetErrorCode::BlockNotFound,
+            format!("Pre-confirmed block with number {block_number} was not found. Current pre-confirmed block number is {}.",
+                block.block_number()),
+        ).into());
+    }
 
     block.refresh_with_candidates(); // We want candidates too :)
     let block = {
