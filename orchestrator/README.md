@@ -368,6 +368,17 @@ RUST_LOG=info cargo run --release --bin orchestrator run \
     - `--otel-service-name`: OpenTelemetry service name
     - `--otel-collector-endpoint`: OpenTelemetry collector endpoint
 
+11. **Batching Configuration**:
+    - `--max-batch-time-seconds`: Maximum time (in seconds) before closing a batch
+    - `--max-batch-size`: Maximum number of blocks in a batch
+    - `--max-num-blobs`: Maximum number of blobs per state update transaction (default: 6)
+    - `--batching-worker-lock-duration`: Lock duration for batching worker (default: 3600s)
+    - `--max-blocks-per-snos-batch`: Hard limit on blocks per SNOS batch (optional)
+    - `--max-snos-batches-per-aggregator-batch`: Max SNOS batches per aggregator batch (default: 50)
+    - `--default-empty-block-proving-gas`: Default proving gas for empty blocks (default: 1500000).
+      Empty blocks still incur ~477,500 proving gas (~4,775 steps). This 1.5M default provides a ~3x
+      safety margin and is used when a block returns zero `proving_gas` from the bouncer weights API.
+
 ## ⚙️ Configuration
 
 The orchestrator uses environment variables for configuration.
@@ -401,6 +412,20 @@ MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL=<service-url>
 ```env
 MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL=mongodb://localhost:27017
 MADARA_ORCHESTRATOR_DATABASE_NAME=orchestrator
+```
+
+### Batching Configuration
+
+```env
+MADARA_ORCHESTRATOR_MAX_BATCH_TIME_SECONDS=1800
+MADARA_ORCHESTRATOR_MAX_BATCH_SIZE=100
+MADARA_ORCHESTRATOR_MAX_NUM_BLOBS=6
+MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS=3600
+MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH=50
+# Default proving gas for empty blocks (15 million)
+# Empty blocks return zero proving_gas from the bouncer weights API,
+# but every block has some proving cost. This value is used when proving_gas is zero.
+MADARA_ORCHESTRATOR_DEFAULT_EMPTY_BLOCK_PROVING_GAS=15000000
 ```
 
 For a complete list of configuration options, refer to the `.env.example` file

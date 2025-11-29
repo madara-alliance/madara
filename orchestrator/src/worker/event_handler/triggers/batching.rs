@@ -1029,6 +1029,12 @@ impl BatchingTrigger {
     ///
     /// NOTE: This will check if the builtin weights are overflowing for blocks from start block
     /// till end block + 1
+    ///
+    /// TODO(mohit 28/11/2025): Optimize this function - currently re-fetching weights for all blocks
+    /// in the batch on every call. Fix by:
+    /// 1. Add `accumulated_bouncer_weights: BouncerWeights` field to `SnosBatch`
+    /// 2. Update it incrementally when adding each block
+    /// 3. Here, only fetch the next block's weights (end_block + 1) and check overflow
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
         if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
             // If the MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env is set, we use that value
@@ -1044,18 +1050,29 @@ impl BatchingTrigger {
         }
 
         let mut current_builtins = Some(BouncerWeights::empty());
+        let mut last_processed_block = batch.start_block.saturating_sub(1);
         for block_number in batch.start_block..=(batch.end_block + 1) {
+            // Check if the previous iteration caused an overflow
+            if current_builtins.is_none() {
+                // Addition caused overflow in the previous iteration (last_processed_block).
+                // Since last_processed_block is within the batch range (start_block to end_block),
+                // this indicates a bug - a batch that already passed validation somehow overflowed.
+                panic!(
+                    "Builtin addition caused overflow when adding block {}. Batch range: {} to {}. This should not have happened.",
+                    last_processed_block, batch.start_block, batch.end_block
+                );
+            }
+
             // Get the bouncer weights for this block
             let bouncer_weights = self
                 .get_block_builtin_weights(config, block_number)
                 .await
                 .map_err(|e| JobError::ProviderError(e.to_string()))?;
+
             if let Some(cb) = &mut current_builtins {
                 current_builtins = cb.checked_add(bouncer_weights);
-            } else {
-                // Addition caused overflow in last iteration
-                panic!("Builtin addition caused overflow at block {}. This was batch from {} to {}. This should not have happened", block_number, batch.start_block, batch.end_block);
             }
+            last_processed_block = block_number;
         }
 
         if let Some(cb) = &mut current_builtins {
@@ -1134,6 +1151,9 @@ impl BatchingTrigger {
 
     /// Get the block builtin weights from Madara admin RPC
     /// This uses a custom admin method that's not part of standard Starknet RPC
+    ///
+    /// If the block is empty (proving_gas is zero), we use the configured default value
+    /// since every block has some proving cost regardless of transactions.
     async fn get_block_builtin_weights(
         &self,
         config: &Arc<Config>,
@@ -1163,10 +1183,23 @@ impl BatchingTrigger {
         }
 
         // Parse the response
-        let bouncer_weights: BouncerWeights = response
+        let mut bouncer_weights: BouncerWeights = response
             .json()
             .await
             .map_err(|e| JobError::Other(OtherError(eyre!("Failed to parse REST response: {}", e))))?;
+
+        // If proving_gas is zero (empty block), use the configured default value.
+        // Every block has some proving cost regardless of transactions.
+        if bouncer_weights.proving_gas.0 == 0 {
+            debug!(
+                block_number = %block_number,
+                default_proving_gas = %config.params.batching_config.default_empty_block_proving_gas,
+                "Block has zero proving_gas (empty block), using default value"
+            );
+            bouncer_weights.proving_gas = starknet_api::execution_resources::GasAmount(
+                config.params.batching_config.default_empty_block_proving_gas,
+            );
+        }
 
         Ok(bouncer_weights)
     }
