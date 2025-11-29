@@ -761,6 +761,12 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         .unwrap(),
         max_num_blobs,
         max_blob_size: max_num_blobs * BLOB_LEN,
+        default_empty_block_proving_gas: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_DEFAULT_EMPTY_BLOCK_PROVING_GAS",
+            "1500000",
+        )
+        .parse::<u64>()
+        .unwrap(),
     };
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");

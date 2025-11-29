@@ -15,6 +15,11 @@ pub struct BatchingParams {
     /// It's calculated by multiplying [BLOB_LEN] with max number of blobs to attach in a txn
     /// (taken through ENV/CLI, default is 6, max that ethereum allows is 9)
     pub max_blob_size: usize,
+    /// Default proving gas to use for empty blocks.
+    /// Empty blocks return zero proving_gas from the bouncer weights API, but every block
+    /// has some proving cost (~4,775 steps = ~477,500 gas). We use 1.5M gas (~3x safety margin).
+    /// This value is used when proving_gas is zero.
+    pub default_empty_block_proving_gas: u64,
 }
 
 impl From<BatchingCliArgs> for BatchingParams {
@@ -27,6 +32,7 @@ impl From<BatchingCliArgs> for BatchingParams {
             max_snos_batches_per_aggregator_batch: args.max_snos_batches_per_aggregator_batch,
             max_num_blobs: args.max_num_blobs,
             max_blob_size: args.max_num_blobs * BLOB_LEN,
+            default_empty_block_proving_gas: args.default_empty_block_proving_gas,
         }
     }
 }
