@@ -1,0 +1,26 @@
+# Migration Test on PR
+#
+# Triggers migration testing when migration-related files are changed.
+
+name: PR - Migration Test
+
+on:
+  pull_request:
+    paths:
+      - 'madara/crates/client/db/src/migration/revisions/**'
+      - '.db-versions.yml'
+    branches:
+      - main
+
+concurrency:
+  group: migration-test-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  migration-test:
+    name: Test Migration
+    uses: ./.github/workflows/task-test-migration.yml
+    with:
+      base_db_version: '8'
+      expected_db_version: '8'  # Update when adding actual migration
+
