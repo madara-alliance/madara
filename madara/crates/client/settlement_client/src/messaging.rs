@@ -96,7 +96,7 @@ async fn sync_inner(
     let replay_max_duration = chain_config.l1_messages_replay_max_duration;
     let finality_blocks = chain_config.l1_messages_finality_blocks;
 
-    let from_l1_block_n = determine_start_block(&settlement_client, &backend, replay_max_duration).await?;
+    let from_l1_block_n = get_start_block(&settlement_client, &backend, replay_max_duration).await?;
 
     tracing::info!("⟠ Starting L1→L2 message sync from block #{from_l1_block_n} (finality: {finality_blocks} blocks)");
 
@@ -109,7 +109,8 @@ async fn sync_inner(
     let mut pending_events: VecDeque<MessageToL2WithMetadata> = VecDeque::new();
 
     loop {
-        // Poll stream for new events with timeout to periodically check finality
+        // Poll stream with timeout. Finality check runs after EVERY iteration (event or timeout).
+        // Timeout ensures finality is checked even when L1 is quiet (no new messages arriving).
         let timeout = tokio::time::sleep(STREAM_POLL_INTERVAL);
         tokio::select! {
             biased;
@@ -146,7 +147,7 @@ async fn sync_inner(
 }
 
 /// Determines the L1 block to start syncing from.
-async fn determine_start_block(
+async fn get_start_block(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
     replay_max_duration: Duration,
