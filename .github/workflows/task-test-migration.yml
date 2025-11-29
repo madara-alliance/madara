@@ -1,13 +1,13 @@
 # Migration Testing Workflow
 #
-# Reusable workflow for testing database migrations.
-# Can be called from other workflows or triggered manually.
+# Tests database migrations by:
+# 1. Downloading base DB fixture from GitHub releases
+# 2. Running madara (migration executes on startup)
+# 3. Verifying migration completed
+# 4. Running validation tests
 #
-# This workflow:
-# 1. Downloads or creates a base DB
-# 2. Runs madara (migration executes on startup)
-# 3. Verifies migration completed correctly
-# 4. Runs migration validation tests
+# Prerequisite: Base DB fixture must exist at:
+#   releases/db-fixtures-v{VERSION}/base-db-v{VERSION}-sepolia.tar.gz
 
 name: Task - Test Migration
 
@@ -15,7 +15,7 @@ on:
   workflow_call:
     inputs:
       base_db_version:
-        description: 'Base DB version to test migration from'
+        description: 'Base DB version to migrate from'
         required: false
         type: string
         default: '8'
@@ -24,80 +24,21 @@ on:
         required: false
         type: string
         default: '8'
-      blocks_to_sync:
-        description: 'Blocks to sync if creating DB from scratch'
-        required: false
-        type: string
-        default: '50'
   workflow_dispatch:
     inputs:
       base_db_version:
-        description: 'Base DB version to test migration from'
+        description: 'Base DB version to migrate from'
         required: false
         default: '8'
       expected_db_version:
         description: 'Expected DB version after migration'
         required: false
         default: '8'
-      blocks_to_sync:
-        description: 'Blocks to sync if creating DB from scratch'
-        required: false
-        default: '50'
 
 jobs:
-  # Job 1: Prepare base DB
-  prepare-db:
-    name: Prepare Base DB
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    outputs:
-      db_source: ${{ steps.get-db.outputs.db_source }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: madara
-
-      - name: Get or create base DB
-        id: get-db
-        run: |
-          VERSION="${{ inputs.base_db_version || '8' }}"
-          mkdir -p /tmp/base-db
-          
-          DB_URL="https://github.com/${{ github.repository }}/releases/download/db-fixtures-v${VERSION}/base-db-v${VERSION}-sepolia.tar.gz"
-          
-          if curl -fsSL "$DB_URL" -o db.tar.gz 2>/dev/null; then
-            tar -xzf db.tar.gz -C /tmp/base-db
-            echo "db_source=downloaded" >> $GITHUB_OUTPUT
-          else
-            echo "Creating DB from scratch..."
-            cd madara && cargo build --release -p madara
-            timeout 600 ./target/release/madara \
-              --base-path /tmp/base-db \
-              --network sepolia --full --no-l1-sync \
-              --sync-stop-at ${{ inputs.blocks_to_sync || '50' }} 2>&1 || true
-            echo "db_source=created" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "DB version: $(cat /tmp/base-db/.db-version)"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: base-db-${{ github.run_id }}
-          path: /tmp/base-db
-          retention-days: 1
-
-  # Job 2: Run migration test
-  test-migration:
+  migration-test:
     name: Test Migration
     runs-on: ubuntu-latest
-    needs: prepare-db
     timeout-minutes: 30
 
     steps:
@@ -111,15 +52,31 @@ jobs:
         with:
           workspaces: madara
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: base-db-${{ github.run_id }}
-          path: /tmp/migration-test
-
-      - name: Build and start madara
+      - name: Download base DB fixture
         run: |
-          cd madara && cargo build --release -p madara
+          VERSION="${{ inputs.base_db_version || '8' }}"
+          DB_URL="https://github.com/${{ github.repository }}/releases/download/db-fixtures-v${VERSION}/base-db-v${VERSION}-sepolia.tar.gz"
           
+          echo "📦 Downloading base DB v${VERSION}..."
+          mkdir -p /tmp/migration-test
+          
+          if ! curl -fsSL "$DB_URL" -o db.tar.gz; then
+            echo "❌ Base DB fixture not found!"
+            echo "Please create and upload the fixture first."
+            echo "See: scripts/create-base-db.sh"
+            exit 1
+          fi
+          
+          tar -xzf db.tar.gz -C /tmp/migration-test
+          echo "✅ DB version: $(cat /tmp/migration-test/.db-version)"
+
+      - name: Build madara
+        working-directory: madara
+        run: cargo build --release -p madara
+
+      - name: Start madara
+        run: |
+          cd madara
           ./target/release/madara \
             --base-path /tmp/migration-test \
             --network sepolia --no-l1-sync \
@@ -129,7 +86,7 @@ jobs:
           for i in {1..90}; do
             curl -s localhost:9944 -H "Content-Type: application/json" \
               -d '{"jsonrpc":"2.0","method":"starknet_chainId","params":[],"id":1}' \
-              >/dev/null 2>&1 && break
+              >/dev/null 2>&1 && echo "✅ Madara ready" && break
             [ $i -eq 90 ] && { cat /tmp/madara.log; exit 1; }
             sleep 2
           done
@@ -138,8 +95,9 @@ jobs:
         run: |
           ACTUAL=$(cat /tmp/migration-test/.db-version)
           EXPECTED="${{ inputs.expected_db_version || '8' }}"
-          echo "Expected: $EXPECTED, Actual: $ACTUAL"
-          [ "$ACTUAL" = "$EXPECTED" ] || exit 1
+          echo "Base: ${{ inputs.base_db_version || '8' }} → Expected: $EXPECTED → Actual: $ACTUAL"
+          [ "$ACTUAL" = "$EXPECTED" ] || { echo "❌ Migration failed!"; exit 1; }
+          echo "✅ Migration verified"
 
       - name: Run migration tests
         working-directory: madara
