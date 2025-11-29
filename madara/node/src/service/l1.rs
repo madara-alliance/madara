@@ -99,6 +99,7 @@ impl L1SyncService {
             client: Some(client.into()),
             sync_worker_config: Some(SyncWorkerConfig {
                 gas_provider_config,
+                l1_msg_min_confirmations: config.l1_msg_min_confirmations,
                 l1_head_sender: sync_config.l1_head_snd,
                 l1_block_metrics: sync_config.l1_block_metrics,
             }),

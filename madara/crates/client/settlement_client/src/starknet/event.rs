@@ -1,4 +1,6 @@
+use crate::client::SettlementLayerProvider;
 use crate::error::SettlementClientError;
+use crate::messaging::depth_filtered_stream::ConfirmationDepthFilteredStream;
 use crate::messaging::MessageToL2WithMetadata;
 use crate::starknet::error::StarknetClientError;
 use bigdecimal::ToPrimitive;
@@ -153,6 +155,39 @@ pub fn watch_events(
             )
         })
         .try_flatten()
+}
+
+/// A stream wrapper that filters events based on dynamic block confirmation depth for Starknet
+pub type StarknetConfirmationDepthFilteredStream<S> = ConfirmationDepthFilteredStream<S>;
+
+/// Create a new `StarknetConfirmationDepthFilteredStream` for Starknet
+pub fn new_starknet_confirmation_depth_filtered_stream<S>(
+    inner: S,
+    client: Arc<crate::starknet::StarknetClient>,
+    polling_interval: Duration,
+    l1_msg_min_confirmations: u64,
+) -> StarknetConfirmationDepthFilteredStream<S>
+where
+    S: Stream<Item = Result<MessageToL2WithMetadata, SettlementClientError>> + Unpin,
+{
+    let client_clone = Arc::clone(&client);
+    ConfirmationDepthFilteredStream::new(
+        inner,
+        move || {
+            let client = Arc::clone(&client_clone);
+            async move {
+                match client.get_latest_block_number().await {
+                    Ok(block) => Some(block),
+                    Err(e) => {
+                        tracing::warn!("Failed to get Starknet block number: {}", e);
+                        None
+                    }
+                }
+            }
+        },
+        polling_interval,
+        l1_msg_min_confirmations,
+    )
 }
 
 #[cfg(test)]

@@ -122,4 +122,9 @@ pub struct L1SyncParams {
         default_value_t = MadaraSettlementLayer::Eth,
     )]
     pub settlement_layer: MadaraSettlementLayer,
+
+    /// Minimum number of block confirmations required before an L1 to L2 message can be processed.
+    /// This ensures messages are only processed after they have sufficient confirmations on the settlement layer.
+    #[clap(env = "MADARA_L1_MESSAGE_CONFIRMATIONS", long, default_value = "10")]
+    pub l1_msg_min_confirmations: u64,
 }

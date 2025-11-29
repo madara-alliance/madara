@@ -9,6 +9,7 @@ use mp_utils::service::ServiceContext;
 
 pub struct SyncWorkerConfig {
     pub gas_provider_config: GasPriceProviderConfig,
+    pub l1_msg_min_confirmations: u64,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
     pub l1_head_sender: L1HeadSender,
 }
@@ -30,6 +31,7 @@ impl L1ClientImpl {
             Arc::clone(&self.backend),
             self.notify_new_message_to_l2.clone(),
             ctx.clone(),
+            config.l1_msg_min_confirmations,
         ));
 
         if !config.gas_provider_config.all_is_fixed() {
