@@ -12,4 +12,3 @@ jobs:
     steps:
       - name: Stub
         run: exit 0
-
