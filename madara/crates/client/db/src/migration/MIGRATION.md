@@ -1,10 +1,13 @@
 # Database Migration System
 
-This document describes Madara's database migration system, which allows upgrading the database schema between versions without requiring a full resync.
+This document describes Madara's database migration system, which allows upgrading
+the database schema between versions without requiring a full resync.
 
 ## Overview
 
-The migration system is inspired by [Pathfinder's approach](https://github.com/eqlabs/pathfinder/blob/main/crates/storage/src/schema.rs) but adapted for RocksDB.
+The migration system is inspired by
+[Pathfinder's approach](https://github.com/eqlabs/pathfinder/blob/main/crates/storage/src/schema.rs)
+but adapted for RocksDB.
 
 ### Key Features
 
@@ -16,7 +19,7 @@ The migration system is inspired by [Pathfinder's approach](https://github.com/e
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                      MigrationRunner                             │
 │  - Checks current vs required version                           │

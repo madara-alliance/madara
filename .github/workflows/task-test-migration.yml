@@ -40,16 +40,16 @@ jobs:
         run: |
           VERSION="${{ steps.versions.outputs.base_version }}"
           DB_URL="https://github.com/${{ github.repository }}/releases/download/db-fixtures-v${VERSION}/base-db-v${VERSION}-sepolia.tar.gz"
-          
+
           echo "📦 Downloading base DB v${VERSION}..."
           mkdir -p /tmp/migration-test
-          
+
           if ! curl -fsSL "$DB_URL" -o db.tar.gz; then
             echo "❌ Base DB fixture not found!"
             echo "Please run: ./scripts/create-base-db.sh ${VERSION}"
             exit 1
           fi
-          
+
           tar -xzf db.tar.gz -C /tmp/migration-test
           echo "✅ DB version: $(cat /tmp/migration-test/.db-version)"
 
@@ -70,7 +70,7 @@ jobs:
             --network sepolia --no-l1-sync \
             --rpc-port 9944 --rpc-cors all \
             2>&1 | tee /tmp/madara.log &
-          
+
           for i in {1..90}; do
             curl -s localhost:9944 -H "Content-Type: application/json" \
               -d '{"jsonrpc":"2.0","method":"starknet_chainId","params":[],"id":1}' \
