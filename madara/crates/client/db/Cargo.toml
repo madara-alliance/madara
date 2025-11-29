@@ -41,10 +41,10 @@ starknet_api = { workspace = true }
 # Other
 alloy.workspace = true
 anyhow.workspace = true
-chrono.workspace = true
 bigdecimal = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
+chrono.workspace = true
 dashmap.workspace = true
 futures = { workspace = true }
 itertools.workspace = true

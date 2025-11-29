@@ -45,12 +45,12 @@ The migration system is inspired by [Pathfinder's approach](https://github.com/e
 
 The migration system uses several files in the database directory:
 
-| File | Purpose |
-|------|---------|
-| `.db-version` | Current database version (single integer) |
-| `.db-migration.lock` | Lock file to prevent concurrent migrations |
-| `.db-migration-state` | Checkpoint file for crash recovery |
-| `backup_pre_migration/` | Pre-migration backup directory |
+| File                    | Purpose                                    |
+| ----------------------- | ------------------------------------------ |
+| `.db-version`           | Current database version (single integer)  |
+| `.db-migration.lock`    | Lock file to prevent concurrent migrations |
+| `.db-migration-state`   | Checkpoint file for crash recovery         |
+| `backup_pre_migration/` | Pre-migration backup directory             |
 
 ## Adding a New Migration
 
@@ -120,7 +120,7 @@ In `.db-versions.yml`:
 
 ```yaml
 current_version: 9
-base_version: 8  # Keep this if migrating from v8 is supported
+base_version: 8 # Keep this if migrating from v8 is supported
 
 versions:
   - version: 9
@@ -137,16 +137,16 @@ The `MigrationContext` provides:
 impl MigrationContext {
     /// Get a reference to the RocksDB instance
     pub fn db(&self) -> &DB;
-    
+
     /// Get the source version (migrating FROM)
     pub fn from_version(&self) -> u32;
-    
+
     /// Get the target version (migrating TO)
     pub fn to_version(&self) -> u32;
-    
+
     /// Report progress during migration
     pub fn report_progress(&self, progress: MigrationProgress);
-    
+
     /// Check if the migration should be aborted
     pub fn should_abort(&self) -> bool;
 }
@@ -204,7 +204,7 @@ Each migration should have unit tests in its revision file:
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_migration_logic() {
         // Test migration logic
@@ -239,18 +239,21 @@ async fn test_migration_from_v8_to_v9() {
 ### "Database version X is too old"
 
 The database version is below `base_version`. You need to:
+
 1. Delete the database directory
 2. Resync from scratch
 
 ### "Database version X is newer than binary"
 
 You're running an older binary with a newer database. You need to:
+
 1. Upgrade to a newer binary version
 2. Or delete and resync (data loss)
 
 ### "Migration is already in progress"
 
 A lock file exists from a previous run. If no other instance is running:
+
 1. Check `.db-migration.lock` file
 2. If stale (>24h), it will be automatically removed
 3. Or manually delete it
@@ -260,4 +263,3 @@ A lock file exists from a previous run. If no other instance is running:
 1. Check the error message in logs
 2. The database may be in an inconsistent state
 3. Restore from `backup_pre_migration/` if needed
-
