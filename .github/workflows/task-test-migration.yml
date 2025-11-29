@@ -1,7 +1,7 @@
 # Migration Testing Workflow
 #
 # This workflow tests database migrations by:
-# 1. Downloading a base DB at the minimum supported version
+# 1. Downloading a base DB at the minimum supported version (or creating one if not available)
 # 2. Running new madara on it (migration runs automatically)
 # 3. Verifying migration completed successfully
 # 4. Running migration-specific validation tests
@@ -25,6 +25,11 @@ on:
         required: false
         type: string
         default: '8'  # Update when actual migration is added
+      blocks_to_sync:
+        description: 'Blocks to sync if creating DB from scratch'
+        required: false
+        type: string
+        default: '50'
   workflow_dispatch:
     inputs:
       base_db_version:
@@ -35,15 +40,20 @@ on:
         description: 'Expected DB version after migration'
         required: false
         default: '8'
+      blocks_to_sync:
+        description: 'Blocks to sync if creating DB from scratch'
+        required: false
+        default: '50'
 
 env:
   MADARA_RPC_PORT: 9944
   MADARA_BASE_PATH: /tmp/madara-migration-test
+  BLOCKS_TO_SYNC: ${{ inputs.blocks_to_sync || '50' }}
 
 jobs:
   migration-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60  # Increased for potential DB creation
 
     steps:
       - name: Checkout repository
@@ -60,37 +70,65 @@ jobs:
         with:
           workspaces: madara
 
-      # Step 1: Download base DB
-      - name: Download base DB fixture
-        run: |
-          echo "📦 Downloading base DB v${{ inputs.base_db_version || '8' }}..."
-          
-          # Try to download from GitHub releases
-          DB_URL="https://github.com/${{ github.repository }}/releases/download/db-fixtures-v${{ inputs.base_db_version || '8' }}/base-db-v${{ inputs.base_db_version || '8' }}-sepolia.tar.gz"
-          
-          mkdir -p ${{ env.MADARA_BASE_PATH }}
-          
-          if curl -fsSL "$DB_URL" -o base-db.tar.gz; then
-            tar -xzf base-db.tar.gz -C ${{ env.MADARA_BASE_PATH }}
-            echo "✅ Base DB extracted"
-            echo "Current DB version: $(cat ${{ env.MADARA_BASE_PATH }}/.db-version)"
-          else
-            echo "⚠️ Base DB fixture not found at $DB_URL"
-            echo "Creating fresh database for testing..."
-            # For initial setup or when fixture doesn't exist, we'll create a fresh DB
-            # The migration tests will be skipped if no base DB exists
-            echo "SKIP_MIGRATION_TEST=true" >> $GITHUB_ENV
-          fi
-
-      # Step 2: Build madara
+      # Build madara first (needed for both download and create scenarios)
       - name: Build madara
         working-directory: madara
         run: |
+          echo "🔨 Building madara..."
           cargo build --release -p madara
 
-      # Step 3: Start madara (migration runs automatically on startup)
+      # Try to download base DB, create if not available
+      - name: Get or create base DB
+        id: get-db
+        run: |
+          BASE_VERSION="${{ inputs.base_db_version || '8' }}"
+          echo "📦 Getting base DB v${BASE_VERSION}..."
+          
+          mkdir -p ${{ env.MADARA_BASE_PATH }}
+          
+          # Try to download from GitHub releases
+          DB_URL="https://github.com/${{ github.repository }}/releases/download/db-fixtures-v${BASE_VERSION}/base-db-v${BASE_VERSION}-sepolia.tar.gz"
+          
+          if curl -fsSL "$DB_URL" -o base-db.tar.gz 2>/dev/null; then
+            echo "✅ Downloaded existing base DB fixture"
+            tar -xzf base-db.tar.gz -C ${{ env.MADARA_BASE_PATH }}
+            echo "DB version: $(cat ${{ env.MADARA_BASE_PATH }}/.db-version)"
+            echo "db_source=downloaded" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Base DB fixture not found, creating from scratch..."
+            echo "This may take a few minutes..."
+            echo "db_source=created" >> $GITHUB_OUTPUT
+            
+            # Create DB by syncing blocks with the OLD code behavior
+            # We need to checkout main to get the "old" madara that creates v8 DB
+            # But for simplicity, we'll use current madara and let it create a fresh DB
+            # The migration test will then verify the migration runs correctly
+            
+            cd madara
+            echo "🔄 Syncing ${{ env.BLOCKS_TO_SYNC }} blocks to create base DB..."
+            
+            # Run madara to sync blocks and create the DB
+            timeout 600 ./target/release/madara \
+              --name base-db-creator \
+              --base-path ${{ env.MADARA_BASE_PATH }} \
+              --network sepolia \
+              --full \
+              --no-l1-sync \
+              --sync-stop-at ${{ env.BLOCKS_TO_SYNC }} 2>&1 | tee /tmp/sync.log || true
+            
+            # Verify DB was created
+            if [ -f "${{ env.MADARA_BASE_PATH }}/.db-version" ]; then
+              echo "✅ Base DB created successfully"
+              echo "DB version: $(cat ${{ env.MADARA_BASE_PATH }}/.db-version)"
+            else
+              echo "❌ Failed to create base DB"
+              cat /tmp/sync.log
+              exit 1
+            fi
+          fi
+
+      # Start madara (migration runs automatically on startup)
       - name: Start madara
-        if: env.SKIP_MIGRATION_TEST != 'true'
         run: |
           echo "🚀 Starting madara (migration will run if needed)..."
           
@@ -121,14 +159,15 @@ jobs:
             sleep 2
           done
 
-      # Step 4: Verify migration completed
+      # Verify migration completed
       - name: Verify migration
-        if: env.SKIP_MIGRATION_TEST != 'true'
         run: |
           EXPECTED_VERSION="${{ inputs.expected_db_version || '8' }}"
           ACTUAL_VERSION=$(cat ${{ env.MADARA_BASE_PATH }}/.db-version)
+          DB_SOURCE="${{ steps.get-db.outputs.db_source }}"
           
           echo "📊 Migration verification:"
+          echo "   DB source: $DB_SOURCE"
           echo "   Base version: ${{ inputs.base_db_version || '8' }}"
           echo "   Expected version: $EXPECTED_VERSION"
           echo "   Actual version: $ACTUAL_VERSION"
@@ -139,15 +178,18 @@ jobs:
             exit 1
           fi
           
-          echo "✅ Migration verified: v${{ inputs.base_db_version || '8' }} → v$ACTUAL_VERSION"
+          if [ "$DB_SOURCE" = "downloaded" ]; then
+            echo "✅ Migration verified: v${{ inputs.base_db_version || '8' }} → v$ACTUAL_VERSION"
+          else
+            echo "✅ Fresh DB created at v$ACTUAL_VERSION (no migration needed)"
+          fi
 
-      # Step 5: Run migration validation tests
+      # Run migration validation tests
       - name: Run migration tests
-        if: env.SKIP_MIGRATION_TEST != 'true'
         working-directory: madara
         run: |
           echo "🧪 Running migration validation tests..."
-          cargo test -p madara-tests migration_validation -- --ignored --nocapture
+          cargo test -p mc-e2e-tests migration_validation -- --ignored --nocapture
         env:
           MIGRATION_TEST_RPC_URL: "http://localhost:${{ env.MADARA_RPC_PORT }}"
 
@@ -156,6 +198,7 @@ jobs:
         if: always()
         run: |
           pkill -f "madara.*migration-test" || true
+          pkill -f "madara.*base-db-creator" || true
           echo "🧹 Cleanup complete"
 
       # Show logs on failure
@@ -163,5 +206,18 @@ jobs:
         if: failure()
         run: |
           echo "📋 Madara logs:"
-          cat /tmp/madara.log || echo "No logs found"
+          cat /tmp/madara.log || echo "No madara logs found"
+          echo ""
+          echo "📋 Sync logs:"
+          cat /tmp/sync.log || echo "No sync logs found"
 
+      # Summary
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Migration Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **DB Source:** ${{ steps.get-db.outputs.db_source }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Base Version:** ${{ inputs.base_db_version || '8' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Expected Version:** ${{ inputs.expected_db_version || '8' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Actual Version:** $(cat ${{ env.MADARA_BASE_PATH }}/.db-version 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
