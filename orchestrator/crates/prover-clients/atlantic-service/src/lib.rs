@@ -232,17 +232,17 @@ impl ProverClient for AtlanticProverService {
     async fn get_aggregator_task_id(
         &self,
         bucket_id: &str,
-        aggregator_index: u64,
+        _aggregator_index: u64,
     ) -> Result<String, ProverClientError> {
         let bucket = self.atlantic_client.get_bucket(bucket_id).await?;
 
+        // Find the aggregator job by its step type (FactHashRegistration)
+        // This is more reliable than using bucket_job_index which depends on num_snos_batches
+        // See: docs/bugs/aggregator_task_id_race_condition.md
         Ok(bucket
             .queries
             .iter()
-            .find(|query| match query.bucket_job_index {
-                Some(index) => index == aggregator_index,
-                None => false,
-            })
+            .find(|query| matches!(query.step, Some(AtlanticQueryStep::FactHashRegistration)))
             .ok_or(ProverClientError::FailedToGetAggregatorId(bucket_id.to_string()))?
             .id
             .clone())
