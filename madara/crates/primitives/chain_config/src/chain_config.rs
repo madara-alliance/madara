@@ -677,6 +677,8 @@ impl ChainConfig {
             )
             .try_into()
             .unwrap(),
+            // Disable finality for fast test execution
+            l1_messages_finality_blocks: 0,
             ..ChainConfig::starknet_sepolia()
         }
     }
