@@ -3,8 +3,8 @@ use futures::{stream, StreamExt, TryStreamExt};
 use mc_db::{MadaraBackend, MadaraStorageRead};
 use mp_convert::Felt;
 use mp_state_update::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
-    StorageEntry,
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate,
+    ReplacedClassItem, StateDiff, StorageEntry,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -55,7 +55,7 @@ pub async fn compress_state_diff(
         old_declared_contracts: raw_state_diff.old_declared_contracts,
         nonces: raw_state_diff.nonces,
         replaced_classes,
-        migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Update this
+        migrated_compiled_classes: raw_state_diff.migrated_compiled_classes,
     };
 
     compressed_diff.sort();
@@ -72,6 +72,8 @@ pub struct StateDiffMap {
     nonces: HashMap<Felt, Felt>,
     replaced_classes: HashMap<Felt, Felt>,
     touched_contracts: HashSet<Felt>,
+    /// Migrated classes (SNIP-34): class_hash -> new BLAKE compiled_class_hash
+    migrated_compiled_classes: HashMap<Felt, Felt>,
 }
 
 impl StateDiffMap {
@@ -111,6 +113,11 @@ impl StateDiffMap {
         // Process deprecated classes
         for class_hash in &state_diff.old_declared_contracts {
             self.deprecated_declared_classes.insert(*class_hash);
+        }
+
+        // Process migrated classes (SNIP-34)
+        for item in &state_diff.migrated_compiled_classes {
+            self.migrated_compiled_classes.insert(item.class_hash, item.compiled_class_hash);
         }
     }
 
@@ -163,6 +170,13 @@ impl StateDiffMap {
 
         let deprecated_declared_classes = self.deprecated_declared_classes.clone().into_iter().collect();
 
+        let migrated_compiled_classes = self
+            .migrated_compiled_classes
+            .clone()
+            .into_iter()
+            .map(|(class_hash, compiled_class_hash)| MigratedClassItem { class_hash, compiled_class_hash })
+            .collect();
+
         StateDiff {
             storage_diffs,
             deployed_contracts,
@@ -170,7 +184,7 @@ impl StateDiffMap {
             old_declared_contracts: deprecated_declared_classes,
             nonces,
             replaced_classes,
-            migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Update this
+            migrated_compiled_classes,
         }
     }
 }
