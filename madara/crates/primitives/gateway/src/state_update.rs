@@ -49,9 +49,6 @@ pub struct StateDiff {
     pub declared_classes: Vec<DeclaredClassItem>,
     pub nonces: HashMap<Felt, Felt>,
     pub replaced_classes: Vec<DeployedContractItem>,
-    /// Classes migrated from Poseidon to BLAKE hash (SNIP-34).
-    /// Maps class_hash -> blake_compiled_class_hash.
-    #[serde(default)]
     pub migrated_compiled_classes: Vec<MigratedClassItem>,
 }
 
