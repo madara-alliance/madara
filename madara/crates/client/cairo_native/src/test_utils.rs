@@ -67,7 +67,7 @@ pub fn get_test_sierra_class() -> &'static SierraConvertedClass {
         // Create SierraClassInfo
         let sierra_info = SierraClassInfo {
             contract_class: Arc::new(flattened_sierra),
-            compiled_class_hash,
+            compiled_class_hash: Some(compiled_class_hash),
             compiled_class_hash_v2: None,
         };
 

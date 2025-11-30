@@ -63,8 +63,9 @@ impl StarknetVersion {
     pub const V0_13_4: StarknetVersion = StarknetVersion([0, 13, 4, 0]);
     pub const V0_13_5: StarknetVersion = StarknetVersion([0, 13, 5, 0]);
     pub const V0_14_0: StarknetVersion = StarknetVersion([0, 14, 0, 0]);
+    pub const V0_14_1: StarknetVersion = StarknetVersion([0, 14, 1, 0]);
     /// The latest version supported by orchestrator.
-    pub const LATEST: StarknetVersion = Self::V0_14_0;
+    pub const LATEST: StarknetVersion = Self::V0_14_1;
 
     pub fn is_pre_v0_7(&self) -> bool {
         *self < Self::V0_7_0
@@ -81,6 +82,12 @@ impl StarknetVersion {
     /// Checks if the version indicates that declared classes are included in state updates.
     pub fn is_declared_class_in_state_update(&self) -> bool {
         *self < Self::DECLARED_CLASS_IN_STATE_UPDATE
+    }
+
+    /// Returns true if this version uses BLAKE compiled_class_hash (SNIP-34).
+    /// Starting from v0.14.1, newly declared classes use BLAKE hash instead of Poseidon.
+    pub fn uses_blake_compiled_class_hash(&self) -> bool {
+        *self >= Self::V0_14_1
     }
 
     /// Attempts to derive a `StarknetVersion` from a mainnet block number.

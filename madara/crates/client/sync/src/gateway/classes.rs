@@ -49,7 +49,7 @@ pub(crate) async fn get_classes(
                     };
                     ClassInfo::Sierra(SierraClassInfo {
                         contract_class: class.clone(),
-                        compiled_class_hash,
+                        compiled_class_hash: Some(compiled_class_hash),
                         compiled_class_hash_v2: None,
                     })
                 }

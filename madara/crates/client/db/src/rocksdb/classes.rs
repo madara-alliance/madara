@@ -102,7 +102,11 @@ impl RocksDBStorageInner {
         converted_classes
             .iter()
             .filter_map(|converted_class| match converted_class {
-                ConvertedClass::Sierra(sierra) => Some((sierra.info.compiled_class_hash, sierra.compiled.clone())),
+                ConvertedClass::Sierra(sierra) => {
+                    // Use canonical compiled_class_hash (v2 if present, else v1)
+                    let canonical_hash = sierra.info.compiled_class_hash_v2.or(sierra.info.compiled_class_hash)?;
+                    Some((canonical_hash, sierra.compiled.clone()))
+                }
                 _ => None,
             })
             .collect::<Vec<_>>()

@@ -334,18 +334,26 @@ impl BlockImporterCtx {
             ClassInfo::Sierra(sierra) => {
                 tracing::trace!("Converting class with hash {:#x}", class_hash);
 
-                let DeclaredClassCompiledClass::Sierra(expected) = check_against else {
+                let DeclaredClassCompiledClass::Sierra(expected_compiled_hash) = check_against else {
                     return Err(BlockImportError::ClassType {
                         class_hash,
                         got: ClassType::Legacy,
                         expected: ClassType::Sierra,
                     });
                 };
-                if !self.config.no_check && sierra.compiled_class_hash != expected {
+
+                // Get the gateway-provided hash (canonical for this temp ClassInfo)
+                let gateway_hash = sierra.compiled_class_hash.ok_or_else(|| {
+                    BlockImportError::Internal(anyhow::anyhow!(
+                        "Sierra class from gateway should have compiled_class_hash"
+                    ))
+                })?;
+
+                if !self.config.no_check && gateway_hash != expected_compiled_hash {
                     return Err(BlockImportError::CompiledClassHash {
                         class_hash,
-                        got: sierra.compiled_class_hash,
-                        expected,
+                        got: gateway_hash,
+                        expected: expected_compiled_hash,
                     });
                 }
 
@@ -360,26 +368,45 @@ impl BlockImporterCtx {
                     }
                 }
 
-                // Compile
-                let (compiled_class_hash, compiled_class) = sierra
+                // Get the protocol version to determine hash type
+                let uses_blake = block_n
+                    .and_then(|n| self.backend.db.get_block_info(n).ok().flatten())
+                    .map(|info| info.header.protocol_version.uses_blake_compiled_class_hash())
+                    .unwrap_or(false);
+
+                // Compile and get both Poseidon and BLAKE hashes
+                let (poseidon_hash, blake_hash, compiled_class) = sierra
                     .contract_class
-                    .compile_to_casm()
+                    .compile_to_casm_with_blake_hash()
                     .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: e })?;
 
-                // Verify compiled class hash
-                if !self.config.no_check && compiled_class_hash != sierra.compiled_class_hash {
+                // Verify compiled class hash based on protocol version
+                // For v0.14.1+: gateway provides BLAKE hash
+                // For pre-v0.14.1: gateway provides Poseidon hash
+                let expected_hash = if uses_blake { blake_hash } else { poseidon_hash };
+                if !self.config.no_check && expected_hash != gateway_hash {
                     return Err(BlockImportError::CompiledClassHash {
                         class_hash,
-                        got: sierra.compiled_class_hash,
-                        expected: compiled_class_hash,
+                        got: gateway_hash,
+                        expected: expected_hash,
                     });
                 }
+
+                // Store:
+                // - For v0.14.1+: compiled_class_hash = None, compiled_class_hash_v2 = BLAKE
+                // - For pre-v0.14.1: compiled_class_hash = Poseidon, compiled_class_hash_v2 = None
+                let (stored_poseidon, stored_blake) = if uses_blake {
+                    (None, Some(blake_hash))
+                } else {
+                    (Some(poseidon_hash), None)
+                };
+
                 Ok(ConvertedClass::Sierra(SierraConvertedClass {
                     class_hash,
                     info: SierraClassInfo {
                         contract_class: sierra.contract_class,
-                        compiled_class_hash,
-                        compiled_class_hash_v2: None,
+                        compiled_class_hash: stored_poseidon,
+                        compiled_class_hash_v2: stored_blake,
                     },
                     compiled: Arc::new((&compiled_class).try_into().map_err(|e| {
                         BlockImportError::CompilationClassError {

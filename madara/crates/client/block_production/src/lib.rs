@@ -249,7 +249,11 @@ impl CurrentBlockState {
                                     *class.class_hash(),
                                     class
                                         .as_sierra()
-                                        .map(|class| DeclaredClassCompiledClass::Sierra(class.info.compiled_class_hash))
+                                        .and_then(|class| {
+                                            // Use canonical hash (v2 if present, else v1)
+                                            let hash = class.info.compiled_class_hash_v2.or(class.info.compiled_class_hash)?;
+                                            Some(DeclaredClassCompiledClass::Sierra(hash))
+                                        })
                                         .unwrap_or(DeclaredClassCompiledClass::Legacy),
                                 )
                             })
@@ -1121,7 +1125,7 @@ pub(crate) mod tests {
                     },
                     abi: "".to_string(),
                 }),
-                compiled_class_hash,
+                compiled_class_hash: Some(compiled_class_hash),
                 compiled_class_hash_v2: None,
             },
             compiled: Arc::new(mp_class::CompiledSierra("".to_string())),
