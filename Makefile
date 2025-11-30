@@ -270,7 +270,7 @@ check:
 	cargo clippy --workspace --tests --no-deps -- -D warnings && \
 	cd ..
 	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
-	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
+	@npx markdownlint -c .markdownlint.json -p .markdownlintignore .
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
 
 .PHONY: fmt

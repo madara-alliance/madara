@@ -3,12 +3,14 @@
 //! This build script:
 //! 1. Reads the current database version from `.db-versions.yml` in project root
 //! 2. Injects it as `DB_VERSION` environment variable for runtime checks
-//! 3. Ensures version file is well-formatted
+//! 3. Reads the base (minimum) version for migration support
+//! 4. Ensures version file is well-formatted
 //!
 //! # File format
 //! The version file must be a YAML file with the following structure:
 //! ```yaml
 //! current_version: 42
+//! base_version: 40  # Optional: minimum version that can be migrated from
 //! versions:
 //!   - version: 42
 //!     pr: 123
@@ -21,6 +23,7 @@
 //!
 //! # Outputs
 //! - `cargo:rustc-env=DB_VERSION=X`: Current database version
+//! - `cargo:rustc-env=DB_BASE_VERSION=Y`: Minimum version for migration
 //! - `cargo:rerun-if-changed=.db-versions.yml`: Rebuild if version changes
 //!
 //! # Errors
@@ -83,25 +86,30 @@ fn get_db_version() -> Result<(), BuildError> {
         BuildError::Io(std::io::Error::new(e.kind(), format!("Failed to read {}: {}", file_path.display(), e)))
     })?;
 
-    let current_version = parse_version(&content)?;
+    let current_version = parse_version(&content, "current_version")?;
+    // Base version is optional - defaults to current_version if not specified
+    // (meaning no migrations are supported from older versions)
+    let base_version = parse_version(&content, "base_version").unwrap_or(current_version);
 
     println!("cargo:rerun-if-changed={}", file_path.display());
     println!("cargo:rustc-env=DB_VERSION={}", current_version);
+    println!("cargo:rustc-env=DB_BASE_VERSION={}", base_version);
 
     Ok(())
 }
 
-fn parse_version(content: &str) -> Result<u32, BuildError> {
+fn parse_version(content: &str, key: &str) -> Result<u32, BuildError> {
+    let prefix = format!("{}:", key);
     content
         .lines()
-        .find(|line| line.starts_with("current_version:"))
-        .ok_or(BuildError::Parse(Cow::Borrowed("Could not find current_version")))?
+        .find(|line| line.starts_with(&prefix))
+        .ok_or_else(|| BuildError::Parse(Cow::Owned(format!("Could not find {}", key))))?
         .split(':')
         .nth(1)
-        .ok_or(BuildError::Parse(Cow::Borrowed("Invalid current_version format")))?
+        .ok_or_else(|| BuildError::Parse(Cow::Owned(format!("Invalid {} format", key))))?
         .trim()
         .parse()
-        .map_err(|_| BuildError::Parse(Cow::Borrowed("Could not parse current_version as u32")))
+        .map_err(|_| BuildError::Parse(Cow::Owned(format!("Could not parse {} as u32", key))))
 }
 
 fn get_parents(path: &Path, n: usize) -> Result<PathBuf, BuildError> {
@@ -124,13 +132,26 @@ mod tests {
     #[test]
     fn test_parse_version_valid() {
         let content = "current_version: 42\nother: stuff";
-        assert_eq!(parse_version(content).unwrap(), 42);
+        assert_eq!(parse_version(content, "current_version").unwrap(), 42);
+    }
+
+    #[test]
+    fn test_parse_base_version_valid() {
+        let content = "current_version: 42\nbase_version: 40\nother: stuff";
+        assert_eq!(parse_version(content, "base_version").unwrap(), 40);
+    }
+
+    #[test]
+    fn test_parse_version_missing_key() {
+        let content = "current_version: 42\nother: stuff";
+        // base_version is not present
+        assert!(matches!(parse_version(content, "base_version"), Err(BuildError::Parse(_))));
     }
 
     #[test]
     fn test_parse_version_invalid_format() {
         let content = "wrong_format";
-        assert!(matches!(parse_version(content), Err(BuildError::Parse(_))));
+        assert!(matches!(parse_version(content, "current_version"), Err(BuildError::Parse(_))));
     }
 
     #[test]
