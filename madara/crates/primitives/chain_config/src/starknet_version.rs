@@ -65,7 +65,7 @@ impl StarknetVersion {
     pub const V0_14_0: StarknetVersion = StarknetVersion([0, 14, 0, 0]);
     pub const V0_14_1: StarknetVersion = StarknetVersion([0, 14, 1, 0]);
     /// The latest version supported by orchestrator.
-    pub const LATEST: StarknetVersion = Self::V0_14_1;
+    pub const LATEST: StarknetVersion = Self::V0_14_0;
 
     pub fn is_pre_v0_7(&self) -> bool {
         *self < Self::V0_7_0

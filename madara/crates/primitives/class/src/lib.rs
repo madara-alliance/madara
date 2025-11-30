@@ -165,11 +165,11 @@ pub struct SierraClassInfo {
     pub contract_class: Arc<FlattenedSierraClass>,
     /// The Poseidon compiled class hash (pre-v0.14.1 classes only).
     /// None for v0.14.1+ newly declared classes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub compiled_class_hash: Option<Felt>,
     /// The BLAKE compiled class hash (SNIP-34).
     /// Present for v0.14.1+ classes or migrated pre-v0.14.1 classes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub compiled_class_hash_v2: Option<Felt>,
 }
 

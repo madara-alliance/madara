@@ -476,7 +476,7 @@ mod tests {
 
         assert_matches!(
             class_info,
-            ClassInfo::Sierra(info) if info.compiled_class_hash == compiled_contract_class_hash
+            ClassInfo::Sierra(info) if info.compiled_class_hash == Some(compiled_contract_class_hash)
         );
 
         let TransactionReceipt::Declare(receipt) = pending_view.get_executed_transaction(0).unwrap().receipt else {
