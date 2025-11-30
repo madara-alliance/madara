@@ -39,18 +39,23 @@ jobs:
       - name: Download base DB fixture
         run: |
           VERSION="${{ steps.versions.outputs.base_version }}"
-          DB_URL="https://github.com/${{ github.repository }}/releases/download/db-fixtures-v${VERSION}/base-db-v${VERSION}-sepolia.tar.gz"
+          IMAGE="ghcr.io/madara-alliance/db-fixtures:v${VERSION}"
 
-          echo "📦 Downloading base DB v${VERSION}..."
+          echo "📦 Pulling base DB v${VERSION} from ${IMAGE}..."
           mkdir -p /tmp/migration-test
 
-          if ! curl -fsSL "$DB_URL" -o db.tar.gz; then
+          if ! docker pull "${IMAGE}"; then
             echo "❌ Base DB fixture not found!"
             echo "Please run: ./scripts/create-base-db.sh ${VERSION}"
             exit 1
           fi
 
-          tar -xzf db.tar.gz -C /tmp/migration-test
+          # Extract tarball from image
+          CONTAINER=$(docker create "${IMAGE}")
+          docker cp "${CONTAINER}:/db.tar.gz" /tmp/db.tar.gz
+          docker rm "${CONTAINER}"
+
+          tar -xzf /tmp/db.tar.gz -C /tmp/migration-test
           echo "✅ DB version: $(cat /tmp/migration-test/.db-version)"
 
       - name: Download Madara binary

@@ -9,42 +9,37 @@
 #   ./scripts/create-base-db.sh 9 100     # Create v9 DB with 100 blocks
 #
 # Prerequisites:
-#   - GitHub CLI (gh) installed and authenticated
+#   - Docker installed and authenticated to ghcr.io
 #   - Rust toolchain installed
+#
+# To authenticate with ghcr.io:
+#   echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 #
 # The script will:
 #   1. Build madara
 #   2. Sync specified blocks from Sepolia
-#   3. Package the DB as a tarball
-#   4. Upload to GitHub releases
+#   3. Package the DB as a Docker image
+#   4. Push to ghcr.io/madara-alliance/db-fixtures:v{VERSION}
 
 set -e
 
 VERSION="${1:-8}"
 BLOCKS="${2:-50}"
 DB_PATH="/tmp/madara-base-db-v${VERSION}"
-TARBALL="base-db-v${VERSION}-sepolia.tar.gz"
-RELEASE_TAG="db-fixtures-v${VERSION}"
+IMAGE="ghcr.io/madara-alliance/db-fixtures:v${VERSION}"
 
 echo "============================================"
 echo "  Create Base DB Fixture"
 echo "============================================"
 echo "  Version: ${VERSION}"
 echo "  Blocks:  ${BLOCKS}"
-echo "  Path:    ${DB_PATH}"
+echo "  Image:   ${IMAGE}"
 echo "============================================"
 echo ""
 
 # Check prerequisites
-if ! command -v gh &> /dev/null; then
-    echo "❌ GitHub CLI (gh) not found. Install it first:"
-    echo "   brew install gh"
-    exit 1
-fi
-
-if ! gh auth status &> /dev/null; then
-    echo "❌ Not authenticated with GitHub. Run:"
-    echo "   gh auth login"
+if ! command -v docker &> /dev/null; then
+    echo "❌ Docker not found. Install it first."
     exit 1
 fi
 
@@ -76,39 +71,36 @@ fi
 DB_VERSION=$(cat "${DB_PATH}/.db-version")
 echo "✅ DB created with version: ${DB_VERSION}"
 
-# Package
+# Package as tarball
 echo "📦 Packaging..."
-cd "${DB_PATH}"
-tar -czf "/tmp/${TARBALL}" .
-ls -lh "/tmp/${TARBALL}"
+TARBALL="/tmp/db-fixtures-v${VERSION}.tar.gz"
+tar -czf "${TARBALL}" -C "${DB_PATH}" .
+ls -lh "${TARBALL}"
 
-# Upload to GitHub releases
-echo "🚀 Uploading to GitHub releases..."
-cd "$(dirname "$0")/.."
+# Create minimal Dockerfile
+DOCKER_DIR="/tmp/db-fixtures-docker"
+rm -rf "${DOCKER_DIR}"
+mkdir -p "${DOCKER_DIR}"
+cp "${TARBALL}" "${DOCKER_DIR}/db.tar.gz"
 
-# Create release if it doesn't exist
-if ! gh release view "${RELEASE_TAG}" &> /dev/null; then
-    echo "Creating release ${RELEASE_TAG}..."
-    gh release create "${RELEASE_TAG}" \
-        --title "DB Fixtures v${VERSION}" \
-        --notes "Base DB fixture for migration testing
+cat > "${DOCKER_DIR}/Dockerfile" << 'EOF'
+FROM scratch
+COPY db.tar.gz /db.tar.gz
+EOF
 
-**Version:** ${VERSION}
-**Blocks:** ${BLOCKS}
-**Network:** Sepolia
+# Build and push Docker image
+echo "🐳 Building Docker image..."
+docker build -t "${IMAGE}" "${DOCKER_DIR}"
 
-Used by migration tests to validate database migrations."
-fi
+echo "🚀 Pushing to ghcr.io..."
+docker push "${IMAGE}"
 
-# Upload asset (overwrite if exists)
-gh release upload "${RELEASE_TAG}" "/tmp/${TARBALL}" --clobber
+# Cleanup
+rm -rf "${DOCKER_DIR}" "${TARBALL}"
 
 echo ""
 echo "============================================"
 echo "  ✅ Done!"
 echo "============================================"
-echo "  Release: ${RELEASE_TAG}"
-echo "  Asset:   ${TARBALL}"
-echo "  URL:     https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/releases/tag/${RELEASE_TAG}"
+echo "  Image: ${IMAGE}"
 echo "============================================"
-
