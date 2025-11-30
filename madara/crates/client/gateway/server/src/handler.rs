@@ -248,8 +248,10 @@ pub async fn handle_get_compiled_class_by_class_hash(
 
     let class_info = view.get_class_info(&class_hash)?.ok_or(StarknetError::class_not_found(class_hash))?;
 
-    let compiled_class_hash = match class_info {
-        ClassInfo::Sierra(class_info) => class_info.compiled_class_hash,
+    let compiled_class_hash = match &class_info {
+        ClassInfo::Sierra(_) => class_info
+            .compiled_class_hash()
+            .ok_or(GatewayError::StarknetError(StarknetError::class_not_found(class_hash)))?,
         ClassInfo::Legacy(_) => {
             return Err(GatewayError::StarknetError(StarknetError::sierra_class_not_found(class_hash)))
         }
