@@ -410,6 +410,11 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner.store_classes(block_n, converted_classes)
     }
 
+    fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()> {
+        tracing::debug!("Updating {} class v2 hashes (SNIP-34 migrations)", migrations.len());
+        self.inner.update_class_v2_hashes(migrations).context("Updating class v2 hashes")
+    }
+
     fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()> {
         tracing::debug!("Replace chain tip {chain_tip:?}");
         self.inner.replace_chain_tip(chain_tip).context("Replacing chain tip in db")
