@@ -204,6 +204,7 @@ impl ChainConfigOverrideParams {
             no_empty_blocks: chain_config_overrides.no_empty_blocks,
             block_production_concurrency: chain_config_overrides.block_production_concurrency,
             l1_messages_replay_max_duration: chain_config_overrides.l1_messages_replay_max_duration,
+            l1_messages_finality_blocks: chain_config.l1_messages_finality_blocks,
         })
     }
 }
