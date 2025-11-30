@@ -293,11 +293,6 @@ impl MadaraStorageRead for RocksDBStorage {
             .get_class_compiled(compiled_class_hash)
             .with_context(|| format!("Getting class compiled for compiled_class_hash={compiled_class_hash:#x}"))
     }
-    fn get_class_migration(&self, class_hash: &Felt) -> Result<Option<Felt>> {
-        self.inner
-            .get_class_migration(class_hash)
-            .with_context(|| format!("Getting class migration for class_hash={class_hash:#x}"))
-    }
 
     // Events
 
@@ -415,9 +410,9 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner.store_classes(block_n, converted_classes)
     }
 
-    fn write_class_migrations(&self, migrations: Vec<(Felt, Felt)>) -> Result<()> {
-        tracing::debug!("Writing {} class migrations", migrations.len());
-        self.inner.store_class_migrations(migrations).context("Storing class migrations")
+    fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()> {
+        tracing::debug!("Updating {} class v2 hashes (SNIP-34 migrations)", migrations.len());
+        self.inner.update_class_v2_hashes(migrations).context("Updating class v2 hashes")
     }
 
     fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()> {

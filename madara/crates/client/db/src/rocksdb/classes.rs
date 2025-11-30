@@ -12,9 +12,6 @@ use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 pub const CLASS_INFO_COLUMN: Column = Column::new("class_info").set_point_lookup();
 /// <compiled_class_hash 32 bytes> => bincode(class_info)
 pub const CLASS_COMPILED_COLUMN: Column = Column::new("class_compiled").set_point_lookup();
-/// <class_hash 32 bytes> => <blake_compiled_class_hash 32 bytes>
-/// Stores SNIP-34 migration mappings: class_hash -> BLAKE compiled_class_hash
-pub const CLASS_MIGRATION_COLUMN: Column = Column::new("class_migration").set_point_lookup();
 
 impl RocksDBStorageInner {
     #[tracing::instrument(skip(self))]
@@ -40,36 +37,38 @@ impl RocksDBStorageInner {
         Ok(self.db.get_pinned_cf(&self.get_column(CLASS_INFO_COLUMN), class_hash.to_bytes_be())?.is_some())
     }
 
-    /// Get the BLAKE compiled_class_hash for a class that was migrated under SNIP-34.
-    /// Returns None if the class has not been migrated.
-    #[tracing::instrument(skip(self))]
-    pub(super) fn get_class_migration(&self, class_hash: &Felt) -> Result<Option<Felt>> {
-        let Some(res) =
-            self.db.get_pinned_cf(&self.get_column(CLASS_MIGRATION_COLUMN), class_hash.to_bytes_be())?
-        else {
-            return Ok(None);
-        };
-        // The value is stored as raw 32 bytes
-        if res.len() != 32 {
-            anyhow::bail!("Invalid migration hash length: expected 32, got {}", res.len());
-        }
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(&res);
-        Ok(Some(Felt::from_bytes_be(&bytes)))
-    }
-
-    /// Store SNIP-34 migration mappings (class_hash -> BLAKE compiled_class_hash).
-    /// These are classes that were migrated from Poseidon to BLAKE hash.
+    /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
+    /// This updates the ClassInfo stored in the database with the new v2 hash.
     #[tracing::instrument(skip(self, migrations))]
-    pub(crate) fn store_class_migrations(
+    pub(crate) fn update_class_v2_hashes(
         &self,
         migrations: impl IntoIterator<Item = (Felt, Felt)>,
     ) -> Result<()> {
-        let col = self.get_column(CLASS_MIGRATION_COLUMN);
+        let col = self.get_column(CLASS_INFO_COLUMN);
         let mut batch = WriteBatchWithTransaction::default();
 
         for (class_hash, blake_compiled_class_hash) in migrations {
-            batch.put_cf(&col, class_hash.to_bytes_be(), blake_compiled_class_hash.to_bytes_be());
+            // Load existing class info
+            let Some(mut class_info_with_block) = self.get_class(&class_hash)? else {
+                tracing::warn!("Cannot update v2 hash for class {class_hash:#x}: class not found in DB");
+                continue;
+            };
+
+            // Update the v2 hash if it's a Sierra class
+            match &mut class_info_with_block.class_info {
+                mp_class::ClassInfo::Sierra(sierra_info) => {
+                    sierra_info.compiled_class_hash_v2 = Some(blake_compiled_class_hash);
+                }
+                mp_class::ClassInfo::Legacy(_) => {
+                    tracing::warn!(
+                        "Cannot update v2 hash for class {class_hash:#x}: class is Legacy, not Sierra"
+                    );
+                    continue;
+                }
+            }
+
+            // Write updated class info back
+            batch.put_cf(&col, class_hash.to_bytes_be(), super::serialize(&class_info_with_block)?);
         }
 
         self.db.write_opt(batch, &self.writeopts)?;

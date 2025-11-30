@@ -47,7 +47,11 @@ pub(crate) async fn get_classes(
                     let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash else {
                         anyhow::bail!("Expected a Sierra class, found a Legacy class")
                     };
-                    ClassInfo::Sierra(SierraClassInfo { contract_class: class.clone(), compiled_class_hash })
+                    ClassInfo::Sierra(SierraClassInfo {
+                        contract_class: class.clone(),
+                        compiled_class_hash,
+                        compiled_class_hash_v2: None,
+                    })
                 }
                 mp_class::ContractClass::Legacy(class) => {
                     if compiled_class_hash != DeclaredClassCompiledClass::Legacy {

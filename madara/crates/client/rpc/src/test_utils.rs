@@ -818,6 +818,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
                         }
                         .into(),
                         compiled_class_hash: compiled_class_hashes[2],
+                        compiled_class_hash_v2: None,
                     },
                     compiled: CompiledSierra(Default::default()).into(),
                 })),

@@ -1122,6 +1122,7 @@ pub(crate) mod tests {
                     abi: "".to_string(),
                 }),
                 compiled_class_hash,
+                compiled_class_hash_v2: None,
             },
             compiled: Arc::new(mp_class::CompiledSierra("".to_string())),
         })

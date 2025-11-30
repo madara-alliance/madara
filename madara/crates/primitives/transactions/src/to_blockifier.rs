@@ -311,7 +311,7 @@ fn handle_class_sierra(
     }
     let converted_class = ConvertedClass::Sierra(SierraConvertedClass {
         class_hash,
-        info: SierraClassInfo { contract_class, compiled_class_hash },
+        info: SierraClassInfo { contract_class, compiled_class_hash, compiled_class_hash_v2: None },
         compiled: Arc::new((&compiled).try_into()?),
     });
     let api_class_info = (&converted_class).try_into()?;

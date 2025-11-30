@@ -65,7 +65,11 @@ pub fn get_test_sierra_class() -> &'static SierraConvertedClass {
         let compiled_sierra = CompiledSierra::try_from(&casm_class).expect("Failed to convert CASM to CompiledSierra");
 
         // Create SierraClassInfo
-        let sierra_info = SierraClassInfo { contract_class: Arc::new(flattened_sierra), compiled_class_hash };
+        let sierra_info = SierraClassInfo {
+            contract_class: Arc::new(flattened_sierra),
+            compiled_class_hash,
+            compiled_class_hash_v2: None,
+        };
 
         // Create SierraConvertedClass
         SierraConvertedClass { class_hash: compiled_class_hash, info: sierra_info, compiled: Arc::new(compiled_sierra) }

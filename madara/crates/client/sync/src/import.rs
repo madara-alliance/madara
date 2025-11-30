@@ -376,7 +376,11 @@ impl BlockImporterCtx {
                 }
                 Ok(ConvertedClass::Sierra(SierraConvertedClass {
                     class_hash,
-                    info: SierraClassInfo { contract_class: sierra.contract_class, compiled_class_hash },
+                    info: SierraClassInfo {
+                        contract_class: sierra.contract_class,
+                        compiled_class_hash,
+                        compiled_class_hash_v2: None,
+                    },
                     compiled: Arc::new((&compiled_class).try_into().map_err(|e| {
                         BlockImportError::CompilationClassError {
                             class_hash,
@@ -466,7 +470,7 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_state_diff(&self, block_n: u64, state_diff: StateDiff) -> Result<(), BlockImportError> {
-        // Store SNIP-34 class migrations if present
+        // Update compiled_class_hash_v2 for SNIP-34 migrated classes
         if !state_diff.migrated_compiled_classes.is_empty() {
             let migrations: Vec<(Felt, Felt)> = state_diff
                 .migrated_compiled_classes
@@ -474,14 +478,14 @@ impl BlockImporterCtx {
                 .map(|m| (m.class_hash, m.compiled_class_hash))
                 .collect();
             tracing::debug!(
-                "Storing {} class migrations for block {}",
+                "Updating {} class v2 hashes (SNIP-34 migrations) for block {}",
                 migrations.len(),
                 block_n
             );
-            self.backend.write_access().write_class_migrations(migrations).map_err(|error| {
+            self.backend.write_access().update_class_v2_hashes(migrations).map_err(|error| {
                 BlockImportError::InternalDb {
                     error,
-                    context: format!("Storing class migrations for {block_n}").into(),
+                    context: format!("Updating class v2 hashes for {block_n}").into(),
                 }
             })?;
         }

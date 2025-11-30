@@ -103,6 +103,7 @@ impl InitiallyDeclaredClasses {
                     class_info: ClassInfo::Sierra(SierraClassInfo {
                         contract_class: c.contract_class.into(),
                         compiled_class_hash: c.compiled_class_hash,
+                        compiled_class_hash_v2: None,
                     }),
                 },
                 InitiallyDeclaredClass::Legacy(c) => ClassInfoWithHash {

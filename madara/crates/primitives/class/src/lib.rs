@@ -133,9 +133,12 @@ impl ClassInfo {
         }
     }
 
+    /// Returns the canonical compiled class hash.
+    /// For Sierra classes: returns v2 (BLAKE) if present, otherwise v1 (Poseidon).
+    /// For Legacy classes: returns None.
     pub fn compiled_class_hash(&self) -> Option<Felt> {
         match self {
-            ClassInfo::Sierra(sierra) => Some(sierra.compiled_class_hash),
+            ClassInfo::Sierra(sierra) => Some(sierra.compiled_class_hash_v2.unwrap_or(sierra.compiled_class_hash)),
             ClassInfo::Legacy(_) => None,
         }
     }
@@ -160,7 +163,12 @@ pub struct LegacyClassInfo {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SierraClassInfo {
     pub contract_class: Arc<FlattenedSierraClass>,
+    /// The compiled class hash (Poseidon hash for pre-SNIP-34 classes).
     pub compiled_class_hash: Felt,
+    /// The BLAKE compiled class hash (SNIP-34). Present after migration or for new classes.
+    /// When present, this is the canonical compiled_class_hash to use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compiled_class_hash_v2: Option<Felt>,
 }
 
 impl SierraClassInfo {
