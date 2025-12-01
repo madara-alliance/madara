@@ -71,7 +71,7 @@ impl MigrationRunner {
 
     /// Signal migration to abort gracefully.
     pub fn abort(&self) {
-        self.abort_flag.store(true, Ordering::Relaxed);
+        self.abort_flag.store(true, Ordering::SeqCst);
     }
 
     /// Initialize a fresh database by writing the version file.
@@ -210,7 +210,7 @@ impl MigrationRunner {
         }
 
         for migration in pending {
-            if self.abort_flag.load(Ordering::Relaxed) {
+            if self.abort_flag.load(Ordering::SeqCst) {
                 tracing::warn!("⚠️  Migration aborted by user");
                 return Err(MigrationError::Aborted);
             }
@@ -252,10 +252,14 @@ impl MigrationRunner {
 
         if lock_path.exists() {
             let is_stale = match fs::metadata(&lock_path).and_then(|m| m.modified()) {
-                Ok(modified) => {
-                    let age = modified.elapsed().unwrap_or(std::time::Duration::MAX);
-                    age > std::time::Duration::from_secs(24 * 60 * 60)
-                }
+                Ok(modified) => match modified.elapsed() {
+                    Ok(age) => age > std::time::Duration::from_secs(24 * 60 * 60),
+                    Err(e) => {
+                        // System time went backwards, treat as stale
+                        tracing::warn!("System time error checking lock age: {}, treating as stale", e);
+                        true
+                    }
+                },
                 Err(e) => {
                     // Can't determine age, treat as stale
                     tracing::warn!("Cannot read lock metadata: {}, treating as stale", e);
