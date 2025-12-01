@@ -183,6 +183,10 @@ impl AtlanticClient {
     /// Initially, the bucket will be empty when created.
     /// The `bucket_id` returned from here will be used to add child jobs to this bucket.
     /// A new bucket is created when creating a new batch in Batching worker.
+    /// 
+    // TODO(Mohit,01/12/2025): We should have an AggregatorInput struct here for args, based on:
+    // https://github.com/starkware-libs/sequencer/blob/main-v0.14.1/crates/starknet_os/src/hint_processor/aggregator_hint_processor.rs#L42-L52
+    // For 0.14.1, we would need to send the public_keys as well.
     pub async fn create_bucket(
         &self,
         atlantic_api_key: impl AsRef<str>,
