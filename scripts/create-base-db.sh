@@ -50,11 +50,12 @@ mkdir -p "${DB_PATH}"
 # Build madara
 echo "🔨 Building madara..."
 cd "$(dirname "$0")/../madara"
-cargo build --release -p madara
+cargo build -p madara
 
 # Sync blocks
 echo "🔄 Syncing ${BLOCKS} blocks from Sepolia..."
-timeout 900 ./target/release/madara \
+MADARA_BIN="${CARGO_TARGET_DIR:-./target}/debug/madara"
+timeout 900 "${MADARA_BIN}" \
     --name base-db-creator \
     --base-path "${DB_PATH}" \
     --network sepolia \

@@ -251,17 +251,23 @@ impl MigrationRunner {
         let lock_path = self.base_path.join(DB_MIGRATION_LOCK);
 
         if lock_path.exists() {
-            if let Ok(metadata) = fs::metadata(&lock_path) {
-                if let Ok(modified) = metadata.modified() {
-                    let age = modified.elapsed().unwrap_or_default();
-                    // Auto-remove stale locks older than 24h
-                    if age > std::time::Duration::from_secs(24 * 60 * 60) {
-                        tracing::warn!("Removing stale lock ({}h old)", age.as_secs() / 3600);
-                        fs::remove_file(&lock_path)?;
-                    } else {
-                        return Err(MigrationError::MigrationInProgress);
-                    }
+            let is_stale = match fs::metadata(&lock_path).and_then(|m| m.modified()) {
+                Ok(modified) => {
+                    let age = modified.elapsed().unwrap_or(std::time::Duration::MAX);
+                    age > std::time::Duration::from_secs(24 * 60 * 60)
                 }
+                Err(e) => {
+                    // Can't determine age, treat as stale
+                    tracing::warn!("Cannot read lock metadata: {}, treating as stale", e);
+                    true
+                }
+            };
+
+            if is_stale {
+                tracing::warn!("Removing stale migration lock");
+                fs::remove_file(&lock_path)?;
+            } else {
+                return Err(MigrationError::MigrationInProgress);
             }
         }
 
