@@ -442,18 +442,22 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             target_n
         );
 
-        // Perform the revert
-        let (reverted_block_n, reverted_hash) =
-            self.db.revert_to(&target_hash).context("Failed to revert database to recover from inconsistent state")?;
+        // We cannot use the normal revert_to() because it requires the current tip's block info
+        // to exist, which is exactly what's missing in this inconsistent state.
+        // Instead, we directly update the chain tip to the valid block.
+        // The cleanup of blocks above this will be handled by remove_all_blocks_starting_from()
+        // which is called later in init().
+        let new_chain_tip = StorageChainTip::Confirmed(target_n);
+        self.db.replace_chain_tip(&new_chain_tip).context("Failed to update chain tip during recovery")?;
 
         tracing::info!(
-            "✅ Successfully reverted to block {} (hash: {:#x}). Database recovered.",
-            reverted_block_n,
-            reverted_hash
+            "✅ Successfully set chain tip to block {} (hash: {:#x}). Database recovered.",
+            target_n,
+            target_hash
         );
 
-        // Return the new chain tip after revert
-        Ok(ChainTip::from_storage(self.db.get_chain_tip()?))
+        // Return the new chain tip
+        Ok(ChainTip::from_storage(new_chain_tip))
     }
 
     /// Get a write handle for the backend. This is the function you need to call to save new blocks, modify the preconfirmed block,
