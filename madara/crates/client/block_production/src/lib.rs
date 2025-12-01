@@ -1186,7 +1186,9 @@ pub(crate) mod tests {
             serde_json::from_slice(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
         let flattened_class: mp_class::FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
 
-        let (compiled_contract_class_hash, _compiled_class) = flattened_class.compile_to_casm().unwrap();
+        // Use BLAKE hash (v2) for v0.14.1+ compatibility
+        let (_poseidon_hash, compiled_contract_class_hash, _compiled_class) =
+            flattened_class.compile_to_casm_with_blake_hash().unwrap();
 
         let mut declare_txn: BroadcastedDeclareTxn = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
             sender_address: contract.address,
