@@ -50,20 +50,19 @@ impl EventWorker {
 
         // Override with service config values if provided via CLI/env args
         // This ensures CLI arguments like --max-concurrent-snos-jobs actually take effect
-        let service_config = config.service_config();
-let override_val = match queue_type {
-    QueueType::SnosJobProcessing => service_config.max_concurrent_snos_jobs,
-    QueueType::ProvingJobProcessing => service_config.max_concurrent_proving_jobs,
-    _ => None,
-};
+        let override_val = match queue_type {
+            QueueType::SnosJobProcessing => config.service_config().max_concurrent_snos_jobs,
+            QueueType::ProvingJobProcessing => config.service_config().max_concurrent_proving_jobs,
+            _ => None,
+        };
 
-if let Some(max_concurrent) = override_val {
-    info!(
-        "Overriding {:?} max_message_count from {} to {} (from service config)",
-        queue_type, queue_control.max_message_count, max_concurrent
-    );
-    queue_control.max_message_count = max_concurrent;
-}
+        if let Some(max_concurrent) = override_val {
+            info!(
+                "Overriding {:?} max_message_count from {} to {} (from service config)",
+                queue_type, queue_control.max_message_count, max_concurrent
+            );
+            queue_control.max_message_count = max_concurrent;
+        }
 
         Ok(Self { queue_type, config, queue_control, cancellation_token })
     }
