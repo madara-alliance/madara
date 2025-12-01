@@ -10,8 +10,6 @@ async fn test_connection_refused_error() {
         "Connection refused",
     )));
 
-    assert!(GatewayRetryState::is_connection_error(&error));
-
     let reason = GatewayRetryState::format_error_reason(&error);
     assert_eq!(reason, "connection refused");
 }
@@ -22,8 +20,6 @@ async fn test_timeout_error() {
         std::io::ErrorKind::TimedOut,
         "Operation timed out",
     )));
-
-    assert!(GatewayRetryState::is_timeout_error(&error));
 
     let reason = GatewayRetryState::format_error_reason(&error);
     assert_eq!(reason, "timeout");
@@ -80,14 +76,10 @@ async fn test_mixed_error_types() {
 
     for error in errors {
         let delay = state.next_delay(&error);
-        let is_conn_error = GatewayRetryState::is_connection_error(&error);
-        let is_timeout = GatewayRetryState::is_timeout_error(&error);
         let formatted = GatewayRetryState::format_error_reason(&error);
 
         // Verify basic properties
         assert!(delay > Duration::from_secs(0), "Should have non-zero delay");
-
-        // At least one classification should match
-        assert!(is_conn_error || is_timeout || !formatted.is_empty(), "Error should be classified: {:?}", error);
+        assert!(!formatted.is_empty(), "Error should be formatted: {:?}", error);
     }
 }

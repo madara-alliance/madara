@@ -38,21 +38,9 @@ impl GatewayRetryState {
         self.inner.increment_retry()
     }
 
-    /// Get current retry count
-    #[allow(dead_code)]
-    pub fn get_retry_count(&self) -> usize {
-        self.inner.get_retry_count()
-    }
-
     /// Determine current retry phase based on elapsed time
     pub fn current_phase(&self) -> RetryPhase {
         self.inner.current_phase()
-    }
-
-    /// Get elapsed time since first retry
-    #[allow(dead_code)]
-    pub fn elapsed(&self) -> Duration {
-        self.inner.elapsed()
     }
 
     /// Check if an error is retryable
@@ -90,34 +78,6 @@ impl GatewayRetryState {
         // TODO: Parse Retry-After header from HttpCallError if available
         // For now, return None and use default rate limit delay
         None
-    }
-
-    /// Check if error is a connection error (network-level failure)
-    #[allow(dead_code)]
-    pub fn is_connection_error(error: &SequencerError) -> bool {
-        match error {
-            SequencerError::HttpCallError(e) => {
-                let error_str = e.to_string().to_lowercase();
-                error_str.contains("connection refused")
-                    || error_str.contains("network unreachable")
-                    || error_str.contains("connection reset")
-                    || error_str.contains("broken pipe")
-            }
-            SequencerError::HyperError(_) => true,
-            _ => false,
-        }
-    }
-
-    /// Check if error is a timeout
-    #[allow(dead_code)]
-    pub fn is_timeout_error(error: &SequencerError) -> bool {
-        match error {
-            SequencerError::HttpCallError(e) => {
-                let error_str = e.to_string().to_lowercase();
-                error_str.contains("timeout") || error_str.contains("timed out")
-            }
-            _ => false,
-        }
     }
 
     /// Format error for user-friendly logging
@@ -170,11 +130,9 @@ mod tests {
     #[test]
     fn test_retry_count() {
         let mut state = GatewayRetryState::new(RetryConfig::default());
-        assert_eq!(state.get_retry_count(), 0);
 
         assert_eq!(state.increment_retry(), 1);
         assert_eq!(state.increment_retry(), 2);
-        assert_eq!(state.get_retry_count(), 2);
     }
 
     #[tokio::test]

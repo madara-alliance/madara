@@ -10,7 +10,7 @@ use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::SystemTime;
+use std::time::Instant;
 
 #[derive(Clone, Debug)]
 pub struct L1BlockMetrics {
@@ -173,7 +173,7 @@ pub async fn gas_price_worker(
     gas_provider_config: GasPriceProviderConfig,
     _l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError> {
-    let mut last_update_timestamp = SystemTime::now();
+    let mut last_update_instant = Instant::now();
     let mut interval = tokio::time::interval(gas_provider_config.poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -185,7 +185,7 @@ pub async fn gas_price_worker(
 
         match res.await {
             Ok(Ok(l1_gas_quote)) => {
-                last_update_timestamp = SystemTime::now();
+                last_update_instant = Instant::now();
                 backend.set_last_l1_gas_quote(l1_gas_quote);
                 tracing::trace!("Gas prices updated successfully");
             }
@@ -200,15 +200,7 @@ pub async fn gas_price_worker(
         // Note: Removed the panic condition that would kill the worker after 10x poll interval
         // The gas price worker now retries infinitely, relying on the underlying L1 calls' retry logic
         // to handle transient failures. The health monitor tracks L1 connection status separately.
-        let time_since_last_update = match SystemTime::now().duration_since(last_update_timestamp) {
-            Ok(duration) => duration,
-            Err(_) => {
-                // System time went backwards (NTP adjustment, VM snapshot, etc.)
-                tracing::warn!("System time went backwards, resetting gas price update timestamp");
-                last_update_timestamp = SystemTime::now();
-                Duration::from_secs(0)
-            }
-        };
+        let time_since_last_update = last_update_instant.elapsed();
 
         if time_since_last_update > gas_provider_config.poll_interval * 10 {
             tracing::warn!(

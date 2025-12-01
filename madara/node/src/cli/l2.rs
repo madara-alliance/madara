@@ -1,7 +1,7 @@
 use anyhow::Context;
 use http::HeaderName;
 use http::HeaderValue;
-use mc_gateway_client::{start_gateway_health_monitor, GatewayProvider};
+use mc_gateway_client::{start_health_monitor, GatewayProvider};
 use mp_chain_config::ChainConfig;
 use mp_utils::parsers::parse_url;
 use serde::{Deserialize, Serialize};
@@ -115,7 +115,7 @@ impl L2SyncParams {
         }
 
         // Start the gateway health monitor (runs in background)
-        start_gateway_health_monitor(client.health());
+        start_health_monitor(client.health());
 
         Ok(Arc::new(client))
     }
