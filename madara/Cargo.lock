@@ -7471,6 +7471,7 @@ version = "0.8.0"
 dependencies = [
  "rstest 0.18.2",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 

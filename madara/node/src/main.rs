@@ -262,8 +262,6 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("💾  Preconfirmed blocks will be saved to database");
     }
 
-    tracing::info!("running latest code #2");
-
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
         chain_config.clone(),

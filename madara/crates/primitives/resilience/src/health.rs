@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 // Health state transition thresholds
 const CONSECUTIVE_FAILURES_TO_DOWN: usize = 10;
@@ -53,7 +54,7 @@ pub enum HealthState {
 #[derive(Debug)]
 pub struct ConnectionHealth {
     /// Name of the service being tracked (e.g., "Gateway", "L1 Endpoint")
-    service_name: String,
+    service_name: Arc<str>,
 
     /// Current health state
     state: HealthState,
@@ -87,7 +88,7 @@ pub struct ConnectionHealth {
 }
 
 impl ConnectionHealth {
-    pub fn new(service_name: impl Into<String>) -> Self {
+    pub fn new(service_name: impl Into<Arc<str>>) -> Self {
         Self {
             service_name: service_name.into(),
             state: HealthState::Healthy,
@@ -226,7 +227,7 @@ impl ConnectionHealth {
 
         // Also transition immediately if no operations are failing (clean recovery)
         // This allows fast transition from Down -> Degraded -> Healthy when L1 comes back up
-        if self.failed_operations.is_empty() && self.failure_rate() == 0.0 && self.recovery_attempts > 0 {
+        if self.failed_operations.is_empty() && self.failure_rate() < f32::EPSILON && self.recovery_attempts > 0 {
             return true;
         }
 
@@ -265,7 +266,7 @@ impl ConnectionHealth {
 
     /// Get adaptive heartbeat interval for Down state based on outage duration
     fn get_down_heartbeat_interval(&self) -> Duration {
-        let elapsed = self.first_failure_time.unwrap().elapsed();
+        let elapsed = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::ZERO);
 
         if elapsed < PHASE1_DURATION {
             HEARTBEAT_INTERVAL_DOWN_PHASE1
@@ -344,6 +345,24 @@ impl ConnectionHealth {
 /// # Returns
 /// A JoinHandle that can be awaited or aborted to stop the monitor
 pub fn start_health_monitor(health: Arc<RwLock<ConnectionHealth>>) -> tokio::task::JoinHandle<()> {
+    start_health_monitor_with_cancellation(health, CancellationToken::new())
+}
+
+/// Start a background health monitor task with cancellation support
+///
+/// This spawns a tokio task that periodically logs connection health status.
+/// The returned JoinHandle can be used to stop the monitor during graceful shutdown.
+///
+/// # Arguments
+/// * `health` - Arc to the ConnectionHealth instance to monitor
+/// * `cancellation_token` - Token to signal graceful shutdown
+///
+/// # Returns
+/// A JoinHandle that can be awaited or aborted to stop the monitor
+pub fn start_health_monitor_with_cancellation(
+    health: Arc<RwLock<ConnectionHealth>>,
+    cancellation_token: CancellationToken,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let service_name = {
             let guard = health.read().await;
@@ -353,8 +372,12 @@ pub fn start_health_monitor(health: Arc<RwLock<ConnectionHealth>>) -> tokio::tas
         tracing::debug!("{} health monitor started", service_name);
 
         loop {
-            // Use tokio::select! to make the sleep cancellable
+            // Use tokio::select! to make the sleep cancellable and support graceful shutdown
             tokio::select! {
+                _ = cancellation_token.cancelled() => {
+                    tracing::debug!("{} health monitor shutting down", service_name);
+                    break;
+                }
                 _ = tokio::time::sleep(Duration::from_secs(1)) => {
                     let mut health_guard = health.write().await;
 

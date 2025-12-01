@@ -86,23 +86,47 @@ pub enum RetryPhase {
     Steady,
 }
 
+impl std::fmt::Display for RetryPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RetryPhase::Aggressive => write!(f, "Aggressive"),
+            RetryPhase::Backoff => write!(f, "Backoff"),
+            RetryPhase::Steady => write!(f, "Steady"),
+        }
+    }
+}
+
 /// State tracker for retry attempts
 pub struct RetryState {
     config: RetryConfig,
     start_time: Instant,
     retry_count: usize,
+    phase_retry_count: usize,
+    current_phase: RetryPhase,
     last_log_time: Option<Instant>,
 }
 
 impl std::fmt::Debug for RetryState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RetryState").field("config", &self.config).field("retry_count", &self.retry_count).finish()
+        f.debug_struct("RetryState")
+            .field("config", &self.config)
+            .field("retry_count", &self.retry_count)
+            .field("phase_retry_count", &self.phase_retry_count)
+            .field("current_phase", &self.current_phase)
+            .finish()
     }
 }
 
 impl RetryState {
     pub fn new(config: RetryConfig) -> Self {
-        Self { config, start_time: Instant::now(), retry_count: 0, last_log_time: None }
+        Self {
+            config,
+            start_time: Instant::now(),
+            retry_count: 0,
+            phase_retry_count: 0,
+            current_phase: RetryPhase::Aggressive,
+            last_log_time: None,
+        }
     }
 
     /// Determine current retry phase based on elapsed time
@@ -124,8 +148,9 @@ impl RetryState {
         match self.current_phase() {
             RetryPhase::Aggressive => self.config.phase1_interval,
             RetryPhase::Backoff => {
-                // Exponential backoff: 5s * 2^retry_count (cap exponent at 5 to prevent overflow)
-                let exponent = self.retry_count.saturating_sub(1).min(5) as u32;
+                // Exponential backoff: 5s * 2^phase_retry_count (cap exponent at 5 to prevent overflow)
+                // Uses phase-specific retry count to ensure backoff starts fresh when entering Phase 2
+                let exponent = self.phase_retry_count.saturating_sub(1).min(5) as u32;
                 let exponential_delay = self.config.phase2_min_delay.saturating_mul(2_u32.saturating_pow(exponent));
                 exponential_delay.min(self.config.max_backoff)
             }
@@ -155,6 +180,15 @@ impl RetryState {
     /// Increment retry counter and return current count
     pub fn increment_retry(&mut self) -> usize {
         self.retry_count += 1;
+
+        // Check for phase transition and reset phase-specific counter
+        let new_phase = self.current_phase();
+        if new_phase != self.current_phase {
+            self.current_phase = new_phase;
+            self.phase_retry_count = 0;
+        }
+        self.phase_retry_count += 1;
+
         self.retry_count
     }
 

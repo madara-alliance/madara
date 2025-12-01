@@ -3,8 +3,8 @@ use crate::retry::{GatewayRetryState, RetryConfig};
 use mp_gateway::error::SequencerError;
 use std::time::Duration;
 
-#[tokio::test]
-async fn test_connection_refused_error() {
+#[test]
+fn test_connection_refused_error() {
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::ConnectionRefused,
         "Connection refused",
@@ -14,8 +14,8 @@ async fn test_connection_refused_error() {
     assert_eq!(reason, "connection refused");
 }
 
-#[tokio::test]
-async fn test_timeout_error() {
+#[test]
+fn test_timeout_error() {
     let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
         std::io::ErrorKind::TimedOut,
         "Operation timed out",
@@ -25,8 +25,8 @@ async fn test_timeout_error() {
     assert_eq!(reason, "timeout");
 }
 
-#[tokio::test]
-async fn test_rate_limit_handling() {
+#[test]
+fn test_rate_limit_handling() {
     use mp_gateway::error::StarknetError;
 
     let error = SequencerError::StarknetError(StarknetError::rate_limited());
@@ -38,8 +38,8 @@ async fn test_rate_limit_handling() {
     assert!(delay >= Duration::from_secs(2), "Rate limited errors should have appropriate delay");
 }
 
-#[tokio::test]
-async fn test_error_message_formatting() {
+#[test]
+fn test_error_message_formatting() {
     let test_cases = vec![
         (
             SequencerError::HttpCallError(Box::new(std::io::Error::new(
@@ -61,8 +61,8 @@ async fn test_error_message_formatting() {
     }
 }
 
-#[tokio::test]
-async fn test_mixed_error_types() {
+#[test]
+fn test_mixed_error_types() {
     let errors = vec![
         SequencerError::HttpCallError(Box::new(std::io::Error::new(
             std::io::ErrorKind::ConnectionRefused,

@@ -17,6 +17,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 # Async runtime
 tokio = { workspace = true, features = ["sync", "time", "macros"] }
+tokio-util.workspace = true
 
 # Logging
 tracing.workspace = true
