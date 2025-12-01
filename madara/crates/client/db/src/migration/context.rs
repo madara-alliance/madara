@@ -16,7 +16,22 @@ pub struct MigrationProgress {
 }
 
 impl MigrationProgress {
+    /// Create a new progress report.
+    ///
+    /// # Parameters
+    /// - `current_step`: Zero-based current step (0 = starting)
+    /// - `total_steps`: Total number of steps in the migration
+    /// - `message`: Human-readable status message
+    ///
+    /// # Panics
+    /// Panics in debug builds if `current_step > total_steps`.
     pub fn new(current_step: usize, total_steps: usize, message: impl Into<String>) -> Self {
+        debug_assert!(
+            current_step <= total_steps,
+            "current_step ({}) cannot exceed total_steps ({})",
+            current_step,
+            total_steps
+        );
         Self { current_step, total_steps, message: message.into() }
     }
 }

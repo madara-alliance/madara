@@ -145,13 +145,29 @@ impl MigrationRunner {
     fn execute_migrations(&self, db: &DB, from_version: u32, to_version: u32) -> Result<(), MigrationError> {
         // Check for interrupted migration and resume if found
         let mut state = if let Some(saved_state) = self.load_migration_state()? {
-            tracing::warn!(
-                "⚠️  Found interrupted migration from v{} to v{}, resuming from v{}...",
-                saved_state.from_version,
-                saved_state.target_version,
-                saved_state.current_version
-            );
-            saved_state
+            // Verify target version matches - if binary was updated, adjust target
+            if saved_state.target_version != to_version {
+                tracing::warn!(
+                    "⚠️  Saved migration target (v{}) differs from binary target (v{}), updating...",
+                    saved_state.target_version,
+                    to_version
+                );
+                MigrationState {
+                    started_at: saved_state.started_at,
+                    from_version: saved_state.from_version,
+                    target_version: to_version, // Use current binary's target
+                    current_version: saved_state.current_version,
+                    completed_migrations: saved_state.completed_migrations,
+                }
+            } else {
+                tracing::warn!(
+                    "⚠️  Found interrupted migration from v{} to v{}, resuming from v{}...",
+                    saved_state.from_version,
+                    saved_state.target_version,
+                    saved_state.current_version
+                );
+                saved_state
+            }
         } else {
             MigrationState {
                 started_at: chrono::Utc::now().to_rfc3339(),
