@@ -107,11 +107,7 @@ async fn test_migration_validation_state_update_intact() {
     match state_update {
         MaybePreConfirmedStateUpdate::Update(update) => {
             // Verify essential fields are present and non-default
-            assert!(
-                update.block_hash != Default::default(),
-                "block_hash should be set, got: {}",
-                update.block_hash
-            );
+            assert!(update.block_hash != Default::default(), "block_hash should be set, got: {}", update.block_hash);
             assert!(update.new_root != Default::default(), "new_root should be set, got: {}", update.new_root);
             assert!(update.old_root != Default::default(), "old_root should be set, got: {}", update.old_root);
 
@@ -168,4 +164,3 @@ mod v9_snip34 {
     //     }
     // }
 }
-

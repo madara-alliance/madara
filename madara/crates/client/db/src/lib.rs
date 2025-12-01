@@ -507,9 +507,7 @@ impl MadaraBackend<RocksDBStorage> {
                     .context("Opening RocksDB storage for migration")?;
 
                 // Run migrations
-                migration_runner
-                    .run_migrations_with_storage(&db)
-                    .context("Running database migrations")?;
+                migration_runner.run_migrations_with_storage(&db).context("Running database migrations")?;
 
                 // DB will be dropped here and reopened below
                 drop(db);

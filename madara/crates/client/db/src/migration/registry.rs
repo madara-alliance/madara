@@ -68,10 +68,7 @@ pub fn get_migrations() -> &'static [Migration] {
 /// # Errors
 ///
 /// Returns `MigrationError::NoMigrationPath` if there's a gap in the migration chain.
-pub fn get_migrations_for_range(
-    from_version: u32,
-    to_version: u32,
-) -> Result<Vec<&'static Migration>, MigrationError> {
+pub fn get_migrations_for_range(from_version: u32, to_version: u32) -> Result<Vec<&'static Migration>, MigrationError> {
     if from_version >= to_version {
         return Ok(vec![]);
     }
@@ -79,10 +76,8 @@ pub fn get_migrations_for_range(
     let all_migrations = get_migrations();
 
     // Find migrations that fall within our range
-    let mut migrations: Vec<_> = all_migrations
-        .iter()
-        .filter(|m| m.from_version >= from_version && m.to_version <= to_version)
-        .collect();
+    let mut migrations: Vec<_> =
+        all_migrations.iter().filter(|m| m.from_version >= from_version && m.to_version <= to_version).collect();
 
     // Sort by from_version to ensure correct order
     migrations.sort_by_key(|m| m.from_version);
@@ -168,4 +163,3 @@ mod tests {
 
     // More tests will be added once we have actual migrations
 }
-

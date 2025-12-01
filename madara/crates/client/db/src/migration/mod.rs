@@ -80,10 +80,7 @@ impl MigrationRunner {
     }
 
     /// Entry point using wrapped storage type.
-    pub fn run_migrations_with_storage(
-        &self,
-        storage: &crate::rocksdb::RocksDBStorage,
-    ) -> Result<(), MigrationError> {
+    pub fn run_migrations_with_storage(&self, storage: &crate::rocksdb::RocksDBStorage) -> Result<(), MigrationError> {
         self.run_migrations(storage.inner_db())
     }
 
@@ -181,10 +178,8 @@ impl MigrationRunner {
         let _lock = self.acquire_lock()?;
 
         let all_migrations = get_migrations_for_range(state.from_version, state.target_version)?;
-        let pending: Vec<_> = all_migrations
-            .iter()
-            .filter(|m| !state.completed_migrations.contains(&m.to_version))
-            .collect();
+        let pending: Vec<_> =
+            all_migrations.iter().filter(|m| !state.completed_migrations.contains(&m.to_version)).collect();
 
         if pending.is_empty() {
             // All done, just cleanup
@@ -215,12 +210,18 @@ impl MigrationRunner {
                 return Err(MigrationError::Aborted);
             }
 
-            tracing::info!("📦 Running '{}' (v{} -> v{})", migration.name, migration.from_version, migration.to_version);
+            tracing::info!(
+                "📦 Running '{}' (v{} -> v{})",
+                migration.name,
+                migration.from_version,
+                migration.to_version
+            );
 
-            let context = MigrationContext::new(db, migration.from_version, migration.to_version, self.abort_flag.clone())
-                .with_progress_callback(Box::new(|p| {
-                    tracing::info!("   [{}/{}] {}", p.current_step, p.total_steps, p.message);
-                }));
+            let context =
+                MigrationContext::new(db, migration.from_version, migration.to_version, self.abort_flag.clone())
+                    .with_progress_callback(Box::new(|p| {
+                        tracing::info!("   [{}/{}] {}", p.current_step, p.total_steps, p.message);
+                    }));
 
             let start = std::time::Instant::now();
             (migration.migrate)(&context).map_err(|e| {
@@ -366,7 +367,10 @@ mod tests {
 
         // Same version
         let (_t, path) = setup_test_db(Some(9));
-        assert!(matches!(MigrationRunner::new(&path, 9, 8).check_status().unwrap(), MigrationStatus::NoMigrationNeeded));
+        assert!(matches!(
+            MigrationRunner::new(&path, 9, 8).check_status().unwrap(),
+            MigrationStatus::NoMigrationNeeded
+        ));
 
         // Too old
         let (_t, path) = setup_test_db(Some(5));
