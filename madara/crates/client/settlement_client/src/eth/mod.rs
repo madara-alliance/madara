@@ -105,7 +105,7 @@ impl EthereumClient {
         Fut: std::future::Future<Output = Result<T, SettlementClientError>>,
     {
         let config = RetryConfig::default();
-        let mut state = RetryState::new(config.clone());
+        let mut state = RetryState::new(config);
 
         loop {
             match call_fn().await {
@@ -275,12 +275,11 @@ impl SettlementLayerProvider for EthereumClient {
         mut ctx: ServiceContext,
         worker: StateUpdateWorker,
     ) -> Result<(), SettlementClientError> {
-        let config = RetryConfig::default();
         // Separate retry states for different failure modes:
         // - stream_creation_retry: Tracks failures when creating the event stream connection
         // - event_processing_retry: Tracks failures when processing events from an active stream
-        let mut stream_creation_retry = RetryState::new(config.clone());
-        let mut event_processing_retry = RetryState::new(config);
+        let mut stream_creation_retry = RetryState::new(RetryConfig::default());
+        let mut event_processing_retry = RetryState::new(RetryConfig::default());
 
         // Infinite retry loop for creating and maintaining the event stream
         loop {
