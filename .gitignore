@@ -110,3 +110,5 @@ s3
 
 sequencer_venv/
 sequencer_requirements.txt
+# Local documentation - do not commit
+0.14.1/
