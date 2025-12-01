@@ -28,11 +28,6 @@ impl GatewayRetryState {
         self.inner.next_delay()
     }
 
-    /// Check if we should log this retry attempt (throttled logging)
-    pub fn should_log(&mut self) -> bool {
-        self.inner.should_log()
-    }
-
     /// Increment retry counter and return current count
     pub fn increment_retry(&mut self) -> usize {
         self.inner.increment_retry()
@@ -80,7 +75,8 @@ impl GatewayRetryState {
         None
     }
 
-    /// Format error for user-friendly logging
+    /// Format error for user-friendly logging (used in tests)
+    #[cfg(test)]
     pub fn format_error_reason(error: &SequencerError) -> String {
         match error {
             SequencerError::HttpCallError(e) => {
@@ -133,26 +129,6 @@ mod tests {
 
         assert_eq!(state.increment_retry(), 1);
         assert_eq!(state.increment_retry(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_log_throttling() {
-        let config = RetryConfig { log_interval: Duration::from_millis(100), ..Default::default() };
-        let mut state = GatewayRetryState::new(config);
-
-        // First log should always be allowed
-        assert!(state.should_log());
-
-        // Immediate second log should be throttled
-        assert!(!state.should_log());
-
-        // Wait for less than log_interval
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(!state.should_log(), "Still should be throttled");
-
-        // Wait for the rest of the interval
-        tokio::time::sleep(Duration::from_millis(60)).await;
-        assert!(state.should_log(), "Should log after interval");
     }
 
     #[test]

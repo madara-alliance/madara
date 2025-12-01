@@ -64,35 +64,28 @@ impl GatewayProvider {
                         return Err(e);
                     }
 
-                    // Per-operation logging at DEBUG level (detailed diagnostics)
-                    if state.should_log() {
-                        let error_reason = GatewayRetryState::format_error_reason(&e);
-                        let phase = state.current_phase();
-
-                        tracing::debug!(
-                            target: "mc_gateway_client::retry",
-                            operation = operation,
-                            reason = error_reason,
-                            retries = retry_count,
-                            phase = ?phase,
-                            "Gateway unavailable"
-                        );
-                    }
-
                     // Calculate delay based on error type and current phase
                     let delay = state.next_delay(&e);
+                    let phase = state.current_phase();
 
-                    // Log phase transitions only once per operation (DEBUG level)
-                    let current_phase = state.current_phase();
-                    if retry_count == 1 {
-                        tracing::debug!(
-                            target: "mc_gateway_client::retry",
-                            operation = operation,
-                            phase = ?current_phase,
-                            interval_secs = delay.as_secs(),
-                            "Retry strategy initialized"
-                        );
-                    }
+                    // DEBUG: Every retry attempt with minimal info
+                    tracing::debug!(
+                        target: "mc_gateway_client::retry",
+                        operation = operation,
+                        retry = retry_count,
+                        phase = %phase,
+                        delay_ms = delay.as_millis() as u64,
+                        "Gateway call failed, retrying"
+                    );
+
+                    // TRACE: Full error details for deep debugging
+                    tracing::trace!(
+                        target: "mc_gateway_client::retry",
+                        operation = operation,
+                        retry = retry_count,
+                        error = ?e,
+                        "Full error details"
+                    );
 
                     tokio::time::sleep(delay).await;
                 }

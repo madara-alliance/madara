@@ -120,21 +120,29 @@ impl EthereumClient {
                     // Report failure to health tracker
                     self.health.write().await.report_failure(operation);
 
-                    // Log with throttling to prevent spam
-                    if state.should_log() {
-                        let phase = state.current_phase();
-                        tracing::debug!(
-                            target: "mc_settlement_client::retry",
-                            operation = operation,
-                            error = %e,
-                            retries = retry_count,
-                            phase = ?phase,
-                            "L1 call failed - retrying"
-                        );
-                    }
-
                     // Calculate delay and wait
                     let delay = state.next_delay();
+                    let phase = state.current_phase();
+
+                    // DEBUG: Every retry attempt with minimal info
+                    tracing::debug!(
+                        target: "mc_settlement_client::retry",
+                        operation = operation,
+                        retry = retry_count,
+                        phase = %phase,
+                        delay_ms = delay.as_millis() as u64,
+                        "L1 call failed, retrying"
+                    );
+
+                    // TRACE: Full error details for deep debugging
+                    tracing::trace!(
+                        target: "mc_settlement_client::retry",
+                        operation = operation,
+                        retry = retry_count,
+                        error = ?e,
+                        "Full error details"
+                    );
+
                     tokio::time::sleep(delay).await;
                 }
             }
