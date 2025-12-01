@@ -295,6 +295,8 @@ pub struct MadaraBackendConfig {
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
     pub unsafe_starting_block: Option<u64>,
+    /// Number of blocks to revert on startup if the database is in an inconsistent state.
+    pub unsafe_revert_blocks: Option<u64>,
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
@@ -344,11 +346,15 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         }
 
         // Init chain_tip and set starting block
-        let chain_tip = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
+        let mut chain_tip = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
             StorageChainTip::Confirmed(starting_block)
         } else {
             self.db.get_chain_tip()?
         });
+
+        // Check for database inconsistency and attempt recovery if unsafe_revert_blocks is set
+        chain_tip = self.try_recover_inconsistent_db(chain_tip)?;
+
         self.starting_block = chain_tip.latest_confirmed_block_n();
         // On startup, remove all blocks past the chain tip, in case we have partial blocks in db.
         self.db.remove_all_blocks_starting_from(
@@ -360,6 +366,94 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         self.latest_l1_confirmed.send_replace(self.db.get_confirmed_on_l1_tip()?);
 
         Ok(())
+    }
+
+    /// Attempts to recover from an inconsistent database state by reverting blocks.
+    ///
+    /// This is triggered when:
+    /// 1. The chain tip points to a block whose info is missing from the database
+    /// 2. The `unsafe_revert_blocks` config option is set
+    ///
+    /// The function will search backwards from the chain tip to find a valid block
+    /// (one with complete block info) within the configured revert limit.
+    fn try_recover_inconsistent_db(&self, chain_tip: ChainTip) -> Result<ChainTip> {
+        let Some(current_block_n) = chain_tip.latest_confirmed_block_n() else {
+            // No blocks in the chain, nothing to recover
+            return Ok(chain_tip);
+        };
+
+        // Check if current chain tip has valid block info
+        if self.db.get_block_info(current_block_n)?.is_some() {
+            // Block info exists, no recovery needed
+            return Ok(chain_tip);
+        }
+
+        // Block info is missing - this is the inconsistent state we're trying to recover from
+        tracing::warn!("⚠️  Database inconsistency detected: Block info at height {} is missing", current_block_n);
+
+        let Some(max_revert_blocks) = self.config.unsafe_revert_blocks else {
+            // No recovery configured, return original chain tip and let the error propagate later
+            tracing::error!(
+                "Database is in an inconsistent state. Block info at height {} is missing. \
+                 Consider using --unsafe-revert-blocks=N to automatically recover by reverting up to N blocks.",
+                current_block_n
+            );
+            return Ok(chain_tip);
+        };
+
+        tracing::info!(
+            "🔄 Attempting automatic recovery: searching for valid block within {} blocks of height {}",
+            max_revert_blocks,
+            current_block_n
+        );
+
+        // Search backwards for a valid block with complete block info
+        let min_block_n = current_block_n.saturating_sub(max_revert_blocks);
+
+        // Also check snap sync boundary - we cannot revert past the snap sync point
+        let snap_sync_limit = self.db.get_snap_sync_latest_block()?.unwrap_or(0);
+        let search_limit = min_block_n.max(snap_sync_limit);
+
+        let mut target_block_n = None;
+        for block_n in (search_limit..current_block_n).rev() {
+            if let Some(block_info) = self.db.get_block_info(block_n)? {
+                tracing::info!("✅ Found valid block at height {} with hash {:#x}", block_n, block_info.block_hash);
+                target_block_n = Some((block_n, block_info.block_hash));
+                break;
+            }
+            tracing::debug!("Block {} also missing info, continuing search...", block_n);
+        }
+
+        let Some((target_n, target_hash)) = target_block_n else {
+            bail!(
+                "Cannot recover database: no valid block found within {} blocks of height {}. \
+                 The database may be severely corrupted. Consider increasing --unsafe-revert-blocks \
+                 or restoring from a backup.",
+                max_revert_blocks,
+                current_block_n
+            );
+        };
+
+        let blocks_to_revert = current_block_n - target_n;
+        tracing::warn!(
+            "🔄 Reverting {} block(s) from height {} to height {} to recover from inconsistent state",
+            blocks_to_revert,
+            current_block_n,
+            target_n
+        );
+
+        // Perform the revert
+        let (reverted_block_n, reverted_hash) =
+            self.db.revert_to(&target_hash).context("Failed to revert database to recover from inconsistent state")?;
+
+        tracing::info!(
+            "✅ Successfully reverted to block {} (hash: {:#x}). Database recovered.",
+            reverted_block_n,
+            reverted_hash
+        );
+
+        // Return the new chain tip after revert
+        Ok(ChainTip::from_storage(self.db.get_chain_tip()?))
     }
 
     /// Get a write handle for the backend. This is the function you need to call to save new blocks, modify the preconfirmed block,

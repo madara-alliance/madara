@@ -144,6 +144,14 @@ pub struct BackendParams {
     /// Recommended: false for production (good balance), true for maximum durability.
     #[clap(env = "MADARA_DB_FSYNC", long, default_value = "false")]
     pub db_fsync: bool,
+
+    /// Automatically revert the specified number of blocks on startup if the database
+    /// is in an inconsistent state (e.g., missing block info). This is useful for
+    /// recovering from crashes or sync interruptions that left the database corrupted.
+    /// Use with caution as this will delete block data.
+    /// Example: --unsafe-revert-blocks=10 will revert up to 10 blocks if needed.
+    #[clap(env = "MADARA_UNSAFE_REVERT_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
+    pub unsafe_revert_blocks: Option<u64>,
 }
 
 impl BackendParams {
@@ -152,6 +160,7 @@ impl BackendParams {
             flush_every_n_blocks: self.flush_every_n_blocks,
             save_preconfirmed: !self.no_save_preconfirmed,
             unsafe_starting_block: self.unsafe_starting_block,
+            unsafe_revert_blocks: self.unsafe_revert_blocks,
         }
     }
     pub fn rocksdb_config(&self) -> RocksDBConfig {
