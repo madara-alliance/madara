@@ -51,7 +51,7 @@ pub async fn handle_get_preconfirmed_block(
         .map_err(|e: std::num::ParseIntError| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
 
     // Use block_view_on_preconfirmed_or_fake() - this always returns a block
-    let block = backend
+    let mut block = backend
         .block_view_on_preconfirmed_or_fake()
         .map_err(|e| StarknetError::new(StarknetErrorCode::BlockNotFound, e.to_string()))?;
 
