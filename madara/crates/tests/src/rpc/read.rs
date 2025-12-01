@@ -704,6 +704,7 @@ mod test_rpc_read_calls {
                 deployed_contracts: vec![],
                 replaced_classes: vec![],
                 nonces: vec![],
+                migrated_compiled_classes: None,
             },
         });
 
@@ -778,6 +779,8 @@ mod test_rpc_read_calls {
                     block_hash: Some(Felt::from_hex("0x5c627d4aeb51280058bed93c7889bce78114d63baad1be0f0aeb32496d5f19c").unwrap()),
                     block_number: Some(0),
                     transaction_hash: Felt::from_hex("0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add").unwrap(),
+                    event_index: 0,
+                    transaction_index: 0,
                 },
                 EmittedEvent {
                     from_address: Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap(),
@@ -786,6 +789,8 @@ mod test_rpc_read_calls {
                     block_hash: Some(Felt::from_hex("0x5c627d4aeb51280058bed93c7889bce78114d63baad1be0f0aeb32496d5f19c").unwrap()),
                     block_number: Some(0),
                     transaction_hash: Felt::from_hex("0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add").unwrap(),
+                    event_index: 0,
+                    transaction_index: 0,
                 },
             ],
             continuation_token: Some("4-0".to_string()),
@@ -863,6 +868,8 @@ mod test_rpc_read_calls {
                     block_hash: Some(Felt::from_hex("0x445152a69e628774b0f78a952e6f9ba0ffcda1374724b314140928fd2f31f4c").unwrap()),
                     block_number: Some(4),
                     transaction_hash: Felt::from_hex("0x3c9dfcd3fe66be18b661ee4ebb62520bb4f13d4182b040b3c2be9a12dbcc09b").unwrap(),
+                    event_index: 0,
+                    transaction_index: 0,
                 },
                 EmittedEvent {
                     from_address: Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap(),
@@ -879,6 +886,8 @@ mod test_rpc_read_calls {
                     block_hash: Some(Felt::from_hex("0x445152a69e628774b0f78a952e6f9ba0ffcda1374724b314140928fd2f31f4c").unwrap()),
                     block_number: Some(4),
                     transaction_hash: Felt::from_hex("0x24ae8900d238a120e927d6a5f2e4ddf85419e97020d92c1fadc615bff666ab1").unwrap(),
+                    event_index: 0,
+                    transaction_index: 0,
                 },
             ],
             continuation_token: Some("6-0".to_string()),

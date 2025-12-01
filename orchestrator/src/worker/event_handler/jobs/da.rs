@@ -596,6 +596,7 @@ pub mod test {
                 .map(|(addr, _class_hash)| DeployedContractItem { address: addr, class_hash: Default::default() })
                 .collect(),
             replaced_classes: vec![],
+            migrated_compiled_classes: None,
         }
     }
 
