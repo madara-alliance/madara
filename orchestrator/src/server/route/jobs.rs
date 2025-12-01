@@ -5,11 +5,11 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use opentelemetry::KeyValue;
-use tracing::{error, info, Span};
+use tracing::{error, info, Span,debug};
 use uuid::Uuid;
 
 use super::super::error::JobRouteError;
-use super::super::types::{ApiResponse, JobId, JobRouteResult, JobStatusResponse, JobStatusResponseItem};
+use super::super::types::{ApiResponse, JobId, JobRouteResult, JobStatusResponse, JobStatusResponseItem, FailedJobResponse, FailedJobResponseItem};
 use crate::core::config::Config;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -161,7 +161,45 @@ async fn handle_retry_job_request(
 pub fn job_router(config: Arc<Config>) -> Router {
     Router::new()
         .nest("/:id", job_trigger_router(config.clone()))
+        .route("/failed", get(handle_get_failed_jobs).with_state(config.clone()))
         .route("/block/:block_number/status", get(handle_get_job_status_by_block_request).with_state(config))
+}
+
+/// Handles HTTP requests to get all failed jobs.
+///
+/// This endpoint retrieves all jobs with status `Failed`.
+///
+/// # Arguments
+/// * `State(config)` - Shared application configuration
+///
+/// # Returns
+/// * `JobRouteResult` - Success response with failed jobs or error details
+async fn handle_get_failed_jobs(
+    State(config): State<Arc<Config>>,
+) -> JobRouteResult {
+    match config.database().get_failed_jobs().await {
+        Ok(jobs) => {
+            let mut job_status_items = Vec::new();
+            debug!("Failed jobs: {:#?}", jobs);
+            for job in jobs {
+                job_status_items.push(FailedJobResponseItem { 
+                    job_type: job.job_type, 
+                    id: job.id,
+                });
+            }
+            let count = job_status_items.len() as u64;
+            info!(count = count, "Successfully fetched failed jobs");
+            Ok(Json(ApiResponse::<FailedJobResponse>::success_with_data(
+                FailedJobResponse { jobs: job_status_items, count },
+                Some(format!("Successfully fetched {} failed jobs", count)),
+            ))
+            .into_response())
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to fetch failed jobs");
+            Err(JobRouteError::ProcessingError(e.to_string()))
+        }
+    }
 }
 
 /// Handles HTTP requests to get job statuses by block number.

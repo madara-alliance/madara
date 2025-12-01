@@ -1252,6 +1252,26 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
+    async fn get_failed_jobs(&self) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "status": bson::to_bson(&JobStatus::Failed)?,
+        };
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
+
+        debug!(
+            job_count = jobs.len(),
+            "Fetched failed jobs"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "get_failed_jobs")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
+    }
+
     // ================================================================================
     // Batch Relationship Management Methods
     // ================================================================================
