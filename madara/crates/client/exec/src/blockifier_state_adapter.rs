@@ -4,6 +4,7 @@ use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::rocksdb::RocksDBStorage;
 use mc_db::{MadaraStateView, MadaraStorageRead};
 use mp_convert::ToFelt;
+use starknet_api::contract_class::compiled_class_hash::{HashVersion, HashableCompiledClass};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
@@ -164,5 +165,45 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
         );
 
         Ok(CompiledClassHash(value))
+    }
+
+    fn get_compiled_class_hash_v2(
+        &self,
+        class_hash: ClassHash,
+        compiled_class: &RunnableCompiledClass,
+    ) -> StateResult<CompiledClassHash> {
+        // First, check if we have the v2 hash stored in the database
+        if let Ok(Some(class_info)) = self.view.get_class_info(&class_hash.to_felt()) {
+            if let Some(v2_hash) = class_info.compiled_class_hash_v2() {
+                tracing::debug!(
+                    "get_compiled_class_hash_v2: on={}, class_hash={:#x} => {v2_hash:#x} (from DB)",
+                    self.view,
+                    class_hash.to_felt(),
+                );
+                return Ok(CompiledClassHash(v2_hash));
+            }
+        }
+
+        // If not in DB, compute it on-the-fly from the compiled class
+        let computed_hash = match compiled_class {
+            RunnableCompiledClass::V0(_) => {
+                // Cairo0 classes don't have v2 compiled class hash
+                return Err(StateError::StateReadError(format!(
+                    "Cairo0 classes do not have compiled class hash v2: class_hash={:#x}",
+                    class_hash.to_felt(),
+                )));
+            }
+            RunnableCompiledClass::V1(casm) => casm.hash(&HashVersion::V2),
+            RunnableCompiledClass::V1Native(casm) => casm.hash(&HashVersion::V2),
+        };
+
+        tracing::debug!(
+            "get_compiled_class_hash_v2: on={}, class_hash={:#x} => {:#x} (computed)",
+            self.view,
+            class_hash.to_felt(),
+            computed_hash.0,
+        );
+
+        Ok(computed_hash)
     }
 }

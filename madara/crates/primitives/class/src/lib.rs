@@ -143,6 +143,15 @@ impl ClassInfo {
         }
     }
 
+    /// Returns the v2 (BLAKE) compiled class hash if present.
+    /// Returns None for Legacy classes or Sierra classes without v2 hash.
+    pub fn compiled_class_hash_v2(&self) -> Option<Felt> {
+        match self {
+            ClassInfo::Sierra(sierra) => sierra.compiled_class_hash_v2,
+            ClassInfo::Legacy(_) => None,
+        }
+    }
+
     pub fn compute_hash(&self) -> Result<Felt, ComputeClassHashError> {
         match self {
             ClassInfo::Sierra(sierra_class_info) => sierra_class_info.contract_class.compute_class_hash(),
