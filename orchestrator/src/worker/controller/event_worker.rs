@@ -46,7 +46,33 @@ impl EventWorker {
         info!("Initializing Event Worker for Queue {:?}", queue_type);
 
         let queue_config = QUEUES.get(&queue_type).ok_or(ConsumptionError::QueueNotFound(queue_type.to_string()))?;
-        let queue_control = queue_config.queue_control.clone();
+        let mut queue_control = queue_config.queue_control.clone();
+
+        // Override with service config values if provided via CLI/env args
+        // This ensures CLI arguments like --max-concurrent-snos-jobs actually take effect
+        let service_config = config.service_config();
+        match queue_type {
+            QueueType::SnosJobProcessing => {
+                if let Some(max_concurrent) = service_config.max_concurrent_snos_jobs {
+                    info!(
+                        "Overriding SnosJobProcessing max_message_count from {} to {} (from service config)",
+                        queue_control.max_message_count, max_concurrent
+                    );
+                    queue_control.max_message_count = max_concurrent;
+                }
+            }
+            QueueType::ProvingJobProcessing => {
+                if let Some(max_concurrent) = service_config.max_concurrent_proving_jobs {
+                    info!(
+                        "Overriding ProvingJobProcessing max_message_count from {} to {} (from service config)",
+                        queue_control.max_message_count, max_concurrent
+                    );
+                    queue_control.max_message_count = max_concurrent;
+                }
+            }
+            _ => {}
+        }
+
         Ok(Self { queue_type, config, queue_control, cancellation_token })
     }
 
