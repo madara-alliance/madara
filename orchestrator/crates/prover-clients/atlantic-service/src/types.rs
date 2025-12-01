@@ -136,6 +136,8 @@ pub struct AtlanticAggregatorParams {
     pub(crate) full_output: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) chain_id_hex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fee_token_address: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

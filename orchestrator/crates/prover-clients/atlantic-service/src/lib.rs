@@ -51,6 +51,7 @@ pub struct AtlanticProverService {
     pub result: AtlanticQueryStep,
     pub cairo_verifier_program_hash: Option<String>,
     pub chain_id_hex: Option<String>,
+    pub fee_token_address: Option<String>,
 }
 
 #[async_trait]
@@ -95,7 +96,7 @@ impl ProverClient for AtlanticProverService {
             Task::CreateBucket => {
                 let response = self
                     .atlantic_client
-                    .create_bucket(self.atlantic_api_key.clone(), self.should_mock_proof(), self.chain_id_hex.clone())
+                    .create_bucket(self.atlantic_api_key.clone(), self.should_mock_proof(), self.chain_id_hex.clone(), self.fee_token_address.clone())
                     .await?;
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
@@ -276,6 +277,7 @@ impl AtlanticProverService {
         fact_checker: Option<FactChecker>,
         mock_fact_hash: bool,
         cairo_verifier_program_hash: Option<String>,
+        fee_token_address: Option<String>,
     ) -> Self {
         Self {
             atlantic_client,
@@ -288,6 +290,7 @@ impl AtlanticProverService {
             result: job_config.result,
             cairo_verifier_program_hash,
             chain_id_hex: job_config.chain_id_hex,
+            fee_token_address,
         }
     }
 
@@ -297,6 +300,8 @@ impl AtlanticProverService {
     /// # Arguments
     /// * `atlantic_params` - The parameters for the Atlantic service.
     /// * `proof_layout` - The layout name for the proof.
+    /// * `chain_id_hex` - The chain ID in hex format.
+    /// * `fee_token_address` - The fee token address.
     ///
     /// # Returns
     /// * `AtlanticProverService` - A new instance of the service.
@@ -304,6 +309,7 @@ impl AtlanticProverService {
         atlantic_params: &AtlanticValidatedArgs,
         proof_layout: &LayoutName,
         chain_id_hex: Option<String>,
+        fee_token_address: Option<String>,
     ) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
@@ -323,6 +329,7 @@ impl AtlanticProverService {
             fact_checker,
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
             atlantic_params.cairo_verifier_program_hash.clone(),
+            fee_token_address,
         )
     }
 
@@ -344,6 +351,7 @@ impl AtlanticProverService {
             },
             fact_checker,
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
+            None,
             None,
         )
     }

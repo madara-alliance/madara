@@ -188,6 +188,7 @@ impl AtlanticClient {
         atlantic_api_key: impl AsRef<str>,
         mock_proof: bool,
         chain_id_hex: Option<String>,
+        fee_token_address: Option<String>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
         // TODO(prakhar,19/11/2025): Use the aggregator version calculated from Madara Version being passed through ENV
         let response = self
@@ -206,6 +207,7 @@ impl AtlanticClient {
                     use_kzg_da: AGGREGATOR_USE_KZG_DA,
                     full_output: AGGREGATOR_FULL_OUTPUT,
                     chain_id_hex,
+                    fee_token_address,
                 },
                 mock_proof,
             })
