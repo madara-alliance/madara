@@ -796,7 +796,37 @@ impl BlockProductionTask {
             .num_executed_transactions();
 
         // Convert state_diff and close block using helper function
-        let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+        let mut state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+
+        // Process migrated class hashes: move them from declared_classes to migrated_compiled_classes
+        // The compiled_class_hashes_for_migration contains Vec<(v2_hash, v1_hash)>
+        // We need to find the corresponding class_hash in declared_classes and move them
+        if !block_exec_summary.compiled_class_hashes_for_migration.is_empty() {
+            let v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
+                .compiled_class_hashes_for_migration
+                .iter()
+                .map(|(v2_hash, _v1_hash)| v2_hash.0)
+                .collect();
+
+            // Partition declared_classes into newly declared and migrated
+            let (migrated, declared): (Vec<_>, Vec<_>) =
+                state_diff.declared_classes.into_iter().partition(|item| v2_hashes.contains(&item.compiled_class_hash));
+
+            state_diff.declared_classes = declared;
+            state_diff.migrated_compiled_classes = migrated
+                .into_iter()
+                .map(|item| mp_state_update::MigratedClassItem {
+                    class_hash: item.class_hash,
+                    compiled_class_hash: item.compiled_class_hash,
+                })
+                .collect();
+
+            tracing::info!(
+                "Migrated {} classes from Poseidon to BLAKE hash",
+                state_diff.migrated_compiled_classes.len()
+            );
+        }
+
         Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
             state.block_number,
