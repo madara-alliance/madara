@@ -21,6 +21,10 @@ use url::Url;
 
 use crate::request_builder::url_join_segment;
 
+/// Timeout for individual gateway HTTP requests (in seconds).
+/// This is the per-request timeout, not the total retry timeout.
+const GATEWAY_REQUEST_TIMEOUT_SECS: u64 = 20;
+
 type BodyTy = Full<Bytes>;
 
 type HttpsClient = Client<HttpsConnector<HttpConnector>, BodyTy>;
@@ -70,7 +74,7 @@ impl GatewayProvider {
 
         // Only apply timeout layer - retry logic is handled by retry_get in methods.rs
         // to avoid duplicate retries (Tower retry × custom retry = 5 × ∞)
-        let timeout_layer = Timeout::new(base_client, Duration::from_secs(20));
+        let timeout_layer = Timeout::new(base_client, Duration::from_secs(GATEWAY_REQUEST_TIMEOUT_SECS));
         let client = PauseLayerMiddleware::new(timeout_layer, Arc::clone(&pause_until));
 
         Self {

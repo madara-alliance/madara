@@ -27,6 +27,10 @@ const FAILURE_RATE_HEALTHY_THRESHOLD: f32 = 0.1;
 // This prevents rapid state oscillations if connection is flaky
 const MIN_TIME_IN_DEGRADED: Duration = Duration::from_secs(2);
 
+// Failed operations tracking limits to prevent unbounded memory growth
+const MAX_FAILED_OPERATIONS_TRACKED: usize = 50;
+const TOP_FAILED_OPERATIONS_TO_KEEP: usize = 20;
+
 // Heartbeat intervals
 const HEARTBEAT_INTERVAL_DEGRADED: Duration = Duration::from_secs(10);
 const HEARTBEAT_INTERVAL_DOWN_PHASE1: Duration = Duration::from_secs(5); // 0-5 minutes
@@ -113,12 +117,12 @@ impl ConnectionHealth {
 
         *self.failed_operations.entry(operation.to_string()).or_insert(0) += 1;
 
-        // Prevent unbounded memory growth: limit to top 50 failing operations
-        if self.failed_operations.len() > 50 {
-            // Keep only the 20 most frequently failing operations
+        // Prevent unbounded memory growth: limit tracked operations
+        if self.failed_operations.len() > MAX_FAILED_OPERATIONS_TRACKED {
+            // Keep only the most frequently failing operations
             let mut ops: Vec<_> = self.failed_operations.iter().map(|(k, v)| (k.clone(), *v)).collect();
             ops.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by failure count descending
-            self.failed_operations = ops.into_iter().take(20).collect();
+            self.failed_operations = ops.into_iter().take(TOP_FAILED_OPERATIONS_TO_KEEP).collect();
         }
 
         self.transition_on_failure();
@@ -129,6 +133,8 @@ impl ConnectionHealth {
         match &self.state {
             HealthState::Healthy => self.transition_healthy_to_degraded(),
             HealthState::Degraded { .. } if self.should_transition_to_down() => self.transition_degraded_to_down(),
+            // No transition for: Degraded (not meeting down threshold) or already Down.
+            // In these cases, we just accumulate failure metrics without changing state.
             _ => {}
         }
     }
@@ -171,7 +177,8 @@ impl ConnectionHealth {
     }
 
     fn transition_down_to_degraded(&mut self) {
-        let downtime = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
+        // Capture metrics before reset for logging
+        let downtime = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::ZERO);
         let failed_ops = self.failed_requests;
 
         // Reset counters to reflect current state, not historical outage
@@ -225,9 +232,16 @@ impl ConnectionHealth {
             return true;
         }
 
-        // Also transition immediately if no operations are failing (clean recovery)
-        // This allows fast transition from Down -> Degraded -> Healthy when L1 comes back up
-        if self.failed_operations.is_empty() && self.failure_rate() < f32::EPSILON && self.recovery_attempts > 0 {
+        // Fast path for clean recovery from Down state:
+        // After transition_down_to_degraded(), counters are reset (failed_operations cleared,
+        // failed_requests=0, recovery_attempts=1). This condition enables immediate
+        // Down -> Degraded -> Healthy transition when the service comes back up cleanly.
+        // The recovery_attempts > 0 check ensures we don't trigger this on initial startup
+        // before any recovery tracking has begun.
+        if self.failed_operations.is_empty()
+            && self.failure_rate() < FAILURE_RATE_HEALTHY_THRESHOLD
+            && self.recovery_attempts > 0
+        {
             return true;
         }
 
