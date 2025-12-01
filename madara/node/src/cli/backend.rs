@@ -56,6 +56,13 @@ pub struct BackendParams {
     #[serde(default)]
     pub no_save_preconfirmed: bool,
 
+    /// Skip creating backup before database migration.
+    /// WARNING: Without backup, there's no recovery if migration fails.
+    /// Only use if you have external snapshots/backups.
+    #[clap(env = "MADARA_SKIP_MIGRATION_BACKUP", long)]
+    #[serde(default)]
+    pub skip_migration_backup: bool,
+
     /// Restore the database at startup from the latest backup version. Use it with `--backup-dir <PATH>`
     #[clap(env = "MADARA_RESTORE_FROM_LATEST_BACKUP", long)]
     pub restore_from_latest_backup: bool,
@@ -152,6 +159,7 @@ impl BackendParams {
             flush_every_n_blocks: self.flush_every_n_blocks,
             save_preconfirmed: !self.no_save_preconfirmed,
             unsafe_starting_block: self.unsafe_starting_block,
+            skip_migration_backup: self.skip_migration_backup,
         }
     }
     pub fn rocksdb_config(&self) -> RocksDBConfig {

@@ -57,6 +57,7 @@ pub struct MigrationRunner {
     required_version: u32,
     base_version: u32,
     abort_flag: Arc<AtomicBool>,
+    skip_backup: bool,
 }
 
 impl MigrationRunner {
@@ -66,7 +67,16 @@ impl MigrationRunner {
             required_version,
             base_version,
             abort_flag: Arc::new(AtomicBool::new(false)),
+            skip_backup: false, // Default: backup enabled
         }
+    }
+
+    /// Skip creating backup before migration.
+    /// WARNING: Without backup, there's no recovery if migration fails.
+    /// Only use if you have external snapshots/backups.
+    pub fn with_skip_backup(mut self, skip: bool) -> Self {
+        self.skip_backup = skip;
+        self
     }
 
     /// Signal migration to abort gracefully.
@@ -198,8 +208,13 @@ impl MigrationRunner {
                 pending.len()
             );
             self.save_migration_state(&state)?;
-            tracing::info!("📸 Creating pre-migration backup...");
-            self.create_backup(db)?;
+
+            if self.skip_backup {
+                tracing::warn!("⚠️  Skipping backup (--skip-migration-backup). No recovery if migration fails!");
+            } else {
+                tracing::info!("📸 Creating pre-migration backup...");
+                self.create_backup(db)?;
+            }
         } else {
             tracing::info!("🔄 Resuming migration: {} migration(s) remaining", pending.len());
         }
@@ -244,7 +259,18 @@ impl MigrationRunner {
         }
 
         self.cleanup_migration_state()?;
+        self.cleanup_backup()?;
         tracing::info!("🎉 Migration complete! Database now at version {}", to_version);
+        Ok(())
+    }
+
+    /// Clean up backup after successful migration.
+    fn cleanup_backup(&self) -> Result<(), MigrationError> {
+        let backup_path = self.base_path.join(BACKUP_DIR_NAME);
+        if backup_path.exists() {
+            tracing::info!("🗑️  Cleaning up pre-migration backup...");
+            fs::remove_dir_all(&backup_path)?;
+        }
         Ok(())
     }
 

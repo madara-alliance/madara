@@ -295,6 +295,10 @@ pub struct MadaraBackendConfig {
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
     pub unsafe_starting_block: Option<u64>,
+    /// Skip creating backup before migration.
+    /// WARNING: Without backup, there's no recovery if migration fails.
+    /// Only use if you have external snapshots/backups.
+    pub skip_migration_backup: bool,
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
@@ -480,7 +484,8 @@ impl MadaraBackend<RocksDBStorage> {
         }
 
         // Check and run migrations if needed
-        let migration_runner = MigrationRunner::new(base_path, required_version, base_version);
+        let migration_runner = MigrationRunner::new(base_path, required_version, base_version)
+            .with_skip_backup(config.skip_migration_backup);
         let status = migration_runner.check_status().context("Checking migration status")?;
 
         match &status {
