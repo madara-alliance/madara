@@ -21,7 +21,7 @@ on:
 jobs:
   migration-test:
     name: Test Migration
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     timeout-minutes: 30
 
     steps:
@@ -97,13 +97,14 @@ jobs:
           [ "$ACTUAL" = "$EXPECTED" ] || { echo "❌ Migration failed!"; exit 1; }
           echo "✅ Migration verified"
 
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Load env
+        uses: ./.github/actions/load-env
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
         with:
-          workspaces: madara
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: madara-${{ runner.os }}
 
       - name: Run migration tests
         working-directory: madara
