@@ -162,6 +162,17 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
         }
         self.inner.get_compiled_class_hash(class_hash)
     }
+
+    fn get_compiled_class_hash_v2(
+        &self,
+        class_hash: ClassHash,
+        compiled_class: &RunnableCompiledClass,
+    ) -> StateResult<CompiledClassHash> {
+        // First, delegate to the inner adapter which checks DB
+        // If the inner has the v2 hash, use it
+        // Otherwise, compute on-the-fly (inner adapter handles this)
+        self.inner.get_compiled_class_hash_v2(class_hash, compiled_class)
+    }
 }
 
 #[cfg(test)]

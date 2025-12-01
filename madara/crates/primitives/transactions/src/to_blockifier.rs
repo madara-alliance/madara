@@ -104,10 +104,18 @@ impl IntoStarknetApiExt for mp_rpc::v0_8_1::BroadcastedTxn {
                     handle_class_legacy(Arc::new((tx.contract_class).clone().try_into()?))?
                 }
                 mp_rpc::v0_8_1::BroadcastedDeclareTxn::V2(tx) | mp_rpc::v0_8_1::BroadcastedDeclareTxn::QueryV2(tx) => {
-                    handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash, starknet_version)?
+                    handle_class_sierra(
+                        Arc::new((tx.contract_class).clone().into()),
+                        tx.compiled_class_hash,
+                        starknet_version,
+                    )?
                 }
                 mp_rpc::v0_8_1::BroadcastedDeclareTxn::V3(tx) | mp_rpc::v0_8_1::BroadcastedDeclareTxn::QueryV3(tx) => {
-                    handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash, starknet_version)?
+                    handle_class_sierra(
+                        Arc::new((tx.contract_class).clone().into()),
+                        tx.compiled_class_hash,
+                        starknet_version,
+                    )?
                 }
             },
             _ => (None, None, None),
@@ -164,10 +172,18 @@ impl IntoStarknetApiExt for mp_rpc::v0_7_1::BroadcastedTxn {
                     handle_class_legacy(Arc::new((tx.contract_class).clone().try_into()?))?
                 }
                 mp_rpc::v0_7_1::BroadcastedDeclareTxn::V2(tx) | mp_rpc::v0_7_1::BroadcastedDeclareTxn::QueryV2(tx) => {
-                    handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash, starknet_version)?
+                    handle_class_sierra(
+                        Arc::new((tx.contract_class).clone().into()),
+                        tx.compiled_class_hash,
+                        starknet_version,
+                    )?
                 }
                 mp_rpc::v0_7_1::BroadcastedDeclareTxn::V3(tx) | mp_rpc::v0_7_1::BroadcastedDeclareTxn::QueryV3(tx) => {
-                    handle_class_sierra(Arc::new((tx.contract_class).clone().into()), tx.compiled_class_hash, starknet_version)?
+                    handle_class_sierra(
+                        Arc::new((tx.contract_class).clone().into()),
+                        tx.compiled_class_hash,
+                        starknet_version,
+                    )?
                 }
             },
             _ => (None, None, None),
@@ -322,11 +338,8 @@ fn handle_class_sierra(
     // Store:
     // - For v0.14.1+: compiled_class_hash = None, compiled_class_hash_v2 = BLAKE
     // - For pre-v0.14.1: compiled_class_hash = Poseidon, compiled_class_hash_v2 = None
-    let (stored_poseidon, stored_blake) = if uses_blake {
-        (None, Some(blake_hash))
-    } else {
-        (Some(poseidon_hash), None)
-    };
+    let (stored_poseidon, stored_blake) =
+        if uses_blake { (None, Some(blake_hash)) } else { (Some(poseidon_hash), None) };
 
     let converted_class = ConvertedClass::Sierra(SierraConvertedClass {
         class_hash,

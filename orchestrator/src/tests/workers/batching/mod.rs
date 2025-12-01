@@ -476,6 +476,7 @@ fn get_dummy_state_update(block_num: u64) -> serde_json::Value {
             deployed_contracts: vec![],
             replaced_classes: vec![],
             nonces: vec![],
+            migrated_compiled_classes: None,
         },
     });
 

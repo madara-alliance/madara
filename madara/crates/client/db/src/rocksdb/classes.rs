@@ -40,10 +40,7 @@ impl RocksDBStorageInner {
     /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
     /// This updates the ClassInfo stored in the database with the new v2 hash.
     #[tracing::instrument(skip(self, migrations))]
-    pub(crate) fn update_class_v2_hashes(
-        &self,
-        migrations: impl IntoIterator<Item = (Felt, Felt)>,
-    ) -> Result<()> {
+    pub(crate) fn update_class_v2_hashes(&self, migrations: impl IntoIterator<Item = (Felt, Felt)>) -> Result<()> {
         let col = self.get_column(CLASS_INFO_COLUMN);
         let mut batch = WriteBatchWithTransaction::default();
 
@@ -60,9 +57,7 @@ impl RocksDBStorageInner {
                     sierra_info.compiled_class_hash_v2 = Some(blake_compiled_class_hash);
                 }
                 mp_class::ClassInfo::Legacy(_) => {
-                    tracing::warn!(
-                        "Cannot update v2 hash for class {class_hash:#x}: class is Legacy, not Sierra"
-                    );
+                    tracing::warn!("Cannot update v2 hash for class {class_hash:#x}: class is Legacy, not Sierra");
                     continue;
                 }
             }
