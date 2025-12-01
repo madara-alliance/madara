@@ -110,5 +110,5 @@ s3
 
 sequencer_venv/
 sequencer_requirements.txt
-# AI-generated documentation - do not commit
+# AI-generated documentation
 AI_docs/
