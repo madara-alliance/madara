@@ -13,22 +13,24 @@
 #   - Rust toolchain installed
 #
 # To authenticate with ghcr.io:
-#   echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+#   echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+#
+# Environment variables:
+#   GITHUB_TOKEN - Required for docker login and making package public
+#                  (needs 'write:packages' and 'read:org' scopes)
 #
 # The script will:
 #   1. Build madara
-#   2. Sync specified blocks from Mainnet
+#   2. Sync specified blocks from Sepolia
 #   3. Package the DB as a Docker image
-#   4. Push to ghcr.io/madara-alliance/db-fixtures:v{VERSION}
+#   4. Push to ghcr.io/madara-alliance/db-fixture:v{VERSION}
 
 set -e
 
 VERSION="${1:-8}"
 BLOCKS="${2:-50}"
 DB_PATH="/tmp/madara-base-db-v${VERSION}"
-IMAGE="ghcr.io/madara-alliance/db-fixtures:v${VERSION}"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MADARA_DIR="${SCRIPT_DIR}/../madara"
+IMAGE="ghcr.io/madara-alliance/db-fixture:v${VERSION}"
 
 echo "============================================"
 echo "  Create Base DB Fixture"
@@ -45,31 +47,31 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+# Check ghcr.io authentication
+# if ! docker login ghcr.io --get-login &> /dev/null; then
+#     echo "❌ Not authenticated to ghcr.io"
+#     echo ""
+#     echo "To authenticate, run:"
+#     echo "  echo \$GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin"
+#     echo ""
+#     echo "Your GITHUB_TOKEN needs 'write:packages' permission."
+#     exit 1
+# fi
+# echo "✅ Authenticated to ghcr.io"
+
 # Clean up any existing DB
 rm -rf "${DB_PATH}"
 mkdir -p "${DB_PATH}"
 
-# Build madara (in subshell to preserve working directory)
+# Build madara
 echo "🔨 Building madara..."
-(
-    cd "${MADARA_DIR}"
-    cargo build -p madara
-)
-
-# Determine binary path
-MADARA_BIN="${CARGO_TARGET_DIR:-${MADARA_DIR}/target}/debug/madara"
-
-# Verify binary exists
-if [ ! -x "${MADARA_BIN}" ]; then
-    echo "❌ Madara binary not found or not executable: ${MADARA_BIN}"
-    exit 1
-fi
+cd "$(dirname "$0")/../madara"
+cargo build -p madara
 
 # Sync blocks
-# Note: || true is intentional - timeout exits 124 on timeout, and madara may
-# exit non-zero when stopping. We verify success by checking .db-version below.
-echo "🔄 Syncing ${BLOCKS} blocks from Mainnet..."
-timeout 900 "${MADARA_BIN}" \
+echo "🔄 Syncing ${BLOCKS} blocks from Sepolia..."
+MADARA_BIN="${CARGO_TARGET_DIR:-./target}/debug/madara"
+timeout 60 "${MADARA_BIN}" \
     --name base-db-creator \
     --base-path "${DB_PATH}" \
     --network mainnet \
@@ -79,7 +81,7 @@ timeout 900 "${MADARA_BIN}" \
 
 # Verify DB was created
 if [ ! -f "${DB_PATH}/.db-version" ]; then
-    echo "❌ Failed to create DB - .db-version not found"
+    echo "❌ Failed to create DB"
     exit 1
 fi
 
@@ -100,6 +102,8 @@ cp "${TARBALL}" "${DOCKER_DIR}/db.tar.gz"
 
 cat > "${DOCKER_DIR}/Dockerfile" << 'EOF'
 FROM scratch
+LABEL org.opencontainers.image.source=https://github.com/madara-alliance/madara
+LABEL org.opencontainers.image.description="Database fixture for migration testing"
 COPY db.tar.gz /db.tar.gz
 EOF
 
@@ -109,6 +113,22 @@ docker build -t "${IMAGE}" "${DOCKER_DIR}"
 
 echo "🚀 Pushing to ghcr.io..."
 docker push "${IMAGE}"
+
+# Make package public (requires GITHUB_TOKEN with admin:packages or repo scope)
+if [ -n "${GITHUB_TOKEN}" ]; then
+    echo "🔓 Making package public..."
+    PACKAGE_NAME="db-fixture"
+    curl -sf -X PATCH \
+        -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+        -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/orgs/madara-alliance/packages/container/${PACKAGE_NAME}" \
+        -d '{"visibility":"public"}' \
+        && echo "✅ Package is now public" \
+        || echo "⚠️  Could not set visibility (you may need to do this manually in GitHub UI)"
+else
+    echo "⚠️  GITHUB_TOKEN not set - package visibility unchanged"
+    echo "   To make public, go to: https://github.com/orgs/madara-alliance/packages"
+fi
 
 # Cleanup
 rm -rf "${DOCKER_DIR}" "${TARBALL}"

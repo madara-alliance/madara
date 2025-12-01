@@ -39,7 +39,7 @@ jobs:
       - name: Download base DB fixture
         run: |
           VERSION="${{ steps.versions.outputs.base_version }}"
-          IMAGE="ghcr.io/madara-alliance/db-fixtures:v${VERSION}"
+          IMAGE="ghcr.io/madara-alliance/db-fixture:v${VERSION}"
 
           echo "📦 Pulling base DB v${VERSION} from ${IMAGE}..."
           mkdir -p /tmp/migration-test
