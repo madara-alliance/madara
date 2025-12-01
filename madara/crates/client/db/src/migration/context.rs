@@ -19,9 +19,10 @@ impl MigrationProgress {
     /// Create a new progress report.
     ///
     /// # Parameters
-    /// - `current_step`: Zero-based current step (0 = starting)
-    /// - `total_steps`: Total number of steps in the migration
-    /// - `message`: Human-readable status message
+    /// - `current_step`: Zero-based step index. Range: `0..=total_steps` where
+    ///   `0` means "starting" and `total_steps` means "completed".
+    /// - `total_steps`: Total number of steps in the migration.
+    /// - `message`: Human-readable status message.
     ///
     /// # Panics
     /// Panics in debug builds if `current_step > total_steps`.
