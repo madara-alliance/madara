@@ -463,6 +463,21 @@ impl BlockProductionTask {
                 .write_bouncer_weights(block_number, &bouncer_weights)
                 .context("Saving Bouncer Weights for SNOS")?;
 
+            // Update ClassInfo in DB with new v2 hashes (SNIP-34 migration)
+            // This persists the computed BLAKE hashes so future lookups don't need to recompute
+            if !state_diff.migrated_compiled_classes.is_empty() {
+                let migrations: Vec<(Felt, Felt)> = state_diff
+                    .migrated_compiled_classes
+                    .iter()
+                    .map(|item| (item.class_hash, item.compiled_class_hash))
+                    .collect();
+
+                backend
+                    .write_access()
+                    .update_class_v2_hashes(migrations)
+                    .context("Updating class v2 hashes in DB")?;
+            }
+
             // Close the preconfirmed block with state_diff
             backend
                 .write_access()
