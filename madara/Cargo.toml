@@ -119,12 +119,12 @@ mc-e2e-tests = { path = "crates/tests" }
 build-version = { path = "../build-artifacts" }
 
 # Starknet dependencies
-starknet-accounts = "0.16.0"
-starknet-core = "0.16"
-starknet-crypto = "0.8"
-starknet-providers = "0.16"
-starknet-signers = "0.14"
-starknet = "0.17.0"
+starknet-accounts = { package = "starknet-rust-accounts", version = "0.16.0" }
+starknet-core = { package = "starknet-rust-core", version = "0.16" }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.8" }
+starknet-providers = { package = "starknet-rust-providers", version = "0.16" }
+starknet-signers = { package = "starknet-rust-signers", version = "0.14" }
+starknet = { package = "starknet-rust", version = "0.17.0" }
 
 starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
