@@ -71,8 +71,10 @@ jobs:
         run: |
           cd madara
           ./target/release/madara \
+            --full \
             --base-path /tmp/migration-test \
-            --network sepolia --no-l1-sync \
+            --network sepolia \
+            --l1-sync-disabled \
             --rpc-port 9944 --rpc-cors all \
             2>&1 | tee /tmp/madara.log &
 
