@@ -518,17 +518,22 @@ pub mod starknet_client_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn fail_create_new_client_contract_does_not_exists(
+    async fn lazy_init_with_nonexistent_contract(
         #[future] test_fixture: StarknetClientTextFixture,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await;
 
+        // With lazy initialization, client creation succeeds even with a non-existent contract address.
+        // The contract validity is deferred to the first RPC call.
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             rpc_url: fixture.context.cmd.rpc_url().parse().unwrap(),
             core_contract_address: "0xdeadbeef".to_string(),
         })
         .await;
-        assert!(starknet_client.is_err(), "Should fail to create a new client");
+        assert!(
+            starknet_client.is_ok(),
+            "Client creation should succeed with lazy init (validation deferred to first RPC call)"
+        );
 
         Ok(())
     }

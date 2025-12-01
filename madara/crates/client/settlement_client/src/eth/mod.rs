@@ -573,8 +573,10 @@ pub mod eth_client_getter_test {
     }
 
     #[tokio::test]
-    async fn fail_create_new_client_invalid_core_contract() {
-        // Sepolia core contract instead of mainnet
+    async fn lazy_init_with_invalid_core_contract() {
+        // With lazy initialization, client creation succeeds even with an invalid contract address.
+        // The contract validity is deferred to the first RPC call.
+        // This test verifies that client creation doesn't fail eagerly.
         const INVALID_CORE_CONTRACT_ADDRESS: &str = "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057";
 
         let rpc_url: Url = get_anvil_url().parse().unwrap();
@@ -582,8 +584,13 @@ pub mod eth_client_getter_test {
             .expect("Should parse valid Ethereum address in test");
         let ethereum_client_config =
             EthereumClientConfig { rpc_url, core_contract_address: core_contract_address.to_string() };
-        let new_client_result = EthereumClient::new(ethereum_client_config).await;
-        assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
+
+        // With lazy initialization, client creation should succeed
+        let client = EthereumClient::new(ethereum_client_config).await;
+        assert!(
+            client.is_ok(),
+            "Client creation should succeed with lazy init (validation deferred to first RPC call)"
+        );
     }
 
     #[tokio::test]
