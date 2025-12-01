@@ -142,7 +142,7 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
-        let value = self.view.get_class_info(&class_hash.to_felt()).map_err(|err| {
+        let class_info = self.view.get_class_info(&class_hash.to_felt()).map_err(|err| {
             StateError::StateReadError(format!(
                 "Failed to retrieve class_hash: on={}, class_hash={:#x}: {err:#}",
                 self.view,
@@ -150,13 +150,26 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
             ))
         })?;
 
-        let value = value.and_then(|c| c.compiled_class_hash()).ok_or_else(|| {
+        let class_info = class_info.ok_or_else(|| {
             StateError::StateReadError(format!(
-                "Class does not have a compiled class hash: on={}, class_hash={:#x}",
+                "Class not found: on={}, class_hash={:#x}",
                 self.view,
                 class_hash.to_felt(),
             ))
         })?;
+
+        // For legacy (Cairo 0) classes, there is no compiled_class_hash concept.
+        // Return ZERO for legacy classes as per Starknet protocol.
+        let value = match &class_info {
+            mp_class::ClassInfo::Legacy(_) => Felt::ZERO,
+            mp_class::ClassInfo::Sierra(_) => class_info.compiled_class_hash().ok_or_else(|| {
+                StateError::StateReadError(format!(
+                    "Sierra class does not have a compiled class hash: on={}, class_hash={:#x}",
+                    self.view,
+                    class_hash.to_felt(),
+                ))
+            })?,
+        };
 
         tracing::debug!(
             "get_compiled_class_hash: on={}, class_hash={:#x} => {value:#x}",
