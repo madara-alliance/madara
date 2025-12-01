@@ -74,7 +74,7 @@ jobs:
             --full \
             --base-path /tmp/migration-test \
             --network mainnet \
-            --l1-sync-disabled \
+            --no-l1-sync \
             --sync-stop-at 50 \
             --rpc-port 9944 --rpc-cors all \
             2>&1 | tee /tmp/madara.log &
