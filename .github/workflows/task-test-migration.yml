@@ -50,8 +50,8 @@ jobs:
             exit 1
           fi
 
-          # Extract tarball from image
-          CONTAINER=$(docker create "${IMAGE}")
+          # Extract tarball from image (scratch image needs dummy command)
+          CONTAINER=$(docker create "${IMAGE}" /bin/true)
           docker cp "${CONTAINER}:/db.tar.gz" /tmp/db.tar.gz
           docker rm "${CONTAINER}"
 
