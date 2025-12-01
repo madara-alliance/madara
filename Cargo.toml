@@ -114,14 +114,14 @@ starknet-providers = "0.16.0"
 starknet-signers = "0.14.0"
 starknet = "0.17.0"
 
-starknet-types-core = { version = "0.2.1", default-features = false, features = [
+starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "57052466290163f95ec085fc5ad877c4e04d5e2d", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "0f818e011ae8e4085d7a70b0d5e1532499a62de9", features = [
   "testing",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "57052466290163f95ec085fc5ad877c4e04d5e2d", features = [
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "0f818e011ae8e4085d7a70b0d5e1532499a62de9", features = [
   "testing",
 ] }
 cairo-lang-starknet-classes = "=2.12.3"
@@ -303,7 +303,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-generate-pie = { git = "https://github.com/keep-starknet-strange/snos", tag = "v0.14.0-alpha.4" }
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "4f1b79f764255255f5d2056cbb0a549fc5e09944" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
