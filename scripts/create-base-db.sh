@@ -107,12 +107,18 @@ LABEL org.opencontainers.image.description="Database fixture for migration testi
 COPY db.tar.gz /db.tar.gz
 EOF
 
-# Build and push Docker image
-echo "🐳 Building Docker image..."
-docker build -t "${IMAGE}" "${DOCKER_DIR}"
+# Build and push Docker image (multi-platform for CI compatibility)
+echo "🐳 Building multi-platform Docker image..."
 
-echo "🚀 Pushing to ghcr.io..."
-docker push "${IMAGE}"
+# Create buildx builder if it doesn't exist
+docker buildx create --name multiarch --use 2>/dev/null || docker buildx use multiarch
+
+# Build and push for both arm64 (Mac) and amd64 (CI/Linux)
+docker buildx build \
+    --platform linux/amd64,linux/arm64 \
+    --tag "${IMAGE}" \
+    --push \
+    "${DOCKER_DIR}"
 
 # Make package public (requires GITHUB_TOKEN with admin:packages or repo scope)
 if [ -n "${GITHUB_TOKEN}" ]; then
