@@ -72,7 +72,7 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
     
     // Verify we have at least one failed job
     assert!(!jobs_response.is_empty(), "Should have at least one failed job");
-
+    assert!(jobs_response.len() == 1, "Should have exactly one failed job");
     // Filter to find our specific job, as DB might have other jobs from other tests if not cleaned
     let found_failed_job = jobs_response.iter().find(|j| j.id == failed_job.id);
     assert!(found_failed_job.is_some(), "Failed job should be in the response");
