@@ -1252,20 +1252,20 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    async fn get_failed_jobs(&self) -> Result<Vec<JobItem>, DatabaseError> {
+    async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
-            "status": bson::to_bson(&JobStatus::Failed)?,
+            "status": bson::to_bson(&status)?,
         };
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
 
         debug!(
             job_count = jobs.len(),
-            "Fetched failed jobs"
+            "Fetched jobs by status"
         );
 
-        let attributes = [KeyValue::new("db_operation_name", "get_failed_jobs")];
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_status")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 

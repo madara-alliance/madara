@@ -11,6 +11,7 @@ use uuid::Uuid;
 use super::super::error::JobRouteError;
 use super::super::types::{ApiResponse, JobId, JobRouteResult, JobStatusResponse, JobStatusResponseItem};
 use crate::core::config::Config;
+use crate::types::jobs::types::JobStatus;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::service::JobService;
@@ -177,7 +178,7 @@ pub fn job_router(config: Arc<Config>) -> Router {
 async fn handle_get_failed_jobs(
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
-    match config.database().get_failed_jobs().await {
+    match config.database().get_jobs_by_status(JobStatus::Failed).await {
         Ok(jobs) => {
             let mut job_status_items = Vec::new();
             debug!("Failed jobs: {:#?}", jobs);
