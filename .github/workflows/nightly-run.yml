@@ -40,13 +40,16 @@ jobs:
   #                              NIGHTLY RELEASE                              #
   # ========================================================================= #
 
+  # NOTE: Nightly Docker images are only published from 'main' branch.
+  # TODO (mohit 02/12/2025): Add branch-specific nightly tags (e.g., nightly-v0.14.1) when main-v0.14.1 is ready
+  #       by updating task-build-nightly-and-publish.yml to accept branch input.
   build-nightly-and-publish-madara:
     uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
       image-name: madara
       image-file: ./madara/Dockerfile
     needs: [test-end-to-end]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
+    if: (github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true') && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
@@ -67,7 +70,7 @@ jobs:
       image-name: orchestrator
       image-file: ./orchestrator/Dockerfile
     needs: [test-end-to-end]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
+    if: (github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true') && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
@@ -81,7 +84,7 @@ jobs:
       image-name: bootstrapper
       image-file: ./bootstrapper/Dockerfile
     needs: [test-end-to-end]
-    if: github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true'
+    if: (github.event_name != 'schedule' || needs.check-merged-today.outputs.should_run == 'true') && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write

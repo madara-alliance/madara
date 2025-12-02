@@ -475,7 +475,7 @@ impl BatchingTrigger {
                                 self.update_aggregator_batch_info(
                                     current_aggregator_batch,
                                     block_number,
-                                    None,
+                                    Some(current_snos_batch.snos_batch_id),
                                     false,
                                     combined_weights,
                                 )
@@ -489,7 +489,7 @@ impl BatchingTrigger {
                         self.update_aggregator_batch_info(
                             current_aggregator_batch,
                             block_number,
-                            None,
+                            Some(current_snos_batch.snos_batch_id),
                             false,
                             current_weights,
                         )

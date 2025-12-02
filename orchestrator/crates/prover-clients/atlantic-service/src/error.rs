@@ -6,17 +6,33 @@ type StatusMessage = String;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AtlanticError {
-    #[error("Failed to add Atlantic job: {0}")]
-    AddJobFailure(#[source] reqwest::Error),
+    #[error("Failed to add Atlantic job ({context}): {source}")]
+    AddJobFailure {
+        context: String,
+        #[source]
+        source: reqwest::Error,
+    },
 
-    #[error("Failed to get status of an Atlantic job: {0}")]
-    GetJobStatusFailure(#[source] reqwest::Error),
+    #[error("Failed to get status of an Atlantic job ({context}): {source}")]
+    GetJobStatusFailure {
+        context: String,
+        #[source]
+        source: reqwest::Error,
+    },
 
-    #[error("Failed to get artifacts of an Atlantic job: {0}")]
-    GetJobArtifactsFailure(#[source] reqwest::Error),
+    #[error("Failed to get artifacts of an Atlantic job ({context}): {source}")]
+    GetJobArtifactsFailure {
+        context: String,
+        #[source]
+        source: reqwest::Error,
+    },
 
-    #[error("Failed to submit L2 query: {0}")]
-    SubmitL2QueryFailure(#[source] reqwest::Error),
+    #[error("Failed to submit L2 query ({context}): {source}")]
+    SubmitL2QueryFailure {
+        context: String,
+        #[source]
+        source: reqwest::Error,
+    },
 
     #[error("Atlantic service returned an error {0}")]
     AtlanticService(StatusCode, StatusMessage),
@@ -54,14 +70,26 @@ pub enum AtlanticError {
     #[error("Failed to parse body: {0}")]
     BodyParseError(#[source] serde_json::Error),
 
-    #[error("Failed to get status of an Atlantic bucket: {0}")]
-    GetBucketStatusFailure(#[source] reqwest::Error),
+    #[error("Failed to get status of an Atlantic bucket ({context}): {source}")]
+    GetBucketStatusFailure {
+        context: String,
+        #[source]
+        source: reqwest::Error,
+    },
 
-    #[error("Failed to create a new Atlantic bucket: {0}")]
-    CreateBucketFailure(#[source] reqwest::Error),
+    #[error("Failed to create a new Atlantic bucket ({context}): {source}")]
+    CreateBucketFailure {
+        context: String,
+        #[source]
+        source: reqwest::Error,
+    },
 
-    #[error("Failed to close Atlantic bucket: {0}")]
-    CloseBucketFailure(#[source] reqwest::Error),
+    #[error("Failed to close Atlantic bucket ({context}): {source}")]
+    CloseBucketFailure {
+        context: String,
+        #[source]
+        source: reqwest::Error,
+    },
 }
 
 impl From<AtlanticError> for ProverClientError {
