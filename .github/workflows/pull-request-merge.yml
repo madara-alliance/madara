@@ -54,6 +54,7 @@ jobs:
   #                                E2E Test                                   #
   # ========================================================================= #
 
+  # E2E tests only run in merge queue for exact 'main' branch (not main-v0.14.1, etc.)
   test-end-to-end:
-    if: github.event.pull_request.draft == false
+    if: github.event.pull_request.draft == false && github.event.merge_group.base_ref == 'refs/heads/main'
     uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml
