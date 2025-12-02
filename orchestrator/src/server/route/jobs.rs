@@ -191,11 +191,14 @@ async fn handle_get_jobs_by_status(
 
     match config.database().get_jobs_by_status(status.clone()).await {
         Ok(jobs) => {
-            let mut job_status_items = Vec::new();
             debug!("Jobs with status {} : {:#?}", status, jobs);
-            for job in jobs {
-                job_status_items.push(JobStatusResponseItem { job_type: job.job_type, id: job.id, status: job.status });
-            }
+            let job_status_items: Vec<_> = jobs.into_iter()
+            .map(|job| JobStatusResponseItem {
+                job_type: job.job_type,
+                id: job.id,
+                status: job.status,
+            })
+            .collect();
             let count = job_status_items.len();
             info!(count = count, "Successfully fetched jobs with status {}", status);
             Ok(Json(ApiResponse::<JobStatusResponse>::success_with_data(

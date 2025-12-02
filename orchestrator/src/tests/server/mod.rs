@@ -1,4 +1,4 @@
-pub mod failed_jobs;
+pub mod jobs_by_status;
 pub mod job_routes;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::worker::initialize_worker;
