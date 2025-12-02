@@ -9,7 +9,7 @@ on:
   pull_request:
     branches:
       - main
-      - 'main-**'
+      - "main-**"
     types: [opened, synchronize, reopened, ready_for_review]
 
 # Use concurrency to prevent multiple workflows running on the same PR
