@@ -53,7 +53,7 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
     let response = client
         .request(
             Request::builder()
-                .uri(format!("http://{}/jobs/failed", addr))
+                .uri(format!("http://{}/jobs?status=failed", addr))
                 .body(Body::empty())
                 .unwrap(),
         )
