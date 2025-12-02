@@ -1,4 +1,5 @@
-use crate::cli::SetupCmd;
+use crate::cli::database::mongodb::MongoDBCliArgs;
+use crate::cli::{RunCmd, SetupCmd};
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
 use crate::core::client::lock::error::LockError;
 use crate::core::client::lock::{LockClient, LockInfo, LockResult, LockValue};
@@ -20,6 +21,24 @@ pub struct MongoLockClient {
 }
 
 impl MongoLockClient {
+    pub async fn from_mongodb_args(mongodb_args: MongoDBCliArgs) -> Result<Self, OrchestratorError> {
+        // Get connection URI from the setup command
+        let connection_uri = mongodb_args
+            .mongodb_connection_url
+            .ok_or(OrchestratorError::SetupCommandError("Database Connection URL is required".to_string()))?;
+        // Get database name from setup command
+        let database_name = mongodb_args
+            .mongodb_database_name
+            .ok_or(OrchestratorError::SetupCommandError("Database Name is required".to_string()))?;
+
+        // Create a new MongoClient instance
+        let client = Client::with_uri_str(&connection_uri).await?;
+
+        Ok(Self {
+            database: Arc::new(client.database(&database_name)),
+            collection_name: String::from(LOCKS_COLLECTION),
+        })
+    }
     /// Create MongoLockClient from the setup command
     ///
     /// # Arguments
@@ -31,24 +50,11 @@ impl MongoLockClient {
     /// # Errors
     /// Returns an error if database args are invalid
     pub async fn from_setup_cmd(setup_cmd: SetupCmd) -> Result<Self, OrchestratorError> {
-        // Get connection URI from the setup command
-        let connection_uri = setup_cmd
-            .mongodb_args
-            .mongodb_connection_url
-            .ok_or(OrchestratorError::SetupCommandError("Database Connection URL is required".to_string()))?;
-        // Get database name from setup command
-        let database_name = setup_cmd
-            .mongodb_args
-            .mongodb_database_name
-            .ok_or(OrchestratorError::SetupCommandError("Database Name is required".to_string()))?;
+        Self::from_mongodb_args(setup_cmd.mongodb_args).await
+    }
 
-        // Create a new MongoClient instance
-        let client = Client::with_uri_str(&connection_uri).await?;
-
-        Ok(Self {
-            database: Arc::new(client.database(&database_name)),
-            collection_name: String::from(LOCKS_COLLECTION),
-        })
+    pub async fn from_run_cmd(run_cmd: RunCmd) -> Result<Self, OrchestratorError> {
+        Self::from_mongodb_args(run_cmd.mongodb_args).await
     }
 
     /// Creates a new MongolockClient instance
