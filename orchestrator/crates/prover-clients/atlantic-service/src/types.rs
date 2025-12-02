@@ -1,3 +1,4 @@
+use cairo_vm::Felt252;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -136,6 +137,8 @@ pub struct AtlanticAggregatorParams {
     pub(crate) full_output: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) chain_id_hex: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fee_token_address: Option<Felt252>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

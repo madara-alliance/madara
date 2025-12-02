@@ -1,5 +1,6 @@
 #[cfg(feature = "testing")]
 use alloy::providers::ProviderBuilder;
+use cairo_vm::Felt252;
 
 use crate::utils::rest_client::RestClient;
 use anyhow::Context;
@@ -253,8 +254,9 @@ impl Config {
                     .map_err(|e| OrchestratorError::ConfigError(format!("Failed to get Chain ID from RPC: {}", e)))?
                     .to_fixed_hex_string(),
             ),
+            Some(Felt252::from_str(params.snos_config.strk_fee_token_address.clone().as_str())?),
         );
-        let da_client = Self::build_da_client(&da_config).await;
+        let da_client: Box<dyn DaClient + Send + Sync + 'static> = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
         Ok(Self {
@@ -318,12 +320,16 @@ impl Config {
     ///
     /// # Arguments
     /// * `prover_params` - The proving service parameters
+    /// * `params` - The config parameters
+    /// * `chain_id_hex` - The chain ID in hex format
+    /// * `fee_token_address` - The fee token address
     /// # Returns
     /// * `Box<dyn ProverClient>` - The proving service
     pub(crate) fn build_prover_service(
         prover_params: &ProverConfig,
         params: &ConfigParam,
         chain_id_hex: Option<String>,
+        fee_token_address: Option<Felt252>,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => {
@@ -333,6 +339,7 @@ impl Config {
                 atlantic_params,
                 &params.prover_layout_name,
                 chain_id_hex,
+                fee_token_address,
             )),
         }
     }
