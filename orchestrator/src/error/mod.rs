@@ -11,6 +11,7 @@ use aws_sdk_sqs::operation::set_queue_attributes::SetQueueAttributesError;
 use mongodb::bson;
 use opentelemetry_otlp::ExporterBuildError;
 use opentelemetry_sdk::trace::TraceError;
+use starknet_core::types::FromStrError;
 use thiserror::Error;
 
 use crate::core::client::alert::AlertError;
@@ -53,6 +54,10 @@ pub enum OrchestratorError {
     /// Setup Command error
     #[error("Error While Downcasting from object: {0}")]
     FromDownstreamError(String),
+
+    /// Felt conversion error
+    #[error("Felt conversion error: {0}")]
+    FeltConversionError(#[from] FromStrError),
 
     #[error("Orchestrator Error: {0}")]
     OrchestratorAnyHowError(#[from] anyhow::Error),
