@@ -1,15 +1,17 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, State,Query};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use opentelemetry::KeyValue;
-use tracing::{error, info, Span,debug};
+use tracing::{debug, error, info, Span};
 use uuid::Uuid;
 
 use super::super::error::JobRouteError;
-use super::super::types::{ApiResponse, JobId, JobRouteResult, JobStatusQuery, JobStatusResponse, JobStatusResponseItem};
+use super::super::types::{
+    ApiResponse, JobId, JobRouteResult, JobStatusQuery, JobStatusResponse, JobStatusResponseItem,
+};
 use crate::core::config::Config;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -162,8 +164,8 @@ pub fn job_router(config: Arc<Config>) -> Router {
     Router::new()
         .nest("/:id", job_trigger_router(config.clone()))
         .route("/", get(handle_get_jobs_by_status).with_state(config.clone()))
-        .route("/block/:block_number/status", get(handle_get_job_status_by_block_request).with_state(config))// TODO: Change this to use query params instead of path params
-
+        .route("/block/:block_number/status", get(handle_get_job_status_by_block_request).with_state(config))
+    // TODO: Change this to use query params instead of path params
 }
 
 /// Handles HTTP requests to get all jobs by status.
@@ -192,11 +194,7 @@ async fn handle_get_jobs_by_status(
             let mut job_status_items = Vec::new();
             debug!("Jobs with status {} : {:#?}", status, jobs);
             for job in jobs {
-                job_status_items.push(JobStatusResponseItem { 
-                    job_type: job.job_type, 
-                    id: job.id,
-                    status: job.status,
-                });
+                job_status_items.push(JobStatusResponseItem { job_type: job.job_type, id: job.id, status: job.status });
             }
             let count = job_status_items.len();
             info!(count = count, "Successfully fetched jobs with status {}", status);

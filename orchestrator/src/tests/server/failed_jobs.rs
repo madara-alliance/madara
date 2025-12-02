@@ -51,12 +51,7 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
 
     let client = hyper::Client::new();
     let response = client
-        .request(
-            Request::builder()
-                .uri(format!("http://{}/jobs?status=failed", addr))
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .request(Request::builder().uri(format!("http://{}/jobs?status=failed", addr)).body(Body::empty()).unwrap())
         .await
         .unwrap();
 
@@ -67,9 +62,9 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
 
     assert!(response_body.success);
     let failed_jobs_data = response_body.data.unwrap();
-    
+
     let jobs_response = failed_jobs_data.jobs;
-    
+
     // Verify we have at least one failed job
     assert!(!jobs_response.is_empty(), "Should have at least one failed job");
     assert!(jobs_response.len() == 1, "Should have exactly one failed job");

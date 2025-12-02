@@ -138,7 +138,6 @@ pub struct JobStatusResponse {
     pub jobs: Vec<JobStatusResponseItem>,
 }
 
-
 pub type BlockRouteResult = Result<Response<axum::body::Body>, BlockRouteError>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

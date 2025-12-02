@@ -1260,10 +1260,7 @@ impl DatabaseClient for MongoDbClient {
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
 
-        debug!(
-            job_count = jobs.len(),
-            "Fetched jobs by status"
-        );
+        debug!(job_count = jobs.len(), "Fetched jobs by status");
 
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_status")];
         let duration = start.elapsed();
