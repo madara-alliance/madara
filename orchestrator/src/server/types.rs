@@ -24,8 +24,7 @@ pub struct JobId {
 /// Represents query parameters for filtering jobs by status.
 #[derive(Deserialize)]
 pub struct JobStatusQuery {
-    /// The job status to filter by
-    pub status: String,
+    pub status: JobStatus,
 }
 
 /// Represents a standardized API response structure.

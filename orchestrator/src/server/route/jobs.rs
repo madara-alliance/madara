@@ -11,7 +11,6 @@ use uuid::Uuid;
 use super::super::error::JobRouteError;
 use super::super::types::{ApiResponse, JobId, JobRouteResult, JobStatusQuery, JobStatusResponse, JobStatusResponseItem};
 use crate::core::config::Config;
-use crate::types::jobs::types::JobStatus;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::service::JobService;
@@ -163,7 +162,8 @@ pub fn job_router(config: Arc<Config>) -> Router {
     Router::new()
         .nest("/:id", job_trigger_router(config.clone()))
         .route("/", get(handle_get_jobs_by_status).with_state(config.clone()))
-        .route("/block/:block_number/status", get(handle_get_job_status_by_block_request).with_state(config))
+        .route("/block/:block_number/status", get(handle_get_job_status_by_block_request).with_state(config))// TODO: Change this to use query params instead of path params
+
 }
 
 /// Handles HTTP requests to get all jobs by status.
@@ -185,23 +185,7 @@ async fn handle_get_jobs_by_status(
     State(config): State<Arc<Config>>,
     Query(query): Query<JobStatusQuery>,
 ) -> JobRouteResult {
-    // Parse the status string (case-insensitive)
-    let status = match query.status.to_lowercase().as_str() {
-        "created" => JobStatus::Created,
-        "lockedforprocessing" => JobStatus::LockedForProcessing,
-        "pendingverification" => JobStatus::PendingVerification,
-        "completed" => JobStatus::Completed,
-        "verificationtimeout" => JobStatus::VerificationTimeout,
-        "verificationfailed" => JobStatus::VerificationFailed,
-        "failed" => JobStatus::Failed,
-        "pendingretry" => JobStatus::PendingRetry,
-        _ => {
-            return Err(JobRouteError::InvalidId(format!(
-                "Invalid status: {}. Valid statuses are: created, lockedforprocessing, pendingverification, completed, verificationtimeout, verificationfailed, failed, pendingretry",
-                query.status
-            )));
-        }
-    };
+    let status = query.status;
 
     match config.database().get_jobs_by_status(status.clone()).await {
         Ok(jobs) => {
