@@ -51,7 +51,7 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
 
     let client = hyper::Client::new();
     let response = client
-        .request(Request::builder().uri(format!("http://{}/jobs?status=failed", addr)).body(Body::empty()).unwrap())
+        .request(Request::builder().uri(format!("http://{}/jobs?status=Failed", addr)).body(Body::empty()).unwrap())
         .await
         .unwrap();
 
