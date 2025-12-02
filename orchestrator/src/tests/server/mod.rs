@@ -1,5 +1,5 @@
-pub mod jobs_by_status;
 pub mod job_routes;
+pub mod jobs_by_status;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::worker::initialize_worker;
 use axum::http::StatusCode;
