@@ -34,11 +34,19 @@ pub mod test_utils;
 // link: https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
 const INITIAL_STATE_BLOCK_NUMBER: &str = "0x800000000000011000000000000000000000000000000000000000000000000";
 
+/// Starknet settlement layer client.
+///
+/// Note: The `health` field is included for health monitoring but retry logic for
+/// individual RPC calls is not yet implemented (future scope). Currently, only
+/// the EthereumClient has full retry support. The health tracker here is used
+/// for monitoring connection status.
 #[derive(Debug)]
 pub struct StarknetClient {
     pub provider: Arc<JsonRpcClient<HttpTransport>>,
     pub core_contract_address: Felt,
     pub processed_update_state_block: AtomicU64,
+    /// Health tracker for monitoring connection status.
+    /// TODO (heemankv 2025-12-02): Implement retry logic for RPC calls similar to EthereumClient.
     pub health: Arc<tokio::sync::RwLock<mp_resilience::ConnectionHealth>>,
 }
 
@@ -68,11 +76,29 @@ impl StarknetClient {
                 StarknetClientError::Conversion(format!("Invalid core contract address: {e}")).into()
             })?;
 
-        // Note: We no longer check if the contract exists here to avoid blocking startup
-        // The contract existence will be verified on the first RPC call, with retry logic
+        // Verify the contract exists at startup (no retry - fail fast on config errors)
+        let class_hash = provider
+            .get_class_hash_at(BlockId::Tag(BlockTag::Latest), core_contract_address)
+            .await
+            .map_err(|e| -> SettlementClientError {
+                StarknetClientError::Contract(format!(
+                    "Failed to verify contract at {} - please check the core_contract_address configuration: {}",
+                    core_contract_address, e
+                ))
+                .into()
+            })?;
+
+        if class_hash == Felt::ZERO {
+            return Err(StarknetClientError::Contract(format!(
+                "No contract found at address {}. Please verify the core_contract_address configuration.",
+                core_contract_address
+            ))
+            .into());
+        }
+
         let health = Arc::new(tokio::sync::RwLock::new(mp_resilience::ConnectionHealth::new("L1 Endpoint")));
 
-        tracing::info!("L1 client initialized (lazy mode) - will connect on first use");
+        tracing::info!("L1 client initialized - contract verified at {}", core_contract_address);
 
         Ok(Self {
             provider: Arc::new(provider),

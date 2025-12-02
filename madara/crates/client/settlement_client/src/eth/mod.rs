@@ -61,15 +61,13 @@ impl Clone for EthereumClient {
 }
 
 impl EthereumClient {
-    /// Create a new Ethereum client with lazy initialization.
+    /// Create a new Ethereum client.
     ///
-    /// This method no longer blocks on L1 availability. Instead, it:
-    /// - Validates the contract address format (fails fast on config errors)
-    /// - Creates the provider and contract instances
-    /// - Defers actual L1 connection verification to the first RPC call
+    /// This method performs a one-time contract verification at startup to fail fast
+    /// on configuration errors (wrong contract address). This check does NOT use retry
+    /// logic because a wrong contract address won't fix itself on retry.
     ///
-    /// This allows Madara to start even when L1 is temporarily unavailable.
-    /// The retry logic in individual RPC calls will handle connection failures.
+    /// After startup, individual RPC calls use retry logic to handle transient failures.
     pub async fn new(config: EthereumClientConfig) -> Result<Self, SettlementClientError> {
         let provider = ProviderBuilder::new().on_http(config.rpc_url);
         let core_contract_address =
@@ -77,12 +75,23 @@ impl EthereumClient {
                 EthereumClientError::Conversion(format!("Invalid core contract address: {e}")).into()
             })?;
 
-        // Note: We no longer check if the contract exists here to avoid blocking startup
-        // The contract existence will be verified on the first RPC call, with retry logic
+        // Verify the contract exists at startup (no retry - fail fast on config errors)
+        let code = provider.get_code_at(core_contract_address).await.map_err(|e| -> SettlementClientError {
+            EthereumClientError::Rpc(format!("Failed to verify contract at startup: {e}")).into()
+        })?;
+
+        if code.is_empty() {
+            return Err(EthereumClientError::Contract(format!(
+                "No contract found at address {}. Please verify the core_contract_address configuration.",
+                core_contract_address
+            ))
+            .into());
+        }
+
         let contract = StarknetCoreContract::new(core_contract_address, provider.clone());
         let health = Arc::new(RwLock::new(ConnectionHealth::new("L1 Endpoint")));
 
-        tracing::info!("L1 client initialized (lazy mode) - will connect on first use");
+        tracing::info!("L1 client initialized - contract verified at {}", core_contract_address);
         Ok(Self { provider: Arc::new(provider), l1_core_contract: contract, health })
     }
 
@@ -325,7 +334,7 @@ impl SettlementLayerProvider for EthereumClient {
 
             // Process events from the stream
             while let Some(event_option) = ctx.run_until_cancelled(event_stream.next()).await {
-                match event_option {
+                let should_recreate_stream = match event_option {
                     Some(Ok(log)) => {
                         // Successfully received an event
                         self.health.write().await.report_success();
@@ -342,27 +351,26 @@ impl SettlementLayerProvider for EthereumClient {
                                 // Continue processing other events
                             }
                         }
+                        false
                     }
                     Some(Err(e)) => {
-                        // Stream error - report failure and recreate stream
                         tracing::warn!("Event stream error: {e:#} - will recreate stream");
-                        self.health.write().await.report_failure("event_stream");
-
-                        let delay = event_processing_retry.next_delay();
-                        event_processing_retry.increment_retry();
-                        tokio::time::sleep(delay).await;
-                        break; // Break inner loop to recreate stream
+                        true
                     }
                     None => {
-                        // Stream ended unexpectedly - recreate it
                         tracing::warn!("Event stream ended unexpectedly - will recreate stream");
-                        self.health.write().await.report_failure("event_stream");
-
-                        let delay = event_processing_retry.next_delay();
-                        event_processing_retry.increment_retry();
-                        tokio::time::sleep(delay).await;
-                        break; // Break inner loop to recreate stream
+                        true
                     }
+                };
+
+                // Handle stream error or unexpected end - report failure and recreate stream
+                if should_recreate_stream {
+                    self.health.write().await.report_failure("event_stream");
+
+                    let delay = event_processing_retry.next_delay();
+                    event_processing_retry.increment_retry();
+                    tokio::time::sleep(delay).await;
+                    break; // Break inner loop to recreate stream
                 }
             }
 
@@ -496,21 +504,27 @@ impl SettlementLayerProvider for EthereumClient {
     }
 
     async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError> {
-        let block = self
-            .provider
-            .get_block(
-                BlockId::Number(BlockNumberOrTag::Number(l1_block_n)),
-                alloy::rpc::types::BlockTransactionsKind::Hashes,
-            )
-            .await
-            .map_err(|e| -> SettlementClientError {
-                EthereumClientError::ArchiveRequired(format!("Could not get block timestamp: {}", e)).into()
-            })?
-            .ok_or_else(|| -> SettlementClientError {
-                EthereumClientError::ArchiveRequired(format!("Cannot find block: {}", l1_block_n)).into()
-            })?;
+        self.retry_l1_call(
+            || async {
+                let block = self
+                    .provider
+                    .get_block(
+                        BlockId::Number(BlockNumberOrTag::Number(l1_block_n)),
+                        alloy::rpc::types::BlockTransactionsKind::Hashes,
+                    )
+                    .await
+                    .map_err(|e| -> SettlementClientError {
+                        EthereumClientError::ArchiveRequired(format!("Could not get block timestamp: {}", e)).into()
+                    })?
+                    .ok_or_else(|| -> SettlementClientError {
+                        EthereumClientError::ArchiveRequired(format!("Cannot find block: {}", l1_block_n)).into()
+                    })?;
 
-        Ok(block.header.timestamp)
+                Ok(block.header.timestamp)
+            },
+            "get_block_n_timestamp",
+        )
+        .await
     }
 
     async fn messages_to_l2_stream(

@@ -37,6 +37,9 @@ const HEARTBEAT_INTERVAL_DOWN_PHASE1: Duration = Duration::from_secs(5); // 0-5 
 const HEARTBEAT_INTERVAL_DOWN_PHASE2: Duration = Duration::from_secs(10); // 5-30 minutes
 const HEARTBEAT_INTERVAL_DOWN_PHASE3: Duration = Duration::from_secs(60); // 30+ minutes
 
+// Health monitor loop interval
+const HEALTH_MONITOR_POLL_INTERVAL: Duration = Duration::from_secs(1);
+
 // Phase durations for adaptive logging
 const PHASE1_DURATION: Duration = Duration::from_secs(5 * 60); // 5 minutes
 const PHASE2_DURATION: Duration = Duration::from_secs(30 * 60); // 30 minutes
@@ -295,7 +298,8 @@ impl ConnectionHealth {
     pub fn log_status(&mut self) {
         match &self.state {
             HealthState::Healthy => {
-                // No logging - silence is golden
+                // Use trace level for healthy state - indicates things are working normally
+                tracing::trace!("{} connection healthy", self.service_name);
             }
 
             HealthState::Degraded { failure_rate } => {
@@ -392,7 +396,7 @@ pub fn start_health_monitor_with_cancellation(
                     tracing::debug!("{} health monitor shutting down", service_name);
                     break;
                 }
-                _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                _ = tokio::time::sleep(HEALTH_MONITOR_POLL_INTERVAL) => {
                     let mut health_guard = health.write().await;
 
                     if health_guard.should_log_heartbeat() {
@@ -430,10 +434,9 @@ fn format_duration(d: Duration) -> String {
 
 /// Get retry phase name based on duration
 fn get_retry_phase(duration: Duration) -> &'static str {
-    let secs = duration.as_secs();
-    if secs < 5 * 60 {
+    if duration < PHASE1_DURATION {
         "Aggressive"
-    } else if secs < 30 * 60 {
+    } else if duration < PHASE2_DURATION {
         "Backoff"
     } else {
         "Steady"
@@ -483,7 +486,10 @@ mod tests {
         }
         assert!(matches!(health.state, HealthState::Down));
 
-        // First success -> Immediately transitions to Healthy (clean recovery with no ongoing failures)
+        // First success after Down state -> Immediately transitions to Healthy via "clean recovery" path.
+        // "No ongoing failures" means: after transitioning from Down to Degraded, the failure counters
+        // are reset (failed_operations cleared, failed_requests=0), so a single success with 0% failure
+        // rate triggers immediate transition to Healthy without waiting for consecutive successes.
         health.report_success();
         assert!(matches!(health.state, HealthState::Healthy));
     }

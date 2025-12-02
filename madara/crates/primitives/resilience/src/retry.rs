@@ -11,7 +11,6 @@
 ///
 /// - **Infinite retry by default**: Full nodes MUST sync eventually, so we never give up on external services
 /// - **Phase-based backoff**: Balances fast recovery during brief outages vs. resource efficiency during extended downtime
-/// - **No jitter**: Simplified implementation, acceptable for single-instance full nodes where thundering herd isn't a concern
 /// - **Separate retry states**: Different operations (RPC calls, stream creation, event processing) maintain independent retry contexts
 ///
 /// # Performance Characteristics
@@ -45,6 +44,16 @@
 /// ```
 use std::time::{Duration, Instant};
 
+// Default retry configuration constants
+const DEFAULT_PHASE1_DURATION_SECS: u64 = 5 * 60; // 5 minutes
+const DEFAULT_PHASE1_INTERVAL_SECS: u64 = 2; // 2 seconds
+const DEFAULT_PHASE2_MIN_DELAY_SECS: u64 = 5; // 5 seconds
+const DEFAULT_MAX_BACKOFF_SECS: u64 = 60; // 60 seconds (1 minute)
+const DEFAULT_LOG_INTERVAL_SECS: u64 = 10; // Log every 10 seconds
+
+// Phase duration thresholds
+const PHASE2_DURATION_SECS: u64 = 30 * 60; // 30 minutes
+
 /// Configuration for the hybrid retry strategy
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
@@ -65,12 +74,12 @@ pub struct RetryConfig {
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
-            phase1_duration: Duration::from_secs(5 * 60), // 5 minutes
-            phase1_interval: Duration::from_secs(2),      // 2 seconds
-            phase2_min_delay: Duration::from_secs(5),     // 5 seconds
-            max_backoff: Duration::from_secs(60),         // 60 seconds (1 minute)
-            log_interval: Duration::from_secs(10),        // Log every 10 seconds
-            infinite_retry: true,                         // Full nodes should retry indefinitely
+            phase1_duration: Duration::from_secs(DEFAULT_PHASE1_DURATION_SECS),
+            phase1_interval: Duration::from_secs(DEFAULT_PHASE1_INTERVAL_SECS),
+            phase2_min_delay: Duration::from_secs(DEFAULT_PHASE2_MIN_DELAY_SECS),
+            max_backoff: Duration::from_secs(DEFAULT_MAX_BACKOFF_SECS),
+            log_interval: Duration::from_secs(DEFAULT_LOG_INTERVAL_SECS),
+            infinite_retry: true, // Full nodes should retry indefinitely
         }
     }
 }
@@ -135,8 +144,7 @@ impl RetryState {
 
         if elapsed < self.config.phase1_duration {
             RetryPhase::Aggressive
-        } else if elapsed < Duration::from_secs(30 * 60) {
-            // 30 minutes total (Phase 1 + Phase 2)
+        } else if elapsed < Duration::from_secs(PHASE2_DURATION_SECS) {
             RetryPhase::Backoff
         } else {
             RetryPhase::Steady
@@ -160,21 +168,13 @@ impl RetryState {
 
     /// Check if we should log this retry attempt (throttled logging)
     pub fn should_log(&mut self) -> bool {
-        match self.last_log_time {
-            None => {
-                // First log - always allow
-                self.last_log_time = Some(Instant::now());
-                true
-            }
-            Some(last_log) => {
-                if last_log.elapsed() >= self.config.log_interval {
-                    self.last_log_time = Some(Instant::now());
-                    true
-                } else {
-                    false
-                }
-            }
+        let should = self.last_log_time.map(|t| t.elapsed() >= self.config.log_interval).unwrap_or(true);
+
+        if should {
+            self.last_log_time = Some(Instant::now());
         }
+
+        should
     }
 
     /// Increment retry counter and return current count

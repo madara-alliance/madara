@@ -5,6 +5,9 @@
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use std::time::Duration;
 
+/// Default delay when rate limited and no Retry-After header is available
+const DEFAULT_RATE_LIMIT_DELAY_SECS: u64 = 10;
+
 // Re-export the generic retry types
 pub use mp_resilience::{RetryConfig, RetryPhase, RetryState};
 
@@ -22,7 +25,7 @@ impl GatewayRetryState {
     pub fn next_delay(&self, error: &SequencerError) -> Duration {
         // Handle rate limiting separately
         if self.is_rate_limited(error) {
-            return Self::extract_retry_after(error).unwrap_or(Duration::from_secs(10));
+            return Self::extract_retry_after(error).unwrap_or(Duration::from_secs(DEFAULT_RATE_LIMIT_DELAY_SECS));
         }
 
         self.inner.next_delay()
@@ -70,7 +73,7 @@ impl GatewayRetryState {
 
     /// Extract Retry-After duration from error if available
     fn extract_retry_after(_error: &SequencerError) -> Option<Duration> {
-        // TODO: Parse Retry-After header from HttpCallError if available
+        // TODO (heemankv 2025-12-01): Parse Retry-After header from HttpCallError if available
         // For now, return None and use default rate limit delay
         None
     }

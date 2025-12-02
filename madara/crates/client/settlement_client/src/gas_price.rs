@@ -202,9 +202,19 @@ pub async fn gas_price_worker(
         // to handle transient failures. The health monitor tracks L1 connection status separately.
         let time_since_last_update = last_update_instant.elapsed();
 
+        // ALERT: Stale gas prices can lead to financial losses during settlement!
+        // If gas prices haven't been updated for too long, we may be using outdated prices.
+        // This could result in:
+        // - Overpaying for settlement if actual L1 gas is lower
+        // - Failed settlements if actual L1 gas is higher and we underestimate costs
         if time_since_last_update > gas_provider_config.poll_interval * 10 {
-            tracing::warn!(
-                "Gas prices haven't been updated for {:?} (>10x poll interval) - L1 may be down, continuing to retry...",
+            tracing::error!(
+                target: "gas_price_alert",
+                stale_duration_secs = time_since_last_update.as_secs(),
+                poll_interval_secs = gas_provider_config.poll_interval.as_secs(),
+                "STALE GAS PRICES: Gas prices haven't been updated for {:?} (>10x poll interval). \
+                Using potentially outdated gas prices may lead to settlement cost discrepancies. \
+                Please check L1 connectivity.",
                 time_since_last_update
             );
         }
