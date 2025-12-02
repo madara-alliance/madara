@@ -37,6 +37,44 @@ impl RocksDBStorageInner {
         Ok(self.db.get_pinned_cf(&self.get_column(CLASS_INFO_COLUMN), class_hash.to_bytes_be())?.is_some())
     }
 
+    /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
+    /// This updates the ClassInfo stored in the database with the new v2 hash.
+    #[tracing::instrument(skip(self, migrations))]
+    pub(crate) fn update_class_v2_hashes(
+        &self,
+        migrations: impl IntoIterator<Item = (Felt, Felt)>,
+    ) -> Result<()> {
+        let col = self.get_column(CLASS_INFO_COLUMN);
+        let mut batch = WriteBatchWithTransaction::default();
+
+        for (class_hash, blake_compiled_class_hash) in migrations {
+            // Load existing class info
+            let Some(mut class_info_with_block) = self.get_class(&class_hash)? else {
+                tracing::warn!("Cannot update v2 hash for class {class_hash:#x}: class not found in DB");
+                continue;
+            };
+
+            // Update the v2 hash if it's a Sierra class
+            match &mut class_info_with_block.class_info {
+                mp_class::ClassInfo::Sierra(sierra_info) => {
+                    sierra_info.compiled_class_hash_v2 = Some(blake_compiled_class_hash);
+                }
+                mp_class::ClassInfo::Legacy(_) => {
+                    tracing::warn!(
+                        "Cannot update v2 hash for class {class_hash:#x}: class is Legacy, not Sierra"
+                    );
+                    continue;
+                }
+            }
+
+            // Write updated class info back
+            batch.put_cf(&col, class_hash.to_bytes_be(), super::serialize(&class_info_with_block)?);
+        }
+
+        self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self, converted_classes))]
     pub(crate) fn store_classes(&self, block_number: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
         converted_classes.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
@@ -64,7 +102,11 @@ impl RocksDBStorageInner {
         converted_classes
             .iter()
             .filter_map(|converted_class| match converted_class {
-                ConvertedClass::Sierra(sierra) => Some((sierra.info.compiled_class_hash, sierra.compiled.clone())),
+                ConvertedClass::Sierra(sierra) => {
+                    // Use canonical compiled_class_hash (v2 if present, else v1)
+                    let canonical_hash = sierra.info.compiled_class_hash_v2.or(sierra.info.compiled_class_hash)?;
+                    Some((canonical_hash, sierra.compiled.clone()))
+                }
                 _ => None,
             })
             .collect::<Vec<_>>()
