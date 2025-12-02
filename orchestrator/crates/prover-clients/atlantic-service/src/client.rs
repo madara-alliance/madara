@@ -240,7 +240,7 @@ impl AtlanticClient {
                 aggregator_params: AtlanticAggregatorParams {
                     use_kzg_da: AGGREGATOR_USE_KZG_DA,
                     full_output: AGGREGATOR_FULL_OUTPUT,
-                    chain_id_hex.clone(),
+                    chain_id_hex: chain_id_hex.clone(),
                     fee_token_address,
                 },
                 mock_proof,
