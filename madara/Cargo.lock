@@ -716,8 +716,8 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "apollo_compilation_utils"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-sierra 2.12.3",
@@ -734,8 +734,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_compile_to_native"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "apollo_compilation_utils",
  "apollo_compile_to_native_types",
@@ -747,8 +747,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_compile_to_native_types"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "apollo_config",
  "serde",
@@ -757,8 +757,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_config"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "apollo_infra_utils",
  "clap",
@@ -775,8 +775,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_infra_utils"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "apollo_proc_macros",
  "assert-json-diff",
@@ -785,7 +785,6 @@ dependencies = [
  "serde",
  "serde_json",
  "socket2 0.5.9",
- "strum 0.25.0",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -794,8 +793,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_metrics"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "indexmap 2.9.0",
  "metrics",
@@ -806,8 +805,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_proc_macros"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -1739,8 +1738,8 @@ dependencies = [
 
 [[package]]
 name = "blockifier"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "anyhow",
  "apollo_compilation_utils",
@@ -1790,8 +1789,8 @@ dependencies = [
 
 [[package]]
 name = "blockifier_test_utils"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-starknet-classes",
@@ -3595,6 +3594,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "cairo-lang-test-plugin"
+version = "2.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1e90cf75528c423cd6b6faaab2dde0c1b23efe36103e1e57f338293552ee16f"
+dependencies = [
+ "anyhow",
+ "cairo-lang-compiler 2.12.3",
+ "cairo-lang-debug 2.12.3",
+ "cairo-lang-defs 2.12.3",
+ "cairo-lang-filesystem 2.12.3",
+ "cairo-lang-lowering 2.12.3",
+ "cairo-lang-parser 2.12.3",
+ "cairo-lang-semantic 2.12.3",
+ "cairo-lang-sierra 2.12.3",
+ "cairo-lang-sierra-generator 2.12.3",
+ "cairo-lang-starknet 2.12.3",
+ "cairo-lang-starknet-classes",
+ "cairo-lang-syntax 2.12.3",
+ "cairo-lang-utils 2.12.3",
+ "indoc 2.0.6",
+ "itertools 0.14.0",
+ "num-bigint",
+ "num-traits",
+ "serde",
+ "starknet-types-core",
+]
+
+[[package]]
 name = "cairo-lang-test-utils"
 version = "2.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3675,23 +3702,33 @@ dependencies = [
 
 [[package]]
 name = "cairo-native"
-version = "0.7.2"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19404b3af952f1f8f1fcb68c58eafc06d5255002dc7a7c81c800676a0779004a"
+checksum = "64a1b73479b3b3676bf81d2e3586f7e7d234227d7bdb6d8635b0256af7a41592"
 dependencies = [
+ "anyhow",
  "aquamarine",
  "ark-ec 0.5.0",
  "ark-ff 0.5.0",
  "ark-secp256k1 0.5.0",
  "ark-secp256r1 0.5.0",
  "bumpalo",
+ "cairo-lang-compiler 2.12.3",
+ "cairo-lang-defs 2.12.3",
+ "cairo-lang-filesystem 2.12.3",
  "cairo-lang-runner",
+ "cairo-lang-semantic 2.12.3",
  "cairo-lang-sierra 2.12.3",
  "cairo-lang-sierra-ap-change 2.12.3",
  "cairo-lang-sierra-gas 2.12.3",
  "cairo-lang-sierra-to-casm 2.12.3",
+ "cairo-lang-starknet 2.12.3",
  "cairo-lang-starknet-classes",
+ "cairo-lang-test-plugin",
  "cairo-lang-utils 2.12.3",
+ "cc",
+ "clap",
+ "colored 2.2.0",
  "educe 0.5.11",
  "itertools 0.14.0",
  "keccak",
@@ -3710,9 +3747,11 @@ dependencies = [
  "sha2",
  "starknet-curve",
  "starknet-types-core",
+ "stats_alloc",
  "tempfile",
  "thiserror 2.0.12",
  "tracing",
+ "tracing-subscriber",
  "utf8_iter",
 ]
 
@@ -9674,15 +9713,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
-name = "size-of"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4e36eca171fddeda53901b0a436573b3f2391eaa9189d439b2bd8ea8cebd7e3"
-
-[[package]]
 name = "sizeof"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "sizeof_internal",
  "sizeof_macro",
@@ -9690,16 +9723,16 @@ dependencies = [
 
 [[package]]
 name = "sizeof_internal"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "starknet-types-core",
 ]
 
 [[package]]
 name = "sizeof_macro"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9999,9 +10032,9 @@ dependencies = [
 
 [[package]]
 name = "starknet-types-core"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab92594a86ac627dd4c8d3350362cc8035e55c548c27c71dfa4c9fc6b3b6ab1a"
+checksum = "90d23b1bc014ee4cce40056ab3114bcbcdc2dbc1e845bbfb1f8bd0bab63507d4"
 dependencies = [
  "arbitrary",
  "blake2",
@@ -10015,14 +10048,13 @@ dependencies = [
  "parity-scale-codec",
  "rand 0.9.2",
  "serde",
- "size-of",
  "zeroize",
 ]
 
 [[package]]
 name = "starknet_api"
-version = "0.16.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?rev=57052466290163f95ec085fc5ad877c4e04d5e2d#57052466290163f95ec085fc5ad877c4e04d5e2d"
+version = "0.16.0-rc.0"
+source = "git+https://github.com/karnotxyz/sequencer?rev=ff514ad8f39ac04302d0b176cef673a6a3820914#ff514ad8f39ac04302d0b176cef673a6a3820914"
 dependencies = [
  "apollo_infra_utils",
  "base64 0.13.1",
@@ -10059,6 +10091,12 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "stats_alloc"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c0e04424e733e69714ca1bbb9204c1a57f09f5493439520f9f68c132ad25eec"
 
 [[package]]
 name = "string_cache"
@@ -10763,6 +10801,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-serde"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704b1aeb7be0d0a84fc9828cae51dab5970fee5088f83d1dd7ee6f6246fc6ff1"
+dependencies = [
+ "serde",
+ "tracing-core",
+]
+
+[[package]]
 name = "tracing-subscriber"
 version = "0.3.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10772,12 +10820,15 @@ dependencies = [
  "nu-ansi-term 0.46.0",
  "once_cell",
  "regex",
+ "serde",
+ "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log",
+ "tracing-serde",
 ]
 
 [[package]]

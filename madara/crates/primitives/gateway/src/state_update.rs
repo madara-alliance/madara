@@ -102,7 +102,6 @@ impl From<StateDiff> for mp_state_update::StateDiff {
                 .into_iter()
                 .map(|(contract_address, nonce)| mp_state_update::NonceUpdate { contract_address, nonce })
                 .collect(),
-            migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Add migrated compiled classes here
         }
     }
 }
