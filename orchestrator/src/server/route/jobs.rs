@@ -9,7 +9,7 @@ use tracing::{error, info, Span,debug};
 use uuid::Uuid;
 
 use super::super::error::JobRouteError;
-use super::super::types::{ApiResponse, JobId, JobRouteResult, JobStatusResponse, JobStatusResponseItem, FailedJobResponse, FailedJobResponseItem};
+use super::super::types::{ApiResponse, JobId, JobRouteResult, JobStatusResponse, JobStatusResponseItem};
 use crate::core::config::Config;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -182,15 +182,16 @@ async fn handle_get_failed_jobs(
             let mut job_status_items = Vec::new();
             debug!("Failed jobs: {:#?}", jobs);
             for job in jobs {
-                job_status_items.push(FailedJobResponseItem { 
+                job_status_items.push(JobStatusResponseItem { 
                     job_type: job.job_type, 
                     id: job.id,
+                    status: job.status,
                 });
             }
-            let count = job_status_items.len() as u64;
+            let count = job_status_items.len();
             info!(count = count, "Successfully fetched failed jobs");
-            Ok(Json(ApiResponse::<FailedJobResponse>::success_with_data(
-                FailedJobResponse { jobs: job_status_items, count },
+            Ok(Json(ApiResponse::<JobStatusResponse>::success_with_data(
+                JobStatusResponse { jobs: job_status_items },
                 Some(format!("Successfully fetched {} failed jobs", count)),
             ))
             .into_response())

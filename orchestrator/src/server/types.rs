@@ -128,18 +128,6 @@ pub struct JobStatusResponseItem {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct FailedJobResponseItem {
-    pub job_type: JobType,
-    pub id: Uuid,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct FailedJobResponse {
-    pub jobs: Vec<FailedJobResponseItem>,
-    pub count: u64
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct JobStatusResponse {
     pub jobs: Vec<JobStatusResponseItem>,
 }
