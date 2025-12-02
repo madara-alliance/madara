@@ -62,21 +62,23 @@ async fn test_get_failed_jobs(#[future] setup_trigger: (SocketAddr, Arc<Config>)
 
     assert_eq!(response.status(), 200);
     let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response_body: ApiResponse<crate::server::types::FailedJobResponse> =
+    let response_body: ApiResponse<crate::server::types::JobStatusResponse> =
         serde_json::from_slice(&body_bytes).unwrap();
 
     assert!(response_body.success);
     let failed_jobs_data = response_body.data.unwrap();
     
-    // Verify the count field is present and reasonable
-    assert!(failed_jobs_data.count > 0, "Should have at least one failed job");
-    
     let jobs_response = failed_jobs_data.jobs;
+    
+    // Verify we have at least one failed job
+    assert!(!jobs_response.is_empty(), "Should have at least one failed job");
 
     // Filter to find our specific job, as DB might have other jobs from other tests if not cleaned
     let found_failed_job = jobs_response.iter().find(|j| j.id == failed_job.id);
     assert!(found_failed_job.is_some(), "Failed job should be in the response");
-    assert_eq!(found_failed_job.unwrap().job_type, JobType::SnosRun);
+    let found_failed_job = found_failed_job.unwrap();
+    assert_eq!(found_failed_job.job_type, JobType::SnosRun);
+    assert_eq!(found_failed_job.status, JobStatus::Failed);
 
     let found_success_job = jobs_response.iter().find(|j| j.id == success_job.id);
     assert!(found_success_job.is_none(), "Success job should NOT be in the response");
