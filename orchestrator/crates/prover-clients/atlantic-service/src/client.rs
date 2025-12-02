@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use cairo_vm::types::layout_name::LayoutName;
+use cairo_vm::Felt252;
 use orchestrator_utils::http_client::extract_http_error_text;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
@@ -183,7 +184,7 @@ impl AtlanticClient {
     /// Initially, the bucket will be empty when created.
     /// The `bucket_id` returned from here will be used to add child jobs to this bucket.
     /// A new bucket is created when creating a new batch in Batching worker.
-    /// 
+    ///
     // TODO(Mohit,01/12/2025): We should have an AggregatorInput struct here for args, based on:
     // https://github.com/starkware-libs/sequencer/blob/main-v0.14.1/crates/starknet_os/src/hint_processor/aggregator_hint_processor.rs#L42-L52
     // For 0.14.1, we would need to send the public_keys as well.
@@ -192,7 +193,7 @@ impl AtlanticClient {
         atlantic_api_key: impl AsRef<str>,
         mock_proof: bool,
         chain_id_hex: Option<String>,
-        fee_token_address: Option<String>,
+        fee_token_address: Option<Felt252>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
         // TODO(prakhar,19/11/2025): Use the aggregator version calculated from Madara Version being passed through ENV
         let response = self

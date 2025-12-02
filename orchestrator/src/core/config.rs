@@ -1,5 +1,6 @@
 #[cfg(feature = "testing")]
 use alloy::providers::ProviderBuilder;
+use cairo_vm::Felt252;
 
 use crate::utils::rest_client::RestClient;
 use anyhow::Context;
@@ -253,9 +254,9 @@ impl Config {
                     .map_err(|e| OrchestratorError::ConfigError(format!("Failed to get Chain ID from RPC: {}", e)))?
                     .to_fixed_hex_string(),
             ),
-            Some(params.snos_config.strk_fee_token_address.clone()),
+            Some(Felt252::from_str(params.snos_config.strk_fee_token_address.clone().as_str())?),
         );
-        let da_client = Self::build_da_client(&da_config).await;
+        let da_client: Box<dyn DaClient + Send + Sync + 'static> = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
         Ok(Self {
@@ -328,7 +329,7 @@ impl Config {
         prover_params: &ProverConfig,
         params: &ConfigParam,
         chain_id_hex: Option<String>,
-        fee_token_address: Option<String>,
+        fee_token_address: Option<Felt252>,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => {

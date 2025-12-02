@@ -9,6 +9,7 @@ pub use crate::types::AtlanticQueryStatus;
 use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
+use cairo_vm::Felt252;
 use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{
     CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
@@ -51,7 +52,7 @@ pub struct AtlanticProverService {
     pub result: AtlanticQueryStep,
     pub cairo_verifier_program_hash: Option<String>,
     pub chain_id_hex: Option<String>,
-    pub fee_token_address: Option<String>,
+    pub fee_token_address: Option<Felt252>,
 }
 
 #[async_trait]
@@ -96,7 +97,12 @@ impl ProverClient for AtlanticProverService {
             Task::CreateBucket => {
                 let response = self
                     .atlantic_client
-                    .create_bucket(self.atlantic_api_key.clone(), self.should_mock_proof(), self.chain_id_hex.clone(), self.fee_token_address.clone())
+                    .create_bucket(
+                        self.atlantic_api_key.clone(),
+                        self.should_mock_proof(),
+                        self.chain_id_hex.clone(),
+                        self.fee_token_address,
+                    )
                     .await?;
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
@@ -277,7 +283,7 @@ impl AtlanticProverService {
         fact_checker: Option<FactChecker>,
         mock_fact_hash: bool,
         cairo_verifier_program_hash: Option<String>,
-        fee_token_address: Option<String>,
+        fee_token_address: Option<Felt252>,
     ) -> Self {
         Self {
             atlantic_client,
@@ -309,7 +315,7 @@ impl AtlanticProverService {
         atlantic_params: &AtlanticValidatedArgs,
         proof_layout: &LayoutName,
         chain_id_hex: Option<String>,
-        fee_token_address: Option<String>,
+        fee_token_address: Option<Felt252>,
     ) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
