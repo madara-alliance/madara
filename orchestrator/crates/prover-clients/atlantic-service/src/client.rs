@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::Felt252;
@@ -7,11 +7,11 @@ use orchestrator_utils::http_client::extract_http_error_text;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::Method;
-use tracing::debug;
+use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::constants::{
-    AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL, RETRY_DELAY_MS, RETRY_MAX_ATTEMPTS,
+    AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL, RETRY_DELAY_SECONDS, RETRY_MAX_ATTEMPTS,
 };
 use crate::error::AtlanticError;
 use crate::types::{
@@ -101,31 +101,89 @@ impl AtlanticClient {
         Self { client, proving_layer }
     }
 
-    /// Generic retry mechanism for GET queries
-    /// Attempts the provided async function up to RETRY_MAX_ATTEMPTS times with RETRY_DELAY_MS delay between attempts
-    async fn retry_get<F, Fut, T, E>(&self, operation_name: &str, mut f: F) -> Result<T, E>
+    /// Generic retry mechanism for all Atlantic API calls (GET and POST)
+    ///
+    /// Retries network-level errors (timeouts, incomplete messages, connection issues)
+    /// Does NOT retry API-level errors (4xx, 5xx with proper Atlantic responses)
+    ///
+    /// # Arguments
+    /// * `operation_name` - Name of the operation for logging (e.g., "add_job", "get_bucket")
+    /// * `context` - Additional context about the request (e.g., job params, bucket_id)
+    /// * `f` - Async function to execute (the actual API call)
+    async fn retry_request<F, Fut, T>(&self, operation_name: &str, context: &str, mut f: F) -> Result<T, AtlanticError>
     where
         F: FnMut() -> Fut,
-        Fut: std::future::Future<Output = Result<T, E>>,
-        E: std::fmt::Display,
+        Fut: std::future::Future<Output = Result<T, AtlanticError>>,
     {
+        let start_time = Instant::now();
         let mut last_error = None;
+        let mut total_attempts = 0;
 
         for attempt in 1..=RETRY_MAX_ATTEMPTS {
-            match f().await {
-                Ok(result) => return Ok(result),
-                Err(err) => {
-                    debug!("Attempt {}/{} for {} failed: {}", attempt, RETRY_MAX_ATTEMPTS, operation_name, err);
-                    last_error = Some(err);
+            total_attempts = attempt;
+            let attempt_start = Instant::now();
 
-                    if attempt < RETRY_MAX_ATTEMPTS {
-                        tokio::time::sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
+            match f().await {
+                Ok(result) => {
+                    let duration_ms = start_time.elapsed().as_millis();
+                    if attempt > 1 {
+                        info!(
+                            operation = operation_name,
+                            context = context,
+                            duration_ms = duration_ms,
+                            attempts = attempt,
+                            "Atlantic API request succeeded after retry"
+                        );
+                    }
+                    return Ok(result);
+                }
+                Err(err) => {
+                    let attempt_duration = attempt_start.elapsed().as_millis();
+
+                    // Check if error is retryable
+                    let is_retryable = err.is_retryable();
+
+                    if is_retryable && attempt < RETRY_MAX_ATTEMPTS {
+                        warn!(
+                            operation = operation_name,
+                            context = context,
+                            attempt = attempt,
+                            max_attempts = RETRY_MAX_ATTEMPTS,
+                            attempt_duration_ms = attempt_duration,
+                            error = %err,
+                            "Atlantic API request failed, retrying"
+                        );
+                        last_error = Some(err);
+                        tokio::time::sleep(Duration::from_secs(RETRY_DELAY_SECONDS)).await;
+                    } else {
+                        // Non-retryable error or last attempt
+                        if !is_retryable {
+                            debug!(
+                                operation = operation_name,
+                                context = context,
+                                attempt = attempt,
+                                error = %err,
+                                "Atlantic API request failed with non-retryable error"
+                            );
+                        }
+                        return Err(err);
                     }
                 }
             }
         }
 
-        Err(last_error.expect("At least one attempt should have been made"))
+        // All retries exhausted
+        let total_duration = start_time.elapsed().as_millis();
+        let final_error = last_error.expect("At least one attempt should have been made");
+        warn!(
+            operation = operation_name,
+            context = context,
+            total_attempts = total_attempts,
+            total_duration_ms = total_duration,
+            error = %final_error,
+            "Atlantic API request failed after all retries"
+        );
+        Err(final_error)
     }
 
     /// Fetch an artifact from the given path.
@@ -139,69 +197,140 @@ impl AtlanticClient {
     /// # Returns
     /// The artifact as a byte array if the request is successful, otherwise an error is returned
     pub async fn get_artifacts(&self, artifact_path: String) -> Result<Vec<u8>, AtlanticError> {
-        debug!("Atlantic Request: GET {} - getting artifacts", artifact_path);
+        let start_time = Instant::now();
+        info!(
+            operation = "get_artifacts",
+            url = %artifact_path,
+            "Starting Atlantic artifacts download"
+        );
 
-        self.retry_get("get_artifacts", || async {
-            let client = reqwest::Client::new();
-            let response = client.get(&artifact_path).send().await.map_err(|e| {
-                AtlanticError::GetJobArtifactsFailure { context: format!("url: {}", artifact_path), source: e }
-            })?;
+        let context = format!("url: {}", artifact_path);
+        let artifact_path_clone = artifact_path.clone();
 
-            let status = response.status();
-            if status.is_success() {
-                let response_text = response.bytes().await.map_err(|e| AtlanticError::GetJobArtifactsFailure {
-                    context: format!("url: {}, reading response bytes", artifact_path),
-                    source: e,
-                })?;
-                let artifact_size = response_text.len();
-                debug!(
-                    "Atlantic Response: GET {} - success (status: {}, size: {} bytes)",
-                    artifact_path, status, artifact_size
-                );
-                Ok(response_text.to_vec())
-            } else {
-                let (error_text, status) = extract_http_error_text(response, "get artifacts").await;
-                debug!("Atlantic Response: GET {} - error (status: {}, error: {})", artifact_path, status, error_text);
-                Err(AtlanticError::AtlanticService(status, error_text))
-            }
-        })
-        .await
+        let result = self
+            .retry_request("get_artifacts", &context, || {
+                let artifact_path = artifact_path_clone.clone();
+                async move {
+                    debug!(
+                        operation = "get_artifacts",
+                        url = %artifact_path,
+                        "Fetching artifact"
+                    );
+
+                    let client = reqwest::Client::new();
+                    let response = client
+                        .get(&artifact_path)
+                        .send()
+                        .await
+                        .map_err(|e| AtlanticError::from_reqwest_error("get_artifacts", e))?;
+
+                    let status = response.status();
+                    if status.is_success() {
+                        let response_bytes = response
+                            .bytes()
+                            .await
+                            .map_err(|e| AtlanticError::from_reqwest_error("get_artifacts", e))?;
+                        let artifact_size = response_bytes.len();
+
+                        debug!(
+                            operation = "get_artifacts",
+                            url = %artifact_path,
+                            status = %status,
+                            artifact_size_bytes = artifact_size,
+                            "Artifact download successful"
+                        );
+                        Ok(response_bytes.to_vec())
+                    } else {
+                        let (error_text, status) = extract_http_error_text(response, "get artifacts").await;
+                        debug!(
+                            operation = "get_artifacts",
+                            url = %artifact_path,
+                            status = %status,
+                            error = %error_text,
+                            "Artifact download failed"
+                        );
+                        Err(AtlanticError::api_error("get_artifacts", status, error_text))
+                    }
+                }
+            })
+            .await?;
+
+        info!(
+            operation = "get_artifacts",
+            url = %artifact_path,
+            artifact_size_bytes = result.len(),
+            duration_ms = start_time.elapsed().as_millis(),
+            "Atlantic artifacts download completed"
+        );
+
+        Ok(result)
     }
 
     /// Fetch the details of a bucket from the Atlantic client
     pub async fn get_bucket(&self, bucket_id: &str) -> Result<AtlanticGetBucketResponse, AtlanticError> {
-        debug!("Atlantic Request: GET /buckets/{} - getting bucket details", bucket_id);
+        let start_time = Instant::now();
+        let context = format!("bucket_id: {}", bucket_id);
 
-        self.retry_get("get_bucket", || async {
-            let response =
-                self.client.request().method(Method::GET).path("buckets").path(bucket_id).send().await.map_err(
-                    |e| AtlanticError::GetBucketStatusFailure {
-                        context: format!("bucket_id: {}", bucket_id),
-                        source: e,
-                    },
-                )?;
+        debug!(
+            operation = "get_bucket",
+            bucket_id = %bucket_id,
+            "Getting bucket details"
+        );
 
-            let status = response.status();
-            match status.is_success() {
-                true => {
-                    let bucket_response = response.json().await.map_err(|e| AtlanticError::GetBucketStatusFailure {
-                        context: format!("bucket_id: {}, parsing JSON response", bucket_id),
-                        source: e,
-                    })?;
-                    debug!("Atlantic Response: GET /buckets/{} - success (status: {})", bucket_id, status);
-                    Ok(bucket_response)
+        let bucket_id = bucket_id.to_string();
+        let result = self
+            .retry_request("get_bucket", &context, || {
+                let bucket_id = bucket_id.clone();
+                async move {
+                    let response = self
+                        .client
+                        .request()
+                        .method(Method::GET)
+                        .path("buckets")
+                        .path(&bucket_id)
+                        .send()
+                        .await
+                        .map_err(|e| AtlanticError::from_reqwest_error("get_bucket", e))?;
+
+                    let status = response.status();
+                    if status.is_success() {
+                        let bucket_response: AtlanticGetBucketResponse = response
+                            .json()
+                            .await
+                            .map_err(|e| AtlanticError::parse_error("get_bucket", e.to_string()))?;
+
+                        debug!(
+                            operation = "get_bucket",
+                            bucket_id = %bucket_id,
+                            status = %status,
+                            queries_count = bucket_response.queries.len(),
+                            bucket_status = ?bucket_response.bucket.status,
+                            "Bucket details retrieved successfully"
+                        );
+                        Ok(bucket_response)
+                    } else {
+                        let (error_text, status) = extract_http_error_text(response, "get bucket").await;
+                        debug!(
+                            operation = "get_bucket",
+                            bucket_id = %bucket_id,
+                            status = %status,
+                            error = %error_text,
+                            "Failed to get bucket details"
+                        );
+                        Err(AtlanticError::api_error("get_bucket", status, error_text))
+                    }
                 }
-                false => {
-                    let (error_text, status) = extract_http_error_text(response, "get bucket").await;
-                    debug!(
-                        "Atlantic Response: GET /buckets/{} - error (status: {}, error: {})",
-                        bucket_id, status, error_text
-                    );
-                    Err(AtlanticError::AtlanticService(status, error_text))
-                }
-            }
-        })
-        .await
+            })
+            .await?;
+
+        info!(
+            operation = "get_bucket",
+            bucket_id = %bucket_id,
+            duration_ms = start_time.elapsed().as_millis(),
+            "Get bucket completed"
+        );
+
+        Ok(result)
     }
 
     /// Create a new bucket for Applicative Recursion.
@@ -219,63 +348,107 @@ impl AtlanticClient {
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
-        debug!(
-            "Atlantic Request: POST /buckets - creating bucket (mock_proof: {}, chain_id_hex: {:?})",
-            mock_proof, chain_id_hex
+        let start_time = Instant::now();
+        let context = format!("mock_proof: {}, chain_id_hex: {:?}", mock_proof, chain_id_hex);
+
+        info!(
+            operation = "create_bucket",
+            mock_proof = mock_proof,
+            chain_id_hex = ?chain_id_hex,
+            "Starting bucket creation"
         );
 
-        // TODO(prakhar,19/11/2025): Use the aggregator version calculated from Madara Version being passed through ENV
-        let response = self
-            .client
-            .request()
-            .method(Method::POST)
-            .header(ACCEPT, HeaderValue::from_static("application/json"))
-            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-            .path("buckets")
-            .query_param("apiKey", atlantic_api_key.as_ref())
-            .body(AtlanticCreateBucketRequest {
-                external_id: None,
-                node_width: None,
-                aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_3,
-                aggregator_params: AtlanticAggregatorParams {
-                    use_kzg_da: AGGREGATOR_USE_KZG_DA,
-                    full_output: AGGREGATOR_FULL_OUTPUT,
-                    chain_id_hex: chain_id_hex.clone(),
-                    fee_token_address,
-                },
-                mock_proof,
-            })
-            .map_err(AtlanticError::BodyParseError)?
-            .send()
-            .await
-            .map_err(|e| AtlanticError::CreateBucketFailure {
-                context: format!("mock_proof: {}, chain_id_hex: {:?}", mock_proof, chain_id_hex),
-                source: e,
-            })?;
+        let api_key = atlantic_api_key.as_ref().to_string();
+        let chain_id_clone = chain_id_hex.clone();
 
-        let status = response.status();
-        match status.is_success() {
-            true => {
-                let bucket_response: AtlanticBucketResponse =
-                    response.json().await.map_err(|e| AtlanticError::CreateBucketFailure {
-                        context: format!(
-                            "mock_proof: {}, chain_id_hex: {:?}, parsing JSON response",
-                            mock_proof, chain_id_hex
-                        ),
-                        source: e,
-                    })?;
-                debug!(
-                    "Atlantic Response: POST /buckets - success (status: {}, bucket_id: {})",
-                    status, bucket_response.atlantic_bucket.id
-                );
-                Ok(bucket_response)
-            }
-            false => {
-                let (error_text, status) = extract_http_error_text(response, "create bucket").await;
-                debug!("Atlantic Response: POST /buckets - error (status: {}, error: {})", status, error_text);
-                Err(AtlanticError::AtlanticService(status, error_text))
-            }
-        }
+        let bucket_request = AtlanticCreateBucketRequest {
+            external_id: None,
+            node_width: None,
+            aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_3,
+            aggregator_params: AtlanticAggregatorParams {
+                use_kzg_da: AGGREGATOR_USE_KZG_DA,
+                full_output: AGGREGATOR_FULL_OUTPUT,
+                chain_id_hex: chain_id_hex.clone(),
+                fee_token_address,
+            },
+            mock_proof,
+        };
+
+        debug!(
+            operation = "create_bucket",
+            request = ?bucket_request,
+            "Create bucket request details"
+        );
+
+        let result = self
+            .retry_request("create_bucket", &context, || {
+                let api_key = api_key.clone();
+                let bucket_request = AtlanticCreateBucketRequest {
+                    external_id: None,
+                    node_width: None,
+                    aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_3,
+                    aggregator_params: AtlanticAggregatorParams {
+                        use_kzg_da: AGGREGATOR_USE_KZG_DA,
+                        full_output: AGGREGATOR_FULL_OUTPUT,
+                        chain_id_hex: chain_id_clone.clone(),
+                        fee_token_address,
+                    },
+                    mock_proof,
+                };
+
+                async move {
+                    // TODO(prakhar,19/11/2025): Use the aggregator version calculated from Madara Version being passed through ENV
+                    let response = self
+                        .client
+                        .request()
+                        .method(Method::POST)
+                        .header(ACCEPT, HeaderValue::from_static("application/json"))
+                        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                        .path("buckets")
+                        .query_param("apiKey", &api_key)
+                        .body(bucket_request)
+                        .map_err(|e| AtlanticError::parse_error("create_bucket", e.to_string()))?
+                        .send()
+                        .await
+                        .map_err(|e| AtlanticError::from_reqwest_error("create_bucket", e))?;
+
+                    let status = response.status();
+                    if status.is_success() {
+                        let bucket_response: AtlanticBucketResponse = response
+                            .json()
+                            .await
+                            .map_err(|e| AtlanticError::parse_error("create_bucket", e.to_string()))?;
+
+                        debug!(
+                            operation = "create_bucket",
+                            status = %status,
+                            bucket_id = %bucket_response.atlantic_bucket.id,
+                            response = ?bucket_response,
+                            "Bucket created successfully"
+                        );
+                        Ok(bucket_response)
+                    } else {
+                        let (error_text, status) = extract_http_error_text(response, "create bucket").await;
+                        debug!(
+                            operation = "create_bucket",
+                            status = %status,
+                            error = %error_text,
+                            "Failed to create bucket"
+                        );
+                        Err(AtlanticError::api_error("create_bucket", status, error_text))
+                    }
+                }
+            })
+            .await?;
+
+        info!(
+            operation = "create_bucket",
+            bucket_id = %result.atlantic_bucket.id,
+            duration_ms = start_time.elapsed().as_millis(),
+            "Bucket creation completed"
+        );
+
+        Ok(result)
     }
 
     /// Close a bucket.
@@ -287,43 +460,81 @@ impl AtlanticClient {
         bucket_id: &str,
         atlantic_api_key: impl AsRef<str>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
-        debug!("Atlantic Request: POST /buckets/close - closing bucket (bucket_id: {})", bucket_id);
+        let start_time = Instant::now();
+        let context = format!("bucket_id: {}", bucket_id);
 
-        let response = self
-            .client
-            .request()
-            .method(Method::POST)
-            .header(ACCEPT, HeaderValue::from_static("application/json"))
-            .path("buckets")
-            .path("close")
-            .query_param("bucketId", bucket_id)
-            .query_param("apiKey", atlantic_api_key.as_ref())
-            .send()
-            .await
-            .map_err(|e| AtlanticError::CloseBucketFailure {
-                context: format!("bucket_id: {}", bucket_id),
-                source: e,
-            })?;
+        info!(
+            operation = "close_bucket",
+            bucket_id = %bucket_id,
+            "Starting bucket closure"
+        );
 
-        let status = response.status();
-        match status.is_success() {
-            true => {
-                let bucket_response = response.json().await.map_err(|e| AtlanticError::CloseBucketFailure {
-                    context: format!("bucket_id: {}, parsing JSON response", bucket_id),
-                    source: e,
-                })?;
-                debug!(
-                    "Atlantic Response: POST /buckets/close - success (status: {}, bucket_id: {})",
-                    status, bucket_id
-                );
-                Ok(bucket_response)
-            }
-            false => {
-                let (error_text, status) = extract_http_error_text(response, "close bucket").await;
-                debug!("Atlantic Response: POST /buckets/close - error (status: {}, error: {})", status, error_text);
-                Err(AtlanticError::AtlanticService(status, error_text))
-            }
-        }
+        let bucket_id = bucket_id.to_string();
+        let api_key = atlantic_api_key.as_ref().to_string();
+
+        let result = self
+            .retry_request("close_bucket", &context, || {
+                let bucket_id = bucket_id.clone();
+                let api_key = api_key.clone();
+
+                async move {
+                    debug!(
+                        operation = "close_bucket",
+                        bucket_id = %bucket_id,
+                        "Sending close bucket request"
+                    );
+
+                    let response = self
+                        .client
+                        .request()
+                        .method(Method::POST)
+                        .header(ACCEPT, HeaderValue::from_static("application/json"))
+                        .path("buckets")
+                        .path("close")
+                        .query_param("bucketId", &bucket_id)
+                        .query_param("apiKey", &api_key)
+                        .send()
+                        .await
+                        .map_err(|e| AtlanticError::from_reqwest_error("close_bucket", e))?;
+
+                    let status = response.status();
+                    if status.is_success() {
+                        let bucket_response: AtlanticBucketResponse = response
+                            .json()
+                            .await
+                            .map_err(|e| AtlanticError::parse_error("close_bucket", e.to_string()))?;
+
+                        debug!(
+                            operation = "close_bucket",
+                            status = %status,
+                            bucket_id = %bucket_id,
+                            response = ?bucket_response,
+                            "Bucket closed successfully"
+                        );
+                        Ok(bucket_response)
+                    } else {
+                        let (error_text, status) = extract_http_error_text(response, "close bucket").await;
+                        debug!(
+                            operation = "close_bucket",
+                            status = %status,
+                            bucket_id = %bucket_id,
+                            error = %error_text,
+                            "Failed to close bucket"
+                        );
+                        Err(AtlanticError::api_error("close_bucket", status, error_text))
+                    }
+                }
+            })
+            .await?;
+
+        info!(
+            operation = "close_bucket",
+            bucket_id = %bucket_id,
+            duration_ms = start_time.elapsed().as_millis(),
+            "Bucket closure completed"
+        );
+
+        Ok(result)
     }
 
     /// Submits request to the prover client
@@ -335,107 +546,204 @@ impl AtlanticClient {
         bucket_info: AtlanticBucketInfo,
         api_key: impl AsRef<str>,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
+        let start_time = Instant::now();
         let job_size = Self::n_steps_to_job_size(job_info.n_steps);
-        debug!(
-            "Atlantic Request: POST /atlantic-query - submitting job (layout: {}, job_size: {}, network: {}, pie_file: {:?}, bucket_id: {:?}, bucket_job_index: {:?})",
-            job_config.proof_layout,
-            job_size,
-            &job_config.network,
-            job_info.pie_file,
-            bucket_info.bucket_id,
-            bucket_info.bucket_job_index
-        );
 
-        let mut request = self.proving_layer.add_proving_params(
-            // NOTE: Removing layout from the query params as it is unnecessary now (as conveyed by the Atlantic team)
-            self.client
-                .request()
-                .method(Method::POST)
-                .path("atlantic-query")
-                .query_param("apiKey", api_key.as_ref())
-                .form_text("declaredJobSize", job_size)
-                .form_text("result", &job_config.result.to_string())
-                .form_text("network", job_config.network.as_ref())
-                .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
-                .form_text("cairoVm", &job_config.cairo_vm.as_str())
-                .form_file("pieFile", job_info.pie_file.as_ref(), "pie.zip", Some("application/zip"))?,
-            ProvingParams { layout: job_config.proof_layout },
-        );
+        // Get file size for logging
+        let file_size = std::fs::metadata(&job_info.pie_file).map(|m| m.len()).unwrap_or(0);
 
-        if let Some(ref bucket_id) = bucket_info.bucket_id {
-            request = request.form_text("bucketId", bucket_id);
-        }
-        if let Some(bucket_job_index) = bucket_info.bucket_job_index {
-            request = request.form_text("bucketJobIndex", &bucket_job_index.to_string());
-        }
+        info!(
+            operation = "add_job",
+            layout = %job_config.proof_layout,
+            job_size = job_size,
+            network = %job_config.network,
+            pie_file_size_bytes = file_size,
+            bucket_id = ?bucket_info.bucket_id,
+            bucket_job_index = ?bucket_info.bucket_job_index,
+            "Starting job submission"
+        );
 
         let context = format!(
-            "layout: {}, job_size: {}, network: {}, pie_file: {:?}, bucket_id: {:?}, bucket_job_index: {:?}",
+            "layout: {}, job_size: {}, network: {}, pie_file_size: {} bytes, bucket_id: {:?}, bucket_job_index: {:?}",
             job_config.proof_layout,
             job_size,
             job_config.network,
-            job_info.pie_file,
+            file_size,
             bucket_info.bucket_id,
             bucket_info.bucket_job_index
         );
 
-        let response =
-            request.send().await.map_err(|e| AtlanticError::AddJobFailure { context: context.clone(), source: e })?;
+        let api_key_str = api_key.as_ref().to_string();
+        let pie_file_path = job_info.pie_file.clone();
+        let layout = job_config.proof_layout;
+        let cairo_vm = job_config.cairo_vm.clone();
+        let result_step = job_config.result.clone();
+        let network = job_config.network.clone();
+        let bucket_id = bucket_info.bucket_id.clone();
+        let bucket_job_index = bucket_info.bucket_job_index;
 
-        let status = response.status();
-        match status.is_success() {
-            true => {
-                let job_response: AtlanticAddJobResponse = response.json().await.map_err(|e| {
-                    AtlanticError::AddJobFailure { context: format!("{}, parsing JSON response", context), source: e }
-                })?;
-                debug!(
-                    "Atlantic Response: POST /atlantic-query - success (status: {}, job_key: {})",
-                    status, job_response.atlantic_query_id
-                );
-                Ok(job_response)
-            }
-            false => {
-                let (error_text, status) = extract_http_error_text(response, "add job").await;
-                debug!("Atlantic Response: POST /atlantic-query - error (status: {}, error: {})", status, error_text);
-                Err(AtlanticError::AtlanticService(status, error_text))
-            }
-        }
+        let result = self
+            .retry_request("add_job", &context, || {
+                let api_key = api_key_str.clone();
+                let pie_file = pie_file_path.clone();
+                let layout = layout;
+                let cairo_vm = cairo_vm.clone();
+                let result_step = result_step.clone();
+                let network = network.clone();
+                let bucket_id = bucket_id.clone();
+
+                async move {
+                    debug!(
+                        operation = "add_job",
+                        layout = %layout,
+                        job_size = job_size,
+                        network = %network,
+                        pie_file = ?pie_file,
+                        "Building add_job request"
+                    );
+
+                    let mut request = self.proving_layer.add_proving_params(
+                        // NOTE: Removing layout from the query params as it is unnecessary now (as conveyed by the Atlantic team)
+                        self.client
+                            .request()
+                            .method(Method::POST)
+                            .path("atlantic-query")
+                            .query_param("apiKey", &api_key)
+                            .form_text("declaredJobSize", job_size)
+                            .form_text("result", &result_step.to_string())
+                            .form_text("network", &network)
+                            .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
+                            .form_text("cairoVm", &cairo_vm.as_str())
+                            .form_file("pieFile", pie_file.as_ref(), "pie.zip", Some("application/zip"))
+                            .map_err(|e| AtlanticError::from_io_error("add_job", e))?,
+                        ProvingParams { layout },
+                    );
+
+                    if let Some(ref bucket_id) = bucket_id {
+                        request = request.form_text("bucketId", bucket_id);
+                    }
+                    if let Some(bucket_job_index) = bucket_job_index {
+                        request = request.form_text("bucketJobIndex", &bucket_job_index.to_string());
+                    }
+
+                    debug!(
+                        operation = "add_job",
+                        layout = %layout,
+                        job_size = job_size,
+                        network = %network,
+                        cairo_vm = ?cairo_vm,
+                        result = ?result_step,
+                        bucket_id = ?bucket_id,
+                        bucket_job_index = ?bucket_job_index,
+                        "Sending add_job request"
+                    );
+
+                    let response = request.send().await.map_err(|e| AtlanticError::from_reqwest_error("add_job", e))?;
+
+                    let status = response.status();
+                    if status.is_success() {
+                        let job_response: AtlanticAddJobResponse =
+                            response.json().await.map_err(|e| AtlanticError::parse_error("add_job", e.to_string()))?;
+
+                        debug!(
+                            operation = "add_job",
+                            status = %status,
+                            job_id = %job_response.atlantic_query_id,
+                            response = ?job_response,
+                            "Job submitted successfully"
+                        );
+                        Ok(job_response)
+                    } else {
+                        let (error_text, status) = extract_http_error_text(response, "add job").await;
+                        debug!(
+                            operation = "add_job",
+                            status = %status,
+                            error = %error_text,
+                            "Failed to submit job"
+                        );
+                        Err(AtlanticError::api_error("add_job", status, error_text))
+                    }
+                }
+            })
+            .await?;
+
+        info!(
+            operation = "add_job",
+            job_id = %result.atlantic_query_id,
+            pie_file_size_bytes = file_size,
+            duration_ms = start_time.elapsed().as_millis(),
+            "Job submission completed"
+        );
+
+        Ok(result)
     }
 
     /// Fetch the status of a job
     pub async fn get_job_status(&self, job_key: &str) -> Result<AtlanticGetStatusResponse, AtlanticError> {
-        debug!("Atlantic Request: GET /atlantic-query/{} - getting job status", job_key);
+        let start_time = Instant::now();
+        let context = format!("job_key: {}", job_key);
 
-        self.retry_get("get_job_status", || async {
-            let response =
-                self.client.request().method(Method::GET).path("atlantic-query").path(job_key).send().await.map_err(
-                    |e| AtlanticError::GetJobStatusFailure { context: format!("job_key: {}", job_key), source: e },
-                )?;
+        debug!(
+            operation = "get_job_status",
+            job_key = %job_key,
+            "Getting job status"
+        );
 
-            let status = response.status();
-            if status.is_success() {
-                let job_status: AtlanticGetStatusResponse =
-                    response.json().await.map_err(|e| AtlanticError::GetJobStatusFailure {
-                        context: format!("job_key: {}, parsing JSON response", job_key),
-                        source: e,
-                    })?;
-                debug!(
-                    "Atlantic Response: GET /atlantic-query/{} - success (status: {}, job_status: {:?})",
-                    job_key, status, job_status.atlantic_query.status
-                );
-                Ok(job_status)
-            } else {
-                {
-                    let (error_text, status) = extract_http_error_text(response, "get job status").await;
-                    debug!(
-                        "Atlantic Response: GET /atlantic-query/{} - error (status: {}, error: {})",
-                        job_key, status, error_text
-                    );
-                    Err(AtlanticError::AtlanticService(status, error_text))
+        let job_key = job_key.to_string();
+        let result = self
+            .retry_request("get_job_status", &context, || {
+                let job_key = job_key.clone();
+                async move {
+                    let response = self
+                        .client
+                        .request()
+                        .method(Method::GET)
+                        .path("atlantic-query")
+                        .path(&job_key)
+                        .send()
+                        .await
+                        .map_err(|e| AtlanticError::from_reqwest_error("get_job_status", e))?;
+
+                    let status = response.status();
+                    if status.is_success() {
+                        let job_status: AtlanticGetStatusResponse = response
+                            .json()
+                            .await
+                            .map_err(|e| AtlanticError::parse_error("get_job_status", e.to_string()))?;
+
+                        debug!(
+                            operation = "get_job_status",
+                            job_key = %job_key,
+                            status = %status,
+                            job_status = ?job_status.atlantic_query.status,
+                            response = ?job_status,
+                            "Job status retrieved successfully"
+                        );
+                        Ok(job_status)
+                    } else {
+                        let (error_text, status) = extract_http_error_text(response, "get job status").await;
+                        debug!(
+                            operation = "get_job_status",
+                            job_key = %job_key,
+                            status = %status,
+                            error = %error_text,
+                            "Failed to get job status"
+                        );
+                        Err(AtlanticError::api_error("get_job_status", status, error_text))
+                    }
                 }
-            }
-        })
-        .await
+            })
+            .await?;
+
+        info!(
+            operation = "get_job_status",
+            job_key = %job_key,
+            job_status = ?result.atlantic_query.status,
+            duration_ms = start_time.elapsed().as_millis(),
+            "Get job status completed"
+        );
+
+        Ok(result)
     }
 
     /// Fetch proof from herodotus service.
@@ -447,41 +755,81 @@ impl AtlanticClient {
     /// The proof as a string if the request is successful, otherwise an error is returned
     pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
         // TODO: Update the code once a proper API is available for this
+        let start_time = Instant::now();
         let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
-        debug!("Atlantic Request: GET {} - getting proof for task_id: {}", proof_path, task_id);
 
-        self.retry_get("get_proof_by_task_id", || async {
-            let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
-            let client = reqwest::Client::new();
-            let response = client.get(&proof_path).send().await.map_err(|e| AtlanticError::GetJobArtifactsFailure {
-                context: format!("task_id: {}, url: {}", task_id, proof_path),
-                source: e,
-            })?;
+        info!(
+            operation = "get_proof_by_task_id",
+            task_id = %task_id,
+            url = %proof_path,
+            "Starting proof download"
+        );
 
-            let status = response.status();
-            if status.is_success() {
-                let response_text = response.text().await.map_err(|e| AtlanticError::GetJobArtifactsFailure {
-                    context: format!("task_id: {}, url: {}, reading response text", task_id, proof_path),
-                    source: e,
-                })?;
-                let proof_size = response_text.len();
-                debug!(
-                    "Atlantic Response: GET {} - success (status: {}, task_id: {}, proof_size: {} bytes)",
-                    proof_path, status, task_id, proof_size
-                );
-                Ok(response_text)
-            } else {
-                {
-                    let (error_text, status) = extract_http_error_text(response, "get proof by task id").await;
+        let context = format!("task_id: {}, url: {}", task_id, proof_path);
+        let task_id_clone = task_id.to_string();
+
+        let result = self
+            .retry_request("get_proof_by_task_id", &context, || {
+                let proof_path = ATLANTIC_PROOF_URL.replace("{}", &task_id_clone);
+                let task_id = task_id_clone.clone();
+
+                async move {
                     debug!(
-                        "Atlantic Response: GET {} - error (status: {}, task_id: {}, error: {})",
-                        proof_path, status, task_id, error_text
+                        operation = "get_proof_by_task_id",
+                        task_id = %task_id,
+                        url = %proof_path,
+                        "Fetching proof"
                     );
-                    Err(AtlanticError::AtlanticService(status, error_text))
+
+                    let client = reqwest::Client::new();
+                    let response = client
+                        .get(&proof_path)
+                        .send()
+                        .await
+                        .map_err(|e| AtlanticError::from_reqwest_error("get_proof_by_task_id", e))?;
+
+                    let status = response.status();
+                    if status.is_success() {
+                        let response_text = response
+                            .text()
+                            .await
+                            .map_err(|e| AtlanticError::from_reqwest_error("get_proof_by_task_id", e))?;
+                        let proof_size = response_text.len();
+
+                        debug!(
+                            operation = "get_proof_by_task_id",
+                            task_id = %task_id,
+                            url = %proof_path,
+                            status = %status,
+                            proof_size_bytes = proof_size,
+                            "Proof download successful"
+                        );
+                        Ok(response_text)
+                    } else {
+                        let (error_text, status) = extract_http_error_text(response, "get proof by task id").await;
+                        debug!(
+                            operation = "get_proof_by_task_id",
+                            task_id = %task_id,
+                            url = %proof_path,
+                            status = %status,
+                            error = %error_text,
+                            "Proof download failed"
+                        );
+                        Err(AtlanticError::api_error("get_proof_by_task_id", status, error_text))
+                    }
                 }
-            }
-        })
-        .await
+            })
+            .await?;
+
+        info!(
+            operation = "get_proof_by_task_id",
+            task_id = %task_id,
+            proof_size_bytes = result.len(),
+            duration_ms = start_time.elapsed().as_millis(),
+            "Proof download completed"
+        );
+
+        Ok(result)
     }
 
     pub async fn submit_l2_query(
@@ -493,63 +841,106 @@ impl AtlanticClient {
         program_hash: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         // TODO: we are having two function to atlantic query might need to merge them with appropriate argument
+        let start_time = Instant::now();
         let job_size = Self::n_steps_to_job_size(n_steps);
         let network = atlantic_network.as_ref();
-        debug!(
-            "Atlantic Request: POST /atlantic-query - submitting L2 query (job_size: {}, network: {}, program_hash: {}, proof_size: {} bytes)",
-            job_size,
-            network,
-            program_hash,
-            proof.len()
+        let proof_size = proof.len();
+
+        info!(
+            operation = "submit_l2_query",
+            job_size = job_size,
+            network = %network,
+            program_hash = %program_hash,
+            proof_size_bytes = proof_size,
+            "Starting L2 query submission"
         );
 
         let context = format!(
             "job_size: {}, network: {}, program_hash: {}, proof_size: {} bytes",
-            job_size,
-            network,
-            program_hash,
-            proof.len()
+            job_size, network, program_hash, proof_size
         );
 
-        let response = self
-            .client
-            .request()
-            .method(Method::POST)
-            .path("atlantic-query")
-            .query_param("apiKey", atlantic_api_key.as_ref())
-            .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))?
-            .form_text("programHash", program_hash)
-            .form_text("layout", LayoutName::recursive_with_poseidon.to_str())
-            .form_text("declaredJobSize", job_size)
-            .form_text("network", network)
-            .form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
-            .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
-            .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
-            .send()
-            .await
-            .map_err(|e| AtlanticError::AddJobFailure { context: context.clone(), source: e })?;
+        let api_key = atlantic_api_key.to_string();
+        let network_str = network.to_string();
+        let program_hash_str = program_hash.to_string();
+        let proof_str = proof.to_string();
 
-        let status = response.status();
-        match status.is_success() {
-            true => {
-                let job_response: AtlanticAddJobResponse = response.json().await.map_err(|e| {
-                    AtlanticError::AddJobFailure { context: format!("{}, parsing JSON response", context), source: e }
-                })?;
-                debug!(
-                    "Atlantic Response: POST /atlantic-query - L2 query success (status: {}, job_key: {})",
-                    status, job_response.atlantic_query_id
-                );
-                Ok(job_response)
-            }
-            false => {
-                let (error_text, status) = extract_http_error_text(response, "submit L2 query").await;
-                debug!(
-                    "Atlantic Response: POST /atlantic-query - L2 query error (status: {}, error: {})",
-                    status, error_text
-                );
-                Err(AtlanticError::AtlanticService(status, error_text))
-            }
-        }
+        let result = self
+            .retry_request("submit_l2_query", &context, || {
+                let api_key = api_key.clone();
+                let network = network_str.clone();
+                let program_hash = program_hash_str.clone();
+                let proof = proof_str.clone();
+
+                async move {
+                    debug!(
+                        operation = "submit_l2_query",
+                        job_size = job_size,
+                        network = %network,
+                        program_hash = %program_hash,
+                        proof_size_bytes = proof.len(),
+                        layout = %LayoutName::recursive_with_poseidon.to_str(),
+                        cairo_vm = "python",
+                        "Sending L2 query request"
+                    );
+
+                    let response = self
+                        .client
+                        .request()
+                        .method(Method::POST)
+                        .path("atlantic-query")
+                        .query_param("apiKey", &api_key)
+                        .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))
+                        .map_err(|e| AtlanticError::from_io_error("submit_l2_query", e))?
+                        .form_text("programHash", &program_hash)
+                        .form_text("layout", LayoutName::recursive_with_poseidon.to_str())
+                        .form_text("declaredJobSize", job_size)
+                        .form_text("network", &network)
+                        .form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
+                        .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
+                        .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
+                        .send()
+                        .await
+                        .map_err(|e| AtlanticError::from_reqwest_error("submit_l2_query", e))?;
+
+                    let status = response.status();
+                    if status.is_success() {
+                        let job_response: AtlanticAddJobResponse = response
+                            .json()
+                            .await
+                            .map_err(|e| AtlanticError::parse_error("submit_l2_query", e.to_string()))?;
+
+                        debug!(
+                            operation = "submit_l2_query",
+                            status = %status,
+                            job_id = %job_response.atlantic_query_id,
+                            response = ?job_response,
+                            "L2 query submitted successfully"
+                        );
+                        Ok(job_response)
+                    } else {
+                        let (error_text, status) = extract_http_error_text(response, "submit L2 query").await;
+                        debug!(
+                            operation = "submit_l2_query",
+                            status = %status,
+                            error = %error_text,
+                            "Failed to submit L2 query"
+                        );
+                        Err(AtlanticError::api_error("submit_l2_query", status, error_text))
+                    }
+                }
+            })
+            .await?;
+
+        info!(
+            operation = "submit_l2_query",
+            job_id = %result.atlantic_query_id,
+            proof_size_bytes = proof_size,
+            duration_ms = start_time.elapsed().as_millis(),
+            "L2 query submission completed"
+        );
+
+        Ok(result)
     }
 
     // https://docs.herodotus.cloud/atlantic/sending-query#sending-query
