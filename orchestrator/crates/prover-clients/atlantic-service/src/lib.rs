@@ -241,7 +241,6 @@ impl ProverClient for AtlanticProverService {
 
         // Find the aggregator job by its step type (FactHashRegistration)
         // This is more reliable than using bucket_job_index which depends on num_snos_batches
-        // See: docs/bugs/aggregator_task_id_race_condition.md
         Ok(bucket
             .queries
             .iter()
