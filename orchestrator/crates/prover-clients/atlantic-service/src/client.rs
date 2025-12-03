@@ -586,7 +586,6 @@ impl AtlanticClient {
             .retry_request("add_job", &context, || {
                 let api_key = api_key_str.clone();
                 let pie_file = pie_file_path.clone();
-                let layout = layout;
                 let cairo_vm = cairo_vm.clone();
                 let result_step = result_step.clone();
                 let network = network.clone();
