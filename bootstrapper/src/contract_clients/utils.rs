@@ -262,7 +262,7 @@ pub(crate) async fn init_governance_proxy(account: &'_ RpcAccount<'_>, contract_
 }
 
 #[cfg(test)]
-#[ignore("Test for locally calculating config hash")]
+#[ignore = "Test for locally calculating config hash"]
 mod tests {
     use super::*;
 
