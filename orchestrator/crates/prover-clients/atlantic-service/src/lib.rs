@@ -57,7 +57,6 @@ pub struct AtlanticProverService {
 
 #[async_trait]
 impl ProverClient for AtlanticProverService {
-    #[tracing::instrument(skip(self, task))]
     async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
@@ -169,7 +168,6 @@ impl ProverClient for AtlanticProverService {
     ///
     /// # Returns
     /// Status of the task
-    #[tracing::instrument(skip(self))]
     async fn get_task_status(
         &self,
         task: TaskType,
