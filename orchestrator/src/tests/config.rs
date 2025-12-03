@@ -754,8 +754,8 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
             .unwrap()
             .map(|s| s.parse::<u64>().unwrap()),
         max_blocks_per_snos_batch: get_env_var_optional("MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH")
-            .parse::<u64>()
-            .unwrap(),
+            .unwrap()
+            .map(|s| s.parse::<u64>().unwrap()),
         max_snos_batches_per_aggregator_batch: get_env_var_or_default(
             "MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH",
             "50",
