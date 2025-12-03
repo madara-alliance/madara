@@ -136,7 +136,7 @@ impl AtlanticClient {
                 Ok(result) => {
                     let duration_s = start_time.elapsed().as_secs_f64();
                     let response_size_bytes = metrics_extractor(&result);
-                    retry_count = if attempt > 1 { attempt - 1 } else { 0 };
+                    retry_count = attempt.saturating_sub(1);
 
                     // Emit metrics event
                     info!(
@@ -182,7 +182,7 @@ impl AtlanticClient {
                     } else {
                         // Non-retryable error or last attempt
                         let duration_s = start_time.elapsed().as_secs_f64();
-                        retry_count = if attempt > 1 { attempt - 1 } else { 0 };
+                        retry_count = attempt.saturating_sub(1);
 
                         let error_type = err.error_type();
 
