@@ -99,11 +99,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
             }
             TaskStatus::Succeeded => {
                 // Get the aggregator query ID
-                let aggregator_query_id = config
-                    .prover_client()
-                    .get_aggregator_task_id(&bucket_id, metadata.num_snos_batches + 1)
-                    .await
-                    .map_err(|e| {
+                let aggregator_query_id =
+                    config.prover_client().get_aggregator_task_id(&bucket_id).await.map_err(|e| {
                         error!(
                             error = %e,
                             "Failed to get aggregator query ID from prover client"

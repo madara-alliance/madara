@@ -236,11 +236,7 @@ impl ProverClient for AtlanticProverService {
         Ok(atlantic_job_response.atlantic_query_id)
     }
 
-    async fn get_aggregator_task_id(
-        &self,
-        bucket_id: &str,
-        _aggregator_index: u64,
-    ) -> Result<String, ProverClientError> {
+    async fn get_aggregator_task_id(&self, bucket_id: &str) -> Result<String, ProverClientError> {
         let bucket = self.atlantic_client.get_bucket(bucket_id).await?;
 
         // Find the aggregator job by its step type (FactHashRegistration)
