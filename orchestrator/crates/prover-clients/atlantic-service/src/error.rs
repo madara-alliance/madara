@@ -34,6 +34,18 @@ impl AtlanticError {
         matches!(self, AtlanticError::NetworkError { .. })
     }
 
+    /// Get error type as a string for metrics
+    pub fn error_type(&self) -> &'static str {
+        match self {
+            AtlanticError::NetworkError { .. } => "network_error",
+            AtlanticError::ApiError { .. } => "api_error",
+            AtlanticError::FileError { .. } => "file_error",
+            AtlanticError::ParseError { .. } => "parse_error",
+            AtlanticError::UrlError { .. } => "url_error",
+            AtlanticError::Other { .. } => "other_error",
+        }
+    }
+
     /// Create a network error from a reqwest error
     pub fn from_reqwest_error(operation: impl Into<String>, source: reqwest::Error) -> Self {
         let operation = operation.into();
