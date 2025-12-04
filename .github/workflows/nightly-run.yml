@@ -204,6 +204,7 @@ jobs:
           MESSAGE="Nightly Run Failed
 
           Repository: ${{ github.repository }}
+          Branch: ${{ github.ref_name }}
           Workflow: ${{ github.workflow }}
           Run ID: ${{ github.run_id }}
           Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
