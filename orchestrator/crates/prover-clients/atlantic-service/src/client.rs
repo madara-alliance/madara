@@ -14,6 +14,7 @@ use crate::constants::{
     AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL, RETRY_DELAY_SECONDS, RETRY_MAX_ATTEMPTS,
 };
 use crate::error::AtlanticError;
+use crate::metrics::ATLANTIC_METRICS;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
@@ -138,6 +139,15 @@ impl AtlanticClient {
                     let response_size_bytes = metrics_extractor(&result);
                     retry_count = attempt.saturating_sub(1);
 
+                    // Record OTEL metrics
+                    ATLANTIC_METRICS.record_success(
+                        operation_name,
+                        duration_s,
+                        data_size_bytes,
+                        response_size_bytes,
+                        retry_count,
+                    );
+
                     // Emit metrics event
                     info!(
                         metric_type = "atlantic_api_call",
@@ -186,6 +196,15 @@ impl AtlanticClient {
 
                         let error_type = err.error_type();
 
+                        // Record OTEL metrics for failure
+                        ATLANTIC_METRICS.record_failure(
+                            operation_name,
+                            duration_s,
+                            data_size_bytes,
+                            error_type,
+                            retry_count,
+                        );
+
                         // Emit metrics event for failure
                         warn!(
                             metric_type = "atlantic_api_call",
@@ -221,6 +240,9 @@ impl AtlanticClient {
         let final_error = last_error.expect("At least one attempt should have been made");
         retry_count = total_attempts - 1;
         let error_type = final_error.error_type();
+
+        // Record OTEL metrics for exhausted retries
+        ATLANTIC_METRICS.record_failure(operation_name, total_duration_s, data_size_bytes, error_type, retry_count);
 
         // Emit metrics event for exhausted retries
         warn!(

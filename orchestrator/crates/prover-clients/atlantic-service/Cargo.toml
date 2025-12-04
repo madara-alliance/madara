@@ -26,6 +26,8 @@ tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing = { workspace = true }
+opentelemetry = { workspace = true }
+once_cell = { workspace = true }
 url.workspace = true
 uuid.workspace = true
 
