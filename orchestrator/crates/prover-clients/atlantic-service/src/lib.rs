@@ -1,6 +1,7 @@
 pub mod client;
 pub mod constants;
 pub mod error;
+pub mod metrics;
 pub mod types;
 
 use std::str::FromStr;
