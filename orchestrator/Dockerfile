@@ -140,9 +140,9 @@ WORKDIR /app
 COPY --from=builder-rust /app/target/release/orchestrator /bin
 
 # Copy trusted setup files
-COPY --from=builder-rust /app/orchestrator/crates/da-clients/ethereum/trusted_setup.txt \
+COPY --from=builder-rust /app/orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt \
     /app/orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt
-COPY --from=builder-rust /app/orchestrator/crates/da-clients/ethereum/trusted_setup.txt /tmp/trusted_setup.txt
+COPY --from=builder-rust /app/orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt /tmp/trusted_setup.txt
 COPY --from=builder-rust /tmp/kzg_dirs.txt /tmp/kzg_dirs.txt
 
 RUN while read dir; do \
