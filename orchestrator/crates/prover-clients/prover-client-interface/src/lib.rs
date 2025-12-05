@@ -29,8 +29,7 @@ pub trait ProverClient: Send + Sync {
         fact: &str,
         n_steps: Option<usize>,
     ) -> Result<String, ProverClientError>;
-    async fn get_aggregator_task_id(&self, bucket_id: &str, aggregator_index: u64)
-        -> Result<String, ProverClientError>;
+    async fn get_aggregator_task_id(&self, bucket_id: &str) -> Result<String, ProverClientError>;
     async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError>;
 }
 
