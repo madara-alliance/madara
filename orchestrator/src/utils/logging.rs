@@ -143,7 +143,7 @@ where
         event.record(&mut visitor);
 
         // Table-like format with fixed widths:
-        // Timestamp (14 chars) | Level (5 chars) | Queue (24 chars) | Message and fields
+        // Timestamp (14 chars) | Level (5 chars) | Queue (24 chars) | Service (12 chars) | Message and fields
         write!(writer, "{}{}{} ", ts_color, now, reset)?;
         write!(writer, "{}|{} ", dim_color, reset)?;
         write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
@@ -151,6 +151,11 @@ where
         write!(writer, "{}{:<20}{} ", queue_color, queue.0, reset)?;
         write!(writer, "{}|{} ", dim_color, reset)?;
         write!(writer, "{}{:<14}{} ", queue_color, queue.1, reset)?;
+        write!(writer, "{}|{} ", dim_color, reset)?;
+
+        // Add service/package column
+        let service = extract_service_name(meta.target());
+        write!(writer, "{}{:<12}{} ", queue_color, service, reset)?;
         write!(writer, "{}|{} ", dim_color, reset)?;
 
         // Write the main message
@@ -276,6 +281,7 @@ where
         root.insert("timestamp".to_string(), Value::String(ts));
         root.insert("level".to_string(), Value::String(meta.level().to_string()));
         root.insert("target".to_string(), Value::String(meta.target().to_string()));
+        root.insert("service".to_string(), Value::String(extract_service_name(meta.target()).to_string()));
         if let Some(file) = meta.file() {
             root.insert("filename".to_string(), Value::String(file.to_string()));
         }
@@ -367,6 +373,24 @@ pub fn init_logging() {
             .with(fmt_layer)
             .with(ErrorLayer::default());
         tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
+    }
+}
+
+/// Extract service/package name from the tracing target
+/// Maps crate names to short display names for the service column
+fn extract_service_name(target: &str) -> &'static str {
+    if target.starts_with("orchestrator_atlantic_service") {
+        "ATLANTIC"
+    } else if target.starts_with("orchestrator_gps_fact_checker") {
+        "GPS_FACT_CHK"
+    } else if target.starts_with("orchestrator_prover_client_interface") {
+        "PROVER_IFACE"
+    } else if target.starts_with("orchestrator_utils") {
+        "UTILS"
+    } else if target.starts_with("orchestrator") {
+        "-"
+    } else {
+        "EXTERNAL"
     }
 }
 
