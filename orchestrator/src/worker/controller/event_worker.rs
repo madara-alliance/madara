@@ -1,10 +1,14 @@
 use crate::core::config::Config;
 use crate::error::other::OtherError;
 use crate::error::{event::EventSystemResult, ConsumptionError};
-use crate::types::queue::{JobState, QueueType};
+use crate::types::jobs::types::JobType;
+use crate::types::queue::{JobAction, JobState, QueueType};
 use crate::types::queue_control::{QueueControlConfig, QUEUES};
 use crate::worker::event_handler::service::JobHandlerService;
-use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
+use crate::worker::parser::{
+    job_queue_message::JobQueueMessage, priority_queue_message::PriorityQueueMessage,
+    worker_trigger_message::WorkerTriggerMessage,
+};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
 use omniqueue::Delivery;
@@ -92,6 +96,26 @@ impl EventWorker {
                     correlation_id = %correlation_id,
                     trace_id = %correlation_id,
                     span_type = "Worker"
+                )
+            }
+            // PriorityJobQueue messages are converted to JobQueue messages in the run loop
+            // This case should not be reached, but we handle it for completeness
+            ParsedMessage::PriorityJobQueue(msg) => {
+                tracing::info_span!(
+                    "job_processing",
+                    job_id = %msg.id,
+                    subject_id = %msg.id,
+                    queue = %self.queue_type,
+                    job_type = %self.get_job_type_from_queue(),
+                    correlation_id = %correlation_id,
+                    trace_id = %correlation_id,
+                    span_type = "Job",
+                    external_id = tracing::field::Empty,
+                    batch_id = tracing::field::Empty,
+                    bucket_id = tracing::field::Empty,
+                    block_start = tracing::field::Empty,
+                    block_end = tracing::field::Empty,
+                    aggregator_query_id = tracing::field::Empty
                 )
             }
         }
@@ -307,6 +331,14 @@ impl EventWorker {
                         ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg: error.to_string() },
                     )
                 }
+                ParsedMessage::PriorityJobQueue(msg) => {
+                    let job_id = &msg.id;
+                    tracing::error!("Failed to handle priority job {job_id:?}. Error: {error:?}");
+                    (
+                        format!("Job {job_id:?} handling failed: {error}"),
+                        ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg: error.to_string() },
+                    )
+                }
             };
 
             message.nack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
@@ -352,6 +384,9 @@ impl EventWorker {
                         ParsedMessage::JobQueue(msg) => {
                             error!("Failed to handle job {msg:?}. Error: {e:?}");
                         }
+                        ParsedMessage::PriorityJobQueue(msg) => {
+                            error!("Failed to handle priority job {msg:?}. Error: {e:?}");
+                        }
                     }
                     // Error already logged above, no additional action needed
                     error!("Failed to process message: {:?}", e);
@@ -387,6 +422,8 @@ impl EventWorker {
 
             tokio::select! {
                 biased;
+
+                // 1. Handle completed tasks (highest priority)
                 Some(result) = tasks.join_next(), if !tasks.is_empty() => {
                     Self::handle_task_result(result);
 
@@ -397,13 +434,38 @@ impl EventWorker {
                     }
                 }
 
-                // Handle shutdown signal
+                // 2. Handle shutdown signal
                 _ = self.cancellation_token.cancelled() => {
                     info!("Shutdown signal received, breaking from main loop");
                     break;
                 }
 
-                // Process new messages (with backpressure)
+                // 3. NEW: Check priority queue BEFORE normal queue
+                priority_result = self.get_priority_message(),
+                    if tasks.len() < max_concurrent_tasks && self.should_check_priority_queue() => {
+                    match priority_result {
+                        Ok(Some((delivery, priority_msg))) => {
+                            // Convert priority message to JobQueueMessage for processing
+                            let job_queue_msg = JobQueueMessage { id: priority_msg.id };
+                            let parsed_message = ParsedMessage::JobQueue(Box::new(job_queue_msg));
+
+                            let worker = self.clone();
+                            tasks.spawn(async move {
+                                worker.process_message(delivery, parsed_message).await
+                            });
+                            debug!("Spawned PRIORITY task, active: {}", tasks.len());
+                        }
+                        Ok(None) => {
+                            // No matching priority messages, will check normal queue
+                        }
+                        Err(e) => {
+                            error!("Error processing priority queue: {:?}", e);
+                            sleep(Duration::from_millis(100)).await;
+                        }
+                    }
+                }
+
+                // 4. Process normal queue messages (existing logic)
                 message_result = self.get_message(), if tasks.len() < max_concurrent_tasks => {
                     match message_result {
                         Ok(message) => {
@@ -432,6 +494,122 @@ impl EventWorker {
         info!("All tasks completed, worker shutdown complete");
 
         Ok(())
+    }
+
+    /// Determines if this worker should check the priority queue
+    /// Only job processing and verification workers check priority queue
+    /// WorkerTrigger and JobHandleFailure workers do not
+    fn should_check_priority_queue(&self) -> bool {
+        !matches!(self.queue_type, QueueType::WorkerTrigger | QueueType::JobHandleFailure | QueueType::PriorityJobQueue)
+    }
+
+    /// Attempts to get a priority message that matches this worker's job type and action
+    /// Returns:
+    /// - Ok(Some(delivery, parsed)) if matching message found
+    /// - Ok(None) if no messages or no matching messages
+    /// - Err if fatal error occurred
+    async fn get_priority_message(&self) -> EventSystemResult<Option<(Delivery, PriorityQueueMessage)>> {
+        // Try to consume from priority queue
+        match self.config.clone().queue().consume_message_from_queue(QueueType::PriorityJobQueue).await {
+            Ok(delivery) => {
+                // Parse the message
+                match PriorityQueueMessage::parse_message(&delivery) {
+                    Ok(parsed_msg) => {
+                        // Check if this message is for this worker
+                        let matches = self.message_matches_worker(&parsed_msg);
+
+                        if matches {
+                            debug!(
+                                "Priority message matched: job_type={:?}, action={:?}",
+                                parsed_msg.job_type, parsed_msg.action
+                            );
+                            Ok(Some((delivery, *parsed_msg)))
+                        } else {
+                            // Message doesn't match - nack it to release for other workers
+                            debug!(
+                                "Priority message doesn't match, releasing: job_type={:?}, action={:?}",
+                                parsed_msg.job_type, parsed_msg.action
+                            );
+
+                            // Nack the message to make it available for other workers
+                            if let Err(e) = delivery.nack().await {
+                                warn!("Failed to nack non-matching priority message: {:?}", e);
+                            }
+
+                            Ok(None)
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to parse priority message: {:?}", e);
+                        // Nack the malformed message
+                        let _ = delivery.nack().await;
+                        Ok(None)
+                    }
+                }
+            }
+            Err(crate::core::client::queue::error::QueueError::ErrorFromQueueError(e))
+                if matches!(e, omniqueue::QueueError::NoData) =>
+            {
+                Ok(None) // No priority messages available
+            }
+            Err(e) => {
+                // Log error but don't fail - just skip priority check this iteration
+                debug!("Priority queue check failed (will retry): {:?}", e);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Checks if a priority message matches this worker's responsibility
+    fn message_matches_worker(&self, msg: &PriorityQueueMessage) -> bool {
+        match self.queue_type {
+            // SNOS workers
+            QueueType::SnosJobProcessing => msg.job_type == JobType::SnosRun && msg.action == JobAction::Process,
+            QueueType::SnosJobVerification => msg.job_type == JobType::SnosRun && msg.action == JobAction::Verify,
+
+            // Proving workers
+            QueueType::ProvingJobProcessing => {
+                msg.job_type == JobType::ProofCreation && msg.action == JobAction::Process
+            }
+            QueueType::ProvingJobVerification => {
+                msg.job_type == JobType::ProofCreation && msg.action == JobAction::Verify
+            }
+
+            // Proof Registration workers
+            QueueType::ProofRegistrationJobProcessing => {
+                msg.job_type == JobType::ProofRegistration && msg.action == JobAction::Process
+            }
+            QueueType::ProofRegistrationJobVerification => {
+                msg.job_type == JobType::ProofRegistration && msg.action == JobAction::Verify
+            }
+
+            // Data Submission workers
+            QueueType::DataSubmissionJobProcessing => {
+                msg.job_type == JobType::DataSubmission && msg.action == JobAction::Process
+            }
+            QueueType::DataSubmissionJobVerification => {
+                msg.job_type == JobType::DataSubmission && msg.action == JobAction::Verify
+            }
+
+            // Update State workers
+            QueueType::UpdateStateJobProcessing => {
+                msg.job_type == JobType::StateTransition && msg.action == JobAction::Process
+            }
+            QueueType::UpdateStateJobVerification => {
+                msg.job_type == JobType::StateTransition && msg.action == JobAction::Verify
+            }
+
+            // Aggregator workers
+            QueueType::AggregatorJobProcessing => {
+                msg.job_type == JobType::Aggregator && msg.action == JobAction::Process
+            }
+            QueueType::AggregatorJobVerification => {
+                msg.job_type == JobType::Aggregator && msg.action == JobAction::Verify
+            }
+
+            // Special queues don't check priority
+            _ => false,
+        }
     }
 
     /// Handle the result of a task

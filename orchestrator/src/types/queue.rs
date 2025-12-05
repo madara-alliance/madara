@@ -1,11 +1,18 @@
 use crate::error::event::EventSystemError;
 use crate::types::jobs::types::JobType;
+use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter};
 
 #[derive(Display, Debug, Clone, PartialEq, Eq, EnumIter, Hash)]
 pub enum JobState {
     Processing,
     Verification,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum JobAction {
+    Process,
+    Verify,
 }
 
 #[derive(Display, Debug, Clone, PartialEq, Eq, EnumIter, Hash)]
@@ -38,6 +45,8 @@ pub enum QueueType {
     JobHandleFailure,
     #[strum(serialize = "worker_trigger")]
     WorkerTrigger,
+    #[strum(serialize = "priority_job_queue")]
+    PriorityJobQueue,
 }
 
 impl TryFrom<QueueType> for JobState {
@@ -58,6 +67,7 @@ impl TryFrom<QueueType> for JobState {
             QueueType::AggregatorJobVerification => JobState::Verification,
             QueueType::JobHandleFailure => Err(Self::Error::InvalidJobType(QueueType::JobHandleFailure.to_string()))?,
             QueueType::WorkerTrigger => Err(Self::Error::InvalidJobType(QueueType::WorkerTrigger.to_string()))?,
+            QueueType::PriorityJobQueue => Err(Self::Error::InvalidJobType(QueueType::PriorityJobQueue.to_string()))?,
         };
         Ok(state)
     }

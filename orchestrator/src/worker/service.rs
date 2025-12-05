@@ -9,11 +9,12 @@ use crate::error::job::JobError;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::types::queue::{QueueNameForJobType, QueueType};
+use crate::types::queue::{JobAction, QueueNameForJobType, QueueType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
 use crate::worker::parser::job_queue_message::JobQueueMessage;
+use crate::worker::parser::priority_queue_message::PriorityQueueMessage;
 
 pub struct JobService;
 
@@ -70,22 +71,51 @@ impl JobService {
         Self::add_job_to_queue(config, id, job_type.verify_queue_name(), delay).await
     }
 
+    /// Adds a job to the priority queue
+    async fn add_job_to_priority_queue(
+        id: Uuid,
+        job_type: JobType,
+        action: JobAction,
+        config: Arc<Config>,
+    ) -> Result<(), JobError> {
+        let priority_message = PriorityQueueMessage { id, job_type: job_type.clone(), action: action.clone() };
+
+        let payload = serde_json::to_string(&priority_message)?;
+
+        config.queue().send_message(QueueType::PriorityJobQueue, payload, None).await?;
+
+        tracing::info!(
+            job_id = %id,
+            job_type = ?job_type,
+            action = ?action,
+            "Job added to priority queue"
+        );
+
+        Ok(())
+    }
+
     /// Queues a job for processing by adding it to the process queue
     ///
     /// # Arguments
     /// * `id` - UUID of the job to process
     /// * `config` - Shared configuration
+    /// * `priority` - If true, sends to priority queue instead of normal queue
     ///
     /// # Returns
     /// * `Result<(), JobError>` - Success or an error
     ///
     /// # State Transitions
     /// * Any valid state -> PendingProcess
-    pub async fn queue_job_for_processing(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    pub async fn queue_job_for_processing(id: Uuid, config: Arc<Config>, priority: bool) -> Result<(), JobError> {
         let job = Self::get_job(id, config.clone()).await?;
 
-        // Add to process queue directly
-        Self::add_job_to_process_queue(id, &job.job_type, config).await?;
+        if priority {
+            // Send to priority queue with job_type and action
+            Self::add_job_to_priority_queue(id, job.job_type, JobAction::Process, config).await?;
+        } else {
+            // Add to process queue directly
+            Self::add_job_to_process_queue(id, &job.job_type, config).await?;
+        }
 
         Ok(())
     }
@@ -95,14 +125,15 @@ impl JobService {
     /// # Arguments
     /// * `id` - UUID of the job to verify
     /// * `config` - Shared configuration
+    /// * `priority` - If true, sends to priority queue instead of normal queue
     ///
     /// # Returns
     /// * `Result<(), JobError>` - Success or an error
     ///
     /// # Notes
     /// * Resets verification attempt count to 0
-    /// * Sets appropriate delay for verification polling
-    pub async fn queue_job_for_verification(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    /// * Sets appropriate delay for verification polling (only for normal queue)
+    pub async fn queue_job_for_verification(id: Uuid, config: Arc<Config>, priority: bool) -> Result<(), JobError> {
         let mut job = Self::get_job(id, config.clone()).await?;
         let job_handler = factory::get_job_handler(&job.job_type).await;
 
@@ -128,14 +159,19 @@ impl JobService {
             )
             .await?;
 
-        // Add to verification queue with appropriate delay
-        Self::add_job_to_verify_queue(
-            config,
-            id,
-            &job.job_type,
-            Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
-        )
-        .await?;
+        if priority {
+            // Send to priority queue with job_type and action
+            Self::add_job_to_priority_queue(id, job.job_type, JobAction::Verify, config).await?;
+        } else {
+            // Add to verification queue with appropriate delay
+            Self::add_job_to_verify_queue(
+                config,
+                id,
+                &job.job_type,
+                Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
+            )
+            .await?;
+        }
 
         Ok(())
     }

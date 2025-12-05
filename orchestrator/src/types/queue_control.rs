@@ -173,5 +173,14 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             supported_layers: vec![Layer::L2],
         },
     );
+    map.insert(
+        QueueType::PriorityJobQueue,
+        QueueConfig {
+            visibility_timeout: 30,
+            dlq_config: None, // No DLQ - failed priority jobs go through normal error handling
+            queue_control: QueueControlConfig::new(10), // Not used directly, but set for consistency
+            supported_layers: vec![Layer::L2, Layer::L3],
+        },
+    );
     map
 });
