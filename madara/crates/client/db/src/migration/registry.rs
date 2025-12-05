@@ -48,16 +48,12 @@ impl std::fmt::Debug for Migration {
 /// 3. Add the migration to this array
 /// 4. Update `.db-versions.yml` with the new version
 pub fn get_migrations() -> &'static [Migration] {
-    &[
-        // Add migrations here as they are implemented.
-        // Example:
-        // Migration {
-        //     from_version: 8,
-        //     to_version: 9,
-        //     name: "snip34_blake_casm_migration",
-        //     migrate: super::revisions::revision_0009::migrate,
-        // },
-    ]
+    &[Migration {
+        from_version: 8,
+        to_version: 9,
+        name: "v8→v9: SierraClassInfo and StateDiff format",
+        migrate: super::revisions::revision_0009::migrate,
+    }]
 }
 
 /// Get migrations needed to upgrade from `from_version` to `to_version`.

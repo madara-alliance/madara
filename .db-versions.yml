@@ -18,7 +18,7 @@
 # Current database schema version.
 # This is the version that new databases will be created with,
 # and the version that existing databases will be migrated to.
-current_version: 8
+current_version: 9
 
 # Minimum version that can be migrated from.
 # Databases older than this must be deleted and re-synced from scratch.
@@ -31,6 +31,8 @@ base_version: 8
 #   - pr: The PR number that introduced this version
 #   - description: (optional) Brief description of changes
 versions:
+  - version: 9
+    description: "SierraClassInfo format migration for SNIP-34 support"
   - version: 8
     pr: 790
     description: "Current schema with migration support"

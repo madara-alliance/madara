@@ -42,8 +42,23 @@ const PARENT_LEVELS: usize = 4;
 
 #[allow(clippy::print_stderr)]
 fn main() {
+    // Always set rerun-if-changed for the version file FIRST
+    // This ensures cargo knows to re-run this script when the file changes,
+    // even if we fail to read it this time.
+    if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
+        if let Ok(root_dir) = get_parents(&PathBuf::from(&manifest_dir), PARENT_LEVELS) {
+            let file_path = root_dir.join(DB_VERSION_FILE);
+            println!("cargo:rerun-if-changed={}", file_path.display());
+        }
+    }
+
+    // Also rerun if this build script changes
+    println!("cargo:rerun-if-changed=build.rs");
+
     if let Err(e) = get_db_version() {
-        eprintln!("Failed to get DB version: {}", e);
+        // Use cargo:warning to make errors visible during build
+        println!("cargo:warning=Failed to get DB version: {}", e);
+        eprintln!("cargo:warning=Failed to get DB version: {}", e);
         std::process::exit(1);
     }
 }
@@ -83,7 +98,14 @@ fn get_db_version() -> Result<(), BuildError> {
     let file_path = root_dir.join(DB_VERSION_FILE);
 
     let content = fs::read_to_string(&file_path).map_err(|e| {
-        BuildError::Io(std::io::Error::new(e.kind(), format!("Failed to read {}: {}", file_path.display(), e)))
+        BuildError::Io(std::io::Error::new(
+            e.kind(),
+            format!(
+                "Failed to read {}: {}. Make sure .db-versions.yml exists in the project root.",
+                file_path.display(),
+                e
+            ),
+        ))
     })?;
 
     let current_version = parse_version(&content, "current_version")?;
@@ -91,7 +113,7 @@ fn get_db_version() -> Result<(), BuildError> {
     // (meaning no migrations are supported from older versions)
     let base_version = parse_version(&content, "base_version").unwrap_or(current_version);
 
-    println!("cargo:rerun-if-changed={}", file_path.display());
+    // Set the environment variables for the compiler
     println!("cargo:rustc-env=DB_VERSION={}", current_version);
     println!("cargo:rustc-env=DB_BASE_VERSION={}", base_version);
 

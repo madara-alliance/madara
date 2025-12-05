@@ -50,4 +50,4 @@
 //! ```
 
 // Export revision modules here as they are added:
-// pub mod revision_0009;
+pub mod revision_0009;
