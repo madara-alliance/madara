@@ -27,6 +27,14 @@ pub struct JobStatusQuery {
     pub status: JobStatus,
 }
 
+/// Represents query parameters for priority queue selection.
+#[derive(Deserialize)]
+pub struct PriorityQuery {
+    /// Whether to use the priority queue (defaults to false)
+    #[serde(default)]
+    pub priority: bool,
+}
+
 /// Represents a standardized API response structure.
 ///
 /// This struct provides a consistent format for all API responses, including
