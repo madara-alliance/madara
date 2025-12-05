@@ -1,37 +1,21 @@
-//! Migration error types.
-
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
-    #[error(
-        "Database version {db_version} is newer than binary version {binary_version}. \
-        Please upgrade to a newer version of the binary."
-    )]
+    #[error("Database version {db_version} is newer than binary supports ({binary_version}). Upgrade the binary.")]
     DatabaseNewerThanBinary { db_version: u32, binary_version: u32 },
 
-    #[error(
-        "Database version {current_version} is older than minimum supported version {base_version}. \
-        Please delete the database directory and resync from scratch."
-    )]
+    #[error("Database version {current_version} too old (minimum: {base_version}). Delete and resync.")]
     DatabaseTooOld { current_version: u32, base_version: u32 },
 
-    /// Migration registry is missing a required migration. This is a developer error -
-    /// ensure all migrations from base_version to current_version are registered.
-    #[error(
-        "Migration registry bug: no migration registered for v{from} -> v{to}. \
-        Check that all migrations are registered in registry.rs"
-    )]
+    #[error("No migration registered for v{from} -> v{to}")]
     NoMigrationPath { from: u32, to: u32 },
 
-    #[error(
-        "Migration lock file exists - another migration may be in progress. \
-        If no other instance is running, delete .db-migration.lock manually."
-    )]
+    #[error("Migration lock exists - another migration may be in progress")]
     MigrationInProgress,
 
-    #[error("Failed to create pre-migration backup: {0}")]
+    #[error("Failed to create backup: {0}")]
     BackupFailed(String),
 
-    #[error("Invalid database version file format. Expected a single integer.")]
+    #[error("Invalid version file format")]
     InvalidVersionFile,
 
     #[error("Migration '{name}' (v{from_version} -> v{to_version}) failed: {message}")]
@@ -41,25 +25,13 @@ pub enum MigrationError {
     Io(#[from] std::io::Error),
 
     #[error("RocksDB error: {0}")]
-    RocksDb(String),
+    RocksDb(#[from] rocksdb::Error),
 
     #[error("Serialization error: {0}")]
-    Serialization(String),
+    Serialization(#[from] serde_json::Error),
 
-    #[error("Migration aborted by user")]
+    #[error("Migration aborted")]
     Aborted,
-}
-
-impl From<rocksdb::Error> for MigrationError {
-    fn from(e: rocksdb::Error) -> Self {
-        MigrationError::RocksDb(e.to_string())
-    }
-}
-
-impl From<serde_json::Error> for MigrationError {
-    fn from(e: serde_json::Error) -> Self {
-        MigrationError::Serialization(e.to_string())
-    }
 }
 
 #[cfg(test)]
@@ -72,6 +44,6 @@ mod tests {
         assert!(err.to_string().contains("10") && err.to_string().contains("9"));
 
         let err = MigrationError::NoMigrationPath { from: 8, to: 9 };
-        assert!(err.to_string().contains("registry bug"));
+        assert!(err.to_string().contains("v8") && err.to_string().contains("v9"));
     }
 }

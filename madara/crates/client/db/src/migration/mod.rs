@@ -20,18 +20,19 @@ pub use error::MigrationError;
 pub use registry::{get_migrations, get_migrations_for_range, validate_registry, Migration, MigrationFn};
 
 use rocksdb::{DBWithThreadMode, MultiThreaded};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 type DB = DBWithThreadMode<MultiThreaded>;
 
-// File names - exported for tests
 pub const DB_VERSION_FILE: &str = ".db-version";
 pub const DB_MIGRATION_LOCK: &str = ".db-migration.lock";
 pub const DB_MIGRATION_STATE: &str = ".db-migration-state";
 const BACKUP_DIR_NAME: &str = "backup_pre_migration";
+const STALE_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug)]
 pub enum MigrationStatus {
@@ -277,36 +278,41 @@ impl MigrationRunner {
     fn acquire_lock(&self) -> Result<MigrationLock, MigrationError> {
         let lock_path = self.base_path.join(DB_MIGRATION_LOCK);
 
-        if lock_path.exists() {
-            let is_stale = match fs::metadata(&lock_path).and_then(|m| m.modified()) {
-                Ok(modified) => match modified.elapsed() {
-                    Ok(age) => age > std::time::Duration::from_secs(24 * 60 * 60),
-                    Err(e) => {
-                        // System time went backwards, treat as stale
-                        tracing::warn!("System time error checking lock age: {}, treating as stale", e);
-                        true
-                    }
-                },
-                Err(e) => {
-                    // Can't determine age, treat as stale
-                    tracing::warn!("Cannot read lock metadata: {}, treating as stale", e);
-                    true
-                }
-            };
-
-            if is_stale {
-                tracing::warn!("Removing stale migration lock");
-                fs::remove_file(&lock_path)?;
-            } else {
-                return Err(MigrationError::MigrationInProgress);
-            }
+        // Try atomic creation first (O_CREAT | O_EXCL)
+        match Self::try_create_lock_file(&lock_path) {
+            Ok(()) => return Ok(MigrationLock { path: lock_path }),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
         }
 
-        fs::write(&lock_path, format!("pid:{}\ntime:{}", std::process::id(), chrono::Utc::now().to_rfc3339()))?;
-        Ok(MigrationLock { path: lock_path })
+        // Lock exists - check if stale
+        let is_stale = match fs::metadata(&lock_path).and_then(|m| m.modified()) {
+            Ok(modified) => modified.elapsed().map(|age| age > STALE_LOCK_TIMEOUT).unwrap_or(true),
+            Err(_) => true,
+        };
+
+        if !is_stale {
+            return Err(MigrationError::MigrationInProgress);
+        }
+
+        tracing::warn!("Removing stale migration lock");
+        let _ = fs::remove_file(&lock_path);
+
+        // Retry atomic creation
+        Self::try_create_lock_file(&lock_path).map(|()| MigrationLock { path: lock_path }).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                MigrationError::MigrationInProgress
+            } else {
+                e.into()
+            }
+        })
     }
 
-    /// Creates a backup using RocksDB checkpoint (uses hard links, very fast).
+    fn try_create_lock_file(lock_path: &Path) -> std::io::Result<()> {
+        let mut file = OpenOptions::new().write(true).create_new(true).open(lock_path)?;
+        writeln!(file, "pid:{}\ntime:{}", std::process::id(), chrono::Utc::now().to_rfc3339())
+    }
+
     fn create_backup(&self, db: &DB) -> Result<(), MigrationError> {
         let backup_path = self.base_path.join(BACKUP_DIR_NAME);
 
@@ -314,7 +320,9 @@ impl MigrationRunner {
             fs::remove_dir_all(&backup_path)?;
         }
 
-        // Checkpoint creates hard links to SST files - fast and space-efficient
+        // Flush WAL to ensure consistent checkpoint
+        db.flush_wal(true).map_err(|e| MigrationError::BackupFailed(e.to_string()))?;
+
         let checkpoint =
             rocksdb::checkpoint::Checkpoint::new(db).map_err(|e| MigrationError::BackupFailed(e.to_string()))?;
         checkpoint.create_checkpoint(&backup_path).map_err(|e| MigrationError::BackupFailed(e.to_string()))?;

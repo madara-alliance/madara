@@ -488,14 +488,18 @@ impl MadaraBackend<RocksDBStorage> {
             .with_skip_backup(config.skip_migration_backup);
         let status = migration_runner.check_status().context("Checking migration status")?;
 
-        match &status {
+        // Handle migration status and open the database
+        let db_path = base_path.join("db");
+        let db = match &status {
             MigrationStatus::FreshDatabase => {
                 tracing::info!("📦 Creating new database at version {}", required_version);
                 // Write the version file for fresh database
                 migration_runner.initialize_fresh_database().context("Initializing fresh database")?;
+                RocksDBStorage::open(&db_path, rocksdb_config).context("Opening RocksDB storage")?
             }
             MigrationStatus::NoMigrationNeeded => {
                 tracing::debug!("✅ Database version {} matches binary, no migration needed", required_version);
+                RocksDBStorage::open(&db_path, rocksdb_config).context("Opening RocksDB storage")?
             }
             MigrationStatus::MigrationRequired { current_version, target_version, migration_count } => {
                 tracing::info!(
@@ -506,16 +510,15 @@ impl MadaraBackend<RocksDBStorage> {
                 );
                 tracing::info!("⚠️  This is a one-time operation that may take several minutes...");
 
-                // Open the database for migration
-                let db_path = base_path.join("db");
-                let db = RocksDBStorage::open(&db_path, rocksdb_config.clone())
-                    .context("Opening RocksDB storage for migration")?;
+                // Open the database for migration and reuse it after
+                let db =
+                    RocksDBStorage::open(&db_path, rocksdb_config).context("Opening RocksDB storage for migration")?;
 
                 // Run migrations
                 migration_runner.run_migrations_with_storage(&db).context("Running database migrations")?;
 
-                // DB will be dropped here and reopened below
-                drop(db);
+                // Reuse the same DB instance instead of reopening
+                db
             }
             MigrationStatus::DatabaseTooOld { current_version, base_version } => {
                 bail!(
@@ -533,11 +536,8 @@ impl MadaraBackend<RocksDBStorage> {
                     binary_version
                 );
             }
-        }
+        };
 
-        // Now open with the proper RocksDBStorage wrapper
-        let db_path = base_path.join("db");
-        let db = RocksDBStorage::open(&db_path, rocksdb_config).context("Opening RocksDB storage")?;
         Ok(Arc::new(Self::new_and_init(db, chain_config, config, cairo_native_config)?))
     }
 }
