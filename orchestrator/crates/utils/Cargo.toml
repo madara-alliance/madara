@@ -16,6 +16,8 @@ thiserror.workspace = true
 base64 = { workspace = true }
 dotenv = { workspace = true }
 flate2 = { workspace = true }
+hex = { workspace = true }
+once_cell = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
