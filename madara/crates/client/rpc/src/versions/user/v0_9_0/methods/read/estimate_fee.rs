@@ -35,6 +35,7 @@ pub async fn estimate_fee(
     }
 
     let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
+    let charge_fee = starknet.charge_fee;
 
     let transactions = request
         .into_iter()
@@ -42,7 +43,7 @@ pub async fn estimate_fee(
             let only_query = tx.is_query();
             let (api_tx, _) =
                 tx.into_starknet_api(view.backend().chain_config().chain_id.to_felt(), exec_context.protocol_version)?;
-            let execution_flags = ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: true };
+            let execution_flags = ExecutionFlags { only_query, charge_fee, validate, strict_nonce_check: true };
             Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
         })
         .collect::<Result<Vec<_>, ToBlockifierError>>()?;
