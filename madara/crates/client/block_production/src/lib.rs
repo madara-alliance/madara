@@ -251,7 +251,8 @@ impl CurrentBlockState {
                                         .as_sierra()
                                         .and_then(|class| {
                                             // Use canonical hash (v2 if present, else v1)
-                                            let hash = class.info.compiled_class_hash_v2.or(class.info.compiled_class_hash)?;
+                                            let hash =
+                                                class.info.compiled_class_hash_v2.or(class.info.compiled_class_hash)?;
                                             Some(DeclaredClassCompiledClass::Sierra(hash))
                                         })
                                         .unwrap_or(DeclaredClassCompiledClass::Legacy),

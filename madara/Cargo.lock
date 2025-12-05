@@ -6668,6 +6668,7 @@ dependencies = [
  "bitvec",
  "blockifier",
  "bonsai-trie",
+ "chrono",
  "dashmap",
  "futures",
  "itertools 0.13.0",
@@ -6788,6 +6789,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

@@ -21,11 +21,12 @@ pub use crate::v0_9_0::{
     MsgToL1, NewClasses, NodeHashToNodeMappingItem, NonceUpdate, PreConfirmedBlockHeader,
     PreConfirmedBlockWithReceipts, PreConfirmedBlockWithTxHashes, PreConfirmedBlockWithTxs, PriceUnitFri, PriceUnitWei,
     ReplacedClass, ResourceBounds, ResourceBoundsMapping, ResourcePrice, SierraEntryPoint, Signature,
-    SimulationFlagForEstimateFee, SpecVersionParams, StarknetGetBlockWithTxsAndReceiptsResult, StateUpdate, StorageKey,
+    SimulationFlagForEstimateFee, SpecVersionParams, StarknetGetBlockWithTxsAndReceiptsResult, StorageKey,
     StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus, TransactionAndReceipt, Txn,
     TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash, TxnReceipt, TxnReceiptWithBlockInfo,
     TxnStatus, TxnWithHash, TypedParameter,
 };
+// Note: StateUpdate is NOT imported from v0.9.0 - we define our own below with v0.10.0's StateDiff
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
@@ -61,6 +62,19 @@ pub struct MigratedClassItem {
     pub class_hash: Felt,
     /// The new BLAKE hash (post-SNIP-34)
     pub compiled_class_hash: Felt,
+}
+
+/// State update for a confirmed block (v0.10.0: uses StateDiff with migrated_compiled_classes)
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct StateUpdate {
+    /// The hash of the block
+    pub block_hash: BlockHash,
+    /// The new global state root
+    pub new_root: Felt,
+    /// The previous global state root
+    pub old_root: Felt,
+    /// The state diff
+    pub state_diff: StateDiff,
 }
 
 #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
