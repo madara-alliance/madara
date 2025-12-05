@@ -547,9 +547,7 @@ impl EventWorker {
                     }
                 }
             }
-            Err(crate::core::client::queue::error::QueueError::ErrorFromQueueError(e))
-                if matches!(e, omniqueue::QueueError::NoData) =>
-            {
+            Err(crate::core::client::queue::error::QueueError::ErrorFromQueueError(omniqueue::QueueError::NoData)) => {
                 Ok(None) // No priority messages available
             }
             Err(e) => {
