@@ -10,6 +10,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::{JobAction, QueueNameForJobType, QueueType};
+use crate::types::queue_control::MAX_PRIORITY_QUEUE_SIZE;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
@@ -78,6 +79,22 @@ impl JobService {
         action: JobAction,
         config: Arc<Config>,
     ) -> Result<(), JobError> {
+        // Check priority queue depth before adding
+        let queue_depth = config.queue().get_queue_depth(QueueType::PriorityJobQueue).await?;
+        let max_size = *MAX_PRIORITY_QUEUE_SIZE;
+
+        if queue_depth >= max_size {
+            tracing::warn!(
+                job_id = %id,
+                job_type = ?job_type,
+                action = ?action,
+                current_size = queue_depth,
+                max_size = max_size,
+                "Priority queue is full, rejecting job"
+            );
+            return Err(JobError::PriorityQueueFull { current_size: queue_depth, max_size });
+        }
+
         let priority_message = PriorityQueueMessage { id, job_type: job_type.clone(), action: action.clone() };
 
         let payload = serde_json::to_string(&priority_message)?;
@@ -88,6 +105,8 @@ impl JobService {
             job_id = %id,
             job_type = ?job_type,
             action = ?action,
+            current_queue_depth = queue_depth,
+            max_queue_size = max_size,
             "Job added to priority queue"
         );
 
