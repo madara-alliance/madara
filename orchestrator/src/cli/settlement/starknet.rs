@@ -2,7 +2,7 @@ use clap::Args;
 use url::Url;
 
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["starknet_rpc_url", "starknet_private_key", "starknet_account_address", "starknet_cairo_core_contract_address", "starknet_finality_retry_wait_in_secs"])]
+#[group()]
 pub struct StarknetSettlementCliArgs {
     /// Use the Starknet settlement layer.
     #[arg(long)]

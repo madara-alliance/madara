@@ -2,7 +2,7 @@ use clap::Args;
 
 /// Parameters used to config MongoDB.
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["mongodb_connection_url"])]
+#[group()]
 pub struct MongoDBCliArgs {
     /// Use the MongoDB client
     #[arg(long)]

@@ -39,7 +39,7 @@ use crate::{
     types::params::service::{ServerParams, ServiceParams},
     types::params::settlement::SettlementConfig,
     types::params::snos::SNOSParams,
-    types::params::{AlertArgs, JobPolicies, QueueArgs, StorageArgs},
+    types::params::{AlertArgs, JobPolicies, JobPolicy, QueueArgs, StorageArgs},
     OrchestratorError, OrchestratorResult,
 };
 
@@ -185,6 +185,428 @@ impl Config {
             da_client,
             settlement_client,
         }
+    }
+
+    /// Create config from OrchestratorConfig (loaded from preset or config file)
+    pub async fn from_orchestrator_config(orch_config: &crate::config::OrchestratorConfig) -> OrchestratorResult<Self> {
+        use crate::config::types::cloud::CloudProvider as ConfigCloudProvider;
+        use crate::types::constant::BLOB_LEN;
+
+        // OrchestratorConfig is a type alias for OrchestratorConfigV1, so just use it directly
+        let config_v1 = orch_config;
+
+        // Convert layer
+        let layer = match config_v1.deployment.layer {
+            crate::config::types::deployment::Layer::L2 => Layer::L2,
+            crate::config::types::deployment::Layer::L3 => Layer::L3,
+        };
+
+        // Convert Madara version - the config already has the right type
+        let madara_version = match config_v1.madara.version {
+            crate::config::types::madara::StarknetVersion::V0_13_2 => StarknetVersion::V0_13_2,
+            crate::config::types::madara::StarknetVersion::V0_13_3 => StarknetVersion::V0_13_3,
+            crate::config::types::madara::StarknetVersion::V0_13_4 => StarknetVersion::V0_13_4,
+            crate::config::types::madara::StarknetVersion::V0_13_5 => StarknetVersion::V0_13_5,
+            crate::config::types::madara::StarknetVersion::V0_14_0 => StarknetVersion::V0_14_0,
+        };
+
+        // Build database args
+        let db = if let Some(mongodb_config) = &config_v1.database.mongodb {
+            DatabaseArgs {
+                connection_uri: mongodb_config.connection_url.clone(),
+                database_name: mongodb_config.database_name.clone(),
+            }
+        } else {
+            return Err(OrchestratorError::ConfigError("MongoDB configuration is required".to_string()));
+        };
+
+        // Build cloud provider - need to initialize AWS SDK config
+        let provider_config = Arc::new(match &config_v1.cloud.provider {
+            ConfigCloudProvider::AWS => {
+                let aws_config_data = config_v1.cloud.aws.as_ref().ok_or_else(|| {
+                    OrchestratorError::ConfigError("AWS provider selected but aws config is missing".to_string())
+                })?;
+
+                // Build AWS SDK config
+                let aws_sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(aws_config::Region::new(aws_config_data.region.clone()))
+                    .load()
+                    .await;
+
+                CloudProvider::AWS(Box::new(aws_sdk_config))
+            }
+        });
+
+        // Build storage args
+        let storage_args = match &config_v1.cloud.provider {
+            ConfigCloudProvider::AWS => {
+                let aws_config_data = config_v1.cloud.aws.as_ref().unwrap();
+                StorageArgs {
+                    bucket_identifier: crate::types::params::AWSResourceIdentifier::Name(
+                        aws_config_data.storage.bucket_name.clone(),
+                    ),
+                }
+            }
+        };
+
+        // Build alert args
+        let alert_args = match &config_v1.cloud.provider {
+            ConfigCloudProvider::AWS => {
+                let aws_config_data = config_v1.cloud.aws.as_ref().unwrap();
+                AlertArgs {
+                    alert_identifier: crate::types::params::AWSResourceIdentifier::Name(
+                        aws_config_data.alerts.topic_name.clone(),
+                    ),
+                }
+            }
+        };
+
+        // Build queue args
+        let queue_args = match &config_v1.cloud.provider {
+            ConfigCloudProvider::AWS => {
+                let aws_config_data = config_v1.cloud.aws.as_ref().unwrap();
+                QueueArgs {
+                    queue_template_identifier: crate::types::params::AWSResourceIdentifier::Name(
+                        aws_config_data.queue.name_pattern.clone(),
+                    ),
+                }
+            }
+        };
+
+        // Build prover config
+        let prover_config = match &config_v1.prover.prover_type {
+            crate::config::types::prover::ProverType::Sharp => {
+                let _sharp_config = config_v1.prover.sharp.as_ref().ok_or_else(|| {
+                    OrchestratorError::ConfigError("Sharp prover selected but sharp config is missing".to_string())
+                })?;
+
+                // TODO: Sharp config needs more fields - for now this is incomplete
+                // Need to add: sharp_user_crt, sharp_user_key, sharp_rpc_node_url, sharp_server_crt,
+                // sharp_proof_layout, gps_verifier_contract_address, sharp_settlement_layer
+                return Err(OrchestratorError::ConfigError(
+                    "Sharp prover support in config files is not yet implemented. Use Atlantic prover instead."
+                        .to_string(),
+                ));
+            }
+            crate::config::types::prover::ProverType::Atlantic => {
+                let atlantic_config = config_v1.prover.atlantic.as_ref().ok_or_else(|| {
+                    OrchestratorError::ConfigError(
+                        "Atlantic prover selected but atlantic config is missing".to_string(),
+                    )
+                })?;
+
+                ProverConfig::Atlantic(orchestrator_atlantic_service::AtlanticValidatedArgs {
+                    atlantic_api_key: atlantic_config.api_key.clone(),
+                    atlantic_service_url: atlantic_config.service_url.clone(),
+                    atlantic_rpc_node_url: config_v1.settlement.rpc_url.clone(),
+                    atlantic_verifier_contract_address: atlantic_config.verifier_contract_address.clone(),
+                    atlantic_settlement_layer: config_v1.settlement.network.clone(),
+                    atlantic_mock_fact_hash: atlantic_config
+                        .mock_fact_hash
+                        .clone()
+                        .unwrap_or_else(|| "false".to_string()),
+                    atlantic_prover_type: atlantic_config.prover_type.clone(),
+                    atlantic_network: match atlantic_config.atlantic_network {
+                        crate::config::types::prover::AtlanticNetwork::Mainnet => "MAINNET".to_string(),
+                        crate::config::types::prover::AtlanticNetwork::Testnet => "TESTNET".to_string(),
+                    },
+                    atlantic_cairo_vm: match atlantic_config.cairo_vm.as_str() {
+                        "rust" => orchestrator_atlantic_service::types::AtlanticCairoVm::Rust,
+                        "python" => orchestrator_atlantic_service::types::AtlanticCairoVm::Python,
+                        _ => {
+                            return Err(OrchestratorError::ConfigError(format!(
+                                "Invalid cairo_vm: {}. Expected 'rust' or 'python'",
+                                atlantic_config.cairo_vm
+                            )))
+                        }
+                    },
+                    atlantic_result: match atlantic_config.result.as_str() {
+                        "trace-generation" => orchestrator_atlantic_service::types::AtlanticQueryStep::TraceGeneration,
+                        "proof-generation" => orchestrator_atlantic_service::types::AtlanticQueryStep::ProofGeneration,
+                        "proof-verification" => {
+                            orchestrator_atlantic_service::types::AtlanticQueryStep::ProofVerification
+                        }
+                        "proof-verification-on-l1" => {
+                            orchestrator_atlantic_service::types::AtlanticQueryStep::ProofVerificationOnL1
+                        }
+                        "proof-verification-on-l2" => {
+                            orchestrator_atlantic_service::types::AtlanticQueryStep::ProofVerificationOnL2
+                        }
+                        "proof-generation-and-verification" => {
+                            orchestrator_atlantic_service::types::AtlanticQueryStep::ProofGenerationAndVerification
+                        }
+                        "fact-hash-registration" => {
+                            orchestrator_atlantic_service::types::AtlanticQueryStep::FactHashRegistration
+                        }
+                        "trace-and-metadata-generation" => {
+                            orchestrator_atlantic_service::types::AtlanticQueryStep::TraceAndMetadataGeneration
+                        }
+                        _ => {
+                            return Err(OrchestratorError::ConfigError(format!(
+                                "Invalid atlantic result: {}",
+                                atlantic_config.result
+                            )))
+                        }
+                    },
+                    cairo_verifier_program_hash: None, // Only needed for L3
+                })
+            }
+        };
+
+        // Build DA config
+        let da_network =
+            config_v1.networks.iter().find(|n| n.name == config_v1.data_availability.network).ok_or_else(|| {
+                OrchestratorError::ConfigError(format!(
+                    "DA network '{}' not found in networks list",
+                    config_v1.data_availability.network
+                ))
+            })?;
+
+        let da_config = match da_network.chain_type {
+            crate::config::networks::ChainType::Ethereum => {
+                let rpc_url = config_v1
+                    .data_availability
+                    .rpc_url
+                    .clone()
+                    .or_else(|| {
+                        // Try to parse default RPC URL
+                        da_network.default_rpc_urls.first().and_then(|s| s.parse().ok())
+                    })
+                    .ok_or_else(|| {
+                        OrchestratorError::ConfigError("DA RPC URL not found in config or network defaults".to_string())
+                    })?;
+
+                DAConfig::Ethereum(orchestrator_ethereum_da_client::EthereumDaValidatedArgs {
+                    ethereum_da_rpc_url: rpc_url,
+                })
+            }
+            crate::config::networks::ChainType::Starknet => {
+                let rpc_url = config_v1
+                    .data_availability
+                    .rpc_url
+                    .clone()
+                    .or_else(|| {
+                        // Try to parse default RPC URL
+                        da_network.default_rpc_urls.first().and_then(|s| s.parse().ok())
+                    })
+                    .ok_or_else(|| {
+                        OrchestratorError::ConfigError("DA RPC URL not found in config or network defaults".to_string())
+                    })?;
+
+                // Note: Starknet DA doesn't have additional config in the config file currently
+                // It only needs the RPC URL
+
+                DAConfig::Starknet(orchestrator_starknet_da_client::StarknetDaValidatedArgs {
+                    starknet_da_rpc_url: rpc_url,
+                })
+            }
+        };
+
+        // Build settlement config
+        let settlement_network =
+            config_v1.networks.iter().find(|n| n.name == config_v1.settlement.network).ok_or_else(|| {
+                OrchestratorError::ConfigError(format!(
+                    "Settlement network '{}' not found in networks list",
+                    config_v1.settlement.network
+                ))
+            })?;
+
+        let settlement_config = match settlement_network.chain_type {
+            crate::config::networks::ChainType::Ethereum => {
+                let ethereum_config = config_v1.settlement.ethereum.as_ref().ok_or_else(|| {
+                    OrchestratorError::ConfigError(
+                        "Ethereum settlement selected but ethereum config is missing".to_string(),
+                    )
+                })?;
+
+                use alloy::primitives::Address;
+                use std::str::FromStr as _;
+
+                let l1_core_contract_address = Address::from_str(&ethereum_config.core_contract_address)
+                    .map_err(|e| OrchestratorError::ConfigError(format!("Invalid L1 core contract address: {}", e)))?;
+
+                let starknet_operator_address = Address::from_slice(
+                    &hex::decode(
+                        ethereum_config
+                            .operator_address
+                            .strip_prefix("0x")
+                            .unwrap_or(&ethereum_config.operator_address),
+                    )
+                    .map_err(|e| OrchestratorError::ConfigError(format!("Invalid operator address: {}", e)))?,
+                );
+
+                SettlementConfig::Ethereum(orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs {
+                    ethereum_rpc_url: config_v1.settlement.rpc_url.clone(),
+                    l1_core_contract_address,
+                    starknet_operator_address,
+                    ethereum_private_key: ethereum_config.operator_private_key.clone(),
+                    ethereum_finality_retry_wait_in_secs: ethereum_config.finality_retry_wait_seconds,
+                    max_gas_price_mul_factor: ethereum_config.max_gas_price_multiplier,
+                    disable_peerdas: ethereum_config.disable_peerdas,
+                })
+            }
+            crate::config::networks::ChainType::Starknet => {
+                let starknet_config = config_v1.settlement.starknet.as_ref().ok_or_else(|| {
+                    OrchestratorError::ConfigError(
+                        "Starknet settlement selected but starknet config is missing".to_string(),
+                    )
+                })?;
+
+                SettlementConfig::Starknet(orchestrator_starknet_settlement_client::StarknetSettlementValidatedArgs {
+                    starknet_rpc_url: config_v1.settlement.rpc_url.clone(),
+                    starknet_private_key: starknet_config.private_key.clone(),
+                    starknet_account_address: starknet_config.account_address.clone(),
+                    starknet_cairo_core_contract_address: starknet_config.cairo_core_contract_address.clone(),
+                    starknet_finality_retry_wait_in_secs: starknet_config.finality_retry_wait_seconds,
+                })
+            }
+        };
+
+        // Build bouncer weights limit
+        let bouncer_weights_limit = Self::default_bouncer_weights_limit();
+
+        // Build params
+        let params = ConfigParam {
+            madara_rpc_url: config_v1.madara.rpc_url.clone(),
+            madara_feeder_gateway_url: config_v1
+                .madara
+                .feeder_gateway_url
+                .clone()
+                .unwrap_or_else(|| config_v1.madara.rpc_url.clone()),
+            madara_version,
+            snos_config: SNOSParams {
+                rpc_for_snos: config_v1.snos.rpc_url.clone(),
+                snos_full_output: config_v1.snos.full_output,
+                versioned_constants: config_v1.snos.versioned_constants_path.as_ref().and_then(|path| {
+                    blockifier::blockifier_versioned_constants::VersionedConstants::from_path(path).ok()
+                }),
+                strk_fee_token_address: config_v1.snos.strk_fee_token_address.clone(),
+                eth_fee_token_address: config_v1.snos.eth_fee_token_address.clone(),
+            },
+            batching_config: BatchingParams {
+                max_batch_time_seconds: config_v1.batching.max_batch_time_seconds,
+                max_batch_size: config_v1.batching.max_batch_size,
+                max_num_blobs: config_v1.batching.max_num_blobs,
+                max_blob_size: config_v1.batching.max_num_blobs * BLOB_LEN,
+                batching_worker_lock_duration: config_v1.batching.lock_duration_seconds,
+                max_blocks_per_snos_batch: config_v1.batching.max_blocks_per_snos_batch,
+                max_snos_batches_per_aggregator_batch: config_v1.batching.max_snos_batches_per_aggregator,
+                default_empty_block_proving_gas: config_v1.batching.default_empty_block_proving_gas,
+            },
+            service_config: ServiceParams {
+                min_block_to_process: config_v1.service.min_block_to_process,
+                max_block_to_process: config_v1.service.max_block_to_process,
+                max_concurrent_created_snos_jobs: config_v1.service.max_concurrent_created_snos_jobs,
+                max_concurrent_snos_jobs: config_v1.service.max_concurrent_snos_jobs,
+                max_concurrent_proving_jobs: config_v1.service.max_concurrent_proving_jobs,
+                job_processing_timeout_seconds: config_v1.service.job_processing_timeout_seconds,
+            },
+            server_config: ServerParams { host: config_v1.server.host.clone(), port: config_v1.server.port },
+            snos_layout_name: Self::get_layout_name(&config_v1.prover.layout.snos)
+                .context("Failed to get SNOS layout name")?,
+            prover_layout_name: Self::get_layout_name(&config_v1.prover.layout.prover)
+                .context("Failed to get prover layout name")?,
+            store_audit_artifacts: config_v1.operational.store_audit_artifacts,
+            aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
+            bouncer_weights_limit,
+            job_policies: JobPolicies {
+                snos_execution: JobPolicy {
+                    max_process_attempts: config_v1.job_policies.snos_execution.max_process_attempts,
+                    max_verification_attempts: config_v1.job_policies.snos_execution.max_verification_attempts,
+                    verification_polling_delay_seconds: config_v1
+                        .job_policies
+                        .snos_execution
+                        .verification_polling_delay_seconds,
+                },
+                proving: JobPolicy {
+                    max_process_attempts: config_v1.job_policies.proving.max_process_attempts,
+                    max_verification_attempts: config_v1.job_policies.proving.max_verification_attempts,
+                    verification_polling_delay_seconds: config_v1
+                        .job_policies
+                        .proving
+                        .verification_polling_delay_seconds,
+                },
+                da_submission: JobPolicy {
+                    max_process_attempts: config_v1.job_policies.da_submission.max_process_attempts,
+                    max_verification_attempts: config_v1.job_policies.da_submission.max_verification_attempts,
+                    verification_polling_delay_seconds: config_v1
+                        .job_policies
+                        .da_submission
+                        .verification_polling_delay_seconds,
+                },
+                state_update: JobPolicy {
+                    max_process_attempts: config_v1.job_policies.state_update.max_process_attempts,
+                    max_verification_attempts: config_v1.job_policies.state_update.max_verification_attempts,
+                    verification_polling_delay_seconds: config_v1
+                        .job_policies
+                        .state_update
+                        .verification_polling_delay_seconds,
+                },
+                aggregator: JobPolicy {
+                    max_process_attempts: config_v1.job_policies.aggregator.max_process_attempts,
+                    max_verification_attempts: config_v1.job_policies.aggregator.max_verification_attempts,
+                    verification_polling_delay_seconds: config_v1
+                        .job_policies
+                        .aggregator
+                        .verification_polling_delay_seconds,
+                },
+                proof_registration: JobPolicy {
+                    max_process_attempts: config_v1.job_policies.proof_registration.max_process_attempts,
+                    max_verification_attempts: config_v1.job_policies.proof_registration.max_verification_attempts,
+                    verification_polling_delay_seconds: config_v1
+                        .job_policies
+                        .proof_registration
+                        .verification_polling_delay_seconds,
+                },
+            },
+        };
+
+        // Build clients
+        let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
+        let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
+
+        let database = Self::build_database_client(&db).await?;
+        let lock = Self::build_lock_client(&db).await?;
+        let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
+        let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
+        let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
+
+        // Start mock Atlantic server if enabled
+        if config_v1.operational.mock_atlantic_server {
+            Self::start_mock_atlantic_server(&prover_config, true).await;
+        }
+
+        // Build prover client
+        let prover_client = Self::build_prover_service(
+            &prover_config,
+            &params,
+            Some(
+                rpc_client
+                    .chain_id()
+                    .await
+                    .map_err(|e| OrchestratorError::ConfigError(format!("Failed to get Chain ID from RPC: {}", e)))?
+                    .to_fixed_hex_string(),
+            ),
+            Some(Felt252::from_str(params.snos_config.strk_fee_token_address.clone().as_str())?),
+        );
+
+        let da_client = Self::build_da_client(&da_config).await;
+        let settlement_client = Self::build_settlement_client(&settlement_config).await?;
+
+        Ok(Self {
+            layer,
+            params,
+            madara_rpc_client: Arc::new(rpc_client),
+            madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
+            database,
+            lock,
+            storage,
+            alerts,
+            queue,
+            prover_client,
+            da_client,
+            settlement_client,
+        })
     }
 
     /// new - create config from the run command

@@ -72,7 +72,7 @@ pub enum Commands {
     group(
         ArgGroup::new("config_source")
             .args(&["config_file", "preset"])
-            .required(true)
+            .required(false)
             .multiple(false)
     )
 )]

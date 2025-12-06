@@ -3,7 +3,7 @@ use url::Url;
 
 /// Parameters used to config Starknet.
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["starknet_da_rpc_url"])]
+#[group()]
 pub struct StarknetDaCliArgs {
     /// Use the Starknet DA layer.
     #[arg(long)]

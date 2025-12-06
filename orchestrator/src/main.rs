@@ -83,15 +83,21 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
     let instrumentation = OrchestratorInstrumentation::new(&config)?;
 
-    // Build config components for detailed logging
-    let settlement_config = orchestrator::types::params::settlement::SettlementConfig::try_from(run_cmd.clone())?;
-    let da_config = orchestrator::types::params::da::DAConfig::try_from(run_cmd.clone())?;
-    let prover_config = orchestrator::types::params::prover::ProverConfig::try_from(run_cmd.clone())?;
-
-    // Log detailed configuration at debug level
-    log_detailed_config(&settlement_config, &da_config, &prover_config);
-
-    let config = Arc::new(Config::from_run_cmd(run_cmd).await?);
+    // Build Config using the new path (preset/config file) or legacy path (CLI args)
+    let config = if run_cmd.config_file.is_some() || run_cmd.preset.is_some() {
+        // NEW PATH: Load from preset or config file
+        info!("Loading configuration from {} mode", if run_cmd.preset.is_some() { "preset" } else { "config file" });
+        let orch_config = orchestrator::config::load_config_from_run_cmd(run_cmd)?;
+        Arc::new(Config::from_orchestrator_config(&orch_config).await?)
+    } else {
+        // LEGACY PATH: Load from CLI args (for backward compatibility)
+        info!("Loading configuration from CLI args (legacy mode)");
+        let settlement_config = orchestrator::types::params::settlement::SettlementConfig::try_from(run_cmd.clone())?;
+        let da_config = orchestrator::types::params::da::DAConfig::try_from(run_cmd.clone())?;
+        let prover_config = orchestrator::types::params::prover::ProverConfig::try_from(run_cmd.clone())?;
+        log_detailed_config(&settlement_config, &da_config, &prover_config);
+        Arc::new(Config::from_run_cmd(run_cmd).await?)
+    };
 
     // Log comprehensive startup information
     log_startup_info(&config);
