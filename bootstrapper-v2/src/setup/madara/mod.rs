@@ -4,6 +4,7 @@ pub mod constants;
 
 use crate::error::madara::MadaraError;
 use crate::utils::declare_contract;
+use crate::utils::get_selector_or_panic;
 use crate::{
     config::MadaraConfig,
     utils::{execute_v3, get_contract_address_from_deploy_tx, get_contracts_deployed_addresses},
@@ -12,7 +13,6 @@ use bootstrap_account::BootstrapAccount;
 use class_contracts::MadaraClass;
 use log;
 use starknet::core::types::Call;
-use starknet::core::utils::get_selector_from_name;
 use strum::IntoEnumIterator;
 
 #[allow(unused_imports)]
@@ -138,8 +138,7 @@ impl MadaraSetup {
         let universal_deployer_class = self.require_class_hash(&MadaraClass::UniversalDeployer)?;
 
         let calldata = Vec::from([*universal_deployer_class, Felt::ZERO, Felt::ONE, Felt::ZERO]);
-        let calls =
-            vec![Call { to: account_address, selector: get_selector_from_name("deploy_contract").unwrap(), calldata }];
+        let calls = vec![Call { to: account_address, selector: get_selector_or_panic("deploy_contract"), calldata }];
         let res = execute_v3(account, &calls).await?;
 
         let udc_address = get_contract_address_from_deploy_tx(account_provider, &res).await?;
@@ -202,7 +201,7 @@ impl MadaraSetup {
 
         let madara_factory_calls = vec![Call {
             to: udc_address,
-            selector: get_selector_from_name("deploy_contract").unwrap(),
+            selector: get_selector_or_panic("deploy_contract"),
             calldata: madara_factory_calldata,
         }];
 
@@ -224,7 +223,7 @@ impl MadaraSetup {
 
         let deploy_bridges_calls = vec![Call {
             to: madara_factory_address,
-            selector: get_selector_from_name("deploy_bridges").unwrap(),
+            selector: get_selector_or_panic("deploy_bridges"),
             calldata: vec![], // deploy_bridges takes no parameters
         }];
 
