@@ -831,6 +831,7 @@ pub struct Starknet {
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
+    pub(crate) charge_fee: bool,
 }
 
 impl Starknet {
@@ -851,6 +852,7 @@ impl Starknet {
             ctx,
             pre_v0_9_preconfirmed_as_pending: false,
             rpc_unsafe_enabled: false,
+            charge_fee: true,
         }
     }
 
@@ -860,6 +862,10 @@ impl Starknet {
 
     pub fn set_rpc_unsafe_enabled(&mut self, value: bool) {
         self.rpc_unsafe_enabled = value;
+    }
+
+    pub fn set_charge_fee(&mut self, value: bool) {
+        self.charge_fee = value;
     }
 }
 

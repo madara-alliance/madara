@@ -389,7 +389,12 @@ async fn main() -> anyhow::Result<()> {
 
     // User-facing RPC
 
-    let service_rpc_user = RpcService::user(run_cmd.rpc_params.clone(), backend.clone(), tx_submit.clone());
+    let service_rpc_user = RpcService::user(
+        run_cmd.rpc_params.clone(),
+        backend.clone(),
+        tx_submit.clone(),
+        !run_cmd.validator_params.no_charge_fee,
+    );
 
     // Admin-facing RPC (for node operators)
 
@@ -398,6 +403,7 @@ async fn main() -> anyhow::Result<()> {
         backend.clone(),
         tx_submit.clone(),
         service_block_production.handle(),
+        !run_cmd.validator_params.no_charge_fee,
     );
 
     // Feeder gateway

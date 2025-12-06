@@ -27,6 +27,7 @@ pub struct RpcService {
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
     block_prod_handle: Option<BlockProductionHandle>,
+    charge_fee: bool,
 }
 
 impl RpcService {
@@ -34,6 +35,7 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        charge_fee: bool,
     ) -> Self {
         Self {
             config,
@@ -42,6 +44,7 @@ impl RpcService {
             server_handle: None,
             rpc_type: RpcType::User,
             block_prod_handle: None,
+            charge_fee,
         }
     }
 
@@ -50,6 +53,7 @@ impl RpcService {
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
         block_prod_handle: BlockProductionHandle,
+        charge_fee: bool,
     ) -> Self {
         Self {
             config,
@@ -58,6 +62,7 @@ impl RpcService {
             server_handle: None,
             rpc_type: RpcType::Admin,
             block_prod_handle: Some(block_prod_handle),
+            charge_fee,
         }
     }
 }
@@ -77,6 +82,7 @@ impl Service for RpcService {
 
         let pre_v0_9_preconfirmed_as_pending = self.config.rpc_pre_v0_9_preconfirmed_as_pending;
         let rpc_unsafe_enabled = self.config.rpc_unsafe;
+        let charge_fee = self.charge_fee;
 
         runner.service_loop(move |ctx| async move {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
@@ -90,6 +96,7 @@ impl Service for RpcService {
             );
             starknet.set_pre_v0_9_preconfirmed_as_pending(pre_v0_9_preconfirmed_as_pending);
             starknet.set_rpc_unsafe_enabled(rpc_unsafe_enabled);
+            starknet.set_charge_fee(charge_fee);
 
             let metrics = RpcMetrics::register()?;
 
