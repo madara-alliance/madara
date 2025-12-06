@@ -208,16 +208,16 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         Ok(result)
     }
 
-    fn max_process_attempts(&self) -> u64 {
-        1
+    fn max_process_attempts(&self, config: &Config) -> u64 {
+        config.params.job_policies.state_update.max_process_attempts
     }
 
-    fn max_verification_attempts(&self) -> u64 {
-        10
+    fn max_verification_attempts(&self, config: &Config) -> u64 {
+        config.params.job_policies.state_update.max_verification_attempts
     }
 
-    fn verification_polling_delay_seconds(&self) -> u64 {
-        60
+    fn verification_polling_delay_seconds(&self, config: &Config) -> u64 {
+        config.params.job_policies.state_update.verification_polling_delay_seconds
     }
 }
 

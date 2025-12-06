@@ -24,9 +24,15 @@ pub struct BatchingParams {
 
 impl From<BatchingCliArgs> for BatchingParams {
     fn from(args: BatchingCliArgs) -> Self {
+        // For legacy compatibility: provide defaults when fields are None
+        // In practice, these should never be None when using the legacy path
+        // as the config/preset system is now required
+        let max_batch_time_seconds = args.max_batch_time_seconds.unwrap_or(600);
+        let max_batch_size = args.max_batch_size.unwrap_or(10000);
+
         Self {
-            max_batch_time_seconds: args.max_batch_time_seconds,
-            max_batch_size: args.max_batch_size,
+            max_batch_time_seconds,
+            max_batch_size,
             batching_worker_lock_duration: args.batching_worker_lock_duration,
             max_blocks_per_snos_batch: args.max_blocks_per_snos_batch,
             max_snos_batches_per_aggregator_batch: args.max_snos_batches_per_aggregator_batch,

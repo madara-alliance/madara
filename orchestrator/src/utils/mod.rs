@@ -12,6 +12,7 @@ pub mod metrics_recorder;
 pub mod preflight;
 pub mod rest_client;
 pub mod signal_handler;
+pub mod startup_info;
 
 /// TODO: This is super Awkward to have this code here
 /// but will try to remove this and move it to the config from the root path

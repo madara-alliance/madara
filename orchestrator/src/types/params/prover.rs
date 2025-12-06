@@ -55,7 +55,7 @@ impl TryFrom<RunCmd> for ProverConfig {
             (false, true) => {
                 let atlantic_args = run_cmd.atlantic_args;
                 // NOTE: Just making sure Cairo Verifier Program Hash is there for L3
-                if run_cmd.layer == Layer::L3 && atlantic_args.cairo_verifier_program_hash.is_none() {
+                if run_cmd.layer.as_ref() == Some(&Layer::L3) && atlantic_args.cairo_verifier_program_hash.is_none() {
                     return Err(OrchestratorError::RunCommandError(
                         "Cairo verifier program hash is required for L3".to_string(),
                     ));
