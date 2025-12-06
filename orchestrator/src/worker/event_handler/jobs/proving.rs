@@ -161,18 +161,15 @@ impl JobHandlerTrait for ProvingJobHandler {
         }
     }
 
-    fn max_process_attempts(&self) -> u64 {
-        // we want this as 1 since we don't want to retry proof creation
-        // because once proof creation fails, the AR bucket will also fail
-        // hence, no point of retrying right now
-        1
+    fn max_process_attempts(&self, config: &Config) -> u64 {
+        config.params.job_policies.proving.max_process_attempts
     }
 
-    fn max_verification_attempts(&self) -> u64 {
-        300
+    fn max_verification_attempts(&self, config: &Config) -> u64 {
+        config.params.job_policies.proving.max_verification_attempts
     }
 
-    fn verification_polling_delay_seconds(&self) -> u64 {
-        30
+    fn verification_polling_delay_seconds(&self, config: &Config) -> u64 {
+        config.params.job_policies.proving.verification_polling_delay_seconds
     }
 }

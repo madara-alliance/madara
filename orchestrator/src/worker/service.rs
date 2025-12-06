@@ -130,10 +130,10 @@ impl JobService {
 
         // Add to verification queue with appropriate delay
         Self::add_job_to_verify_queue(
-            config,
+            config.clone(),
             id,
             &job.job_type,
-            Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
+            Some(Duration::from_secs(job_handler.verification_polling_delay_seconds(&config))),
         )
         .await?;
 

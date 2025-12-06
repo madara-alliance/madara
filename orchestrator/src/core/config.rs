@@ -39,7 +39,7 @@ use crate::{
     types::params::service::{ServerParams, ServiceParams},
     types::params::settlement::SettlementConfig,
     types::params::snos::SNOSParams,
-    types::params::{AlertArgs, QueueArgs, StorageArgs},
+    types::params::{AlertArgs, JobPolicies, QueueArgs, StorageArgs},
     OrchestratorError, OrchestratorResult,
 };
 
@@ -122,6 +122,8 @@ pub struct ConfigParam {
     pub store_audit_artifacts: bool,
     pub bouncer_weights_limit: BouncerWeights,
     pub aggregator_batch_weights_limit: AggregatorBatchWeights,
+    /// Job retry and timeout policies (configurable per job type)
+    pub job_policies: JobPolicies,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -208,15 +210,32 @@ impl Config {
 
         let bouncer_weights_limit = Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?;
 
-        let layer = run_cmd.layer.clone();
+        // Extract required fields with proper error messages for legacy mode
+        let madara_rpc_url = run_cmd.madara_rpc_url.clone().ok_or_else(|| {
+            OrchestratorError::ConfigError(
+                "madara_rpc_url is required. Use --madara-rpc-url or provide a config file with --config".to_string(),
+            )
+        })?;
+
+        let madara_version = run_cmd.madara_version.ok_or_else(|| {
+            OrchestratorError::ConfigError(
+                "madara_version is required. Use --madara-version or provide a config file with --config".to_string(),
+            )
+        })?;
+
+        let layer = run_cmd.layer.clone().ok_or_else(|| {
+            OrchestratorError::ConfigError(
+                "layer is required. Use --layer or provide a config file with --config".to_string(),
+            )
+        })?;
 
         let params = ConfigParam {
-            madara_rpc_url: run_cmd.madara_rpc_url.clone(),
+            madara_rpc_url: madara_rpc_url.clone(),
             madara_feeder_gateway_url: run_cmd
                 .madara_feeder_gateway_url
                 .clone()
-                .unwrap_or_else(|| run_cmd.madara_rpc_url.clone()),
-            madara_version: run_cmd.madara_version,
+                .unwrap_or_else(|| madara_rpc_url.clone()),
+            madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
@@ -228,6 +247,9 @@ impl Config {
             store_audit_artifacts: run_cmd.store_audit_artifacts,
             aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
             bouncer_weights_limit,
+            // Initialize job policies with default values (matching previous hardcoded values)
+            // These can be overridden via config file in the future
+            job_policies: JobPolicies::default(),
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());

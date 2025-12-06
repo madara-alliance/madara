@@ -345,7 +345,7 @@ impl JobHandlerService {
             config.clone(),
             job.id,
             &job.job_type,
-            Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
+            Some(Duration::from_secs(job_handler.verification_polling_delay_seconds(&config))),
         )
         .await
         .map_err(|e| {
@@ -515,7 +515,7 @@ impl JobHandlerService {
                 // Record job failure
                 MetricsRecorder::record_job_failed(&job, &e);
 
-                if job.metadata.common.process_attempt_no < job_handler.max_process_attempts() {
+                if job.metadata.common.process_attempt_no < job_handler.max_process_attempts(&config) {
                     info!(
                         job_id = ?id,
                         attempt = job.metadata.common.process_attempt_no + 1,
@@ -555,7 +555,7 @@ impl JobHandlerService {
                 }
             }
             JobVerificationStatus::Pending => {
-                if job.metadata.common.verification_attempt_no >= job_handler.max_verification_attempts() {
+                if job.metadata.common.verification_attempt_no >= job_handler.max_verification_attempts(&config) {
                     warn!(job_id = ?id, "Max verification attempts reached. Marking job as timed out");
 
                     // Record timeout metric
@@ -588,7 +588,7 @@ impl JobHandlerService {
                         config.clone(),
                         job.id,
                         &job.job_type,
-                        Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
+                        Some(Duration::from_secs(job_handler.verification_polling_delay_seconds(&config))),
                     )
                     .await
                     .map_err(|e| {

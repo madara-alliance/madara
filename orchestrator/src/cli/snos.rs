@@ -14,15 +14,15 @@ fn parse_constants(path: &str) -> Result<VersionedConstants, String> {
 }
 
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["rpc_for_snos"])]
 pub struct SNOSCliArgs {
     /// Weather to use full output or not
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT", long, default_value = "false")]
     pub snos_full_output: bool,
 
     /// The RPC URL for SNOS.
+    /// Optional when using --config or --preset (used as override)
     #[arg(env = "MADARA_ORCHESTRATOR_RPC_FOR_SNOS", long)]
-    pub rpc_for_snos: Url,
+    pub rpc_for_snos: Option<Url>,
 
     /// Address of STRK native fee token
     #[arg(env = "MADARA_ORCHESTRATOR_STRK_NATIVE_FEE_TOKEN_ADDRESS", long, required = false, default_value = DEFAULT_SEPOLIA_STRK_FEE_TOKEN)]

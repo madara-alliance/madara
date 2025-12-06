@@ -24,6 +24,22 @@ pub mod snos;
 pub mod storage;
 
 #[derive(Parser, Debug)]
+#[command(
+    name = "orchestrator",
+    about = "Madara Orchestrator - Starknet block processing and proof generation",
+    long_about = "Madara Orchestrator coordinates SNOS execution, proving, DA submission, and state updates for Starknet rollups.\n\n\
+    Quick Start:\n  \
+    orchestrator run --preset local-dev\n\n\
+    Available Presets:\n  \
+    • local-dev           - Local development environment\n  \
+    • l2-sepolia          - L2 deployment on Ethereum Sepolia\n  \
+    • l3-starknet-sepolia - L3 deployment on Starknet Sepolia",
+    after_help = "Examples:\n  \
+    orchestrator run --preset local-dev\n  \
+    orchestrator run --config /path/to/config.yaml\n  \
+    orchestrator setup --preset local-dev\n\n\
+    For more information, visit: https://github.com/madara-alliance/madara"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -31,12 +47,19 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Run the orchestrator
+    /// Run the orchestrator service
+    #[command(long_about = "Start the orchestrator service to process Starknet blocks.\n\n\
+        The orchestrator requires either a preset or a config file to run.\n\n\
+        Examples:\n  \
+        orchestrator run --preset local-dev\n  \
+        orchestrator run --config my-config.yaml")]
     Run {
         #[command(flatten)]
         run_command: Box<RunCmd>,
     },
-    /// Setup the orchestrator
+    /// Setup the orchestrator infrastructure
+    #[command(long_about = "Initialize cloud infrastructure for the orchestrator.\n\n\
+        This command sets up queues, storage, and other required resources.")]
     Setup {
         #[command(flatten)]
         setup_command: Box<SetupCmd>,
@@ -47,140 +70,117 @@ pub enum Commands {
 #[command(author, version, about, long_about = None)]
 #[clap(
     group(
-        ArgGroup::new("provider")
-            .args(&["aws"])
+        ArgGroup::new("config_source")
+            .args(&["config_file", "preset"])
             .required(true)
             .multiple(false)
-    ),
-    group(
-        ArgGroup::new("storage")
-            .args(&["aws_s3"])
-            .required(true)
-            .multiple(false)
-            .requires("provider")
-    ),
-    group(
-      ArgGroup::new("queue")
-          .args(&["aws_sqs"])
-          .required(true)
-          .multiple(false)
-          .requires("provider")
-    ),
-    group(
-      ArgGroup::new("alert")
-          .args(&["aws_sns"])
-          .required(true)
-          .multiple(false)
-          .requires("provider")
-    ),
-    group(
-        ArgGroup::new("prover")
-            .args(&["sharp", "atlantic"])
-            .required(true)
-            .multiple(false)
-    ),
-    group(
-        ArgGroup::new("settlement_layer")
-            .args(&["settle_on_ethereum", "settle_on_starknet"])
-            .required(true)
-            .multiple(false)
-    ),
-    group(
-        ArgGroup::new("da_layer")
-            .args(&["da_on_ethereum", "da_on_starknet"])
-            .required(true)
-            .multiple(false)
-    ),
+    )
 )]
 pub struct RunCmd {
-    // Provider Config
-    #[clap(flatten)]
-    pub aws_config_args: AWSConfigCliArgs,
+    // ===== CONFIGURATION =====
+    /// Path to YAML configuration file
+    ///
+    /// Provide a custom configuration file for the orchestrator.
+    /// This allows you to define all settings in a structured YAML format.
+    ///
+    /// Example: --config /path/to/my-config.yaml
+    #[arg(long, value_name = "PATH", conflicts_with = "preset")]
+    pub config_file: Option<std::path::PathBuf>,
 
-    // Storage
-    #[clap(flatten)]
-    pub aws_s3_args: storage::aws_s3::AWSS3CliArgs,
+    /// Use a built-in preset configuration
+    ///
+    /// Available presets:
+    ///   • local-dev           - Local development environment
+    ///   • l2-sepolia          - L2 deployment on Ethereum Sepolia
+    ///   • l3-starknet-sepolia - L3 deployment on Starknet Sepolia
+    ///
+    /// Example: --preset local-dev
+    #[arg(
+        long,
+        value_name = "NAME",
+        conflicts_with = "config_file",
+        value_parser = clap::builder::PossibleValuesParser::new(["local-dev", "l2-sepolia", "l3-starknet-sepolia"])
+    )]
+    pub preset: Option<String>,
 
-    // Queue
-    #[clap(flatten)]
-    pub aws_sqs_args: queue::aws_sqs::AWSSQSCliArgs,
-
-    // Server
-    #[clap(flatten)]
-    pub server_args: server::ServerCliArgs,
-
-    // Alert
-    #[clap(flatten)]
-    pub aws_sns_args: alert::aws_sns::AWSSNSCliArgs,
-
-    // Database
-    #[clap(flatten)]
+    // ===== INTERNAL USE ONLY - DO NOT USE DIRECTLY =====
+    // These fields are kept temporarily for internal config building.
+    // They will be removed once the new config system is fully integrated.
+    // Users should ONLY use --config or --preset.
+    #[clap(flatten, next_help_heading = None)]
     pub mongodb_args: database::mongodb::MongoDBCliArgs,
 
-    // Data Availability Layer
-    #[clap(flatten)]
-    pub ethereum_da_args: da::ethereum::EthereumDaCliArgs,
+    #[arg(hide = true)]
+    pub madara_rpc_url: Option<Url>,
 
-    #[clap(flatten)]
-    pub starknet_da_args: da::starknet::StarknetDaCliArgs,
-
-    #[clap(flatten)]
-    pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
-
-    // Settlement Layer
-    #[clap(flatten)]
-    pub ethereum_settlement_args: settlement::ethereum::EthereumSettlementCliArgs,
-
-    #[clap(flatten)]
-    pub starknet_settlement_args: settlement::starknet::StarknetSettlementCliArgs,
-
-    // Prover
-    #[clap(flatten)]
-    pub sharp_args: prover::sharp::SharpCliArgs,
-
-    #[clap(flatten)]
-    pub atlantic_args: prover::atlantic::AtlanticCliArgs,
-
-    // SNOS
-    #[clap(flatten)]
-    pub snos_args: snos::SNOSCliArgs,
-
-    #[clap(flatten)]
-    pub batching_args: batching::BatchingCliArgs,
-
-    #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
-    pub madara_rpc_url: Url,
-
-    #[arg(env = "MADARA_ORCHESTRATOR_MADARA_FEEDER_GATEWAY_URL", long)]
+    #[arg(hide = true)]
     pub madara_feeder_gateway_url: Option<Url>,
 
-    #[arg(env = "MADARA_ORCHESTRATOR_BOUNCER_WEIGHTS_LIMIT_FILE", long)]
+    #[arg(hide = true)]
     pub bouncer_weights_limit_file: Option<std::path::PathBuf>,
 
-    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
-    pub layer: Layer,
+    #[arg(hide = true)]
+    pub layer: Option<Layer>,
 
-    #[arg(env = "MADARA_ORCHESTRATOR_MADARA_VERSION", long, required = true)]
-    pub madara_version: StarknetVersion,
+    #[arg(hide = true)]
+    pub madara_version: Option<StarknetVersion>,
 
-    // Service
-    #[clap(flatten)]
+    #[clap(flatten, next_help_heading = None)]
+    pub snos_args: snos::SNOSCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub batching_args: batching::BatchingCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
     pub service_args: service::ServiceCliArgs,
-    #[clap(flatten)]
+
+    #[clap(flatten, next_help_heading = None)]
+    pub server_args: server::ServerCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub ethereum_settlement_args: settlement::ethereum::EthereumSettlementCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub starknet_settlement_args: settlement::starknet::StarknetSettlementCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub sharp_args: prover::sharp::SharpCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub atlantic_args: prover::atlantic::AtlanticCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub ethereum_da_args: da::ethereum::EthereumDaCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub starknet_da_args: da::starknet::StarknetDaCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
     pub instrumentation_args: instrumentation::InstrumentationCliArgs,
 
-    /// Run the mock Atlantic server for testing purposes.
-    /// This starts a local mock server that simulates the Atlantic prover service.
-    #[clap(long)]
+    #[arg(skip)]
     pub mock_atlantic_server: bool,
 
-    #[arg(env = "MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", long)]
+    #[arg(skip)]
     pub store_audit_artifacts: bool,
 
-    /// Graceful shutdown timeout in seconds.
-    /// Provides sufficient time for workers to complete their current tasks before forcing termination.
-    #[arg(env = "MADARA_ORCHESTRATOR_GRACEFUL_SHUTDOWN_TIMEOUT", long, default_value = "120")]
+    #[arg(skip)]
     pub graceful_shutdown_timeout: u64,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub aws_config_args: AWSConfigCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub aws_s3_args: storage::aws_s3::AWSS3CliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub aws_sqs_args: queue::aws_sqs::AWSSQSCliArgs,
+
+    #[clap(flatten, next_help_heading = None)]
+    pub aws_sns_args: alert::aws_sns::AWSSNSCliArgs,
 }
 
 #[derive(Parser, Debug, Clone)]
