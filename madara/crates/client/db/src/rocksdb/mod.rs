@@ -216,6 +216,19 @@ impl RocksDBStorage {
     pub fn flush(&self) -> Result<()> {
         self.inner.flush()
     }
+
+    /// Get a reference to the underlying RocksDB instance.
+    ///
+    /// This is primarily used for database migrations that need direct access
+    /// to the raw DB for low-level operations.
+    ///
+    /// # Warning
+    ///
+    /// Direct manipulation of the DB can lead to data corruption if not done
+    /// carefully. This should only be used by the migration system.
+    pub fn inner_db(&self) -> &DB {
+        &self.inner.db
+    }
 }
 
 impl MadaraStorageRead for RocksDBStorage {
