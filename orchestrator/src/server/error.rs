@@ -58,6 +58,10 @@ pub enum JobRouteError {
     /// Contains both the job ID and the current status
     #[error("Invalid status: {id}: {job_status}")]
     InvalidStatus { id: String, job_status: String },
+
+    /// Indicates that the priority queue has reached capacity
+    #[error("Priority queue capacity exceeded: {0}")]
+    QueueCapacityExceeded(String),
 }
 
 /// Implementation of axum's `IntoResponse` trait for converting errors into HTTP responses.
@@ -106,6 +110,9 @@ impl IntoResponse for JobRouteError {
                 Json(ApiResponse::error(format!("Cannot retry job {id}: invalid status {job_status}"))),
             )
                 .into_response(),
+            JobRouteError::QueueCapacityExceeded(msg) => {
+                (StatusCode::TOO_MANY_REQUESTS, Json(ApiResponse::error(msg))).into_response()
+            }
         }
     }
 }

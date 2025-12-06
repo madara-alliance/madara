@@ -26,4 +26,11 @@ pub trait QueueClient: Send + Sync {
     /// * `Ok(())` - If the queue service is healthy and accessible
     /// * `Err(QueueError)` - If the health check fails
     async fn health_check(&self) -> Result<(), QueueError>;
+
+    /// Get the approximate number of messages in a queue
+    ///
+    /// # Returns
+    /// * `Ok(i32)` - Approximate number of messages in the queue
+    /// * `Err(QueueError)` - If the operation fails
+    async fn get_queue_depth(&self, queue: QueueType) -> Result<i32, QueueError>;
 }

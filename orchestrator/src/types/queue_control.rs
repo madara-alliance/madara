@@ -4,6 +4,14 @@ use orchestrator_utils::env_utils::get_env_var_or_default;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+/// Maximum number of messages allowed in the priority queue
+/// Can be configured via MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE environment variable
+pub static MAX_PRIORITY_QUEUE_SIZE: LazyLock<i32> = LazyLock::new(|| {
+    get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE", "20")
+        .parse()
+        .expect("MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE must be a valid integer")
+});
+
 #[derive(Clone)]
 pub struct DlqConfig {
     pub max_receive_count: u32,
@@ -171,6 +179,15 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2],
+        },
+    );
+    map.insert(
+        QueueType::PriorityJobQueue,
+        QueueConfig {
+            visibility_timeout: 30,
+            dlq_config: None, // No DLQ - failed priority jobs go through normal error handling
+            queue_control: QueueControlConfig::new(10), // Not used directly, but set for consistency
+            supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
     map

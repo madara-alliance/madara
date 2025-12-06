@@ -98,6 +98,10 @@ pub enum JobError {
     #[error("Max Capacity Reached, Already processing")]
     MaxCapacityReached,
 
+    /// Indicates that the priority queue has reached its maximum capacity
+    #[error("Priority queue is full. Current size: {current_size}, Max size: {max_size}. Please try again later or use normal queue.")]
+    PriorityQueueFull { current_size: i32, max_size: i32 },
+
     /// Indicates an error occurred while extracting the processing lock
     #[error("Error extracting processing lock: {0}")]
     LockError(String),

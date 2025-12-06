@@ -445,4 +445,26 @@ impl QueueClient for SQS {
 
         Ok(())
     }
+
+    async fn get_queue_depth(&self, queue: QueueType) -> Result<i32, QueueError> {
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        let attributes = self
+            .inner
+            .client()
+            .get_queue_attributes()
+            .queue_url(&queue_url)
+            .attribute_names(QueueAttributeName::ApproximateNumberOfMessages)
+            .send()
+            .await?;
+
+        let count = attributes
+            .attributes()
+            .and_then(|attrs| attrs.get(&QueueAttributeName::ApproximateNumberOfMessages))
+            .and_then(|value| value.parse::<i32>().ok())
+            .unwrap_or(0);
+
+        Ok(count)
+    }
 }
