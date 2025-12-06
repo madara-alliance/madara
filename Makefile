@@ -288,6 +288,13 @@ fmt:
 	@taplo format --config=./taplo/taplo.toml
 	@echo -e "$(INFO)Running cargo fmt...$(RESET)"
 	@cargo fmt
+	@# TODO(mehul 14/11/2025, hotfix): This is a temporary fix to ensure that the madara is linted.
+	@# Madara does not belong to the toplevel workspace, so we need to lint it separately.
+	@# Remove this once we add madara back to toplevel workspace.
+	@echo "Running cargo clippy for madara..."
+	@cd madara && \
+	cargo fmt && \
+	cd ..
 	@echo -e "$(PASS)Code formatting complete!$(RESET)"
 
 .PHONY: test-orchestrator-e2e

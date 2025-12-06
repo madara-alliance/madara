@@ -6,7 +6,7 @@ mod test_rpc_read_calls {
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
     use rstest::rstest;
-    use starknet::macros::felt;
+    use starknet_core::types::Felt;
     use starknet_core::types::{
         BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
         BroadcastedDeployAccountTransactionV3, BroadcastedTransaction, ContractClass, ContractStorageDiffItem,
@@ -64,7 +64,8 @@ mod test_rpc_read_calls {
             result,
             BlockHashAndNumber {
                 // https://sepolia.voyager.online/block/19
-                block_hash: felt!("0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5"),
+                block_hash: Felt::from_hex("0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5")
+                    .unwrap(),
                 block_number: 19
             }
         );
@@ -213,30 +214,47 @@ mod test_rpc_read_calls {
 
         let expected_block = MaybePreConfirmedBlockWithReceipts::Block(BlockWithReceipts {
             status: BlockStatus::AcceptedOnL2,
-            block_hash: felt!("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d"),
-            parent_hash: felt!("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6"),
+            block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d").unwrap(),
+            parent_hash: Felt::from_hex("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6").unwrap(),
             block_number: 2,
-            new_root: felt!("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0"),
+            new_root: Felt::from_hex("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0").unwrap(),
             timestamp: 1700475581,
-            sequencer_address: felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
-            l1_gas_price: ResourcePrice { price_in_fri: felt!("0x0"), price_in_wei: felt!("0x3b9ad016") },
-            l1_data_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
-            l2_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
+            sequencer_address: Felt::from_hex("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")
+                .unwrap(),
+            l1_gas_price: ResourcePrice {
+                price_in_fri: Felt::from_hex("0x0").unwrap(),
+                price_in_wei: Felt::from_hex("0x3b9ad016").unwrap(),
+            },
+            l1_data_gas_price: ResourcePrice {
+                price_in_fri: Felt::from_hex("0x1").unwrap(),
+                price_in_wei: Felt::from_hex("0x1").unwrap(),
+            },
+            l2_gas_price: ResourcePrice {
+                price_in_fri: Felt::from_hex("0x1").unwrap(),
+                price_in_wei: Felt::from_hex("0x1").unwrap(),
+            },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
             transactions: vec![TransactionWithReceipt {
                 transaction: Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
-                    transaction_hash: felt!("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"),
-                    sender_address: felt!("0x1"),
-                    max_fee: felt!("0x0"),
+                    transaction_hash: Felt::from_hex(
+                        "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
+                    )
+                    .unwrap(),
+                    sender_address: Felt::from_hex("0x1").unwrap(),
+                    max_fee: Felt::from_hex("0x0").unwrap(),
                     signature: vec![],
-                    class_hash: felt!("0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1"),
+                    class_hash: Felt::from_hex("0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1")
+                        .unwrap(),
                 }))
                 .into(),
                 receipt: {
                     TransactionReceipt::Declare(DeclareTransactionReceipt {
-                        transaction_hash: felt!("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"),
-                        actual_fee: FeePayment { amount: felt!("0x0"), unit: PriceUnit::Wei },
+                        transaction_hash: Felt::from_hex(
+                            "0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772",
+                        )
+                        .unwrap(),
+                        actual_fee: FeePayment { amount: Felt::from_hex("0x0").unwrap(), unit: PriceUnit::Wei },
                         finality_status: TransactionFinalityStatus::AcceptedOnL2,
                         messages_sent: vec![],
                         events: vec![],
@@ -280,18 +298,30 @@ mod test_rpc_read_calls {
 
         let expected_block = MaybePreConfirmedBlockWithTxHashes::Block(BlockWithTxHashes {
             status: BlockStatus::AcceptedOnL2,
-            block_hash: felt!("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d"),
-            parent_hash: felt!("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6"),
+            block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d").unwrap(),
+            parent_hash: Felt::from_hex("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6").unwrap(),
             block_number: 2,
-            new_root: felt!("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0"),
+            new_root: Felt::from_hex("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0").unwrap(),
             timestamp: 1700475581,
-            sequencer_address: felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
-            l1_gas_price: ResourcePrice { price_in_fri: felt!("0x0"), price_in_wei: felt!("0x3b9ad016") },
-            l1_data_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
-            l2_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
+            sequencer_address: Felt::from_hex("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")
+                .unwrap(),
+            l1_gas_price: ResourcePrice {
+                price_in_fri: Felt::from_hex("0x0").unwrap(),
+                price_in_wei: Felt::from_hex("0x3b9ad016").unwrap(),
+            },
+            l1_data_gas_price: ResourcePrice {
+                price_in_fri: Felt::from_hex("0x1").unwrap(),
+                price_in_wei: Felt::from_hex("0x1").unwrap(),
+            },
+            l2_gas_price: ResourcePrice {
+                price_in_fri: Felt::from_hex("0x1").unwrap(),
+                price_in_wei: Felt::from_hex("0x1").unwrap(),
+            },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
-            transactions: vec![felt!("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772")],
+            transactions: vec![
+                Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772").unwrap()
+            ],
         });
         assert_eq!(block, expected_block);
     }
@@ -323,23 +353,35 @@ mod test_rpc_read_calls {
 
         let expected_block = MaybePreConfirmedBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL2,
-            block_hash: felt!("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d"),
-            parent_hash: felt!("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6"),
+            block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d").unwrap(),
+            parent_hash: Felt::from_hex("0x78b67b11f8c23850041e11fb0f3b39db0bcb2c99d756d5a81321d1b483d79f6").unwrap(),
             block_number: 2,
-            new_root: felt!("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0"),
+            new_root: Felt::from_hex("0xe005205a1327f3dff98074e528f7b96f30e0624a1dfcf571bdc81948d150a0").unwrap(),
             timestamp: 1700475581,
-            sequencer_address: felt!("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"),
-            l1_gas_price: ResourcePrice { price_in_fri: felt!("0x0"), price_in_wei: felt!("0x3b9ad016") },
-            l1_data_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
-            l2_gas_price: ResourcePrice { price_in_fri: felt!("0x1"), price_in_wei: felt!("0x1") },
+            sequencer_address: Felt::from_hex("0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8")
+                .unwrap(),
+            l1_gas_price: ResourcePrice {
+                price_in_fri: Felt::from_hex("0x0").unwrap(),
+                price_in_wei: Felt::from_hex("0x3b9ad016").unwrap(),
+            },
+            l1_data_gas_price: ResourcePrice {
+                price_in_fri: Felt::from_hex("0x1").unwrap(),
+                price_in_wei: Felt::from_hex("0x1").unwrap(),
+            },
+            l2_gas_price: ResourcePrice {
+                price_in_fri: Felt::from_hex("0x1").unwrap(),
+                price_in_wei: Felt::from_hex("0x1").unwrap(),
+            },
             l1_da_mode: L1DataAvailabilityMode::Calldata,
             starknet_version: "0.12.3".to_string(),
             transactions: vec![Transaction::Declare(DeclareTransaction::V0(DeclareTransactionV0 {
-                transaction_hash: felt!("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"),
-                sender_address: felt!("0x1"),
-                max_fee: felt!("0x0"),
+                transaction_hash: Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772")
+                    .unwrap(),
+                sender_address: Felt::from_hex("0x1").unwrap(),
+                max_fee: Felt::from_hex("0x0").unwrap(),
                 signature: vec![],
-                class_hash: felt!("0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1"),
+                class_hash: Felt::from_hex("0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1")
+                    .unwrap(),
             }))],
         });
         assert_eq!(block, expected_block);
@@ -373,12 +415,13 @@ mod test_rpc_read_calls {
             json_client
                 .get_class_hash_at(
                     BlockId::Number(15),
-                    felt!("0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
+                    Felt::from_hex("0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f").unwrap(),
                 )
                 .await
                 .unwrap()
         };
-        let expected_class_hash = felt!("0xd0e183745e9dae3e4e78a8ffedcce0903fc4900beace4e0abf192d4c202da3");
+        let expected_class_hash =
+            Felt::from_hex("0xd0e183745e9dae3e4e78a8ffedcce0903fc4900beace4e0abf192d4c202da3").unwrap();
 
         assert_eq!(class_hash, expected_class_hash);
     }
@@ -411,12 +454,12 @@ mod test_rpc_read_calls {
             json_client
                 .get_nonce(
                     BlockId::Number(19),
-                    felt!("0x0535ca4e1d1be7ec4a88d51a2962cd6c5aea1be96cb2c0b60eb1721dc34f800d"),
+                    Felt::from_hex("0x0535ca4e1d1be7ec4a88d51a2962cd6c5aea1be96cb2c0b60eb1721dc34f800d").unwrap(),
                 )
                 .await
                 .unwrap()
         };
-        let expected_nonce = felt!("0x2");
+        let expected_nonce = Felt::from_hex("0x2").unwrap();
 
         assert_eq!(nonce, expected_nonce);
     }
@@ -447,16 +490,19 @@ mod test_rpc_read_calls {
         let json_client = madara.json_rpc();
         let txn = { json_client.get_transaction_by_block_id_and_index(BlockId::Number(16), 1).await.unwrap() };
         let expected_txn = Transaction::L1Handler(L1HandlerTransaction {
-            transaction_hash: felt!("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"),
-            version: felt!("0x0"),
+            transaction_hash: Felt::from_hex("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a")
+                .unwrap(),
+            version: Felt::from_hex("0x0").unwrap(),
             nonce: 11,
-            contract_address: felt!("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
-            entry_point_selector: felt!("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5"),
+            contract_address: Felt::from_hex("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f")
+                .unwrap(),
+            entry_point_selector: Felt::from_hex("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5")
+                .unwrap(),
             calldata: vec![
-                felt!("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc"),
-                felt!("0x70503f026c7af73cfd2b007fe650e8c310256e9674ac4e42797c291edca5e84"),
-                felt!("0x15fb7f9b8c38000"),
-                felt!("0x0"),
+                Felt::from_hex("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc").unwrap(),
+                Felt::from_hex("0x70503f026c7af73cfd2b007fe650e8c310256e9674ac4e42797c291edca5e84").unwrap(),
+                Felt::from_hex("0x15fb7f9b8c38000").unwrap(),
+                Felt::from_hex("0x0").unwrap(),
             ],
         });
 
@@ -486,21 +532,26 @@ mod test_rpc_read_calls {
         let json_client = madara.json_rpc();
         let txn = {
             json_client
-                .get_transaction_by_hash(felt!("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"))
+                .get_transaction_by_hash(
+                    Felt::from_hex("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a").unwrap(),
+                )
                 .await
                 .unwrap()
         };
         let expected_txn = Transaction::L1Handler(L1HandlerTransaction {
-            transaction_hash: felt!("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"),
-            version: felt!("0x0"),
+            transaction_hash: Felt::from_hex("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a")
+                .unwrap(),
+            version: Felt::from_hex("0x0").unwrap(),
             nonce: 11,
-            contract_address: felt!("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
-            entry_point_selector: felt!("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5"),
+            contract_address: Felt::from_hex("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f")
+                .unwrap(),
+            entry_point_selector: Felt::from_hex("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5")
+                .unwrap(),
             calldata: vec![
-                felt!("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc"),
-                felt!("0x70503f026c7af73cfd2b007fe650e8c310256e9674ac4e42797c291edca5e84"),
-                felt!("0x15fb7f9b8c38000"),
-                felt!("0x0"),
+                Felt::from_hex("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc").unwrap(),
+                Felt::from_hex("0x70503f026c7af73cfd2b007fe650e8c310256e9674ac4e42797c291edca5e84").unwrap(),
+                Felt::from_hex("0x15fb7f9b8c38000").unwrap(),
+                Felt::from_hex("0x0").unwrap(),
             ],
         });
 
@@ -531,14 +582,17 @@ mod test_rpc_read_calls {
         let json_client = madara.json_rpc();
         let txn_receipt = {
             json_client
-                .get_transaction_receipt(felt!("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"))
+                .get_transaction_receipt(
+                    Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772").unwrap(),
+                )
                 .await
                 .unwrap()
         };
         let expected_txn_receipt = TransactionReceiptWithBlockInfo {
             receipt: TransactionReceipt::Declare(DeclareTransactionReceipt {
-                transaction_hash: felt!("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772"),
-                actual_fee: FeePayment { amount: felt!("0x0"), unit: PriceUnit::Wei },
+                transaction_hash: Felt::from_hex("0x701d9adb9c60bc2fd837fe3989e15aeba4be1a6e72bb6f61ffe35a42866c772")
+                    .unwrap(),
+                actual_fee: FeePayment { amount: Felt::from_hex("0x0").unwrap(), unit: PriceUnit::Wei },
                 finality_status: TransactionFinalityStatus::AcceptedOnL2,
                 messages_sent: vec![],
                 events: vec![],
@@ -546,7 +600,8 @@ mod test_rpc_read_calls {
                 execution_result: ExecutionResult::Succeeded,
             }),
             block: ReceiptBlock::Block {
-                block_hash: felt!("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d"),
+                block_hash: Felt::from_hex("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d")
+                    .unwrap(),
                 block_number: 2,
             },
         };
@@ -584,7 +639,9 @@ mod test_rpc_read_calls {
         let json_client = madara.json_rpc();
         let txn_status = {
             json_client
-                .get_transaction_status(felt!("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a"))
+                .get_transaction_status(
+                    Felt::from_hex("0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a").unwrap(),
+                )
                 .await
                 .unwrap()
         };
@@ -625,14 +682,14 @@ mod test_rpc_read_calls {
         let storage_response = {
             json_client
                 .get_storage_at(
-                    felt!("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
-                    felt!("0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1"),
+                    Felt::from_hex("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7").unwrap(),
+                    Felt::from_hex("0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1").unwrap(),
                     BlockId::Number(12),
                 )
                 .await
                 .unwrap()
         };
-        let expected_storage_response = felt!("0x4574686572");
+        let expected_storage_response = Felt::from_hex("0x4574686572").unwrap();
 
         assert_eq!(storage_response, expected_storage_response);
     }
@@ -673,28 +730,36 @@ mod test_rpc_read_calls {
         };
 
         let expected_state_update = MaybePreConfirmedStateUpdate::Update(StateUpdate {
-            block_hash: felt!("0x12e2fe9e5273b777341a372edc56ca0327dc2237232cf2fed6cecc7398ffe9d"),
-            old_root: felt!("0x7b6d0a312a1304bc1f99396c227a3bf062ff390258d2341309b4f60e6520bc9"),
-            new_root: felt!("0x73ef61c78f5bda0bd3ef54d360484d06d32032e3b9287a71e0798526654a733"),
+            block_hash: Felt::from_hex("0x12e2fe9e5273b777341a372edc56ca0327dc2237232cf2fed6cecc7398ffe9d").unwrap(),
+            old_root: Felt::from_hex("0x7b6d0a312a1304bc1f99396c227a3bf062ff390258d2341309b4f60e6520bc9").unwrap(),
+            new_root: Felt::from_hex("0x73ef61c78f5bda0bd3ef54d360484d06d32032e3b9287a71e0798526654a733").unwrap(),
             state_diff: StateDiff {
                 storage_diffs: vec![
                     ContractStorageDiffItem {
-                        address: felt!("0x1"),
+                        address: Felt::from_hex("0x1").unwrap(),
                         storage_entries: vec![StorageEntry {
-                            key: felt!("0x3"),
-                            value: felt!("0x37644818236ee05b7e3b180bed64ea70ee3dd1553ca334a5c2a290ee276f380"),
+                            key: Felt::from_hex("0x3").unwrap(),
+                            value: Felt::from_hex("0x37644818236ee05b7e3b180bed64ea70ee3dd1553ca334a5c2a290ee276f380")
+                                .unwrap(),
                         }],
                     },
                     ContractStorageDiffItem {
-                        address: felt!("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
+                        address: Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+                            .unwrap(),
                         storage_entries: vec![
                             StorageEntry {
-                                key: felt!("0x110e2f729c9c2b988559994a3daccd838cf52faf88e18101373e67dd061455a"),
-                                value: felt!("0xe20a99b3d590000"),
+                                key: Felt::from_hex(
+                                    "0x110e2f729c9c2b988559994a3daccd838cf52faf88e18101373e67dd061455a",
+                                )
+                                .unwrap(),
+                                value: Felt::from_hex("0xe20a99b3d590000").unwrap(),
                             },
                             StorageEntry {
-                                key: felt!("0x6cfd3e69ed325a8ac721ef6c60099111df74d4c17f62221dc847b26c9e9db3d"),
-                                value: felt!("0x71afd498d0000"),
+                                key: Felt::from_hex(
+                                    "0x6cfd3e69ed325a8ac721ef6c60099111df74d4c17f62221dc847b26c9e9db3d",
+                                )
+                                .unwrap(),
+                                value: Felt::from_hex("0x71afd498d0000").unwrap(),
                             },
                         ],
                     },
@@ -756,7 +821,10 @@ mod test_rpc_read_calls {
                     EventFilter {
                         from_block: Some(BlockId::Number(0)),
                         to_block: Some(BlockId::Number(19)),
-                        address: Some(felt!("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")),
+                        address: Some(
+                            Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+                                .unwrap(),
+                        ),
                         keys: Some(vec![vec![]]),
                     },
                     None,
@@ -769,23 +837,41 @@ mod test_rpc_read_calls {
         let expected_events = EventsPage {
             events: vec![
                 EmittedEvent {
-                    from_address: felt!("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
-                    keys: vec![felt!("0x3774b0545aabb37c45c1eddc6a7dae57de498aae6d5e3589e362d4b4323a533")],
-                    data: vec![
-                        felt!("0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8"),
-                        felt!("0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8"),
+                    from_address: Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+                        .unwrap(),
+                    keys: vec![
+                        Felt::from_hex("0x3774b0545aabb37c45c1eddc6a7dae57de498aae6d5e3589e362d4b4323a533").unwrap()
                     ],
-                    block_hash: Some(felt!("0x5c627d4aeb51280058bed93c7889bce78114d63baad1be0f0aeb32496d5f19c")),
+                    data: vec![
+                        Felt::from_hex("0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8").unwrap(),
+                        Felt::from_hex("0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8").unwrap(),
+                    ],
+                    block_hash: Some(
+                        Felt::from_hex("0x5c627d4aeb51280058bed93c7889bce78114d63baad1be0f0aeb32496d5f19c").unwrap(),
+                    ),
                     block_number: Some(0),
-                    transaction_hash: felt!("0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add"),
+                    transaction_hash: Felt::from_hex(
+                        "0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add",
+                    )
+                    .unwrap(),
                 },
                 EmittedEvent {
-                    from_address: felt!("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
-                    keys: vec![felt!("0x4595132f9b33b7077ebf2e7f3eb746a8e0a6d5c337c71cd8f9bf46cac3cfd7")],
-                    data: vec![felt!("0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8")],
-                    block_hash: Some(felt!("0x5c627d4aeb51280058bed93c7889bce78114d63baad1be0f0aeb32496d5f19c")),
+                    from_address: Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+                        .unwrap(),
+                    keys: vec![
+                        Felt::from_hex("0x4595132f9b33b7077ebf2e7f3eb746a8e0a6d5c337c71cd8f9bf46cac3cfd7").unwrap()
+                    ],
+                    data: vec![
+                        Felt::from_hex("0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8").unwrap()
+                    ],
+                    block_hash: Some(
+                        Felt::from_hex("0x5c627d4aeb51280058bed93c7889bce78114d63baad1be0f0aeb32496d5f19c").unwrap(),
+                    ),
                     block_number: Some(0),
-                    transaction_hash: felt!("0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add"),
+                    transaction_hash: Felt::from_hex(
+                        "0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add",
+                    )
+                    .unwrap(),
                 },
             ],
             continuation_token: Some("4-0".to_string()),
@@ -835,7 +921,10 @@ mod test_rpc_read_calls {
                     EventFilter {
                         from_block: Some(BlockId::Number(0)),
                         to_block: Some(BlockId::Number(19)),
-                        address: Some(felt!("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")),
+                        address: Some(
+                            Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+                                .unwrap(),
+                        ),
                         keys: Some(vec![vec![]]),
                     },
                     Some("0-2".to_string()),
@@ -848,37 +937,53 @@ mod test_rpc_read_calls {
         let expected_events = EventsPage {
             events: vec![
                 EmittedEvent {
-                    from_address: felt!("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
-                    keys: vec![felt!("0x2e8a4ec40a36a027111fafdb6a46746ff1b0125d5067fbaebd8b5f227185a1e")],
-                    data: vec![
-                        felt!("0x23be95f90bf41685e18a4356e57b0cfdc1da22bf382ead8b64108353915c1e5"),
-                        felt!("0x0"),
-                        felt!("0x4"),
-                        felt!("0x4574686572"),
-                        felt!("0x455448"),
-                        felt!("0x12"),
-                        felt!("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
-                        felt!("0x0"),
+                    from_address: Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+                        .unwrap(),
+                    keys: vec![
+                        Felt::from_hex("0x2e8a4ec40a36a027111fafdb6a46746ff1b0125d5067fbaebd8b5f227185a1e").unwrap()
                     ],
-                    block_hash: Some(felt!("0x445152a69e628774b0f78a952e6f9ba0ffcda1374724b314140928fd2f31f4c")),
+                    data: vec![
+                        Felt::from_hex("0x23be95f90bf41685e18a4356e57b0cfdc1da22bf382ead8b64108353915c1e5").unwrap(),
+                        Felt::from_hex("0x0").unwrap(),
+                        Felt::from_hex("0x4").unwrap(),
+                        Felt::from_hex("0x4574686572").unwrap(),
+                        Felt::from_hex("0x455448").unwrap(),
+                        Felt::from_hex("0x12").unwrap(),
+                        Felt::from_hex("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f").unwrap(),
+                        Felt::from_hex("0x0").unwrap(),
+                    ],
+                    block_hash: Some(
+                        Felt::from_hex("0x445152a69e628774b0f78a952e6f9ba0ffcda1374724b314140928fd2f31f4c").unwrap(),
+                    ),
                     block_number: Some(4),
-                    transaction_hash: felt!("0x3c9dfcd3fe66be18b661ee4ebb62520bb4f13d4182b040b3c2be9a12dbcc09b"),
+                    transaction_hash: Felt::from_hex(
+                        "0x3c9dfcd3fe66be18b661ee4ebb62520bb4f13d4182b040b3c2be9a12dbcc09b",
+                    )
+                    .unwrap(),
                 },
                 EmittedEvent {
-                    from_address: felt!("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
-                    keys: vec![felt!("0x1205ec81562fc65c367136bd2fe1c0fff2d1986f70e4ba365e5dd747bd08753")],
-                    data: vec![
-                        felt!("0x23be95f90bf41685e18a4356e57b0cfdc1da22bf382ead8b64108353915c1e5"),
-                        felt!("0x0"),
-                        felt!("0x4"),
-                        felt!("0x4574686572"),
-                        felt!("0x455448"),
-                        felt!("0x12"),
-                        felt!("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
+                    from_address: Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
+                        .unwrap(),
+                    keys: vec![
+                        Felt::from_hex("0x1205ec81562fc65c367136bd2fe1c0fff2d1986f70e4ba365e5dd747bd08753").unwrap()
                     ],
-                    block_hash: Some(felt!("0x445152a69e628774b0f78a952e6f9ba0ffcda1374724b314140928fd2f31f4c")),
+                    data: vec![
+                        Felt::from_hex("0x23be95f90bf41685e18a4356e57b0cfdc1da22bf382ead8b64108353915c1e5").unwrap(),
+                        Felt::from_hex("0x0").unwrap(),
+                        Felt::from_hex("0x4").unwrap(),
+                        Felt::from_hex("0x4574686572").unwrap(),
+                        Felt::from_hex("0x455448").unwrap(),
+                        Felt::from_hex("0x12").unwrap(),
+                        Felt::from_hex("0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f").unwrap(),
+                    ],
+                    block_hash: Some(
+                        Felt::from_hex("0x445152a69e628774b0f78a952e6f9ba0ffcda1374724b314140928fd2f31f4c").unwrap(),
+                    ),
                     block_number: Some(4),
-                    transaction_hash: felt!("0x24ae8900d238a120e927d6a5f2e4ddf85419e97020d92c1fadc615bff666ab1"),
+                    transaction_hash: Felt::from_hex(
+                        "0x24ae8900d238a120e927d6a5f2e4ddf85419e97020d92c1fadc615bff666ab1",
+                    )
+                    .unwrap(),
                 },
             ],
             continuation_token: Some("6-0".to_string()),
@@ -924,10 +1029,14 @@ mod test_rpc_read_calls {
             json_client
                 .call(
                     FunctionCall {
-                        contract_address: felt!("0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"),
-                        entry_point_selector: felt!(
-                            "0x361458367e696363fbcc70777d07ebbd2394e89fd0adcaf147faccd1d294d60"
-                        ),
+                        contract_address: Felt::from_hex(
+                            "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                        )
+                        .unwrap(),
+                        entry_point_selector: Felt::from_hex(
+                            "0x361458367e696363fbcc70777d07ebbd2394e89fd0adcaf147faccd1d294d60",
+                        )
+                        .unwrap(),
                         calldata: vec![],
                     },
                     BlockId::Number(19),
@@ -936,7 +1045,7 @@ mod test_rpc_read_calls {
                 .unwrap()
         };
 
-        let expected_call_response = vec![felt!("0x4574686572")];
+        let expected_call_response = vec![Felt::from_hex("0x4574686572").unwrap()];
 
         assert_eq!(call_response, expected_call_response);
     }
@@ -997,7 +1106,7 @@ mod test_rpc_read_calls {
             json_client
                 .get_class(
                     BlockId::Number(12),
-                    felt!("0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"),
+                    Felt::from_hex("0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6").unwrap(),
                 )
                 .await
                 .unwrap()
@@ -1093,7 +1202,7 @@ mod test_rpc_read_calls {
             json_client
                 .get_class_at(
                     BlockId::Number(12),
-                    felt!("0x043abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8"),
+                    Felt::from_hex("0x043abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8").unwrap(),
                 )
                 .await
                 .unwrap()
@@ -1158,23 +1267,29 @@ mod test_rpc_read_calls {
                 .estimate_fee(
                     vec![BroadcastedTransaction::DeployAccount(BroadcastedDeployAccountTransactionV3 {
                         signature: vec![
-                            felt!("0x73d0a8a69f0ebf44b1c2bb2a9e85bf998883eb2008ca7b9c57b6f28dacb6dd8"),
-                            felt!("0x4a43711cd08f55ef73603f1e7b880c7f438fb68934f0823a736f9f577ab040a"),
-                            felt!("0x0"),
-                            felt!("0x0"),
-                            felt!("0x0"),
-                            felt!("0x0"),
-                            felt!("0x0"),
-                            felt!("0x0"),
-                            felt!("0x0"),
-                            felt!("0x0"),
+                            Felt::from_hex("0x73d0a8a69f0ebf44b1c2bb2a9e85bf998883eb2008ca7b9c57b6f28dacb6dd8")
+                                .unwrap(),
+                            Felt::from_hex("0x4a43711cd08f55ef73603f1e7b880c7f438fb68934f0823a736f9f577ab040a")
+                                .unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
                         ],
-                        nonce: felt!("0x0"),
-                        contract_address_salt: felt!("0x0"),
-                        constructor_calldata: vec![felt!(
-                            "0x2e23f1647b018bfb3fe107e2ebd4412f0a0ed41bd60c10d842a76f8cdbbe1ba"
-                        )],
-                        class_hash: felt!("0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6"),
+                        nonce: Felt::from_hex("0x0").unwrap(),
+                        contract_address_salt: Felt::from_hex("0x0").unwrap(),
+                        constructor_calldata: vec![Felt::from_hex(
+                            "0x2e23f1647b018bfb3fe107e2ebd4412f0a0ed41bd60c10d842a76f8cdbbe1ba",
+                        )
+                        .unwrap()],
+                        class_hash: Felt::from_hex(
+                            "0x05c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6",
+                        )
+                        .unwrap(),
                         is_query: true,
                         resource_bounds: ResourceBoundsMapping {
                             l1_gas: ResourceBounds { max_amount: 10000, max_price_per_unit: 10000 },
@@ -1243,11 +1358,19 @@ mod test_rpc_read_calls {
                 .estimate_message_fee(
                     MsgFromL1 {
                         from_address: EthAddress::from_hex("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc").unwrap(),
-                        to_address: felt!("0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f"),
-                        entry_point_selector: felt!(
-                            "0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5"
-                        ),
-                        payload: vec![felt!("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc"), felt!("0x0"), felt!("0x0")],
+                        to_address: Felt::from_hex(
+                            "0x04c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f",
+                        )
+                        .unwrap(),
+                        entry_point_selector: Felt::from_hex(
+                            "0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5",
+                        )
+                        .unwrap(),
+                        payload: vec![
+                            Felt::from_hex("0x8453fc6cd1bcfe8d4dfc069c400b433054d47bdc").unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
+                            Felt::from_hex("0x0").unwrap(),
+                        ],
                     },
                     BlockId::Number(8),
                 )
