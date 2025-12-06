@@ -25,6 +25,7 @@ mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
 mp-gateway.workspace = true
+mp-resilience.workspace = true
 mp-rpc.workspace = true
 mp-transactions.workspace = true
 
@@ -55,3 +56,4 @@ url.workspace = true
 rstest.workspace = true
 flate2.workspace = true
 reqwest = { workspace = true, features = ["json"] }
+httpmock.workspace = true

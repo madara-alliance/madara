@@ -1,0 +1,85 @@
+/// Unit tests for gateway-specific retry error handling
+use crate::retry::{GatewayRetryState, RetryConfig};
+use mp_gateway::error::SequencerError;
+use std::time::Duration;
+
+#[test]
+fn test_connection_refused_error() {
+    let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
+        std::io::ErrorKind::ConnectionRefused,
+        "Connection refused",
+    )));
+
+    let reason = GatewayRetryState::format_error_reason(&error);
+    assert_eq!(reason, "connection refused");
+}
+
+#[test]
+fn test_timeout_error() {
+    let error = SequencerError::HttpCallError(Box::new(std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        "Operation timed out",
+    )));
+
+    let reason = GatewayRetryState::format_error_reason(&error);
+    assert_eq!(reason, "timeout");
+}
+
+#[test]
+fn test_rate_limit_handling() {
+    use mp_gateway::error::StarknetError;
+
+    let error = SequencerError::StarknetError(StarknetError::rate_limited());
+
+    let state = GatewayRetryState::new(RetryConfig::default());
+    let delay = state.next_delay(&error);
+
+    // Should respect rate limiting
+    assert!(delay >= Duration::from_secs(2), "Rate limited errors should have appropriate delay");
+}
+
+#[test]
+fn test_error_message_formatting() {
+    let test_cases = vec![
+        (
+            SequencerError::HttpCallError(Box::new(std::io::Error::new(
+                std::io::ErrorKind::ConnectionRefused,
+                "Connection refused",
+            ))),
+            "connection refused",
+        ),
+        (
+            SequencerError::HttpCallError(Box::new(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))),
+            "timeout",
+        ),
+        (SequencerError::StarknetError(mp_gateway::error::StarknetError::rate_limited()), "rate limited"),
+    ];
+
+    for (error, expected) in test_cases {
+        let formatted = GatewayRetryState::format_error_reason(&error);
+        assert_eq!(formatted, expected, "Error formatting mismatch for: {:?}", error);
+    }
+}
+
+#[test]
+fn test_mixed_error_types() {
+    let errors = vec![
+        SequencerError::HttpCallError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "Connection refused",
+        ))),
+        SequencerError::HttpCallError(Box::new(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout"))),
+        SequencerError::StarknetError(mp_gateway::error::StarknetError::rate_limited()),
+    ];
+
+    let state = GatewayRetryState::new(RetryConfig::default());
+
+    for error in errors {
+        let delay = state.next_delay(&error);
+        let formatted = GatewayRetryState::format_error_reason(&error);
+
+        // Verify basic properties
+        assert!(delay > Duration::from_secs(0), "Should have non-zero delay");
+        assert!(!formatted.is_empty(), "Error should be formatted: {:?}", error);
+    }
+}

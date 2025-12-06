@@ -88,7 +88,7 @@ pub async fn start_server(
                         let res_len = res.body().len() as u64;
                         let response_time = start.elapsed().as_micros();
 
-                        tracing::info!(
+                        tracing::debug!(
                             target: "gateway_calls",
                             method = &path,
                             status = status,

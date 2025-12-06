@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use futures::FutureExt;
-use http::StatusCode;
 use http_body_util::Full;
 use hyper::body::Incoming;
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
@@ -16,25 +15,39 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tower::retry;
+use tower::timeout::Timeout;
 use tower::Service;
-use tower::{retry::Retry, timeout::Timeout};
 use url::Url;
 
 use crate::request_builder::url_join_segment;
 
+/// Timeout for individual gateway HTTP requests (in seconds).
+/// This is the per-request timeout, not the total retry timeout.
+const GATEWAY_REQUEST_TIMEOUT_SECS: u64 = 20;
+
 type BodyTy = Full<Bytes>;
 
 type HttpsClient = Client<HttpsConnector<HttpConnector>, BodyTy>;
-type TimeoutRetryClient = Retry<RetryPolicy, Timeout<HttpsClient>>;
-pub type PausedClient = PauseLayerMiddleware<TimeoutRetryClient>;
-#[derive(Debug, Clone)]
+type TimeoutClient = Timeout<HttpsClient>;
+pub type PausedClient = PauseLayerMiddleware<TimeoutClient>;
+#[derive(Clone)]
 pub struct GatewayProvider {
     pub(crate) client: PausedClient,
     pub(crate) headers: HeaderMap,
     pub(crate) gateway_url: Url,
     pub(crate) feeder_gateway_url: Url,
     pub(crate) madara_specific_url: Option<Url>,
+    pub(crate) health: Arc<RwLock<crate::health::GatewayHealth>>,
+}
+
+impl std::fmt::Debug for GatewayProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GatewayProvider")
+            .field("gateway_url", &self.gateway_url)
+            .field("feeder_gateway_url", &self.feeder_gateway_url)
+            .field("madara_specific_url", &self.madara_specific_url)
+            .finish()
+    }
 }
 
 impl GatewayProvider {
@@ -59,12 +72,24 @@ impl GatewayProvider {
         let connector = HttpsConnector::new();
         let base_client = Client::builder(TokioExecutor::new()).build::<_, BodyTy>(connector);
 
-        let timeout_layer = Timeout::new(base_client, Duration::from_secs(20)); // Timeout after 20 seconds
-        let retry_policy = RetryPolicy::new(5, Duration::from_secs(1), Arc::clone(&pause_until)); // Retry 5 times with 1 second backoff
-        let retry_layer = Retry::new(retry_policy, timeout_layer);
-        let client = PauseLayerMiddleware::new(retry_layer, Arc::clone(&pause_until));
+        // Only apply timeout layer - retry logic is handled by retry_get in methods.rs
+        // to avoid duplicate retries (Tower retry × custom retry = 5 × ∞)
+        let timeout_layer = Timeout::new(base_client, Duration::from_secs(GATEWAY_REQUEST_TIMEOUT_SECS));
+        let client = PauseLayerMiddleware::new(timeout_layer, Arc::clone(&pause_until));
 
-        Self { client, gateway_url, feeder_gateway_url, madara_specific_url: None, headers: HeaderMap::new() }
+        Self {
+            client,
+            gateway_url,
+            feeder_gateway_url,
+            madara_specific_url: None,
+            headers: HeaderMap::new(),
+            health: Arc::new(RwLock::new(crate::health::GatewayHealth::new("Gateway"))),
+        }
+    }
+
+    /// Get a reference to the health tracker for this gateway
+    pub fn health(&self) -> Arc<RwLock<crate::health::GatewayHealth>> {
+        Arc::clone(&self.health)
     }
 
     pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
@@ -106,89 +131,6 @@ impl GatewayProvider {
             ),
         )
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct RetryPolicy {
-    max_retries: usize,
-    backoff: Duration,
-    pause_until: Arc<RwLock<Option<Instant>>>,
-}
-
-impl RetryPolicy {
-    pub fn new(max_retries: usize, backoff: Duration, pause_until: Arc<RwLock<Option<Instant>>>) -> Self {
-        RetryPolicy { max_retries, backoff, pause_until }
-    }
-}
-
-impl<Req: Clone> retry::Policy<Req, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
-    type Future = Pin<Box<dyn Future<Output = Self> + Send>>;
-
-    #[tracing::instrument(skip(self, result), fields(module = "RetryPolicy"))]
-    fn retry(
-        &self,
-        _: &Req,
-        result: Result<&Response<Incoming>, &Box<dyn Error + Send + Sync>>,
-    ) -> Option<Self::Future> {
-        let pause_until = self.pause_until.clone();
-
-        match result {
-            Ok(response) => {
-                if response.status() == StatusCode::TOO_MANY_REQUESTS {
-                    let retry_after = get_retry_after(response).unwrap_or(Duration::from_secs(10)); // Default 10 seconds
-
-                    let next_policy = self.clone();
-                    let fut = async move {
-                        if (*pause_until.read().await).is_none() {
-                            tracing::info!(retry_after = ?retry_after, "⏳ Rate limited, retrying");
-                        }
-
-                        *pause_until.write().await = Some(Instant::now() + retry_after);
-
-                        // wait for the retry_after duration
-                        tokio::time::sleep(retry_after).await;
-
-                        next_policy
-                    }
-                    .boxed();
-                    Some(fut)
-                } else {
-                    None
-                }
-            }
-            Err(_) if self.max_retries > 0 => {
-                // If the request failed, retry after backoff duration
-                let next_policy = RetryPolicy {
-                    max_retries: self.max_retries - 1,
-                    backoff: self.backoff,
-                    pause_until: self.pause_until.clone(),
-                };
-                let sleep = tokio::time::sleep(self.backoff);
-                let fut = async move {
-                    sleep.await;
-                    next_policy
-                }
-                .boxed();
-                Some(fut)
-            }
-            _ => None, // No more retries
-        }
-    }
-
-    fn clone_request(&self, req: &Req) -> Option<Req> {
-        Some(req.clone())
-    }
-}
-
-fn get_retry_after(response: &Response<Incoming>) -> Option<Duration> {
-    if let Some(retry_after_header) = response.headers().get("Retry-After") {
-        if let Ok(retry_after_str) = retry_after_header.to_str() {
-            if let Ok(retry_seconds) = retry_after_str.parse::<u64>() {
-                return Some(Duration::from_secs(retry_seconds));
-            }
-        }
-    }
-    None
 }
 
 #[derive(Clone, Debug)]
