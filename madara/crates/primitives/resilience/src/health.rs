@@ -175,7 +175,7 @@ impl ConnectionHealth {
         match &self.state {
             HealthState::Healthy => {}
             HealthState::Down => self.transition_down_to_degraded(),
-            HealthState::Degraded { .. } => self.try_transition_to_healthy(),
+            HealthState::Degraded { .. } => self.try_transition_to_healthy(None),
         }
     }
 
@@ -205,15 +205,18 @@ impl ConnectionHealth {
         // Immediately check if we can transition to healthy
         // If the operation that brought us back is successful (which it is),
         // and we have no ongoing failures, transition immediately
-        self.try_transition_to_healthy();
+        // Pass the failed_ops count since we already reset the counters
+        self.try_transition_to_healthy(Some(failed_ops));
     }
 
-    fn try_transition_to_healthy(&mut self) {
+    fn try_transition_to_healthy(&mut self, failed_during_outage: Option<usize>) {
         self.recovery_attempts += 1;
 
         if self.should_transition_to_healthy() {
             let downtime = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
-            let failed_ops = self.failed_requests;
+            // Use the passed-in count if available (from Down->Degraded transition),
+            // otherwise use current failed_requests (for Degraded->Healthy transitions)
+            let failed_ops = failed_during_outage.unwrap_or(self.failed_requests);
 
             self.state = HealthState::Healthy;
             self.last_state_change = Instant::now();
