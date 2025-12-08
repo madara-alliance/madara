@@ -313,13 +313,13 @@ impl AtlanticProverService {
         proof_layout: &LayoutName,
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
-    ) -> Self {
+    ) -> Result<Self, ProverClientError> {
         let atlantic_client =
-            AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
+            AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params)?;
 
         let fact_checker = Self::get_fact_checker(atlantic_params);
 
-        Self::new(
+        Ok(Self::new(
             atlantic_client,
             atlantic_params.atlantic_api_key.clone(),
             AtlanticJobConfig {
@@ -333,16 +333,20 @@ impl AtlanticProverService {
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
             atlantic_params.cairo_verifier_program_hash.clone(),
             fee_token_address,
-        )
+        ))
     }
 
-    pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn with_test_params(
+        port: u16,
+        atlantic_params: &AtlanticValidatedArgs,
+        proof_layout: &LayoutName,
+    ) -> Result<Self, ProverClientError> {
         let atlantic_client =
-            AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params);
+            AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params)?;
 
         let fact_checker = Self::get_fact_checker(atlantic_params);
 
-        Self::new(
+        Ok(Self::new(
             atlantic_client,
             "random_api_key".to_string(),
             AtlanticJobConfig {
@@ -356,7 +360,7 @@ impl AtlanticProverService {
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
             None,
             None,
-        )
+        ))
     }
 
     fn get_fact_checker(atlantic_params: &AtlanticValidatedArgs) -> Option<FactChecker> {

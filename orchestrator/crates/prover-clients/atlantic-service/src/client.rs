@@ -64,11 +64,13 @@ pub struct AtlanticBucketInfo {
 pub struct AtlanticClient {
     client: HttpClient,
     proving_layer: Box<dyn ProvingLayer>,
+    /// Shared HTTP client for external artifact downloads (with connection pooling)
+    http_client: reqwest::Client,
 }
 
 impl AtlanticClient {
     /// Creates a new Atlantic client with the given configuration
-    pub fn new_with_args(url: Url, atlantic_params: &AtlanticValidatedArgs) -> Self {
+    pub fn new_with_args(url: Url, atlantic_params: &AtlanticValidatedArgs) -> Result<Self, AtlanticError> {
         let mock_fact_hash = atlantic_params.atlantic_mock_fact_hash.clone();
         let client = HttpClient::builder(url.as_str())
             .expect("Failed to create HTTP client builder")
@@ -76,9 +78,13 @@ impl AtlanticClient {
             .build()
             .expect("Failed to build HTTP client");
 
-        let proving_layer = create_proving_layer(&atlantic_params.atlantic_settlement_layer);
+        let proving_layer = create_proving_layer(&atlantic_params.atlantic_settlement_layer)?;
 
-        Self { client, proving_layer }
+        // Create a shared HTTP client for external artifact downloads
+        // This client reuses connections and is more efficient than creating new clients per request
+        let http_client = reqwest::Client::new();
+
+        Ok(Self { client, proving_layer, http_client })
     }
 
     /// Generic retry mechanism for all Atlantic API calls
@@ -107,18 +113,15 @@ impl AtlanticClient {
     {
         let start_time = Instant::now();
         let mut last_error = None;
-        let mut total_attempts = 0;
-        let retry_count;
 
         for attempt in 1..=RETRY_MAX_ATTEMPTS {
-            total_attempts = attempt;
             let attempt_start = Instant::now();
 
             match f().await {
                 Ok(result) => {
                     let duration_s = start_time.elapsed().as_secs_f64();
                     let response_size_bytes = metrics_extractor(&result);
-                    retry_count = attempt.saturating_sub(1);
+                    let retry_count = attempt.saturating_sub(1);
 
                     // Record OTEL metrics
                     ATLANTIC_METRICS.record_success(
@@ -166,15 +169,16 @@ impl AtlanticClient {
                     } else {
                         // Non-retryable error or last attempt
                         let duration_s = start_time.elapsed().as_secs_f64();
-                        retry_count = attempt.saturating_sub(1);
-
+                        let retry_count = attempt.saturating_sub(1);
                         let error_type = err.error_type();
+                        let response_bytes = err.response_bytes();
 
                         // Record OTEL metrics for failure
                         ATLANTIC_METRICS.record_failure(
                             operation_name,
                             duration_s,
                             data_size_bytes,
+                            response_bytes,
                             error_type,
                             retry_count,
                         );
@@ -196,11 +200,19 @@ impl AtlanticClient {
         // All retries exhausted
         let total_duration_s = start_time.elapsed().as_secs_f64();
         let final_error = last_error.expect("At least one attempt should have been made");
-        retry_count = total_attempts - 1;
+        let retry_count = RETRY_MAX_ATTEMPTS - 1;
         let error_type = final_error.error_type();
+        let response_bytes = final_error.response_bytes();
 
         // Record OTEL metrics for exhausted retries
-        ATLANTIC_METRICS.record_failure(operation_name, total_duration_s, data_size_bytes, error_type, retry_count);
+        ATLANTIC_METRICS.record_failure(
+            operation_name,
+            total_duration_s,
+            data_size_bytes,
+            response_bytes,
+            error_type,
+            retry_count,
+        );
 
         // Emit metrics event for exhausted retries
         warn!(
@@ -208,7 +220,7 @@ impl AtlanticClient {
             operation = operation_name,
             duration_seconds = total_duration_s,
             request_bytes = data_size_bytes,
-            response_bytes = 0,
+            response_bytes = response_bytes,
             retry_count = retry_count,
             success = false,
             error_type = error_type,
@@ -241,6 +253,7 @@ impl AtlanticClient {
             0,
             || {
                 let artifact_path = artifact_path_clone.clone();
+                let client = &self.http_client;
                 async move {
                     debug!(
                         operation = "get_artifacts",
@@ -248,8 +261,7 @@ impl AtlanticClient {
                         "Fetching artifact"
                     );
 
-                    // Use direct reqwest client for external URLs
-                    let client = reqwest::Client::new();
+                    // Use shared HTTP client for external URLs (enables connection pooling)
                     let response = client
                         .get(&artifact_path)
                         .send()
@@ -612,6 +624,7 @@ impl AtlanticClient {
             || {
                 let proof_path = ATLANTIC_PROOF_URL.replace("{}", &task_id_owned);
                 let task_id = task_id_owned.clone();
+                let client = &self.http_client;
 
                 async move {
                     debug!(
@@ -621,8 +634,7 @@ impl AtlanticClient {
                         "Fetching proof"
                     );
 
-                    // Use direct reqwest client for external URLs
-                    let client = reqwest::Client::new();
+                    // Use shared HTTP client for external URLs (enables connection pooling)
                     let response = client
                         .get(&proof_path)
                         .send()

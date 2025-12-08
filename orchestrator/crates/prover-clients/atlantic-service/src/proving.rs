@@ -36,6 +36,7 @@
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::RequestBuilder;
 
+use crate::error::AtlanticError;
 use crate::types::AtlanticQueryStep;
 
 /// Parameters for proving layer specific configuration
@@ -99,14 +100,17 @@ impl ProvingLayer for StarknetLayer {
 /// * `settlement_layer` - The name of the settlement layer ("ethereum" or "starknet")
 ///
 /// # Returns
-/// A boxed proving layer implementation
+/// A boxed proving layer implementation, or an error if the settlement layer is not recognized
 ///
-/// # Panics
-/// Panics if the settlement layer is not recognized
-pub fn create_proving_layer(settlement_layer: &str) -> Box<dyn ProvingLayer> {
+/// # Errors
+/// Returns an error if the settlement layer is not "ethereum" or "starknet"
+pub fn create_proving_layer(settlement_layer: &str) -> Result<Box<dyn ProvingLayer>, AtlanticError> {
     match settlement_layer {
-        "ethereum" => Box::new(EthereumLayer),
-        "starknet" => Box::new(StarknetLayer),
-        _ => panic!("Invalid settlement layer: {}", settlement_layer),
+        "ethereum" => Ok(Box::new(EthereumLayer)),
+        "starknet" => Ok(Box::new(StarknetLayer)),
+        _ => Err(AtlanticError::Other {
+            operation: "create_proving_layer".to_string(),
+            message: format!("Invalid settlement layer '{}'. Expected 'ethereum' or 'starknet'", settlement_layer),
+        }),
     }
 }
