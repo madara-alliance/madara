@@ -569,7 +569,6 @@ fn madara_help_shows() {
 
 #[rstest]
 #[tokio::test]
-#[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
 async fn madara_can_sync_a_few_blocks() {
     use starknet_core::types::BlockHashAndNumber;
     use starknet_types_core::felt::Felt;
@@ -603,7 +602,6 @@ async fn madara_can_sync_a_few_blocks() {
 
 #[rstest]
 #[tokio::test]
-#[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
 async fn madara_can_sync_and_restart() {
     use starknet_core::types::BlockHashAndNumber;
     use starknet_types_core::felt::Felt;

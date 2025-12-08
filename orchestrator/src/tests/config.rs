@@ -509,7 +509,7 @@ pub mod implement_client {
         match service {
             ConfigType::Mock(client) => client.into(),
             ConfigType::Actual => {
-                Config::build_prover_service(&params.prover_params, &params.orchestrator_params, None)
+                Config::build_prover_service(&params.prover_params, &params.orchestrator_params, None, None)
             }
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }

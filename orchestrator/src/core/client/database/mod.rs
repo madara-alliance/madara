@@ -170,6 +170,9 @@ pub trait DatabaseClient: Send + Sync {
     /// * `timeout_seconds` - Timeout threshold in seconds
     async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError>;
 
+    /// Get all jobs by status
+    async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError>;
+
     // ================================================================================
     // SNOS Batch Management Methods
     // ================================================================================

@@ -1,15 +1,17 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use opentelemetry::KeyValue;
-use tracing::{error, info, Span};
+use tracing::{debug, error, info, Span};
 use uuid::Uuid;
 
 use super::super::error::JobRouteError;
-use super::super::types::{ApiResponse, JobId, JobRouteResult, JobStatusResponse, JobStatusResponseItem};
+use super::super::types::{
+    ApiResponse, JobId, JobRouteResult, JobStatusQuery, JobStatusResponse, JobStatusResponseItem,
+};
 use crate::core::config::Config;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -161,7 +163,52 @@ async fn handle_retry_job_request(
 pub fn job_router(config: Arc<Config>) -> Router {
     Router::new()
         .nest("/:id", job_trigger_router(config.clone()))
+        .route("/", get(handle_get_jobs_by_status).with_state(config.clone()))
         .route("/block/:block_number/status", get(handle_get_job_status_by_block_request).with_state(config))
+    // TODO: Change this to use query params instead of path params
+}
+
+/// Handles HTTP requests to get all jobs by status.
+///
+/// This endpoint retrieves all jobs with the specified status.
+///
+/// # Arguments
+/// * `State(config)` - Shared application configuration
+/// * `Query(query)` - Query parameters containing the status filter
+///
+/// # Returns
+/// * `JobRouteResult` - Success response with jobs matching the status or error details
+///
+/// # Query Parameters
+/// * `status` - The job status to filter by (case-insensitive)
+///   Valid values: created, lockedforprocessing, pendingverification, completed,
+///   verificationtimeout, verificationfailed, failed, pendingretry
+async fn handle_get_jobs_by_status(
+    State(config): State<Arc<Config>>,
+    Query(query): Query<JobStatusQuery>,
+) -> JobRouteResult {
+    let status = query.status;
+
+    match config.database().get_jobs_by_status(status.clone()).await {
+        Ok(jobs) => {
+            debug!("Jobs with status {} : {:#?}", status, jobs);
+            let job_status_items: Vec<_> = jobs
+                .into_iter()
+                .map(|job| JobStatusResponseItem { job_type: job.job_type, id: job.id, status: job.status })
+                .collect();
+            let count = job_status_items.len();
+            info!(count = count, "Successfully fetched jobs with status {}", status);
+            Ok(Json(ApiResponse::<JobStatusResponse>::success_with_data(
+                JobStatusResponse { jobs: job_status_items },
+                Some(format!("Successfully fetched {} jobs with status {}", count, status)),
+            ))
+            .into_response())
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to fetch jobs with status {}", status);
+            Err(JobRouteError::ProcessingError(e.to_string()))
+        }
+    }
 }
 
 /// Handles HTTP requests to get job statuses by block number.

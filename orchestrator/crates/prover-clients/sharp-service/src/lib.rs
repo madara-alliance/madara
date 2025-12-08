@@ -194,7 +194,7 @@ impl ProverClient for SharpProverService {
             .await?)
     }
 
-    async fn get_aggregator_task_id(&self, bucket_id: &str, _: u64) -> Result<String, ProverClientError> {
+    async fn get_aggregator_task_id(&self, bucket_id: &str) -> Result<String, ProverClientError> {
         Ok(self.sharp_client.get_aggregator_task_id(bucket_id).await?.task_id)
     }
 }
