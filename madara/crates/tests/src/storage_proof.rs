@@ -14,7 +14,6 @@ fn normalize(json: &mut serde_json::Value) {
 
 #[rstest]
 #[tokio::test]
-#[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
 async fn test_storage_proof_snapshots() {
     let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
@@ -47,7 +46,6 @@ async fn test_storage_proof_snapshots() {
 
 #[rstest]
 #[tokio::test]
-#[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
 async fn test_storage_proof_trie_log() {
     // use trie log
     let cmd_builder = MadaraCmdBuilder::new().args([
