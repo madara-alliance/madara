@@ -5,7 +5,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::Felt252;
 use orchestrator_utils::http_client::extract_http_error_text;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
-use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
+use reqwest::header::{HeaderName, HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::Method;
 use tracing::{debug, info, warn};
 use url::Url;
@@ -449,8 +449,14 @@ impl AtlanticClient {
                             .method(Method::POST)
                             .header(ACCEPT, HeaderValue::from_static("application/json"))
                             .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                            .header(
+                                HeaderName::from_static("api-key"),
+                                HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
+                                    operation: "create_bucket".to_string(),
+                                    message: format!("Invalid API key format: {}", e),
+                                })?,
+                            )
                             .path("buckets")
-                            .query_param("apiKey", &api_key)
                             .body(bucket_request)
                             .map_err(|e| AtlanticError::parse_error("create_bucket", e.to_string()))?
                             .send()
@@ -532,10 +538,16 @@ impl AtlanticClient {
                             .request()
                             .method(Method::POST)
                             .header(ACCEPT, HeaderValue::from_static("application/json"))
+                            .header(
+                                HeaderName::from_static("api-key"),
+                                HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
+                                    operation: "close_bucket".to_string(),
+                                    message: format!("Invalid API key format: {}", e),
+                                })?,
+                            )
                             .path("buckets")
                             .path("close")
                             .query_param("bucketId", &bucket_id)
-                            .query_param("apiKey", &api_key)
                             .send()
                             .await
                             .map_err(|e| AtlanticError::from_reqwest_error("close_bucket", e))?;
@@ -643,7 +655,13 @@ impl AtlanticClient {
                                 .request()
                                 .method(Method::POST)
                                 .path("atlantic-query")
-                                .query_param("apiKey", &api_key)
+                                .header(
+                                    HeaderName::from_static("api-key"),
+                                    HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
+                                        operation: "add_job".to_string(),
+                                        message: format!("Invalid API key format: {}", e),
+                                    })?,
+                                )
                                 .form_text("declaredJobSize", job_size)
                                 .form_text("result", &result_step.to_string())
                                 .form_text("network", &network)
@@ -908,7 +926,13 @@ impl AtlanticClient {
                             .request()
                             .method(Method::POST)
                             .path("atlantic-query")
-                            .query_param("apiKey", &api_key)
+                            .header(
+                                HeaderName::from_static("api-key"),
+                                HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
+                                    operation: "submit_l2_query".to_string(),
+                                    message: format!("Invalid API key format: {}", e),
+                                })?,
+                            )
                             .form_file_bytes(
                                 "inputFile",
                                 proof.as_bytes().to_vec(),
