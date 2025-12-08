@@ -58,7 +58,8 @@ async fn atlantic_client_submit_task_when_mock_works() {
 
     // Configure the service to use mock server
     let atlantic_service =
-        AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params, &LayoutName::dynamic);
+        AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params, &LayoutName::dynamic)
+            .expect("Failed to create Atlantic service");
 
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
@@ -207,7 +208,8 @@ async fn atlantic_client_get_task_status_works() {
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
     };
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None);
+    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None)
+        .expect("Failed to create Atlantic service");
 
     let atlantic_query_id = "01JPMKV7WFP4JTC0TTQSEAM9GW";
     let task_result = atlantic_service.atlantic_client.get_job_status(atlantic_query_id).await;
@@ -233,7 +235,8 @@ async fn atlantic_client_get_bucket_status_works() {
         atlantic_cairo_vm: AtlanticCairoVm::Python,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
     };
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None);
+    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None)
+        .expect("Failed to create Atlantic service");
 
     let bucket_id = "01K0RN2JFJW3382CZPHRBC48NR";
     let task_result = atlantic_service.atlantic_client.get_bucket(bucket_id).await;
@@ -263,7 +266,8 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     };
 
     // Create the Atlantic service with actual configuration
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None);
+    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None)
+        .expect("Failed to create Atlantic service");
 
     // Load the Cairo PIE from the test data
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
