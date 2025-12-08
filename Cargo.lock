@@ -7884,7 +7884,6 @@ dependencies = [
  "flate2",
  "hex",
  "httpmock",
- "once_cell",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
