@@ -9,8 +9,35 @@ pub use config::*;
 
 use crate::services::server::{Server, ServerConfig};
 use reqwest::Url;
+use serde::Deserialize;
 use std::process::ExitStatus;
 use std::time::Duration;
+
+// JSON response types
+#[derive(Debug, Deserialize)]
+struct ApiResponse<T> {
+    success: bool,
+    data: T,
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct JobsData {
+    jobs: Vec<Job>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(unused)]
+struct Job {
+    job_type: String,
+    id: String,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct BatchData {
+    batch_number: u64,
+}
 
 pub struct OrchestratorService {
     server: Server, // None for setup mode
@@ -141,84 +168,111 @@ impl OrchestratorService {
     /// Check if State Update for specified block completed or not
     ///
     /// This method calls the orchestrator's job status endpoint to check if the StateTransition
-    /// job for the given block number has completed.
+    /// job for the given block number has completed. It also verifies that no jobs are left in
+    /// Created or LockedForProcessing state.
     ///
     /// Returns:
-    /// - `Ok(true)` if the StateTransition job for the block is completed
-    /// - `Ok(false)` if the StateTransition job is not completed or doesn't exist
+    /// - `Ok(true)` if the StateTransition job for the block is completed AND no jobs are pending
+    /// - `Ok(false)` if the StateTransition job is not completed, doesn't exist, or jobs are still pending
     /// - `Err(OrchestratorError)` for RPC errors or parsing failures
     pub async fn check_state_update(&self, block_number: u64) -> Result<bool, OrchestratorError> {
         let client = reqwest::Client::new();
+        let endpoint = self.endpoint().unwrap();
 
-        // Step 1: Fetch batch for the block
-        let url = format!("{}blocks/batch-for-block/{}", self.endpoint().unwrap(), block_number);
+        // Step 1: Check for jobs in Created state
+        let url_get_created = format!("{}jobs?status=Created", endpoint);
+        let response_created =
+            client.get(&url_get_created).header("accept", "application/json").send().await.map_err(|e| {
+                println!("Failed to fetch Created jobs: {}", e);
+                OrchestratorError::NetworkError(e.to_string())
+            })?;
 
-        let response_1 = client.get(&url).header("accept", "application/json").send().await.map_err(|e| {
-            println!("Failed to send request to orchestrator: {}", e);
-            OrchestratorError::NetworkError(e.to_string())
-        })?;
-
-        let json_1 = response_1.json::<serde_json::Value>().await.map_err(|e| {
-            println!("Failed to parse JSON response: {}", e);
+        let created_jobs: ApiResponse<JobsData> = response_created.json().await.map_err(|e| {
+            println!("Failed to parse Created jobs response: {}", e);
             OrchestratorError::InvalidResponse(e.to_string())
         })?;
 
-        // Check if the API call was successful
-        let success_1 = json_1.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-
-        if !success_1 {
-            let message = json_1.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
-            println!("Orchestrator API error: {}", message);
-            return Err(OrchestratorError::InvalidResponse(message.to_string()));
+        if !created_jobs.success {
+            println!("Orchestrator API error (Created jobs): {}", created_jobs.message);
+            return Err(OrchestratorError::InvalidResponse(created_jobs.message));
         }
 
-        // Extract the batch number from the response
-        let batch_number = json_1.get("data").and_then(|data| data.get("batch_number")).unwrap();
+        if !created_jobs.data.jobs.is_empty() {
+            println!("Found {} jobs in Created state, waiting...", created_jobs.data.jobs.len());
+            return Ok(false);
+        }
 
-        // Step 2: Fetch the status of the batch's state_transition job
-        let url = format!("{}jobs/block/{}/status", self.endpoint().unwrap(), batch_number);
-        let client = reqwest::Client::new();
+        // Step 2: Check for jobs in LockedForProcessing state
+        let url_get_locked = format!("{}jobs?status=LockedForProcessing", endpoint);
+        let response_locked =
+            client.get(&url_get_locked).header("accept", "application/json").send().await.map_err(|e| {
+                println!("Failed to fetch LockedForProcessing jobs: {}", e);
+                OrchestratorError::NetworkError(e.to_string())
+            })?;
 
-        let response = client.get(&url).header("accept", "application/json").send().await.map_err(|e| {
-            println!("Failed to send request to orchestrator: {}", e);
-            OrchestratorError::NetworkError(e.to_string())
-        })?;
-
-        let json = response.json::<serde_json::Value>().await.map_err(|e| {
-            println!("Failed to parse JSON response: {}", e);
+        let locked_jobs: ApiResponse<JobsData> = response_locked.json().await.map_err(|e| {
+            println!("Failed to parse LockedForProcessing jobs response: {}", e);
             OrchestratorError::InvalidResponse(e.to_string())
         })?;
 
-        // Check if the API call was successful
-        let success = json.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-
-        if !success {
-            let message = json.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
-            println!("Orchestrator API error: {}", message);
-            return Err(OrchestratorError::InvalidResponse(message.to_string()));
+        if !locked_jobs.success {
+            println!("Orchestrator API error (LockedForProcessing jobs): {}", locked_jobs.message);
+            return Err(OrchestratorError::InvalidResponse(locked_jobs.message));
         }
 
-        let empty_vec = vec![];
+        if !locked_jobs.data.jobs.is_empty() {
+            println!("Found {} jobs in LockedForProcessing state, waiting...", locked_jobs.data.jobs.len());
+            return Ok(false);
+        }
 
-        // Extract jobs array from the response
-        let jobs =
-            json.get("data").and_then(|data| data.get("jobs")).and_then(|jobs| jobs.as_array()).unwrap_or(&empty_vec);
+        // Step 3: Fetch batch for the block
+        let url_batch = format!("{}blocks/batch-for-block/{}", endpoint, block_number);
+        let response_batch = client.get(&url_batch).header("accept", "application/json").send().await.map_err(|e| {
+            println!("Failed to fetch batch for block {}: {}", block_number, e);
+            OrchestratorError::NetworkError(e.to_string())
+        })?;
 
-        // Look for StateTransition job and check its status
-        for job in jobs {
-            if let (Some(job_type), Some(status)) =
-                (job.get("job_type").and_then(|v| v.as_str()), job.get("status").and_then(|v| v.as_str()))
-            {
-                if job_type == "StateTransition" {
-                    let is_completed = status == "Completed";
-                    println!("StateTransition job for block {}: {}", block_number, status);
-                    return Ok(is_completed);
-                }
+        let batch_response: ApiResponse<BatchData> = response_batch.json().await.map_err(|e| {
+            println!("Failed to parse batch response: {}", e);
+            OrchestratorError::InvalidResponse(e.to_string())
+        })?;
+
+        if !batch_response.success {
+            println!("Orchestrator API error (batch): {}", batch_response.message);
+            return Err(OrchestratorError::InvalidResponse(batch_response.message));
+        }
+
+        let batch_number = batch_response.data.batch_number;
+
+        // Step 4: Fetch the status of the batch's state_transition job
+        let url_status = format!("{}jobs/block/{}/status", endpoint, batch_number);
+        let response_status =
+            client.get(&url_status).header("accept", "application/json").send().await.map_err(|e| {
+                println!("Failed to fetch job status for batch {}: {}", batch_number, e);
+                OrchestratorError::NetworkError(e.to_string())
+            })?;
+
+        let status_response: ApiResponse<JobsData> = response_status.json().await.map_err(|e| {
+            println!("Failed to parse job status response: {}", e);
+            OrchestratorError::InvalidResponse(e.to_string())
+        })?;
+
+        if !status_response.success {
+            println!("Orchestrator API error (job status): {}", status_response.message);
+            return Err(OrchestratorError::InvalidResponse(status_response.message));
+        }
+
+        // Step 5: Look for StateTransition job and check its status
+        for job in &status_response.data.jobs {
+            if job.job_type == "StateTransition" {
+                let is_completed = job.status == "Completed";
+                println!("StateTransition job for block {} (batch {}): {}", block_number, batch_number, job.status);
+                return Ok(is_completed);
             }
         }
 
         // No StateTransition job found for this block
-        println!("No StateTransition job found for block {}", block_number);
+        println!("No StateTransition job found for block {} (batch {})", block_number, batch_number);
         Ok(false)
     }
 }
