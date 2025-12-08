@@ -491,7 +491,6 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn get_preconfirmed_block(client_testnet_fixture: GatewayProvider) {
         let latest_block_number =
             client_testnet_fixture.get_header(BlockId::Tag(BlockTag::Latest)).await.unwrap().block_number;
@@ -504,7 +503,6 @@ mod tests {
     // TODO: Fix this test
     #[rstest]
     #[tokio::test]
-    #[ignore = "Ignoring for now because of changes in SN version 0.14.0"]
     async fn get_state_update(client_mainnet_fixture: GatewayProvider) {
         let state_update = client_mainnet_fixture.get_state_update(BlockId::Number(0)).await.unwrap();
         assert_eq!(
