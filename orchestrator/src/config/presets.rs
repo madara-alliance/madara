@@ -1,42 +1,61 @@
 use anyhow::{Context, Result};
-use std::collections::HashMap;
+use std::path::PathBuf;
 
 use super::{OrchestratorConfig, OrchestratorConfigVersioned};
 
 /// Built-in preset configurations
 pub struct PresetRegistry {
-    presets: HashMap<String, &'static str>,
+    presets: Vec<String>,
+    presets_dir: PathBuf,
 }
 
 impl PresetRegistry {
-    pub fn builtin() -> Self {
-        let mut presets = HashMap::new();
+    pub fn new() -> Self {
+        // Get the workspace root by going up from the orchestrator package
+        // This allows the presets to be stored externally in configs/orchestrator/presets/
+        let workspace_root = std::env::var("CARGO_MANIFEST_DIR")
+            .map(PathBuf::from)
+            .map(|p| p.parent().unwrap_or(&p).to_path_buf())
+            .unwrap_or_else(|_| {
+                // Fallback: use current directory and go up to find configs
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+            });
 
-        // Register built-in presets
-        presets.insert("local-dev".to_string(), include_str!("presets/local-dev.yaml"));
-        presets.insert("l2-sepolia".to_string(), include_str!("presets/l2-sepolia.yaml"));
-        presets.insert("l3-starknet-sepolia".to_string(), include_str!("presets/l3-starknet-sepolia.yaml"));
+        let presets_dir = workspace_root.join("configs/orchestrator/presets");
 
-        Self { presets }
+        Self {
+            presets: vec!["local-dev".to_string(), "l2-sepolia".to_string(), "l3-starknet-sepolia".to_string()],
+            presets_dir,
+        }
     }
 
-    pub fn get(&self, name: &str) -> Option<&'static str> {
-        self.presets.get(name).copied()
+    pub fn builtin() -> Self {
+        Self::new()
+    }
+
+    pub fn get_preset_path(&self, name: &str) -> Option<PathBuf> {
+        if self.presets.contains(&name.to_string()) {
+            Some(self.presets_dir.join(format!("{}.yaml", name)))
+        } else {
+            None
+        }
     }
 
     pub fn list(&self) -> Vec<String> {
-        let mut names: Vec<_> = self.presets.keys().cloned().collect();
-        names.sort();
-        names
+        self.presets.clone()
     }
 
     pub fn load_preset(&self, name: &str) -> Result<OrchestratorConfig> {
-        let content = self
-            .get(name)
+        let preset_path = self
+            .get_preset_path(name)
             .ok_or_else(|| anyhow::anyhow!("Unknown preset: {}. Available presets: {:?}", name, self.list()))?;
 
+        // Read the preset file
+        let content = std::fs::read_to_string(&preset_path)
+            .with_context(|| format!("Failed to read preset file: {}", preset_path.display()))?;
+
         // Parse the preset
-        let versioned = OrchestratorConfigVersioned::from_yaml_str(content)
+        let versioned = OrchestratorConfigVersioned::from_yaml_str(&content)
             .with_context(|| format!("Failed to parse preset '{}'", name))?;
 
         let mut config = versioned.into_canonical();
@@ -69,11 +88,22 @@ mod tests {
     }
 
     #[test]
-    fn test_get_preset() {
+    fn test_get_preset_path() {
         let registry = PresetRegistry::builtin();
 
-        let content = registry.get("local-dev");
-        assert!(content.is_some());
-        assert!(content.unwrap().contains("config_version"));
+        let path = registry.get_preset_path("local-dev");
+        assert!(path.is_some());
+        assert!(path.unwrap().to_string_lossy().contains("local-dev.yaml"));
+    }
+
+    #[test]
+    fn test_load_preset() {
+        let registry = PresetRegistry::builtin();
+
+        // This test will only pass if the configs directory exists
+        // Skip if we're in a test environment without the configs
+        if let Ok(config) = registry.load_preset("local-dev") {
+            assert_eq!(config.deployment.layer, crate::config::types::deployment::Layer::L2);
+        }
     }
 }

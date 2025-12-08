@@ -273,6 +273,21 @@ impl Config {
             }
         };
 
+        // Get settlement network first (needed for prover config)
+        let settlement_network =
+            config_v1.networks.iter().find(|n| n.name == config_v1.settlement.network).ok_or_else(|| {
+                OrchestratorError::ConfigError(format!(
+                    "Settlement network '{}' not found in networks list",
+                    config_v1.settlement.network
+                ))
+            })?;
+
+        // Determine settlement layer string for Atlantic prover (ethereum or starknet)
+        let settlement_layer_str = match settlement_network.chain_type {
+            crate::config::networks::ChainType::Ethereum => "ethereum",
+            crate::config::networks::ChainType::Starknet => "starknet",
+        };
+
         // Build prover config
         let prover_config = match &config_v1.prover.prover_type {
             crate::config::types::prover::ProverType::Sharp => {
@@ -300,7 +315,7 @@ impl Config {
                     atlantic_service_url: atlantic_config.service_url.clone(),
                     atlantic_rpc_node_url: config_v1.settlement.rpc_url.clone(),
                     atlantic_verifier_contract_address: atlantic_config.verifier_contract_address.clone(),
-                    atlantic_settlement_layer: config_v1.settlement.network.clone(),
+                    atlantic_settlement_layer: settlement_layer_str.to_string(),
                     atlantic_mock_fact_hash: atlantic_config
                         .mock_fact_hash
                         .clone()
@@ -402,15 +417,7 @@ impl Config {
             }
         };
 
-        // Build settlement config
-        let settlement_network =
-            config_v1.networks.iter().find(|n| n.name == config_v1.settlement.network).ok_or_else(|| {
-                OrchestratorError::ConfigError(format!(
-                    "Settlement network '{}' not found in networks list",
-                    config_v1.settlement.network
-                ))
-            })?;
-
+        // Build settlement config (settlement_network already looked up earlier for prover config)
         let settlement_config = match settlement_network.chain_type {
             crate::config::networks::ChainType::Ethereum => {
                 let ethereum_config = config_v1.settlement.ethereum.as_ref().ok_or_else(|| {
@@ -422,8 +429,14 @@ impl Config {
                 use alloy::primitives::Address;
                 use std::str::FromStr as _;
 
-                let l1_core_contract_address = Address::from_str(&ethereum_config.core_contract_address)
-                    .map_err(|e| OrchestratorError::ConfigError(format!("Invalid L1 core contract address: {}", e)))?;
+                tracing::debug!("Parsing L1 core contract address: '{}'", ethereum_config.core_contract_address);
+                let l1_core_contract_address =
+                    Address::from_str(&ethereum_config.core_contract_address).map_err(|e| {
+                        OrchestratorError::ConfigError(format!(
+                            "Invalid L1 core contract address '{}': {}",
+                            ethereum_config.core_contract_address, e
+                        ))
+                    })?;
 
                 let starknet_operator_address = Address::from_slice(
                     &hex::decode(
