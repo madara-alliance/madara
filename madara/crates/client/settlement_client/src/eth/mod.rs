@@ -61,37 +61,31 @@ impl Clone for EthereumClient {
 }
 
 impl EthereumClient {
-    /// Create a new Ethereum client.
+    /// Create a new Ethereum client with lazy initialization.
     ///
-    /// This method performs a one-time contract verification at startup to fail fast
-    /// on configuration errors (wrong contract address). This check does NOT use retry
-    /// logic because a wrong contract address won't fix itself on retry.
+    /// This method creates the client without verifying L1 connectivity, enabling
+    /// Madara to start even when L1 is temporarily unavailable. Contract verification
+    /// will happen on the first actual RPC call, which uses infinite retry logic.
     ///
-    /// After startup, individual RPC calls use retry logic to handle transient failures.
+    /// This design allows:
+    /// - Starting Madara before L1 infrastructure is ready
+    /// - Automatic recovery when L1 comes back online
+    /// - No service interruption during L1 outages
     pub async fn new(config: EthereumClientConfig) -> Result<Self, SettlementClientError> {
-        let provider = ProviderBuilder::new().on_http(config.rpc_url);
+        let provider = ProviderBuilder::new().on_http(config.rpc_url.clone());
         let core_contract_address =
             Address::from_str(&config.core_contract_address).map_err(|e| -> SettlementClientError {
                 EthereumClientError::Conversion(format!("Invalid core contract address: {e}")).into()
             })?;
 
-        // Verify the contract exists at startup (no retry - fail fast on config errors)
-        let code = provider.get_code_at(core_contract_address).await.map_err(|e| -> SettlementClientError {
-            EthereumClientError::Rpc(format!("Failed to verify contract at startup: {e}")).into()
-        })?;
-
-        if code.is_empty() {
-            return Err(EthereumClientError::Contract(format!(
-                "No contract found at address {}. Please verify the core_contract_address configuration.",
-                core_contract_address
-            ))
-            .into());
-        }
-
         let contract = StarknetCoreContract::new(core_contract_address, provider.clone());
         let health = Arc::new(RwLock::new(ConnectionHealth::new("L1 Endpoint")));
 
-        tracing::info!("L1 client initialized - contract verified at {}", core_contract_address);
+        tracing::info!(
+            "L1 client initialized with lazy connection - will verify contract on first use (endpoint: {})",
+            config.rpc_url
+        );
+
         Ok(Self { provider: Arc::new(provider), l1_core_contract: contract, health })
     }
 
