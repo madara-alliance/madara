@@ -98,51 +98,75 @@ async fn sync_inner(
 
     let from_l1_block_n = get_start_block(&settlement_client, &backend, replay_max_duration).await?;
 
-    tracing::info!("⟠ Starting L1→L2 message sync from block #{from_l1_block_n} (finality: {finality_blocks} blocks)");
-
-    let mut stream = settlement_client
-        .messages_to_l2_stream(from_l1_block_n)
-        .await
-        .map_err(|e| SettlementClientError::StreamProcessing(format!("Failed to create messaging stream: {}", e)))?;
-
-    // Buffer for events waiting for finality
+    // Buffer for events waiting for finality (persists across stream recreations)
     let mut pending_events: VecDeque<MessageToL2WithMetadata> = VecDeque::new();
 
+    // Infinite retry loop for creating and maintaining the event stream
     loop {
-        // Poll stream with timeout. Finality check runs after EVERY iteration (event or timeout).
-        // Timeout ensures finality is checked even when L1 is quiet (no new messages arriving).
-        let timeout = tokio::time::sleep(STREAM_POLL_INTERVAL);
-        tokio::select! {
-            biased;
+        tracing::info!(
+            "⟠ Starting L1→L2 message sync from block #{from_l1_block_n} (finality: {finality_blocks} blocks)"
+        );
 
-            event = stream.next() => {
-                match event {
-                    Some(Ok(msg)) => {
-                        tracing::debug!(
-                            "L1→L2 message received: block={}, nonce={}, tx={:#x}",
-                            msg.l1_block_number, msg.message.tx.nonce, msg.l1_transaction_hash
-                        );
-                        pending_events.push_back(msg);
-                    }
-                    Some(Err(e)) => {
-                        tracing::warn!("L1 event stream error: {e:#}");
-                    }
-                    None => {
-                        // Stream ended unexpectedly - this shouldn't happen in normal operation
-                        tracing::warn!("L1 event stream ended unexpectedly");
-                        return Err(SettlementClientError::StreamProcessing(
-                            "L1 event stream ended unexpectedly".to_string()
-                        ));
+        let mut stream = match settlement_client.messages_to_l2_stream(from_l1_block_n).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to create messaging stream: {e:#} - retrying...");
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                continue; // Retry stream creation
+            }
+        };
+
+        // Process events from the stream
+        loop {
+            // Poll stream with timeout. Finality check runs after EVERY iteration (event or timeout).
+            // Timeout ensures finality is checked even when L1 is quiet (no new messages arriving).
+            let timeout = tokio::time::sleep(STREAM_POLL_INTERVAL);
+
+            let should_recreate_stream = tokio::select! {
+                biased;
+
+                event = stream.next() => {
+                    match event {
+                        Some(Ok(msg)) => {
+                            tracing::debug!(
+                                "L1→L2 message received: block={}, nonce={}, tx={:#x}",
+                                msg.l1_block_number, msg.message.tx.nonce, msg.l1_transaction_hash
+                            );
+                            pending_events.push_back(msg);
+                            false // Continue with current stream
+                        }
+                        Some(Err(e)) => {
+                            tracing::warn!("L1 event stream error: {e:#} - will recreate stream");
+                            true // Recreate stream
+                        }
+                        None => {
+                            tracing::warn!("L1 event stream ended unexpectedly - will recreate stream");
+                            true // Recreate stream
+                        }
                     }
                 }
-            }
 
-            _ = timeout => {}
-        }
+                _ = timeout => {
+                    false // Continue with current stream
+                }
+            };
 
-        // Process finalized events
-        process_finalized_events(&settlement_client, &backend, &notify_consumer, &mut pending_events, finality_blocks)
+            // Process finalized events
+            process_finalized_events(
+                &settlement_client,
+                &backend,
+                &notify_consumer,
+                &mut pending_events,
+                finality_blocks,
+            )
             .await?;
+
+            // If stream needs recreation, break inner loop to recreate
+            if should_recreate_stream {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                break; // Break inner loop to recreate stream
+            }
+        }
     }
 }
 
