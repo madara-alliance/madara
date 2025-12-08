@@ -1,7 +1,10 @@
+pub mod api;
 pub mod client;
 pub mod constants;
 pub mod error;
 pub mod metrics;
+pub mod proving;
+pub mod transport;
 pub mod types;
 
 use std::str::FromStr;
