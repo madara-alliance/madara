@@ -84,6 +84,15 @@ pub struct AtlanticClient {
 }
 
 impl AtlanticClient {
+    /// Helper method to create an API key header value
+    /// Pre-validates the API key format to avoid repeated validation on retries
+    fn create_api_key_header(api_key: &str) -> Result<HeaderValue, AtlanticError> {
+        HeaderValue::from_str(api_key).map_err(|e| AtlanticError::Other {
+            operation: "create_api_key_header".to_string(),
+            message: format!("Invalid API key format: {}", e),
+        })
+    }
+
     /// We need to set up the client with the API_KEY.
     pub fn new_with_args(url: Url, atlantic_params: &AtlanticValidatedArgs) -> Self {
         let mock_fact_hash = atlantic_params.atlantic_mock_fact_hash.clone();
@@ -104,13 +113,45 @@ impl AtlanticClient {
 
     /// Generic retry mechanism for all Atlantic API calls (GET and POST)
     ///
-    /// Retries network-level errors (timeouts, incomplete messages, connection issues)
-    /// Does NOT retry API-level errors (4xx, 5xx with proper Atlantic responses)
+    /// This method provides unified retry logic with comprehensive metrics and logging for all Atlantic API operations.
+    ///
+    /// ## Retry Behavior
+    /// - **Retries**: Only network-level errors (timeouts, incomplete messages, connection issues, infrastructure errors)
+    /// - **Does NOT retry**: Real Atlantic API errors (4xx, 5xx with proper JSON responses)
+    /// - **Max attempts**: Configured by `RETRY_MAX_ATTEMPTS` constant
+    /// - **Delay between retries**: Fixed delay of `RETRY_DELAY_SECONDS` seconds
+    ///
+    /// ## Error Classification
+    /// The method uses `AtlanticError::is_retryable()` to determine if an error should be retried:
+    /// - `NetworkError`: Retryable (timeouts, connection failures, incomplete messages, 502/503/504 gateway errors)
+    /// - `ApiError`: Non-retryable (proper Atlantic API errors with valid status codes and messages)
+    ///
+    /// ## Metrics & Logging
+    /// - Records OpenTelemetry metrics for duration, request/response sizes, retry counts, and success/failure rates
+    /// - Logs at appropriate levels: `debug` for normal operations, `info` for successful retries, `warn` for failures
+    /// - Only logs retries when they actually occur to reduce noise
     ///
     /// # Arguments
-    /// * `operation_name` - Name of the operation for logging (e.g., "add_job", "get_bucket")
-    /// * `context` - Additional context about the request (e.g., job params, bucket_id)
-    /// * `f` - Async function to execute (the actual API call)
+    /// * `operation_name` - Name of the operation for logging and metrics (e.g., "add_job", "get_bucket")
+    /// * `context` - Additional context about the request for error messages (e.g., "bucket_id: abc123", "job_size: large")
+    /// * `data_size_bytes` - Size of the request payload in bytes for metrics (use 0 for GET requests)
+    /// * `f` - Async function to execute (the actual API call). Must be FnMut to support multiple retry attempts
+    /// * `metrics_extractor` - Function to extract response size from successful results for metrics
+    ///
+    /// # Returns
+    /// * `Ok(T)` - Successful response from the API call (may have required retries)
+    /// * `Err(AtlanticError)` - Either a non-retryable error or exhausted all retry attempts
+    ///
+    /// # Example
+    /// ```ignore
+    /// self.retry_request(
+    ///     "get_bucket",
+    ///     &format!("bucket_id: {}", bucket_id),
+    ///     0,  // No request payload for GET
+    ///     || async { /* API call */ },
+    ///     |response| response.size_in_bytes()
+    /// ).await?
+    /// ```
     async fn retry_request<F, Fut, T, M>(
         &self,
         operation_name: &str,
@@ -131,7 +172,6 @@ impl AtlanticClient {
 
         for attempt in 1..=RETRY_MAX_ATTEMPTS {
             total_attempts = attempt;
-            let attempt_start = Instant::now();
 
             match f().await {
                 Ok(result) => {
@@ -167,8 +207,6 @@ impl AtlanticClient {
                     return Ok(result);
                 }
                 Err(err) => {
-                    let _attempt_duration = attempt_start.elapsed().as_millis();
-
                     // Check if error is retryable
                     let is_retryable = err.is_retryable();
 
@@ -399,7 +437,8 @@ impl AtlanticClient {
             "Starting bucket creation"
         );
 
-        let api_key = atlantic_api_key.as_ref().to_string();
+        // Pre-validate API key header format once before retry loop
+        let api_key_header = Self::create_api_key_header(atlantic_api_key.as_ref())?;
         let chain_id_clone = chain_id_hex.clone();
 
         let bucket_request = AtlanticCreateBucketRequest {
@@ -427,7 +466,7 @@ impl AtlanticClient {
                 &context,
                 0,
                 || {
-                    let api_key = api_key.clone();
+                    let api_key_header = api_key_header.clone();
                     let bucket_request = AtlanticCreateBucketRequest {
                         external_id: None,
                         node_width: None,
@@ -449,13 +488,7 @@ impl AtlanticClient {
                             .method(Method::POST)
                             .header(ACCEPT, HeaderValue::from_static("application/json"))
                             .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
-                            .header(
-                                HeaderName::from_static("api-key"),
-                                HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
-                                    operation: "create_bucket".to_string(),
-                                    message: format!("Invalid API key format: {}", e),
-                                })?,
-                            )
+                            .header(HeaderName::from_static("api-key"), api_key_header)
                             .path("buckets")
                             .body(bucket_request)
                             .map_err(|e| AtlanticError::parse_error("create_bucket", e.to_string()))?
@@ -514,8 +547,9 @@ impl AtlanticClient {
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
         let context = format!("bucket_id: {}", bucket_id);
 
+        // Pre-validate API key header format once before retry loop
+        let api_key_header = Self::create_api_key_header(atlantic_api_key.as_ref())?;
         let bucket_id = bucket_id.to_string();
-        let api_key = atlantic_api_key.as_ref().to_string();
 
         let result = self
             .retry_request(
@@ -524,7 +558,7 @@ impl AtlanticClient {
                 0,
                 || {
                     let bucket_id = bucket_id.clone();
-                    let api_key = api_key.clone();
+                    let api_key_header = api_key_header.clone();
 
                     async move {
                         debug!(
@@ -538,13 +572,7 @@ impl AtlanticClient {
                             .request()
                             .method(Method::POST)
                             .header(ACCEPT, HeaderValue::from_static("application/json"))
-                            .header(
-                                HeaderName::from_static("api-key"),
-                                HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
-                                    operation: "close_bucket".to_string(),
-                                    message: format!("Invalid API key format: {}", e),
-                                })?,
-                            )
+                            .header(HeaderName::from_static("api-key"), api_key_header)
                             .path("buckets")
                             .path("close")
                             .query_param("bucketId", &bucket_id)
@@ -617,7 +645,8 @@ impl AtlanticClient {
             bucket_info.bucket_job_index
         );
 
-        let api_key_str = api_key.as_ref().to_string();
+        // Pre-validate API key header format once before retry loop
+        let api_key_header = Self::create_api_key_header(api_key.as_ref())?;
         let pie_file_path = job_info.pie_file.clone();
         let layout = job_config.proof_layout;
         let cairo_vm = job_config.cairo_vm.clone();
@@ -632,7 +661,7 @@ impl AtlanticClient {
                 &context,
                 file_size,
                 || {
-                    let api_key = api_key_str.clone();
+                    let api_key_header = api_key_header.clone();
                     let pie_file = pie_file_path.clone();
                     let cairo_vm = cairo_vm.clone();
                     let result_step = result_step.clone();
@@ -655,13 +684,7 @@ impl AtlanticClient {
                                 .request()
                                 .method(Method::POST)
                                 .path("atlantic-query")
-                                .header(
-                                    HeaderName::from_static("api-key"),
-                                    HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
-                                        operation: "add_job".to_string(),
-                                        message: format!("Invalid API key format: {}", e),
-                                    })?,
-                                )
+                                .header(HeaderName::from_static("api-key"), api_key_header)
                                 .form_text("declaredJobSize", job_size)
                                 .form_text("result", &result_step.to_string())
                                 .form_text("network", &network)
