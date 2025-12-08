@@ -355,6 +355,7 @@ pub struct ResourcePrice {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub enum BlockStatus {
+    #[serde(rename = "PENDING")]
     PreConfirmed,
     AcceptedOnL2,
     AcceptedOnL1,

@@ -15,6 +15,7 @@ use mc_db::MadaraBackend;
 use mc_rpc::versions::user::v0_9_0::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_9_0_trace_block_transactions;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
 use mp_class::{ClassInfo, ContractClass};
+use mp_block::{Header, MadaraMaybePreconfirmedBlockInfo};
 use mp_gateway::{
     block::ProviderBlockPreConfirmed,
     user_transaction::{
@@ -123,16 +124,41 @@ pub async fn handle_get_block(
         });
         Ok(create_json_response(hyper::StatusCode::OK, &body))
     } else {
-        // Pending(preconfirmed) blocks can't be returned anymore from this endpoint
-        let Some(block) = block.as_confirmed() else {
-            return Err(StarknetError::block_not_found().into());
+        let info = block.get_block_info()?;
+        let txs = block.get_executed_transactions(..)?;
+        let parent_block_hash = if let Some(parent) = block.parent_block() {
+            parent.get_block_info()?.block_hash
+        } else {
+            Felt::ZERO
         };
 
-        let status = if block.is_on_l1() { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
+        let block_provider = match info {
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(info) => {
+                let status = if block.is_on_l1() { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
+                ProviderBlock::new(info.block_hash, info.header, txs, status)
+            }
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(info) => {
+                let header = Header {
+                    parent_block_hash,
+                    sequencer_address: info.header.sequencer_address,
+                    block_timestamp: info.header.block_timestamp,
+                    protocol_version: info.header.protocol_version,
+                    gas_prices: info.header.gas_prices,
+                    l1_da_mode: info.header.l1_da_mode,
+                    block_number: info.header.block_number,
+                    global_state_root: Felt::ZERO,
+                    transaction_count: txs.len() as u64,
+                    transaction_commitment: Felt::ZERO,
+                    event_count: 0,
+                    event_commitment: Felt::ZERO,
+                    state_diff_length: None,
+                    state_diff_commitment: None,
+                    receipt_commitment: None,
+                };
 
-        let info = block.get_block_info()?;
-        let block_provider =
-            ProviderBlock::new(info.block_hash, info.header, block.get_executed_transactions(..)?, status);
+                ProviderBlock::new(Felt::ZERO, header, txs, BlockStatus::PreConfirmed)
+            }
+        };
         Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
     }
 }
