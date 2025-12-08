@@ -137,7 +137,10 @@ impl ConnectionHealth {
             HealthState::Healthy => self.transition_healthy_to_degraded(),
             HealthState::Degraded { .. } if self.should_transition_to_down() => self.transition_degraded_to_down(),
             // No transition for: Degraded (not meeting down threshold) or already Down.
-            // In these cases, we just accumulate failure metrics without changing state.
+            // In case of failure in these states, we don't perform any state transition.
+            // We just accumulate failure metrics (failed_requests, consecutive_failures, etc.)
+            // without changing the current state. This allows tracking progressive degradation
+            // or continued outage without oscillating between states.
             _ => {}
         }
     }
@@ -213,7 +216,7 @@ impl ConnectionHealth {
         self.recovery_attempts += 1;
 
         if self.should_transition_to_healthy() {
-            let downtime = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
+            let downtime = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::ZERO);
             // Use the passed-in count if available (from Down->Degraded transition),
             // otherwise use current failed_requests (for Degraded->Healthy transitions)
             let failed_ops = failed_during_outage.unwrap_or(self.failed_requests);
@@ -306,7 +309,7 @@ impl ConnectionHealth {
             }
 
             HealthState::Degraded { failure_rate } => {
-                let duration = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
+                let duration = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::ZERO);
                 let affected_ops: Vec<_> = self.failed_operations.keys().map(|s| s.as_str()).collect();
 
                 // Don't log if no operations are affected (empty list means we're recovering)
@@ -322,7 +325,7 @@ impl ConnectionHealth {
             }
 
             HealthState::Down => {
-                let duration = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::from_secs(0));
+                let duration = self.first_failure_time.map(|t| t.elapsed()).unwrap_or(Duration::ZERO);
                 let phase = get_retry_phase(duration);
 
                 tracing::warn!(
