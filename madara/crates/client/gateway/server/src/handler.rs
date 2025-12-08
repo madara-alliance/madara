@@ -132,10 +132,11 @@ pub async fn handle_get_block(
             Felt::ZERO
         };
 
-        let block_provider = match info {
+        match info {
             MadaraMaybePreconfirmedBlockInfo::Confirmed(info) => {
                 let status = if block.is_on_l1() { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
-                ProviderBlock::new(info.block_hash, info.header, txs, status)
+                let block_provider = ProviderBlock::new(info.block_hash, info.header, txs, status);
+                Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
             }
             MadaraMaybePreconfirmedBlockInfo::Preconfirmed(info) => {
                 let header = Header {
@@ -149,17 +150,17 @@ pub async fn handle_get_block(
                     global_state_root: Felt::ZERO,
                     transaction_count: txs.len() as u64,
                     transaction_commitment: Felt::ZERO,
-                    event_count: 0,
+                    event_count: txs.iter().map(|tx| tx.receipt.events().len() as u64).sum(),
                     event_commitment: Felt::ZERO,
                     state_diff_length: None,
                     state_diff_commitment: None,
                     receipt_commitment: None,
                 };
 
-                ProviderBlock::new(Felt::ZERO, header, txs, BlockStatus::PreConfirmed)
+                let block_provider = ProviderBlock::new(Felt::ZERO, header, txs, BlockStatus::PreConfirmed);
+                Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
             }
-        };
-        Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+        }
     }
 }
 
