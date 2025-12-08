@@ -42,14 +42,12 @@ impl OrchestratorInstrumentation {
             }
             Some(ref endpoint) => {
                 info!(
-                    endpoint = %endpoint,
                     service_name = %config.service_name,
                     "Initializing OpenTelemetry exporters..."
                 );
 
                 let meter_provider = Self::instrument_metric_provider(config, endpoint)?;
                 info!(
-                    endpoint = %endpoint,
                     service_name = format!("{}_meter_service", config.service_name),
                     export_interval_secs = 5,
                     "OTEL metrics exporter initialized"
@@ -57,17 +55,12 @@ impl OrchestratorInstrumentation {
 
                 let tracer = Self::instrument_tracer_provider(config, endpoint)?;
                 info!(
-                    endpoint = %endpoint,
                     service_name = format!("{}_trace_service", config.service_name),
                     "OTEL tracer exporter initialized"
                 );
 
                 let logger = Self::instrument_logger_provider(config, endpoint)?;
-                info!(
-                    endpoint = %endpoint,
-                    service_name = format!("{}_logs_service", config.service_name),
-                    "OTEL logs exporter initialized"
-                );
+                info!(service_name = format!("{}_logs_service", config.service_name), "OTEL logs exporter initialized");
 
                 // Respect LOG_FORMAT when composing the subscriber with OTEL layers
                 let log_format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string());
@@ -103,7 +96,6 @@ impl OrchestratorInstrumentation {
                 }
 
                 info!(
-                    endpoint = %endpoint,
                     service_name = %config.service_name,
                     log_format = %log_format,
                     "OpenTelemetry fully initialized - metrics, traces, and logs exporters active"

@@ -155,31 +155,26 @@ impl AtlanticClient {
                         retry_count,
                     );
 
-                    // Emit metrics event
-                    info!(
-                        metric_type = "atlantic_api_call",
-                        operation = operation_name,
-                        duration_seconds = duration_s,
-                        request_bytes = data_size_bytes,
-                        response_bytes = response_size_bytes,
-                        retry_count = retry_count,
-                        success = true,
-                        context = context,
-                        "Atlantic API call completed successfully"
-                    );
-
+                    // Only log if retries were needed (interesting case)
                     if attempt > 1 {
                         info!(
                             operation = operation_name,
-                            context = context,
                             attempts = attempt,
-                            "Atlantic API request succeeded after retry"
+                            duration_ms = (duration_s * 1000.0) as u64,
+                            "Atlantic API succeeded after retry"
                         );
                     }
+
+                    debug!(
+                        operation = operation_name,
+                        duration_ms = (duration_s * 1000.0) as u64,
+                        retry_count = retry_count,
+                        "Atlantic API call completed"
+                    );
                     return Ok(result);
                 }
                 Err(err) => {
-                    let attempt_duration = attempt_start.elapsed().as_millis();
+                    let _attempt_duration = attempt_start.elapsed().as_millis();
 
                     // Check if error is retryable
                     let is_retryable = err.is_retryable();
@@ -187,12 +182,10 @@ impl AtlanticClient {
                     if is_retryable && attempt < RETRY_MAX_ATTEMPTS {
                         warn!(
                             operation = operation_name,
-                            context = context,
                             attempt = attempt,
                             max_attempts = RETRY_MAX_ATTEMPTS,
-                            attempt_duration_ms = attempt_duration,
                             error = %err,
-                            "Atlantic API request failed, retrying"
+                            "Atlantic API failed, retrying"
                         );
                         last_error = Some(err);
                         tokio::time::sleep(Duration::from_secs(RETRY_DELAY_SECONDS)).await;
@@ -212,30 +205,14 @@ impl AtlanticClient {
                             retry_count,
                         );
 
-                        // Emit metrics event for failure
+                        // Log failure with error details
                         warn!(
-                            metric_type = "atlantic_api_call",
                             operation = operation_name,
-                            duration_seconds = duration_s,
-                            request_bytes = data_size_bytes,
-                            response_bytes = 0,
-                            retry_count = retry_count,
-                            success = false,
                             error_type = error_type,
-                            context = context,
+                            retry_count = retry_count,
                             error = %err,
                             "Atlantic API call failed"
                         );
-
-                        if !is_retryable {
-                            debug!(
-                                operation = operation_name,
-                                context = context,
-                                attempt = attempt,
-                                error = %err,
-                                "Atlantic API request failed with non-retryable error"
-                            );
-                        }
                         return Err(err);
                     }
                 }
@@ -280,13 +257,6 @@ impl AtlanticClient {
     /// # Returns
     /// The artifact as a byte array if the request is successful, otherwise an error is returned
     pub async fn get_artifacts(&self, artifact_path: String) -> Result<Vec<u8>, AtlanticError> {
-        let start_time = Instant::now();
-        info!(
-            operation = "get_artifacts",
-            url = %artifact_path,
-            "Starting Atlantic artifacts download"
-        );
-
         let context = format!("url: {}", artifact_path);
         let artifact_path_clone = artifact_path.clone();
 
@@ -344,20 +314,11 @@ impl AtlanticClient {
             )
             .await?;
 
-        info!(
-            operation = "get_artifacts",
-            url = %artifact_path,
-            artifact_size_bytes = result.len(),
-            duration_ms = start_time.elapsed().as_millis(),
-            "Atlantic artifacts download completed"
-        );
-
         Ok(result)
     }
 
     /// Fetch the details of a bucket from the Atlantic client
     pub async fn get_bucket(&self, bucket_id: &str) -> Result<AtlanticGetBucketResponse, AtlanticError> {
-        let start_time = Instant::now();
         let context = format!("bucket_id: {}", bucket_id);
 
         debug!(
@@ -417,13 +378,6 @@ impl AtlanticClient {
                 |_: &AtlanticGetBucketResponse| 0,
             )
             .await?;
-
-        info!(
-            operation = "get_bucket",
-            bucket_id = %bucket_id,
-            duration_ms = start_time.elapsed().as_millis(),
-            "Get bucket completed"
-        );
 
         Ok(result)
     }
@@ -559,7 +513,6 @@ impl AtlanticClient {
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
-        let start_time = Instant::now();
         let context = format!("mock_proof: {}, chain_id_hex: {:?}", mock_proof, chain_id_hex);
 
         info!(
@@ -667,8 +620,7 @@ impl AtlanticClient {
         info!(
             operation = "create_bucket",
             bucket_id = %result.atlantic_bucket.id,
-            duration_ms = start_time.elapsed().as_millis(),
-            "Bucket creation completed"
+            "Bucket created"
         );
 
         Ok(result)
@@ -683,14 +635,7 @@ impl AtlanticClient {
         bucket_id: &str,
         atlantic_api_key: impl AsRef<str>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
-        let start_time = Instant::now();
         let context = format!("bucket_id: {}", bucket_id);
-
-        info!(
-            operation = "close_bucket",
-            bucket_id = %bucket_id,
-            "Starting bucket closure"
-        );
 
         let bucket_id = bucket_id.to_string();
         let api_key = atlantic_api_key.as_ref().to_string();
@@ -765,8 +710,7 @@ impl AtlanticClient {
         info!(
             operation = "close_bucket",
             bucket_id = %bucket_id,
-            duration_ms = start_time.elapsed().as_millis(),
-            "Bucket closure completed"
+            "Bucket closed"
         );
 
         Ok(result)
@@ -781,7 +725,6 @@ impl AtlanticClient {
         bucket_info: AtlanticBucketInfo,
         api_key: impl AsRef<str>,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-        let start_time = Instant::now();
         let job_size = Self::n_steps_to_job_size(job_info.n_steps);
 
         // Get file size for logging
@@ -926,9 +869,7 @@ impl AtlanticClient {
         info!(
             operation = "add_job",
             job_id = %result.atlantic_query_id,
-            pie_file_size_bytes = file_size,
-            duration_ms = start_time.elapsed().as_millis(),
-            "Job submission completed"
+            "Job submitted"
         );
 
         Ok(result)
@@ -936,7 +877,6 @@ impl AtlanticClient {
 
     /// Fetch the status of a job
     pub async fn get_job_status(&self, job_key: &str) -> Result<AtlanticGetStatusResponse, AtlanticError> {
-        let start_time = Instant::now();
         let context = format!("job_key: {}", job_key);
 
         debug!(
@@ -997,14 +937,6 @@ impl AtlanticClient {
             )
             .await?;
 
-        info!(
-            operation = "get_job_status",
-            job_key = %job_key,
-            job_status = ?result.atlantic_query.status,
-            duration_ms = start_time.elapsed().as_millis(),
-            "Get job status completed"
-        );
-
         Ok(result)
     }
 
@@ -1017,15 +949,7 @@ impl AtlanticClient {
     /// The proof as a string if the request is successful, otherwise an error is returned
     pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
         // TODO: Update the code once a proper API is available for this
-        let start_time = Instant::now();
         let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
-
-        info!(
-            operation = "get_proof_by_task_id",
-            task_id = %task_id,
-            url = %proof_path,
-            "Starting proof download"
-        );
 
         let context = format!("task_id: {}, url: {}", task_id, proof_path);
         let task_id_clone = task_id.to_string();
@@ -1089,14 +1013,6 @@ impl AtlanticClient {
             )
             .await?;
 
-        info!(
-            operation = "get_proof_by_task_id",
-            task_id = %task_id,
-            proof_size_bytes = result.len(),
-            duration_ms = start_time.elapsed().as_millis(),
-            "Proof download completed"
-        );
-
         Ok(result)
     }
 
@@ -1109,19 +1025,9 @@ impl AtlanticClient {
         program_hash: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         // TODO: we are having two function to atlantic query might need to merge them with appropriate argument
-        let start_time = Instant::now();
         let job_size = Self::n_steps_to_job_size(n_steps);
         let network = atlantic_network.as_ref();
         let proof_size = proof.len();
-
-        info!(
-            operation = "submit_l2_query",
-            job_size = job_size,
-            network = %network,
-            program_hash = %program_hash,
-            proof_size_bytes = proof_size,
-            "Starting L2 query submission"
-        );
 
         let context = format!(
             "job_size: {}, network: {}, program_hash: {}, proof_size: {} bytes",
@@ -1220,9 +1126,7 @@ impl AtlanticClient {
         info!(
             operation = "submit_l2_query",
             job_id = %result.atlantic_query_id,
-            proof_size_bytes = proof_size,
-            duration_ms = start_time.elapsed().as_millis(),
-            "L2 query submission completed"
+            "L2 query submitted"
         );
 
         Ok(result)
