@@ -81,10 +81,7 @@ impl EthereumClient {
         let contract = StarknetCoreContract::new(core_contract_address, provider.clone());
         let health = Arc::new(RwLock::new(ConnectionHealth::new("L1 Endpoint")));
 
-        tracing::info!(
-            "L1 client initialized with lazy connection - will verify contract on first use (endpoint: {})",
-            config.rpc_url
-        );
+        tracing::info!("L1 client initialized with lazy connection - will verify contract on first use");
 
         Ok(Self { provider: Arc::new(provider), l1_core_contract: contract, health })
     }

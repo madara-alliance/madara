@@ -69,36 +69,23 @@ impl Clone for StarknetClient {
 
 // Add this new implementation block for constructor
 impl StarknetClient {
+    /// Create a new Starknet settlement layer client with lazy initialization.
+    ///
+    /// This method creates the client without verifying L1 connectivity, enabling
+    /// Madara to start even when the settlement layer is temporarily unavailable.
+    /// Contract verification will happen on the first actual RPC call.
     pub async fn new(config: StarknetClientConfig) -> Result<Self, SettlementClientError> {
-        let provider = JsonRpcClient::new(HttpTransport::new(config.rpc_url));
+        let provider = JsonRpcClient::new(HttpTransport::new(config.rpc_url.clone()));
         let core_contract_address =
             Felt::from_hex(&config.core_contract_address).map_err(|e| -> SettlementClientError {
                 StarknetClientError::Conversion(format!("Invalid core contract address: {e}")).into()
             })?;
 
-        // Verify the contract exists at startup (no retry - fail fast on config errors)
-        let class_hash = provider
-            .get_class_hash_at(BlockId::Tag(BlockTag::Latest), core_contract_address)
-            .await
-            .map_err(|e| -> SettlementClientError {
-                StarknetClientError::Contract(format!(
-                    "Failed to verify contract at {} - please check the core_contract_address configuration: {}",
-                    core_contract_address, e
-                ))
-                .into()
-            })?;
-
-        if class_hash == Felt::ZERO {
-            return Err(StarknetClientError::Contract(format!(
-                "No contract found at address {}. Please verify the core_contract_address configuration.",
-                core_contract_address
-            ))
-            .into());
-        }
-
         let health = Arc::new(tokio::sync::RwLock::new(mp_resilience::ConnectionHealth::new("L1 Endpoint")));
 
-        tracing::info!("L1 client initialized - contract verified at {}", core_contract_address);
+        tracing::info!(
+            "Starknet settlement layer client initialized with lazy connection - will verify contract on first use"
+        );
 
         Ok(Self {
             provider: Arc::new(provider),
