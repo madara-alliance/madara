@@ -336,7 +336,7 @@ impl AtlanticClient {
                                 error = %error_text,
                                 "Artifact download failed"
                             );
-                            Err(AtlanticError::api_error("get_artifacts", status, error_text))
+                            Err(AtlanticError::from_http_error_response("get_artifacts", status, error_text))
                         }
                     }
                 },
@@ -410,7 +410,7 @@ impl AtlanticClient {
                                 error = %error_text,
                                 "Failed to get bucket details"
                             );
-                            Err(AtlanticError::api_error("get_bucket", status, error_text))
+                            Err(AtlanticError::from_http_error_response("get_bucket", status, error_text))
                         }
                     }
                 },
@@ -656,7 +656,7 @@ impl AtlanticClient {
                                 error = %error_text,
                                 "Failed to create bucket"
                             );
-                            Err(AtlanticError::api_error("create_bucket", status, error_text))
+                            Err(AtlanticError::from_http_error_response("create_bucket", status, error_text))
                         }
                     }
                 },
@@ -754,7 +754,7 @@ impl AtlanticClient {
                                 error = %error_text,
                                 "Failed to close bucket"
                             );
-                            Err(AtlanticError::api_error("close_bucket", status, error_text))
+                            Err(AtlanticError::from_http_error_response("close_bucket", status, error_text))
                         }
                     }
                 },
@@ -915,7 +915,7 @@ impl AtlanticClient {
                                 error = %error_text,
                                 "Failed to submit job"
                             );
-                            Err(AtlanticError::api_error("add_job", status, error_text))
+                            Err(AtlanticError::from_http_error_response("add_job", status, error_text))
                         }
                     }
                 },
@@ -989,7 +989,7 @@ impl AtlanticClient {
                                 error = %error_text,
                                 "Failed to get job status"
                             );
-                            Err(AtlanticError::api_error("get_job_status", status, error_text))
+                            Err(AtlanticError::from_http_error_response("get_job_status", status, error_text))
                         }
                     }
                 },
@@ -1081,7 +1081,7 @@ impl AtlanticClient {
                                 error = %error_text,
                                 "Proof download failed"
                             );
-                            Err(AtlanticError::api_error("get_proof_by_task_id", status, error_text))
+                            Err(AtlanticError::from_http_error_response("get_proof_by_task_id", status, error_text))
                         }
                     }
                 },
@@ -1209,7 +1209,7 @@ impl AtlanticClient {
                                 error = %error_text,
                                 "Failed to submit L2 query"
                             );
-                            Err(AtlanticError::api_error("submit_l2_query", status, error_text))
+                            Err(AtlanticError::from_http_error_response("submit_l2_query", status, error_text))
                         }
                     }
                 },
