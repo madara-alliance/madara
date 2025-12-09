@@ -7,7 +7,9 @@ name: Workflow - Pull Request Main
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - "main-**"
     types: [opened, synchronize, reopened, ready_for_review]
 
 # Use concurrency to prevent multiple workflows running on the same PR
@@ -194,6 +196,7 @@ jobs:
     if: github.event.pull_request.draft == false
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
+  # E2E tests only run on PRs targeting exact 'main' branch (not main-v0.14.1, etc.)
   test-end-to-end:
-    if: github.event.pull_request.draft == false
+    if: github.event.pull_request.draft == false && github.base_ref == 'main'
     uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml
