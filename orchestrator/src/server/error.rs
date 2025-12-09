@@ -3,6 +3,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 use super::types::ApiResponse;
+use crate::error::job::JobError;
 
 pub type ApiServiceError = JobRouteError;
 
@@ -113,6 +114,28 @@ impl IntoResponse for JobRouteError {
             JobRouteError::QueueCapacityExceeded(msg) => {
                 (StatusCode::TOO_MANY_REQUESTS, Json(ApiResponse::error(msg))).into_response()
             }
+        }
+    }
+}
+
+/// Implementation of conversion from JobError to JobRouteError.
+///
+/// This provides automatic error conversion for route handlers, allowing the use of
+/// the `?` operator or `.into()` instead of manual error mapping.
+///
+/// # Conversion Rules
+/// * `JobError::PriorityQueueFull` -> `JobRouteError::QueueCapacityExceeded` with formatted message
+/// * All other `JobError` variants -> `JobRouteError::ProcessingError` with the error string
+impl From<JobError> for JobRouteError {
+    fn from(err: JobError) -> Self {
+        match err {
+            JobError::PriorityQueueFull { current_size, max_size } => {
+                JobRouteError::QueueCapacityExceeded(format!(
+                    "Priority queue is full (current: {}, max: {}). Please try again later or use normal queue.",
+                    current_size, max_size
+                ))
+            }
+            _ => JobRouteError::ProcessingError(err.to_string()),
         }
     }
 }

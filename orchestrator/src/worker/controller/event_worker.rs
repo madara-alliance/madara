@@ -532,9 +532,10 @@ impl EventWorker {
                             );
 
                             // Nack the message to make it available for other workers
-                            if let Err(e) = delivery.nack().await {
+                            delivery.nack().await.map_err(|e| {
                                 warn!("Failed to nack non-matching priority message: {:?}", e);
-                            }
+                                ConsumptionError::FailedToNackMessage(e.0.to_string())
+                            })?;
 
                             Ok(None)
                         }
@@ -542,7 +543,8 @@ impl EventWorker {
                     Err(e) => {
                         error!("Failed to parse priority message: {:?}", e);
                         // Nack the malformed message
-                        let _ = delivery.nack().await;
+                        // let _ = delivery.nack().await;
+                        delivery.nack().await.map_err(|e| ConsumptionError::FailedToNackMessage(e.0.to_string()))?;
                         Ok(None)
                     }
                 }
@@ -560,54 +562,10 @@ impl EventWorker {
 
     /// Checks if a priority message matches this worker's responsibility
     fn message_matches_worker(&self, msg: &PriorityQueueMessage) -> bool {
-        match self.queue_type {
-            // SNOS workers
-            QueueType::SnosJobProcessing => msg.job_type == JobType::SnosRun && msg.action == JobAction::Process,
-            QueueType::SnosJobVerification => msg.job_type == JobType::SnosRun && msg.action == JobAction::Verify,
+        let Some(target_type) = self.queue_type.target_job_type() else { return false };
+        let Some(target_action) = self.queue_type.target_action() else { return false };
 
-            // Proving workers
-            QueueType::ProvingJobProcessing => {
-                msg.job_type == JobType::ProofCreation && msg.action == JobAction::Process
-            }
-            QueueType::ProvingJobVerification => {
-                msg.job_type == JobType::ProofCreation && msg.action == JobAction::Verify
-            }
-
-            // Proof Registration workers
-            QueueType::ProofRegistrationJobProcessing => {
-                msg.job_type == JobType::ProofRegistration && msg.action == JobAction::Process
-            }
-            QueueType::ProofRegistrationJobVerification => {
-                msg.job_type == JobType::ProofRegistration && msg.action == JobAction::Verify
-            }
-
-            // Data Submission workers
-            QueueType::DataSubmissionJobProcessing => {
-                msg.job_type == JobType::DataSubmission && msg.action == JobAction::Process
-            }
-            QueueType::DataSubmissionJobVerification => {
-                msg.job_type == JobType::DataSubmission && msg.action == JobAction::Verify
-            }
-
-            // Update State workers
-            QueueType::UpdateStateJobProcessing => {
-                msg.job_type == JobType::StateTransition && msg.action == JobAction::Process
-            }
-            QueueType::UpdateStateJobVerification => {
-                msg.job_type == JobType::StateTransition && msg.action == JobAction::Verify
-            }
-
-            // Aggregator workers
-            QueueType::AggregatorJobProcessing => {
-                msg.job_type == JobType::Aggregator && msg.action == JobAction::Process
-            }
-            QueueType::AggregatorJobVerification => {
-                msg.job_type == JobType::Aggregator && msg.action == JobAction::Verify
-            }
-
-            // Special queues don't check priority
-            _ => false,
-        }
+        msg.job_type == target_type && msg.action == target_action
     }
 
     /// Handle the result of a task

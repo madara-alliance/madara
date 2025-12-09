@@ -72,16 +72,7 @@ async fn handle_process_job_request(
                     KeyValue::new("priority", if query.priority { "true" } else { "false" }),
                 ],
             );
-            // Map PriorityQueueFull to QueueCapacityExceeded for proper HTTP status code
-            match e {
-                crate::error::job::JobError::PriorityQueueFull { current_size, max_size } => {
-                    Err(JobRouteError::QueueCapacityExceeded(format!(
-                        "Priority queue is full (current: {}, max: {}). Please try again later or use normal queue.",
-                        current_size, max_size
-                    )))
-                }
-                _ => Err(JobRouteError::ProcessingError(e.to_string())),
-            }
+            Err(e.into())
         }
     }
 }
@@ -141,16 +132,7 @@ async fn handle_verify_job_request(
                     KeyValue::new("priority", if query.priority { "true" } else { "false" }),
                 ],
             );
-            // Map PriorityQueueFull to QueueCapacityExceeded for proper HTTP status code
-            match e {
-                crate::error::job::JobError::PriorityQueueFull { current_size, max_size } => {
-                    Err(JobRouteError::QueueCapacityExceeded(format!(
-                        "Priority queue is full (current: {}, max: {}). Please try again later or use normal queue.",
-                        current_size, max_size
-                    )))
-                }
-                _ => Err(JobRouteError::ProcessingError(e.to_string())),
-            }
+            Err(e.into())
         }
     }
 }

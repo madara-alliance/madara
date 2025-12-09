@@ -100,3 +100,45 @@ impl QueueNameForJobType for JobType {
         }
     }
 }
+
+impl QueueType {
+    /// Returns the job type this queue processes, if applicable.
+    ///
+    /// Returns `None` for system queues (WorkerTrigger, JobHandleFailure, PriorityJobQueue)
+    /// that don't process specific job types.
+    pub fn target_job_type(&self) -> Option<JobType> {
+        match self {
+            Self::SnosJobProcessing | Self::SnosJobVerification => Some(JobType::SnosRun),
+            Self::ProvingJobProcessing | Self::ProvingJobVerification => Some(JobType::ProofCreation),
+            Self::ProofRegistrationJobProcessing | Self::ProofRegistrationJobVerification => {
+                Some(JobType::ProofRegistration)
+            }
+            Self::DataSubmissionJobProcessing | Self::DataSubmissionJobVerification => Some(JobType::DataSubmission),
+            Self::UpdateStateJobProcessing | Self::UpdateStateJobVerification => Some(JobType::StateTransition),
+            Self::AggregatorJobProcessing | Self::AggregatorJobVerification => Some(JobType::Aggregator),
+            Self::WorkerTrigger | Self::JobHandleFailure | Self::PriorityJobQueue => None,
+        }
+    }
+
+    /// Returns the action this queue performs, if applicable.
+    ///
+    /// Returns `None` for system queues (WorkerTrigger, JobHandleFailure, PriorityJobQueue)
+    /// that don't perform specific actions.
+    pub fn target_action(&self) -> Option<JobAction> {
+        match self {
+            Self::SnosJobProcessing
+            | Self::ProvingJobProcessing
+            | Self::ProofRegistrationJobProcessing
+            | Self::DataSubmissionJobProcessing
+            | Self::UpdateStateJobProcessing
+            | Self::AggregatorJobProcessing => Some(JobAction::Process),
+            Self::SnosJobVerification
+            | Self::ProvingJobVerification
+            | Self::ProofRegistrationJobVerification
+            | Self::DataSubmissionJobVerification
+            | Self::UpdateStateJobVerification
+            | Self::AggregatorJobVerification => Some(JobAction::Verify),
+            Self::WorkerTrigger | Self::JobHandleFailure | Self::PriorityJobQueue => None,
+        }
+    }
+}

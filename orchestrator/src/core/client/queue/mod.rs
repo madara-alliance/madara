@@ -32,5 +32,5 @@ pub trait QueueClient: Send + Sync {
     /// # Returns
     /// * `Ok(i32)` - Approximate number of messages in the queue
     /// * `Err(QueueError)` - If the operation fails
-    async fn get_queue_depth(&self, queue: QueueType) -> Result<i32, QueueError>;
+    async fn get_queue_depth(&self, queue: QueueType) -> Result<usize, QueueError>;
 }
