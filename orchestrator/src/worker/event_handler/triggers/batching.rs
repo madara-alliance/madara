@@ -102,7 +102,6 @@ impl JobTrigger for BatchingTrigger {
             Layer::L3 => self.get_range_for_assigning_batches_l3(&config).await?,
         };
 
-        tracing::info!("in batching code");
         // Invoking method to assign batches to all the blocks in the range
         if start_block < end_block {
             match config.layer() {
@@ -1038,7 +1037,7 @@ impl BatchingTrigger {
     /// 3. Here, only fetch the next block's weights (end_block + 1) and check overflow
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
         if let Some(fixed_blocks_per_snos_batch) = config.params.batching_config.fixed_blocks_per_snos_batch {
-            // If the MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env is set, we use that value
+            // If the MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env is set, we use that value
             // Mostly, it'll be used for testing purposes
             debug!("Using MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {}", fixed_blocks_per_snos_batch);
             return Ok(batch.num_blocks >= fixed_blocks_per_snos_batch);
