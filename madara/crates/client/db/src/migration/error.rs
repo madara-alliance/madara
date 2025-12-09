@@ -12,8 +12,15 @@ pub enum MigrationError {
     #[error("Migration lock exists - another migration may be in progress")]
     MigrationInProgress,
 
-    #[error("Failed to create backup: {0}")]
-    BackupFailed(String),
+    #[error("Failed to create backup: {message}")]
+    BackupFailed {
+        message: &'static str,
+        #[source]
+        source: rocksdb::Error,
+    },
+
+    #[error("Insufficient disk space for backup: need {required} bytes, only {available} bytes available")]
+    InsufficientDiskSpace { required: u64, available: u64 },
 
     #[error("Invalid version file format")]
     InvalidVersionFile,

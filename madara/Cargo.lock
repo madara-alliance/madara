@@ -6712,6 +6712,7 @@ dependencies = [
  "futures",
  "itertools 0.13.0",
  "lazy_static",
+ "libc",
  "librocksdb-sys",
  "mc-analytics",
  "mc-class-exec",

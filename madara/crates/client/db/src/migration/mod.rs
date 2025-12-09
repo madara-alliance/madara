@@ -28,6 +28,42 @@ use std::sync::Arc;
 
 type DB = DBWithThreadMode<MultiThreaded>;
 
+/// Get available disk space at the given path using libc::statvfs (Unix only)
+#[cfg(unix)]
+fn get_available_disk_space(path: &Path) -> std::io::Result<u64> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"))?;
+
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    let result = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
+
+    if result != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    Ok(stat.f_bavail as u64 * stat.f_frsize as u64)
+}
+
+/// Calculate total size of a directory recursively
+fn get_directory_size(path: &Path) -> std::io::Result<u64> {
+    let mut total = 0;
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                total += get_directory_size(&path)?;
+            } else {
+                total += entry.metadata()?.len();
+            }
+        }
+    }
+    Ok(total)
+}
+
 pub const DB_VERSION_FILE: &str = ".db-version";
 pub const DB_MIGRATION_LOCK: &str = ".db-migration.lock";
 pub const DB_MIGRATION_STATE: &str = ".db-migration-state";
@@ -315,17 +351,39 @@ impl MigrationRunner {
 
     fn create_backup(&self, db: &DB) -> Result<(), MigrationError> {
         let backup_path = self.base_path.join(BACKUP_DIR_NAME);
+        let db_path = self.base_path.join("db");
+
+        // Check disk space before backup (Unix only)
+        #[cfg(unix)]
+        {
+            if let Ok(db_size) = get_directory_size(&db_path) {
+                // Need at least db_size + 10% buffer for backup
+                let required_space = db_size + (db_size / 10);
+                if let Ok(available) = get_available_disk_space(&self.base_path) {
+                    if available < required_space {
+                        return Err(MigrationError::InsufficientDiskSpace { required: required_space, available });
+                    }
+                    tracing::info!(
+                        "💾 Disk space check passed: {} bytes available, {} bytes required",
+                        available,
+                        required_space
+                    );
+                }
+            }
+        }
 
         if backup_path.exists() {
             fs::remove_dir_all(&backup_path)?;
         }
 
         // Flush WAL to ensure consistent checkpoint
-        db.flush_wal(true).map_err(|e| MigrationError::BackupFailed(e.to_string()))?;
+        db.flush_wal(true).map_err(|e| MigrationError::BackupFailed { message: "Failed to flush WAL", source: e })?;
 
-        let checkpoint =
-            rocksdb::checkpoint::Checkpoint::new(db).map_err(|e| MigrationError::BackupFailed(e.to_string()))?;
-        checkpoint.create_checkpoint(&backup_path).map_err(|e| MigrationError::BackupFailed(e.to_string()))?;
+        let checkpoint = rocksdb::checkpoint::Checkpoint::new(db)
+            .map_err(|e| MigrationError::BackupFailed { message: "Failed to create checkpoint", source: e })?;
+        checkpoint
+            .create_checkpoint(&backup_path)
+            .map_err(|e| MigrationError::BackupFailed { message: "Failed to write checkpoint to disk", source: e })?;
 
         tracing::info!("✅ Backup created at {:?}", backup_path);
         Ok(())
