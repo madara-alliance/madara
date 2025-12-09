@@ -637,14 +637,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let new_tip_in_db = if self.inner.config.save_preconfirmed {
             &new_tip
         } else {
-            // Remove the pre-confirmed case: we save the parent confirmed in that case.
-            // Log when we're dropping a preconfirmed block
-            if let ChainTip::Preconfirmed(preconfirmed_block) = &new_tip {
-                tracing::info!(
-                    "⚠️  Preconfirmed block #{} NOT saved to database. Block will be lost on restart.",
-                    preconfirmed_block.header.block_number
-                );
-            }
             &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
         };
         // Write to db if needed.
