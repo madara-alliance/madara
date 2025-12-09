@@ -117,7 +117,7 @@ VENV_ACTIVATE  := . $(VENV)/bin/activate
 # Configuration for E2E bridge tests
 CARGO_TARGET_DIR ?= target
 AWS_REGION ?= us-east-1
-PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.13.2.1-no-charge-fee/pathfinder-aarch64-apple-darwin.tar.gz
+PATHFINDER_URL_MAC = https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.1/pathfinder-aarch64-apple-darwin.tar.gz
 
 # dim white italic
 DIM            := \033[2;3;37m
@@ -288,6 +288,13 @@ fmt:
 	@taplo format --config=./taplo/taplo.toml
 	@echo -e "$(INFO)Running cargo fmt...$(RESET)"
 	@cargo fmt
+	@# TODO(mehul 14/11/2025, hotfix): This is a temporary fix to ensure that the madara is linted.
+	@# Madara does not belong to the toplevel workspace, so we need to lint it separately.
+	@# Remove this once we add madara back to toplevel workspace.
+	@echo "Running cargo clippy for madara..."
+	@cd madara && \
+	cargo fmt && \
+	cd ..
 	@echo -e "$(PASS)Code formatting complete!$(RESET)"
 
 .PHONY: test-orchestrator-e2e
