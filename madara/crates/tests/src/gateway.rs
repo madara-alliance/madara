@@ -2,12 +2,18 @@
 mod tests {
     use mc_gateway_client::{BlockId, GatewayProvider};
     use mp_convert::ToFelt;
+    use mp_state_update::StateDiff;
     use rstest::{fixture, rstest};
     use starknet_api::core::ChainId;
 
     #[fixture]
     fn client_mainnet_fixture() -> GatewayProvider {
         GatewayProvider::starknet_alpha_mainnet()
+    }
+
+    #[fixture]
+    fn client_sepolia_fixture() -> GatewayProvider {
+        GatewayProvider::starknet_alpha_sepolia()
     }
 
     #[rstest]
@@ -29,5 +35,17 @@ mod tests {
             res.block.header(&res.state_update.state_diff.into()).unwrap().compute_hash(chain_id, false);
         println!("computed_block_hash: 0x{:x}", computed_block_hash);
         assert!(computed_block_hash == res.block.block_hash, "Computed block hash does not match expected block hash");
+    }
+
+    /// Sepolia v0.14.1 block with migrated_compiled_classes (SNIP-34)
+    #[rstest]
+    #[case::v0_14_1_snip34(2_934_726)] // First block with 7 migrated classes
+    #[tokio::test]
+    async fn get_block_compute_hash_header_sepolia(client_sepolia_fixture: GatewayProvider, #[case] block_n: u64) {
+        let res = client_sepolia_fixture.get_state_update_with_block(BlockId::Number(block_n)).await.unwrap();
+        let chain_id = ChainId::Sepolia.to_felt();
+        let state_diff: StateDiff = res.state_update.state_diff.into();
+        let computed = res.block.header(&state_diff).unwrap().compute_hash(chain_id, false);
+        assert_eq!(computed, res.block.block_hash);
     }
 }

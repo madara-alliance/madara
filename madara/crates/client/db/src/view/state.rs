@@ -214,7 +214,11 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
             s.declared_class
                 .as_ref()
                 .and_then(|c| c.as_sierra())
-                .filter(|c| &c.info.compiled_class_hash == compiled_class_hash)
+                .filter(|c| {
+                    // Check canonical hash (v2 if present, else v1)
+                    let canonical = c.info.compiled_class_hash_v2.or(c.info.compiled_class_hash);
+                    canonical.as_ref() == Some(compiled_class_hash)
+                })
                 .map(|c| c.compiled.clone())
         }) {
             return Ok(Some(res));
@@ -233,14 +237,21 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
             return Ok(None);
         };
         let compiled = match class_info {
-            ClassInfo::Sierra(sierra_class_info) => ConvertedClass::Sierra(SierraConvertedClass {
-                class_hash: *class_hash,
-                compiled: self
-                    .get_class_compiled(&sierra_class_info.compiled_class_hash)
-                    .context("Getting class compiled from class_hash")?
-                    .context("Class info found, compiled class should be found")?,
-                info: sierra_class_info,
-            }),
+            ClassInfo::Sierra(sierra_class_info) => {
+                // Get canonical compiled_class_hash (v2 if present, else v1)
+                let canonical_hash = sierra_class_info
+                    .compiled_class_hash_v2
+                    .or(sierra_class_info.compiled_class_hash)
+                    .context("Sierra class must have at least one compiled_class_hash")?;
+                ConvertedClass::Sierra(SierraConvertedClass {
+                    class_hash: *class_hash,
+                    compiled: self
+                        .get_class_compiled(&canonical_hash)
+                        .context("Getting class compiled from class_hash")?
+                        .context("Class info found, compiled class should be found")?,
+                    info: sierra_class_info,
+                })
+            }
             ClassInfo::Legacy(legacy_class_info) => {
                 ConvertedClass::Legacy(LegacyConvertedClass { class_hash: *class_hash, info: legacy_class_info })
             }
