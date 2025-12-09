@@ -96,24 +96,37 @@ impl JobTrigger for BatchingTrigger {
             }
         }
 
-        // Getting the block range to process
-        let (start_block, end_block) = match config.layer() {
-            Layer::L2 => self.get_range_for_assigning_batches_l2(&config).await?,
-            Layer::L3 => self.get_range_for_assigning_batches_l3(&config).await?,
-        };
+        // Execute the main work and capture the result
+        let result = async {
+            // Getting the block range to process
+            let (start_block, end_block) = match config.layer() {
+                Layer::L2 => self.get_range_for_assigning_batches_l2(&config).await?,
+                Layer::L3 => self.get_range_for_assigning_batches_l3(&config).await?,
+            };
 
-        // Invoking method to assign batches to all the blocks in the range
-        if start_block < end_block {
-            match config.layer() {
-                Layer::L2 => self.assign_batch_to_blocks_l2(start_block, end_block, &config).await?,
-                Layer::L3 => self.assign_batch_to_blocks_l3(start_block, end_block, &config).await?,
+            // Invoking method to assign batches to all the blocks in the range
+            if start_block < end_block {
+                match config.layer() {
+                    Layer::L2 => self.assign_batch_to_blocks_l2(start_block, end_block, &config).await?,
+                    Layer::L3 => self.assign_batch_to_blocks_l3(start_block, end_block, &config).await?,
+                }
             }
+
+            Ok(())
+        }
+        .await;
+
+        // Always release the lock, regardless of whether work succeeded or failed
+        if let Err(e) = config.lock().release_lock("BatchingWorker", None).await {
+            error!("Failed to release BatchingWorker lock: {}", e);
+            // If work succeeded but lock release failed, return the lock release error
+            if result.is_ok() {
+                return Err(e.into());
+            }
+            // If work failed, we still want to return the original work error
         }
 
-        // Releasing the lock
-        config.lock().release_lock("BatchingWorker", None).await?;
-
-        Ok(())
+        result
     }
 }
 
