@@ -8,13 +8,7 @@
 //! the application, avoiding redundant network calls during job processing.
 
 use crate::layer::Layer;
-use crate::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
-use crate::register_metric;
 use color_eyre::eyre::{eyre, Result};
-use once_cell::sync::Lazy;
-use opentelemetry::global;
-use opentelemetry::metrics::{Counter, Gauge};
-use opentelemetry::KeyValue;
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::time::{sleep, Instant};
@@ -25,60 +19,6 @@ use url::Url;
 const DEFAULT_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 /// Total timeout for fetching chain details (default: 5 minutes)
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
-
-// ============================================================================
-// Metrics
-// ============================================================================
-
-register_metric!(CHAIN_DETAILS_METRICS, ChainDetailsMetrics);
-
-/// Metrics for chain details fetch operations.
-pub struct ChainDetailsMetrics {
-    /// Counter for failed fetch attempts (incremented on each retry)
-    pub fetch_failures: Counter<f64>,
-    /// Counter for successful fetches
-    pub fetch_successes: Counter<f64>,
-    /// Gauge for the number of retry attempts in the current/last fetch operation
-    pub retry_attempts: Gauge<f64>,
-    /// Gauge for the total time taken to fetch chain details (in seconds)
-    pub fetch_duration_seconds: Gauge<f64>,
-}
-
-impl Metrics for ChainDetailsMetrics {
-    fn register() -> Self {
-        let meter = global::meter("crates.orchestrator.chain_details");
-
-        let fetch_failures = register_counter_metric_instrument(
-            &meter,
-            "chain_details_fetch_failures".to_string(),
-            "Number of failed attempts to fetch chain details from node".to_string(),
-            "failures".to_string(),
-        );
-
-        let fetch_successes = register_counter_metric_instrument(
-            &meter,
-            "chain_details_fetch_successes".to_string(),
-            "Number of successful chain details fetches".to_string(),
-            "successes".to_string(),
-        );
-
-        let retry_attempts = register_gauge_metric_instrument(
-            &meter,
-            "chain_details_retry_attempts".to_string(),
-            "Number of retry attempts for the current/last fetch operation".to_string(),
-            "attempts".to_string(),
-        );
-
-        let fetch_duration_seconds = register_gauge_metric_instrument(
-            &meter,
-            "chain_details_fetch_duration_seconds".to_string(),
-            "Time taken to successfully fetch chain details".to_string(),
-            "seconds".to_string(),
-        );
-
-        Self { fetch_failures, fetch_successes, retry_attempts, fetch_duration_seconds }
-    }
-}
 
 // ============================================================================
 // Types
@@ -170,9 +110,6 @@ impl ChainDetails {
         loop {
             attempt += 1;
 
-            // Record current attempt count
-            CHAIN_DETAILS_METRICS.retry_attempts.record(attempt as f64, &[]);
-
             debug!(
                 attempt = attempt,
                 elapsed_secs = start_time.elapsed().as_secs(),
@@ -182,10 +119,6 @@ impl ChainDetails {
             match Self::try_fetch(rpc_url, feeder_gateway_url, layer).await {
                 Ok(details) => {
                     let elapsed = start_time.elapsed();
-
-                    // Record success metrics
-                    CHAIN_DETAILS_METRICS.fetch_successes.add(1.0, &[]);
-                    CHAIN_DETAILS_METRICS.fetch_duration_seconds.record(elapsed.as_secs_f64(), &[]);
 
                     if attempt > 1 {
                         info!(
@@ -214,15 +147,6 @@ impl ChainDetails {
                 }
                 Err(e) => {
                     let elapsed = start_time.elapsed();
-
-                    // Record failure metric with error context
-                    CHAIN_DETAILS_METRICS.fetch_failures.add(
-                        1.0,
-                        &[
-                            KeyValue::new("attempt", attempt as i64),
-                            KeyValue::new("error_type", Self::categorize_error(&e)),
-                        ],
-                    );
 
                     if elapsed >= timeout {
                         error!(
@@ -367,24 +291,6 @@ impl ChainDetails {
         let bytes = hex::decode(hex_str).map_err(|e| eyre!("Failed to decode chain_id hex '{}': {}", hex_str, e))?;
         String::from_utf8(bytes).map_err(|e| eyre!("Failed to convert chain_id to UTF-8: {}", e))
     }
-
-    /// Categorize an error for metrics purposes.
-    fn categorize_error(error: &color_eyre::eyre::Error) -> String {
-        let error_str = error.to_string().to_lowercase();
-        if error_str.contains("timeout") || error_str.contains("timed out") {
-            "timeout".to_string()
-        } else if error_str.contains("connection") || error_str.contains("connect") {
-            "connection".to_string()
-        } else if error_str.contains("dns") || error_str.contains("resolve") {
-            "dns".to_string()
-        } else if error_str.contains("status") {
-            "http_error".to_string()
-        } else if error_str.contains("parse") || error_str.contains("json") {
-            "parse_error".to_string()
-        } else {
-            "unknown".to_string()
-        }
-    }
 }
 
 #[cfg(test)]
@@ -401,15 +307,5 @@ mod tests {
 
         // "SN_SEPOLIA" in hex
         assert_eq!(ChainDetails::decode_chain_id("0x534e5f5345504f4c4941").unwrap(), "SN_SEPOLIA");
-    }
-
-    #[test]
-    fn test_categorize_error() {
-        assert_eq!(ChainDetails::categorize_error(&eyre!("Connection refused")), "connection");
-        assert_eq!(ChainDetails::categorize_error(&eyre!("Request timed out")), "timeout");
-        assert_eq!(ChainDetails::categorize_error(&eyre!("DNS resolution failed")), "dns");
-        assert_eq!(ChainDetails::categorize_error(&eyre!("HTTP status 500")), "http_error");
-        assert_eq!(ChainDetails::categorize_error(&eyre!("Failed to parse JSON")), "parse_error");
-        assert_eq!(ChainDetails::categorize_error(&eyre!("Something else")), "unknown");
     }
 }
