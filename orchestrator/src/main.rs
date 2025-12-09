@@ -25,6 +25,7 @@ use orchestrator::utils::instrument::OrchestratorInstrumentation;
 use orchestrator::utils::logging::init_logging;
 use orchestrator::utils::preflight::run_preflight_checks;
 use orchestrator::utils::signal_handler::SignalHandler;
+use orchestrator::utils::startup_info::{log_detailed_config, log_startup_info};
 use orchestrator::worker::initialize_worker;
 use orchestrator::{OrchestratorError, OrchestratorResult};
 use std::sync::Arc;
@@ -38,7 +39,6 @@ static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 async fn main() {
     dotenv().ok();
     init_logging();
-    info!("Starting orchestrator");
     let cli = Cli::parse();
 
     match &cli.command {
@@ -82,10 +82,25 @@ async fn main() {
 async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
     let instrumentation = OrchestratorInstrumentation::new(&config)?;
-    info!("Starting orchestrator service");
 
-    let config = Arc::new(Config::from_run_cmd(run_cmd).await?);
-    debug!("Configuration initialized");
+    // Build Config using the new path (preset/config file) or legacy path (CLI args)
+    let config = if run_cmd.config_file.is_some() || run_cmd.preset.is_some() {
+        // NEW PATH: Load from preset or config file
+        info!("Loading configuration from {} mode", if run_cmd.preset.is_some() { "preset" } else { "config file" });
+        let orch_config = orchestrator::config::load_config_from_run_cmd(run_cmd)?;
+        Arc::new(Config::from_orchestrator_config(&orch_config).await?)
+    } else {
+        // LEGACY PATH: Load from CLI args (for backward compatibility)
+        info!("Loading configuration from CLI args (legacy mode)");
+        let settlement_config = orchestrator::types::params::settlement::SettlementConfig::try_from(run_cmd.clone())?;
+        let da_config = orchestrator::types::params::da::DAConfig::try_from(run_cmd.clone())?;
+        let prover_config = orchestrator::types::params::prover::ProverConfig::try_from(run_cmd.clone())?;
+        log_detailed_config(&settlement_config, &da_config, &prover_config);
+        Arc::new(Config::from_run_cmd(run_cmd).await?)
+    };
+
+    // Log comprehensive startup information
+    log_startup_info(&config);
 
     // Run pre-flight health checks to ensure all dependencies are accessible
     run_preflight_checks(config.database(), config.storage(), config.queue(), config.alerts()).await?;

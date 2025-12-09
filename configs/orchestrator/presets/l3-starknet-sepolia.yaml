@@ -1,0 +1,116 @@
+config_version: "1"
+
+deployment:
+  name: madara-l3-starknet-sepolia
+  layer: l3
+  environment: staging
+
+madara:
+  rpc_url: "${MADARA_RPC_URL}"
+  version: "0.14.0"
+
+settlement:
+  network: starknet-sepolia
+  rpc_url: "${STARKNET_RPC_URL:-https://starknet-sepolia.public.blastapi.io}"
+  starknet:
+    private_key: "${STARKNET_PRIVATE_KEY}"
+    account_address: "${STARKNET_ACCOUNT}"
+    cairo_core_contract_address: "${CAIRO_CORE_CONTRACT}"
+    finality_retry_wait_seconds: 120
+
+data_availability:
+  network: starknet-sepolia
+
+prover:
+  type: atlantic
+  layout:
+    snos: all_cairo
+    prover: dynamic
+  atlantic:
+    api_key: "${ATLANTIC_API_KEY}"
+    service_url: "https://atlantic.provable.build"
+    prover_type: stone
+    verifier_contract_address: "${VERIFIER_CONTRACT}"
+    cairo_vm: rust
+    result: proof-generation
+    atlantic_network: TESTNET
+
+snos:
+  rpc_url: "${MADARA_RPC_URL}"
+  full_output: false
+
+batching:
+  max_batch_time_seconds: 600
+  max_batch_size: 10000
+
+service:
+  min_block_to_process: 0
+  max_concurrent_created_snos_jobs: 200
+
+job_policies:
+  snos_execution:
+    max_process_attempts: 1
+    max_verification_attempts: 1
+    verification_polling_delay_seconds: 1
+    timeout_seconds: 300
+  proving:
+    max_process_attempts: 1
+    max_verification_attempts: 300
+    verification_polling_delay_seconds: 30
+    timeout_seconds: 9000
+  da_submission:
+    max_process_attempts: 3
+    max_verification_attempts: 10
+    verification_polling_delay_seconds: 30
+    timeout_seconds: 600
+  state_update:
+    max_process_attempts: 1
+    max_verification_attempts: 20
+    verification_polling_delay_seconds: 30
+    timeout_seconds: 1200
+  aggregator:
+    max_process_attempts: 1
+    max_verification_attempts: 300
+    verification_polling_delay_seconds: 30
+    timeout_seconds: 9000
+  proof_registration:
+    max_process_attempts: 2
+    max_verification_attempts: 300
+    verification_polling_delay_seconds: 300
+    timeout_seconds: 90000
+
+cloud:
+  provider: aws
+  aws:
+    region: us-east-1
+    prefix: madara-l3-starknet-sepolia
+    storage:
+      bucket_name: orchestrator-artifacts
+    queue:
+      name_pattern: "orchestrator-{job_type}"
+    alerts:
+      topic_name: orchestrator-alerts
+    event_bridge:
+      type: schedule
+      interval_seconds: 60
+
+database:
+  type: mongodb
+  mongodb:
+    connection_url: "${MONGODB_URL}"
+    database_name: orchestrator
+
+server:
+  host: "0.0.0.0"
+  port: 3000
+
+observability:
+  otel:
+    enabled: true
+    service_name: orchestrator-l3-starknet-sepolia
+    collector_endpoint: "${OTEL_COLLECTOR_ENDPOINT:-}"
+
+operational:
+  store_audit_artifacts: true
+  graceful_shutdown_timeout_seconds: 120
+  mock_atlantic_server: false

@@ -14,7 +14,12 @@ pub struct SNOSParams {
 impl From<SNOSCliArgs> for SNOSParams {
     fn from(args: SNOSCliArgs) -> Self {
         Self {
-            rpc_for_snos: args.rpc_for_snos,
+            // For legacy compatibility: if rpc_for_snos is None, use a placeholder
+            // In practice, this should never be None when using the legacy path
+            // as the config/preset system is now required
+            rpc_for_snos: args
+                .rpc_for_snos
+                .unwrap_or_else(|| "http://localhost:9944".parse().expect("Failed to parse default RPC URL")),
             snos_full_output: args.snos_full_output,
             strk_fee_token_address: args.strk_fee_token_address,
             eth_fee_token_address: args.eth_fee_token_address,

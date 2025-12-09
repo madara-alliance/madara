@@ -280,7 +280,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting process job function in job processor to return the external ID.
     job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
-    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
+    job_handler.expect_verification_polling_delay_seconds().returning(|_| 1u64);
 
     // Mocking the `get_job_handler` call AFTER creating job
     // process_job calls get_job_handler exactly once
@@ -452,7 +452,7 @@ async fn process_job_two_workers_process_same_job_works() {
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting process job function in job processor to return the external ID.
     job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
-    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
+    job_handler.expect_verification_polling_delay_seconds().returning(|_| 1u64);
 
     // Mocking the `get_job_handler` call - both workers will call it before one fails due to lock contention
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
@@ -512,7 +512,7 @@ async fn process_job_job_handler_returns_error_works() {
         .expect_process_job()
         .times(1)
         .returning(move |_, _| Err(JobError::Other(failure_reason.to_string().into())));
-    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
+    job_handler.expect_verification_polling_delay_seconds().returning(|_| 1u64);
 
     // building config first
     let mut mock_alert_client = MockAlertClient::new();
@@ -568,7 +568,7 @@ async fn verify_job_with_verified_status_works() {
     database_client.create_job(job_item.clone()).await.unwrap();
     // expecting process job function in job processor to return the external ID
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Verified));
-    job_handler.expect_max_process_attempts().returning(move || 2u64);
+    job_handler.expect_max_process_attempts().returning(move |_| 2u64);
 
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = get_job_handler_context_safe();
@@ -626,7 +626,7 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     // creating job in database
     database_client.create_job(job_item.clone()).await.unwrap();
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Rejected("".to_string())));
-    job_handler.expect_max_process_attempts().returning(move || 2u64);
+    job_handler.expect_max_process_attempts().returning(move |_| 2u64);
 
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = get_job_handler_context_safe();
@@ -687,7 +687,7 @@ async fn verify_job_with_rejected_status_works() {
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting verify_job function to return Rejected status
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Rejected("".to_string())));
-    job_handler.expect_max_process_attempts().returning(move || 1u64);
+    job_handler.expect_max_process_attempts().returning(move |_| 1u64);
 
     // Mocking the `get_job_handler` call - verify_job calls it exactly once
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
@@ -742,8 +742,8 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting verify_job function to return Pending status
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Pending));
-    job_handler.expect_max_verification_attempts().returning(move || 2u64);
-    job_handler.expect_verification_polling_delay_seconds().returning(move || 2u64);
+    job_handler.expect_max_verification_attempts().returning(move |_| 2u64);
+    job_handler.expect_verification_polling_delay_seconds().returning(move |_| 2u64);
 
     // Mocking the `get_job_handler` call - verify_job calls it exactly once
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
@@ -805,8 +805,8 @@ async fn verify_job_with_pending_status_works() {
     let mut job_handler = MockJobHandlerTrait::new();
     // Expecting verify_job function to return Pending status
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Pending));
-    job_handler.expect_max_verification_attempts().returning(move || 1u64);
-    job_handler.expect_verification_polling_delay_seconds().returning(move || 2u64);
+    job_handler.expect_max_verification_attempts().returning(move |_| 1u64);
+    job_handler.expect_verification_polling_delay_seconds().returning(move |_| 2u64);
 
     // Mocking the `get_job_handler` call
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));

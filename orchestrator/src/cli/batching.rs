@@ -2,15 +2,16 @@ use clap::Args;
 
 /// Parameters used to configure the batching.
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["max_batch_time_seconds", "max_batch_size"])]
 pub struct BatchingCliArgs {
     /// Max batch time in seconds.
+    /// Optional when using --config or --preset (used as override)
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_BATCH_TIME_SECONDS", long)]
-    pub max_batch_time_seconds: u64,
+    pub max_batch_time_seconds: Option<u64>,
 
     /// Max batch size.
+    /// Optional when using --config or --preset (used as override)
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_BATCH_SIZE", long)]
-    pub max_batch_size: u64,
+    pub max_batch_size: Option<u64>,
 
     /// Max number of blobs to attach in a single state update transaction
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_NUM_BLOBS", long, default_value = "6")]

@@ -197,16 +197,16 @@ impl JobHandlerTrait for SnosJobHandler {
         Ok(JobVerificationStatus::Verified)
     }
 
-    fn max_process_attempts(&self) -> u64 {
-        1
+    fn max_process_attempts(&self, config: &Config) -> u64 {
+        config.params.job_policies.snos_execution.max_process_attempts
     }
 
-    fn max_verification_attempts(&self) -> u64 {
-        1
+    fn max_verification_attempts(&self, config: &Config) -> u64 {
+        config.params.job_policies.snos_execution.max_verification_attempts
     }
 
-    fn verification_polling_delay_seconds(&self) -> u64 {
-        1
+    fn verification_polling_delay_seconds(&self, config: &Config) -> u64 {
+        config.params.job_policies.snos_execution.verification_polling_delay_seconds
     }
 }
 

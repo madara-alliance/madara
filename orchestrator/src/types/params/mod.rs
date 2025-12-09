@@ -2,6 +2,7 @@ pub mod batching;
 pub mod cloud_provider;
 pub mod da;
 pub mod database;
+pub mod job_policies;
 pub mod otel;
 pub mod prover;
 pub mod service;
@@ -13,6 +14,7 @@ use crate::cli::{RunCmd, SetupCmd};
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::types::queue::QueueType;
 use crate::OrchestratorError;
+pub use job_policies::{JobPolicies, JobPolicy};
 pub use otel::OTELConfig;
 
 #[derive(Debug, Clone)]

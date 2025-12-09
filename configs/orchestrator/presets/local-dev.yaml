@@ -1,0 +1,127 @@
+config_version: "1"
+
+deployment:
+  name: madara-local
+  layer: l2
+  environment: dev
+
+madara:
+  rpc_url: "http://localhost:9944"
+  version: "0.14.0"
+
+settlement:
+  network: ethereum-local
+  rpc_url: "https://eth-sepolia.g.alchemy.com/v2/API_KEY"
+  ethereum:
+    core_contract_address: "0x0000000000000000000000000000000000000000"
+    operator_private_key: "PVT_KEY"
+  operator_address: "0x0000000000000000000000000000000000000000"
+    finality_retry_wait_seconds: 10
+    max_gas_price_multiplier: 1.5
+    disable_peerdas: false
+
+data_availability:
+  network: ethereum-local
+
+prover:
+  type: atlantic
+  layout:
+    snos: all_cairo
+    prover: dynamic
+  atlantic:
+    api_key: "${ATLANTIC_API_KEY:-mock_key}"
+    service_url: "http://localhost:4001"
+    mock_fact_hash: "true"
+    prover_type: stone
+    verifier_contract_address: "0x0000000000000000000000000000000000000000"
+    cairo_vm: rust
+    result: proof-generation
+    atlantic_network: TESTNET
+
+snos:
+  rpc_url: "http://localhost:9944"
+  full_output: false
+
+batching:
+  max_batch_time_seconds: 600
+  max_batch_size: 10000
+  max_num_blobs: 6
+
+service:
+  min_block_to_process: 0
+  max_concurrent_created_snos_jobs: 200
+
+job_policies:
+  snos_execution:
+    max_process_attempts: 1
+    max_verification_attempts: 1
+    verification_polling_delay_seconds: 1
+    timeout_seconds: 10
+  proving:
+    max_process_attempts: 1
+    max_verification_attempts: 10
+    verification_polling_delay_seconds: 5
+    timeout_seconds: 300
+  da_submission:
+    max_process_attempts: 2
+    max_verification_attempts: 5
+    verification_polling_delay_seconds: 5
+    timeout_seconds: 60
+  state_update:
+    max_process_attempts: 1
+    max_verification_attempts: 10
+    verification_polling_delay_seconds: 5
+    timeout_seconds: 100
+  aggregator:
+    max_process_attempts: 1
+    max_verification_attempts: 10
+    verification_polling_delay_seconds: 5
+    timeout_seconds: 300
+  proof_registration:
+    max_process_attempts: 2
+    max_verification_attempts: 10
+    verification_polling_delay_seconds: 10
+    timeout_seconds: 200
+
+cloud:
+  provider: aws
+  aws:
+    region: us-east-1
+    prefix: madara-local
+    storage:
+      bucket_name: local-artifacts
+    queue:
+      name_pattern: "local-{job_type}"
+    alerts:
+      topic_name: local-alerts
+    event_bridge:
+      type: rule
+      interval_seconds: 60
+
+database:
+  type: mongodb
+  mongodb:
+    connection_url: "mongodb://localhost:27017"
+    database_name: orchestrator-local
+
+server:
+  host: "0.0.0.0"
+  port: 3000
+
+observability:
+  otel:
+    enabled: false
+    service_name: orchestrator-local
+
+operational:
+  store_audit_artifacts: false
+  graceful_shutdown_timeout_seconds: 120
+  mock_atlantic_server: true
+
+networks:
+  - name: ethereum-local
+    chain_type: ethereum
+    chain_id: "0x7a69"
+    is_testnet: true
+    default_rpc_urls:
+      - "http://localhost:8545"

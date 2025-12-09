@@ -324,14 +324,14 @@ impl JobHandlerTrait for DAJobHandler {
         info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::DataSubmission, internal_id);
         Ok(verification_status)
     }
-    fn max_process_attempts(&self) -> u64 {
-        1
+    fn max_process_attempts(&self, config: &Config) -> u64 {
+        config.params.job_policies.da_submission.max_process_attempts
     }
-    fn max_verification_attempts(&self) -> u64 {
-        3
+    fn max_verification_attempts(&self, config: &Config) -> u64 {
+        config.params.job_policies.da_submission.max_verification_attempts
     }
-    fn verification_polling_delay_seconds(&self) -> u64 {
-        60
+    fn verification_polling_delay_seconds(&self, config: &Config) -> u64 {
+        config.params.job_policies.da_submission.verification_polling_delay_seconds
     }
 }
 
