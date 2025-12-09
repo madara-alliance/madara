@@ -149,3 +149,70 @@ jobs:
       bootstrapper-binary-hash: ${{ needs.build-bootstrapper.outputs.bootstrapper-binary-hash }}
       cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
     secrets: inherit
+
+  # ========================================================================= #
+  #                            FAILURE NOTIFICATION                           #
+  # ========================================================================= #
+
+  notify-on-failure:
+    name: Send SNS notification on failure
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    needs:
+      - build-madara
+      - build-orchestrator
+      - build-bootstrapper
+      - test-end-to-end
+      - build-nightly-and-publish-madara
+      - build-nightly-and-publish-orchestrator
+      - build-nightly-and-publish-bootstrapper
+    if: always() && (needs.build-madara.result == 'failure' || needs.build-orchestrator.result == 'failure' || needs.build-bootstrapper.result == 'failure' || needs.test-end-to-end.result == 'failure' || needs.build-nightly-and-publish-madara.result == 'failure' || needs.build-nightly-and-publish-orchestrator.result == 'failure' || needs.build-nightly-and-publish-bootstrapper.result == 'failure')
+    steps:
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_SNS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Send SNS notification
+        run: |
+          FAILED_JOBS=""
+          if [ "${{ needs.build-madara.result }}" == "failure" ]; then
+            FAILED_JOBS="$FAILED_JOBS- build-madara\n"
+          fi
+          if [ "${{ needs.build-orchestrator.result }}" == "failure" ]; then
+            FAILED_JOBS="$FAILED_JOBS- build-orchestrator\n"
+          fi
+          if [ "${{ needs.build-bootstrapper.result }}" == "failure" ]; then
+            FAILED_JOBS="$FAILED_JOBS- build-bootstrapper\n"
+          fi
+          if [ "${{ needs.test-end-to-end.result }}" == "failure" ]; then
+            FAILED_JOBS="$FAILED_JOBS- test-end-to-end\n"
+          fi
+          if [ "${{ needs.build-nightly-and-publish-madara.result }}" == "failure" ]; then
+            FAILED_JOBS="$FAILED_JOBS- build-nightly-and-publish-madara\n"
+          fi
+          if [ "${{ needs.build-nightly-and-publish-orchestrator.result }}" == "failure" ]; then
+            FAILED_JOBS="$FAILED_JOBS- build-nightly-and-publish-orchestrator\n"
+          fi
+          if [ "${{ needs.build-nightly-and-publish-bootstrapper.result }}" == "failure" ]; then
+            FAILED_JOBS="$FAILED_JOBS- build-nightly-and-publish-bootstrapper\n"
+          fi
+
+          MESSAGE="Nightly Run Failed
+
+          Repository: ${{ github.repository }}
+          Branch: ${{ github.ref_name }}
+          Workflow: ${{ github.workflow }}
+          Run ID: ${{ github.run_id }}
+          Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Failed Jobs:
+          $(echo -e "$FAILED_JOBS")"
+
+          aws sns publish \
+            --topic-arn "${{ secrets.AWS_SNS_TOPIC_ARN }}" \
+            --subject "Nightly Run Failed - ${{ github.repository }}" \
+            --message "$MESSAGE"
