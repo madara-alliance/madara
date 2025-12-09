@@ -163,6 +163,7 @@ impl PathfinderConfig {
 
         command.arg("--storage.state-tries").arg(self.storage_state_tries());
         command.arg("--gateway.request-timeout").arg(self.gateway_request_timeout().to_string());
+        command.arg("--is-l3").arg("false"); // we are running the E2E for L2s
 
         // Environment variables
         for (key, value) in &self.environment_vars {

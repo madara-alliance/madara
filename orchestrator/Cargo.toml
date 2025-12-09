@@ -139,3 +139,6 @@ mockito = "1.6.1"
 
 [build-dependencies]
 build-version.workspace = true
+
+[profile.release]
+debug = true

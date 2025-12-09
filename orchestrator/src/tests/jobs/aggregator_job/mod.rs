@@ -70,7 +70,7 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
 
     // Mocking prover client
     let mut prover_client = MockProverClient::new();
-    prover_client.expect_get_aggregator_task_id().returning(|_, _| Ok("aggregator_task_id".to_string()));
+    prover_client.expect_get_aggregator_task_id().returning(|_| Ok("aggregator_task_id".to_string()));
     prover_client
         .expect_get_task_status()
         .with(eq(TaskType::Bucket), eq("bucket_id".to_string()), eq(None), eq(false))

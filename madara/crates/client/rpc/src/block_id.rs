@@ -139,8 +139,6 @@ impl BlockViewResolvable for mp_rpc::v0_9_0::BlockId {
     }
 }
 
-// v0.10 rpc
-
 impl Starknet {
     pub fn resolve_block_view<R: BlockViewResolvable>(
         &self,

@@ -99,11 +99,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
             }
             TaskStatus::Succeeded => {
                 // Get the aggregator query ID
-                let aggregator_query_id = config
-                    .prover_client()
-                    .get_aggregator_task_id(&bucket_id, metadata.num_snos_batches + 1)
-                    .await
-                    .map_err(|e| {
+                let aggregator_query_id =
+                    config.prover_client().get_aggregator_task_id(&bucket_id).await.map_err(|e| {
                         error!(
                             error = %e,
                             "Failed to get aggregator query ID from prover client"
@@ -212,7 +209,7 @@ impl AggregatorJobHandler {
         storage_path: &str,
     ) -> Result<Vec<u8>, JobError> {
         // TODO: Check if we can optimize the memory usage here
-        debug!("Downloading {} and storing to path: {}", file_name, storage_path);
+        debug!("Downloading {} and storing to path: {} for id {}", file_name, storage_path, task_id);
         let artifact = config.prover_client().get_task_artifacts(task_id, file_name).await.map_err(|e| {
             error!(error = %e, "Failed to download {}", file_name);
             JobError::Other(OtherError(eyre!(e)))
