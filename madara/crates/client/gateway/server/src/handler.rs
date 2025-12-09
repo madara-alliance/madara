@@ -14,8 +14,8 @@ use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::MadaraBackend;
 use mc_rpc::versions::user::v0_9_0::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_9_0_trace_block_transactions;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
+use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_class::{ClassInfo, ContractClass};
-use mp_block::{Header, MadaraMaybePreconfirmedBlockInfo};
 use mp_gateway::{
     block::ProviderBlockPreConfirmed,
     user_transaction::{
@@ -126,11 +126,6 @@ pub async fn handle_get_block(
     } else {
         let info = block.get_block_info()?;
         let txs = block.get_executed_transactions(..)?;
-        let parent_block_hash = if let Some(parent) = block.parent_block() {
-            parent.get_block_info()?.block_hash
-        } else {
-            Felt::ZERO
-        };
 
         match info {
             MadaraMaybePreconfirmedBlockInfo::Confirmed(info) => {
@@ -138,26 +133,18 @@ pub async fn handle_get_block(
                 let block_provider = ProviderBlock::new(info.block_hash, info.header, txs, status);
                 Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
             }
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(info) => {
-                let header = Header {
-                    parent_block_hash,
-                    sequencer_address: info.header.sequencer_address,
-                    block_timestamp: info.header.block_timestamp,
-                    protocol_version: info.header.protocol_version,
-                    gas_prices: info.header.gas_prices,
-                    l1_da_mode: info.header.l1_da_mode,
-                    block_number: info.header.block_number,
-                    global_state_root: Felt::ZERO,
-                    transaction_count: txs.len() as u64,
-                    transaction_commitment: Felt::ZERO,
-                    event_count: txs.iter().map(|tx| tx.receipt.events().len() as u64).sum(),
-                    event_commitment: Felt::ZERO,
-                    state_diff_length: None,
-                    state_diff_commitment: None,
-                    receipt_commitment: None,
-                };
-
-                let block_provider = ProviderBlock::new(Felt::ZERO, header, txs, BlockStatus::PreConfirmed);
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => {
+                // TODO(@bytezorvin, 2025-12-09): Return preconfirmed block when starknet.rs adds
+                // support for it and migrates feeder gateway to 0.9.0 RPC version from 0.8.1.
+                //
+                // Currently returning the last confirmed block because starknet.rs
+                // SequencerGatewayProvider does NOT support pending/preconfirmed block conversion.
+                // Use get_preconfirmed_block endpoint for madara's preconfirmed block info.
+                let confirmed = backend.block_view_on_last_confirmed().ok_or_else(StarknetError::block_not_found)?;
+                let info = confirmed.get_block_info()?;
+                let txs = confirmed.get_executed_transactions(..)?;
+                let status = if confirmed.is_on_l1() { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
+                let block_provider = ProviderBlock::new(info.block_hash, info.header, txs, status);
                 Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
             }
         }
