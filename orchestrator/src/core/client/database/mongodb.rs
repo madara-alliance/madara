@@ -1163,6 +1163,39 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
+    async fn get_jobs_excluding_statuses_up_to_internal_id(
+        &self,
+        job_type: JobType,
+        job_statuses: Vec<JobStatus>,
+        max_internal_id: u64,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "job_type": bson::to_bson(&job_type)?,
+            "status": {
+                "$nin": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+            },
+            "$expr": {
+                "$lte": [
+                    { "$toInt": "$internal_id" },  // Convert stored string to number
+                    max_internal_id as i64
+                ]
+            }
+        };
+
+        let find_options = FindOptions::builder().sort(doc! { "internal_id": -1 }).build();
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+
+        debug!(job_count = jobs.len(), "Retrieved jobs by type and statuses with internal_id <= {}", max_internal_id);
+
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_type_and_status_ne")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
+    }
+
     async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         let block_number_i64 = block_number as i64; // MongoDB typically handles numbers as i32 or i64

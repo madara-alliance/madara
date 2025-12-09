@@ -4,7 +4,7 @@ use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
-use crate::types::jobs::types::JobType;
+use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Result};
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -21,6 +21,8 @@ use tracing::{debug, error};
 /// - Managing job creation within concurrency limits
 /// - Ensuring proper ordering and dependencies between jobs
 pub struct SnosJobTrigger;
+
+const MIN_COMPLETED_SNOS_JOBS_THRESHOLD: u64 = 50;
 
 #[async_trait]
 impl JobTrigger for SnosJobTrigger {
@@ -46,6 +48,36 @@ impl JobTrigger for SnosJobTrigger {
         // Self-healing: recover any orphaned SNOS jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::SnosRun).await {
             error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
+        }
+
+        let latest_snos_job = config.database().get_latest_job_by_type(JobType::SnosRun).await?;
+        if let Some(latest_snos_job) = latest_snos_job {
+            let latest_internal_id: u64 = latest_snos_job.internal_id.parse().map_err(|e| {
+                eyre!(
+                    "Failed to parse internal id {} for SNOS with id {}: {}",
+                    latest_snos_job.internal_id,
+                    latest_snos_job.id,
+                    e
+                )
+            })?;
+
+            let pending_jobs = config
+                .database()
+                .get_jobs_excluding_statuses_up_to_internal_id(
+                    JobType::SnosRun,
+                    vec![JobStatus::Completed],
+                    latest_internal_id - MIN_COMPLETED_SNOS_JOBS_THRESHOLD,
+                )
+                .await?;
+
+            if !pending_jobs.is_empty() {
+                info!(
+                    "Skipping SNOS job creation: {} non-completed jobs found in buffer window (internal_id ≤ {}). Waiting for buffer to clear.",
+                    pending_jobs.len(),
+                    latest_internal_id - MIN_COMPLETED_SNOS_JOBS_THRESHOLD
+                );
+                return Ok(());
+            }
         }
 
         // Get all snos batches that are closed but don't have a SnosRun job created yet
