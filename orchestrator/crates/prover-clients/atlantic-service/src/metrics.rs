@@ -115,6 +115,7 @@ impl AtlanticMetrics {
         operation: &str,
         duration_s: f64,
         request_bytes: u64,
+        response_bytes: u64,
         error_type: &str,
         retry_count: u32,
     ) {
@@ -129,6 +130,7 @@ impl AtlanticMetrics {
 
         let op_attr = [KeyValue::new("operation", operation.to_string())];
         self.request_bytes_total.add(request_bytes as f64, &op_attr);
+        self.response_bytes_total.add(response_bytes as f64, &op_attr);
 
         if retry_count > 0 {
             self.retries_total.add(retry_count as f64, &op_attr);
