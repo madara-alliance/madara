@@ -1,95 +1,146 @@
-use alloy::primitives::hex::FromHexError;
 use orchestrator_prover_client_interface::ProverClientError;
 use reqwest::StatusCode;
 
-type StatusMessage = String;
+use crate::transport::HttpResponseClassifier;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AtlanticError {
-    #[error("Failed to add Atlantic job ({context}): {source}")]
-    AddJobFailure {
-        context: String,
-        #[source]
-        source: reqwest::Error,
-    },
+    /// Network/transport errors that may be retryable (timeouts, incomplete messages, etc.)
+    #[error("Network error during {operation}: {message}")]
+    NetworkError { operation: String, message: String, response_bytes: Option<u64> },
 
-    #[error("Failed to get status of an Atlantic job ({context}): {source}")]
-    GetJobStatusFailure {
-        context: String,
-        #[source]
-        source: reqwest::Error,
-    },
+    /// Atlantic API returned an error response (4xx/5xx status codes)
+    #[error("Atlantic API error during {operation} (status {status}): {message}")]
+    ApiError { operation: String, status: StatusCode, message: String, response_bytes: Option<u64> },
 
-    #[error("Failed to get artifacts of an Atlantic job ({context}): {source}")]
-    GetJobArtifactsFailure {
-        context: String,
-        #[source]
-        source: reqwest::Error,
-    },
+    /// File system errors
+    #[error("File error during {operation}: {message}")]
+    FileError { operation: String, message: String },
 
-    #[error("Failed to submit L2 query ({context}): {source}")]
-    SubmitL2QueryFailure {
-        context: String,
-        #[source]
-        source: reqwest::Error,
-    },
+    /// JSON parsing errors
+    #[error("Failed to parse response during {operation}: {message}")]
+    ParseError { operation: String, message: String },
 
-    #[error("Atlantic service returned an error {0}")]
-    AtlanticService(StatusCode, StatusMessage),
+    /// URL/path segment errors
+    #[error("Failed to build URL for {operation}: {message}")]
+    UrlError { operation: String, message: String },
 
-    #[error("Failed to read file: {0}")]
-    FileError(#[from] std::io::Error),
+    /// Other unexpected errors
+    #[error("Unexpected error during {operation}: {message}")]
+    Other { operation: String, message: String },
+}
 
-    #[error("Failed to parse job key: {0}")]
-    JobKeyParse(uuid::Error),
+impl AtlanticError {
+    /// Check if this error is retryable
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, AtlanticError::NetworkError { .. })
+    }
 
-    #[error("Failed to parse fact: {0}")]
-    FactParse(FromHexError),
+    /// Get error type as a string for metrics
+    pub fn error_type(&self) -> &'static str {
+        match self {
+            AtlanticError::NetworkError { .. } => "network_error",
+            AtlanticError::ApiError { .. } => "api_error",
+            AtlanticError::FileError { .. } => "file_error",
+            AtlanticError::ParseError { .. } => "parse_error",
+            AtlanticError::UrlError { .. } => "url_error",
+            AtlanticError::Other { .. } => "other_error",
+        }
+    }
 
-    #[error("Failed to split task id into job key and fact")]
-    TaskIdSplit,
+    /// Get response bytes if available (for metrics)
+    pub fn response_bytes(&self) -> u64 {
+        match self {
+            AtlanticError::NetworkError { response_bytes, .. } => response_bytes.unwrap_or(0),
+            AtlanticError::ApiError { response_bytes, .. } => response_bytes.unwrap_or(0),
+            _ => 0,
+        }
+    }
 
-    #[error("Failed to encode PIE: {0}")]
-    PieEncode(String),
+    /// Create a network error from a reqwest error
+    pub fn from_reqwest_error(operation: impl Into<String>, source: reqwest::Error) -> Self {
+        let operation = operation.into();
 
-    #[error("Failed to get url as path segment mut. URL is cannot-be-a-base.")]
-    PathSegmentMutFailOnUrl,
+        // Check if it's a network-level error (retryable)
+        if source.is_timeout() || source.is_connect() || source.is_request() {
+            let message = if source.is_timeout() {
+                "request timed out".to_string()
+            } else if source.is_connect() {
+                format!("connection failed: {}", source)
+            } else {
+                // Check for specific hyper errors like IncompleteMessage
+                let error_msg = source.to_string();
+                if error_msg.contains("IncompleteMessage") {
+                    "incomplete message received from server".to_string()
+                } else if error_msg.contains("Canceled") {
+                    "request was canceled".to_string()
+                } else {
+                    format!("request failed: {}", error_msg)
+                }
+            };
 
-    #[error("Failed to open file: {0}")]
-    FileOpenError(#[source] tokio::io::Error),
+            AtlanticError::NetworkError { operation, message, response_bytes: None }
+        } else if let Some(status) = source.status() {
+            // HTTP error with status code (non-retryable)
+            AtlanticError::ApiError { operation, status, message: source.to_string(), response_bytes: None }
+        } else {
+            // Other reqwest errors
+            AtlanticError::NetworkError { operation, message: source.to_string(), response_bytes: None }
+        }
+    }
 
-    #[error("Failed to create mime string: {0}")]
-    MimeError(#[source] reqwest::Error),
+    /// Create a file error from an io error
+    pub fn from_io_error(operation: impl Into<String>, source: std::io::Error) -> Self {
+        AtlanticError::FileError { operation: operation.into(), message: source.to_string() }
+    }
 
-    #[error("Failed to read file: {0}")]
-    FileReadError(#[source] tokio::io::Error),
+    /// Create a parse error
+    pub fn parse_error(operation: impl Into<String>, message: impl Into<String>) -> Self {
+        AtlanticError::ParseError { operation: operation.into(), message: message.into() }
+    }
 
-    #[error("Other error: {0}")]
-    Other(#[from] color_eyre::eyre::Error),
+    /// Create an API error with custom message
+    pub fn api_error(operation: impl Into<String>, status: StatusCode, message: impl Into<String>) -> Self {
+        AtlanticError::ApiError { operation: operation.into(), status, message: message.into(), response_bytes: None }
+    }
 
-    #[error("Failed to parse body: {0}")]
-    BodyParseError(#[source] serde_json::Error),
+    /// Create an error from HTTP response, detecting infrastructure errors
+    ///
+    /// Infrastructure errors (load balancer/gateway errors) are treated as retryable NetworkErrors,
+    /// while real Atlantic API errors are treated as non-retryable ApiErrors.
+    ///
+    /// Uses `HttpResponseClassifier` from the transport layer to determine if the error
+    /// is an infrastructure issue (retryable) or a real API error (non-retryable).
+    ///
+    /// # Arguments
+    /// * `operation` - The operation name (e.g., "add_job")
+    /// * `status` - HTTP status code
+    /// * `response_text` - Response body text
+    ///
+    /// # Returns
+    /// * `NetworkError` if this is an infrastructure/gateway error (retryable)
+    /// * `ApiError` if this is a real Atlantic API error (non-retryable)
+    pub fn from_http_error_response(
+        operation: impl Into<String>,
+        status: StatusCode,
+        response_text: impl AsRef<str>,
+    ) -> Self {
+        let operation = operation.into();
+        let text = response_text.as_ref();
+        let response_bytes = Some(text.len() as u64);
 
-    #[error("Failed to get status of an Atlantic bucket ({context}): {source}")]
-    GetBucketStatusFailure {
-        context: String,
-        #[source]
-        source: reqwest::Error,
-    },
-
-    #[error("Failed to create a new Atlantic bucket ({context}): {source}")]
-    CreateBucketFailure {
-        context: String,
-        #[source]
-        source: reqwest::Error,
-    },
-
-    #[error("Failed to close Atlantic bucket ({context}): {source}")]
-    CloseBucketFailure {
-        context: String,
-        #[source]
-        source: reqwest::Error,
-    },
+        if HttpResponseClassifier::is_infrastructure_error(status, text) {
+            // Treat as network error (retryable)
+            AtlanticError::NetworkError {
+                operation,
+                message: format!("infrastructure error (status {}): {}", status, text),
+                response_bytes,
+            }
+        } else {
+            // Real API error (non-retryable)
+            AtlanticError::ApiError { operation, status, message: text.to_string(), response_bytes }
+        }
+    }
 }
 
 impl From<AtlanticError> for ProverClientError {

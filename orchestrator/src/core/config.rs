@@ -5,6 +5,7 @@ use cairo_vm::Felt252;
 use crate::utils::rest_client::RestClient;
 use anyhow::Context;
 use cairo_vm::types::layout_name::LayoutName;
+use hex;
 use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
@@ -14,8 +15,9 @@ use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_sharp_service::SharpProverService;
 use orchestrator_starknet_da_client::StarknetDaClient;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
+use orchestrator_utils::chain_details::ChainDetails;
 use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Provider};
+use starknet::providers::JsonRpcClient;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -130,6 +132,8 @@ pub struct Config {
     layer: Layer,
     /// The orchestrator config
     pub params: ConfigParam,
+    /// Chain details fetched from the node at startup (chain_id, fee tokens, etc.)
+    chain_details: ChainDetails,
     /// The Madara client to get data from the node
     madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The Madara feeder gateway client for fetching builtins
@@ -158,6 +162,7 @@ impl Config {
     pub(crate) fn new(
         layer: Layer,
         params: ConfigParam,
+        chain_details: ChainDetails,
         madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
         madara_feeder_gateway_client: Arc<RestClient>,
         database: Box<dyn DatabaseClient>,
@@ -172,6 +177,7 @@ impl Config {
         Self {
             layer,
             params,
+            chain_details,
             madara_rpc_client,
             madara_feeder_gateway_client,
             database,
@@ -243,18 +249,25 @@ impl Config {
             Self::start_mock_atlantic_server(&prover_config, run_cmd.mock_atlantic_server).await;
         }
 
+        // Fetch chain details from node with retry logic
+        info!("Fetching chain details from node...");
+        let chain_details = ChainDetails::fetch(&params.madara_rpc_url, &params.madara_feeder_gateway_url, &layer)
+            .await
+            .map_err(|e| OrchestratorError::ConfigError(format!("Failed to fetch chain details from node: {}", e)))?;
+        info!(
+            chain_id = %chain_details.chain_id,
+            strk_fee_token = %chain_details.strk_fee_token_address,
+            eth_fee_token = %chain_details.eth_fee_token_address,
+            is_l3 = %chain_details.is_l3,
+            "Chain details fetched successfully"
+        );
+
         // External Clients Initialization
         let prover_client = Self::build_prover_service(
             &prover_config,
             &params,
-            Some(
-                rpc_client
-                    .chain_id()
-                    .await
-                    .map_err(|e| OrchestratorError::ConfigError(format!("Failed to get Chain ID from RPC: {}", e)))?
-                    .to_fixed_hex_string(),
-            ),
-            Some(Felt252::from_str(params.snos_config.strk_fee_token_address.clone().as_str())?),
+            Some(format!("0x{}", hex::encode(&chain_details.chain_id))),
+            Some(Felt252::from_str(chain_details.strk_fee_token_address.as_str())?),
         );
         let da_client: Box<dyn DaClient + Send + Sync + 'static> = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
@@ -262,6 +275,7 @@ impl Config {
         Ok(Self {
             layer,
             params,
+            chain_details,
             madara_rpc_client: Arc::new(rpc_client),
             madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
             database,
@@ -278,6 +292,11 @@ impl Config {
     /// Returns the layer of the config
     pub fn layer(&self) -> &Layer {
         &self.layer
+    }
+
+    /// Returns the chain details fetched from the node at startup
+    pub fn chain_details(&self) -> &ChainDetails {
+        &self.chain_details
     }
 
     pub(crate) async fn build_database_client(
@@ -335,12 +354,15 @@ impl Config {
             ProverConfig::Sharp(sharp_params) => {
                 Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
             }
-            ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(
-                atlantic_params,
-                &params.prover_layout_name,
-                chain_id_hex,
-                fee_token_address,
-            )),
+            ProverConfig::Atlantic(atlantic_params) => Box::new(
+                AtlanticProverService::new_with_args(
+                    atlantic_params,
+                    &params.prover_layout_name,
+                    chain_id_hex,
+                    fee_token_address,
+                )
+                .expect("Failed to create Atlantic prover service"),
+            ),
         }
     }
 
