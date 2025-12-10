@@ -56,6 +56,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_block_hash_and_number_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -91,6 +92,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_block_txn_count_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -126,6 +128,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_batched_requests_work() {
         let madara = get_madara().await;
 
@@ -291,6 +294,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_block_txn_with_tx_hashes_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -346,6 +350,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_block_txn_with_tx_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -408,6 +413,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_class_hash_at_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -447,6 +453,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_nonce_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -485,6 +492,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_txn_by_block_id_and_index_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -527,6 +535,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_txn_by_hash_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -576,6 +585,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     // TODO: replace this with jsonrpsee client
     async fn test_get_txn_receipt_works() {
         let madara = get_madara().await;
@@ -634,6 +644,7 @@ mod test_rpc_read_calls {
     /// Hence, all the txn would be marked as AcceptedOnL2.
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_txn_status_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -676,6 +687,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_storage_at_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -714,6 +726,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_state_update_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -812,6 +825,7 @@ mod test_rpc_read_calls {
     /// the continuation token.
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_events_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -912,6 +926,7 @@ mod test_rpc_read_calls {
     /// ```
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_events_with_continuation_token_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -1099,6 +1114,7 @@ mod test_rpc_read_calls {
     /// Along with that we are also checking for abi and the entry points.
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_class_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
@@ -1137,6 +1153,7 @@ mod test_rpc_read_calls {
     /// for Sierra class versions > v1.1.0, we always use the latest version of the compiler.
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_compiled_casm_works() {
         let madara = get_madara().await;
 
@@ -1195,6 +1212,7 @@ mod test_rpc_read_calls {
     /// Note: The program has been compressed using the same script mentioned in the above test case.
     #[rstest]
     #[tokio::test]
+    #[ignore = "Madara is incompatible with 0.14.1 feeder gateway changes, specifically migrated_compiled_classes."]
     async fn test_get_class_at_works() {
         let madara = get_madara().await;
         let json_client = madara.json_rpc();
