@@ -33,12 +33,12 @@ starknet-proxy-client = { git = "https://github.com/karnotxyz/zaun", rev = "1dfe
 starknet-token-bridge-client = { git = "https://github.com/karnotxyz/zaun", rev = "1dfe1a158b744332139893e0d8a49b83b4ab60f2" }
 zaun-utils = { package = "utils", git = "https://github.com/karnotxyz/zaun", rev = "1dfe1a158b744332139893e0d8a49b83b4ab60f2" }
 # Starknet Deps
-starknet = { package = "starknet-rust", version = "0.17.0" }
-starknet-accounts = { package = "starknet-rust-accounts", version = "0.16.0" }
-starknet-core = { package = "starknet-rust-core", version = "0.16.0" }
-starknet-crypto = { package = "starknet-rust-crypto", version = "0.8.1" }
-starknet-providers = { package = "starknet-rust-providers", version = "0.16.0" }
-starknet-signers = { package = "starknet-rust-signers", version = "0.14.0" }
+starknet = "0.17.0"
+starknet-accounts = "0.16.0"
+starknet-core = "0.16.0"
+starknet-crypto = "0.8.1"
+starknet-providers = "0.16.0"
+starknet-signers = "0.14.0"
 starknet-types-core = { version = "0.1.5", default-features = false, features = [
   "hash",
 ] }

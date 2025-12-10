@@ -14,7 +14,7 @@ use starknet::core::types::{
     BlockId, BlockTag, DeclareTransactionResult, ExecutionResult, Felt, FunctionCall, InvokeTransactionResult,
     StarknetError, TransactionStatus,
 };
-use starknet::core::utils::get_selector_from_name;
+use starknet::macros::{felt, selector};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError, Url};
 use starknet::signers::{LocalWallet, SigningKey};
@@ -156,7 +156,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     // tests are updated to use the new UDC flow.
     #[allow(deprecated)]
     let contract_factory = ContractFactory::new(flattened_class.class_hash(), account.clone());
-    let deploy_v1 = contract_factory.deploy_v3(vec![], Felt::from_hex("0x1122").unwrap(), false);
+    let deploy_v1 = contract_factory.deploy_v3(vec![], felt!("1122"), false);
     let deployed_address = deploy_v1.deployed_address();
 
     // env::set_var("STARKNET_CAIRO_CORE_CONTRACT_ADDRESS", deployed_address.to_hex_string());
@@ -191,7 +191,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
         .call(
             FunctionCall {
                 contract_address: deployed_address,
-                entry_point_selector: get_selector_from_name("get_is_updated").unwrap(),
+                entry_point_selector: selector!("get_is_updated"),
                 calldata: vec![Felt::from_bytes_be_slice(&onchain_data_hash)],
             },
             BlockId::Tag(BlockTag::PreConfirmed),

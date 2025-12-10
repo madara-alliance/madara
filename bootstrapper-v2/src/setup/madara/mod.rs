@@ -4,7 +4,6 @@ pub mod constants;
 
 use crate::error::madara::MadaraError;
 use crate::utils::declare_contract;
-use crate::utils::get_selector_or_panic;
 use crate::{
     config::MadaraConfig,
     utils::{execute_v3, get_contract_address_from_deploy_tx, get_contracts_deployed_addresses},
@@ -13,6 +12,7 @@ use bootstrap_account::BootstrapAccount;
 use class_contracts::MadaraClass;
 use log;
 use starknet::core::types::Call;
+use starknet::macros::selector;
 use strum::IntoEnumIterator;
 
 #[allow(unused_imports)]
@@ -138,7 +138,7 @@ impl MadaraSetup {
         let universal_deployer_class = self.require_class_hash(&MadaraClass::UniversalDeployer)?;
 
         let calldata = Vec::from([*universal_deployer_class, Felt::ZERO, Felt::ONE, Felt::ZERO]);
-        let calls = vec![Call { to: account_address, selector: get_selector_or_panic("deploy_contract"), calldata }];
+        let calls = vec![Call { to: account_address, selector: selector!("deploy_contract"), calldata }];
         let res = execute_v3(account, &calls).await?;
 
         let udc_address = get_contract_address_from_deploy_tx(account_provider, &res).await?;
@@ -199,11 +199,8 @@ impl MadaraSetup {
         ];
         madara_factory_calldata.extend(constructor_calldata); // append constructor calldata
 
-        let madara_factory_calls = vec![Call {
-            to: udc_address,
-            selector: get_selector_or_panic("deploy_contract"),
-            calldata: madara_factory_calldata,
-        }];
+        let madara_factory_calls =
+            vec![Call { to: udc_address, selector: selector!("deploy_contract"), calldata: madara_factory_calldata }];
 
         let madara_factory_res = execute_v3(account, &madara_factory_calls).await?;
 
@@ -223,7 +220,7 @@ impl MadaraSetup {
 
         let deploy_bridges_calls = vec![Call {
             to: madara_factory_address,
-            selector: get_selector_or_panic("deploy_bridges"),
+            selector: selector!("deploy_bridges"),
             calldata: vec![], // deploy_bridges takes no parameters
         }];
 
