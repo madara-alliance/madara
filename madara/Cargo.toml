@@ -119,21 +119,23 @@ mc-e2e-tests = { path = "crates/tests" }
 build-version = { path = "../build-artifacts" }
 
 # Starknet dependencies
-starknet-accounts = "0.16.0"
-starknet-core = "0.16"
-starknet-crypto = "0.8"
-starknet-providers = "0.16"
-starknet-signers = "0.14"
-starknet = "0.17.0"
+starknet-accounts = { package = "starknet-rust-accounts", version = "0.17.0-rc.0" }
+starknet-core = { package = "starknet-rust-core", version = "0.17.0-rc.0" }
+starknet-core-derive = { package = "starknet-rust-core-derive", version = "0.1.0" }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.9.0-rc.0" }
+starknet-providers = { package = "starknet-rust-providers", version = "0.17.0-rc.0" }
+starknet-signers = { package = "starknet-rust-signers", version = "0.15.0-rc.0" }
+starknet-macros = { package = "starknet-rust-macros", version = "0.2.6-rc.0" }
+starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
 
-starknet-types-core = { version = "=0.2.3", default-features = false, features = [
+starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
 ] }
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "57052466290163f95ec085fc5ad877c4e04d5e2d", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "0f818e011ae8e4085d7a70b0d5e1532499a62de9", features = [
   "node_api",
   "cairo_native",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "57052466290163f95ec085fc5ad877c4e04d5e2d" }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "0f818e011ae8e4085d7a70b0d5e1532499a62de9" }
 cairo-lang-starknet-classes = "2.12.3"
 cairo-lang-utils = "2.12.3"
 cairo-vm = "2.5.0"

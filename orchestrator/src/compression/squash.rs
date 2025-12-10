@@ -8,8 +8,8 @@ use futures::{stream, TryStreamExt};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError};
 use starknet_core::types::{
-    BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem,
-    StarknetError, StateDiff, StateUpdate, StorageEntry,
+    BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, MigratedCompiledClassItem,
+    NonceUpdate, ReplacedClassItem, StarknetError, StateDiff, StateUpdate, StorageEntry,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -58,6 +58,8 @@ struct StateDiffMap {
     deprecated_declared_classes: HashSet<Felt>,
     nonces: HashMap<Felt, Felt>,
     replaced_classes: HashMap<Felt, Felt>,
+    /// Migrated classes (SNIP-34): class_hash -> new BLAKE compiled_class_hash
+    migrated_compiled_classes: HashMap<Felt, Felt>,
 }
 
 impl StateDiffMap {
@@ -100,6 +102,13 @@ impl StateDiffMap {
             // Process deprecated classes
             for class_hash in &update.state_diff.deprecated_declared_classes {
                 state_diff_map.deprecated_declared_classes.insert(*class_hash);
+            }
+
+            // Process migrated classes (SNIP-34)
+            if let Some(ref migrated) = update.state_diff.migrated_compiled_classes {
+                for item in migrated {
+                    state_diff_map.migrated_compiled_classes.insert(item.class_hash, item.compiled_class_hash);
+                }
             }
         }
 
@@ -153,6 +162,13 @@ impl StateDiffMap {
         // Deprecated classes
         let deprecated_declared_classes = self.deprecated_declared_classes.into_iter().collect();
 
+        // Convert migrated classes back to Vec
+        let migrated_compiled_classes: Vec<MigratedCompiledClassItem> = self
+            .migrated_compiled_classes
+            .into_iter()
+            .map(|(class_hash, compiled_class_hash)| MigratedCompiledClassItem { class_hash, compiled_class_hash })
+            .collect();
+
         Ok(StateDiff {
             storage_diffs,
             deployed_contracts,
@@ -160,6 +176,11 @@ impl StateDiffMap {
             deprecated_declared_classes,
             nonces,
             replaced_classes,
+            migrated_compiled_classes: if migrated_compiled_classes.is_empty() {
+                None
+            } else {
+                Some(migrated_compiled_classes)
+            },
         })
     }
 }

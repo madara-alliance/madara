@@ -464,6 +464,18 @@ impl BlockProductionTask {
                 .write_bouncer_weights(block_number, &bouncer_weights)
                 .context("Saving Bouncer Weights for SNOS")?;
 
+            // Update ClassInfo in DB with new v2 hashes (SNIP-34 migration)
+            // This persists the computed BLAKE hashes so future lookups don't need to recompute
+            if !state_diff.migrated_compiled_classes.is_empty() {
+                let migrations: Vec<(Felt, Felt)> = state_diff
+                    .migrated_compiled_classes
+                    .iter()
+                    .map(|item| (item.class_hash, item.compiled_class_hash))
+                    .collect();
+
+                backend.write_access().update_class_v2_hashes(migrations).context("Updating class v2 hashes in DB")?;
+            }
+
             // Close the preconfirmed block with state_diff
             backend
                 .write_access()
@@ -797,7 +809,37 @@ impl BlockProductionTask {
             .num_executed_transactions();
 
         // Convert state_diff and close block using helper function
-        let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+        let mut state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+
+        // Process migrated class hashes: move them from declared_classes to migrated_compiled_classes
+        // The compiled_class_hashes_for_migration contains Vec<(v2_hash, v1_hash)>
+        // We need to find the corresponding class_hash in declared_classes and move them
+        if !block_exec_summary.compiled_class_hashes_for_migration.is_empty() {
+            let v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
+                .compiled_class_hashes_for_migration
+                .iter()
+                .map(|(v2_hash, _v1_hash)| v2_hash.0)
+                .collect();
+
+            // Partition declared_classes into newly declared and migrated
+            let (migrated, declared): (Vec<_>, Vec<_>) =
+                state_diff.declared_classes.into_iter().partition(|item| v2_hashes.contains(&item.compiled_class_hash));
+
+            state_diff.declared_classes = declared;
+            state_diff.migrated_compiled_classes = migrated
+                .into_iter()
+                .map(|item| mp_state_update::MigratedClassItem {
+                    class_hash: item.class_hash,
+                    compiled_class_hash: item.compiled_class_hash,
+                })
+                .collect();
+
+            tracing::info!(
+                "Migrated {} classes from Poseidon to BLAKE hash",
+                state_diff.migrated_compiled_classes.len()
+            );
+        }
+
         Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
             state.block_number,
@@ -1142,7 +1184,9 @@ pub(crate) mod tests {
             serde_json::from_slice(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
         let flattened_class: mp_class::FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
 
-        let (compiled_contract_class_hash, _compiled_class) = flattened_class.compile_to_casm().unwrap();
+        // Use BLAKE hash (v2) for v0.14.1+ compatibility
+        let (_poseidon_hash, compiled_contract_class_hash, _compiled_class) =
+            flattened_class.compile_to_casm_with_blake_hash().unwrap();
 
         let mut declare_txn: BroadcastedDeclareTxn = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
             sender_address: contract.address,

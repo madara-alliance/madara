@@ -432,7 +432,9 @@ mod tests {
         let sierra_class: SierraClass = serde_json::from_slice(contract).unwrap();
         let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
 
-        let (compiled_contract_class_hash, _compiled_class) = flattened_class.compile_to_casm().unwrap();
+        // Use BLAKE hash (v2) for v0.14.1+ compatibility
+        let (_poseidon_hash, compiled_contract_class_hash, _compiled_class) =
+            flattened_class.compile_to_casm_with_blake_hash().unwrap();
 
         let declare_txn: BroadcastedDeclareTxn = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
             sender_address: sender_address.address,
@@ -474,9 +476,10 @@ mod tests {
 
         let class_info = chain.backend.view_on_latest().get_class_info(&calculated_class_hash).unwrap().unwrap();
 
+        // For v0.14.1+, classes use compiled_class_hash_v2 (BLAKE hash)
         assert_matches!(
             class_info,
-            ClassInfo::Sierra(info) if info.compiled_class_hash == Some(compiled_contract_class_hash)
+            ClassInfo::Sierra(info) if info.compiled_class_hash_v2 == Some(compiled_contract_class_hash)
         );
 
         let TransactionReceipt::Declare(receipt) = pending_view.get_executed_transaction(0).unwrap().receipt else {
