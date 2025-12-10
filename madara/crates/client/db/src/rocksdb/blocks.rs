@@ -7,9 +7,38 @@ use blockifier::bouncer::BouncerWeights;
 use itertools::{Either, Itertools};
 use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
 use mp_convert::Felt;
-use mp_state_update::StateDiff;
+use mp_state_update::{
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
+};
 use rocksdb::{IteratorMode, ReadOptions};
 use std::iter;
+
+/// StateDiff with migrated_compiled_classes field for backward compatibility.
+/// Used to deserialize state diffs that were serialized when this field existed.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct StateDiffWithMigration {
+    pub storage_diffs: Vec<ContractStorageDiffItem>,
+    pub old_declared_contracts: Vec<Felt>,
+    pub declared_classes: Vec<DeclaredClassItem>,
+    pub deployed_contracts: Vec<DeployedContractItem>,
+    pub replaced_classes: Vec<ReplacedClassItem>,
+    pub nonces: Vec<NonceUpdate>,
+    #[serde(default)]
+    pub migrated_compiled_classes: Vec<Felt>,
+}
+
+impl From<StateDiffWithMigration> for StateDiff {
+    fn from(diff: StateDiffWithMigration) -> Self {
+        StateDiff {
+            storage_diffs: diff.storage_diffs,
+            old_declared_contracts: diff.old_declared_contracts,
+            declared_classes: diff.declared_classes,
+            deployed_contracts: diff.deployed_contracts,
+            replaced_classes: diff.replaced_classes,
+            nonces: diff.nonces,
+        }
+    }
+}
 
 /// <block_hash 32 bytes> => bincode(block_n)
 pub const BLOCK_HASH_TO_BLOCK_N_COLUMN: Column = Column::new("block_hash_to_block_n").set_point_lookup();
@@ -71,7 +100,17 @@ impl RocksDBStorageInner {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_STATE_DIFF_COLUMN), block_n.to_be_bytes())? else {
             return Ok(None);
         };
-        Ok(Some(super::deserialize(&res)?))
+
+        // Try deserializing with the current StateDiff format first
+        match super::deserialize::<StateDiff>(&res) {
+            Ok(state_diff) => Ok(Some(state_diff)),
+            Err(_) => {
+                // Fall back to StateDiffWithMigration for backward compatibility
+                // This handles state diffs that were serialized when migrated_compiled_classes field existed
+                let legacy: StateDiffWithMigration = super::deserialize(&res)?;
+                Ok(Some(legacy.into()))
+            }
+        }
     }
 
     #[tracing::instrument(skip(self))]
