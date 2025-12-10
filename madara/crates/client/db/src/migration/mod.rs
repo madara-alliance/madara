@@ -19,7 +19,7 @@ pub use context::{MigrationContext, MigrationProgress, ProgressCallback};
 pub use error::MigrationError;
 pub use registry::{get_migrations, get_migrations_for_range, validate_registry, Migration, MigrationFn};
 
-use rocksdb::{DBWithThreadMode, MultiThreaded};
+use rocksdb::{DBWithThreadMode, FlushOptions, MultiThreaded};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -258,6 +258,30 @@ impl MigrationRunner {
             self.write_version_file(migration.to_version)?;
         }
 
+        // // Flush all column families to ensure all data is persisted (critical when WAL is disabled)
+        // tracing::info!("💾 Flushing database to ensure all migration data is persisted...");
+        // let mut flush_opts = FlushOptions::default();
+        // flush_opts.set_wait(true);
+        
+        // // Get all column families and flush them
+        // // Use the static method to list column families from the database path
+        // let db_path = self.base_path.join("db");
+        // let cf_names = rocksdb::DB::list_cf(&rocksdb::Options::default(), &db_path)
+        //     .map_err(|e| MigrationError::RocksDb(format!("Failed to list column families: {}", e)))?;
+        
+        // let column_families: Vec<_> = cf_names
+        //     .iter()
+        //     .filter_map(|name| db.cf_handle(name))
+        //     .collect();
+        
+        // if !column_families.is_empty() {
+        //     db.flush_cfs_opt(&column_families, &flush_opts)
+        //         .map_err(|e| MigrationError::RocksDb(format!("Failed to flush database: {}", e)))?;
+        //     tracing::info!("✅ Database flushed successfully");
+        // } else {
+        //     tracing::warn!("⚠️  No column families found to flush");
+        // }
+        
         self.cleanup_migration_state()?;
         self.cleanup_backup()?;
         tracing::info!("🎉 Migration complete! Database now at version {}", to_version);

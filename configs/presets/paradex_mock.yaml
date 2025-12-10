@@ -1,0 +1,69 @@
+# Human readable chain name, for displaying to the console.
+chain_name: "Paradex Mock Testnet"
+
+chain_id: "PRIVATE_SN_POTC_MOCK_SEPOLIA"
+
+# The URL of the gateway and Feeder Gateway your nodes should sync from.
+feeder_gateway_url: "https://feeder.potc-testnet-mock-sepolia.starknet.io/feeder_gateway"
+gateway_url: "https://potc-testnet-mock-sepolia.starknet.io/gateway"
+
+# For starknet, this is the STRK ERC-20 contract on starknet.
+native_fee_token_address: "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+
+# For starknet, this is the ETH ERC-20 contract on starknet.
+parent_fee_token_address: "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+
+# The Starknet core contract address for the L1 watcher.
+eth_core_contract_address: "0x582CC5d9b509391232cd544cDF9da036e55833Af"
+
+# Most recent Starknet version supported
+latest_protocol_version: "0.14.1"
+block_time: "180h"
+pending_block_update_time: "10ms"
+
+# Transaction limit in the mempool.
+mempool_max_transactions: 1000000000
+# Transaction limit in the mempool, additional limit for declare transactions.
+mempool_max_declare_transactions: 2000000
+# Max age of a transaction in the mempool. Null for no age limit.
+# mempool_tx_max_age: "5h"
+mempool_ttl: null
+l2_gas_target: 200000000000000
+min_l2_gas_price: 10000000000
+l2_gas_price_max_change_denominator: 48
+
+# UNSURE
+eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
+sequencer_address: "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"
+l2_gas_price:
+  type: eip1559
+  target: 2000000000
+  min_price: 100000
+  max_change_denominator: 48
+
+config_version: 1
+
+# Only for block production
+
+bouncer_config:
+  block_max_capacity:
+    sierra_gas: 4000000000
+    message_segment_length: 3700
+    n_events: 14000
+    state_diff_size: 8000
+    l1_gas: 4400000
+    n_txs: 500
+    proving_gas: 5000000000
+  blake_weight: 6320
+  builtin_weights:
+    gas_costs:
+      pedersen: 4769
+      range_check: 70
+      ecdsa: 1666666
+      ecop: 714875
+      bitwise: 583
+      keccak: 510707
+      poseidon: 6250
+      add_mod: 312
+      mul_mod: 604
+      range_check96: 56
