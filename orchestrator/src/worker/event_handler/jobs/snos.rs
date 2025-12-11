@@ -43,12 +43,8 @@ const SNOS_UNAVAILABLE_RETRY_DELAY_SECS: u64 = 60;
 
 /// Check if SNOS RPC is healthy by calling chain_id.
 /// Returns true if the RPC is reachable and responds, false otherwise.
-pub async fn check_snos_health(snos_url: &str) -> bool {
-    let url = match Url::parse(snos_url) {
-        Ok(u) => u,
-        Err(_) => return false,
-    };
-    let provider = JsonRpcClient::new(HttpTransport::new(url));
+pub async fn check_snos_health(snos_url: &Url) -> bool {
+    let provider = JsonRpcClient::new(HttpTransport::new(snos_url.clone()));
     provider.chain_id().await.is_ok()
 }
 
@@ -230,9 +226,9 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     async fn check_ready_to_process(&self, config: Arc<Config>) -> Result<(), Duration> {
-        let snos_url = config.snos_config().rpc_for_snos.to_string();
+        let snos_url = &config.snos_config().rpc_for_snos;
 
-        if !check_snos_health(&snos_url).await {
+        if !check_snos_health(snos_url).await {
             // SNOS is down - signal to requeue with delay
             warn!(snos_url = %snos_url, "SNOS RPC is unavailable, job will be requeued");
 
@@ -242,6 +238,8 @@ impl JobHandlerTrait for SnosJobHandler {
                     format!("SNOS RPC {} is unavailable. SnosRun jobs will be requeued until it recovers.", snos_url);
                 if let Err(e) = config.alerts().send_message(alert_msg).await {
                     error!(error = ?e, "Failed to send SNOS unavailability alert");
+                    // Reset flag so alert can be retried on next job attempt
+                    SNOS_UNAVAILABLE_ALERT_SENT.store(false, Ordering::SeqCst);
                 }
             }
 
