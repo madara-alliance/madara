@@ -79,6 +79,43 @@ runs:
         echo "/usr/lib/llvm-19/bin" >> $GITHUB_PATH
 
     - name: Setup mold
-      uses: rui314/setup-mold@v1
-      with:
-        make-default: false # Don't make mold the default - Cairo Native runtime compilation needs lld-19
+      shell: bash
+      run: |
+        # Install mold linker with retry logic
+        MOLD_VERSION="2.40.4"
+        ARCH=$(uname -m)
+        MOLD_URL="https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/mold-${MOLD_VERSION}-${ARCH}-linux.tar.gz"
+
+        echo "Installing mold linker version ${MOLD_VERSION}..."
+
+        # Try up to 5 times with exponential backoff
+        for i in 1 2 3 4 5; do
+          echo "Attempt $i: Downloading mold from ${MOLD_URL}"
+
+          if wget --retry-connrefused --waitretry=5 --read-timeout=20 --timeout=15 -t 5 \
+                  -O /tmp/mold.tar.gz "${MOLD_URL}"; then
+            echo "Download successful, extracting..."
+            sudo tar -C /usr/local --strip-components=1 --no-overwrite-dir -xzf /tmp/mold.tar.gz
+            rm /tmp/mold.tar.gz
+            echo "Mold installed successfully"
+
+            # Verify installation
+            if command -v mold &> /dev/null; then
+              mold --version
+              exit 0
+            else
+              echo "Warning: mold binary not found after installation"
+              exit 1
+            fi
+          else
+            echo "Attempt $i failed"
+            if [ $i -lt 5 ]; then
+              SLEEP_TIME=$((i * 10))
+              echo "Retrying in ${SLEEP_TIME} seconds..."
+              sleep ${SLEEP_TIME}
+            else
+              echo "ERROR: Failed to download mold after 5 attempts"
+              exit 1
+            fi
+          fi
+        done
