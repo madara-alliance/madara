@@ -38,66 +38,9 @@ const SNOS_UNAVAILABLE_RETRY_DELAY_SECS: u64 = 60;
 
 /// Check if SNOS RPC is healthy by calling chain_id.
 /// Returns true if the RPC is reachable and responds, false otherwise.
-/// Times out after 10 seconds to prevent workers from hanging indefinitely.
 pub async fn check_snos_health(snos_url: &Url) -> bool {
-    use tokio::time::timeout;
-
-    const HEALTH_CHECK_TIMEOUT_SECS: u64 = 10;
-
-    info!("🏥 Starting SNOS health check for URL: {} (timeout: {}s)", snos_url, HEALTH_CHECK_TIMEOUT_SECS);
-    let start = std::time::Instant::now();
-
-    let provider = match std::panic::catch_unwind(|| JsonRpcClient::new(HttpTransport::new(snos_url.clone()))) {
-        Ok(p) => {
-            debug!("Successfully created SNOS provider for URL: {}", snos_url);
-            p
-        }
-        Err(e) => {
-            error!(
-                "❌ Panic occurred while creating SNOS provider for URL: {}. Panic: {:?}",
-                snos_url,
-                e.downcast_ref::<String>()
-                    .map(|s| s.as_str())
-                    .or_else(|| e.downcast_ref::<&str>().copied())
-                    .unwrap_or("Unknown panic")
-            );
-            return false;
-        }
-    };
-
-    debug!("Calling chain_id() on SNOS RPC...");
-    let health_check_future = provider.chain_id();
-
-    match timeout(Duration::from_secs(HEALTH_CHECK_TIMEOUT_SECS), health_check_future).await {
-        Ok(Ok(chain_id)) => {
-            let elapsed = start.elapsed();
-            info!(
-                "✅ SNOS health check PASSED for URL: {} in {:.2}s. Chain ID: {:?}",
-                snos_url,
-                elapsed.as_secs_f64(),
-                chain_id
-            );
-            true
-        }
-        Ok(Err(e)) => {
-            let elapsed = start.elapsed();
-            warn!(
-                "❌ SNOS health check FAILED for URL: {} after {:.2}s. Error: {:?}",
-                snos_url,
-                elapsed.as_secs_f64(),
-                e
-            );
-            false
-        }
-        Err(_) => {
-            error!(
-                "⏰ SNOS health check TIMED OUT for URL: {} after {}s. RPC may be unresponsive or network issues present.",
-                snos_url,
-                HEALTH_CHECK_TIMEOUT_SECS
-            );
-            false
-        }
-    }
+    let provider = JsonRpcClient::new(HttpTransport::new(snos_url.clone()));
+    provider.chain_id().await.is_ok()
 }
 
 pub struct SnosJobHandler;
@@ -256,70 +199,22 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     async fn check_ready_to_process(&self, config: Arc<Config>) -> Result<(), Duration> {
-        use tokio::time::timeout;
+        let snos_url = &config.snos_config().rpc_for_snos;
 
-        const CHECK_READY_TIMEOUT_SECS: u64 = 15;
+        if !check_snos_health(snos_url).await {
+            // SNOS is down - signal to requeue with delay
+            warn!(snos_url = %snos_url, "SNOS RPC is unavailable, job will be requeued");
 
-        info!("🔍 Starting check_ready_to_process for SNOS job (timeout: {}s)", CHECK_READY_TIMEOUT_SECS);
-        let start = std::time::Instant::now();
-
-        let check_future = async {
-            let snos_url = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                config.snos_config().rpc_for_snos.clone()
-            })) {
-                Ok(url) => {
-                    debug!("Successfully retrieved SNOS RPC URL: {}", url);
-                    url
-                }
-                Err(e) => {
-                    error!(
-                        "❌ Panic occurred while retrieving SNOS RPC URL. Panic: {:?}",
-                        e.downcast_ref::<String>()
-                            .map(|s| s.as_str())
-                            .or_else(|| e.downcast_ref::<&str>().copied())
-                            .unwrap_or("Unknown panic")
-                    );
-                    return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
-                }
-            };
-
-            debug!("Checking SNOS health for URL: {}", snos_url);
-            if !check_snos_health(&snos_url).await {
-                // SNOS is down - signal to requeue with delay
-                warn!(snos_url = %snos_url, "⚠️ SNOS RPC is unavailable, job will be requeued");
-
-                let alert_msg =
-                    format!("SNOS RPC {} is unavailable. SnosRun jobs will be requeued until it recovers.", snos_url);
-
-                debug!("Attempting to send SNOS unavailability alert");
-                if let Err(e) = config.alerts().send_message(alert_msg).await {
-                    error!(error = ?e, "Failed to send SNOS unavailability alert");
-                } else {
-                    debug!("Successfully sent SNOS unavailability alert");
-                }
-
-                debug!("Returning error to requeue job with delay of {} seconds", SNOS_UNAVAILABLE_RETRY_DELAY_SECS);
-                return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
+            let alert_msg =
+                format!("SNOS RPC {} is unavailable. SnosRun jobs will be requeued until it recovers.", snos_url);
+            if let Err(e) = config.alerts().send_message(alert_msg).await {
+                error!(error = ?e, "Failed to send SNOS unavailability alert");
             }
 
-            info!("✅ SNOS job is ready to process - all dependencies are available");
-            Ok(())
-        };
-
-        match timeout(Duration::from_secs(CHECK_READY_TIMEOUT_SECS), check_future).await {
-            Ok(result) => {
-                let elapsed = start.elapsed();
-                debug!("check_ready_to_process completed in {:.2}s", elapsed.as_secs_f64());
-                result
-            }
-            Err(_) => {
-                error!(
-                    "⏰ check_ready_to_process TIMED OUT after {}s. This should not happen as health check has its own timeout. Requeueing job.",
-                    CHECK_READY_TIMEOUT_SECS
-                );
-                Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS))
-            }
+            return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
         }
+
+        Ok(())
     }
 }
 

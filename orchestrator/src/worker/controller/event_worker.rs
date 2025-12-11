@@ -116,32 +116,10 @@ impl EventWorker {
     /// Messages with incompatible versions are re-enqueued for other orchestrator instances
     /// It returns a Result<Delivery, EventSystemError> - never returns None
     pub async fn get_message(&self) -> EventSystemResult<Delivery> {
-        debug!(queue = ?self.queue_type, "📥 Attempting to consume message from queue");
-
         loop {
             match self.config.clone().queue().consume_message_from_queue(self.queue_type.clone()).await {
-                Ok(delivery) => {
-                    // Log the raw message payload for debugging
-                    if let Some(payload_bytes) = delivery.borrow_payload() {
-                        let payload = std::str::from_utf8(payload_bytes).unwrap_or("<invalid UTF-8>");
-
-                        info!(
-                            queue = ?self.queue_type,
-                            payload_preview = %payload.chars().take(200).collect::<String>(),
-                            payload_size = payload_bytes.len(),
-                            "✅ Successfully consumed message from queue"
-                        );
-                    } else {
-                        warn!(
-                            queue = ?self.queue_type,
-                            "✅ Successfully consumed message from queue (no payload available for preview)"
-                        );
-                    }
-
-                    return Ok(delivery);
-                }
+                Ok(delivery) => return Ok(delivery),
                 Err(crate::core::client::queue::QueueError::ErrorFromQueueError(omniqueue::QueueError::NoData)) => {
-                    debug!(queue = ?self.queue_type, "No messages available in queue, retrying after 100ms");
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
@@ -149,7 +127,7 @@ impl EventWorker {
                     error!(
                         queue = ?self.queue_type,
                         error = %e,
-                        "❌ Failed to consume message from queue"
+                        "Failed to consume message from queue"
                     );
                     return Err(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() })?;
                 }
@@ -167,46 +145,10 @@ impl EventWorker {
     /// # Errors
     /// * Returns an EventSystemError if the message cannot be parsed
     fn parse_message(&self, message: &Delivery) -> EventSystemResult<ParsedMessage> {
-        debug!(queue = ?self.queue_type, "🔍 Parsing message from queue");
-
-        let result = match self.queue_type {
-            QueueType::WorkerTrigger => {
-                debug!(queue = ?self.queue_type, "Parsing as WorkerTrigger message");
-                WorkerTriggerMessage::parse_message(message).map(ParsedMessage::WorkerTrigger)
-            }
-            _ => {
-                debug!(queue = ?self.queue_type, "Parsing as JobQueue message");
-                JobQueueMessage::parse_message(message).map(ParsedMessage::JobQueue)
-            }
-        };
-
-        match &result {
-            Ok(parsed) => match parsed {
-                ParsedMessage::JobQueue(msg) => {
-                    info!(
-                        queue = ?self.queue_type,
-                        job_id = %msg.id,
-                        "✅ Successfully parsed JobQueue message"
-                    );
-                }
-                ParsedMessage::WorkerTrigger(msg) => {
-                    info!(
-                        queue = ?self.queue_type,
-                        worker = ?msg.worker,
-                        "✅ Successfully parsed WorkerTrigger message"
-                    );
-                }
-            },
-            Err(e) => {
-                error!(
-                    queue = ?self.queue_type,
-                    error = ?e,
-                    "❌ Failed to parse message"
-                );
-            }
+        match self.queue_type {
+            QueueType::WorkerTrigger => WorkerTriggerMessage::parse_message(message).map(ParsedMessage::WorkerTrigger),
+            _ => JobQueueMessage::parse_message(message).map(ParsedMessage::JobQueue),
         }
-
-        result
     }
 
     /// handle_worker_trigger - Handle the message received from the queue for WorkerTrigger type
@@ -348,12 +290,7 @@ impl EventWorker {
             let (_error_context, consumption_error) = match parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
                     let worker = &msg.worker;
-                    error!(
-                        queue = ?self.queue_type,
-                        worker = ?worker,
-                        error = ?error,
-                        "❌ Failed to handle worker trigger message"
-                    );
+                    tracing::error!("Failed to handle worker trigger {worker:?}. Error: {error:?}");
                     (
                         format!("Worker {worker:?} handling failed: {error}"),
                         ConsumptionError::FailedToSpawnWorker {
@@ -364,12 +301,7 @@ impl EventWorker {
                 }
                 ParsedMessage::JobQueue(msg) => {
                     let job_id = &msg.id;
-                    error!(
-                        queue = ?self.queue_type,
-                        job_id = %job_id,
-                        error = ?error,
-                        "❌ Failed to handle job queue message"
-                    );
+                    tracing::error!("Failed to handle job {job_id:?}. Error: {error:?}");
                     (
                         format!("Job {job_id:?} handling failed: {error}"),
                         ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg: error.to_string() },
@@ -377,19 +309,7 @@ impl EventWorker {
                 }
             };
 
-            warn!(
-                queue = ?self.queue_type,
-                "⏪ Sending NACK for failed message - will be retried or sent to DLQ"
-            );
-            message.nack().await.map_err(|e| {
-                error!(
-                    queue = ?self.queue_type,
-                    error = %e.0,
-                    "❌ Failed to NACK message"
-                );
-                ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string())
-            })?;
-            info!(queue = ?self.queue_type, "✅ Successfully sent NACK for failed message");
+            message.nack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
             // self.config.alerts().send_message(error_context).await?;
@@ -397,16 +317,7 @@ impl EventWorker {
             return Err(consumption_error.into());
         }
 
-        debug!(queue = ?self.queue_type, "📤 Sending ACK for successfully processed message");
-        message.ack().await.map_err(|e| {
-            error!(
-                queue = ?self.queue_type,
-                error = %e.0,
-                "❌ Failed to ACK message"
-            );
-            ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string())
-        })?;
-        info!(queue = ?self.queue_type, "✅ Successfully acknowledged message");
+        message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
         Ok(())
     }
 
@@ -465,17 +376,12 @@ impl EventWorker {
     pub async fn run(&self) -> EventSystemResult<()> {
         let mut tasks = JoinSet::new();
         let max_concurrent_tasks = self.queue_control.max_message_count;
-        info!(
-            queue = ?self.queue_type,
-            max_concurrent = max_concurrent_tasks,
-            "🚀 Starting worker with thread pool size: {}",
-            max_concurrent_tasks
-        );
+        info!("Starting worker with thread pool size: {}", max_concurrent_tasks);
 
         loop {
             // Check if shutdown was requested at the start of each loop iteration
             if self.is_shutdown_requested() {
-                info!(queue = ?self.queue_type, "Shutdown requested, stopping message processing");
+                info!("Shutdown requested, stopping message processing");
                 break;
             }
 
@@ -484,39 +390,16 @@ impl EventWorker {
                 Some(result) = tasks.join_next(), if !tasks.is_empty() => {
                     Self::handle_task_result(result);
 
-                    let capacity_used = (tasks.len() as f64 / max_concurrent_tasks as f64 * 100.0) as u32;
-
                     if tasks.len() > max_concurrent_tasks {
-                        warn!(
-                            queue = ?self.queue_type,
-                            active_tasks = tasks.len(),
-                            max_tasks = max_concurrent_tasks,
-                            "🔴 BACKPRESSURE ACTIVATED - Worker at {}% capacity, waiting for tasks to complete",
-                            capacity_used
-                        );
-                    } else if tasks.len() >= (max_concurrent_tasks * 80 / 100) {
-                        warn!(
-                            queue = ?self.queue_type,
-                            active_tasks = tasks.len(),
-                            max_tasks = max_concurrent_tasks,
-                            "🟡 HIGH CAPACITY - Worker at {}% capacity, approaching limit",
-                            capacity_used
-                        );
+                        warn!("Backpressure activated - waiting for tasks to complete. Active: {}", tasks.len());
                     } else {
-                        debug!(
-                            queue = ?self.queue_type,
-                            active_tasks = tasks.len(),
-                            max_tasks = max_concurrent_tasks,
-                            capacity_pct = capacity_used,
-                            "Task completed, active tasks: {}",
-                            tasks.len()
-                        );
+                        debug!("Task completed, active tasks: {}", tasks.len());
                     }
                 }
 
                 // Handle shutdown signal
                 _ = self.cancellation_token.cancelled() => {
-                    info!(queue = ?self.queue_type, "Shutdown signal received, breaking from main loop");
+                    info!("Shutdown signal received, breaking from main loop");
                     break;
                 }
 
@@ -529,24 +412,11 @@ impl EventWorker {
                                 tasks.spawn(async move {
                                     worker.process_message(message, parsed_message).await
                                 });
-
-                                let capacity_used = (tasks.len() as f64 / max_concurrent_tasks as f64 * 100.0) as u32;
-                                info!(
-                                    queue = ?self.queue_type,
-                                    active_tasks = tasks.len(),
-                                    max_tasks = max_concurrent_tasks,
-                                    capacity_pct = capacity_used,
-                                    "📤 Spawned task for message processing ({}% capacity)",
-                                    capacity_used
-                                );
+                                debug!("Spawned task, active: {}", tasks.len());
                             }
                         }
                         Err(e) => {
-                            error!(
-                                queue = ?self.queue_type,
-                                error = ?e,
-                                "❌ Error receiving message, will retry after 1s"
-                            );
+                            error!("Error receiving message: {:?}", e);
                             sleep(Duration::from_secs(1)).await;
                         }
                     }
