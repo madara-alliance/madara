@@ -420,6 +420,34 @@ impl EventWorker {
                 break;
             }
 
+            // Check priority queue FIRST (outside select to prevent starvation)
+            // This runs once per iteration and doesn't compete with normal queue
+            if tasks.len() < max_concurrent_tasks && self.should_check_priority_queue() {
+                match self.get_priority_message().await {
+                    Ok(Some((delivery, priority_msg))) => {
+                        // Found a priority message - process it
+                        let job_queue_msg = JobQueueMessage { id: priority_msg.id };
+                        let parsed_message = ParsedMessage::JobQueue(Box::new(job_queue_msg));
+
+                        let worker = self.clone();
+                        tasks.spawn(async move { worker.process_message(delivery, parsed_message).await });
+                        debug!("Spawned PRIORITY task, active: {}", tasks.len());
+
+                        // Continue to next iteration to check for more priority messages
+                        continue;
+                    }
+                    Ok(None) => {
+                        // No priority messages available, fall through to normal queue
+                    }
+                    Err(e) => {
+                        error!("Error processing priority queue: {:?}", e);
+                        sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                }
+            }
+
+            // Now block on normal queue and tasks (only when no priority messages)
             tokio::select! {
                 biased;
 
@@ -440,32 +468,7 @@ impl EventWorker {
                     break;
                 }
 
-                // 3. NEW: Check priority queue BEFORE normal queue
-                priority_result = self.get_priority_message(),
-                    if tasks.len() < max_concurrent_tasks && self.should_check_priority_queue() => {
-                    match priority_result {
-                        Ok(Some((delivery, priority_msg))) => {
-                            // Convert priority message to JobQueueMessage for processing
-                            let job_queue_msg = JobQueueMessage { id: priority_msg.id };
-                            let parsed_message = ParsedMessage::JobQueue(Box::new(job_queue_msg));
-
-                            let worker = self.clone();
-                            tasks.spawn(async move {
-                                worker.process_message(delivery, parsed_message).await
-                            });
-                            debug!("Spawned PRIORITY task, active: {}", tasks.len());
-                        }
-                        Ok(None) => {
-                            // No matching priority messages, will check normal queue
-                        }
-                        Err(e) => {
-                            error!("Error processing priority queue: {:?}", e);
-                            sleep(Duration::from_millis(100)).await;
-                        }
-                    }
-                }
-
-                // 4. Process normal queue messages (existing logic)
+                // 3. Process normal queue messages
                 message_result = self.get_message(), if tasks.len() < max_concurrent_tasks => {
                     match message_result {
                         Ok(message) => {
