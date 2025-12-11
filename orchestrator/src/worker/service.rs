@@ -47,9 +47,31 @@ impl JobService {
         delay: Option<Duration>,
     ) -> Result<(), JobError> {
         let message = JobQueueMessage { id };
-        config.queue().send_message(queue.clone(), serde_json::to_string(&message)?, delay).await?;
+        let payload = serde_json::to_string(&message)?;
 
-        tracing::debug!("Added job with id {:?} to {:?} queue", id, queue);
+        tracing::info!(
+            queue = ?queue,
+            job_id = %id,
+            payload = %payload,
+            delay_secs = ?delay.map(|d| d.as_secs()),
+            "📤 Sending message to queue"
+        );
+
+        config.queue().send_message(queue.clone(), payload.clone(), delay).await.inspect_err(|e| {
+            tracing::error!(
+                queue = ?queue,
+                job_id = %id,
+                payload = %payload,
+                error = ?e,
+                "❌ Failed to send message to queue"
+            );
+        })?;
+
+        tracing::info!(
+            queue = ?queue,
+            job_id = %id,
+            "✅ Successfully sent message to queue"
+        );
         Ok(())
     }
 

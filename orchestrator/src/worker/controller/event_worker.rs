@@ -344,6 +344,19 @@ impl EventWorker {
         message: Delivery,
         parsed_message: &ParsedMessage,
     ) -> EventSystemResult<()> {
+        // Extract identifier for logging (job_id or worker type)
+        let message_identifier = match parsed_message {
+            ParsedMessage::JobQueue(msg) => format!("job_id={}", msg.id),
+            ParsedMessage::WorkerTrigger(msg) => format!("worker={:?}", msg.worker),
+        };
+
+        // Get payload preview for detailed logging
+        let payload_preview = message
+            .borrow_payload()
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+            .map(|s| s.chars().take(150).collect::<String>())
+            .unwrap_or_else(|| "<no payload>".to_string());
+
         if let Err(ref error) = result {
             let (_error_context, consumption_error) = match parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
@@ -379,17 +392,25 @@ impl EventWorker {
 
             warn!(
                 queue = ?self.queue_type,
+                identifier = %message_identifier,
+                payload_preview = %payload_preview,
+                error = ?error,
                 "⏪ Sending NACK for failed message - will be retried or sent to DLQ"
             );
             message.nack().await.map_err(|e| {
                 error!(
                     queue = ?self.queue_type,
+                    identifier = %message_identifier,
                     error = %e.0,
                     "❌ Failed to NACK message"
                 );
                 ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string())
             })?;
-            info!(queue = ?self.queue_type, "✅ Successfully sent NACK for failed message");
+            info!(
+                queue = ?self.queue_type,
+                identifier = %message_identifier,
+                "✅ Successfully sent NACK for failed message"
+            );
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
             // self.config.alerts().send_message(error_context).await?;
@@ -397,16 +418,26 @@ impl EventWorker {
             return Err(consumption_error.into());
         }
 
-        debug!(queue = ?self.queue_type, "📤 Sending ACK for successfully processed message");
+        debug!(
+            queue = ?self.queue_type,
+            identifier = %message_identifier,
+            payload_preview = %payload_preview,
+            "📤 Sending ACK for successfully processed message"
+        );
         message.ack().await.map_err(|e| {
             error!(
                 queue = ?self.queue_type,
+                identifier = %message_identifier,
                 error = %e.0,
                 "❌ Failed to ACK message"
             );
             ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string())
         })?;
-        info!(queue = ?self.queue_type, "✅ Successfully acknowledged message");
+        info!(
+            queue = ?self.queue_type,
+            identifier = %message_identifier,
+            "✅ Successfully acknowledged message"
+        );
         Ok(())
     }
 

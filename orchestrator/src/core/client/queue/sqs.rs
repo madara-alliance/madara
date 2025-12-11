@@ -198,6 +198,29 @@ impl QueueClient for SQS {
         let queue_name = self.get_queue_name(&queue)?;
         let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
 
+        // Extract identifier from payload for logging
+        let identifier = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&payload) {
+            if let Some(id) = json.get("id") {
+                format!("id={}", id)
+            } else if let Some(worker) = json.get("worker") {
+                format!("worker={}", worker)
+            } else {
+                "unknown".to_string()
+            }
+        } else {
+            "invalid_json".to_string()
+        };
+
+        tracing::debug!(
+            queue = ?queue,
+            queue_name = %queue_name,
+            identifier = %identifier,
+            payload_preview = %payload.chars().take(150).collect::<String>(),
+            delay_secs = ?delay.map(|d| d.as_secs()),
+            version = %ORCHESTRATOR_VERSION,
+            "📤 [SQS] Sending message to queue"
+        );
+
         let version_attribute = MessageAttributeValue::builder()
             .data_type("String")
             .string_value(ORCHESTRATOR_VERSION)
@@ -216,9 +239,23 @@ impl QueueClient for SQS {
             send_message_request = send_message_request.delay_seconds(delay_duration.as_secs() as i32);
         }
 
-        send_message_request.send().await?;
+        send_message_request.send().await.inspect_err(|e| {
+            tracing::error!(
+                queue = ?queue,
+                queue_name = %queue_name,
+                identifier = %identifier,
+                error = ?e,
+                "❌ [SQS] Failed to send message to queue"
+            );
+        })?;
 
-        tracing::debug!("Sent message to queue {} with version {}", queue_name, ORCHESTRATOR_VERSION);
+        tracing::info!(
+            queue = ?queue,
+            queue_name = %queue_name,
+            identifier = %identifier,
+            version = %ORCHESTRATOR_VERSION,
+            "✅ [SQS] Successfully sent message to queue"
+        );
 
         Ok(())
     }
@@ -429,6 +466,37 @@ impl QueueClient for SQS {
 
             return Err(omniqueue::QueueError::NoData.into());
         }
+
+        // Extract identifier from message body for logging
+        let identifier = if let Some(body) = message.body() {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
+                if let Some(id) = json.get("id") {
+                    format!("id={}", id)
+                } else if let Some(worker) = json.get("worker") {
+                    format!("worker={}", worker)
+                } else {
+                    "unknown".to_string()
+                }
+            } else {
+                "invalid_json".to_string()
+            }
+        } else {
+            "no_body".to_string()
+        };
+
+        let body_preview =
+            message.body().map(|b| b.chars().take(150).collect::<String>()).unwrap_or_else(|| "<no body>".to_string());
+
+        tracing::info!(
+            queue = ?queue,
+            queue_name = %queue_name,
+            identifier = %identifier,
+            message_id = ?message.message_id(),
+            body_preview = %body_preview,
+            version = %ORCHESTRATOR_VERSION,
+            "✅ [SQS] Successfully consumed message from queue"
+        );
+
         let consumer = self.get_consumer(queue.clone()).await?;
         let delivery = consumer.wrap_message(messages_vec.first().unwrap());
 
