@@ -28,15 +28,10 @@ use starknet::providers::Url;
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_core::types::Felt;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::NamedTempFile;
 use tracing::{debug, error, info, warn};
-
-/// Tracks whether we've already sent an alert for SNOS being unavailable.
-/// Reset to false when SNOS recovers, so the next downtime triggers a new alert.
-static SNOS_UNAVAILABLE_ALERT_SENT: AtomicBool = AtomicBool::new(false);
 
 /// Delay before retrying when SNOS RPC is unavailable (in seconds)
 const SNOS_UNAVAILABLE_RETRY_DELAY_SECS: u64 = 60;
@@ -232,22 +227,15 @@ impl JobHandlerTrait for SnosJobHandler {
             // SNOS is down - signal to requeue with delay
             warn!(snos_url = %snos_url, "SNOS RPC is unavailable, job will be requeued");
 
-            // Send alert only once per downtime period
-            if !SNOS_UNAVAILABLE_ALERT_SENT.swap(true, Ordering::SeqCst) {
-                let alert_msg =
-                    format!("SNOS RPC {} is unavailable. SnosRun jobs will be requeued until it recovers.", snos_url);
-                if let Err(e) = config.alerts().send_message(alert_msg).await {
-                    error!(error = ?e, "Failed to send SNOS unavailability alert");
-                    // Reset flag so alert can be retried on next job attempt
-                    SNOS_UNAVAILABLE_ALERT_SENT.store(false, Ordering::SeqCst);
-                }
+            let alert_msg =
+                format!("SNOS RPC {} is unavailable. SnosRun jobs will be requeued until it recovers.", snos_url);
+            if let Err(e) = config.alerts().send_message(alert_msg).await {
+                error!(error = ?e, "Failed to send SNOS unavailability alert");
             }
 
             return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
         }
 
-        // SNOS is available - reset alert flag so next downtime triggers a new alert
-        SNOS_UNAVAILABLE_ALERT_SENT.store(false, Ordering::SeqCst);
         Ok(())
     }
 }
