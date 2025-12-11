@@ -186,21 +186,30 @@ impl JobHandlerService {
     /// * Automatically adds the job to verification queue upon successful processing
     pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let start = Instant::now();
-        let mut job = JobService::get_job(id, config.clone()).await?;
+        info!(job_id = ?id, "🔄 Starting process_job - fetching job from database");
+
+        let mut job = JobService::get_job(id, config.clone()).await.inspect_err(|e| {
+            error!(job_id = ?id, error = ?e, "Failed to fetch job from database in process_job");
+        })?;
+
         let internal_id = &job.internal_id;
-        debug!(
+        info!(
             log_type = "starting",
             category = "general",
             function_type = "process_job",
+            job_id = ?id,
+            job_type = ?job.job_type,
             block_no = %internal_id,
+            status = ?job.status,
             "General process job started for block"
         );
 
         // Calculate and record queue wait time
         let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
+        debug!(job_id = ?id, queue_wait_time_secs = %queue_wait_time, "Recording job processing metrics");
         MetricsRecorder::record_job_processing_started(&job, queue_wait_time);
 
-        debug!(job_id = ?id, status = ?job.status, "Current job status");
+        debug!(job_id = ?id, status = ?job.status, job_type = ?job.job_type, "Current job status");
         match job.status {
             // We only want to process jobs that are in the created or verification failed state,
             // or if it's been called from the retry endpoint (in this case it would be
@@ -224,14 +233,18 @@ impl JobHandlerService {
             }
         }
 
+        debug!(job_id = ?id, job_type = ?job.job_type, "Fetching job handler from factory");
         let job_handler = factory::get_job_handler(&job.job_type).await;
+        debug!(job_id = ?id, job_type = ?job.job_type, "Successfully obtained job handler");
 
         // This updates the version of the job.
         // This ensures that if another thread was about to process the same job,
         // it would fail to update the job in the database because the version would be outdated
+        debug!(job_id = ?id, "Setting process_started_at timestamp");
         job.metadata.common.process_started_at = Some(Utc::now());
 
         // Record state transition
+        debug!(job_id = ?id, from_state = ?job.status, to_state = ?JobStatus::LockedForProcessing, "Recording state transition metric");
         ORCHESTRATOR_METRICS.job_state_transitions.add(
             1.0,
             &[
@@ -239,6 +252,14 @@ impl JobHandlerService {
                 KeyValue::new("to_state", JobStatus::LockedForProcessing.to_string()),
                 KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             ],
+        );
+
+        info!(
+            job_id = ?id,
+            job_type = ?job.job_type,
+            from_status = ?job.status,
+            to_status = ?JobStatus::LockedForProcessing,
+            "🔒 Attempting to update job status to LockedForProcessing in database"
         );
         let mut job = config
             .database()
@@ -251,8 +272,10 @@ impl JobHandlerService {
             )
             .await
             .inspect_err(|e| {
-                error!(job_id = ?id, error = ?e, "Failed to update job status");
+                error!(job_id = ?id, error = ?e, "❌ Failed to update job status to LockedForProcessing");
             })?;
+
+        info!(job_id = ?id, job_type = ?job.job_type, "✅ Successfully updated job status to LockedForProcessing");
 
         info!(
             job_id = ?id,
