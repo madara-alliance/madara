@@ -28,27 +28,18 @@ use starknet::providers::{JsonRpcClient, Provider, Url};
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_core::types::Felt;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::NamedTempFile;
 use tracing::{debug, error, info, warn};
-
-/// Tracks whether we've already sent an alert for SNOS being unavailable.
-/// Reset to false when SNOS recovers, so the next downtime triggers a new alert.
-static SNOS_UNAVAILABLE_ALERT_SENT: AtomicBool = AtomicBool::new(false);
 
 /// Delay before retrying when SNOS RPC is unavailable (in seconds)
 const SNOS_UNAVAILABLE_RETRY_DELAY_SECS: u64 = 60;
 
 /// Check if SNOS RPC is healthy by calling chain_id.
 /// Returns true if the RPC is reachable and responds, false otherwise.
-pub async fn check_snos_health(snos_url: &str) -> bool {
-    let url = match Url::parse(snos_url) {
-        Ok(u) => u,
-        Err(_) => return false,
-    };
-    let provider = JsonRpcClient::new(HttpTransport::new(url));
+pub async fn check_snos_health(snos_url: &Url) -> bool {
+    let provider = JsonRpcClient::new(HttpTransport::new(snos_url.clone()));
     provider.chain_id().await.is_ok()
 }
 
@@ -208,26 +199,21 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     async fn check_ready_to_process(&self, config: Arc<Config>) -> Result<(), Duration> {
-        let snos_url = config.snos_config().rpc_for_snos.to_string();
+        let snos_url = &config.snos_config().rpc_for_snos;
 
-        if !check_snos_health(&snos_url).await {
+        if !check_snos_health(snos_url).await {
             // SNOS is down - signal to requeue with delay
             warn!(snos_url = %snos_url, "SNOS RPC is unavailable, job will be requeued");
 
-            // Send alert only once per downtime period
-            if !SNOS_UNAVAILABLE_ALERT_SENT.swap(true, Ordering::SeqCst) {
-                let alert_msg =
-                    format!("SNOS RPC {} is unavailable. SnosRun jobs will be requeued until it recovers.", snos_url);
-                if let Err(e) = config.alerts().send_message(alert_msg).await {
-                    error!(error = ?e, "Failed to send SNOS unavailability alert");
-                }
+            let alert_msg =
+                format!("SNOS RPC {} is unavailable. SnosRun jobs will be requeued until it recovers.", snos_url);
+            if let Err(e) = config.alerts().send_message(alert_msg).await {
+                error!(error = ?e, "Failed to send SNOS unavailability alert");
             }
 
             return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
         }
 
-        // SNOS is available - reset alert flag so next downtime triggers a new alert
-        SNOS_UNAVAILABLE_ALERT_SENT.store(false, Ordering::SeqCst);
         Ok(())
     }
 }
