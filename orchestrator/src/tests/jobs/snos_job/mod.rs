@@ -135,10 +135,10 @@ async fn test_check_snos_health_unavailable() {
     use crate::worker::event_handler::jobs::snos::check_snos_health;
 
     // Use an invalid/unreachable URL to simulate SNOS being down
-    let invalid_snos_url = Url::parse("http://127.0.0.1:1").unwrap();
+    let invalid_snos_url = "http://127.0.0.1:1";
 
     // check_snos_health should return false for unreachable URL
-    let is_healthy = check_snos_health(&invalid_snos_url).await;
+    let is_healthy = check_snos_health(invalid_snos_url).await;
 
     assert!(!is_healthy, "Expected false when SNOS RPC is unavailable");
 }
@@ -150,7 +150,7 @@ async fn test_check_snos_health_available() {
     use crate::worker::event_handler::jobs::snos::check_snos_health;
 
     let snos_url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
-        Ok(url) => Url::parse(&url).unwrap(),
+        Ok(url) => url,
         Err(_) => {
             println!("Ignoring test: {} environment variable is not set", SNOS_PATHFINDER_RPC_URL_ENV);
             return;
