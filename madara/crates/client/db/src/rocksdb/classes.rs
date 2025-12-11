@@ -38,20 +38,17 @@ impl RocksDBStorageInner {
     }
 
     /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
-    /// This updates the ClassInfo stored in the database with the new v2 hash.
     #[tracing::instrument(skip(self, migrations))]
     pub(crate) fn update_class_v2_hashes(&self, migrations: impl IntoIterator<Item = (Felt, Felt)>) -> Result<()> {
         let col = self.get_column(CLASS_INFO_COLUMN);
         let mut batch = WriteBatchWithTransaction::default();
 
         for (class_hash, blake_compiled_class_hash) in migrations {
-            // Load existing class info
             let Some(mut class_info_with_block) = self.get_class(&class_hash)? else {
                 tracing::warn!("Cannot update v2 hash for class {class_hash:#x}: class not found in DB");
                 continue;
             };
 
-            // Update the v2 hash if it's a Sierra class
             match &mut class_info_with_block.class_info {
                 mp_class::ClassInfo::Sierra(sierra_info) => {
                     sierra_info.compiled_class_hash_v2 = Some(blake_compiled_class_hash);
@@ -62,7 +59,6 @@ impl RocksDBStorageInner {
                 }
             }
 
-            // Write updated class info back
             batch.put_cf(&col, class_hash.to_bytes_be(), super::serialize(&class_info_with_block)?);
         }
 
@@ -146,18 +142,12 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    /// Revert items in the class db.
+    /// Revert class DB changes for a range of blocks.
     ///
-    /// `state_diffs` should be a Vec of tuples containing the block number and the entire StateDiff
-    /// to be reverted in that block.
-    ///
-    /// **Warning:** While not enforced, the following should be true:
-    ///  * Each `StateDiff` should include all deployed classes for its block
-    ///  * `state_diffs` should form a contiguous range of blocks
-    ///  * that range should end with the current blockchain tip
-    ///
-    /// If this isn't the case, the db could end up storing classes that aren't canonically
-    /// deployed.
+    /// Handles three types of class changes:
+    /// - Legacy classes (old_declared_contracts): Deleted entirely
+    /// - Sierra classes (declared_classes): Class info and compiled class deleted
+    /// - Migrated classes (migrated_compiled_classes): compiled_class_hash_v2 cleared
     #[tracing::instrument(skip(self, state_diffs))]
     pub(super) fn class_db_revert(&self, state_diffs: &[(u64, StateDiff)]) -> Result<()> {
         tracing::info!("🎓 REORG [class_db_revert]: Starting with {} state diffs", state_diffs.len());
@@ -166,36 +156,48 @@ impl RocksDBStorageInner {
         let class_compiled_col = self.get_column(CLASS_COMPILED_COLUMN);
 
         let mut batch = WriteBatchWithTransaction::default();
-        let mut total_old_classes = 0;
-        let mut total_classes = 0;
+        let mut legacy_count = 0;
+        let mut sierra_count = 0;
+        let mut migrated_count = 0;
 
-        for (block_n, diff) in state_diffs {
-            tracing::debug!(
-                "🎓 REORG [class_db_revert]: Processing block {} with {} legacy classes, {} sierra classes",
-                block_n,
-                diff.old_declared_contracts.len(),
-                diff.declared_classes.len()
-            );
+        for (_block_n, diff) in state_diffs {
             for class_hash in &diff.old_declared_contracts {
                 batch.delete_cf(&class_info_col, class_hash.to_bytes_be());
-                total_old_classes += 1;
+                legacy_count += 1;
             }
+
             for declared_class in &diff.declared_classes {
                 batch.delete_cf(&class_info_col, declared_class.class_hash.to_bytes_be());
                 batch.delete_cf(&class_compiled_col, declared_class.compiled_class_hash.to_bytes_be());
-                total_classes += 1;
+                sierra_count += 1;
+            }
+
+            // Revert migrated classes: clear their compiled_class_hash_v2
+            for migrated in &diff.migrated_compiled_classes {
+                if let Some(mut class_info_with_block) = self.get_class(&migrated.class_hash)? {
+                    if let mp_class::ClassInfo::Sierra(sierra_info) = &mut class_info_with_block.class_info {
+                        sierra_info.compiled_class_hash_v2 = None;
+                        batch.put_cf(
+                            &class_info_col,
+                            migrated.class_hash.to_bytes_be(),
+                            super::serialize(&class_info_with_block)?,
+                        );
+                        migrated_count += 1;
+                    }
+                }
             }
         }
 
-        tracing::info!(
-            "🎓 REORG [class_db_revert]: Removing {} legacy classes and {} sierra classes",
-            total_old_classes,
-            total_classes
-        );
-
         self.db.write_opt(batch, &self.writeopts)?;
 
-        tracing::info!("✅ REORG [class_db_revert]: Successfully removed all declared classes");
+        if legacy_count > 0 || sierra_count > 0 || migrated_count > 0 {
+            tracing::debug!(
+                "Reverted classes: {} legacy, {} sierra, {} migrated",
+                legacy_count,
+                sierra_count,
+                migrated_count
+            );
+        }
 
         Ok(())
     }

@@ -162,13 +162,18 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
         // Return ZERO for legacy classes as per Starknet protocol.
         let value = match &class_info {
             mp_class::ClassInfo::Legacy(_) => Felt::ZERO,
-            mp_class::ClassInfo::Sierra(_) => class_info.compiled_class_hash().ok_or_else(|| {
-                StateError::StateReadError(format!(
-                    "Sierra class does not have a compiled class hash: on={}, class_hash={:#x}",
-                    self.view,
-                    class_hash.to_felt(),
-                ))
-            })?,
+            mp_class::ClassInfo::Sierra(_) => {
+                // Return the canonical compiled_class_hash (v2 if present, else v1).
+                // - If v2 exists: either declared in v0.14.1+ OR already migrated, state uses v2
+                // - If only v1 exists: pre-migration class, state still uses v1
+                class_info.compiled_class_hash().ok_or_else(|| {
+                    StateError::StateReadError(format!(
+                        "Sierra class does not have a compiled class hash: on={}, class_hash={:#x}",
+                        self.view,
+                        class_hash.to_felt(),
+                    ))
+                })?
+            }
         };
 
         tracing::debug!(
@@ -185,7 +190,7 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
         class_hash: ClassHash,
         compiled_class: &RunnableCompiledClass,
     ) -> StateResult<CompiledClassHash> {
-        // First, check if we have the v2 hash stored in the database
+        // Check if we have the v2 hash stored in the database
         if let Ok(Some(class_info)) = self.view.get_class_info(&class_hash.to_felt()) {
             if let Some(v2_hash) = class_info.compiled_class_hash_v2() {
                 tracing::debug!(
@@ -197,10 +202,9 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
             }
         }
 
-        // If not in DB, compute it on-the-fly from the compiled class
+        // Compute v2 hash on-the-fly from the compiled class
         let computed_hash = match compiled_class {
             RunnableCompiledClass::V0(_) => {
-                // Cairo0 classes don't have v2 compiled class hash
                 return Err(StateError::StateReadError(format!(
                     "Cairo0 classes do not have compiled class hash v2: class_hash={:#x}",
                     class_hash.to_felt(),

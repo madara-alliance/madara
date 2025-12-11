@@ -17,7 +17,8 @@ use std::sync::Arc;
 
 const CLASS_INFO_COLUMN: &str = "class_info";
 const BLOCK_STATE_DIFF_COLUMN: &str = "block_state_diff";
-const BATCH_SIZE: usize = 2000; // Increased from 500 to reduce write overhead
+const BATCH_SIZE: usize = 2000;
+const LOG_INTERVAL_SECS: u64 = 10;
 
 fn bincode_opts() -> impl bincode::Options {
     bincode::DefaultOptions::new()
@@ -55,166 +56,96 @@ struct StateDiffOld {
 }
 
 pub fn migrate(ctx: &MigrationContext<'_>) -> Result<(), MigrationError> {
-    tracing::info!("Starting migration revision 0009: SierraClassInfo and StateDiff format changes");
-    
+    tracing::info!("Starting v8→v9 migration: SierraClassInfo and StateDiff format changes");
+
     let class_stats = migrate_column(ctx, CLASS_INFO_COLUMN, convert_class_info)?;
-    tracing::info!("ClassInfo migration completed: {} migrated, {} skipped", class_stats.0, class_stats.1);
+    tracing::info!("ClassInfo: {} migrated, {} skipped", class_stats.0, class_stats.1);
 
     let diff_stats = migrate_column(ctx, BLOCK_STATE_DIFF_COLUMN, convert_state_diff)?;
-    tracing::info!("StateDiff migration completed: {} migrated, {} skipped", diff_stats.0, diff_stats.1);
+    tracing::info!("StateDiff: {} migrated, {} skipped", diff_stats.0, diff_stats.1);
 
-    tracing::info!("Migration revision 0009 completed successfully");
+    tracing::info!("v8→v9 migration completed");
     Ok(())
 }
 
-/// Generic column migration: returns (migrated_count, skipped_count)
-/// Processes entries in a streaming fashion to avoid loading everything into memory.
+/// Migrate a column family in batches.
 fn migrate_column<F>(ctx: &MigrationContext<'_>, column: &str, convert: F) -> Result<(usize, usize), MigrationError>
 where
     F: Fn(&[u8]) -> Option<Vec<u8>>,
 {
+    tracing::info!("  Migrating column '{}'...", column);
+
     let db = ctx.db();
     let cf = db.cf_handle(column).ok_or_else(|| MigrationError::RocksDb(format!("{column} not found")))?;
 
-    tracing::info!("Starting migration for column '{}'", column);
-    
-    // Optimize WriteOptions: disable WAL and sync for faster writes (safe since we have backups)
+    // Optimize for bulk writes (WAL disabled - backup provides safety)
     let mut write_options = WriteOptions::default();
     write_options.disable_wal(true);
     write_options.set_sync(false);
-    
-    // Optimize ReadOptions: don't fill cache during migration to save memory
+
     let mut read_options = ReadOptions::default();
     read_options.fill_cache(false);
-    
+
     let start_time = std::time::Instant::now();
-    let mut migrated = 0;
-    let mut skipped = 0;
-    let mut batch_num = 0;
-    let mut processed_count = 0u64;
-    let mut last_log_time = start_time;
-    let mut conversion_time = std::time::Duration::ZERO;
-    let mut write_time = std::time::Duration::ZERO;
-    let mut conversion_count = 0u64;
-    
-    // Buffer to accumulate entries before writing a batch
+    let mut migrated = 0usize;
+    let mut skipped = 0usize;
+    let mut batch_num = 0usize;
+    let mut last_log = start_time;
+
     let mut batch_buffer: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(BATCH_SIZE);
-    
-    let iterator = db
-        .iterator_cf_opt(&cf, read_options, IteratorMode::Start)
-        .filter_map(|r| r.ok());
-    
-    for (key, value) in iterator {
+
+    for result in db.iterator_cf_opt(&cf, read_options, IteratorMode::Start) {
+        let (key, value) = result?;
+
         if ctx.should_abort() {
-            tracing::warn!("Migration aborted for column '{}' at batch {}", column, batch_num);
+            tracing::warn!("  Migration aborted at batch {}", batch_num);
             return Err(MigrationError::Aborted);
         }
-        
-        processed_count += 1;
-        
-        // Convert the entry (measure conversion time)
-        let convert_start = std::time::Instant::now();
+
         if let Some(new_value) = convert(&value) {
-            conversion_time += convert_start.elapsed();
-            conversion_count += 1;
             batch_buffer.push((key.to_vec(), new_value));
             migrated += 1;
         } else {
             skipped += 1;
         }
-        
-        // Log progress every 5 seconds during processing
-        let now = std::time::Instant::now();
-        if now.duration_since(last_log_time).as_secs() >= 5 {
-            let elapsed = now.duration_since(start_time);
-            let rate = if elapsed.as_secs() > 0 {
-                processed_count as f64 / elapsed.as_secs() as f64
-            } else {
-                0.0
-            };
-            let avg_convert_time = if conversion_count > 0 {
-                conversion_time.as_millis() as f64 / conversion_count as f64
-            } else {
-                0.0
-            };
-            tracing::info!(
-                "Column '{}': processed {} entries ({} entries/s), migrated: {}, skipped: {}, avg conversion: {:.2}ms",
-                column,
-                processed_count,
-                rate as u64,
-                migrated,
-                skipped,
-                avg_convert_time
-            );
-            last_log_time = now;
-        }
-        
-        // Write batch when buffer is full
+
+        // Write batch when full
         if batch_buffer.len() >= BATCH_SIZE {
             batch_num += 1;
-            let write_start = std::time::Instant::now();
-            
-            if batch_num == 1 {
-                tracing::info!("Writing first batch for column '{}'...", column);
-            }
-            
             let mut batch = WriteBatch::default();
             for (k, v) in batch_buffer.drain(..) {
                 batch.put_cf(&cf, &k, v);
             }
-            
             db.write_opt(batch, &write_options)?;
-            let batch_write_duration = write_start.elapsed();
-            write_time += batch_write_duration;
-            
-            // Log per-batch write duration for diagnostics
-            if batch_num == 1 || batch_num % 10 == 0 {
-                tracing::debug!(
-                    "Column '{}': batch {} write took {:.2}ms",
-                    column,
-                    batch_num,
-                    batch_write_duration.as_millis()
-                );
-            }
-            
+
+            // Log first batch completion (helps debug if stuck)
             if batch_num == 1 {
-                let first_batch_duration = start_time.elapsed();
                 tracing::info!(
-                    "First batch for column '{}' completed in {:.2}s",
-                    column,
-                    first_batch_duration.as_secs_f64()
-                );
-            }
-            
-            // Log progress every 10 batches with timing breakdown
-            if batch_num % 10 == 0 {
-                let elapsed = start_time.elapsed();
-                let total_time_ms = elapsed.as_millis() as f64;
-                let conversion_pct = if total_time_ms > 0.0 {
-                    (conversion_time.as_millis() as f64 / total_time_ms) * 100.0
-                } else {
-                    0.0
-                };
-                let write_pct = if total_time_ms > 0.0 {
-                    (write_time.as_millis() as f64 / total_time_ms) * 100.0
-                } else {
-                    0.0
-                };
-                tracing::info!(
-                    "Column '{}': batch {}, processed: {}, migrated: {}, skipped: {} | Time breakdown: conversion {:.1}%, writes {:.1}%",
-                    column,
-                    batch_num,
-                    processed_count,
-                    migrated,
-                    skipped,
-                    conversion_pct,
-                    write_pct
+                    "    First batch written ({} entries) in {:.1}s",
+                    BATCH_SIZE,
+                    start_time.elapsed().as_secs_f64()
                 );
             }
         }
+
+        // Log progress periodically
+        let now = std::time::Instant::now();
+        if now.duration_since(last_log).as_secs() >= LOG_INTERVAL_SECS {
+            let elapsed = now.duration_since(start_time).as_secs_f64();
+            let total = migrated + skipped;
+            let rate = total as f64 / elapsed;
+            tracing::info!(
+                "    Progress: {} entries ({:.0}/s), migrated: {}, skipped: {}",
+                total,
+                rate,
+                migrated,
+                skipped
+            );
+            last_log = now;
+        }
     }
-    
-    // Write any remaining entries in the buffer
+
+    // Write remaining
     if !batch_buffer.is_empty() {
         batch_num += 1;
         let mut batch = WriteBatch::default();
@@ -223,55 +154,23 @@ where
         }
         db.write_opt(batch, &write_options)?;
     }
-    
-    // Flush the column family to ensure all data is persisted (critical when WAL is disabled)
+
+    // Flush to disk (critical when WAL disabled)
+    tracing::info!("    Flushing to disk...");
     let mut flush_opts = FlushOptions::default();
     flush_opts.set_wait(true);
     db.flush_cf_opt(&cf, &flush_opts)
-        .map_err(|e| MigrationError::RocksDb(format!("Failed to flush column '{}': {}", column, e)))?;
-    tracing::info!("Flushed column '{}' to disk", column);
-    
-    let total_duration = start_time.elapsed();
-    let total_time_ms = total_duration.as_millis() as f64;
-    let conversion_pct = if total_time_ms > 0.0 {
-        (conversion_time.as_millis() as f64 / total_time_ms) * 100.0
-    } else {
-        0.0
-    };
-    let write_pct = if total_time_ms > 0.0 {
-        (write_time.as_millis() as f64 / total_time_ms) * 100.0
-    } else {
-        0.0
-    };
-    let other_pct = 100.0 - conversion_pct - write_pct;
-    let avg_rate = if total_duration.as_secs() > 0 {
-        processed_count as f64 / total_duration.as_secs() as f64
-    } else {
-        0.0
-    };
-    
+        .map_err(|e| MigrationError::RocksDb(format!("Flush failed for '{column}': {e}")))?;
+
+    let elapsed = start_time.elapsed().as_secs_f64();
+    let total = migrated + skipped;
     tracing::info!(
-        "Column '{}' migration completed: {} batches, {} migrated, {} skipped",
+        "  Column '{}' done: {} entries in {} batches, {:.1}s ({:.0}/s)",
         column,
+        total,
         batch_num,
-        migrated,
-        skipped
-    );
-    tracing::info!(
-        "Column '{}' timing: total {:.2}s, conversion {:.1}% ({:.2}s), writes {:.1}% ({:.2}s), other {:.1}% ({:.2}s)",
-        column,
-        total_duration.as_secs_f64(),
-        conversion_pct,
-        conversion_time.as_secs_f64(),
-        write_pct,
-        write_time.as_secs_f64(),
-        other_pct,
-        (total_duration - conversion_time - write_time).as_secs_f64()
-    );
-    tracing::info!(
-        "Column '{}' performance: {:.0} entries/s average",
-        column,
-        avg_rate
+        elapsed,
+        total as f64 / elapsed.max(0.001)
     );
 
     Ok((migrated, skipped))

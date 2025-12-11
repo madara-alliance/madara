@@ -19,7 +19,7 @@ pub use context::{MigrationContext, MigrationProgress, ProgressCallback};
 pub use error::MigrationError;
 pub use registry::{get_migrations, get_migrations_for_range, validate_registry, Migration, MigrationFn};
 
-use rocksdb::{DBWithThreadMode, FlushOptions, MultiThreaded};
+use rocksdb::{DBWithThreadMode, MultiThreaded};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -221,7 +221,10 @@ impl MigrationRunner {
 
         for migration in pending {
             if self.abort_flag.load(Ordering::SeqCst) {
-                tracing::warn!("⚠️  Migration aborted by user");
+                tracing::warn!("⚠️  Migration aborted by user, cleaning up state...");
+                // On graceful abort, clean up state file so next run starts fresh.
+                // User explicitly chose to stop, so don't try to resume.
+                self.cleanup_migration_state()?;
                 return Err(MigrationError::Aborted);
             }
 
@@ -232,23 +235,27 @@ impl MigrationRunner {
                 migration.to_version
             );
 
-            let context =
-                MigrationContext::new(db, migration.from_version, migration.to_version, self.abort_flag.clone())
-                    .with_progress_callback(Box::new(|p| {
-                        tracing::info!("   [{}/{}] {}", p.current_step, p.total_steps, p.message);
-                    }));
+            let context = MigrationContext::new(db, self.abort_flag.clone()).with_progress_callback(Box::new(|p| {
+                tracing::info!("   [{}/{}] {}", p.current_step, p.total_steps, p.message);
+            }));
 
             let start = std::time::Instant::now();
-            (migration.migrate)(&context).map_err(|e| {
+            if let Err(e) = (migration.migrate)(&context) {
+                // On graceful abort from within migration, clean up state
+                if matches!(e, MigrationError::Aborted) {
+                    tracing::warn!("⚠️  Migration aborted, cleaning up state...");
+                    let _ = self.cleanup_migration_state();
+                    return Err(e);
+                }
                 tracing::error!("❌ Migration '{}' failed: {}", migration.name, e);
-                tracing::error!("Restore from backup at: {:?}", self.base_path.join(BACKUP_DIR_NAME));
-                MigrationError::MigrationStepFailed {
+                tracing::error!("   Restore from backup at: {:?}", self.base_path.join(BACKUP_DIR_NAME));
+                return Err(MigrationError::MigrationStepFailed {
                     name: migration.name.to_string(),
                     from_version: migration.from_version,
                     to_version: migration.to_version,
                     message: e.to_string(),
-                }
-            })?;
+                });
+            }
 
             tracing::info!("✅ '{}' completed in {:.2}s", migration.name, start.elapsed().as_secs_f64());
 
@@ -258,30 +265,6 @@ impl MigrationRunner {
             self.write_version_file(migration.to_version)?;
         }
 
-        // // Flush all column families to ensure all data is persisted (critical when WAL is disabled)
-        // tracing::info!("💾 Flushing database to ensure all migration data is persisted...");
-        // let mut flush_opts = FlushOptions::default();
-        // flush_opts.set_wait(true);
-        
-        // // Get all column families and flush them
-        // // Use the static method to list column families from the database path
-        // let db_path = self.base_path.join("db");
-        // let cf_names = rocksdb::DB::list_cf(&rocksdb::Options::default(), &db_path)
-        //     .map_err(|e| MigrationError::RocksDb(format!("Failed to list column families: {}", e)))?;
-        
-        // let column_families: Vec<_> = cf_names
-        //     .iter()
-        //     .filter_map(|name| db.cf_handle(name))
-        //     .collect();
-        
-        // if !column_families.is_empty() {
-        //     db.flush_cfs_opt(&column_families, &flush_opts)
-        //         .map_err(|e| MigrationError::RocksDb(format!("Failed to flush database: {}", e)))?;
-        //     tracing::info!("✅ Database flushed successfully");
-        // } else {
-        //     tracing::warn!("⚠️  No column families found to flush");
-        // }
-        
         self.cleanup_migration_state()?;
         self.cleanup_backup()?;
         tracing::info!("🎉 Migration complete! Database now at version {}", to_version);

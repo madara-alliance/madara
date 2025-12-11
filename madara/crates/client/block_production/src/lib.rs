@@ -813,7 +813,6 @@ impl BlockProductionTask {
 
         // Process migrated class hashes: move them from declared_classes to migrated_compiled_classes
         // The compiled_class_hashes_for_migration contains Vec<(v2_hash, v1_hash)>
-        // We need to find the corresponding class_hash in declared_classes and move them
         if !block_exec_summary.compiled_class_hashes_for_migration.is_empty() {
             let v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
                 .compiled_class_hashes_for_migration
@@ -833,11 +832,6 @@ impl BlockProductionTask {
                     compiled_class_hash: item.compiled_class_hash,
                 })
                 .collect();
-
-            tracing::info!(
-                "Migrated {} classes from Poseidon to BLAKE hash",
-                state_diff.migrated_compiled_classes.len()
-            );
         }
 
         Self::close_preconfirmed_block_with_state_diff(

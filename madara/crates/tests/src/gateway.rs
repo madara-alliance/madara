@@ -5,6 +5,7 @@ mod tests {
     use mp_state_update::StateDiff;
     use rstest::{fixture, rstest};
     use starknet_api::core::ChainId;
+    use url::Url;
 
     #[fixture]
     fn client_mainnet_fixture() -> GatewayProvider {
@@ -14,6 +15,16 @@ mod tests {
     #[fixture]
     fn client_sepolia_fixture() -> GatewayProvider {
         GatewayProvider::starknet_alpha_sepolia()
+    }
+    /// Paradex testnet provider using config from configs/presets/paradex_testnet.yaml
+    #[fixture]
+    fn client_paradex_testnet_fixture() -> GatewayProvider {
+        GatewayProvider::new(
+            Url::parse("https://potc-testnet-sepolia.starknet.io/gateway/")
+                .expect("Failed to parse Paradex testnet gateway url"),
+            Url::parse("https://feeder.potc-testnet-sepolia.starknet.io/feeder_gateway/")
+                .expect("Failed to parse Paradex testnet feeder gateway url"),
+        )
     }
 
     #[rstest]
@@ -47,5 +58,28 @@ mod tests {
         let state_diff: StateDiff = res.state_update.state_diff.into();
         let computed = res.block.header(&state_diff).unwrap().compute_hash(chain_id, false);
         assert_eq!(computed, res.block.block_hash);
+    }
+
+    /// Paradex testnet block hash computation with detailed logging
+    /// Chain ID: PRIVATE_SN_POTC_SEPOLIA
+    #[rstest]
+    #[case::block_481007(481007)]
+    #[tokio::test]
+    async fn get_block_compute_hash_header_paradex_testnet(
+        client_paradex_testnet_fixture: GatewayProvider,
+        #[case] block_n: u64,
+    ) {
+        use starknet_types_core::felt::Felt;
+
+        let res = client_paradex_testnet_fixture.get_state_update_with_block(BlockId::Number(block_n)).await.unwrap();
+
+        // Paradex testnet chain ID from config
+        let chain_id = Felt::from_bytes_be_slice(b"PRIVATE_SN_POTC_SEPOLIA");
+
+        let state_diff: StateDiff = res.state_update.state_diff.into();
+        let header = res.block.header(&state_diff).unwrap();
+        let computed_block_hash = header.compute_hash(chain_id, false);
+
+        assert_eq!(computed_block_hash, res.block.block_hash, "Computed block hash does not match expected block hash");
     }
 }

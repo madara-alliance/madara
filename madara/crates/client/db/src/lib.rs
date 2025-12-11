@@ -760,14 +760,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &block.events,
         );
 
-        // Global state root and block hash.
         let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
+
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        tracing::info!("🙇 Block hash {:?} computed for #{}", block_hash, block.header.block_number);
+        tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
         if let Some(header) = self.inner.get_custom_header_with_clear(true) {
             let is_valid = header.is_block_hash_as_expected(&block_hash);

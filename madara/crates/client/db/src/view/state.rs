@@ -238,17 +238,21 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         };
         let compiled = match class_info {
             ClassInfo::Sierra(sierra_class_info) => {
-                // Get canonical compiled_class_hash (v2 if present, else v1)
-                let canonical_hash = sierra_class_info
-                    .compiled_class_hash_v2
-                    .or(sierra_class_info.compiled_class_hash)
-                    .context("Sierra class must have at least one compiled_class_hash")?;
+                // Try v2 hash first, then fall back to v1 (for migrated classes where
+                // the compiled Sierra may still be stored under the v1 hash).
+                let compiled = [sierra_class_info.compiled_class_hash_v2, sierra_class_info.compiled_class_hash]
+                    .into_iter()
+                    .flatten()
+                    .try_fold(None, |acc, hash| -> Result<Option<_>> {
+                        if acc.is_some() {
+                            return Ok(acc);
+                        }
+                        self.get_class_compiled(&hash).context("Getting class compiled")
+                    })?;
+
                 ConvertedClass::Sierra(SierraConvertedClass {
                     class_hash: *class_hash,
-                    compiled: self
-                        .get_class_compiled(&canonical_hash)
-                        .context("Getting class compiled from class_hash")?
-                        .context("Class info found, compiled class should be found")?,
+                    compiled: compiled.context("Class info found, compiled class should be found")?,
                     info: sierra_class_info,
                 })
             }

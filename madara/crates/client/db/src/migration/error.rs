@@ -2,51 +2,37 @@
 
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
-    #[error(
-        "Database version {db_version} is newer than binary version {binary_version}. \
-        Please upgrade to a newer version of the binary."
-    )]
+    #[error("DB v{db_version} > binary v{binary_version}. Upgrade the binary.")]
     DatabaseNewerThanBinary { db_version: u32, binary_version: u32 },
 
-    #[error(
-        "Database version {current_version} is older than minimum supported version {base_version}. \
-        Please delete the database directory and resync from scratch."
-    )]
+    #[error("DB v{current_version} < min v{base_version}. Delete DB and resync.")]
     DatabaseTooOld { current_version: u32, base_version: u32 },
 
-    /// Migration registry is missing a required migration. This is a developer error -
-    /// ensure all migrations from base_version to current_version are registered.
-    #[error(
-        "Migration registry bug: no migration registered for v{from} -> v{to}. \
-        Check that all migrations are registered in registry.rs"
-    )]
+    #[error("No migration v{from}→v{to}. Check registry.rs.")]
     NoMigrationPath { from: u32, to: u32 },
 
-    #[error(
-        "Migration lock file exists - another migration may be in progress. \
-        If no other instance is running, delete .db-migration.lock manually."
-    )]
+    #[error("Migration lock exists. Delete .db-migration.lock if no other instance running.")]
     MigrationInProgress,
 
-    #[error("Failed to create pre-migration backup: {0}")]
+    #[error("Backup failed: {0}")]
     BackupFailed(String),
 
-    #[error("Invalid database version file format. Expected a single integer.")]
+    #[error("Invalid .db-version file")]
     InvalidVersionFile,
 
-    #[error("Migration '{name}' (v{from_version} -> v{to_version}) failed: {message}")]
+    #[error("Migration '{name}' (v{from_version}→v{to_version}) failed: {message}")]
     MigrationStepFailed { name: String, from_version: u32, to_version: u32, message: String },
 
-    #[error("IO error: {0}")]
+    #[error("IO: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("RocksDB error: {0}")]
+    #[error("RocksDB: {0}")]
     RocksDb(String),
 
-    #[error("Serialization error: {0}")]
+    #[error("Serialization: {0}")]
     Serialization(String),
 
-    #[error("Migration aborted by user")]
+    #[error("Aborted")]
     Aborted,
 }
 

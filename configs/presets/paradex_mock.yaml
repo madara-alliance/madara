@@ -5,7 +5,7 @@ chain_id: "PRIVATE_SN_POTC_MOCK_SEPOLIA"
 
 # The URL of the gateway and Feeder Gateway your nodes should sync from.
 feeder_gateway_url: "https://feeder.potc-testnet-mock-sepolia.starknet.io/feeder_gateway"
-gateway_url: "https://potc-testnet-mock-sepolia.starknet.io/gateway"
+gateway_url: "https://feeder.potc-testnet-mock-sepolia.starknet.io/gateway"
 
 # For starknet, this is the STRK ERC-20 contract on starknet.
 native_fee_token_address: "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
