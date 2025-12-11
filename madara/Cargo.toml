@@ -231,6 +231,7 @@ bitvec = { version = "1.0", default-features = false, features = ["std"] }
 bytes = "1.6.0"
 smallvec = { version = "1.15", features = ["write"] }
 itertools = { version = "0.13.0" }
+libc = "0.2"
 
 # Error handling
 thiserror = "2.0"
