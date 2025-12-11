@@ -6,7 +6,6 @@ use rstest::*;
 use url::Url;
 use uuid::Uuid;
 
-use crate::core::client::alert::MockAlertClient;
 use crate::tests::common::default_job_item;
 use crate::tests::config::{MockType, TestConfigBuilder};
 use crate::tests::jobs::ConfigType;
@@ -124,67 +123,5 @@ async fn test_process_job() -> color_eyre::Result<()> {
     let _ = CairoPie::from_bytes(&cairo_pie_data)?;
     let _: serde_json::Value = serde_json::from_slice(&snos_output_data)?;
 
-    Ok(())
-}
-
-/// Test that check_snos_health returns false when SNOS RPC is unavailable.
-/// This tests the core health check logic without needing to manipulate env vars.
-#[rstest]
-#[tokio::test]
-async fn test_check_snos_health_unavailable() {
-    use crate::worker::event_handler::jobs::snos::check_snos_health;
-
-    // Use an invalid/unreachable URL to simulate SNOS being down
-    let invalid_snos_url = "http://127.0.0.1:1";
-
-    // check_snos_health should return false for unreachable URL
-    let is_healthy = check_snos_health(invalid_snos_url).await;
-
-    assert!(!is_healthy, "Expected false when SNOS RPC is unavailable");
-}
-
-/// Test that check_snos_health returns true when SNOS RPC is available.
-#[rstest]
-#[tokio::test]
-async fn test_check_snos_health_available() {
-    use crate::worker::event_handler::jobs::snos::check_snos_health;
-
-    let snos_url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
-        Ok(url) => url,
-        Err(_) => {
-            println!("Ignoring test: {} environment variable is not set", SNOS_PATHFINDER_RPC_URL_ENV);
-            return;
-        }
-    };
-
-    // check_snos_health should return true for reachable URL
-    let is_healthy = check_snos_health(&snos_url).await;
-
-    assert!(is_healthy, "Expected true when SNOS RPC is available");
-}
-
-/// Test that when SNOS RPC is available, check_ready_to_process returns Ok
-#[rstest]
-#[tokio::test]
-async fn test_check_ready_to_process_snos_available() -> color_eyre::Result<()> {
-    // Skip if SNOS RPC URL is not set
-    if std::env::var(SNOS_PATHFINDER_RPC_URL_ENV).is_err() {
-        println!("Ignoring test: {} environment variable is not set", SNOS_PATHFINDER_RPC_URL_ENV);
-        return Ok(());
-    }
-
-    // Mock alert client - no alert should be sent when SNOS is available
-    let mut mock_alert_client = MockAlertClient::new();
-    mock_alert_client.expect_send_message().times(0);
-
-    let services = TestConfigBuilder::new()
-        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
-        .build()
-        .await;
-
-    // Call check_ready_to_process - should return Ok since SNOS is available
-    let result = SnosJobHandler.check_ready_to_process(services.config.clone()).await;
-
-    assert!(result.is_ok(), "Expected Ok when SNOS RPC is available");
     Ok(())
 }

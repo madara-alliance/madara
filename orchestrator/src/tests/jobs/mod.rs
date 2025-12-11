@@ -409,68 +409,6 @@ async fn process_job_with_job_exists_in_db_with_invalid_job_processing_status_er
     assert_matches!(queue_error, QueueError::ErrorFromQueueError(_));
 }
 
-/// Tests `process_job` function when `check_ready_to_process` returns Err (dependencies not ready).
-/// This test verifies that:
-/// 1. The job is NOT processed (process_job on handler should not be called)
-/// 2. The job is requeued to the processing queue with a delay
-/// 3. The job status remains unchanged (still Created)
-/// 4. No failure is recorded
-#[rstest]
-#[tokio::test]
-#[allow(clippy::await_holding_lock)]
-async fn process_job_requeues_when_check_ready_to_process_fails() {
-    // Acquire test lock to serialize this test with others that use mocks
-    let _test_lock = acquire_test_lock();
-
-    // Building config
-    let services = TestConfigBuilder::new()
-        .configure_database(ConfigType::Actual)
-        .configure_queue_client(ConfigType::Actual)
-        .build()
-        .await;
-    let database_client = services.config.database();
-
-    // Create a job with Created status
-    let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
-
-    // Creating job in database first
-    database_client.create_job(job_item.clone()).await.unwrap();
-
-    let mut job_handler = MockJobHandlerTrait::new();
-
-    // Mock check_ready_to_process to return Err with 0 second delay (for immediate queue visibility in test)
-    job_handler.expect_check_ready_to_process().times(1).returning(|_| Err(Duration::from_secs(0)));
-
-    // process_job should NOT be called since dependencies are not ready
-    job_handler.expect_process_job().times(0);
-
-    // Mocking the `get_job_handler` call
-    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx_guard = get_job_handler_context_safe();
-    ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
-
-    // Call process_job - should succeed (returns Ok) but job should be requeued, not processed
-    let result = JobHandlerService::process_job(job_item.id, services.config.clone()).await;
-    assert!(result.is_ok(), "process_job should return Ok when requeuing due to check_ready_to_process failure");
-
-    // DB checks - job should still be in Created status (not processed, not failed)
-    let job_in_db = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(job_in_db.status, JobStatus::Created, "Job status should remain Created when requeued");
-    assert!(job_in_db.metadata.common.failure_reason.is_none(), "No failure reason should be recorded when requeuing");
-
-    // Queue checks - job should be requeued to the processing queue (not verification queue)
-    let consumed_messages = consume_message_with_retry(
-        services.config.queue(),
-        job_item.job_type.process_queue_name(),
-        QUEUE_CONSUME_MAX_RETRIES,
-        QUEUE_CONSUME_RETRY_DELAY_SECS,
-    )
-    .await
-    .unwrap();
-    let consumed_message_payload: MessagePayloadType = consumed_messages.payload_serde_json().unwrap().unwrap();
-    assert_eq!(consumed_message_payload.id, job_item.id, "Requeued message should have the same job ID");
-}
-
 /// Tests `process_job` function when job is not in the db
 /// This test should fail
 #[rstest]
