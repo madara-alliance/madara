@@ -23,6 +23,8 @@ use generate_pie::types::os_hints::OsHintsConfiguration;
 use generate_pie::types::pie::{PieGenerationInput, PieGenerationResult};
 use orchestrator_utils::chain_details::ChainDetails;
 use orchestrator_utils::layer::Layer;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Provider, Url};
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_core::types::Felt;
 
