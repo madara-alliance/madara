@@ -157,6 +157,19 @@ pub trait DatabaseClient: Send + Sync {
         job_statuses: Vec<JobStatus>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
+    /// Get jobs by their type and statuses with internal_id constraint
+    ///
+    /// # Arguments
+    /// * `job_type` - The type of job to search for
+    /// * `job_status` - Vector of statuses to match
+    /// * `max_internal_id` - Maximum internal_id value (inclusive) - compared numerically
+    async fn get_jobs_excluding_statuses_up_to_internal_id(
+        &self,
+        job_type: JobType,
+        job_status: Vec<JobStatus>,
+        max_internal_id: u64,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
+
     /// Get all jobs for a specific block number
     ///
     /// # Arguments
