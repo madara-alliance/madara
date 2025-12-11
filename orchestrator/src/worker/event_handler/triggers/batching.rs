@@ -810,16 +810,15 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<(), JobError> {
-        try_join!(
-            self.save_aggregator_batch_state(
-                batch_state.aggregator_batch,
-                batch_state.state_update,
-                batch_state.close_aggregator_batch,
-                config,
-                provider
-            ),
-            self.update_or_create_snos_batch_in_db(batch_state.snos_batch, config, batch_state.snos_batch_status)
-        )?;
+        self.save_aggregator_batch_state(
+            batch_state.aggregator_batch,
+            batch_state.state_update,
+            batch_state.close_aggregator_batch,
+            config,
+            provider,
+        )
+        .await?;
+        self.update_or_create_snos_batch_in_db(batch_state.snos_batch, config, batch_state.snos_batch_status).await?;
 
         Ok(())
     }
@@ -832,10 +831,8 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<(), JobError> {
-        try_join!(
-            self.store_aggregator_batch_state_update(batch, state_update, config, provider),
-            self.update_or_create_aggregator_batch_in_db(batch, should_close, config,),
-        )?;
+        self.store_aggregator_batch_state_update(batch, state_update, config, provider).await?;
+        self.update_or_create_aggregator_batch_in_db(batch, should_close, config).await?;
 
         Ok(())
     }
@@ -849,6 +846,7 @@ impl BatchingTrigger {
         close_aggregator_batch: bool, // boolean to decide if we can close the block
         config: &Arc<Config>,
     ) -> Result<(), JobError> {
+        debug!(batch=?aggregator_batch, "Saving Aggregator batch to DB");
         // Get the database
         let database = config.database();
 
@@ -865,6 +863,7 @@ impl BatchingTrigger {
             )
             .await?;
 
+        debug!(batch=?aggregator_batch, "Saved Aggregator batch to DB");
         Ok(())
     }
 
@@ -874,6 +873,7 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         status: SnosBatchStatus,
     ) -> Result<(), JobError> {
+        debug!(batch=?snos_batch, "Saving SNOS batch to DB");
         let database = config.database();
 
         database
@@ -882,6 +882,8 @@ impl BatchingTrigger {
                 &SnosBatchUpdates { end_block: Some(snos_batch.end_block), status: Some(status) },
             )
             .await?;
+
+        debug!(batch=?snos_batch, "Saved SNOS batch to DB");
 
         Ok(())
     }
@@ -896,6 +898,7 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<(), JobError> {
+        debug!(batch=?aggregator_batch, "Saving Aggregator batch state to storage");
         let storage = config.storage();
 
         let compressed_state_update = self
@@ -907,6 +910,7 @@ impl BatchingTrigger {
             self.store_blob(storage, &compressed_state_update, aggregator_batch),
         )?;
 
+        debug!(batch=?aggregator_batch, "Saved Aggregator batch state to storage");
         Ok(())
     }
 
