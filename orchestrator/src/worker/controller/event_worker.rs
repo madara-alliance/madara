@@ -433,6 +433,9 @@ impl EventWorker {
                         tasks.spawn(async move { worker.process_message(delivery, parsed_message).await });
                         debug!("Spawned PRIORITY task, active: {}", tasks.len());
 
+                        // Add a small sleep to prevent tight loop when processing priority messages
+                        sleep(Duration::from_millis(50)).await;
+
                         // Continue to next iteration to check for more priority messages
                         continue;
                     }
