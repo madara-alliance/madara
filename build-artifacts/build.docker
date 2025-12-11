@@ -140,8 +140,13 @@ RUN git clone https://github.com/myBraavos/braavos-account-cairo.git
 WORKDIR braavos-account-cairo
 RUN git checkout $BRAAVOS_REV
 
-# Setup scarb
-RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
+# Setup scarb with retry logic
+RUN mkdir scarb && \
+    for i in 1 2 3 4 5; do \
+        wget --retry-connrefused --waitretry=5 --read-timeout=20 --timeout=15 -t 5 \
+            -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1 && break || \
+        { echo "Attempt $i failed, retrying in $((i*10)) seconds..."; sleep $((i*10)); }; \
+    done
 
 # Compile contracts
 RUN ./scarb/bin/scarb build
@@ -167,8 +172,13 @@ RUN git clone https://github.com/argentlabs/argent-contracts-starknet.git
 WORKDIR argent-contracts-starknet
 RUN git checkout $ARGENT_REV
 
-# Setup scarb
-RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
+# Setup scarb with retry logic
+RUN mkdir scarb && \
+    for i in 1 2 3 4 5; do \
+        wget --retry-connrefused --waitretry=5 --read-timeout=20 --timeout=15 -t 5 \
+            -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1 && break || \
+        { echo "Attempt $i failed, retrying in $((i*10)) seconds..."; sleep $((i*10)); }; \
+    done
 
 # Compile contracts
 RUN ./scarb/bin/scarb build
@@ -192,8 +202,13 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 WORKDIR js-tests
 COPY cairo/js_tests .
 
-# Setup scarb
-RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
+# Setup scarb with retry logic
+RUN mkdir scarb && \
+    for i in 1 2 3 4 5; do \
+        wget --retry-connrefused --waitretry=5 --read-timeout=20 --timeout=15 -t 5 \
+            -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1 && break || \
+        { echo "Attempt $i failed, retrying in $((i*10)) seconds..."; sleep $((i*10)); }; \
+    done
 
 # Compile contracts
 RUN ./scarb/bin/scarb build
@@ -217,8 +232,13 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
 WORKDIR orchestrator-tests
 COPY cairo/orchestrator_tests .
 
-# Setup scarb
-RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
+# Setup scarb with retry logic
+RUN mkdir scarb && \
+    for i in 1 2 3 4 5; do \
+        wget --retry-connrefused --waitretry=5 --read-timeout=20 --timeout=15 -t 5 \
+            -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1 && break || \
+        { echo "Attempt $i failed, retrying in $((i*10)) seconds..."; sleep $((i*10)); }; \
+    done
 
 # Compile contracts
 RUN ./scarb/bin/scarb build
@@ -254,8 +274,13 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
   fi
 
 WORKDIR /contracts
-# Setup scarb
-RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
+# Setup scarb with retry logic
+RUN mkdir scarb && \
+    for i in 1 2 3 4 5; do \
+        wget --retry-connrefused --waitretry=5 --read-timeout=20 --timeout=15 -t 5 \
+            -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1 && break || \
+        { echo "Attempt $i failed, retrying in $((i*10)) seconds..."; sleep $((i*10)); }; \
+    done
 
 COPY bootstrapper-v2/contracts/madara/ .
 
