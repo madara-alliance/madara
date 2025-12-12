@@ -20,7 +20,7 @@ use url::Url;
 
 use crate::client::{AtlanticBucketInfo, AtlanticClient, AtlanticJobConfig, AtlanticJobInfo};
 use crate::constants::ATLANTIC_FETCH_ARTIFACTS_BASE_URL;
-use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQueryStep};
+use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQuery, AtlanticQueryStep};
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -67,6 +67,46 @@ impl ProverClient for AtlanticProverService {
         );
         match task {
             Task::CreateJob(CreateJobInfo { cairo_pie, bucket_id, bucket_job_index, num_steps: n_steps, external_id }) => {
+                let existing_job = self
+                    .atlantic_client
+                    .search_atlantic_queries(
+                        &external_id,
+                        Some(1),
+                        None,
+                        Some(self.atlantic_network.as_str()),
+                        None,
+                        None,
+                    )
+                    .await?
+                    .atlantic_queries
+                    .into_iter()
+                    .find(|query| {
+                        query.external_id.as_deref() == Some(external_id.as_str()) || query.id == external_id
+                    });
+
+                if let Some(existing_job) = existing_job {
+                    match existing_job.status {
+                        AtlanticQueryStatus::Failed => {
+                            tracing::warn!(
+                                atlantic_query_id = %existing_job.id,
+                                external_id = %external_id,
+                                status = ?existing_job.status,
+                                "Existing Atlantic job found in failed state. Resubmitting."
+                            );
+                        }
+                        _ => {
+                            Self::ensure_bucket_details_match(&existing_job, &bucket_id, bucket_job_index)?;
+                            tracing::info!(
+                                atlantic_query_id = %existing_job.id,
+                                external_id = %external_id,
+                                status = ?existing_job.status,
+                                "Atlantic job already exists. Skipping resubmission."
+                            );
+                            return Ok(existing_job.id);
+                        }
+                    }
+                }
+
                 let temp_file =
                     NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
                 let pie_file_path = temp_file.path();
@@ -375,5 +415,50 @@ impl AtlanticProverService {
 
     fn should_mock_proof(&self) -> bool {
         self.mock_fact_hash
+    }
+
+    fn ensure_bucket_details_match(
+        existing_job: &AtlanticQuery,
+        expected_bucket_id: &Option<String>,
+        expected_bucket_job_index: Option<u64>,
+    ) -> Result<(), ProverClientError> {
+        match (expected_bucket_id.as_deref(), existing_job.bucket_id.as_deref()) {
+            (Some(expected), Some(found)) if expected == found => {}
+            (None, None) => {}
+            _ => {
+                return Err(ProverClientError::TaskInvalid(format!(
+                    "existing Atlantic job {} has bucket_id {:?} but expected {:?}",
+                    existing_job.id,
+                    existing_job.bucket_id.as_deref(),
+                    expected_bucket_id.as_deref()
+                )));
+            }
+        }
+
+        match (expected_bucket_job_index, existing_job.bucket_job_index) {
+            (Some(expected), Some(found)) => {
+                let found_u64 = u64::try_from(found).map_err(|_| {
+                    ProverClientError::TaskInvalid(format!(
+                        "existing Atlantic job {} returned a negative bucket_job_index",
+                        existing_job.id
+                    ))
+                })?;
+                if found_u64 != expected {
+                    return Err(ProverClientError::TaskInvalid(format!(
+                        "existing Atlantic job {} has bucket_job_index {:?} but expected {:?}",
+                        existing_job.id, found_u64, expected
+                    )));
+                }
+            }
+            (None, None) => {}
+            (expected, found) => {
+                return Err(ProverClientError::TaskInvalid(format!(
+                    "existing Atlantic job {} bucket_job_index mismatch: found {:?}, expected {:?}",
+                    existing_job.id, found, expected
+                )));
+            }
+        }
+
+        Ok(())
     }
 }

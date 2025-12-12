@@ -208,12 +208,13 @@ impl AtlanticClient {
 
     /// Search Atlantic queries with optional filters
     /// This function searches through Atlantic queries using the provided search string
-    /// and optional additional filters like limit, offset, client_id, network, status, and result.
+    /// and optional additional filters like limit, offset, network, status, and result.
     ///
     /// # Arguments
     /// * `search_string` - The search string to filter queries
     /// * `limit` - Optional limit for the number of results (default: None)
     /// * `offset` - Optional offset for pagination (default: None)
+    /// * `network` - Optional network filter (default: None)
     /// * `status` - Optional status filter (default: None)
     /// * `result` - Optional result filter (default: None)
     ///
@@ -224,12 +225,16 @@ impl AtlanticClient {
         search_string: impl AsRef<str>,
         limit: Option<u32>,
         offset: Option<u32>,
+        network: Option<&str>,
         status: Option<&str>,
         result: Option<&str>,
     ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
         debug!(
-            "Atlantic Request: GET /atlantic-queries - searching queries (search: {}, limit: {:?}, offset: {:?})",
-            search_string.as_ref(), limit, offset
+            "Atlantic Request: GET /atlantic-queries - searching queries (search: {}, limit: {:?}, offset: {:?}, network: {:?})",
+            search_string.as_ref(),
+            limit,
+            offset,
+            network
         );
 
         self.retry_get("search_atlantic_queries", || async {
@@ -244,6 +249,9 @@ impl AtlanticClient {
             }
             if let Some(offset_val) = offset {
                 request = request.query_param("offset", &offset_val.to_string());
+            }
+            if let Some(network_val) = network {
+                request = request.query_param("network", network_val);
             }
             if let Some(status_val) = status {
                 request = request.query_param("status", status_val);
