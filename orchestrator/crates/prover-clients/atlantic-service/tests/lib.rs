@@ -148,7 +148,8 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
     });
 
     let atlantic_service =
-        AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params, &LayoutName::dynamic);
+        AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params, &LayoutName::dynamic)
+            .expect("Failed to create Atlantic service");
 
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
