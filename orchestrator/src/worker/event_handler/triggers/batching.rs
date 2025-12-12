@@ -636,10 +636,16 @@ impl BatchingTrigger {
 
         // Ensure aggregator and SNOS batches are in sync
         if latest_aggregator_block_in_db != latest_snos_block_in_db {
-            return Err(JobError::BatchingNotInSync(format!(
+            let msg = format!(
                 "Aggregator and SNOS batches are out of sync: aggregator_block={}, snos_block={}",
                 latest_aggregator_block_in_db, latest_snos_block_in_db
-            )));
+            );
+            // Send a sns here
+            if let Err(e) = config.alerts().send_message(msg.clone()).await {
+                error!(error = ?e, "Failed to send batching alert");
+            }
+
+            return Err(JobError::BatchingNotInSync(msg));
         }
 
         // Getting the latest block number from the sequencer

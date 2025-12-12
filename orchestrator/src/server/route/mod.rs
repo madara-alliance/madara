@@ -50,7 +50,7 @@ pub(crate) fn server_router(config: Arc<Config>) -> Router {
 
     // Conditionally add admin routes if enabled
     if config.server_config().admin_enabled {
-        tracing::info!("🔐 Admin endpoints enabled at /admin/*");
+        tracing::info!("Admin endpoints enabled at /admin/*");
         router = router.nest("/admin", admin::admin_router(config.clone()));
     }
 
