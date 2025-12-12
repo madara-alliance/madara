@@ -35,12 +35,8 @@ runs:
       shell: bash
       run: |
         # Check if cargo dependencies are already fetched (e.g., by Rust setup action)
-        if [ -d "$HOME/.cargo/git/checkouts" ] && [ "$(find "$HOME/.cargo/git/checkouts" -name "*.toml" 2>/dev/null | wc -l)" -gt 0 ]; then
-          echo "✓ Cargo dependencies already available from previous step"
-        else
-          echo "Fetching Cargo dependencies to get sequencer requirements.txt..."
-          cargo fetch --manifest-path Cargo.toml
-        fi
+        echo "Fetching Cargo dependencies to get sequencer requirements.txt..."
+        cargo fetch --manifest-path Cargo.toml
 
     - name: Setup Python virtual environment with sequencer requirements
       shell: bash
