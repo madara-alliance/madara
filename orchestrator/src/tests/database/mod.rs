@@ -352,7 +352,8 @@ async fn test_create_snos_batch() {
     let snos_batch = SnosBatch::new(1, Some(100), 200);
 
     // Create the batch in the database
-    let created_batch = database_client.create_snos_batch(snos_batch.clone()).await.unwrap();
+    let created_batch =
+        database_client.update_or_create_snos_batch(&snos_batch, &SnosBatchUpdates::default()).await.unwrap();
 
     // Verify the created batch matches the input
     assert_eq!(created_batch, snos_batch);
@@ -570,7 +571,7 @@ async fn test_get_snos_batches_by_indices() {
         [SnosBatch::new(1, Some(100), 200), SnosBatch::new(2, Some(100), 300), SnosBatch::new(3, Some(100), 400)];
 
     for batch in &batches {
-        database_client.create_snos_batch(batch.clone()).await.unwrap();
+        database_client.update_or_create_snos_batch(&batch, &SnosBatchUpdates::default()).await.unwrap();
     }
 
     let retrieved_batches = database_client.get_snos_batches_by_indices(vec![1, 3]).await.unwrap();
@@ -592,7 +593,7 @@ async fn test_update_snos_batch_status_by_index() {
     let database_client = config.database();
 
     let batch = SnosBatch::new(1, Some(100), 200);
-    database_client.create_snos_batch(batch.clone()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch, &SnosBatchUpdates::default()).await.unwrap();
 
     let updated_batch = database_client.update_snos_batch_status_by_index(1, SnosBatchStatus::Closed).await.unwrap();
 
@@ -616,9 +617,9 @@ async fn test_get_snos_batches_by_status() {
     batch1.status = SnosBatchStatus::Closed;
     batch3.status = SnosBatchStatus::Closed;
 
-    database_client.create_snos_batch(batch1.clone()).await.unwrap();
-    database_client.create_snos_batch(batch2.clone()).await.unwrap();
-    database_client.create_snos_batch(batch3.clone()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch1, &SnosBatchUpdates::default()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch2, &SnosBatchUpdates::default()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch3, &SnosBatchUpdates::default()).await.unwrap();
 
     let closed_batches = database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None).await.unwrap();
 
@@ -798,9 +799,9 @@ async fn test_get_snos_batches_by_aggregator_index() {
     batch2.aggregator_batch_index = Some(1);
     batch3.aggregator_batch_index = Some(2);
 
-    database_client.create_snos_batch(batch1.clone()).await.unwrap();
-    database_client.create_snos_batch(batch2.clone()).await.unwrap();
-    database_client.create_snos_batch(batch3.clone()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch1, &SnosBatchUpdates::default()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch2, &SnosBatchUpdates::default()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch3, &SnosBatchUpdates::default()).await.unwrap();
 
     let batches_for_agg1 = database_client.get_snos_batches_by_aggregator_index(1).await.unwrap();
 
@@ -827,9 +828,9 @@ async fn test_get_open_snos_batches_by_aggregator_index() {
     batch3.aggregator_batch_index = Some(1);
     batch2.status = SnosBatchStatus::Closed;
 
-    database_client.create_snos_batch(batch1.clone()).await.unwrap();
-    database_client.create_snos_batch(batch2.clone()).await.unwrap();
-    database_client.create_snos_batch(batch3.clone()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch1, &SnosBatchUpdates::default()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch2, &SnosBatchUpdates::default()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch3, &SnosBatchUpdates::default()).await.unwrap();
 
     let open_batches = database_client.get_open_snos_batches_by_aggregator_index(1).await.unwrap();
 
@@ -852,8 +853,10 @@ async fn test_get_next_snos_batch_id() {
     assert_eq!(next_id, 1);
 
     // Create some batches
-    database_client.create_snos_batch(SnosBatch::new(1, Some(100), 200)).await.unwrap();
-    database_client.create_snos_batch(SnosBatch::new(2, Some(100), 300)).await.unwrap();
+    let batch1 = SnosBatch::new(1, Some(100), 200);
+    let batch2 = SnosBatch::new(2, Some(100), 300);
+    database_client.update_or_create_snos_batch(&batch1, &SnosBatchUpdates::default()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch2, &SnosBatchUpdates::default()).await.unwrap();
 
     // Should now return 3
     let next_id = database_client.get_next_snos_batch_id().await.unwrap();
@@ -877,9 +880,9 @@ async fn test_close_all_snos_batches_for_aggregator() {
     batch2.aggregator_batch_index = Some(1);
     batch3.aggregator_batch_index = Some(2);
 
-    database_client.create_snos_batch(batch1.clone()).await.unwrap();
-    database_client.create_snos_batch(batch2.clone()).await.unwrap();
-    database_client.create_snos_batch(batch3.clone()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch1, &SnosBatchUpdates::default()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch2, &SnosBatchUpdates::default()).await.unwrap();
+    database_client.update_or_create_snos_batch(&batch3, &SnosBatchUpdates::default()).await.unwrap();
 
     let closed_batches = database_client.close_all_snos_batches_for_aggregator(1).await.unwrap();
 

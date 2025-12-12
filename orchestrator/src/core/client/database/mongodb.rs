@@ -874,25 +874,6 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    async fn create_snos_batch(&self, batch: SnosBatch) -> Result<SnosBatch, DatabaseError> {
-        let start = Instant::now();
-        let collection: Collection<SnosBatch> = self.get_snos_batch_collection();
-        match collection.insert_one(batch.clone(), InsertOneOptions::builder().build()).await {
-            Ok(_) => {
-                let duration = start.elapsed();
-                tracing::debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
-                Ok(batch)
-            }
-            Err(err) => {
-                tracing::error!(batch_id = %batch.id, category = "db_call", "Failed to insert batch");
-                Err(DatabaseError::InsertFailed(format!(
-                    "Failed to insert batch {} with id {}: {}",
-                    batch.snos_batch_id, batch.id, err
-                )))
-            }
-        }
-    }
-
     async fn update_or_create_snos_batch(
         &self,
         batch: &SnosBatch,

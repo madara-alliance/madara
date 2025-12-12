@@ -406,7 +406,7 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
             created_at: chrono::Utc::now(),
             ..Default::default()
         };
-        database.create_snos_batch(existing_snos_batch).await?;
+        database.update_or_create_snos_batch(&existing_snos_batch, &SnosBatchUpdates::default()).await?;
 
         end_block = 14;
     }

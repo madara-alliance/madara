@@ -1184,13 +1184,7 @@ impl BatchingTrigger {
                 )
                 .await?;
 
-            config
-                .database()
-                .update_or_create_snos_batch(
-                    snos_batch,
-                    &SnosBatchUpdates { end_block: Some(snos_batch.end_block), status: Some(SnosBatchStatus::Closed) },
-                )
-                .await?;
+            self.update_or_create_snos_batch_in_db(snos_batch, config, SnosBatchStatus::Closed).await?;
         } else {
             self.check_and_close_snos_batch(config, snos_batch).await?;
         }
@@ -1200,13 +1194,7 @@ impl BatchingTrigger {
 
     async fn check_and_close_snos_batch(&self, config: &Arc<Config>, snos_batch: &SnosBatch) -> Result<(), JobError> {
         if self.should_close_snos_batch(config, snos_batch).await? {
-            config
-                .database()
-                .update_or_create_snos_batch(
-                    snos_batch,
-                    &SnosBatchUpdates { end_block: Some(snos_batch.end_block), status: Some(SnosBatchStatus::Closed) },
-                )
-                .await?;
+            self.update_or_create_snos_batch_in_db(snos_batch, config, SnosBatchStatus::Closed).await?;
         }
 
         Ok(())

@@ -237,12 +237,6 @@ pub trait DatabaseClient: Send + Sync {
         update: &SnosBatchUpdates,
     ) -> Result<SnosBatch, DatabaseError>;
 
-    /// Create a new SNOS batch
-    ///
-    /// # Arguments
-    /// * `batch` - The SNOS batch to create
-    async fn create_snos_batch(&self, batch: SnosBatch) -> Result<SnosBatch, DatabaseError>;
-
     /// Update a SNOS batch with custom filter and update documents
     ///
     /// # Arguments
