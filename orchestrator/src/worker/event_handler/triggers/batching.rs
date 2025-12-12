@@ -466,9 +466,27 @@ impl BatchingTrigger {
                                 "Closing SNOS batch, starting new batch within same aggregator batch"
                             );
 
+                            // Starting a new SNOS batch
+                            let new_snos_batch = self.start_snos_batch(
+                                current_snos_batch.snos_batch_id + 1,
+                                Some(current_aggregator_batch.index),
+                                current_snos_batch.end_block + 1,
+                            )?;
+
+                            // Updating aggregator batch
+                            let updated_aggregator_batch = self
+                                .update_aggregator_batch_info(
+                                    current_aggregator_batch,
+                                    block_number,
+                                    Some(new_snos_batch.snos_batch_id),
+                                    false,
+                                    combined_weights,
+                                )
+                                .await?;
+
                             self.save_batch_state(
                                 BatchState {
-                                    aggregator_batch: &current_aggregator_batch,
+                                    aggregator_batch: &updated_aggregator_batch,
                                     snos_batch: &current_snos_batch,
                                     close_aggregator_batch: false, // Don't close the aggregator batch
                                     snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
@@ -479,25 +497,7 @@ impl BatchingTrigger {
                             )
                             .await?;
 
-                            // Starting a new SNOS batch
-                            let new_snos_batch = self.start_snos_batch(
-                                current_snos_batch.snos_batch_id + 1,
-                                Some(current_aggregator_batch.index),
-                                current_snos_batch.end_block + 1,
-                            )?;
-
-                            Ok((
-                                Some(squashed_state_update),
-                                self.update_aggregator_batch_info(
-                                    current_aggregator_batch,
-                                    block_number,
-                                    Some(new_snos_batch.snos_batch_id),
-                                    false,
-                                    combined_weights,
-                                )
-                                .await?,
-                                new_snos_batch,
-                            ))
+                            Ok((Some(squashed_state_update), updated_aggregator_batch, new_snos_batch))
                         } else {
                             // We can add the current block in this batch
                             // Update batch info and return
