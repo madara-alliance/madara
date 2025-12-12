@@ -289,7 +289,7 @@ impl BatchingTrigger {
         current_snos_batch: SnosBatch,
         config: &Arc<Config>,
     ) -> Result<(Option<StateUpdate>, AggregatorBatch, SnosBatch), JobError> {
-        debug!(
+        info!(
             "Assigning batch to block {} with current aggregator batch index = {} and current snos batch index = {}",
             block_number, current_aggregator_batch.index, current_snos_batch.snos_batch_id
         );
@@ -466,9 +466,14 @@ impl BatchingTrigger {
                                 "Closing SNOS batch, starting new batch within same aggregator batch"
                             );
 
+                            // Saving batch state after updating snos batch details in aggregator batch
+                            let mut updated_aggregator_batch = current_aggregator_batch.clone();
+                            updated_aggregator_batch.end_block = current_snos_batch.end_block;
+                            updated_aggregator_batch.num_blocks =
+                                updated_aggregator_batch.end_snos_batch - updated_aggregator_batch.start_snos_batch + 1;
                             self.save_batch_state(
                                 BatchState {
-                                    aggregator_batch: &current_aggregator_batch,
+                                    aggregator_batch: &updated_aggregator_batch,
                                     snos_batch: &current_snos_batch,
                                     close_aggregator_batch: false, // Don't close the aggregator batch
                                     snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
