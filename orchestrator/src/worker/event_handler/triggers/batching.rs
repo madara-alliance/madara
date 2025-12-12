@@ -289,6 +289,11 @@ impl BatchingTrigger {
         current_snos_batch: SnosBatch,
         config: &Arc<Config>,
     ) -> Result<(Option<StateUpdate>, AggregatorBatch, SnosBatch), JobError> {
+        debug!(
+            "Assigning batch to block {} with current aggregator batch index = {} and current snos batch index = {}",
+            block_number, current_aggregator_batch.index, current_snos_batch.snos_batch_id
+        );
+
         // Get the provider
         let provider = config.madara_rpc_client();
 
@@ -407,26 +412,38 @@ impl BatchingTrigger {
 
                             info!(
                                 batch_index = %current_aggregator_batch.index,
-                                current_blocks = %current_aggregator_batch.num_blocks,
-                                max_blocks = %config.params.batching_config.max_batch_size,
-                                current_size = %compressed_state_update.len(),
-                                max_size = %config.params.batching_config.max_blob_size,
+                                current_batches = %current_aggregator_batch.num_snos_batches,
+                                max_batches = %config.params.batching_config.max_batch_size,
+                                current_blob_size = %compressed_state_update.len(),
+                                max_blob_size = %config.params.batching_config.max_blob_size,
                                 "Closing aggregator batch due to size or weight limits"
                             );
 
                             // Close the current batches (both aggregator and SNOS) and save the state
-                            self.save_batch_state(
-                                BatchState {
-                                    aggregator_batch: &current_aggregator_batch,
-                                    snos_batch: &current_snos_batch,
-                                    close_aggregator_batch: true, // Close the aggregator batch
-                                    snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
-                                    state_update: &prev_state_update,
-                                },
-                                config,
-                                provider,
-                            )
-                            .await?;
+                            if current_snos_batch.end_block != current_aggregator_batch.end_block {
+                                warn!(snos_batch = ?current_snos_batch, aggregator_batch = ?current_aggregator_batch, "Discrepancy detected in end blocks while closing batches after Aggregator is full. Not saving SNOS batch to prevent data corruption");
+                                self.save_aggregator_batch_state(
+                                    &current_aggregator_batch,
+                                    &prev_state_update,
+                                    true,
+                                    config,
+                                    provider,
+                                )
+                                .await?;
+                            } else {
+                                self.save_batch_state(
+                                    BatchState {
+                                        aggregator_batch: &current_aggregator_batch,
+                                        snos_batch: &current_snos_batch,
+                                        close_aggregator_batch: true, // Close the aggregator batch
+                                        snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
+                                        state_update: &prev_state_update,
+                                    },
+                                    config,
+                                    provider,
+                                )
+                                .await?;
+                            }
 
                             // Start a new batches
                             let (new_snos_batch, new_aggregator_batch) = self
@@ -443,8 +460,9 @@ impl BatchingTrigger {
 
                             info!(
                                 snos_batch_id = %current_snos_batch.snos_batch_id,
-                                num_blocks = %current_snos_batch.num_blocks,
+                                start_block = %current_snos_batch.start_block,
                                 end_block = %current_snos_batch.end_block,
+                                num_blocks = %current_snos_batch.num_blocks,
                                 "Closing SNOS batch, starting new batch within same aggregator batch"
                             );
 
@@ -465,7 +483,7 @@ impl BatchingTrigger {
                             let new_snos_batch = self.start_snos_batch(
                                 current_snos_batch.snos_batch_id + 1,
                                 Some(current_aggregator_batch.index),
-                                block_number,
+                                current_snos_batch.end_block + 1,
                             )?;
 
                             Ok((
@@ -792,20 +810,29 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<(), JobError> {
-        try_join!(
-            self.store_aggregator_batch_state_update(
-                batch_state.aggregator_batch,
-                batch_state.state_update,
-                config,
-                provider
-            ),
-            self.update_or_create_aggregator_batch_in_db(
-                batch_state.aggregator_batch,
-                batch_state.close_aggregator_batch,
-                config,
-            ),
-            self.update_or_create_snos_batch_in_db(batch_state.snos_batch, config, batch_state.snos_batch_status),
-        )?;
+        self.save_aggregator_batch_state(
+            batch_state.aggregator_batch,
+            batch_state.state_update,
+            batch_state.close_aggregator_batch,
+            config,
+            provider,
+        )
+        .await?;
+        self.update_or_create_snos_batch_in_db(batch_state.snos_batch, config, batch_state.snos_batch_status).await?;
+
+        Ok(())
+    }
+
+    async fn save_aggregator_batch_state(
+        &self,
+        batch: &AggregatorBatch,
+        state_update: &StateUpdate,
+        should_close: bool,
+        config: &Arc<Config>,
+        provider: &Arc<JsonRpcClient<HttpTransport>>,
+    ) -> Result<(), JobError> {
+        self.store_aggregator_batch_state_update(batch, state_update, config, provider).await?;
+        self.update_or_create_aggregator_batch_in_db(batch, should_close, config).await?;
 
         Ok(())
     }
@@ -819,6 +846,7 @@ impl BatchingTrigger {
         close_aggregator_batch: bool, // boolean to decide if we can close the block
         config: &Arc<Config>,
     ) -> Result<(), JobError> {
+        debug!(batch=?aggregator_batch, "Saving Aggregator batch to DB");
         // Get the database
         let database = config.database();
 
@@ -835,6 +863,7 @@ impl BatchingTrigger {
             )
             .await?;
 
+        debug!(batch=?aggregator_batch, "Saved Aggregator batch to DB");
         Ok(())
     }
 
@@ -844,6 +873,7 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         status: SnosBatchStatus,
     ) -> Result<(), JobError> {
+        debug!(batch=?snos_batch, "Saving SNOS batch to DB");
         let database = config.database();
 
         database
@@ -852,6 +882,8 @@ impl BatchingTrigger {
                 &SnosBatchUpdates { end_block: Some(snos_batch.end_block), status: Some(status) },
             )
             .await?;
+
+        debug!(batch=?snos_batch, "Saved SNOS batch to DB");
 
         Ok(())
     }
@@ -866,6 +898,7 @@ impl BatchingTrigger {
         config: &Arc<Config>,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<(), JobError> {
+        debug!(batch=?aggregator_batch, "Saving Aggregator batch state to storage");
         let storage = config.storage();
 
         let compressed_state_update = self
@@ -877,6 +910,7 @@ impl BatchingTrigger {
             self.store_blob(storage, &compressed_state_update, aggregator_batch),
         )?;
 
+        debug!(batch=?aggregator_batch, "Saved Aggregator batch state to storage");
         Ok(())
     }
 
@@ -894,6 +928,7 @@ impl BatchingTrigger {
         batch.end_block = end_block;
         if let Some(end_snos_batch) = end_snos_batch {
             batch.end_snos_batch = end_snos_batch;
+            batch.num_snos_batches = end_snos_batch - batch.start_snos_batch + 1;
         }
         batch.is_batch_ready = is_batch_ready;
         batch.num_blocks = end_block - batch.start_block + 1;
