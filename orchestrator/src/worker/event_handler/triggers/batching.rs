@@ -419,11 +419,41 @@ impl BatchingTrigger {
                                 "Closing aggregator batch due to size or weight limits"
                             );
 
+                            // Update aggregator batch to include the current SNOS batch before closing
+                            info!(
+                                aggregator_batch_index = %current_aggregator_batch.index,
+                                current_snos_batch_id = %current_snos_batch.snos_batch_id,
+                                old_end_snos_batch = %current_aggregator_batch.end_snos_batch,
+                                old_end_block = %current_aggregator_batch.end_block,
+                                new_end_snos_batch = %current_snos_batch.snos_batch_id,
+                                new_end_block = %current_snos_batch.end_block,
+                                "Updating aggregator batch before closing to include current SNOS batch"
+                            );
+
+                            let mut updated_aggregator_batch = current_aggregator_batch.clone();
+                            updated_aggregator_batch.end_snos_batch = current_snos_batch.snos_batch_id;
+                            updated_aggregator_batch.end_block = current_snos_batch.end_block;
+                            updated_aggregator_batch.num_snos_batches =
+                                updated_aggregator_batch.end_snos_batch - updated_aggregator_batch.start_snos_batch + 1;
+                            updated_aggregator_batch.num_blocks =
+                                updated_aggregator_batch.end_block - updated_aggregator_batch.start_block + 1;
+
+                            info!(
+                                aggregator_batch_index = %updated_aggregator_batch.index,
+                                start_snos_batch = %updated_aggregator_batch.start_snos_batch,
+                                end_snos_batch = %updated_aggregator_batch.end_snos_batch,
+                                num_snos_batches = %updated_aggregator_batch.num_snos_batches,
+                                start_block = %updated_aggregator_batch.start_block,
+                                end_block = %updated_aggregator_batch.end_block,
+                                num_blocks = %updated_aggregator_batch.num_blocks,
+                                "Updated aggregator batch details before closing"
+                            );
+
                             // Close the current batches (both aggregator and SNOS) and save the state
-                            if current_snos_batch.end_block != current_aggregator_batch.end_block {
-                                warn!(snos_batch = ?current_snos_batch, aggregator_batch = ?current_aggregator_batch, "Discrepancy detected in end blocks while closing batches after Aggregator is full. Not saving SNOS batch to prevent data corruption");
+                            if current_snos_batch.end_block != updated_aggregator_batch.end_block {
+                                warn!(snos_batch = ?current_snos_batch, aggregator_batch = ?updated_aggregator_batch, "Discrepancy detected in end blocks while closing batches after Aggregator is full. Not saving SNOS batch to prevent data corruption");
                                 self.save_aggregator_batch_state(
-                                    &current_aggregator_batch,
+                                    &updated_aggregator_batch,
                                     &prev_state_update,
                                     true,
                                     config,
@@ -433,7 +463,7 @@ impl BatchingTrigger {
                             } else {
                                 self.save_batch_state(
                                     BatchState {
-                                        aggregator_batch: &current_aggregator_batch,
+                                        aggregator_batch: &updated_aggregator_batch,
                                         snos_batch: &current_snos_batch,
                                         close_aggregator_batch: true, // Close the aggregator batch
                                         snos_batch_status: SnosBatchStatus::Closed, // Close the SNOS batch
