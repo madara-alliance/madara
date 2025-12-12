@@ -143,7 +143,7 @@ where
         event.record(&mut visitor);
 
         // Table-like format with fixed widths:
-        // Timestamp (14 chars) | Level (5 chars) | Queue (24 chars) | Service (12 chars) | Message and fields
+        // Timestamp (14 chars) | Level (5 chars) | Queue (24 chars) | Message and fields
         write!(writer, "{}{}{} ", ts_color, now, reset)?;
         write!(writer, "{}|{} ", dim_color, reset)?;
         write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
@@ -153,13 +153,16 @@ where
         write!(writer, "{}{:<14}{} ", queue_color, queue.1, reset)?;
         write!(writer, "{}|{} ", dim_color, reset)?;
 
-        // Add service/package column
+        // Add service/package as prefix to message
         let service = extract_service_name(meta.target());
-        write!(writer, "{}{:<12}{} ", queue_color, service, reset)?;
-        write!(writer, "{}|{} ", dim_color, reset)?;
 
-        // Write the main message
-        write!(writer, "{}{}{}", msg_color, visitor.message, reset)?;
+        // Write the service prefix and main message
+        if service != "-" {
+            write!(writer, "{}{}: {}{}", queue_color, service, msg_color, visitor.message)?;
+        } else {
+            write!(writer, "{}{}{}", msg_color, visitor.message, reset)?;
+        }
+        write!(writer, "{}", reset)?;
 
         // Write fields separately with proper formatting (excluding queue which is already shown)
         if !visitor.meta.is_empty() || !visitor.fields.is_empty() {
@@ -377,7 +380,24 @@ pub fn init_logging() {
 }
 
 /// Extract service/package name from the tracing target
-/// Maps crate names to short display names for the service column
+///
+/// Maps crate names to short display names for service identification in logs.
+///
+/// # Classification
+///
+/// - **Orchestrator crates** → Specific service names (ATLANTIC, UTILS, GPS_FACT_CHK, etc.)
+/// - **Generic orchestrator** → "-" (no specific service, core orchestrator code)
+/// - **Third-party dependencies** → "EXTERNAL" (logs from external crates like tokio, hyper, etc.)
+///
+/// # Examples
+///
+/// ```ignore
+/// extract_service_name("orchestrator_atlantic_service::client") → "ATLANTIC"
+/// extract_service_name("orchestrator_utils::logging")           → "UTILS"
+/// extract_service_name("orchestrator::core::config")            → "-"
+/// extract_service_name("tokio::runtime")                        → "EXTERNAL"
+/// extract_service_name("hyper::client")                         → "EXTERNAL"
+/// ```
 fn extract_service_name(target: &str) -> &'static str {
     if target.starts_with("orchestrator_atlantic_service") {
         "ATLANTIC"

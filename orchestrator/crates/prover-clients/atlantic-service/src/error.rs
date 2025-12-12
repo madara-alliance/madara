@@ -3,6 +3,28 @@ use reqwest::StatusCode;
 
 use crate::transport::HttpResponseClassifier;
 
+/// Errors that can occur when interacting with the Atlantic API.
+///
+/// # Retry Behavior
+///
+/// Only `NetworkError` is retryable. All other error types are considered permanent failures:
+///
+/// - **`NetworkError` (Retryable)**: Infrastructure-level errors like timeouts, incomplete messages,
+///   connection issues, and gateway errors (502/503/504). These are transient and will be
+///   automatically retried up to `RETRY_MAX_ATTEMPTS` times.
+///
+/// - **`ApiError` (Non-retryable)**: Real Atlantic API errors with proper HTTP responses.
+///   This includes 4xx client errors and 5xx server errors that return valid JSON error messages.
+///   These indicate application-level failures that won't be resolved by retrying.
+///
+/// - **Other error types (Non-retryable)**: `FileError`, `ParseError`, `UrlError`, and `Other`
+///   represent programming errors or configuration issues that cannot be resolved by retrying.
+///
+/// ## Important Note on 5xx Errors
+///
+/// Real Atlantic API 5xx errors with valid JSON responses are treated as `ApiError` and will
+/// **NOT** be retried. Only infrastructure-level 5xx errors (like gateway timeouts or HTML
+/// error pages from load balancers) are classified as `NetworkError` and retried.
 #[derive(Debug, thiserror::Error)]
 pub enum AtlanticError {
     /// Network/transport errors that may be retryable (timeouts, incomplete messages, etc.)
@@ -37,6 +59,18 @@ impl AtlanticError {
     }
 
     /// Get error type as a string for metrics
+    ///
+    /// Returns a static string classification of the error type for use in OpenTelemetry metrics.
+    /// This allows error types to be used as metric labels for monitoring and alerting.
+    ///
+    /// # Returns
+    /// A static string that will never be empty, ensuring metrics always have a valid error_type label:
+    /// - "network_error" - Infrastructure/transport errors
+    /// - "api_error" - Atlantic API errors
+    /// - "file_error" - File system errors
+    /// - "parse_error" - JSON parsing errors
+    /// - "url_error" - URL construction errors
+    /// - "other_error" - Unexpected errors
     pub fn error_type(&self) -> &'static str {
         match self {
             AtlanticError::NetworkError { .. } => "network_error",
@@ -45,15 +79,6 @@ impl AtlanticError {
             AtlanticError::ParseError { .. } => "parse_error",
             AtlanticError::UrlError { .. } => "url_error",
             AtlanticError::Other { .. } => "other_error",
-        }
-    }
-
-    /// Get response bytes if available (for metrics)
-    pub fn response_bytes(&self) -> u64 {
-        match self {
-            AtlanticError::NetworkError { response_bytes, .. } => response_bytes.unwrap_or(0),
-            AtlanticError::ApiError { response_bytes, .. } => response_bytes.unwrap_or(0),
-            _ => 0,
         }
     }
 
