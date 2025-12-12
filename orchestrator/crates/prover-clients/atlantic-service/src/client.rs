@@ -548,6 +548,7 @@ impl AtlanticClient {
     /// * `network` - Optional network filter
     /// * `status` - Optional status filter
     /// * `result` - Optional result filter
+    /// * `api_key` - API key for authentication
     ///
     /// # Returns
     /// Returns a list of Atlantic queries matching the search criteria and total count
@@ -559,10 +560,14 @@ impl AtlanticClient {
         network: Option<&str>,
         status: Option<&str>,
         result: Option<&str>,
+        api_key: impl AsRef<str>,
     ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
         let search_str = search_string.as_ref();
         let context =
             format!("search: {}, limit: {:?}, offset: {:?}, network: {:?}", search_str, limit, offset, network);
+
+        // Validate API key once using transport layer
+        let auth = ApiKeyAuth::new(api_key)?;
         let search_string_owned = search_str.to_string();
         let network_owned = network.map(|s| s.to_string());
         let status_owned = status.map(|s| s.to_string());
@@ -578,6 +583,7 @@ impl AtlanticClient {
         );
 
         self.retry_request("search_atlantic_queries", &context, || {
+            let auth = auth.clone();
             let search_string = search_string_owned.clone();
             let network = network_owned.as_deref();
             let status = status_owned.as_deref();
@@ -587,6 +593,7 @@ impl AtlanticClient {
                 // Build request using API layer
                 let request = AtlanticApiOperations::build_search_queries_request(
                     self.client.request(),
+                    &auth,
                     &search_string,
                     limit,
                     offset,

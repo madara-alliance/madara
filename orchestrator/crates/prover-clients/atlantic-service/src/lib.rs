@@ -85,6 +85,7 @@ impl ProverClient for AtlanticProverService {
                         Some(self.atlantic_network.as_str()),
                         None,
                         None,
+                        self.atlantic_api_key.clone(),
                     )
                     .await?
                     .atlantic_queries

@@ -92,6 +92,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
     let search_mock = mock_server.mock(|when, then| {
         when.method("GET")
             .path("/atlantic-queries")
+            .header("x-api-key", atlantic_params.atlantic_api_key.as_str())
             .query_param("search", external_id.as_str())
             .query_param("limit", "1")
             .query_param("network", "TESTNET");

@@ -531,10 +531,11 @@ impl AtlanticApiOperations {
 
     // ==================== SEARCH ATLANTIC QUERIES ====================
 
-    /// Builds a search atlantic queries request (no authentication required)
+    /// Builds a search atlantic queries request
     ///
     /// # Arguments
     /// * `builder` - Base request builder from HTTP client
+    /// * `auth` - API key authentication
     /// * `search_string` - The search string to filter queries
     /// * `limit` - Optional limit for the number of results
     /// * `offset` - Optional offset for pagination
@@ -546,6 +547,7 @@ impl AtlanticApiOperations {
     /// Configured request builder ready to send
     pub fn build_search_queries_request<'a>(
         builder: RequestBuilder<'a>,
+        auth: &ApiKeyAuth,
         search_string: &str,
         limit: Option<u32>,
         offset: Option<u32>,
@@ -564,7 +566,11 @@ impl AtlanticApiOperations {
             "Building search queries request"
         );
 
-        let mut request = builder.method(Method::GET).path("atlantic-queries").query_param("search", search_string);
+        let mut request = builder
+            .method(Method::GET)
+            .header(ApiKeyAuth::header_name(), auth.header_value())
+            .path("atlantic-queries")
+            .query_param("search", search_string);
 
         if let Some(limit_val) = limit {
             request = request.query_param("limit", &limit_val.to_string());
