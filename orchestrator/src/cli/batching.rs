@@ -21,16 +21,19 @@ pub struct BatchingCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS", long, default_value = "3600")]
     pub batching_worker_lock_duration: u64,
 
-    /// Maximum number of blocks allowed in a single SNOS batch.
-    /// Keep this None if you don't want to specify a hard limit.
-    /// This can be used to test with RPC other than Madara.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH", long)]
     pub max_blocks_per_snos_batch: Option<u64>,
 
+    /// Fixed number of blocks allowed in a single SNOS batch.
+    /// If this is set, nothing will be checked and every SNOS batch will have these many blocks.
+    /// Keep this None if you don't want to specify a hard limit.
+    /// This can be used to test with RPC other than Madara.
     #[arg(env = "MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH", long)]
     pub fixed_blocks_per_snos_batch: Option<u64>,
 
     /// Maximum number of SNOS batches that can be children of one aggregator batch.
+    ///
+    /// NOTE: This is not actually being used in the batching logic
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH", long, default_value = "50")]
     pub max_snos_batches_per_aggregator_batch: u64,
 
