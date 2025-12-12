@@ -79,7 +79,7 @@ use crate::transport::ApiKeyAuth;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
-    AtlanticGetStatusResponse, AtlanticQueryStep,
+    AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQueryStep,
 };
 
 /// Atlantic API operations - request building and response parsing
@@ -242,6 +242,7 @@ impl AtlanticApiOperations {
         result: &AtlanticQueryStep,
         network: &str,
         cairo_vm: &AtlanticCairoVm,
+        external_id: &str,
         bucket_id: Option<&str>,
         bucket_job_index: Option<u64>,
     ) -> Result<RequestBuilder<'a>, AtlanticError> {
@@ -251,6 +252,7 @@ impl AtlanticApiOperations {
             network = %network,
             cairo_vm = ?cairo_vm,
             result = ?result,
+            external_id = %external_id,
             bucket_id = ?bucket_id,
             bucket_job_index = ?bucket_job_index,
             pie_file = ?pie_file,
@@ -266,6 +268,7 @@ impl AtlanticApiOperations {
             .form_text("network", network)
             .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
             .form_text("cairoVm", &cairo_vm.as_str())
+            .form_text("externalId", external_id)
             .form_file("pieFile", pie_file, "pie.zip", Some("application/zip"))
             .map_err(|e| AtlanticError::from_io_error("add_job", e))?;
 
@@ -523,6 +526,98 @@ impl AtlanticApiOperations {
                 "Proof download failed"
             );
             Err(AtlanticError::from_http_error_response("get_proof_by_task_id", status, error_text))
+        }
+    }
+
+    // ==================== SEARCH ATLANTIC QUERIES ====================
+
+    /// Builds a search atlantic queries request (no authentication required)
+    ///
+    /// # Arguments
+    /// * `builder` - Base request builder from HTTP client
+    /// * `search_string` - The search string to filter queries
+    /// * `limit` - Optional limit for the number of results
+    /// * `offset` - Optional offset for pagination
+    /// * `network` - Optional network filter
+    /// * `status` - Optional status filter
+    /// * `result` - Optional result filter
+    ///
+    /// # Returns
+    /// Configured request builder ready to send
+    pub fn build_search_queries_request<'a>(
+        builder: RequestBuilder<'a>,
+        search_string: &str,
+        limit: Option<u32>,
+        offset: Option<u32>,
+        network: Option<&str>,
+        status: Option<&str>,
+        result: Option<&str>,
+    ) -> RequestBuilder<'a> {
+        debug!(
+            operation = "search_atlantic_queries",
+            search_string = %search_string,
+            limit = ?limit,
+            offset = ?offset,
+            network = ?network,
+            status = ?status,
+            result = ?result,
+            "Building search queries request"
+        );
+
+        let mut request = builder.method(Method::GET).path("atlantic-queries").query_param("search", search_string);
+
+        if let Some(limit_val) = limit {
+            request = request.query_param("limit", &limit_val.to_string());
+        }
+        if let Some(offset_val) = offset {
+            request = request.query_param("offset", &offset_val.to_string());
+        }
+        if let Some(network_val) = network {
+            request = request.query_param("network", network_val);
+        }
+        if let Some(status_val) = status {
+            request = request.query_param("status", status_val);
+        }
+        if let Some(result_val) = result {
+            request = request.query_param("result", result_val);
+        }
+
+        request
+    }
+
+    /// Parses search queries response
+    pub async fn parse_search_queries_response(
+        response: Response,
+        search_string: &str,
+    ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
+        let status = response.status();
+
+        if status.is_success() {
+            let queries_response: AtlanticQueriesListResponse = response
+                .json()
+                .await
+                .map_err(|e| AtlanticError::parse_error("search_atlantic_queries", e.to_string()))?;
+
+            debug!(
+                operation = "search_atlantic_queries",
+                search_string = %search_string,
+                status = %status,
+                total_count = queries_response.total,
+                returned_count = queries_response.atlantic_queries.len(),
+                "Queries search completed"
+            );
+
+            Ok(queries_response)
+        } else {
+            let (error_text, status) = extract_http_error_text(response, "search atlantic queries").await;
+            debug!(
+                operation = "search_atlantic_queries",
+                search_string = %search_string,
+                status = %status,
+                error = %error_text,
+                "Failed to search queries"
+            );
+            Err(AtlanticError::from_http_error_response("search_atlantic_queries", status, error_text))
         }
     }
 

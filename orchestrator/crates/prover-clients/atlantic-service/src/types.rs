@@ -117,6 +117,13 @@ pub struct AtlanticQuery {
     pub completed_at: Option<String>,
     pub result: Option<AtlanticQueryStep>,
     pub network: Option<String>,
+    pub hints: Option<AtlanticHints>,
+    pub sharp_prover: Option<AtlanticSharpProver>,
+    pub bucket_id: Option<String>,
+    pub bucket_job_index: Option<i32>,
+    pub customer_name: Option<String>,
+    pub is_job_size_valid: bool,
+    pub is_proof_mocked: Option<bool>,
     pub client: AtlanticClient,
 }
 
@@ -128,6 +135,14 @@ pub struct AtlanticClient {
     pub email: Option<String>,
     pub is_email_verified: Option<bool>,
     pub image: Option<String>,
+}
+
+/// This is the response struct for the `/atlantic-queries` GET endpoint
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AtlanticQueriesListResponse {
+    pub atlantic_queries: Vec<AtlanticQuery>,
+    pub total: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +186,13 @@ pub enum AtlanticBucketType {
 pub enum AtlanticHints {
     HerodotusEvmGrower,
     HerodotusSnGrower,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AtlanticSharpProver {
+    Stone,
+    Stwo,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -15,7 +15,7 @@ use crate::proving::{create_proving_layer, ProvingLayer, ProvingParams};
 use crate::transport::ApiKeyAuth;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticBucketResponse, AtlanticCairoVm, AtlanticGetBucketResponse,
-    AtlanticGetStatusResponse, AtlanticQueryStep,
+    AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQueryStep,
 };
 use crate::AtlanticValidatedArgs;
 
@@ -25,6 +25,8 @@ pub struct AtlanticJobInfo {
     pub pie_file: PathBuf,
     /// Number of steps
     pub n_steps: Option<usize>,
+    /// External ID to identify the job (used to prevent duplicate submissions)
+    pub external_id: String,
 }
 
 /// Struct to store job config
@@ -424,6 +426,7 @@ impl AtlanticClient {
         // Validate API key once using transport layer
         let auth = ApiKeyAuth::new(api_key)?;
         let pie_file_path = job_info.pie_file.clone();
+        let external_id = job_info.external_id.clone();
         let layout = job_config.proof_layout;
         let cairo_vm = job_config.cairo_vm.clone();
         let result_step = job_config.result.clone();
@@ -435,6 +438,7 @@ impl AtlanticClient {
             .retry_request("add_job", &context, || {
                 let auth = auth.clone();
                 let pie_file = pie_file_path.clone();
+                let external_id = external_id.clone();
                 let cairo_vm = cairo_vm.clone();
                 let result_step = result_step.clone();
                 let network = network.clone();
@@ -446,6 +450,7 @@ impl AtlanticClient {
                         layout = %layout,
                         job_size = job_size,
                         network = %network,
+                        external_id = %external_id,
                         pie_file = ?pie_file,
                         "Building add_job request"
                     );
@@ -459,6 +464,7 @@ impl AtlanticClient {
                         &result_step,
                         &network,
                         &cairo_vm,
+                        &external_id,
                         bucket_id.as_deref(),
                         bucket_job_index,
                     )?;
@@ -525,6 +531,78 @@ impl AtlanticClient {
 
                 // Parse response using API layer
                 AtlanticApiOperations::parse_get_status_response(response, &job_key).await
+            }
+        })
+        .await
+    }
+
+    /// Search Atlantic queries with optional filters
+    ///
+    /// This function searches through Atlantic queries using the provided search string
+    /// and optional additional filters like limit, offset, network, status, and result.
+    ///
+    /// # Arguments
+    /// * `search_string` - The search string to filter queries (e.g., external_id)
+    /// * `limit` - Optional limit for the number of results
+    /// * `offset` - Optional offset for pagination
+    /// * `network` - Optional network filter
+    /// * `status` - Optional status filter
+    /// * `result` - Optional result filter
+    ///
+    /// # Returns
+    /// Returns a list of Atlantic queries matching the search criteria and total count
+    pub async fn search_atlantic_queries(
+        &self,
+        search_string: impl AsRef<str>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+        network: Option<&str>,
+        status: Option<&str>,
+        result: Option<&str>,
+    ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
+        let search_str = search_string.as_ref();
+        let context =
+            format!("search: {}, limit: {:?}, offset: {:?}, network: {:?}", search_str, limit, offset, network);
+        let search_string_owned = search_str.to_string();
+        let network_owned = network.map(|s| s.to_string());
+        let status_owned = status.map(|s| s.to_string());
+        let result_owned = result.map(|s| s.to_string());
+
+        debug!(
+            operation = "search_atlantic_queries",
+            search_string = %search_str,
+            limit = ?limit,
+            offset = ?offset,
+            network = ?network,
+            "Searching Atlantic queries"
+        );
+
+        self.retry_request("search_atlantic_queries", &context, || {
+            let search_string = search_string_owned.clone();
+            let network = network_owned.as_deref();
+            let status = status_owned.as_deref();
+            let result = result_owned.as_deref();
+
+            async move {
+                // Build request using API layer
+                let request = AtlanticApiOperations::build_search_queries_request(
+                    self.client.request(),
+                    &search_string,
+                    limit,
+                    offset,
+                    network,
+                    status,
+                    result,
+                );
+
+                // Send request
+                let response = request
+                    .send()
+                    .await
+                    .map_err(|e| AtlanticError::from_reqwest_error("search_atlantic_queries", e))?;
+
+                // Parse response using API layer
+                AtlanticApiOperations::parse_search_queries_response(response, &search_string).await
             }
         })
         .await

@@ -71,6 +71,7 @@ impl JobHandlerTrait for ProvingJobHandler {
                 bucket_id: proving_metadata.bucket_id,
                 bucket_job_index: proving_metadata.bucket_job_index,
                 num_steps: proving_metadata.n_steps,
+                external_id: job.id.to_string(),
             }))
             .await
             .inspect_err(|e| {

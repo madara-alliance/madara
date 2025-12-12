@@ -54,11 +54,119 @@ async fn atlantic_client_submit_task_when_mock_works() {
             bucket_id: None,
             bucket_job_index: None,
             num_steps: None,
+            external_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await;
 
     assert!(task_result.is_ok());
     submit_mock.assert();
+}
+
+#[tokio::test]
+async fn atlantic_client_does_not_resubmit_when_job_exists() {
+    let _ = env_logger::try_init();
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
+
+    let external_id = uuid::Uuid::new_v4().to_string();
+    let bucket_id = "bucket-123".to_string();
+    let bucket_job_index = 1u64;
+
+    let atlantic_params = AtlanticValidatedArgs {
+        atlantic_api_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"),
+        atlantic_service_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL")).unwrap(),
+        atlantic_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL")).unwrap(),
+        atlantic_mock_fact_hash: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH"),
+        atlantic_prover_type: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_PROVER_TYPE"),
+        atlantic_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SETTLEMENT_LAYER"),
+        atlantic_verifier_contract_address: get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
+        ),
+        atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
+    };
+
+    let mock_server = MockServer::start();
+
+    let search_mock = mock_server.mock(|when, then| {
+        when.method("GET")
+            .path("/atlantic-queries")
+            .query_param("search", external_id.as_str())
+            .query_param("limit", "1")
+            .query_param("network", "TESTNET");
+
+        then.status(200).header("content-type", "application/json").json_body(serde_json::json!({
+            "atlanticQueries": [{
+                "id": "existing_query_id",
+                "externalId": external_id.clone(),
+                "transactionId": null,
+                "status": "RECEIVED",
+                "step": null,
+                "programHash": null,
+                "integrityFactHash": null,
+                "sharpFactHash": null,
+                "layout": null,
+                "isFactMocked": null,
+                "chain": null,
+                "jobSize": null,
+                "declaredJobSize": null,
+                "cairoVm": null,
+                "cairoVersion": null,
+                "steps": [],
+                "errorReason": null,
+                "submittedByClient": "client",
+                "projectId": "project",
+                "createdAt": "2024-01-01T00:00:00Z",
+                "completedAt": null,
+                "result": null,
+                "network": "TESTNET",
+                "hints": null,
+                "sharpProver": null,
+                "bucketId": bucket_id.clone(),
+                "bucketJobIndex": bucket_job_index,
+                "customerName": null,
+                "isJobSizeValid": true,
+                "isProofMocked": null,
+                "client": {
+                    "clientId": null,
+                    "name": null,
+                    "email": null,
+                    "isEmailVerified": null,
+                    "image": null
+                }
+            }],
+            "total": 1
+        }));
+    });
+
+    let submit_mock = mock_server.mock(|when, then| {
+        when.method("POST").path("/atlantic-query");
+        then.status(200)
+            .header("content-type", "application/json")
+            .json_body(serde_json::json!({ "atlanticQueryId": "should_not_be_called" }));
+    });
+
+    let atlantic_service =
+        AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params, &LayoutName::dynamic);
+
+    let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
+    let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
+
+    let task_result = atlantic_service
+        .submit_task(Task::CreateJob(CreateJobInfo {
+            cairo_pie: Box::new(cairo_pie),
+            bucket_id: Some(bucket_id.clone()),
+            bucket_job_index: Some(bucket_job_index),
+            num_steps: None,
+            external_id: external_id.clone(),
+        }))
+        .await
+        .expect("submit_task should return existing job id");
+
+    assert_eq!(task_result, "existing_query_id");
+    search_mock.assert_calls(1);
+    submit_mock.assert_calls(0);
 }
 
 #[tokio::test]
@@ -153,6 +261,7 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
             bucket_id: None,
             bucket_job_index: None,
             num_steps: None,
+            external_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await
         .expect("Failed to submit task to Atlantic service");
