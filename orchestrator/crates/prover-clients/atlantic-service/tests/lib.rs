@@ -53,6 +53,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
             bucket_id: None,
             bucket_job_index: None,
             num_steps: None,
+            external_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await;
 
@@ -149,6 +150,7 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
             bucket_id: None,
             bucket_job_index: None,
             num_steps: None,
+            external_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await
         .expect("Failed to submit task to Atlantic service");

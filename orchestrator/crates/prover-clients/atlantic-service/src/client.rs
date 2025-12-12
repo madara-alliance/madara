@@ -17,7 +17,7 @@ use crate::error::AtlanticError;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
-    AtlanticGetStatusResponse, AtlanticQueryStep,
+    AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQueryStep,
 };
 use crate::AtlanticValidatedArgs;
 
@@ -27,6 +27,8 @@ pub struct AtlanticJobInfo {
     pub pie_file: PathBuf,
     /// Number of steps
     pub n_steps: Option<usize>,
+    /// External ID to identify the job (used to prevent duplicate submissions)
+    pub external_id: String,
 }
 
 /// Struct to store job config
@@ -204,6 +206,83 @@ impl AtlanticClient {
         .await
     }
 
+    /// Search Atlantic queries with optional filters
+    /// This function searches through Atlantic queries using the provided search string
+    /// and optional additional filters like limit, offset, client_id, network, status, and result.
+    ///
+    /// # Arguments
+    /// * `search_string` - The search string to filter queries
+    /// * `limit` - Optional limit for the number of results (default: None)
+    /// * `offset` - Optional offset for pagination (default: None)
+    /// * `status` - Optional status filter (default: None)
+    /// * `result` - Optional result filter (default: None)
+    ///
+    /// # Returns
+    /// Returns a list of Atlantic queries matching the search criteria and total count
+    pub async fn search_atlantic_queries(
+        &self,
+        search_string: impl AsRef<str>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+        status: Option<&str>,
+        result: Option<&str>,
+    ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
+        debug!(
+            "Atlantic Request: GET /atlantic-queries - searching queries (search: {}, limit: {:?}, offset: {:?})",
+            search_string.as_ref(), limit, offset
+        );
+
+        self.retry_get("search_atlantic_queries", || async {
+            let mut request = self.client.request()
+                .method(Method::GET)
+                .path("atlantic-queries")
+                .query_param("search", search_string.as_ref());
+
+            // Add optional query parameters
+            if let Some(limit_val) = limit {
+                request = request.query_param("limit", &limit_val.to_string());
+            }
+            if let Some(offset_val) = offset {
+                request = request.query_param("offset", &offset_val.to_string());
+            }
+            if let Some(status_val) = status {
+                request = request.query_param("status", status_val);
+            }
+            if let Some(result_val) = result {
+                request = request.query_param("result", result_val);
+            }
+
+            let response = request.send().await.map_err(|e| AtlanticError::GetQueriesFailure {
+                context: format!("search: {}", search_string.as_ref()),
+                source: e,
+            })?;
+
+            let status = response.status();
+            match status.is_success() {
+                true => {
+                    let queries_response = response.json().await.map_err(|e| AtlanticError::GetQueriesFailure {
+                        context: format!("search: {}, parsing JSON response", search_string.as_ref()),
+                        source: e,
+                    })?;
+                    debug!(
+                        "Atlantic Response: GET /atlantic-queries - success (status: {}, search: {})",
+                        status, search_string.as_ref()
+                    );
+                    Ok(queries_response)
+                }
+                false => {
+                    let (error_text, status) = extract_http_error_text(response, "search atlantic queries").await;
+                    debug!(
+                        "Atlantic Response: GET /atlantic-queries - error (status: {}, error: {}, search: {})",
+                        status, error_text, search_string.as_ref()
+                    );
+                    Err(AtlanticError::AtlanticService(status, error_text))
+                }
+            }
+        })
+        .await
+    }
+
     /// Create a new bucket for Applicative Recursion.
     /// Initially, the bucket will be empty when created.
     /// The `bucket_id` returned from here will be used to add child jobs to this bucket.
@@ -358,7 +437,9 @@ impl AtlanticClient {
                 .form_text("network", job_config.network.as_ref())
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                 .form_text("cairoVm", &job_config.cairo_vm.as_str())
+                .form_text("externalId", &job_info.external_id)
                 .form_file("pieFile", job_info.pie_file.as_ref(), "pie.zip", Some("application/zip"))?,
+
             ProvingParams { layout: job_config.proof_layout },
         );
 

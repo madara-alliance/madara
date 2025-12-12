@@ -66,7 +66,7 @@ impl ProverClient for AtlanticProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CreateJob(CreateJobInfo { cairo_pie, bucket_id, bucket_job_index, num_steps: n_steps }) => {
+            Task::CreateJob(CreateJobInfo { cairo_pie, bucket_id, bucket_job_index, num_steps: n_steps, external_id }) => {
                 let temp_file =
                     NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
                 let pie_file_path = temp_file.path();
@@ -77,7 +77,11 @@ impl ProverClient for AtlanticProverService {
                 let atlantic_job_response = self
                     .atlantic_client
                     .add_job(
-                        AtlanticJobInfo { pie_file: pie_file_path.to_path_buf(), n_steps },
+                        AtlanticJobInfo { 
+                            pie_file: pie_file_path.to_path_buf(), 
+                            n_steps,
+                            external_id,
+                        },
                         AtlanticJobConfig {
                             proof_layout: self.proof_layout,
                             cairo_vm: self.cairo_vm.clone(),
