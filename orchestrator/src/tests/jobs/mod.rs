@@ -417,7 +417,6 @@ async fn process_job_with_job_exists_in_db_with_invalid_job_processing_status_er
 /// 4. No failure is recorded
 #[rstest]
 #[tokio::test]
-#[allow(clippy::await_holding_lock)]
 async fn process_job_requeues_when_check_ready_to_process_fails() {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = acquire_test_lock();
