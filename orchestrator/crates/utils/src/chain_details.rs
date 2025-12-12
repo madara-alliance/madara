@@ -101,7 +101,7 @@ impl ChainDetails {
         info!(
             rpc_url = %rpc_url.as_str(),
             feeder_gateway_url = %feeder_gateway_url.as_str(),
-            layer = ?layer.as_str(),
+            layer = ?layer,
             retry_interval_secs = retry_interval.as_secs(),
             timeout_secs = timeout.as_secs(),
             "Fetching chain details"

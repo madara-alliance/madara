@@ -11,4 +11,8 @@ pub struct ServerCliArgs {
     /// The port to listen on.
     #[arg(env = "MADARA_ORCHESTRATOR_PORT", long, default_value = "3000")]
     pub port: u16,
+
+    /// Enable admin endpoints for privileged operations.
+    #[arg(env = "MADARA_ORCHESTRATOR_ADMIN_ENABLED", long, default_value_t = false)]
+    pub admin_enabled: bool,
 }
