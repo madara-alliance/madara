@@ -22,11 +22,11 @@ use generate_pie::types::chain_config::ChainConfig;
 use generate_pie::types::os_hints::OsHintsConfiguration;
 use generate_pie::types::pie::{PieGenerationInput, PieGenerationResult};
 use orchestrator_utils::layer::Layer;
-use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
-use starknet::providers::Provider;
-use starknet::providers::Url;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Provider};
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_core::types::Felt;
+use url::Url;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -103,7 +103,7 @@ impl JobHandlerTrait for SnosJobHandler {
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = &job.internal_id;
-        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::SnosRun, internal_id);
+        info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::SnosRun, internal_id);
 
         // Get SNOS metadata
         let snos_metadata: SnosMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
@@ -194,7 +194,7 @@ impl JobHandlerTrait for SnosJobHandler {
         // Store the Cairo Pie path
         self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
 
-        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::SnosRun, internal_id);
+        info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::SnosRun, internal_id);
 
         Ok(snos_metadata.snos_batch_index.to_string())
     }
@@ -204,7 +204,7 @@ impl JobHandlerTrait for SnosJobHandler {
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::SnosRun, internal_id);
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
-        info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::SnosRun, internal_id);
+        info!(log_type = "completed", job_id = %job.id, "{:?} job {} verification completed", JobType::SnosRun, internal_id);
         Ok(JobVerificationStatus::Verified)
     }
 

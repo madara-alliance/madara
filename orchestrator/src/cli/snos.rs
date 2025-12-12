@@ -4,9 +4,6 @@ use blockifier::blockifier_versioned_constants::VersionedConstants;
 use clap::Args;
 use url::Url;
 
-// Getting the default fee token addresses from the SNOS
-use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STRK_FEE_TOKEN};
-
 fn parse_constants(path: &str) -> color_eyre::Result<VersionedConstants> {
     let path_buf = PathBuf::from(path);
     tracing::info!(file_path = %path_buf.display(), "Loading versioned constants from file");

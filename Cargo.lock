@@ -7551,6 +7551,7 @@ dependencies = [
  "chrono",
  "clap",
  "color-eyre",
+ "color-spantrace",
  "dotenvy",
  "futures",
  "generate-pie",

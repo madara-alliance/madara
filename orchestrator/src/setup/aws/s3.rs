@@ -37,7 +37,7 @@ impl Resource for InnerAWSS3 {
         // Check if the bucket already exists
         // If it does, return the existing bucket name and location
         if self.check_if_exists(&args.bucket_identifier).await? {
-            warn!(" ⏭️  S3 bucket {} already exists , skipping creation", &args.bucket_identifier);
+            warn!("  S3 bucket {} already exists , skipping creation", &args.bucket_identifier);
             return Ok(());
         }
 

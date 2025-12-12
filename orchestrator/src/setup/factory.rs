@@ -132,7 +132,7 @@ impl ResourceFactory {
 
                             while start_time.elapsed() < timeout_duration {
                                 if is_queue_ready_clone.load(Ordering::Acquire) {
-                                    info!("✅ Queue is ready, setting up SNS");
+                                    info!("Queue is ready, setting up SNS");
                                     let rs = resource.downcast_mut::<InnerAWSSNS>().ok_or(
                                         OrchestratorError::SetupError("Failed to downcast resource to SNS".to_string()),
                                     )?;
@@ -161,7 +161,7 @@ impl ResourceFactory {
 
                             while start_time.elapsed() < timeout_duration {
                                 if is_queue_ready_clone.load(Ordering::Acquire) {
-                                    info!("✅ Queue is ready, setting up EventBridge");
+                                    info!("Queue is ready, setting up EventBridge");
                                     let rs = resource.downcast_mut::<InnerAWSEventBridge>().ok_or(
                                         OrchestratorError::SetupError(
                                             "Failed to downcast resource to EventBridge".to_string(),
@@ -190,9 +190,9 @@ impl ResourceFactory {
                 .await;
 
                 if let Err(ref e) = result {
-                    info!(" ❌ Resource setup failed for {:?}: {:?}", resource_type, e);
+                    info!(" Resource setup failed for {:?}: {:?}", resource_type, e);
                 } else {
-                    info!(" ✅ Resource setup completed: {:?}", resource_type);
+                    info!(" Resource setup completed: {:?}", resource_type);
                 }
                 result
             };
