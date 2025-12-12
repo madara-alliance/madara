@@ -7,6 +7,7 @@ use jobs::job_router;
 use public::local_route;
 use std::sync::Arc;
 
+pub(super) mod admin;
 pub(super) mod blocks;
 pub(super) mod jobs;
 
@@ -41,11 +42,17 @@ fn v1_route(config: Arc<Config>) -> Router {
 pub(crate) fn server_router(config: Arc<Config>) -> Router {
     let v1_routes = Router::new().nest("/v1", v1_route(config.clone()));
 
-    Router::new()
+    let mut router = Router::new()
         .nest("/", local_route())
         .nest("/api", v1_routes)
         .nest("/jobs", job_router(config.clone()))
-        .nest("/blocks", block_router(config.clone()))
-        .fallback(handler_404)
-        .layer(axum::middleware::from_fn(crate::server::middleware::trace_context))
+        .nest("/blocks", block_router(config.clone()));
+
+    // Conditionally add admin routes if enabled
+    if config.server_config().admin_enabled {
+        tracing::info!("🔐 Admin endpoints enabled at /admin/*");
+        router = router.nest("/admin", admin::admin_router(config.clone()));
+    }
+
+    router.fallback(handler_404).layer(axum::middleware::from_fn(crate::server::middleware::trace_context))
 }
