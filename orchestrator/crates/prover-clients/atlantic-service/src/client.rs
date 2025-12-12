@@ -237,8 +237,10 @@ impl AtlanticClient {
             network
         );
 
-        self.retry_get("search_atlantic_queries", || async {
-            let mut request = self.client.request()
+        self.retry_get("atlantic-queries", || async {
+            let mut request = self
+                .client
+                .request()
                 .method(Method::GET)
                 .path("atlantic-queries")
                 .query_param("search", search_string.as_ref());
@@ -274,7 +276,8 @@ impl AtlanticClient {
                     })?;
                     debug!(
                         "Atlantic Response: GET /atlantic-queries - success (status: {}, search: {})",
-                        status, search_string.as_ref()
+                        status,
+                        search_string.as_ref()
                     );
                     Ok(queries_response)
                 }
@@ -282,7 +285,9 @@ impl AtlanticClient {
                     let (error_text, status) = extract_http_error_text(response, "search atlantic queries").await;
                     debug!(
                         "Atlantic Response: GET /atlantic-queries - error (status: {}, error: {}, search: {})",
-                        status, error_text, search_string.as_ref()
+                        status,
+                        error_text,
+                        search_string.as_ref()
                     );
                     Err(AtlanticError::AtlanticService(status, error_text))
                 }
@@ -447,7 +452,6 @@ impl AtlanticClient {
                 .form_text("cairoVm", &job_config.cairo_vm.as_str())
                 .form_text("externalId", &job_info.external_id)
                 .form_file("pieFile", job_info.pie_file.as_ref(), "pie.zip", Some("application/zip"))?,
-
             ProvingParams { layout: job_config.proof_layout },
         );
 
