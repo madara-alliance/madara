@@ -7884,6 +7884,7 @@ dependencies = [
  "color-eyre",
  "dotenv",
  "flate2",
+ "hex",
  "httpmock",
  "opentelemetry",
  "opentelemetry-appender-tracing",

@@ -25,14 +25,6 @@ pub struct SNOSCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_RPC_FOR_SNOS", long)]
     pub rpc_for_snos: Url,
 
-    /// Address of STRK native fee token
-    #[arg(env = "MADARA_ORCHESTRATOR_STRK_NATIVE_FEE_TOKEN_ADDRESS", long, required = false, default_value = DEFAULT_SEPOLIA_STRK_FEE_TOKEN)]
-    pub strk_fee_token_address: String,
-
-    /// Address of ETH native fee token
-    #[arg(env = "MADARA_ORCHESTRATOR_ETH_NATIVE_FEE_TOKEN_ADDRESS", long, required = false, default_value = DEFAULT_SEPOLIA_ETH_FEE_TOKEN)]
-    pub eth_fee_token_address: String,
-
     /// Path to a JSON file containing versioned constants to override the default Starknet constants.
     /// By default, versioned constants are picked from the official Starknet constants loaded in blockifier.
     /// Use this argument to override those defaults with custom versioned constants from a file.

@@ -21,10 +21,8 @@ use generate_pie::generate_pie;
 use generate_pie::types::chain_config::ChainConfig;
 use generate_pie::types::os_hints::OsHintsConfiguration;
 use generate_pie::types::pie::{PieGenerationInput, PieGenerationResult};
+use orchestrator_utils::chain_details::ChainDetails;
 use orchestrator_utils::layer::Layer;
-use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
-use starknet::providers::Provider;
-use starknet::providers::Url;
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_core::types::Felt;
 
@@ -45,37 +43,22 @@ pub async fn check_snos_health(snos_url: &Url) -> bool {
 
 pub struct SnosJobHandler;
 
-#[async_trait]
-pub trait ChainConfigFromExt {
-    async fn get_chain_config(
-        rpc_url: &str,
-        layer: &Layer,
-        strk_fee_token_address: &str,
-        eth_fee_token_address: &str,
-    ) -> Result<ChainConfig>;
+/// Extension trait to convert ChainDetails to ChainConfig for SNOS usage.
+pub trait ChainDetailsExt {
+    /// Convert ChainDetails to the ChainConfig type required by generate_pie.
+    fn to_chain_config(&self) -> ChainConfig;
 }
 
-#[async_trait]
-impl ChainConfigFromExt for ChainConfig {
-    async fn get_chain_config(
-        rpc_url: &str,
-        layer: &Layer,
-        strk_fee_token_address: &str,
-        eth_fee_token_address: &str,
-    ) -> Result<ChainConfig> {
-        let rpc_url = Url::parse(rpc_url)?;
-        let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
-        let chain_id_in_hex = provider.chain_id().await?.to_fixed_hex_string();
-
-        let chain_id_decoded = String::from_utf8(hex::decode(chain_id_in_hex.trim_start_matches("0x"))?)?;
-        let chain_id = ChainId::Other(chain_id_decoded);
-
-        Ok(ChainConfig {
-            chain_id,
-            strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(strk_fee_token_address))?,
-            eth_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(eth_fee_token_address))?,
-            is_l3: layer.is_l3(),
-        })
+impl ChainDetailsExt for ChainDetails {
+    fn to_chain_config(&self) -> ChainConfig {
+        ChainConfig {
+            chain_id: ChainId::Other(self.chain_id.clone()),
+            strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.strk_fee_token_address))
+                .expect("Invalid STRK fee token address"),
+            eth_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.eth_fee_token_address))
+                .expect("Invalid ETH fee token address"),
+            is_l3: self.is_l3,
+        }
     }
 }
 
@@ -127,15 +110,8 @@ impl JobHandlerTrait for SnosJobHandler {
         let input = PieGenerationInput {
             rpc_url: snos_url.to_string(),
             blocks: (start_block_number..=end_block_number).collect(),
-            // chain_config: ChainConfig::default(),
-            chain_config: ChainConfig::get_chain_config(
-                snos_url,
-                config.layer(),
-                &config.params.snos_config.strk_fee_token_address,
-                &config.params.snos_config.eth_fee_token_address,
-            )
-            .await
-            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to get chain config: {}", e))))?,
+            // Use chain details fetched at orchestrator startup (no RPC call needed here)
+            chain_config: config.chain_details().to_chain_config(),
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
             layout: config.params.snos_layout_name,

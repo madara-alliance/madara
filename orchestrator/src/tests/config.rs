@@ -26,7 +26,7 @@ use axum::Router;
 use blockifier::blockifier_versioned_constants::VersionedConstants;
 use blockifier::bouncer::BouncerWeights;
 use cairo_vm::types::layout_name::LayoutName;
-use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STRK_FEE_TOKEN};
+
 use httpmock::MockServer;
 use orchestrator_da_client_interface::{DaClient, MockDaClient};
 use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
@@ -34,6 +34,7 @@ use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
 use orchestrator_prover_client_interface::{MockProverClient, ProverClient};
 use orchestrator_settlement_client_interface::{MockSettlementClient, SettlementClient};
 use orchestrator_sharp_service::SharpValidatedArgs;
+use orchestrator_utils::chain_details::ChainDetails;
 use orchestrator_utils::env_utils::{
     get_env_var_optional, get_env_var_optional_or_panic, get_env_var_or_default, get_env_var_or_panic,
 };
@@ -381,9 +382,18 @@ impl TestConfigBuilder {
         let madara_feeder_gateway_client =
             Arc::new(RestClient::new(params.orchestrator_params.madara_feeder_gateway_url.clone()));
 
+        // Create test chain details (using Sepolia defaults for testing)
+        let chain_details = ChainDetails {
+            chain_id: "SN_SEPOLIA".to_string(),
+            strk_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d".to_string(),
+            eth_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
+            is_l3: layer.as_ref().map(|l| l.is_l3()).unwrap_or(false),
+        };
+
         let config = Arc::new(Config::new(
             layer.unwrap_or(Layer::L2),
             params.orchestrator_params,
+            chain_details,
             starknet_client.clone(),
             madara_feeder_gateway_client,
             database,
@@ -729,14 +739,6 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
         snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
-        strk_fee_token_address: get_env_var_or_default(
-            "MADARA_ORCHESTRATOR_STRK_NATIVE_FEE_TOKEN_ADDRESS",
-            DEFAULT_SEPOLIA_STRK_FEE_TOKEN,
-        ),
-        eth_fee_token_address: get_env_var_or_default(
-            "MADARA_ORCHESTRATOR_ETH_NATIVE_FEE_TOKEN_ADDRESS",
-            DEFAULT_SEPOLIA_ETH_FEE_TOKEN,
-        ),
         versioned_constants,
     };
 
