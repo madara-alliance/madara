@@ -64,9 +64,9 @@ RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
 FROM base-rust AS planner
 
 COPY . .
-# RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-#     --mount=type=cache,target=/usr/local/cargo/registry \
-#     RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
 
 # Fetch cargo dependencies and extract sequencer requirements.txt
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
