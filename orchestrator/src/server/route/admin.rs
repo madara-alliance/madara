@@ -85,7 +85,9 @@ async fn handle_retry_all_failed_jobs(
                 );
             }
 
-            let message = if result.failed_count > 0 {
+            let message = if result.success_count == 0 && result.failed_count == 0 {
+                "No failed jobs to retry".to_string()
+            } else if result.failed_count > 0 {
                 format!(
                     "Queued {} job(s) for retry. {} job(s) failed to queue.",
                     result.success_count, result.failed_count
@@ -162,7 +164,9 @@ async fn handle_requeue_pending_verification(
                 );
             }
 
-            let message = if result.failed_count > 0 {
+            let message = if result.success_count == 0 && result.failed_count == 0 {
+                "No pending verification jobs to requeue".to_string()
+            } else if result.failed_count > 0 {
                 format!(
                     "Re-queued {} job(s) for verification. {} job(s) failed to queue.",
                     result.success_count, result.failed_count
@@ -240,7 +244,9 @@ async fn handle_requeue_created_jobs(
                 );
             }
 
-            let message = if result.failed_count > 0 {
+            let message = if result.success_count == 0 && result.failed_count == 0 {
+                "No created jobs to requeue".to_string()
+            } else if result.failed_count > 0 {
                 format!(
                     "Re-queued {} created job(s) for processing. {} job(s) failed to queue.",
                     result.success_count, result.failed_count
