@@ -211,7 +211,7 @@ async fn test_create_snos_job_for_existing_batch(
     // Verify the worker succeeded
     assert!(result.is_ok(), "SNOS job trigger run_worker should succeed");
 
-    println!("✅ Test completed: SNOS job created for existing batch successfully");
+    println!("Test completed: SNOS job created for existing batch successfully");
 
     Ok(())
 }

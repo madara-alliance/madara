@@ -85,7 +85,7 @@ impl Resource for InnerAWSEventBridge {
                 ))
                 .await?
             {
-                tracing::info!(" ⏭️ Event Bridge {trigger} already exists, skipping");
+                tracing::info!(" Event Bridge {trigger} already exists, skipping");
             } else {
                 self.add_cron_target_queue(
                     trigger,

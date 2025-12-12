@@ -82,7 +82,6 @@ async fn main() {
 async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
     let instrumentation = OrchestratorInstrumentation::new(&config)?;
-    info!("Starting orchestrator service");
 
     let config = Arc::new(Config::from_run_cmd(run_cmd).await?);
     debug!("Configuration initialized");
@@ -93,15 +92,15 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     // Run the server in a separate tokio spawn task
     setup_server(config.clone()).await?;
 
-    debug!("Application router initialized");
+    info!("Application server live!");
 
-    info!("Initializing MongoDB lock client");
+    debug!("Initializing MongoDB lock client");
     let lock_client = MongoLockClient::from_run_cmd(run_cmd.clone()).await?;
     lock_client.initialize().await.map_err(|e| OrchestratorError::SetupError(e.to_string()))?;
-    info!("MongoDB lock client initialize successfully");
+    debug!("MongoDB lock client initialize successfully");
 
     // Set up comprehensive signal handling for Docker/Kubernetes
-    info!("Setting up signal handler for graceful shutdown");
+    debug!("Setting up signal handler for graceful shutdown");
     let mut signal_handler = SignalHandler::new();
     let shutdown_token = signal_handler.get_shutdown_token();
 

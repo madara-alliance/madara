@@ -44,7 +44,7 @@ impl Resource for InnerSQS {
             // It is to note that we skip just after we check if queue exists,
             // Ideally we would want to check the DL queue & policy inclusion as well.
             if self.check_if_exists(&(args.queue_template_identifier.clone(), queue_type.clone())).await? {
-                tracing::info!(" ⏭️️ SQS queue already exists. Queue Type: {}", queue_type);
+                tracing::info!(" SQS queue already exists. Queue Type: {}", queue_type);
                 continue;
             }
 
@@ -69,7 +69,7 @@ impl Resource for InnerSQS {
                             .check_if_exists(&(args.queue_template_identifier.clone(), dlq_config.dlq_name.clone()))
                             .await?
                         {
-                            tracing::info!(" ⏭️️  DLQ already exists. Queue Type: {}", &dlq_config.dlq_name);
+                            tracing::info!("  DLQ already exists. Queue Type: {}", &dlq_config.dlq_name);
                             // Fetch DLQ URL
                             let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
                             self.get_queue_url_from_client(&dlq_name).await?

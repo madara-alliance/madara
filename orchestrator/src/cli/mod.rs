@@ -179,7 +179,7 @@ pub struct RunCmd {
 
     /// Graceful shutdown timeout in seconds.
     /// Provides sufficient time for workers to complete their current tasks before forcing termination.
-    #[arg(env = "MADARA_ORCHESTRATOR_GRACEFUL_SHUTDOWN_TIMEOUT", long, default_value = "120")]
+    #[arg(env = "MADARA_ORCHESTRATOR_GRACEFUL_SHUTDOWN_TIMEOUT", long, default_value = "30")]
     pub graceful_shutdown_timeout: u64,
 }
 

@@ -92,16 +92,16 @@ pub fn get_status_color(status: &JobStatus) -> &'static str {
     }
 }
 
-/// Helper function to get status icon for dashboard
+/// Helper function to get status indicator for dashboard
 pub fn get_status_icon(status: &JobStatus) -> &'static str {
     match status {
-        JobStatus::Created => "🆕",
-        JobStatus::LockedForProcessing => "🔒",
-        JobStatus::PendingVerification => "🔍",
-        JobStatus::Completed => "✅",
-        JobStatus::VerificationFailed => "⚠️",
-        JobStatus::Failed => "❌",
-        JobStatus::VerificationTimeout => "⏱️",
-        JobStatus::PendingRetry => "🔄",
+        JobStatus::Created => "[NEW]",
+        JobStatus::LockedForProcessing => "[LOCKED]",
+        JobStatus::PendingVerification => "[VERIFYING]",
+        JobStatus::Completed => "[OK]",
+        JobStatus::VerificationFailed => "[VERIFY_FAIL]",
+        JobStatus::Failed => "[FAIL]",
+        JobStatus::VerificationTimeout => "[TIMEOUT]",
+        JobStatus::PendingRetry => "[RETRY]",
     }
 }

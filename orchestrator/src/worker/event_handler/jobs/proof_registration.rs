@@ -27,7 +27,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = &job.internal_id;
-        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::ProofRegistration, internal_id);
+        info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::ProofRegistration, internal_id);
 
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
             error!(error = %e, "Failed to convert metadata to ProvingMetadata");
@@ -68,7 +68,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
                 job.internal_id);
             })?;
 
-        info!(log_type = "completed", job_id = %job.id, external_id = %external_id, "✅ {:?} job {} processed successfully", JobType::ProofRegistration, internal_id);
+        info!(log_type = "completed", job_id = %job.id, external_id = %external_id, "{:?} job {} processed successfully", JobType::ProofRegistration, internal_id);
         Ok(external_id)
     }
 
@@ -126,11 +126,11 @@ impl JobHandlerTrait for RegisterProofJobHandler {
                     debug!("Downloading and storing bridge proof to path: {}", download_path);
                     config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
                 }
-                info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::ProofRegistration, internal_id);
+                info!(log_type = "completed", job_id = %job.id, "{:?} job {} verification completed", JobType::ProofRegistration, internal_id);
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
-                warn!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::ProofRegistration, internal_id);
+                warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed", JobType::ProofRegistration, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Proof registration job #{} failed with error: {}",
                     job.internal_id, err

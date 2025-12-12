@@ -284,7 +284,7 @@ aws-credential-types = { version = "1.2.1", features = [
 ] }
 aws-sdk-sqs = "1.36.0"
 axum = { version = "0.7.4" }
-color-eyre = "0.6.2"
+color-eyre = "0.6.3"
 chrono = { version = "0.4", features = ["serde"] }
 c-kzg = "2.1.5"
 dotenvy = "0.15.7"

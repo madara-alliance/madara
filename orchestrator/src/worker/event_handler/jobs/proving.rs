@@ -30,7 +30,7 @@ impl JobHandlerTrait for ProvingJobHandler {
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = &job.internal_id;
-        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::ProofCreation, internal_id);
+        info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::ProofCreation, internal_id);
 
         // Get proving metadata
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
@@ -81,7 +81,7 @@ impl JobHandlerTrait for ProvingJobHandler {
         let proof_duration = proof_start.elapsed().as_secs_f64();
         MetricsRecorder::record_proof_generation_time("proof_submission", proof_duration);
 
-        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::ProofCreation, internal_id);
+        info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::ProofCreation, internal_id);
 
         Ok(external_id)
     }
@@ -148,11 +148,11 @@ impl JobHandlerTrait for ProvingJobHandler {
                     debug!("Downloading and storing proof to path: {}", download_path);
                     config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
                 }
-                info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::ProofCreation, internal_id);
+                info!(log_type = "completed", job_id = %job.id, "{:?} job {} verification completed", JobType::ProofCreation, internal_id);
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
-                warn!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::ProofCreation, internal_id);
+                warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed", JobType::ProofCreation, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Prover job #{} failed with error: {}",
                     job.internal_id, err

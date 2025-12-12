@@ -1,11 +1,14 @@
 use chrono::Utc;
+use color_eyre::config::{HookBuilder, Theme};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::fmt as stdfmt;
 use tracing::{
     field::{Field, Visit},
     Event, Level, Subscriber,
 };
 use tracing_error::ErrorLayer;
+use tracing_subscriber::field::{MakeVisitor, VisitFmt, VisitOutput};
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::{format::Writer, FormatEvent, FormatFields};
 use tracing_subscriber::layer::Context;
@@ -115,20 +118,6 @@ where
         let meta = event.metadata();
         let now = Utc::now().format("%y-%m-%d %H:%M:%S").to_string();
 
-        // Colors
-        let ts_color = "\x1b[96m"; // Bright Cyan
-        let level_color = match *meta.level() {
-            Level::TRACE => "\x1b[90m",
-            Level::DEBUG => "\x1b[34m",
-            Level::INFO => "\x1b[32m",
-            Level::WARN => "\x1b[33m",
-            Level::ERROR => "\x1b[31m",
-        };
-        let msg_color = "\x1b[97m"; // Bright White
-        let queue_color = "\x1b[92m"; // Bright Green
-        let reset = "\x1b[0m";
-        let dim_color = "\x1b[90m"; // Dim gray for separators
-
         // Extract queue from span fields
         let mut queue = (String::from("-"), String::from("-"));
         if let Some(span) = ctx.lookup_current() {
@@ -144,25 +133,24 @@ where
 
         // Table-like format with fixed widths:
         // Timestamp (14 chars) | Level (5 chars) | Queue (24 chars) | Message and fields
-        write!(writer, "{}{}{} ", ts_color, now, reset)?;
-        write!(writer, "{}|{} ", dim_color, reset)?;
-        write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
-        write!(writer, "{}|{} ", dim_color, reset)?;
-        write!(writer, "{}{:<20}{} ", queue_color, queue.0, reset)?;
-        write!(writer, "{}|{} ", dim_color, reset)?;
-        write!(writer, "{}{:<14}{} ", queue_color, queue.1, reset)?;
-        write!(writer, "{}|{} ", dim_color, reset)?;
+        write!(writer, "{} ", now)?;
+        write!(writer, "| ")?;
+        write!(writer, "{:<5} ", *meta.level())?;
+        write!(writer, "| ")?;
+        write!(writer, "{:<20} ", queue.0)?;
+        write!(writer, "| ")?;
+        write!(writer, "{:<14} ", queue.1)?;
+        write!(writer, "| ")?;
 
         // Add service/package as prefix to message
         let service = extract_service_name(meta.target());
 
         // Write the service prefix and main message
         if service != "-" {
-            write!(writer, "{}{}: {}{}", queue_color, service, msg_color, visitor.message)?;
+            write!(writer, "{}: {}", service, visitor.message)?;
         } else {
-            write!(writer, "{}{}{}", msg_color, visitor.message, reset)?;
+            write!(writer, "{}", visitor.message)?;
         }
-        write!(writer, "{}", reset)?;
 
         // Write fields separately with proper formatting (excluding queue which is already shown)
         if !visitor.meta.is_empty() || !visitor.fields.is_empty() {
@@ -171,14 +159,14 @@ where
 
             // Write meta fields (id, etc.) but skip 'q' since it's in the queue column
             if !visitor.meta.is_empty() {
-                write!(writer, "{}{}{}", msg_color, visitor.meta, reset)?;
+                write!(writer, "{}", visitor.meta)?;
                 first = false;
             }
             if !visitor.fields.is_empty() {
                 if !first {
                     write!(writer, ", ")?;
                 }
-                write!(writer, "{}{}{}", msg_color, visitor.fields, reset)?;
+                write!(writer, "{}", visitor.fields)?;
             }
             write!(writer, ")")?;
         }
@@ -197,16 +185,13 @@ struct FieldExtractor {
 
 impl tracing::field::Visit for FieldExtractor {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        let fixed_field_color = "\x1b[90m"; // Dark Grey
-        let reset = "\x1b[0m";
-
         if field.name() == "message" {
             self.message = format!("{:?}", value).trim_matches('"').to_string();
         } else if field.name() == "q" {
             // Skip 'q' field - it's displayed in the queue column
         } else {
             let formatted_value = format!("{:?}", value).trim_matches('"').to_string();
-            let formatted_field = format!("{}{}={}{}", fixed_field_color, field.name(), formatted_value, reset);
+            let formatted_field = format!("{}={}", field.name(), formatted_value);
 
             // Prioritize id field
             if field.name() == "id" {
@@ -324,13 +309,96 @@ where
     }
 }
 
+/// A field formatter that produces plain text without ANSI color codes.
+/// Used for ErrorLayer to ensure spantraces don't contain escape sequences.
+#[derive(Debug, Default)]
+pub struct PlainFields;
+
+impl PlainFields {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+/// Visitor for PlainFields that formats fields without ANSI codes
+pub struct PlainVisitor<'a> {
+    writer: Writer<'a>,
+    is_empty: bool,
+    result: stdfmt::Result,
+}
+
+impl<'a> PlainVisitor<'a> {
+    fn new(writer: Writer<'a>, is_empty: bool) -> Self {
+        Self { writer, is_empty, result: Ok(()) }
+    }
+
+    fn maybe_pad(&mut self) {
+        if self.is_empty {
+            self.is_empty = false;
+        } else {
+            self.result = write!(self.writer, " ");
+        }
+    }
+}
+
+impl<'a> Visit for PlainVisitor<'a> {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if self.result.is_err() {
+            return;
+        }
+        if field.name() == "message" {
+            self.record_debug(field, &format_args!("{}", value))
+        } else {
+            self.record_debug(field, &value)
+        }
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn stdfmt::Debug) {
+        if self.result.is_err() {
+            return;
+        }
+        self.maybe_pad();
+        self.result = match field.name() {
+            "message" => write!(self.writer, "{:?}", value),
+            name if name.starts_with("r#") => write!(self.writer, "{}={:?}", &name[2..], value),
+            name => write!(self.writer, "{}={:?}", name, value),
+        };
+    }
+}
+
+impl<'a> VisitOutput<stdfmt::Result> for PlainVisitor<'a> {
+    fn finish(self) -> stdfmt::Result {
+        self.result
+    }
+}
+
+impl<'a> VisitFmt for PlainVisitor<'a> {
+    fn writer(&mut self) -> &mut dyn stdfmt::Write {
+        &mut self.writer
+    }
+}
+
+impl<'a> MakeVisitor<Writer<'a>> for PlainFields {
+    type Visitor = PlainVisitor<'a>;
+
+    fn make_visitor(&self, target: Writer<'a>) -> Self::Visitor {
+        PlainVisitor::new(target, true)
+    }
+}
+
 /// Initialize the tracing subscriber with
 /// - PrettyFormatter for console readability (when LOG_FORMAT != "json")
 /// - JsonEventFormatter for json logging (when LOG_FORMAT = "json")
 ///
 /// This will also install color_eyre to handle the panic in the application
 pub fn init_logging() {
-    color_eyre::install().expect("Unable to install color_eyre");
+    // Install color_eyre with colors disabled for clean log files
+    // Theme::new() creates a blank theme with no ANSI color codes (all Style::default())
+    HookBuilder::blank()
+        .capture_span_trace_by_default(true)
+        .theme(Theme::new())
+        .install()
+        .expect("Unable to install color_eyre");
 
     // Read from `RUST_LOG` environment variable, with fallback to default
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -358,7 +426,7 @@ pub fn init_logging() {
             .with(env_filter)
             .with(field_collector_layer)
             .with(fmt_layer)
-            .with(ErrorLayer::default());
+            .with(ErrorLayer::new(PlainFields::new()));
         tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
     } else {
         // Pretty format for console readability
@@ -374,7 +442,7 @@ pub fn init_logging() {
             .with(env_filter)
             .with(field_collector_layer)
             .with(fmt_layer)
-            .with(ErrorLayer::default());
+            .with(ErrorLayer::new(PlainFields::new()));
         tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
     }
 }

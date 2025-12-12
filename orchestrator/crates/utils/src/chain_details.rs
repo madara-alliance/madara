@@ -99,12 +99,12 @@ impl ChainDetails {
         let mut attempt = 0u32;
 
         info!(
-            rpc_url = %rpc_url,
-            feeder_gateway_url = %feeder_gateway_url,
-            layer = ?layer,
+            rpc_url = %rpc_url.as_str(),
+            feeder_gateway_url = %feeder_gateway_url.as_str(),
+            layer = ?layer.as_str(),
             retry_interval_secs = retry_interval.as_secs(),
             timeout_secs = timeout.as_secs(),
-            "Starting chain details fetch with retry"
+            "Fetching chain details"
         );
 
         loop {
@@ -134,14 +134,6 @@ impl ChainDetails {
                             "Successfully fetched chain details on first attempt"
                         );
                     }
-
-                    debug!(
-                        chain_id = %details.chain_id,
-                        strk_fee_token = %details.strk_fee_token_address,
-                        eth_fee_token = %details.eth_fee_token_address,
-                        is_l3 = details.is_l3,
-                        "Chain details retrieved"
-                    );
 
                     return Ok(details);
                 }
