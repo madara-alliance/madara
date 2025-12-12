@@ -10,7 +10,7 @@ use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{SdkTracerProvider, Tracer};
 use opentelemetry_sdk::Resource;
 use std::time::Duration;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::EnvFilter;
@@ -47,20 +47,23 @@ impl OrchestratorInstrumentation {
                 );
 
                 let meter_provider = Self::instrument_metric_provider(config, endpoint)?;
-                info!(
+                debug!(
                     service_name = format!("{}_meter_service", config.service_name),
                     export_interval_secs = 5,
                     "OTEL metrics exporter initialized"
                 );
 
                 let tracer = Self::instrument_tracer_provider(config, endpoint)?;
-                info!(
+                debug!(
                     service_name = format!("{}_trace_service", config.service_name),
                     "OTEL tracer exporter initialized"
                 );
 
                 let logger = Self::instrument_logger_provider(config, endpoint)?;
-                info!(service_name = format!("{}_logs_service", config.service_name), "OTEL logs exporter initialized");
+                debug!(
+                    service_name = format!("{}_logs_service", config.service_name),
+                    "OTEL logs exporter initialized"
+                );
 
                 // Respect LOG_FORMAT when composing the subscriber with OTEL layers
                 let log_format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string());
@@ -98,7 +101,7 @@ impl OrchestratorInstrumentation {
                 info!(
                     service_name = %config.service_name,
                     log_format = %log_format,
-                    "OpenTelemetry fully initialized - metrics, traces, and logs exporters active"
+                    "OpenTelemetry ready - all services active (metrics, traces, logs)"
                 );
 
                 Ok(Self { otel_config: config.clone(), meter_provider: Some(meter_provider) })
