@@ -130,29 +130,52 @@ impl HttpResponseClassifier {
     /// `true` if this is an infrastructure error that should be retried
     pub fn is_infrastructure_error(status: StatusCode, response_text: &str) -> bool {
         // Common gateway/load balancer error pages
-        response_text.contains("404 page not found")
+        if response_text.contains("404 page not found")
             || response_text.contains("502 Bad Gateway")
             || response_text.contains("503 Service Unavailable")
             || response_text.contains("504 Gateway Timeout")
             || response_text.contains("<html")
             || response_text.contains("<!DOCTYPE")
-            // Weird JSON-encoded string format from stress testing
-            // e.g., {"0":"4","1":"0","2":"4",...} encoding "404 page not found"
-            || (response_text.starts_with("{\"0\":")
-                && response_text.contains("\"4\"")
-                && response_text.contains("\"0\""))
-            // 404 from infrastructure (not a real Atlantic API 404)
-            // Real Atlantic 404s would have proper JSON with "error" field
-            || (status == StatusCode::NOT_FOUND
-                && !response_text.contains("bucket")
-                && !response_text.contains("query")
-                && !response_text.contains("job")
-                && !response_text.contains("error")
-                && !response_text.contains("message"))
-            // 502/503/504 are almost always infrastructure issues
-            || status == StatusCode::BAD_GATEWAY
+        {
+            return true;
+        }
+
+        // Weird JSON-encoded string format observed during stress testing
+        // Example: {"0":"4","1":"0","2":"4",...} encoding "404 page not found"
+        // This occurs when nginx returns a character-by-character JSON object
+        if response_text.starts_with("{\"0\":") && response_text.contains("\"4\"") && response_text.contains("\"0\"") {
+            return true;
+        }
+
+        // 502/503/504 are almost always infrastructure issues
+        if status == StatusCode::BAD_GATEWAY
             || status == StatusCode::SERVICE_UNAVAILABLE
             || status == StatusCode::GATEWAY_TIMEOUT
+        {
+            return true;
+        }
+
+        // Special handling for 404 errors - need to distinguish infrastructure vs API errors
+        if status == StatusCode::NOT_FOUND {
+            // First, check if it's valid JSON
+            if serde_json::from_str::<serde_json::Value>(response_text).is_ok() {
+                // Valid JSON = real API response from Atlantic, not infrastructure error
+                return false;
+            }
+
+            // Not valid JSON - likely an infrastructure error page
+            // Double-check by looking for API-specific keywords
+            let has_api_keywords = response_text.contains("bucket")
+                || response_text.contains("query")
+                || response_text.contains("job")
+                || response_text.contains("error")
+                || response_text.contains("message");
+
+            // If no API keywords and not valid JSON, it's infrastructure
+            !has_api_keywords
+        } else {
+            false
+        }
     }
 }
 
@@ -235,10 +258,34 @@ mod tests {
 
         #[test]
         fn test_api_error_bucket_not_found() {
-            // Real API 404 should NOT be classified as infrastructure error
+            // Real API 404 with valid JSON should NOT be classified as infrastructure error
             assert!(!HttpResponseClassifier::is_infrastructure_error(
                 StatusCode::NOT_FOUND,
                 r#"{"error": "bucket not found"}"#
+            ));
+        }
+
+        #[test]
+        fn test_api_error_valid_json_404() {
+            // Any valid JSON 404 response should be treated as API error, not infrastructure
+            assert!(!HttpResponseClassifier::is_infrastructure_error(
+                StatusCode::NOT_FOUND,
+                r#"{"status": "not_found", "code": 404}"#
+            ));
+        }
+
+        #[test]
+        fn test_infrastructure_invalid_json_404() {
+            // 404 with invalid JSON and no API keywords = infrastructure error
+            assert!(HttpResponseClassifier::is_infrastructure_error(StatusCode::NOT_FOUND, "Not Found"));
+        }
+
+        #[test]
+        fn test_infrastructure_html_404() {
+            // HTML 404 page = infrastructure error
+            assert!(HttpResponseClassifier::is_infrastructure_error(
+                StatusCode::NOT_FOUND,
+                "<html><body>404 Not Found</body></html>"
             ));
         }
     }
