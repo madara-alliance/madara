@@ -25,7 +25,7 @@ pub struct BatchingCliArgs {
     /// Keep this None if you don't want to specify a hard limit.
     /// This can be used to test with RPC other than Madara.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH", long)]
-    pub max_blocks_per_snos_batch: Option<u64>,
+    pub max_blocks_per_snos_batch: u64,
 
     #[arg(env = "MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH", long)]
     pub fixed_blocks_per_snos_batch: Option<u64>,
