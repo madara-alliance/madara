@@ -763,6 +763,7 @@ impl Default for ChainVersionedConstants {
             (StarknetVersion::V0_13_4, VERSIONED_CONSTANTS_V0_13_4.deref().clone()),
             (StarknetVersion::V0_13_5, VERSIONED_CONSTANTS_V0_13_5.deref().clone()),
             (StarknetVersion::V0_14_0, VERSIONED_CONSTANTS_V0_14_0.deref().clone()),
+            (StarknetVersion::V0_14_1, VERSIONED_CONSTANTS_V0_14_1.deref().clone()),
         ]
         .into()
     }

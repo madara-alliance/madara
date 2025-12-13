@@ -247,7 +247,15 @@ impl StateDiff {
         };
 
         let declared_classes_sorted = {
-            let mut declared_classes = self.declared_classes.clone();
+            let mut declared_classes: Vec<DeclaredClassItem> = self
+                .declared_classes
+                .iter()
+                .cloned()
+                .chain(self.migrated_compiled_classes.iter().map(|m| DeclaredClassItem {
+                    class_hash: m.class_hash,
+                    compiled_class_hash: m.compiled_class_hash,
+                }))
+                .collect();
             declared_classes.sort_by_key(|declared_class| declared_class.class_hash);
             declared_classes
         };
@@ -270,14 +278,6 @@ impl StateDiff {
             storage_diffs.sort_by_key(|storage_diff| storage_diff.address);
             storage_diffs
         };
-
-        // Note: migrated_compiled_classes is NOT included as a separate section in the hash.
-        // Per the official Starknet implementation, migrated classes are MERGED into
-        // declared_classes (class_hash_to_compiled_class_hash) before hashing.
-        // TODO (mohit 27/11/2025): When SNIP-34 migration is implemented, merge
-        // migrated_compiled_classes into declared_classes before computing the hash.
-        // See: from_state_diff() in official sequencer where migrated classes are chained
-        // into class_hash_to_compiled_class_hash before hash computation.
 
         let updated_contracts_len_as_felt = (updated_contracts_sorted.len() as u64).into();
         let declared_classes_len_as_felt = (declared_classes_sorted.len() as u64).into();

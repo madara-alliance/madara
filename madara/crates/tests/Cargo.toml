@@ -37,3 +37,4 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true

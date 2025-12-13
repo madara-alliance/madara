@@ -135,7 +135,7 @@ use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-mod db_version;
+pub mod migration;
 mod prelude;
 pub mod storage;
 
@@ -295,6 +295,10 @@ pub struct MadaraBackendConfig {
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
     pub unsafe_starting_block: Option<u64>,
+    /// Skip creating backup before migration.
+    /// WARNING: Without backup, there's no recovery if migration fails.
+    /// Only use if you have external snapshots/backups.
+    pub skip_migration_backup: bool,
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
@@ -442,6 +446,19 @@ impl MadaraBackend<RocksDBStorage> {
     }
 
     /// Open the db.
+    ///
+    /// This function will:
+    /// 1. Check the database version against the binary's expected version
+    /// 2. Run any necessary migrations if the database is outdated
+    /// 3. Create a fresh database if none exists
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The database version is newer than the binary (requires binary upgrade)
+    /// - The database version is too old to migrate (requires resync)
+    /// - A migration fails
+    /// - The database cannot be opened
     pub fn open_rocksdb(
         base_path: &Path,
         chain_config: Arc<ChainConfig>,
@@ -449,13 +466,78 @@ impl MadaraBackend<RocksDBStorage> {
         rocksdb_config: RocksDBConfig,
         cairo_native_config: Arc<NativeConfig>,
     ) -> Result<Arc<Self>> {
-        // check if the db version is compatible with the current binary
-        tracing::debug!("checking db version");
-        if let Some(db_version) = db_version::check_db_version(base_path).context("Checking database version")? {
-            tracing::debug!("version of existing db is {db_version}");
+        use crate::migration::{MigrationRunner, MigrationStatus};
+
+        /// Database version from build-time, injected by build.rs
+        const REQUIRED_DB_VERSION_STR: &str = env!("DB_VERSION");
+        /// Minimum database version that can be migrated from.
+        const BASE_DB_VERSION_STR: &str = env!("DB_BASE_VERSION");
+
+        let required_version: u32 =
+            REQUIRED_DB_VERSION_STR.parse().expect("DB_VERSION must be a valid u32 (checked at build time)");
+        let base_version: u32 =
+            BASE_DB_VERSION_STR.parse().expect("DB_BASE_VERSION must be a valid u32 (checked at build time)");
+
+        // Create base directory if it doesn't exist
+        if !base_path.exists() {
+            std::fs::create_dir_all(base_path).context("Creating database directory")?;
         }
+
+        // Check and run migrations if needed
+        let migration_runner = MigrationRunner::new(base_path, required_version, base_version)
+            .with_skip_backup(config.skip_migration_backup);
+        let status = migration_runner.check_status().context("Checking migration status")?;
+
+        match &status {
+            MigrationStatus::FreshDatabase => {
+                tracing::info!("📦 Creating new database at version {}", required_version);
+                // Write the version file for fresh database
+                migration_runner.initialize_fresh_database().context("Initializing fresh database")?;
+            }
+            MigrationStatus::NoMigrationNeeded => {
+                tracing::debug!("✅ Database version {} matches binary, no migration needed", required_version);
+            }
+            MigrationStatus::MigrationRequired { current_version, target_version, migration_count } => {
+                tracing::info!(
+                    "🔄 Database migration required: v{} -> v{} ({} migration(s))",
+                    current_version,
+                    target_version,
+                    migration_count
+                );
+                tracing::info!("⚠️  This is a one-time operation that may take several minutes...");
+
+                // Open the database for migration
+                let db_path = base_path.join("db");
+                let db = RocksDBStorage::open(&db_path, rocksdb_config.clone())
+                    .context("Opening RocksDB storage for migration")?;
+
+                // Run migrations
+                migration_runner.run_migrations_with_storage(&db).context("Running database migrations")?;
+
+                // DB will be dropped here and reopened below
+                drop(db);
+            }
+            MigrationStatus::DatabaseTooOld { current_version, base_version } => {
+                bail!(
+                    "Database version {} is too old (minimum supported: {}). \
+                    Please delete the database directory and resync from scratch.",
+                    current_version,
+                    base_version
+                );
+            }
+            MigrationStatus::DatabaseNewer { db_version, binary_version } => {
+                bail!(
+                    "Database version {} is newer than this binary supports ({}). \
+                    Please upgrade to a newer version of the binary.",
+                    db_version,
+                    binary_version
+                );
+            }
+        }
+
+        // Now open with the proper RocksDBStorage wrapper
         let db_path = base_path.join("db");
-        let db = RocksDBStorage::open(&db_path, rocksdb_config).context("Opening rocksdb storage")?;
+        let db = RocksDBStorage::open(&db_path, rocksdb_config).context("Opening RocksDB storage")?;
         Ok(Arc::new(Self::new_and_init(db, chain_config, config, cairo_native_config)?))
     }
 }
@@ -678,14 +760,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &block.events,
         );
 
-        // Global state root and block hash.
         let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
+
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        tracing::info!("🙇 Block hash {:?} computed for #{}", block_hash, block.header.block_number);
+        tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
         if let Some(header) = self.inner.get_custom_header_with_clear(true) {
             let is_valid = header.is_block_hash_as_expected(&block_hash);

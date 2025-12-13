@@ -143,6 +143,15 @@ impl ClassInfo {
         }
     }
 
+    /// Returns the v2 (BLAKE) compiled class hash if present.
+    /// Returns None for Legacy classes or Sierra classes without v2 hash.
+    pub fn compiled_class_hash_v2(&self) -> Option<Felt> {
+        match self {
+            ClassInfo::Sierra(sierra) => sierra.compiled_class_hash_v2,
+            ClassInfo::Legacy(_) => None,
+        }
+    }
+
     pub fn compute_hash(&self) -> Result<Felt, ComputeClassHashError> {
         match self {
             ClassInfo::Sierra(sierra_class_info) => sierra_class_info.contract_class.compute_class_hash(),
@@ -181,20 +190,14 @@ impl SierraClassInfo {
             // Has BLAKE hash - verify against it
             let (_, blake_hash, compiled) = self.contract_class.compile_to_casm_with_blake_hash()?;
             if expected != blake_hash {
-                return Err(ClassCompilationError::CompiledClassHashMismatch {
-                    expected,
-                    got: blake_hash,
-                });
+                return Err(ClassCompilationError::CompiledClassHashMismatch { expected, got: blake_hash });
             }
             Ok((&compiled).try_into()?)
         } else if let Some(expected) = self.compiled_class_hash {
             // Has Poseidon hash only - verify against it
             let (poseidon_hash, compiled) = self.contract_class.compile_to_casm()?;
             if expected != poseidon_hash {
-                return Err(ClassCompilationError::CompiledClassHashMismatch {
-                    expected,
-                    got: poseidon_hash,
-                });
+                return Err(ClassCompilationError::CompiledClassHashMismatch { expected, got: poseidon_hash });
             }
             Ok((&compiled).try_into()?)
         } else {

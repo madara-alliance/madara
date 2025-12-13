@@ -159,9 +159,7 @@ impl FlattenedSierraClass {
     /// - Poseidon compiled class hash (pre-SNIP-34)
     /// - BLAKE2s compiled class hash (post-SNIP-34)
     /// - The compiled CASM class
-    pub fn compile_to_casm_with_blake_hash(
-        &self,
-    ) -> Result<(Felt, Felt, CasmContractClass), ClassCompilationError> {
+    pub fn compile_to_casm_with_blake_hash(&self) -> Result<(Felt, Felt, CasmContractClass), ClassCompilationError> {
         let (poseidon_hash, casm_class) = self.compile_to_casm()?;
         let blake_hash = v2::compute_blake_compiled_class_hash(&casm_class)?;
         Ok((poseidon_hash, blake_hash, casm_class))

@@ -23,8 +23,8 @@ use setup_scripts::erc20_bridge::Erc20BridgeSetupOutput;
 use setup_scripts::eth_bridge::EthBridgeSetupOutput;
 use setup_scripts::udc::UdcSetupOutput;
 use starknet::accounts::Account;
-use starknet_core_contract_client::clients::StarknetCoreContractClient;
 use starknet::core::types::Felt;
+use starknet_core_contract_client::clients::StarknetCoreContractClient;
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::starknet_core_contract::StarknetCoreContract;
