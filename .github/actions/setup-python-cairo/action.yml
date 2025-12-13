@@ -35,12 +35,8 @@ runs:
       shell: bash
       run: |
         # Check if cargo dependencies are already fetched (e.g., by Rust setup action)
-        if [ -d "$HOME/.cargo/git/checkouts" ] && [ "$(find "$HOME/.cargo/git/checkouts" -name "*.toml" 2>/dev/null | wc -l)" -gt 0 ]; then
-          echo "✓ Cargo dependencies already available from previous step"
-        else
-          echo "Fetching Cargo dependencies to get sequencer requirements.txt..."
-          cargo fetch --manifest-path Cargo.toml
-        fi
+        echo "Fetching Cargo dependencies to get sequencer requirements.txt..."
+        cargo fetch --manifest-path Cargo.toml
 
     - name: Setup Python virtual environment with sequencer requirements
       shell: bash
@@ -49,13 +45,27 @@ runs:
         python3 -m venv sequencer_venv
         source sequencer_venv/bin/activate
 
+        # Resolve the sequencer revision from madara/Cargo.toml
+        SEQUENCER_REV=$(grep -A 1 'blockifier = { git = "https://github.com/karnotxyz/sequencer"' madara/Cargo.toml | sed -n 's/.*rev = "\(.*\)".*/\1/p' | head -1)
+        if [ -z "$SEQUENCER_REV" ]; then
+          echo "❌ Could not extract sequencer revision from madara/Cargo.toml"
+          exit 1
+        fi
+        SEQUENCER_SHORT_REV=$(echo "$SEQUENCER_REV" | cut -c1-7)
+        echo "Looking for sequencer requirements.txt rev=$SEQUENCER_REV (short=$SEQUENCER_SHORT_REV)"
+
         # Now look for the requirements.txt file in the cargo checkouts
         REQUIREMENTS_FILE=""
 
-        # Look for requirements.txt in sequencer checkout directories
+        # Prefer the requirements.txt that matches the sequencer revision
         if [ -d "$HOME/.cargo/git/checkouts" ]; then
-          echo "Searching for sequencer requirements.txt in cargo checkouts..."
-          REQUIREMENTS_FILE=$(find "$HOME/.cargo/git/checkouts" -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | grep -i sequencer | head -1)
+          while IFS= read -r dir; do
+            candidate="$dir/$SEQUENCER_SHORT_REV/scripts/requirements.txt"
+            if [ -f "$candidate" ]; then
+              REQUIREMENTS_FILE="$candidate"
+              break
+            fi
+          done < <(find "$HOME/.cargo/git/checkouts" -maxdepth 2 -type d -name "*sequencer*" 2>/dev/null)
         fi
 
         # Alternative search - look more broadly in cargo git checkouts
