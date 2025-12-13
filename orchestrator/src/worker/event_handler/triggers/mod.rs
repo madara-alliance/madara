@@ -1,9 +1,11 @@
 pub(crate) mod aggregator;
-pub(crate) mod batching;
+pub(crate) mod aggregator_batching;
+pub(crate) mod batching_v2;
 pub(crate) mod data_submission_worker;
 pub(crate) mod proof_registration;
 pub(crate) mod proving;
 pub(crate) mod snos;
+pub(crate) mod snos_batching;
 pub(crate) mod update_state;
 
 use crate::core::config::Config;

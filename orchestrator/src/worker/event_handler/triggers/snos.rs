@@ -1,4 +1,4 @@
-use crate::core::config::Config;
+use crate::core::config::{Config, StarknetVersion};
 use crate::types::batch::SnosBatchStatus;
 use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
@@ -11,6 +11,9 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Result};
 use opentelemetry::KeyValue;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
+use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{debug, error};
 
@@ -52,7 +55,7 @@ impl JobTrigger for SnosJobTrigger {
         for snos_batch in config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed).await? {
             // Create SNOS job metadata
             let snos_metadata = create_job_metadata(
-                snos_batch.snos_batch_id,
+                snos_batch.index,
                 snos_batch.start_block,
                 snos_batch.end_block,
                 config.snos_config().snos_full_output,
@@ -61,7 +64,7 @@ impl JobTrigger for SnosJobTrigger {
             // Create a new job and add it to the queue
             match JobHandlerService::create_job(
                 JobType::SnosRun,
-                snos_batch.snos_batch_id.clone().to_string(), /* changing mapping here snos_batch_id => internal_id for snos and then eventually proving jobs*/
+                snos_batch.index.clone().to_string(), /* changing mapping here snos_batch_id => internal_id for snos and then eventually proving jobs*/
                 snos_metadata,
                 config.clone(),
             )
@@ -69,7 +72,7 @@ impl JobTrigger for SnosJobTrigger {
             {
                 Ok(_) => {}
                 Err(e) => {
-                    error!(error = %e,"Failed to create new {:?} job for {}", JobType::SnosRun, snos_batch.snos_batch_id);
+                    error!(error = %e,"Failed to create new {:?} job for {}", JobType::SnosRun, snos_batch.index);
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
@@ -101,11 +104,13 @@ impl JobTrigger for SnosJobTrigger {
 /// - Network connectivity issues with the sequencer
 /// - Block not found
 /// - Missing starknet_version field in block header
-pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u64) -> Result<String> {
+pub async fn fetch_block_starknet_version(
+    provider: &Arc<JsonRpcClient<HttpTransport>>,
+    block_number: u64,
+) -> Result<StarknetVersion> {
     use starknet::core::types::BlockId;
     use starknet::providers::Provider;
 
-    let provider = config.madara_rpc_client();
     debug!("Fetching block header for block {} to extract Starknet version", block_number);
 
     // Fetch block with transaction hashes (lighter than full txs)
@@ -121,7 +126,7 @@ pub async fn fetch_block_starknet_version(config: &Arc<Config>, block_number: u6
         }
     };
 
-    Ok(starknet_version)
+    StarknetVersion::from_str(&starknet_version).map_err(|e| eyre!(e))
 }
 
 // create_job_metadata is a helper function to create job metadata for a given block number and layer
