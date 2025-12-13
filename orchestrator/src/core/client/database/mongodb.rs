@@ -967,6 +967,46 @@ impl DatabaseClient for MongoDbClient {
         Ok(batch)
     }
 
+    async fn get_start_snos_batch_for_aggregator(
+        &self,
+        aggregator_index: u64,
+    ) -> Result<Option<SnosBatch>, DatabaseError> {
+        let start = Instant::now();
+
+        // Construct the aggregation pipeline
+        let pipeline = vec![
+            // Stage 1: Match by type + status
+            doc! {
+                "$match": {
+                    "aggregator_batch_index": aggregator_index as i64
+                }
+            },
+            // Stage 2: Sort by index ascending
+            doc! {
+                "$sort": {
+                    "index": 1
+                }
+            },
+            // Stage 3: Take only the top document
+            doc! { "$limit": 1 },
+        ];
+
+        debug!("Fetching first SNOS batch in an Aggregator batch");
+
+        let collection: Collection<SnosBatch> = self.get_snos_batch_collection();
+
+        // Execute pipeline
+        let results = self.execute_pipeline::<SnosBatch, SnosBatch>(collection, pipeline, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_start_snos_batch_for_aggregator")];
+
+        let result = vec_to_single_result(results, "get_start_snos_batch_for_aggregator")?;
+
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(result)
+    }
+
     /// Get aggregator batches filtered by status
     async fn get_aggregator_batches_by_status(
         &self,
@@ -1250,6 +1290,7 @@ impl DatabaseClient for MongoDbClient {
 
     async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
+
         let filter = doc! {
             "status": bson::to_bson(&status)?,
         };
@@ -1275,11 +1316,15 @@ impl DatabaseClient for MongoDbClient {
         aggregator_index: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
+
+        let find_options = FindOptions::builder().sort(doc! { "index": 1 }).build();
+
         let filter = doc! {
             "aggregator_batch_index": aggregator_index as i64
         };
 
-        let batches: Vec<SnosBatch> = self.get_snos_batch_collection().find(filter, None).await?.try_collect().await?;
+        let batches: Vec<SnosBatch> =
+            self.get_snos_batch_collection().find(filter, find_options).await?.try_collect().await?;
 
         tracing::debug!(
             aggregator_index = aggregator_index,

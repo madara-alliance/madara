@@ -49,7 +49,7 @@ use blockifier::bouncer::BouncerWeights;
 /// Starknet versions supported by the service
 macro_rules! versions {
     ($(($variant:ident, $version:expr)),* $(,)?) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
         pub enum StarknetVersion {
             $($variant),*
         }

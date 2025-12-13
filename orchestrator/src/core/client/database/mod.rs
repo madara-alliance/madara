@@ -328,6 +328,11 @@ pub trait DatabaseClient: Send + Sync {
     async fn get_aggregator_batch_for_block(&self, block_number: u64)
         -> Result<Option<AggregatorBatch>, DatabaseError>;
 
+    /// Get the first SNOS batch in an Aggregator batch
+    async fn get_start_snos_batch_for_aggregator(
+        &self,
+        aggregator_index: u64,
+    ) -> Result<Option<SnosBatch>, DatabaseError>;
     /// Get aggregator batches by status
     ///
     /// # Arguments
