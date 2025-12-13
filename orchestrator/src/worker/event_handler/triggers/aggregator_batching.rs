@@ -13,6 +13,7 @@ use tracing::{debug, error, warn};
 
 pub struct AggregatorBatchingTrigger;
 
+#[async_trait::async_trait]
 impl JobTrigger for AggregatorBatchingTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         // Trying to acquire lock on Aggregator Batching Worker
@@ -39,9 +40,7 @@ impl JobTrigger for AggregatorBatchingTrigger {
         }
 
         let batching_handler = AggregatorHandler::new(
-            config.madara_rpc_client(),
-            config.madara_feeder_gateway_client(),
-            config.prover_client(),
+            config.clone(),
             AggregatorBatchLimits::from_config(&config.params),
             config.params.batching_config.default_empty_block_proving_gas,
         );
@@ -50,7 +49,7 @@ impl JobTrigger for AggregatorBatchingTrigger {
 
         // Execute the main work and capture the result
         let result = async {
-            let (start_block, end_block) = self.calculate_range(&config)?;
+            let (start_block, end_block) = self.calculate_range(&config).await?;
 
             let mut state = state_handler.load_batch_state().await?;
 
@@ -71,8 +70,8 @@ impl JobTrigger for AggregatorBatchingTrigger {
                         }
                         state = new_state;
                     }
-                    BlockProcessingResult::NotBatched => {
-                        match state {
+                    BlockProcessingResult::NotBatched(current_state) => {
+                        match current_state {
                             AggregatorState::Empty(_) => {}
                             AggregatorState::NonEmpty(state) => {
                                 state_handler.save_batch_state(state).await?;

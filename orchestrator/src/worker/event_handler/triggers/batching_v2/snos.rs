@@ -1,17 +1,14 @@
 use crate::core::config::{Config, ConfigParam, StarknetVersion};
-use crate::core::{DatabaseClient};
+use crate::core::DatabaseClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::batch::{ SnosBatch, SnosBatchStatus, SnosBatchUpdates};
-use crate::utils::rest_client::RestClient;
+use crate::types::batch::{SnosBatch, SnosBatchStatus, SnosBatchUpdates};
 use crate::worker::event_handler::triggers::batching_v2::utils::get_block_builtin_weights;
 use crate::worker::event_handler::triggers::batching_v2::BlockProcessingResult;
 use crate::worker::event_handler::triggers::snos::fetch_block_starknet_version;
 use blockifier::bouncer::BouncerWeights;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::JsonRpcClient;
 use std::sync::Arc;
 use tracing::{debug, info};
 
@@ -27,16 +24,17 @@ pub struct NonEmptySnosState {
 }
 
 pub struct SnosStateHandler {
-    database: Box<dyn DatabaseClient>,
+    config: Arc<Config>,
 }
 
 impl SnosStateHandler {
-    pub fn new(database: Box<dyn DatabaseClient>) -> Self {
-        Self { database }
+    #[allow(dead_code)]
+    pub fn new(config: Arc<Config>) -> Self {
+        Self { config }
     }
 
     pub fn from_config(config: &Arc<Config>) -> Self {
-        Self { database: config.database() }
+        Self { config: config.clone() }
     }
 
     /// Load the latest SNOS batch state from the database
@@ -44,7 +42,7 @@ impl SnosStateHandler {
     /// If a batch exists and is open, we return it.
     /// If the batch is closed, we return an empty state.
     pub async fn load_batch_state(&self) -> Result<SnosState, JobError> {
-        let batch = self.database.get_latest_snos_batch().await?;
+        let batch = self.config.database().get_latest_snos_batch().await?;
 
         if let Some(batch) = batch {
             if batch.status == SnosBatchStatus::Open {
@@ -62,7 +60,7 @@ impl SnosStateHandler {
     ///
     /// Updates or creates the batch document in the DB
     pub async fn save_batch_state(&self, state: &NonEmptySnosState) -> Result<(), JobError> {
-        self.database.update_or_create_snos_batch(&state.batch, &SnosBatchUpdates::default()).await?;
+        self.config.database().update_or_create_snos_batch(&state.batch, &SnosBatchUpdates::default()).await?;
         Ok(())
     }
 }
@@ -90,22 +88,14 @@ impl SnosBatchLimits {
 }
 
 pub struct SnosHandler {
-    provider: Arc<JsonRpcClient<HttpTransport>>,
-    fgw: Arc<RestClient>,
-    database: Box<dyn DatabaseClient>,
+    config: Arc<Config>,
     limits: SnosBatchLimits,
     empty_block_proving_gas: u64,
 }
 
 impl SnosHandler {
-    pub fn new(
-        provider: Arc<JsonRpcClient<HttpTransport>>,
-        fgw: Arc<RestClient>,
-        database: Box<dyn DatabaseClient>,
-        limits: SnosBatchLimits,
-        empty_block_proving_gas: u64,
-    ) -> Self {
-        Self { provider, fgw, database, limits, empty_block_proving_gas }
+    pub fn new(config: Arc<Config>, limits: SnosBatchLimits, empty_block_proving_gas: u64) -> Self {
+        Self { config, limits, empty_block_proving_gas }
     }
 
     /// Include a block in SNOS batching
@@ -122,15 +112,20 @@ impl SnosHandler {
         match state {
             SnosState::Empty(_) => {
                 // Get the starknet version of the current block
-                let block_version = fetch_block_starknet_version(&self.provider, block_num).await.map_err(|e| {
-                    JobError::Other(OtherError(eyre!(
-                        "Failed to fetch Starknet version for block {}: {}",
-                        block_num,
-                        e
-                    )))
-                })?;
-                let block_weights =
-                    get_block_builtin_weights(block_num, &self.fgw, self.empty_block_proving_gas).await?;
+                let block_version =
+                    fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
+                        JobError::Other(OtherError(eyre!(
+                            "Failed to fetch Starknet version for block {}: {}",
+                            block_num,
+                            e
+                        )))
+                    })?;
+                let block_weights = get_block_builtin_weights(
+                    block_num,
+                    self.config.madara_feeder_gateway_client(),
+                    self.empty_block_proving_gas,
+                )
+                .await?;
                 let new_state =
                     self.start_snos_batch(1, aggregator_batch_index, block_num, block_weights, block_version).await?;
                 Ok(BlockProcessingResult::Accumulated(SnosState::NonEmpty(new_state)))
@@ -160,13 +155,27 @@ impl SnosHandler {
         state: NonEmptySnosState,
     ) -> Result<BlockProcessingResult<SnosState>, JobError> {
         // Get the bouncer weights for the current block
-        let block_weights = get_block_builtin_weights(block_num, &self.fgw, self.empty_block_proving_gas).await?;
+        let block_weights = get_block_builtin_weights(
+            block_num,
+            self.config.madara_feeder_gateway_client(),
+            self.empty_block_proving_gas,
+        )
+        .await?;
         // Get the starknet version of the current block
-        let block_version = fetch_block_starknet_version(&self.provider, block_num).await.map_err(|e| {
-            JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", block_num, e)))
-        })?;
+        let block_version =
+            fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
+                JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", block_num, e)))
+            })?;
 
-        match state.checked_add_block_with_limits(block_num, block_weights, block_version, self.limits, &self.database)
+        match state
+            .checked_add_block_with_limits(
+                block_num,
+                block_weights,
+                block_version,
+                &self.limits,
+                self.config.database(),
+            )
+            .await?
         {
             Some(updated_state) => Ok(BlockProcessingResult::Accumulated(SnosState::NonEmpty(updated_state))),
             None => {
@@ -219,7 +228,7 @@ impl NonEmptySnosState {
         block_num: u64,
         block_weights: BouncerWeights,
         block_version: StarknetVersion,
-        batch_limits: SnosBatchLimits,
+        batch_limits: &SnosBatchLimits,
         database: &dyn DatabaseClient,
     ) -> Result<Option<Self>, JobError> {
         // If a fixed size is set, use only that to decide if we should close the SNOS batch
@@ -279,6 +288,7 @@ impl NonEmptySnosState {
     ///
     /// Returns Some(updated_state) if the block was added successfully,
     /// None if weights would overflow
+    #[allow(dead_code)]
     pub fn checked_add_block(&self, block_num: u64, block_weights: BouncerWeights) -> Option<Self> {
         // Try to add the weights
         let new_builtin_weights = self.batch.builtin_weights.checked_add(block_weights)?;

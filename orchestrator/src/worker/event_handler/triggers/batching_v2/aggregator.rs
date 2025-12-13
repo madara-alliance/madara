@@ -1,14 +1,10 @@
 use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
 use crate::compression::squash::squash;
 use crate::core::config::{Config, ConfigParam, StarknetVersion};
-use crate::core::{DatabaseClient, StorageClient};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::batch::{
-    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights,
-};
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::utils::rest_client::RestClient;
 use crate::worker::event_handler::triggers::batching_v2::aggregator::AggregatorState::{Empty, NonEmpty};
 use crate::worker::event_handler::triggers::batching_v2::utils::get_block_builtin_weights;
 use crate::worker::event_handler::triggers::batching_v2::BlockProcessingResult;
@@ -18,7 +14,6 @@ use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
-use orchestrator_prover_client_interface::{ProverClient, Task};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Update};
@@ -41,20 +36,18 @@ pub struct NonEmptyAggregatorState {
 }
 
 pub struct AggregatorStateHandler {
-    database: Box<dyn DatabaseClient>,
-    storage: Box<dyn StorageClient>,
-    provider: Arc<JsonRpcClient<HttpTransport>>,
+    config: Arc<Config>,
 }
 
 impl AggregatorStateHandler {
     pub fn from_config(config: &Arc<Config>) -> Self {
-        Self { database: config.database(), storage: config.storage(), provider: config.madara_rpc_client() }
+        Self { config: config.clone() }
     }
 
     pub async fn load_batch_state(&self) -> Result<AggregatorState, JobError> {
-        let batch = self.database.get_latest_aggregator_batch().await?;
+        let batch = self.config.database().get_latest_aggregator_batch().await?;
         if let Some(batch) = batch {
-            let state_update_bytes = self.storage.get_data(&batch.squashed_state_updates_path).await?;
+            let state_update_bytes = self.config.storage().get_data(&batch.squashed_state_updates_path).await?;
             let blob: StateUpdate = serde_json::from_slice(&state_update_bytes)?;
             Ok(NonEmpty(NonEmptyAggregatorState::new(batch, blob)))
         } else {
@@ -74,20 +67,29 @@ impl AggregatorStateHandler {
         // Compressing the state update into vector of felts
         // Doing this first since this is dependent on external RPC => Higher chances of failure
         // i.e. if this fails, we won't update anything in our state and prevent data inconsistency
-        let compressed_state_update =
-            compress_state_update(&self.provider, &state.blob, state.batch.end_block, state.batch.starknet_version)
-                .await?;
+        let compressed_state_update = compress_state_update(
+            self.config.madara_rpc_client(),
+            &state.blob,
+            state.batch.end_block,
+            state.batch.starknet_version,
+        )
+        .await?;
 
         // Update batch status in the database
-        self.database.update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default()).await?;
+        self.config
+            .database()
+            .update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default())
+            .await?;
 
         // Update state update and blob in storage
-        self.storage
+        self.config
+            .storage()
             .put_data(Bytes::from(serde_json::to_string(&state.blob)?), &state.batch.squashed_state_updates_path)
             .await?;
         let blobs = convert_felt_vec_to_blob_data(&compressed_state_update)?;
         for (i, blob) in blobs.iter().enumerate() {
-            self.storage
+            self.config
+                .storage()
                 .put_data(
                     biguint_vec_to_u8_vec(blob.as_slice()).into(),
                     &AggregatorBatch::get_blob_file_path(state.batch.index, i as u64 + 1),
@@ -111,16 +113,14 @@ impl AggregatorBatchLimits {
         Self {
             max_blob_size: config.batching_config.max_blob_size,
             max_batch_size: config.batching_config.max_batch_size,
-            max_batch_builtin_weights: config.aggregator_batch_weights_limit,
+            max_batch_builtin_weights: config.aggregator_batch_weights_limit.clone(),
             max_batch_time_seconds: config.batching_config.max_batch_time_seconds,
         }
     }
 }
 
 pub struct AggregatorHandler {
-    provider: Arc<JsonRpcClient<HttpTransport>>,
-    fgw: Arc<RestClient>,
-    prover_client: Arc<dyn ProverClient>,
+    config: Arc<Config>,
     limits: AggregatorBatchLimits,
     empty_block_proving_gas: u64,
 }
@@ -133,7 +133,7 @@ impl AggregatorHandler {
     ) -> Result<BlockProcessingResult<AggregatorState>, JobError> {
         // Fetch Starknet version for the current block
         let current_block_starknet_version =
-            fetch_block_starknet_version(&self.provider, block_num).await.map_err(|e| {
+            fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
                 JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_num, e))
             })?;
 
@@ -141,7 +141,8 @@ impl AggregatorHandler {
             Empty(_) => {
                 // Get state update for the current block
                 let current_state_update = self
-                    .provider
+                    .config
+                    .madara_rpc_client()
                     .get_state_update(BlockId::Number(block_num))
                     .await
                     .map_err(|e| JobError::ProviderError(e.to_string()))?;
@@ -149,21 +150,21 @@ impl AggregatorHandler {
                 match current_state_update {
                     Update(state_update) => {
                         let compressed_state_update = compress_state_update(
-                            &self.provider,
+                            self.config.madara_rpc_client(),
                             &state_update,
                             block_num.saturating_sub(1),
                             current_block_starknet_version,
                         )
                         .await?;
                         let new_state = NonEmpty(NonEmptyAggregatorState::new(
-                            self.start_aggregator_batch(1, block_num, compressed_state_update.len())?,
+                            self.start_aggregator_batch(1, block_num, compressed_state_update.len()).await?,
                             state_update,
                         ));
                         Ok(BlockProcessingResult::Accumulated(new_state))
                     }
                     PreConfirmedUpdate(_) => {
                         info!("Skipping batching for block {} as it is still pending", block_num);
-                        Ok(BlockProcessingResult::NotBatched)
+                        Ok(BlockProcessingResult::NotBatched(Empty(EmptyAggregatorState)))
                     }
                 }
             }
@@ -176,21 +177,26 @@ impl AggregatorHandler {
         block_num: u64,
         state: NonEmptyAggregatorState,
     ) -> Result<BlockProcessingResult<AggregatorState>, JobError> {
-        // Get the provider
-        let provider = self.provider;
-
         // Fetch block weights for the current block
         let block_weights = AggregatorBatchWeights::from(
-            get_block_builtin_weights(block_num, &self.fgw, self.empty_block_proving_gas).await?,
+            &get_block_builtin_weights(
+                block_num,
+                self.config.madara_feeder_gateway_client(),
+                self.empty_block_proving_gas,
+            )
+            .await?,
         );
 
         // Fetch Starknet version of the current block
-        let block_version = fetch_block_starknet_version(&provider, block_num).await.map_err(|e| {
-            JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_num, e))
-        })?;
+        let block_version =
+            fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
+                JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_num, e))
+            })?;
 
         // Get the state update for the block
-        let block_state_update = provider
+        let block_state_update = self
+            .config
+            .madara_rpc_client()
             .get_state_update(BlockId::Number(block_num))
             .await
             .map_err(|e| JobError::ProviderError(e.to_string()))?;
@@ -199,28 +205,35 @@ impl AggregatorHandler {
             Update(state_update) => {
                 // Squash the state updates
 
-                match state.checked_add_block_with_limits(
-                    block_num,
-                    &state_update,
-                    &block_weights,
-                    block_version,
-                    &self.limits,
-                    &self.provider,
-                ) {
+                match state
+                    .checked_add_block_with_limits(
+                        block_num,
+                        &state_update,
+                        &block_weights,
+                        block_version,
+                        &self.limits,
+                        self.config.madara_rpc_client(),
+                    )
+                    .await?
+                {
                     Some(state) => {
                         // Can add the given block in this batch
-                        Ok(BlockProcessingResult::Accumulated(state))
+                        Ok(BlockProcessingResult::Accumulated(NonEmpty(state)))
                     }
                     None => {
                         // Can't add the given block in this batch
                         let completed_state = state.close();
 
-                        let blob_len =
-                            compress_state_update(&provider, &state_update, block_num.saturating_sub(1), block_version)
-                                .await?
-                                .len();
+                        let blob_len = compress_state_update(
+                            self.config.madara_rpc_client(),
+                            &state_update,
+                            block_num.saturating_sub(1),
+                            block_version,
+                        )
+                        .await?
+                        .len();
                         let new_state = NonEmpty(NonEmptyAggregatorState::new(
-                            self.start_aggregator_batch(state.batch.index + 1, block_num, blob_len)?,
+                            self.start_aggregator_batch(state.batch.index + 1, block_num, blob_len).await?,
                             state_update,
                         ));
                         Ok(BlockProcessingResult::BatchCompleted {
@@ -232,7 +245,7 @@ impl AggregatorHandler {
             }
             PreConfirmedUpdate(_) => {
                 info!("Skipping batching for block {} as it is still pending", block_num);
-                Ok(BlockProcessingResult::NotBatched)
+                Ok(BlockProcessingResult::NotBatched(NonEmpty(state)))
             }
         }
     }
@@ -248,7 +261,7 @@ impl AggregatorHandler {
 
         // Fetch Starknet version for the start block
         // In tests, use a default version if fetch fails due to HTTP mocking limitations
-        let starknet_version = fetch_block_starknet_version(&self.provider, start_block).await.map_err(|e| {
+        let starknet_version = fetch_block_starknet_version(self.config.madara_rpc_client(), start_block).await.map_err(|e| {
             error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
             JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", start_block, e)))
         })?;
@@ -271,7 +284,12 @@ impl AggregatorHandler {
 
         // Getting the builtin weights for the start_block and adding it in the DB
         let weights = AggregatorBatchWeights::from(
-            &get_block_builtin_weights(start_block, &self.fgw, self.empty_block_proving_gas).await?,
+            &get_block_builtin_weights(
+                start_block,
+                self.config.madara_feeder_gateway_client(),
+                self.empty_block_proving_gas,
+            )
+            .await?,
         );
 
         let batch =
@@ -374,14 +392,8 @@ impl NonEmptyAggregatorState {
 }
 
 impl AggregatorHandler {
-    pub fn new(
-        provider: Arc<JsonRpcClient<HttpTransport>>,
-        fgw: Arc<RestClient>,
-        prover_client: Arc<dyn ProverClient>,
-        limits: AggregatorBatchLimits,
-        empty_block_proving_gas: u64,
-    ) -> AggregatorHandler {
-        AggregatorHandler { provider, limits, fgw, prover_client, empty_block_proving_gas }
+    pub fn new(config: Arc<Config>, limits: AggregatorBatchLimits, empty_block_proving_gas: u64) -> AggregatorHandler {
+        AggregatorHandler { config, limits, empty_block_proving_gas }
     }
 }
 

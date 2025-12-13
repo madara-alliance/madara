@@ -14,6 +14,7 @@ use tracing::{debug, error, info, warn};
 
 pub struct SnosBatchingTrigger;
 
+#[async_trait::async_trait]
 impl JobTrigger for SnosBatchingTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         // Trying to acquire lock on SNOS Batching Worker (Taking a lock for 1 hr)
@@ -40,7 +41,7 @@ impl JobTrigger for SnosBatchingTrigger {
         }
 
         let batching_handler = SnosHandler::new(
-            config.madara_feeder_gateway_client(),
+            config.clone(),
             SnosBatchLimits::from_config(&config.params),
             config.params.batching_config.default_empty_block_proving_gas,
         );
@@ -107,8 +108,8 @@ impl JobTrigger for SnosBatchingTrigger {
                         }
                         state = new_state;
                     }
-                    BlockProcessingResult::NotBatched => {
-                        match state {
+                    BlockProcessingResult::NotBatched(current_state) => {
+                        match current_state {
                             SnosState::Empty(_) => {}
                             SnosState::NonEmpty(state) => {
                                 state_handler.save_batch_state(&state).await?;
