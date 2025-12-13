@@ -1,8 +1,8 @@
 use crate::core::config::{Config, ConfigParam, StarknetVersion};
-use crate::core::{DatabaseClient, StorageClient};
+use crate::core::{DatabaseClient};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::batch::{AggregatorBatch, SnosBatch, SnosBatchStatus, SnosBatchUpdates};
+use crate::types::batch::{ SnosBatch, SnosBatchStatus, SnosBatchUpdates};
 use crate::utils::rest_client::RestClient;
 use crate::worker::event_handler::triggers::batching_v2::utils::get_block_builtin_weights;
 use crate::worker::event_handler::triggers::batching_v2::BlockProcessingResult;
@@ -13,7 +13,7 @@ use color_eyre::eyre::eyre;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use std::sync::Arc;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 pub enum SnosState {
     Empty(EmptySnosState),

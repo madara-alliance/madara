@@ -6,7 +6,6 @@ use crate::worker::event_handler::triggers::batching_v2::aggregator::{
 };
 use crate::worker::event_handler::triggers::batching_v2::BlockProcessingResult;
 use crate::worker::event_handler::triggers::JobTrigger;
-use orchestrator_utils::layer::Layer;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;

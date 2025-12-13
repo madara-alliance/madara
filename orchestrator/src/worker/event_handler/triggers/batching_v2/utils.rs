@@ -1,4 +1,3 @@
-use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::utils::rest_client::RestClient;

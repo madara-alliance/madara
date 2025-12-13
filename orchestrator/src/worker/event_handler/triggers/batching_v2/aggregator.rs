@@ -5,10 +5,8 @@ use crate::core::{DatabaseClient, StorageClient};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{
-    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights, SnosBatchStatus,
+    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights,
 };
-use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
-use crate::types::params::batching::BatchingParams;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::utils::rest_client::RestClient;
 use crate::worker::event_handler::triggers::batching_v2::aggregator::AggregatorState::{Empty, NonEmpty};
@@ -26,10 +24,8 @@ use starknet::providers::{JsonRpcClient, Provider};
 use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Update};
 use starknet_core::types::{BlockId, StateUpdate};
 use starknet_types_core::felt::Felt;
-use std::cmp::{max, min};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::try_join;
 use tracing::{debug, error, info};
 
 pub enum AggregatorState {
@@ -412,7 +408,7 @@ async fn compress_state_update(
 
     // Perform stateless compression if needed
     if madara_version >= StarknetVersion::V0_13_3 {
-        crate::compression::stateless::compress::compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))
+        crate::compression::stateless::compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))
     } else {
         Ok(vec_felts)
     }

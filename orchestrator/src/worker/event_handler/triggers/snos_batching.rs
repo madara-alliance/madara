@@ -1,14 +1,11 @@
 use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
-use crate::error::other::OtherError;
-use crate::types::batch::{SnosBatchStatus, SnosBatchUpdates};
 use crate::worker::event_handler::triggers::batching_v2::snos::{
     SnosBatchLimits, SnosHandler, SnosState, SnosStateHandler,
 };
 use crate::worker::event_handler::triggers::batching_v2::BlockProcessingResult;
 use crate::worker::event_handler::triggers::JobTrigger;
-use color_eyre::eyre::eyre;
 use orchestrator_utils::layer::Layer;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
