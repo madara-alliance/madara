@@ -49,7 +49,7 @@ use blockifier::bouncer::BouncerWeights;
 /// Starknet versions supported by the service
 macro_rules! versions {
     ($(($variant:ident, $version:expr)),* $(,)?) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
         pub enum StarknetVersion {
             $($variant),*
         }
@@ -91,6 +91,25 @@ macro_rules! versions {
         impl std::fmt::Display for StarknetVersion {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.to_string())
+            }
+        }
+
+        impl serde::Serialize for StarknetVersion {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                serializer.serialize_str(self.to_string())
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for StarknetVersion {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let s = String::deserialize(deserializer)?;
+                StarknetVersion::from_str(&s).map_err(serde::de::Error::custom)
             }
         }
     }
