@@ -1,3 +1,5 @@
+use crate::core::config::StarknetVersion;
+use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use blockifier::bouncer::BouncerWeights;
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
@@ -39,18 +41,20 @@ pub enum AggregatorBatchStatus {
     StateUpdateFailed,
 }
 
+impl AggregatorBatchStatus {
+    pub fn is_closed(&self) -> bool {
+        matches!(self, AggregatorBatchStatus::Open)
+    }
+}
+
 /// Update structure for Aggregator batches
 ///
 /// Contains optional fields that can be updated for an aggregator batch.
 /// Used in database update operations to specify which fields should be modified.
-#[derive(Serialize, Debug, Clone)]
+#[derive(Default, Serialize, Debug, Clone)]
 pub struct AggregatorBatchUpdates {
-    /// Updated end SNOS batch number
-    pub end_snos_batch: Option<u64>,
     /// Updated end block number
     pub end_block: Option<u64>,
-    /// Updated batch-ready status
-    pub is_batch_ready: Option<bool>,
     /// Updated batch status
     pub status: Option<AggregatorBatchStatus>,
 }
@@ -59,7 +63,7 @@ pub struct AggregatorBatchUpdates {
 ///
 /// Contains optional fields that can be updated for a SNOS batch.
 /// Used in database update operations to specify which fields should be modified.
-#[derive(Serialize, Debug, Clone)]
+#[derive(Default, Serialize, Debug, Clone)]
 pub struct SnosBatchUpdates {
     /// Updated end block number
     pub end_block: Option<u64>,
@@ -91,6 +95,7 @@ pub struct AggregatorBatchWeights {
 /// - SNOS batches cannot exist without a parent aggregator batch
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AggregatorBatch {
+    // Statis fields - set when starting and don't change after that
     /// Unique identifier for the batch
     #[cfg_attr(feature = "with_mongodb", serde(rename = "_id", with = "uuid_1_as_binary"))]
     pub id: Uuid,
@@ -99,31 +104,9 @@ pub struct AggregatorBatch {
     /// Used for ordering and referencing batches
     pub index: u64,
 
-    /// Number of SNOS batches in the batch
-    pub num_snos_batches: u64,
-
-    /// Start SNOS batch number (inclusive)
-    pub start_snos_batch: u64,
-
-    /// End SNOS batch number (inclusive)
-    pub end_snos_batch: u64,
-
-    /// Number of blocks covered by this aggregator batch
-    /// This spans across all SNOS batches contained within this aggregator batch
-    pub num_blocks: u64,
-
-    /// Start block number of the aggregator batch (inclusive)
-    /// This is the lowest block number across all contained SNOS batches
-    pub start_block: u64,
-
-    /// End block number of the aggregator batch (inclusive)
-    /// This is the highest block number across all contained SNOS batches
-    pub end_block: u64,
-
-    /// Whether the batch is ready to be processed
-    /// This will be true when adding a new block would exceed size limits
-    /// or other batching criteria are met
-    pub is_batch_ready: bool,
+    /// Bucket ID for the batch, received from the prover client
+    /// Used to track the batch in the proving system
+    pub bucket_id: String,
 
     /// Path to the squashed state updates file
     /// This is done for optimization so we don't have to create a new squashed
@@ -134,6 +117,33 @@ pub struct AggregatorBatch {
     /// Used for data availability and storage optimization
     pub blob_path: String,
 
+    /// Starknet protocol version for all blocks in this batch
+    /// All blocks in a batch must have the same Starknet version for prover compatibility
+    pub starknet_version: StarknetVersion,
+
+    /// Start block number of the aggregator batch (inclusive)
+    /// This is the lowest block number across all contained SNOS batches
+    pub start_block: u64,
+
+    // Dynamic fields - can change when adding a new block to the batch
+    /// End block number of the aggregator batch (inclusive)
+    /// This is the highest block number across all contained SNOS batches
+    pub end_block: u64,
+
+    /// Number of blocks covered by this aggregator batch
+    /// This spans across all SNOS batches contained within this aggregator batch
+    pub num_blocks: u64,
+
+    /// Length of vector of felts representing the compressed blob data for the batch
+    pub blob_len: usize,
+
+    /// Builtin weights for the batch. We decide when to close a batch based on this.
+    pub builtin_weights: AggregatorBatchWeights,
+
+    /// Current status of the aggregator batch
+    pub status: AggregatorBatchStatus,
+
+    // Audit fields
     /// Timestamp when the batch was created
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub created_at: DateTime<Utc>,
@@ -141,19 +151,6 @@ pub struct AggregatorBatch {
     /// Timestamp when the batch was last updated
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
-
-    /// Bucket ID for the batch, received from the prover client
-    /// Used to track the batch in the proving system
-    pub bucket_id: String,
-
-    /// Builtin weights for the batch. We decide when to close a batch based on this.
-    pub builtin_weights: AggregatorBatchWeights,
-
-    /// Current status of the aggregator batch
-    pub status: AggregatorBatchStatus,
-    /// Starknet protocol version for all blocks in this batch
-    /// All blocks in a batch must have the same Starknet version for prover compatibility
-    pub starknet_version: String,
 }
 
 impl AggregatorBatchWeights {
@@ -197,26 +194,22 @@ impl AggregatorBatch {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         index: u64,
-        start_snos_batch: u64,
         start_block: u64,
-        squashed_state_updates_path: String,
-        blob_path: String,
         bucket_id: String,
+        blob_len: usize,
         builtin_weights: AggregatorBatchWeights,
-        starknet_version: String,
+        starknet_version: StarknetVersion,
     ) -> Self {
+        // TODO: move get file path methods to this struct
         Self {
             id: Uuid::new_v4(),
             index,
             num_blocks: 1,
-            start_snos_batch,
-            end_snos_batch: start_snos_batch,
-            num_snos_batches: 1,
             start_block,
             end_block: start_block,
-            is_batch_ready: false,
-            squashed_state_updates_path,
-            blob_path,
+            squashed_state_updates_path: Self::get_state_update_file_path(index),
+            blob_path: Self::get_blob_dir_path(index),
+            blob_len,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
@@ -224,6 +217,36 @@ impl AggregatorBatch {
             status: AggregatorBatchStatus::Open,
             builtin_weights,
         }
+    }
+
+    pub fn update(
+        &self,
+        end_block: u64,
+        blob_len: usize,
+        weights: AggregatorBatchWeights,
+        status: Option<AggregatorBatchStatus>,
+    ) -> AggregatorBatch {
+        let mut updated_batch = self.clone();
+        updated_batch.end_block = end_block;
+        updated_batch.num_blocks = end_block - updated_batch.start_block + 1;
+        updated_batch.blob_len = blob_len;
+        updated_batch.builtin_weights = weights;
+        if let Some(status) = status {
+            updated_batch.status = status;
+        }
+        updated_batch
+    }
+
+    pub fn get_blob_file_path(batch_index: u64, blob_index: u64) -> String {
+        format!("{}/{}.txt", Self::get_blob_dir_path(batch_index), blob_index)
+    }
+
+    fn get_state_update_file_path(batch_index: u64) -> String {
+        format!("{}/batch/{}.json", STORAGE_STATE_UPDATE_DIR, batch_index)
+    }
+
+    fn get_blob_dir_path(batch_index: u64) -> String {
+        format!("{}/batch/{}", STORAGE_BLOB_DIR, batch_index)
     }
 }
 
@@ -244,6 +267,12 @@ pub enum SnosBatchStatus {
     Completed,
 }
 
+impl SnosBatchStatus {
+    pub fn is_closed(&self) -> bool {
+        matches!(self, SnosBatchStatus::Open)
+    }
+}
+
 /// SNOS Batch
 ///
 /// Represents a batch of blocks that will be processed by SNOS (Starknet OS).
@@ -260,30 +289,41 @@ pub enum SnosBatchStatus {
 /// - Multiple SNOS batches can exist within one aggregator batch
 /// - SNOS batches are closed when their parent aggregator batch closes
 /// - SNOS batches can also close independently based on their own criteria
-#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 pub struct SnosBatch {
+    // Statis fields - set when starting and don't change after that
     /// Unique identifier for the batch
     #[cfg_attr(feature = "with_mongodb", serde(rename = "_id", with = "uuid_1_as_binary"))]
     pub id: Uuid,
 
     /// SNOS batch sequential ID (unique across all SNOS batches, auto-incrementing)
     /// This provides a global ordering of SNOS batches independent of aggregator batches
-    pub snos_batch_id: u64,
+    pub index: u64,
 
     /// Reference to the parent aggregator batch index
     /// This establishes the hierarchical relationship between SNOS and aggregator batches
     /// This is Optional since for L3s, we don't have aggregator batches
     pub aggregator_batch_index: Option<u64>,
 
-    /// Number of blocks in this SNOS batch
-    pub num_blocks: u64,
+    pub starknet_version: StarknetVersion,
 
     /// Start block number of the batch (inclusive)
     pub start_block: u64,
 
+    // Dynamic fields - can change when adding a new block to the batch
     /// End block number of the batch (inclusive)
     pub end_block: u64,
 
+    /// Number of blocks in this SNOS batch
+    pub num_blocks: u64,
+
+    /// Weights for this SNOS batch
+    pub builtin_weights: BouncerWeights,
+
+    /// Current status of the SNOS batch
+    pub status: SnosBatchStatus,
+
+    // Audit fields
     /// Timestamp when the batch was created
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub created_at: DateTime<Utc>,
@@ -291,9 +331,6 @@ pub struct SnosBatch {
     /// Timestamp when the batch was last updated
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
-
-    /// Current status of the SNOS batch
-    pub status: SnosBatchStatus,
 }
 
 impl SnosBatch {
@@ -311,18 +348,37 @@ impl SnosBatch {
     /// # Panics
     ///
     /// Panics if `end_block` < `start_block`
-    pub fn new(snos_batch_id: u64, aggregator_batch_index: Option<u64>, start_block: u64) -> Self {
+    pub fn new(
+        index: u64,
+        aggregator_batch_index: Option<u64>,
+        start_block: u64,
+        builtin_weights: BouncerWeights,
+        starknet_version: StarknetVersion,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
-            snos_batch_id,
+            index,
             aggregator_batch_index,
-            num_blocks: 1,
+            starknet_version,
             start_block,
             end_block: start_block,
+            num_blocks: 1,
             status: SnosBatchStatus::Open,
+            builtin_weights,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
         }
+    }
+
+    pub fn update(&self, end_block: u64, weights: BouncerWeights, status: Option<SnosBatchStatus>) -> SnosBatch {
+        let mut updated_batch = self.clone();
+        updated_batch.end_block = end_block;
+        updated_batch.num_blocks = end_block - updated_batch.start_block + 1;
+        updated_batch.builtin_weights = weights;
+        if let Some(status) = status {
+            updated_batch.status = status;
+        }
+        updated_batch
     }
 
     /// Validates the internal consistency of the SNOS batch
