@@ -175,7 +175,7 @@ pub struct PendingStateUpdate {
     pub state_diff: StateDiff,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateDiff {
     /// Changed storage values. Mapping (contract_address, storage_key) => value.
     pub storage_diffs: Vec<ContractStorageDiffItem>,
@@ -191,69 +191,6 @@ pub struct StateDiff {
     pub nonces: Vec<NonceUpdate>,
     /// Classes that were migrated from Poseidon to BLAKE hash (SNIP-34). Mapping class_hash => compiled_class_hash.
     pub migrated_compiled_classes: Vec<MigratedClassItem>,
-}
-
-// TODO (mohit, 14/12/2024): Remove this custom deserializer once the v8→v9 migration from
-// tmp/0.14.1-with-migration is merged. After that, all databases will have migrated_compiled_classes
-// and we can use the standard derive(Deserialize) again.
-// Custom deserializer for backward compatibility with v8 databases that don't have migrated_compiled_classes
-impl<'de> serde::Deserialize<'de> for StateDiff {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        // Helper struct matching the old format (without migrated_compiled_classes)
-        #[derive(serde::Deserialize)]
-        struct StateDiffOld {
-            storage_diffs: Vec<ContractStorageDiffItem>,
-            old_declared_contracts: Vec<Felt>,
-            declared_classes: Vec<DeclaredClassItem>,
-            deployed_contracts: Vec<DeployedContractItem>,
-            replaced_classes: Vec<ReplacedClassItem>,
-            nonces: Vec<NonceUpdate>,
-        }
-
-        // Helper struct matching the new format (with migrated_compiled_classes)
-        #[derive(serde::Deserialize)]
-        struct StateDiffNew {
-            storage_diffs: Vec<ContractStorageDiffItem>,
-            old_declared_contracts: Vec<Felt>,
-            declared_classes: Vec<DeclaredClassItem>,
-            deployed_contracts: Vec<DeployedContractItem>,
-            replaced_classes: Vec<ReplacedClassItem>,
-            nonces: Vec<NonceUpdate>,
-            migrated_compiled_classes: Vec<MigratedClassItem>,
-        }
-
-        // Use an untagged enum to try both formats
-        #[derive(serde::Deserialize)]
-        #[serde(untagged)]
-        enum StateDiffCompat {
-            New(StateDiffNew),
-            Old(StateDiffOld),
-        }
-
-        match StateDiffCompat::deserialize(deserializer)? {
-            StateDiffCompat::New(new) => Ok(StateDiff {
-                storage_diffs: new.storage_diffs,
-                old_declared_contracts: new.old_declared_contracts,
-                declared_classes: new.declared_classes,
-                deployed_contracts: new.deployed_contracts,
-                replaced_classes: new.replaced_classes,
-                nonces: new.nonces,
-                migrated_compiled_classes: new.migrated_compiled_classes,
-            }),
-            StateDiffCompat::Old(old) => Ok(StateDiff {
-                storage_diffs: old.storage_diffs,
-                old_declared_contracts: old.old_declared_contracts,
-                declared_classes: old.declared_classes,
-                deployed_contracts: old.deployed_contracts,
-                replaced_classes: old.replaced_classes,
-                nonces: old.nonces,
-                migrated_compiled_classes: Vec::new(), // Default for old format
-            }),
-        }
-    }
 }
 
 impl StateDiff {
