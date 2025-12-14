@@ -126,18 +126,18 @@ starknet-providers = { package = "starknet-rust-providers", version = "0.16" }
 starknet-signers = { package = "starknet-rust-signers", version = "0.14" }
 starknet = { package = "starknet-rust", version = "0.17.0" }
 
-starknet-types-core = { version = "0.2.1", default-features = false, features = [
+starknet-types-core = { version = "=0.2.3", default-features = false, features = [
   "hash",
 ] }
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "ff514ad8f39ac04302d0b176cef673a6a3820914", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "57052466290163f95ec085fc5ad877c4e04d5e2d", features = [
   "node_api",
   "cairo_native",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "ff514ad8f39ac04302d0b176cef673a6a3820914" }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "57052466290163f95ec085fc5ad877c4e04d5e2d" }
 cairo-lang-starknet-classes = "2.12.3"
 cairo-lang-utils = "2.12.3"
 cairo-vm = "2.5.0"
-cairo-native = "0.6.2"
+cairo-native = "0.7.1"
 
 alloy = { version = "0.8.3", features = [
   "node-bindings",

@@ -144,6 +144,7 @@ impl TransactionStateUpdate {
                 self.nonces.iter().map(|(&contract_address, &nonce)| NonceUpdate { contract_address, nonce }).collect(),
                 |entry| entry.contract_address,
             ),
+            migrated_compiled_classes: Vec::new(), // TODO(prakhar,22/11/2025): Add migrated compiled classes here
         }
     }
 }
@@ -188,6 +189,8 @@ pub struct StateDiff {
     pub replaced_classes: Vec<ReplacedClassItem>,
     /// New contract nonce. Mapping contract_address => nonce.
     pub nonces: Vec<NonceUpdate>,
+    /// Classes that were migrated from Poseidon to BLAKE hash (SNIP-34). Mapping class_hash => compiled_class_hash.
+    pub migrated_compiled_classes: Vec<MigratedClassItem>,
 }
 
 impl StateDiff {
@@ -198,6 +201,7 @@ impl StateDiff {
             && self.nonces.is_empty()
             && self.replaced_classes.is_empty()
             && self.storage_diffs.is_empty()
+            && self.migrated_compiled_classes.is_empty()
     }
 
     pub fn len(&self) -> usize {
@@ -207,6 +211,7 @@ impl StateDiff {
         result += self.old_declared_contracts.len();
         result += self.nonces.len();
         result += self.replaced_classes.len();
+        result += self.migrated_compiled_classes.len();
 
         for storage_diff in &self.storage_diffs {
             result += storage_diff.len();
@@ -222,6 +227,7 @@ impl StateDiff {
         self.deployed_contracts.sort_by_key(|deployed_contract| deployed_contract.address);
         self.replaced_classes.sort_by_key(|replaced_class| replaced_class.contract_address);
         self.nonces.sort_by_key(|nonce| nonce.contract_address);
+        self.migrated_compiled_classes.sort_by_key(|migrated_class| migrated_class.class_hash);
     }
 
     pub fn compute_hash(&self) -> Felt {
@@ -264,6 +270,14 @@ impl StateDiff {
             storage_diffs.sort_by_key(|storage_diff| storage_diff.address);
             storage_diffs
         };
+
+        // Note: migrated_compiled_classes is NOT included as a separate section in the hash.
+        // Per the official Starknet implementation, migrated classes are MERGED into
+        // declared_classes (class_hash_to_compiled_class_hash) before hashing.
+        // TODO (mohit 27/11/2025): When SNIP-34 migration is implemented, merge
+        // migrated_compiled_classes into declared_classes before computing the hash.
+        // See: from_state_diff() in official sequencer where migrated classes are chained
+        // into class_hash_to_compiled_class_hash before hash computation.
 
         let updated_contracts_len_as_felt = (updated_contracts_sorted.len() as u64).into();
         let declared_classes_len_as_felt = (declared_classes_sorted.len() as u64).into();
@@ -360,6 +374,7 @@ impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {
             deployed_contracts,
             replaced_classes,
             nonces,
+            migrated_compiled_classes: Vec::new(), // Migrated classes are handled separately
         }
     }
 }
@@ -405,6 +420,13 @@ pub struct DeployedContractItem {
 pub struct ReplacedClassItem {
     pub contract_address: Felt,
     pub class_hash: Felt,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MigratedClassItem {
+    pub class_hash: Felt,
+    pub compiled_class_hash: Felt,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -499,6 +521,7 @@ mod tests {
                 NonceUpdate { contract_address: Felt::from(25), nonce: Felt::from(26) },
                 NonceUpdate { contract_address: Felt::from(27), nonce: Felt::from(28) },
             ],
+            migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Add value here and update the test
         }
     }
 }
