@@ -28,7 +28,9 @@ pub enum AggregatorState {
     NonEmpty(NonEmptyAggregatorState),
 }
 
-pub struct EmptyAggregatorState;
+pub struct EmptyAggregatorState {
+    index: u64,
+}
 
 pub struct NonEmptyAggregatorState {
     batch: AggregatorBatch,
@@ -47,11 +49,14 @@ impl AggregatorStateHandler {
     pub async fn load_batch_state(&self) -> Result<AggregatorState, JobError> {
         let batch = self.config.database().get_latest_aggregator_batch().await?;
         if let Some(batch) = batch {
+            if batch.status.is_closed() {
+                return Ok(Empty(EmptyAggregatorState { index: batch.index + 1 }));
+            }
             let state_update_bytes = self.config.storage().get_data(&batch.squashed_state_updates_path).await?;
             let blob: StateUpdate = serde_json::from_slice(&state_update_bytes)?;
             Ok(NonEmpty(NonEmptyAggregatorState::new(batch, blob)))
         } else {
-            Ok(Empty(EmptyAggregatorState))
+            Ok(Empty(EmptyAggregatorState::new(1)))
         }
     }
 
@@ -63,7 +68,8 @@ impl AggregatorStateHandler {
     /// IMPORTANT:
     /// 1. Assuming all the details are already updated in state
     /// 2. Not making database and storage updates atomically. It might happen that one fail and other pass
-    pub async fn save_batch_state(&self, state: NonEmptyAggregatorState) -> Result<(), JobError> {
+    pub async fn save_batch_state(&self, state: &NonEmptyAggregatorState) -> Result<(), JobError> {
+        info!(batch=?state.batch, "Saving aggregator state");
         // Compressing the state update into vector of felts
         // Doing this first since this is dependent on external RPC => Higher chances of failure
         // i.e. if this fails, we won't update anything in our state and prevent data inconsistency
@@ -74,12 +80,6 @@ impl AggregatorStateHandler {
             state.batch.starknet_version,
         )
         .await?;
-
-        // Update batch status in the database
-        self.config
-            .database()
-            .update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default())
-            .await?;
 
         // Update state update and blob in storage
         self.config
@@ -96,6 +96,12 @@ impl AggregatorStateHandler {
                 )
                 .await?;
         }
+
+        // Update batch status in the database
+        self.config
+            .database()
+            .update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default())
+            .await?;
 
         Ok(())
     }
@@ -131,6 +137,7 @@ impl AggregatorHandler {
         block_num: u64,
         state: AggregatorState,
     ) -> Result<BlockProcessingResult<AggregatorState>, JobError> {
+        info!("Including block {} in aggregator batch", block_num);
         // Fetch Starknet version for the current block
         let current_block_starknet_version =
             fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
@@ -138,7 +145,7 @@ impl AggregatorHandler {
             })?;
 
         match state {
-            Empty(_) => {
+            Empty(ref empty_state) => {
                 // Get state update for the current block
                 let current_state_update = self
                     .config
@@ -157,14 +164,15 @@ impl AggregatorHandler {
                         )
                         .await?;
                         let new_state = NonEmpty(NonEmptyAggregatorState::new(
-                            self.start_aggregator_batch(1, block_num, compressed_state_update.len()).await?,
+                            self.start_aggregator_batch(empty_state.index, block_num, compressed_state_update.len())
+                                .await?,
                             state_update,
                         ));
                         Ok(BlockProcessingResult::Accumulated(new_state))
                     }
                     PreConfirmedUpdate(_) => {
                         info!("Skipping batching for block {} as it is still pending", block_num);
-                        Ok(BlockProcessingResult::NotBatched(Empty(EmptyAggregatorState)))
+                        Ok(BlockProcessingResult::NotBatched(state))
                     }
                 }
             }
@@ -273,13 +281,15 @@ impl AggregatorHandler {
         );
 
         // Start a new bucket
-        let bucket_id = self.prover_client.submit_task(Task::CreateBucket).await.map_err(|e| {
-            error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
-            JobError::Other(OtherError(eyre!(
-                "Prover Client Error: Failed to submit create bucket task to prover client, {}",
-                e
-            )))
-        })?;
+        // TODO: Reverse this change before commiting
+        let bucket_id = String::from("ABCDE12345");
+        // let bucket_id = self.config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
+        //     error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+        //     JobError::Other(OtherError(eyre!(
+        //         "Prover Client Error: Failed to submit create bucket task to prover client, {}",
+        //         e
+        //     )))
+        // })?;
         debug!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
 
         // Getting the builtin weights for the start_block and adding it in the DB
@@ -316,6 +326,12 @@ impl AggregatorHandler {
         );
 
         Ok(batch)
+    }
+}
+
+impl EmptyAggregatorState {
+    pub fn new(index: u64) -> Self {
+        Self { index }
     }
 }
 

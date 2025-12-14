@@ -9,7 +9,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct AggregatorBatchingTrigger;
 
@@ -51,6 +51,14 @@ impl JobTrigger for AggregatorBatchingTrigger {
         let result = async {
             let (start_block, end_block) = self.calculate_range(&config).await?;
 
+            // If there are no blocks to process, return early
+            if start_block > end_block {
+                info!("No Aggregator blocks to process: start_block ({}) > end_block ({})", start_block, end_block);
+                return Ok(());
+            }
+
+            info!("Processing Aggregator batches for blocks {} to {}", start_block, end_block);
+
             let mut state = state_handler.load_batch_state().await?;
 
             for block_num in start_block..=end_block {
@@ -62,23 +70,32 @@ impl JobTrigger for AggregatorBatchingTrigger {
                         match completed_state {
                             AggregatorState::Empty(_) => {
                                 warn!("Aggregator state contains empty state");
+                                state = completed_state;
                                 break;
                             }
                             AggregatorState::NonEmpty(completed_state) => {
-                                state_handler.save_batch_state(completed_state).await?;
+                                state_handler.save_batch_state(&completed_state).await?;
                             }
                         }
                         state = new_state;
                     }
                     BlockProcessingResult::NotBatched(current_state) => {
-                        match current_state {
+                        match &current_state {
                             AggregatorState::Empty(_) => {}
                             AggregatorState::NonEmpty(state) => {
                                 state_handler.save_batch_state(state).await?;
                             }
                         }
+                        state = current_state;
                         break;
                     }
+                }
+            }
+
+            match state {
+                AggregatorState::Empty(_) => {}
+                AggregatorState::NonEmpty(state) => {
+                    state_handler.save_batch_state(&state).await?;
                 }
             }
 
@@ -134,6 +151,6 @@ impl AggregatorBatchingTrigger {
     }
 
     fn max_blocks_to_process_at_once(&self) -> u64 {
-        25
+        10
     }
 }

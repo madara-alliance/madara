@@ -95,14 +95,14 @@ impl WorkerController {
     /// * `Vec<QueueType>` - A list of queues for L2 network
     fn get_l2_queues() -> Vec<QueueType> {
         vec![
-            QueueType::SnosJobProcessing,
-            QueueType::ProvingJobProcessing,
-            QueueType::AggregatorJobProcessing,
-            QueueType::UpdateStateJobProcessing,
-            QueueType::SnosJobVerification,
-            QueueType::ProvingJobVerification,
-            QueueType::AggregatorJobVerification,
-            QueueType::UpdateStateJobVerification,
+            // QueueType::SnosJobProcessing,
+            // QueueType::ProvingJobProcessing,
+            // QueueType::AggregatorJobProcessing,
+            // QueueType::UpdateStateJobProcessing,
+            // QueueType::SnosJobVerification,
+            // QueueType::ProvingJobVerification,
+            // QueueType::AggregatorJobVerification,
+            // QueueType::UpdateStateJobVerification,
             QueueType::WorkerTrigger,
             QueueType::JobHandleFailure,
         ]

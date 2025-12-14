@@ -584,13 +584,13 @@ impl Config {
         use starknet_api::execution_resources::GasAmount;
 
         BouncerWeights {
-            l1_gas: 1_000_000,                 // 1M L1 gas
-            message_segment_length: 100_000,   // 100K message segment length
-            n_events: 5_000,                   // 5K events
-            state_diff_size: 100_000,          // 100K state diff size
-            sierra_gas: GasAmount(10_000_000), // 10M sierra gas
-            n_txs: 1_000,                      // 1K transactions
-            proving_gas: GasAmount(5_000_000), // 5M proving gas
+            l1_gas: 10_000_000,                 // 1M L1 gas
+            message_segment_length: 1_000_000,   // 100K message segment length
+            n_events: 50_000,                   // 5K events
+            state_diff_size: 1_000_000,          // 100K state diff size
+            sierra_gas: GasAmount(100_000_000), // 10M sierra gas
+            n_txs: 10_000,                      // 1K transactions
+            proving_gas: GasAmount(50_000_000), // 5M proving gas
         }
     }
 }

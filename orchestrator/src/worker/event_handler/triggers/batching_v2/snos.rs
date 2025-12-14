@@ -1,5 +1,4 @@
 use crate::core::config::{Config, ConfigParam, StarknetVersion};
-use crate::core::DatabaseClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{SnosBatch, SnosBatchStatus, SnosBatchUpdates};
@@ -17,7 +16,9 @@ pub enum SnosState {
     NonEmpty(NonEmptySnosState),
 }
 
-pub struct EmptySnosState;
+pub struct EmptySnosState {
+    index: u64,
+}
 
 pub struct NonEmptySnosState {
     pub batch: SnosBatch,
@@ -45,14 +46,14 @@ impl SnosStateHandler {
         let batch = self.config.database().get_latest_snos_batch().await?;
 
         if let Some(batch) = batch {
-            if batch.status == SnosBatchStatus::Open {
-                Ok(SnosState::NonEmpty(NonEmptySnosState::new(batch)))
-            } else {
+            if batch.status.is_closed() {
                 // Batch is closed, return empty state
-                Ok(SnosState::Empty(EmptySnosState))
+                Ok(SnosState::Empty(EmptySnosState::new(batch.index + 1)))
+            } else {
+                Ok(SnosState::NonEmpty(NonEmptySnosState::new(batch)))
             }
         } else {
-            Ok(SnosState::Empty(EmptySnosState))
+            Ok(SnosState::Empty(EmptySnosState::new(1)))
         }
     }
 
@@ -60,6 +61,7 @@ impl SnosStateHandler {
     ///
     /// Updates or creates the batch document in the DB
     pub async fn save_batch_state(&self, state: &NonEmptySnosState) -> Result<(), JobError> {
+        info!(batch=?state.batch, "Saving snos state");
         self.config.database().update_or_create_snos_batch(&state.batch, &SnosBatchUpdates::default()).await?;
         Ok(())
     }
@@ -109,8 +111,9 @@ impl SnosHandler {
         aggregator_batch_index: Option<u64>,
         state: SnosState,
     ) -> Result<BlockProcessingResult<SnosState>, JobError> {
+        info!("Including block {} in snos batch", block_num);
         match state {
-            SnosState::Empty(_) => {
+            SnosState::Empty(ref empty_state) => {
                 // Get the starknet version of the current block
                 let block_version =
                     fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
@@ -126,8 +129,15 @@ impl SnosHandler {
                     self.empty_block_proving_gas,
                 )
                 .await?;
-                let new_state =
-                    self.start_snos_batch(1, aggregator_batch_index, block_num, block_weights, block_version).await?;
+                let new_state = self
+                    .start_snos_batch(
+                        empty_state.index,
+                        aggregator_batch_index,
+                        block_num,
+                        block_weights,
+                        block_version,
+                    )
+                    .await?;
                 Ok(BlockProcessingResult::Accumulated(SnosState::NonEmpty(new_state)))
             }
             SnosState::NonEmpty(state) => {
@@ -147,7 +157,6 @@ impl SnosHandler {
     /// Returns:
     /// - Accumulated: Block added to current batch
     /// - BatchCompleted: Current batch is full, new batch started with this block
-    /// - NotBatched: Should not happen in normal flow
     pub async fn process_block(
         &self,
         block_num: u64,
@@ -167,13 +176,14 @@ impl SnosHandler {
                 JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", block_num, e)))
             })?;
 
+        // TODO: We can send the aggregator batch index in the argument here
         match state
             .checked_add_block_with_limits(
                 block_num,
                 block_weights,
                 block_version,
+                aggregator_batch_index,
                 &self.limits,
-                self.config.database(),
             )
             .await?
         {
@@ -218,6 +228,12 @@ impl SnosHandler {
     }
 }
 
+impl EmptySnosState {
+    pub fn new(index: u64) -> Self {
+        EmptySnosState { index }
+    }
+}
+
 impl NonEmptySnosState {
     pub fn new(batch: SnosBatch) -> Self {
         Self { batch }
@@ -228,8 +244,8 @@ impl NonEmptySnosState {
         block_num: u64,
         block_weights: BouncerWeights,
         block_version: StarknetVersion,
+        block_aggregator_batch_index: Option<u64>,
         batch_limits: &SnosBatchLimits,
-        database: &dyn DatabaseClient,
     ) -> Result<Option<Self>, JobError> {
         // If a fixed size is set, use only that to decide if we should close the SNOS batch
         if let Some(fixed_blocks_per_snos_batch) = batch_limits.fixed_batch_size {
@@ -249,8 +265,7 @@ impl NonEmptySnosState {
         }
 
         if let Some(snos_batch_aggregator_batch_index) = self.batch.aggregator_batch_index {
-            let aggregator_batch_for_block = database.get_aggregator_batch_for_block(block_num).await?;
-            match aggregator_batch_for_block {
+            match block_aggregator_batch_index {
                 None => {
                     // This is not expected
                     return Err(JobError::Other(OtherError(eyre!(
@@ -258,8 +273,8 @@ impl NonEmptySnosState {
                         block_num
                     ))));
                 }
-                Some(aggregator_batch) => {
-                    if snos_batch_aggregator_batch_index == aggregator_batch.index {
+                Some(block_aggregator_batch_index) => {
+                    if snos_batch_aggregator_batch_index == block_aggregator_batch_index {
                         return Ok(None);
                     }
                 }

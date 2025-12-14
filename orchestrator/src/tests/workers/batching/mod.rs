@@ -60,7 +60,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         };
 
         let existing_snos_batch = crate::types::batch::SnosBatch {
-            snos_batch_id: 1,
+            index: 1,
             aggregator_batch_index: Some(1),
             start_block: 0,
             end_block: 3,
@@ -197,7 +197,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     };
 
     let existing_snos_batch = crate::types::batch::SnosBatch {
-        snos_batch_id: 1,
+        index: 1,
         aggregator_batch_index: Some(1),
         start_block: 0,
         end_block: 3,
@@ -397,7 +397,7 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
         end_block = 11;
     } else {
         let existing_snos_batch = crate::types::batch::SnosBatch {
-            snos_batch_id: 1,
+            index: 1,
             aggregator_batch_index: None,
             start_block: 0,
             end_block: 3,

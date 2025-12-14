@@ -95,10 +95,10 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
 
     debug!("Application router initialized");
 
-    info!("Initializing MongoDB lock client");
-    let lock_client = MongoLockClient::from_run_cmd(run_cmd.clone()).await?;
-    lock_client.initialize().await.map_err(|e| OrchestratorError::SetupError(e.to_string()))?;
-    info!("MongoDB lock client initialize successfully");
+    // info!("Initializing MongoDB lock client");
+    // let lock_client = MongoLockClient::from_run_cmd(run_cmd.clone()).await?;
+    // lock_client.initialize().await.map_err(|e| OrchestratorError::SetupError(e.to_string()))?;
+    // info!("MongoDB lock client initialize successfully");
 
     // Set up comprehensive signal handling for Docker/Kubernetes
     info!("Setting up signal handler for graceful shutdown");

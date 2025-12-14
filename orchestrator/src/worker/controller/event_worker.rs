@@ -1,6 +1,7 @@
 use crate::core::config::Config;
 use crate::error::other::OtherError;
 use crate::error::{event::EventSystemResult, ConsumptionError};
+use crate::types::jobs::WorkerTriggerType;
 use crate::types::queue::{JobState, QueueType};
 use crate::types::queue_control::{QueueControlConfig, QUEUES};
 use crate::worker::event_handler::service::JobHandlerService;
@@ -162,18 +163,23 @@ impl EventWorker {
     /// * Returns an EventSystemError if the message cannot be handled
     async fn handle_worker_trigger(&self, worker_message: &WorkerTriggerMessage) -> EventSystemResult<()> {
         let span = info_span!("worker_trigger", q = %self.queue_type, id = %worker_message.worker);
-
-        async move {
-            let worker_handler =
-                JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone());
-            worker_handler
-                .run_worker_if_enabled(self.config.clone())
-                .await
-                .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+        if worker_message.worker == WorkerTriggerType::SnosBatching
+            || worker_message.worker == WorkerTriggerType::AggregatorBatching
+        {
+            async move {
+                let worker_handler =
+                    JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone());
+                worker_handler
+                    .run_worker_if_enabled(self.config.clone())
+                    .await
+                    .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                Ok(())
+            }
+            .instrument(span)
+            .await
+        } else {
             Ok(())
         }
-        .instrument(span)
-        .await
     }
 
     /// handle_job_failure - Handle the message received from the queue for JobHandleFailure type

@@ -24,6 +24,7 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     let alert_params = AlertArgs::try_from(setup_cmd.clone())?;
     let cron_params = CronArgs::try_from(setup_cmd.clone())?;
     let miscellaneous_params = MiscellaneousArgs::try_from(setup_cmd.clone())?;
+
     let lock_client = MongoLockClient::from_setup_cmd(setup_cmd.clone()).await?;
 
     debug!("Queue Params: {:?}", queue_params);

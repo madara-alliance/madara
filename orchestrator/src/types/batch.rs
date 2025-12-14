@@ -43,7 +43,7 @@ pub enum AggregatorBatchStatus {
 
 impl AggregatorBatchStatus {
     pub fn is_closed(&self) -> bool {
-        matches!(self, AggregatorBatchStatus::Open)
+        !matches!(self, AggregatorBatchStatus::Open)
     }
 }
 
@@ -269,7 +269,7 @@ pub enum SnosBatchStatus {
 
 impl SnosBatchStatus {
     pub fn is_closed(&self) -> bool {
-        matches!(self, SnosBatchStatus::Open)
+        !matches!(self, SnosBatchStatus::Open)
     }
 }
 

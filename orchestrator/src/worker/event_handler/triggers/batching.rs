@@ -183,7 +183,7 @@ impl BatchingTrigger {
                 if aggregator_batch.is_batch_ready && snos_batch.status == SnosBatchStatus::Open {
                     return Err(JobError::BatchingNotInSync(format!(
                         "Latest SNOS batch {} is {} but Latest Aggregator batch {} is {}",
-                        snos_batch.snos_batch_id, snos_batch.status, aggregator_batch.index, aggregator_batch.status
+                        snos_batch.index, snos_batch.status, aggregator_batch.index, aggregator_batch.status
                     )));
                 }
 
@@ -191,22 +191,14 @@ impl BatchingTrigger {
                 if snos_batch.end_block != aggregator_batch.end_block {
                     return Err(JobError::BatchingNotInSync(format!(
                         "Latest SNOS batch {}'s end block is {} but latest Aggregator batch {}'s end block is {}",
-                        snos_batch.snos_batch_id,
-                        snos_batch.end_block,
-                        aggregator_batch.index,
-                        aggregator_batch.end_block
+                        snos_batch.index, snos_batch.end_block, aggregator_batch.index, aggregator_batch.end_block
                     )));
                 }
 
                 if aggregator_batch.is_batch_ready {
                     // Both batches are full. Create new batches
                     let (new_snos_batch, new_aggregator_batch) = self
-                        .start_new_batches(
-                            config,
-                            aggregator_batch.index + 1,
-                            snos_batch.snos_batch_id + 1,
-                            start_block_number,
-                        )
+                        .start_new_batches(config, aggregator_batch.index + 1, snos_batch.index + 1, start_block_number)
                         .await?;
                     (new_aggregator_batch, new_snos_batch, None)
                 } else {
@@ -215,11 +207,7 @@ impl BatchingTrigger {
                     let latest_snos_batch = if snos_batch.status != SnosBatchStatus::Closed {
                         snos_batch
                     } else {
-                        self.start_snos_batch(
-                            snos_batch.snos_batch_id + 1,
-                            Some(aggregator_batch.index),
-                            start_block_number,
-                        )?
+                        self.start_snos_batch(snos_batch.index + 1, Some(aggregator_batch.index), start_block_number)?
                     };
                     let state_update_bytes = storage.get_data(&aggregator_batch.squashed_state_updates_path).await?;
                     let state_update: StateUpdate = serde_json::from_slice(&state_update_bytes)?;
@@ -231,7 +219,7 @@ impl BatchingTrigger {
                     Some(snos_batch) => {
                         return Err(JobError::BatchingNotInSync(format!(
                             "No Aggregator batch present in DB but SNOS batch ({}) is present",
-                            snos_batch.snos_batch_id
+                            snos_batch.index
                         )))
                     }
                     None => {
@@ -332,7 +320,7 @@ impl BatchingTrigger {
                 .start_new_batches(
                     config,
                     current_aggregator_batch.index + 1,
-                    current_snos_batch.snos_batch_id + 1,
+                    current_snos_batch.index + 1,
                     block_number,
                 )
                 .await?;
@@ -433,7 +421,7 @@ impl BatchingTrigger {
                                 .start_new_batches(
                                     config,
                                     current_aggregator_batch.index + 1,
-                                    current_snos_batch.snos_batch_id + 1,
+                                    current_snos_batch.index + 1,
                                     block_number,
                                 )
                                 .await?;
@@ -442,7 +430,7 @@ impl BatchingTrigger {
                             // Close the current SNOS batch and start a new one
 
                             info!(
-                                snos_batch_id = %current_snos_batch.snos_batch_id,
+                                snos_batch_id = %current_snos_batch.index,
                                 num_blocks = %current_snos_batch.num_blocks,
                                 end_block = %current_snos_batch.end_block,
                                 "Closing SNOS batch, starting new batch within same aggregator batch"
@@ -463,7 +451,7 @@ impl BatchingTrigger {
 
                             // Starting a new SNOS batch
                             let new_snos_batch = self.start_snos_batch(
-                                current_snos_batch.snos_batch_id + 1,
+                                current_snos_batch.index + 1,
                                 Some(current_aggregator_batch.index),
                                 block_number,
                             )?;
@@ -473,7 +461,7 @@ impl BatchingTrigger {
                                 self.update_aggregator_batch_info(
                                     current_aggregator_batch,
                                     block_number,
-                                    Some(new_snos_batch.snos_batch_id),
+                                    Some(new_snos_batch.index),
                                     false,
                                     combined_weights,
                                 )
@@ -488,7 +476,7 @@ impl BatchingTrigger {
                                 self.update_aggregator_batch_info(
                                     current_aggregator_batch,
                                     block_number,
-                                    Some(current_snos_batch.snos_batch_id),
+                                    Some(current_snos_batch.index),
                                     false,
                                     combined_weights,
                                 )
@@ -502,7 +490,7 @@ impl BatchingTrigger {
                         self.update_aggregator_batch_info(
                             current_aggregator_batch,
                             block_number,
-                            Some(current_snos_batch.snos_batch_id),
+                            Some(current_snos_batch.index),
                             false,
                             current_weights,
                         )
@@ -549,7 +537,7 @@ impl BatchingTrigger {
             Some(snos_batch) => {
                 if snos_batch.status == SnosBatchStatus::Closed {
                     // Previous batch is closed. Start a new one
-                    self.start_snos_batch(snos_batch.snos_batch_id + 1, None, start_block_number)?
+                    self.start_snos_batch(snos_batch.index + 1, None, start_block_number)?
                 } else {
                     // Previous batch is not closed yet. Continue with that
                     snos_batch
@@ -564,7 +552,7 @@ impl BatchingTrigger {
         // Assign batches to all the blocks
         for block_number in start_block_number..=end_block_number {
             latest_snos_batch = self.assign_batch_to_single_block_l3(block_number, latest_snos_batch, config).await?;
-            tracing::Span::current().record("batch_id", latest_snos_batch.snos_batch_id);
+            tracing::Span::current().record("batch_id", latest_snos_batch.index);
         }
 
         self.update_or_create_snos_batch_in_db(&latest_snos_batch.clone(), config, latest_snos_batch.status).await?;
@@ -583,7 +571,7 @@ impl BatchingTrigger {
         if self.should_close_snos_batch(config, &current_snos_batch).await? {
             // Close the current batch and start a new batch
             self.update_or_create_snos_batch_in_db(&current_snos_batch, config, SnosBatchStatus::Closed).await?;
-            self.start_snos_batch(current_snos_batch.snos_batch_id + 1, None, current_snos_batch.end_block + 1)
+            self.start_snos_batch(current_snos_batch.index + 1, None, current_snos_batch.end_block + 1)
         } else {
             // Continue with the same SNOS batch
             self.update_snos_batch_info(current_snos_batch, block_number).await
@@ -1130,7 +1118,7 @@ impl BatchingTrigger {
                 .update_or_create_aggregator_batch(
                     aggregator_batch,
                     &AggregatorBatchUpdates {
-                        end_snos_batch: Some(snos_batch.snos_batch_id),
+                        end_snos_batch: Some(snos_batch.index),
                         end_block: Some(aggregator_batch.end_block),
                         is_batch_ready: Some(true),
                         status: Some(AggregatorBatchStatus::Closed),
@@ -1173,11 +1161,7 @@ impl BatchingTrigger {
     ///
     /// If the block is empty (proving_gas is zero), we use the configured default value
     /// since every block has some proving cost regardless of transactions.
-    async fn get_block_builtin_weights(
-        &self,
-        config: &Arc<Config>,
-        block_number: u64,
-    ) -> Result<BouncerWeights, JobError> {
+    async fn get_block_builtin_weights(config: &Arc<Config>, block_number: u64) -> Result<BouncerWeights, JobError> {
         debug!(
             block_number = %block_number,
             "Requesting block bouncer weights via REST"
