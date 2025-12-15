@@ -83,20 +83,14 @@ pub async fn state_update_worker(
     // Outer loop for reconnection on stream/connection failure
     loop {
         // Get initial state on each reconnection attempt
-        let initial_state = match ctx
-            .run_until_cancelled(settlement_client.get_current_core_contract_state())
-            .await
-        {
+        let initial_state = match ctx.run_until_cancelled(settlement_client.get_current_core_contract_state()).await {
             Some(Ok(state)) => {
                 // Reset backoff on successful state fetch
                 reconnect_delay = RECONNECT_BASE_DELAY;
                 state
             }
             Some(Err(e)) => {
-                tracing::warn!(
-                    "Failed to get initial L1 state: {e:#}, retrying in {:?}",
-                    reconnect_delay
-                );
+                tracing::warn!("Failed to get initial L1 state: {e:#}, retrying in {:?}", reconnect_delay);
                 tokio::time::sleep(reconnect_delay).await;
                 reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
                 continue;
@@ -112,20 +106,14 @@ pub async fn state_update_worker(
         }
 
         // Listen for state update events
-        match settlement_client
-            .listen_for_update_state_events(ctx.clone(), state.clone())
-            .await
-        {
+        match settlement_client.listen_for_update_state_events(ctx.clone(), state.clone()).await {
             Ok(()) => return Ok(()), // Clean shutdown (context cancelled)
             Err(e) if is_stream_ended_error(&e) => {
                 // Check if context was cancelled during the listen call
                 if ctx.is_cancelled() {
                     return Ok(());
                 }
-                tracing::warn!(
-                    "L1 state update stream ended: {e:#}, reconnecting in {:?}",
-                    reconnect_delay
-                );
+                tracing::warn!("L1 state update stream ended: {e:#}, reconnecting in {:?}", reconnect_delay);
                 tokio::time::sleep(reconnect_delay).await;
                 reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
                 // Continue outer loop to reconnect
@@ -142,8 +130,5 @@ pub async fn state_update_worker(
 
 /// Check if the error indicates a stream/connection ended (recoverable)
 fn is_stream_ended_error(e: &SettlementClientError) -> bool {
-    matches!(
-        e,
-        SettlementClientError::StreamProcessing(_) | SettlementClientError::StateEventListener(_)
-    )
+    matches!(e, SettlementClientError::StreamProcessing(_) | SettlementClientError::StateEventListener(_))
 }

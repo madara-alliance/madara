@@ -131,10 +131,7 @@ async fn sync_inner(
                 s
             }
             Err(e) => {
-                tracing::warn!(
-                    "Failed to create L1 message stream: {e:#}, retrying in {:?}",
-                    reconnect_delay
-                );
+                tracing::warn!("Failed to create L1 message stream: {e:#}, retrying in {:?}", reconnect_delay);
                 tokio::time::sleep(reconnect_delay).await;
                 reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
                 continue;
@@ -190,10 +187,7 @@ async fn sync_inner(
         };
 
         if stream_ended {
-            tracing::warn!(
-                "L1 event stream ended unexpectedly, reconnecting in {:?}",
-                reconnect_delay
-            );
+            tracing::warn!("L1 event stream ended unexpectedly, reconnecting in {:?}", reconnect_delay);
             tokio::time::sleep(reconnect_delay).await;
             reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
             // Continue outer loop to recreate stream
