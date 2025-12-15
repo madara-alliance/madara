@@ -8,6 +8,12 @@ use std::sync::Arc;
 use std::{cmp, time::Duration};
 use tokio::time::Instant;
 
+/// Base delay for retry attempts after pipeline/gateway failure.
+const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
+
+/// Maximum delay between retry attempts (exponential backoff cap).
+const RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+
 pub trait ForwardPipeline {
     fn run(
         &mut self,
@@ -217,6 +223,8 @@ impl<P: ForwardPipeline> SyncController<P> {
                     res?;
                 }
                 res = self.probe.run() => {
+                    // Probe errors are already handled gracefully in GatewayLatestProbe::probe()
+                    // which returns Ok(None) or Ok(last_known_block) on error
                     let new_probe_height = res?.map(|v| v.block_number);
                     if self.config.stop_at_block_n.is_none()
                         && !can_run_pipeline
@@ -234,10 +242,19 @@ impl<P: ForwardPipeline> SyncController<P> {
                 Some(res) = OptionFuture::from(
                     self.get_pending_block.as_mut().filter(|_| !can_run_pipeline).map(|fut| fut.run())
                 ) => {
-                    let res = res?;
-                    tracing::debug!("Pending probe successful: {}", res.is_some());
-                    if res.is_some() {
-                        self.config.service_state_sender.send(ServiceEvent::UpdatedPreconfirmedBlock);
+                    match res {
+                        Ok(res) => {
+                            tracing::debug!("Pending probe successful: {}", res.is_some());
+                            if res.is_some() {
+                                self.config.service_state_sender.send(ServiceEvent::UpdatedPreconfirmedBlock);
+                            }
+                        }
+                        Err(e) => {
+                            // Pending block fetch failed - log but don't crash
+                            tracing::warn!(
+                                "Failed to fetch pending block: {e:#}. Will retry on next cycle."
+                            );
+                        }
                     }
                 }
                 else => break Ok(()),
