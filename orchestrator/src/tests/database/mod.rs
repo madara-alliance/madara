@@ -1,7 +1,7 @@
 use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::tests::utils::{build_batch, build_job_item};
-use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus};
+use crate::tests::utils::{build_batch, build_job_item, build_snos_batch};
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatchStatus};
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -287,9 +287,7 @@ async fn database_test_update_batch(
 
     // Create updates for the batch
     let updates = AggregatorBatchUpdates {
-        end_snos_batch: Some(30),
         end_block: Some(250),
-        is_batch_ready: Some(true),
         status: Some(AggregatorBatchStatus::Closed),
     };
 
@@ -299,16 +297,11 @@ async fn database_test_update_batch(
     // Verify the updates
     assert_eq!(updated_batch.id, batch.id);
     assert_eq!(updated_batch.index, batch.index);
-    // verify the snos batch updates
-    assert_eq!(updated_batch.num_snos_batches, updates.end_snos_batch.unwrap() - batch.start_snos_batch + 1);
-    assert_eq!(updated_batch.start_snos_batch, batch.start_snos_batch);
-    assert_eq!(updated_batch.end_snos_batch, updates.end_snos_batch.unwrap());
     // verify the block updates
     assert_eq!(updated_batch.num_blocks, updates.end_block.unwrap() - batch.start_block + 1);
     assert_eq!(updated_batch.start_block, batch.start_block);
     assert_eq!(updated_batch.end_block, updates.end_block.unwrap());
     // verify other updates
-    assert!(updated_batch.is_batch_ready);
     assert_eq!(updated_batch.status, AggregatorBatchStatus::Closed);
     assert_eq!(updated_batch.bucket_id, batch.bucket_id);
     assert_eq!(updated_batch.squashed_state_updates_path, batch.squashed_state_updates_path);
@@ -349,7 +342,7 @@ async fn test_create_snos_batch() {
     let database_client = config.database();
 
     // Create a SNOS batch
-    let snos_batch = SnosBatch::new(1, Some(100), 200);
+    let snos_batch = build_snos_batch(1, Some(100), 200);
 
     // Create the batch in the database
     let created_batch = database_client.create_snos_batch(snos_batch.clone()).await.unwrap();
@@ -362,7 +355,7 @@ async fn test_create_snos_batch() {
     assert_eq!(retrieved_batch, snos_batch);
 
     // Verify batch properties
-    assert_eq!(retrieved_batch.snos_batch_id, 1);
+    assert_eq!(retrieved_batch.index, 1);
     assert_eq!(retrieved_batch.start_block, 200);
     assert_eq!(retrieved_batch.end_block, 200);
     assert_eq!(retrieved_batch.num_blocks, 1); // 200 - 100 + 1
@@ -567,7 +560,7 @@ async fn test_get_snos_batches_by_indices() {
     let database_client = config.database();
 
     let batches =
-        [SnosBatch::new(1, Some(100), 200), SnosBatch::new(2, Some(100), 300), SnosBatch::new(3, Some(100), 400)];
+        [build_snos_batch(1, Some(100), 200), build_snos_batch(2, Some(100), 300), build_snos_batch(3, Some(100), 400)];
 
     for batch in &batches {
         database_client.create_snos_batch(batch.clone()).await.unwrap();
@@ -578,8 +571,8 @@ async fn test_get_snos_batches_by_indices() {
     println!("{:?}", retrieved_batches);
 
     assert_eq!(retrieved_batches.len(), 2);
-    assert_eq!(retrieved_batches[0].snos_batch_id, 1);
-    assert_eq!(retrieved_batches[1].snos_batch_id, 3);
+    assert_eq!(retrieved_batches[0].index, 1);
+    assert_eq!(retrieved_batches[1].index, 3);
 }
 
 /// Test for `update_snos_batch_status_by_index` operation in database trait.
@@ -591,13 +584,13 @@ async fn test_update_snos_batch_status_by_index() {
     let config = services.config;
     let database_client = config.database();
 
-    let batch = SnosBatch::new(1, Some(100), 200);
+    let batch = build_snos_batch(1, Some(100), 200);
     database_client.create_snos_batch(batch.clone()).await.unwrap();
 
     let updated_batch = database_client.update_snos_batch_status_by_index(1, SnosBatchStatus::Closed).await.unwrap();
 
     assert_eq!(updated_batch.status, SnosBatchStatus::Closed);
-    assert_eq!(updated_batch.snos_batch_id, 1);
+    assert_eq!(updated_batch.index, 1);
 }
 
 /// Test for `get_snos_batches_by_status` operation in database trait.
@@ -609,9 +602,9 @@ async fn test_get_snos_batches_by_status() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, Some(100), 200);
-    let batch2 = SnosBatch::new(2, Some(100), 300);
-    let mut batch3 = SnosBatch::new(3, Some(100), 400);
+    let mut batch1 = build_snos_batch(1, Some(100), 200);
+    let batch2 = build_snos_batch(2, Some(100), 300);
+    let mut batch3 = build_snos_batch(3, Some(100), 400);
 
     batch1.status = SnosBatchStatus::Closed;
     batch3.status = SnosBatchStatus::Closed;
@@ -623,8 +616,8 @@ async fn test_get_snos_batches_by_status() {
     let closed_batches = database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None).await.unwrap();
 
     assert_eq!(closed_batches.len(), 2);
-    assert!(closed_batches.iter().any(|b| b.snos_batch_id == 1));
-    assert!(closed_batches.iter().any(|b| b.snos_batch_id == 3));
+    assert!(closed_batches.iter().any(|b| b.index == 1));
+    assert!(closed_batches.iter().any(|b| b.index == 3));
 
     // Test with limit
     let limited_batches = database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, Some(1)).await.unwrap();
@@ -641,8 +634,8 @@ async fn test_get_snos_batches_without_jobs() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, Some(100), 200);
-    let mut batch2 = SnosBatch::new(2, Some(100), 300);
+    let mut batch1 = build_snos_batch(1, Some(100), 200);
+    let mut batch2 = build_snos_batch(2, Some(100), 300);
     batch1.status = SnosBatchStatus::Closed;
     batch2.status = SnosBatchStatus::Closed;
 
@@ -656,7 +649,7 @@ async fn test_get_snos_batches_without_jobs() {
     let batches_without_jobs = database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed).await.unwrap();
 
     assert_eq!(batches_without_jobs.len(), 1);
-    assert_eq!(batches_without_jobs[0].snos_batch_id, 2);
+    assert_eq!(batches_without_jobs[0].index, 2);
 }
 
 /// Test for `get_aggregator_batches_by_indexes` operation in database trait.
@@ -790,9 +783,9 @@ async fn test_get_snos_batches_by_aggregator_index() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, Some(1), 200);
-    let mut batch2 = SnosBatch::new(2, Some(1), 300);
-    let mut batch3 = SnosBatch::new(3, Some(2), 400);
+    let mut batch1 = build_snos_batch(1, Some(1), 200);
+    let mut batch2 = build_snos_batch(2, Some(1), 300);
+    let mut batch3 = build_snos_batch(3, Some(2), 400);
 
     batch1.aggregator_batch_index = Some(1);
     batch2.aggregator_batch_index = Some(1);
@@ -805,8 +798,8 @@ async fn test_get_snos_batches_by_aggregator_index() {
     let batches_for_agg1 = database_client.get_snos_batches_by_aggregator_index(1).await.unwrap();
 
     assert_eq!(batches_for_agg1.len(), 2);
-    assert!(batches_for_agg1.iter().any(|b| b.snos_batch_id == 1));
-    assert!(batches_for_agg1.iter().any(|b| b.snos_batch_id == 2));
+    assert!(batches_for_agg1.iter().any(|b| b.index == 1));
+    assert!(batches_for_agg1.iter().any(|b| b.index == 2));
 }
 
 /// Test for `get_open_snos_batches_by_aggregator_index` operation in database trait.
@@ -818,9 +811,9 @@ async fn test_get_open_snos_batches_by_aggregator_index() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, Some(1), 200);
-    let mut batch2 = SnosBatch::new(2, Some(1), 300);
-    let mut batch3 = SnosBatch::new(3, Some(1), 400);
+    let mut batch1 = build_snos_batch(1, Some(1), 200);
+    let mut batch2 = build_snos_batch(2, Some(1), 300);
+    let mut batch3 = build_snos_batch(3, Some(1), 400);
 
     batch1.aggregator_batch_index = Some(1);
     batch2.aggregator_batch_index = Some(1);
@@ -834,8 +827,8 @@ async fn test_get_open_snos_batches_by_aggregator_index() {
     let open_batches = database_client.get_open_snos_batches_by_aggregator_index(1).await.unwrap();
 
     assert_eq!(open_batches.len(), 2);
-    assert!(open_batches.iter().any(|b| b.snos_batch_id == 1));
-    assert!(open_batches.iter().any(|b| b.snos_batch_id == 3));
+    assert!(open_batches.iter().any(|b| b.index == 1));
+    assert!(open_batches.iter().any(|b| b.index == 3));
 }
 
 /// Test for `get_next_snos_batch_id` operation in database trait.
@@ -852,8 +845,8 @@ async fn test_get_next_snos_batch_id() {
     assert_eq!(next_id, 1);
 
     // Create some batches
-    database_client.create_snos_batch(SnosBatch::new(1, Some(100), 200)).await.unwrap();
-    database_client.create_snos_batch(SnosBatch::new(2, Some(100), 300)).await.unwrap();
+    database_client.create_snos_batch(build_snos_batch(1, Some(100), 200)).await.unwrap();
+    database_client.create_snos_batch(build_snos_batch(2, Some(100), 300)).await.unwrap();
 
     // Should now return 3
     let next_id = database_client.get_next_snos_batch_id().await.unwrap();
@@ -869,9 +862,9 @@ async fn test_close_all_snos_batches_for_aggregator() {
     let config = services.config;
     let database_client = config.database();
 
-    let mut batch1 = SnosBatch::new(1, Some(1), 200);
-    let mut batch2 = SnosBatch::new(2, Some(1), 300);
-    let mut batch3 = SnosBatch::new(3, Some(2), 400);
+    let mut batch1 = build_snos_batch(1, Some(1), 200);
+    let mut batch2 = build_snos_batch(2, Some(1), 300);
+    let mut batch3 = build_snos_batch(3, Some(2), 400);
 
     batch1.aggregator_batch_index = Some(1);
     batch2.aggregator_batch_index = Some(1);
@@ -885,8 +878,8 @@ async fn test_close_all_snos_batches_for_aggregator() {
 
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().all(|b| b.status == SnosBatchStatus::Closed));
-    assert!(closed_batches.iter().any(|b| b.snos_batch_id == 1));
-    assert!(closed_batches.iter().any(|b| b.snos_batch_id == 2));
+    assert!(closed_batches.iter().any(|b| b.index == 1));
+    assert!(closed_batches.iter().any(|b| b.index == 2));
 
     // Verify batch 3 is still open
     let batch3_after = database_client.get_snos_batches_by_indices(vec![3]).await.unwrap();

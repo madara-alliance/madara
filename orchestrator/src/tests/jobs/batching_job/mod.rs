@@ -2,7 +2,8 @@ use crate::core::StorageClient;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
 use crate::tests::utils::read_file_to_string;
-use crate::worker::event_handler::triggers::batching::BatchingTrigger;
+use crate::worker::event_handler::triggers::aggregator_batching::AggregatorBatchingTrigger;
+use crate::worker::event_handler::triggers::snos_batching::SnosBatchingTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use alloy::hex;
 use color_eyre::Result;
@@ -43,8 +44,10 @@ async fn test_assign_batch_to_block_new_batch(
         .build()
         .await;
 
-    let result = BatchingTrigger.run_worker(services.config.clone()).await;
+    let result = AggregatorBatchingTrigger.run_worker(services.config.clone()).await;
+    assert!(result.is_ok());
 
+    let result = SnosBatchingTrigger.run_worker(services.config.clone()).await;
     assert!(result.is_ok());
 
     let generated_blobs =
