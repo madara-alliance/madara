@@ -31,69 +31,31 @@ runs:
     #        restore-keys: |
     #          python-cairo-${{ runner.os }}-${{ inputs.python-version }}-
 
-    - name: Ensure Cargo dependencies are available
-      shell: bash
-      run: |
-        # Check if cargo dependencies are already fetched (e.g., by Rust setup action)
-        if [ -d "$HOME/.cargo/git/checkouts" ] && [ "$(find "$HOME/.cargo/git/checkouts" -name "*.toml" 2>/dev/null | wc -l)" -gt 0 ]; then
-          echo "✓ Cargo dependencies already available from previous step"
-        else
-          echo "Fetching Cargo dependencies to get sequencer requirements.txt..."
-          cargo fetch --manifest-path Cargo.toml
-        fi
-
-    - name: Setup Python virtual environment with sequencer requirements
+    - name: Setup Python virtual environment with cairo-lang
       shell: bash
       run: |
         # Create virtual environment
         python3 -m venv sequencer_venv
         source sequencer_venv/bin/activate
 
-        # Now look for the requirements.txt file in the cargo checkouts
-        REQUIREMENTS_FILE=""
+        # Pin cairo-lang to exact version required by build scripts
+        # Note: We explicitly pin to 0.14.0.1 instead of using sequencer's requirements.txt
+        # because the sequencer may have a newer alpha version that's incompatible with our build
+        echo "Installing cairo-lang==0.14.0.1 (exact version required by build scripts)..."
+        pip install --upgrade pip
+        pip install cairo-lang==0.14.0.1 "numpy<2.0"
 
-        # Look for requirements.txt in sequencer checkout directories
-        if [ -d "$HOME/.cargo/git/checkouts" ]; then
-          echo "Searching for sequencer requirements.txt in cargo checkouts..."
-          REQUIREMENTS_FILE=$(find "$HOME/.cargo/git/checkouts" -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | grep -i sequencer | head -1)
-        fi
-
-        # Alternative search - look more broadly in cargo git checkouts
-        if [ -z "$REQUIREMENTS_FILE" ]; then
-          echo "Broad search in cargo git checkouts..."
-          REQUIREMENTS_FILE=$(find "$HOME/.cargo/git/checkouts" -name "requirements.txt" 2>/dev/null | head -1)
-        fi
-
-        # Last resort - check if running inside GitHub Actions and look in runner's cargo directory
-        if [ -z "$REQUIREMENTS_FILE" ] && [ -n "$GITHUB_WORKSPACE" ]; then
-          echo "Searching in GitHub runner cargo directory..."
-          REQUIREMENTS_FILE=$(find /home/runner/.cargo -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | head -1)
-        fi
-
-        if [ -n "$REQUIREMENTS_FILE" ] && [ -f "$REQUIREMENTS_FILE" ]; then
-          echo "✓ Found requirements.txt at: $REQUIREMENTS_FILE"
-          echo "Contents of requirements.txt:"
-          cat "$REQUIREMENTS_FILE"
-          echo ""
-          echo "Installing dependencies from requirements.txt..."
-          pip install --upgrade pip
-          pip install -r "$REQUIREMENTS_FILE"
-        else
-          echo "❌ Could not find sequencer requirements.txt file"
-          echo "Searched in the following locations:"
-          echo "  - $HOME/.cargo/git/checkouts"
-          echo "  - /home/runner/.cargo (if in GitHub Actions)"
-          echo ""
-          echo "Available files in cargo checkouts:"
-          find "$HOME/.cargo/git/checkouts" -name "*.txt" 2>/dev/null | head -10 || echo "No .txt files found"
-          echo ""
-          exit 1
-        fi
-
-        # Verify cairo-compile is available
+        # Verify cairo-compile is available and has the correct version
         if command -v cairo-compile >/dev/null 2>&1; then
+          CAIRO_VERSION=$(cairo-compile --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?' || echo "unknown")
           echo "✓ cairo-compile is available at: $(which cairo-compile)"
-          cairo-compile --version
+          echo "✓ cairo-compile version: $CAIRO_VERSION"
+
+          # Verify the version is exactly what we expect
+          if [[ "$CAIRO_VERSION" != "0.14.0.1" ]]; then
+            echo "⚠️  Warning: cairo-compile version is $CAIRO_VERSION, expected 0.14.0.1"
+            echo "This may cause build failures. Please check cairo-lang installation."
+          fi
         else
           echo "❌ cairo-compile not found in PATH after installing requirements"
           echo "Installed Python packages:"
@@ -101,7 +63,7 @@ runs:
           exit 1
         fi
 
-        echo "✓ Python virtual environment setup complete with sequencer requirements"
+        echo "✓ Python virtual environment setup complete with cairo-lang==0.14.0.1"
 
     - name: Activate virtual environment for subsequent steps
       shell: bash
