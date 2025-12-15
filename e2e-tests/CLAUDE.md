@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Project Overview
 
-The e2e-tests folder contains orchestrator-specific workflow testing focused on proving, aggregation, and state transitions. It validates the complete orchestrator job pipeline with heavily mocked external services.
+The e2e-tests folder contains orchestrator-specific workflow testing focused on proving,
+aggregation, and state transitions. It validates the complete orchestrator job pipeline
+with heavily mocked external services.
 
 **Key capabilities:**
 
@@ -37,7 +39,7 @@ RUST_LOG=debug cargo test --package e2e-tests test_orchestrator_workflow -- --no
 
 ### Directory Structure
 
-```
+```text
 e2e-tests/
 ├── src/
 │   ├── lib.rs              # Module exports and utilities
@@ -64,7 +66,7 @@ e2e-tests/
 
 ### Test Flow
 
-```
+```text
 1. Initialize MongoDB (fresh instance)
 2. Initialize StarknetClient (mock)
 3. Initialize SharpClient (mock)
@@ -94,7 +96,7 @@ Each job type is polled with specific timeouts:
 
 ### Environment Variables (`.env.test`)
 
-```
+```text
 MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL=mongodb://localhost:27017
 MADARA_ORCHESTRATOR_DATABASE_NAME=test_db
 MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL=http://localhost:8545
@@ -118,7 +120,7 @@ Located in `artifacts/`:
 
 ### SHARP Client Mocking
 
-```
+```text
 POST /add_job → {code: JOB_RECEIVED_SUCCESSFULLY}
 GET /get_status → {status: ONCHAIN, validation_done: true}
 POST /create_bucket → {code: BUCKET_CREATED_SUCCESSFULLY, bucket_id: ...}
@@ -128,7 +130,7 @@ GET /aggregator_task_id → {task_id: <uuid>}
 
 ### Starknet Client Mocking
 
-```
+```text
 starknet_getNonce → Nonce from JSON artifact
 starknet_getStateUpdate → State update from JSON artifact
 starknet_blockNumber → L2 block number

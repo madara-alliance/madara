@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Bootstrapper-v2 is a CLI application for bootstrapping complete Madara networks with Ethereum as the base layer. It uses a factory pattern for atomic, efficient contract deployments across both L1 (Ethereum) and L2 (Madara).
+Bootstrapper-v2 is a CLI application for bootstrapping complete Madara networks with Ethereum
+as the base layer. It uses a factory pattern for atomic, efficient contract deployments across
+both L1 (Ethereum) and L2 (Madara).
 
 **Key capabilities:**
 
@@ -94,8 +96,8 @@ RUST_LOG=debug cargo run -- \
 
 **Base Layer (L1 - Ethereum):**
 
-```
-1. Deploy implementation contracts (CoreContract, Manager, Registry, MultiBridge, EthBridge, EthBridgeEIC)
+```text
+1. Deploy implementation contracts (CoreContract, Manager, Registry, MultiBridge, EthBridge)
 2. Deploy Factory contract with implementation references
 3. Call Factory.setup() → BaseLayerContractsDeployed event
 4. Extract addresses: CoreContract, Manager, Registry, MultiBridge, EthBridge
@@ -104,7 +106,7 @@ RUST_LOG=debug cargo run -- \
 
 **Madara (L2 - StarkNet):**
 
-```
+```text
 1. Bootstrap account declare (OpenZeppelin Account with special nonce=0)
 2. Deploy user account via OpenZeppelin AccountFactory
 3. Declare Cairo contracts (TokenBridge, ERC20, EIC, UniversalDeployer, MadaraFactory)
@@ -144,7 +146,7 @@ RUST_LOG=debug cargo run -- \
 
 ### Environment Variables
 
-```
+```text
 BASE_LAYER_PRIVATE_KEY=0xabcd    # Private key for L1 deployments
 MADARA_PRIVATE_KEY=0xabcd        # Private key for L2 deployments
 RUST_LOG=info                    # Logging level

@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Project Overview
 
-The e2e folder contains a comprehensive test framework library for testing the Madara Starknet sequencer system with multiple services working together. It tests full-stack integration for Layer 2 (L2) blockchain operations including deposits, withdrawals, and bridge transactions.
+The e2e folder contains a comprehensive test framework library for testing the Madara Starknet
+sequencer system with multiple services working together. It tests full-stack integration for
+Layer 2 (L2) blockchain operations including deposits, withdrawals, and bridge transactions.
 
 **Key capabilities:**
 
@@ -42,7 +44,7 @@ RUST_LOG=debug cargo test --package e2e -- --nocapture
 
 ### Directory Structure
 
-```
+```text
 e2e/
 ├── src/
 │   ├── setup/              # Environment initialization
@@ -70,7 +72,7 @@ e2e/
 
 ### Service Dependencies
 
-```
+```text
 Infrastructure (MongoDB, LocalStack)
          ↓
 L1 Setup (Anvil → Mock Verifier Deployer → Bootstrapper)
@@ -173,7 +175,7 @@ L1_ACCOUNT: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 
 ---
 
-# E2E-Tests (Orchestrator Workflow)
+## E2E-Tests (Orchestrator Workflow)
 
 Located in `../e2e-tests/`, this tests the orchestrator's job processing pipeline with heavily mocked external services.
 
@@ -212,7 +214,7 @@ RUST_LOG=debug cargo test --package e2e-tests test_orchestrator_workflow -- --no
 
 **Configuration:** Via `.env.test` file with environment variables:
 
-```
+```text
 MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL
 MADARA_ORCHESTRATOR_DATABASE_NAME
 MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL

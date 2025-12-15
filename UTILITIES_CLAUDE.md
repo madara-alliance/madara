@@ -1,6 +1,8 @@
 # UTILITIES_CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) for the smaller utility folders in this repository: `cairo/`, `madaraup/`, `scripts/`, `tools/`, `test_utils/`, `build-artifacts/`, and `evm/`.
+This file provides guidance to Claude Code (claude.ai/code) for the smaller utility
+folders in this repository: `cairo/`, `madaraup/`, `scripts/`, `tools/`, `test_utils/`,
+`build-artifacts/`, and `evm/`.
 
 ---
 
@@ -13,9 +15,9 @@ Cairo smart contracts used for genesis block initialization and testing.
 - Smart contracts for genesis/devnet initialization
 - Test contracts for JavaScript and orchestrator integration testing
 
-### Structure
+### Cairo Structure
 
-```
+```text
 cairo/
 ├── js_tests/           # Contracts for JS integration testing
 │   ├── Scarb.toml      # Cairo project manifest
@@ -52,7 +54,7 @@ cd cairo/js_tests && snforge test
 
 Cross-platform installer script for Madara binaries.
 
-### Purpose
+### Madaraup Purpose
 
 - Install Madara without building from source
 - Update Madara versions
@@ -64,7 +66,7 @@ Cross-platform installer script for Madara binaries.
 - `madaraup`: Main executable script
 - `install`: Bootstrap installation script
 
-### Commands
+### Madaraup Commands
 
 ```bash
 # Install from web
@@ -82,7 +84,7 @@ madaraup --tag v0.7.0-beta
 madaraup --pr 123
 ```
 
-### Key Info
+### Madaraup Key Info
 
 - Creates `~/.madara/bin` directory
 - Updates shell profile (zsh/bash/fish/ash)
@@ -129,7 +131,7 @@ Utility scripts for development, testing, deployment, and database management.
 ./scripts/rpc_cmp --madara http://127.0.0.1:9944 --pathfinder http://pathfinder:8080 getBlockWithTxs 1
 ```
 
-### Key Info
+### Scripts Key Info
 
 - All scripts use `set -e` for fail-fast
 - Default database path: `/tmp/madara`
@@ -142,7 +144,7 @@ Utility scripts for development, testing, deployment, and database management.
 
 Nix derivation files for reproducible tool installation.
 
-### Files
+### Nix Files
 
 | File          | Tool    | Version | Purpose                               |
 | ------------- | ------- | ------- | ------------------------------------- |
@@ -163,7 +165,7 @@ let
 in { ... }
 ```
 
-### Key Info
+### Tools Key Info
 
 - Uses pre-built binaries (no compilation)
 - musl-based binaries on Linux for NixOS compatibility
@@ -175,9 +177,9 @@ in { ... }
 
 Mock services and test utilities for development and testing.
 
-### Structure
+### Test Utils Structure
 
-```
+```text
 test_utils/
 ├── crates/
 │   └── mock-atlantic-server/  # Mock Atlantic prover server
@@ -193,10 +195,10 @@ test_utils/
 
 **Atlantic API Reference:**
 
-- Swagger UI: https://atlantic.api.herodotus.cloud/docs/
-- OpenAPI JSON: https://atlantic.api.herodotus.cloud/docs/json
+- Swagger UI: <https://atlantic.api.herodotus.cloud/docs/>
+- OpenAPI JSON: <https://atlantic.api.herodotus.cloud/docs/json>
 
-### Commands
+### Test Utils Commands
 
 ```bash
 # Build mock Atlantic server
@@ -215,14 +217,14 @@ cargo run --bin utils-mock-atlantic-server 8080 0.1    # With 10% failure rate
 
 ### Mock Atlantic API
 
-```
+```text
 POST /atlantic-query?apiKey={key}  # Submit proving job
 GET  /atlantic-query/{job_id}      # Get job status
 GET  /queries/{task_id}/proof.json # Download proof
 GET  /health                       # Health check
 ```
 
-### Key Info
+### Test Utils Key Info
 
 - Default port: 3001
 - Default API key: "mock-key"
@@ -235,9 +237,9 @@ GET  /health                       # Health check
 
 Pre-compiled smart contracts in JSON format.
 
-### Structure
+### Artifacts Structure
 
-```
+```text
 build-artifacts/
 ├── bootstrapper/       # MadaraFactory, EIC, Solidity contracts
 ├── argent/             # Argent wallet (sierra.json, casm.json)
@@ -262,7 +264,7 @@ build-artifacts/
 ./scripts/artifacts.sh
 ```
 
-### Key Info
+### Artifacts Key Info
 
 - Built using Docker (Rust 1.85, Python, npm)
 - Contracts compiled from source (not pre-downloaded)
@@ -286,7 +288,7 @@ Docker Compose setup for local EVM-Starknet integrated testing.
 | kakarot-rpc      | kakarot-rpc:v0.7.1-alpha1 | 3030  | EVM RPC             |
 | kakarot-deployer | kakarot:v0.9.2            | -     | Contract deployment |
 
-### Commands
+### EVM Commands
 
 ```bash
 # Start all services
@@ -302,16 +304,16 @@ MADARA_CHAIN_CONFIG=/path/to/config.yaml docker-compose up -d
 docker-compose down
 ```
 
-### Environment Variables
+### EVM Environment Variables
 
-```
+```text
 MADARA_BASE_PATH: /var/lib/madara
 MADARA_MODE: sequencer | full
 MADARA_PRESET: mainnet | testnet | devnet
 MADARA_RPC_PORT: 9944
 ```
 
-### Key Info
+### EVM Key Info
 
 - Kakarot provides EVM compatibility on Starknet
 - Apibara streams real-time blockchain data

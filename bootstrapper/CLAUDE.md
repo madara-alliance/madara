@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-The Madara Bootstrapper is a Rust-based tool for deploying and initializing bridge contracts between a Madara/Starknet Appchain (L2) and Ethereum/EVM-compatible chains (L1). It automates the complex setup process for cross-chain interoperability.
+The Madara Bootstrapper is a Rust-based tool for deploying and initializing bridge contracts
+between a Madara/Starknet Appchain (L2) and Ethereum/EVM-compatible chains (L1). It automates
+the complex setup process for cross-chain interoperability.
 
 **Key capabilities:**
 
@@ -133,7 +135,7 @@ cargo test deposit_and_claim_erc20 -- --nocapture
 
 **L1 (Ethereum):**
 
-```
+```text
 eth_rpc: Ethereum RPC endpoint (default: http://127.0.0.1:8545)
 eth_priv_key: Private key for L1 deployer
 eth_chain_id: Chain ID (e.g., 31337 for local anvil)
@@ -142,7 +144,7 @@ l1_deployer_address: Deployer account address
 
 **L2 (Starknet/Madara):**
 
-```
+```text
 rollup_seq_url: L2 sequencer URL (default: http://127.0.0.1:19944/rpc/v0.8.1/)
 rollup_declare_v0_seq_url: Admin RPC for Cairo 0 declarations (default: http://127.0.0.1:19943)
 rollup_priv_key: L2 deployer private key
@@ -151,7 +153,7 @@ app_chain_id: Starknet chain ID (default: MADARA_DEVNET)
 
 **Governance:**
 
-```
+```text
 l1_multisig_address: L1 multisig for governance
 l2_multisig_address: L2 multisig for governance
 verifier_address: Cairo proof verifier address
@@ -185,9 +187,10 @@ operator_address: Block proposer/operator address
 
 ---
 
-# Bootstrapper V2
+## Bootstrapper V2
 
-Located in `../bootstrapper-v2/`, this is a newer implementation using factory patterns for atomic deployments.
+Located in `../bootstrapper-v2/`, this is a newer implementation using factory patterns for
+atomic deployments.
 
 ## Key Differences from V1
 
@@ -211,9 +214,9 @@ RUST_LOG=debug cargo run -- \
   --output-path output/madara_addresses.json
 ```
 
-## V2 Environment Variables
+### V2 Environment Variables
 
-```
+```text
 BASE_LAYER_PRIVATE_KEY=0xabcd    # Private key for L1 deployments
 MADARA_PRIVATE_KEY=0xabcd        # Private key for L2 deployments
 RUST_LOG=info                    # Logging level

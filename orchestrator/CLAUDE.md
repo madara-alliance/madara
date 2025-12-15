@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-The Madara Orchestrator is a critical service that runs alongside the Madara node to coordinate block processing, proof generation, data submission, and state transitions. It manages a multi-stage job processing pipeline with distributed workers and queue-based execution.
+The Madara Orchestrator is a critical service that runs alongside the Madara node to coordinate
+block processing, proof generation, data submission, and state transitions. It manages a
+multi-stage job processing pipeline with distributed workers and queue-based execution.
 
 **Key capabilities:**
 
@@ -126,7 +128,7 @@ docker run -p 6000:6000 ocdbytes/mock-prover:latest
 
 ### Job Execution Pipeline
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                   Job Lifecycle                         │
 ├─────────────────────────────────────────────────────────┤
@@ -161,7 +163,7 @@ docker run -p 6000:6000 ocdbytes/mock-prover:latest
 
 ### Job State Machine
 
-```
+```text
 Created → LockedForProcessing → PendingVerification → Completed
                 ↓                       ↓
             VerificationFailed    VerificationTimeout
@@ -175,40 +177,40 @@ Created → LockedForProcessing → PendingVerification → Completed
 
 **AWS Configuration:**
 
-```
+```text
 AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 AWS_ENDPOINT_URL (for localstack)
 ```
 
 **Database (MongoDB):**
 
-```
+```text
 MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL
 MADARA_ORCHESTRATOR_DATABASE_NAME
 ```
 
 **Prover Services:**
 
-```
+```text
 SHARP: MADARA_ORCHESTRATOR_SHARP_URL, MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID
 ATLANTIC: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY, MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL
 ```
 
 **Atlantic API Documentation:**
 
-- Swagger UI: https://atlantic.api.herodotus.cloud/docs/
-- OpenAPI JSON: https://atlantic.api.herodotus.cloud/docs/json
+- Swagger UI: <https://atlantic.api.herodotus.cloud/docs/>
+- OpenAPI JSON: <https://atlantic.api.herodotus.cloud/docs/json>
 
 **Settlement Layers:**
 
-```
+```text
 Ethereum: MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL, MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY
 Starknet: MADARA_ORCHESTRATOR_STARKNET_SETTLEMENT_RPC_URL, MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY
 ```
 
 **Batching:**
 
-```
+```text
 MADARA_ORCHESTRATOR_MAX_BATCH_TIME_SECONDS
 MADARA_ORCHESTRATOR_MAX_BATCH_SIZE
 MADARA_ORCHESTRATOR_MAX_NUM_BLOBS

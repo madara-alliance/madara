@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Madara is a hybrid RPC node / sequencer for the Starknet network. It supports both state synchronization (full node mode) and state production (sequencer mode). The node follows the Starknet RPC specs and Starknet P2P specs.
+Madara is a hybrid RPC node / sequencer for the Starknet network. It supports both
+state synchronization (full node mode) and state production (sequencer mode). The node
+follows the Starknet RPC specs and Starknet P2P specs.
 
 **Key capabilities:**
 
@@ -107,7 +109,9 @@ cargo fmt -- --check
 
 ### Service Orchestration
 
-Services implement the `Service` trait with `ServiceContext` for cancellation. The `ServiceMonitor` manages lifecycle: registration, activation, graceful shutdown. Services are identified by atomic bitmask (`PowerOfTwo`) for thread-safe coordination.
+Services implement the `Service` trait with `ServiceContext` for cancellation.
+The `ServiceMonitor` manages lifecycle: registration, activation, graceful shutdown.
+Services are identified by atomic bitmask (`PowerOfTwo`) for thread-safe coordination.
 
 Key services run concurrently:
 
