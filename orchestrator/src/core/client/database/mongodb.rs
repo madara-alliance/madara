@@ -17,15 +17,16 @@ use chrono::{SubsecRound, Utc};
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{
-    AggregateOptions, FindOneAndUpdateOptions, FindOptions, InsertOneOptions, ReturnDocument, UpdateOptions,
+    AggregateOptions, FindOneAndUpdateOptions, FindOptions, IndexOptions, InsertOneOptions, ReturnDocument,
+    UpdateOptions,
 };
-use mongodb::{bson, Client, Collection, Database};
+use mongodb::{bson, Client, Collection, Database, IndexModel};
 use opentelemetry::KeyValue;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 pub trait ToDocument {
@@ -76,6 +77,72 @@ impl MongoDbClient {
         let client = Client::with_uri_str(&config.connection_uri).await?;
         let database = Arc::new(client.database(&config.database_name));
         Ok(Self { client, database })
+    }
+
+    pub async fn ensure_indexes(&self) -> Result<(), DatabaseError> {
+        // Create indexes for aggregator batch collection
+        let aggregator_collection = self.get_aggregator_batch_collection();
+
+        let aggregator_indexes = vec![
+            // Unique index on batch index
+            IndexModel::builder()
+                .keys(doc! { "index": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            // Index on status
+            IndexModel::builder().keys(doc! { "status": 1 }).build(),
+            // Index on created_at (descending for latest-first queries)
+            IndexModel::builder().keys(doc! { "created_at": -1 }).build(),
+            // Compound index on start_block and end_block
+            IndexModel::builder().keys(doc! { "start_block": 1, "end_block": 1 }).build(),
+            // Unique index on start_block
+            IndexModel::builder()
+                .keys(doc! { "start_block": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            // Unique index on end_block
+            IndexModel::builder()
+                .keys(doc! { "end_block": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        ];
+
+        aggregator_collection.create_indexes(aggregator_indexes, None).await?;
+        info!("Created indexes for aggregator batch collection");
+
+        // Create indexes for SNOS batch collection
+        let snos_collection = self.get_snos_batch_collection();
+
+        let snos_indexes = vec![
+            // Unique index on batch index
+            IndexModel::builder()
+                .keys(doc! { "index": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            // Index on aggregator_batch_index
+            IndexModel::builder().keys(doc! { "aggregator_batch_index": 1 }).build(),
+            // Index on status
+            IndexModel::builder().keys(doc! { "status": 1 }).build(),
+            // Index on created_at (descending for latest-first queries)
+            IndexModel::builder().keys(doc! { "created_at": -1 }).build(),
+            // Compound index on start_block and end_block
+            IndexModel::builder().keys(doc! { "start_block": 1, "end_block": 1 }).build(),
+            // Unique index on start_block
+            IndexModel::builder()
+                .keys(doc! { "start_block": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            // Unique index on end_block
+            IndexModel::builder()
+                .keys(doc! { "end_block": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        ];
+
+        snos_collection.create_indexes(snos_indexes, None).await?;
+        info!("Created indexes for SNOS batch collection");
+
+        Ok(())
     }
 
     /// Mongodb client uses Arc internally, reducing the cost of clone.

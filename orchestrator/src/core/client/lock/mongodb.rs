@@ -71,7 +71,7 @@ impl MongoLockClient {
     }
 
     /// Initialize the cache collection with proper indexes
-    pub async fn initialize(&self) -> Result<(), LockError> {
+    pub async fn ensure_indexes(&self) -> Result<(), LockError> {
         let start = Instant::now();
         let collection = self.get_cache_collection();
 
