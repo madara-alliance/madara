@@ -4,9 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Project Overview
 
-The e2e folder contains a comprehensive test framework library for testing the Madara Starknet sequencer system with multiple services working together. It tests full-stack integration for Layer 2 (L2) blockchain operations including deposits, withdrawals, and bridge transactions.
+The e2e folder contains a comprehensive test framework library for testing the Madara Starknet
+sequencer system with multiple services working together. It tests full-stack integration for
+Layer 2 (L2) blockchain operations including deposits, withdrawals, and bridge transactions.
 
 **Key capabilities:**
+
 - Full-stack integration testing for L1-L2 bridge operations
 - Multi-service orchestration (13+ services)
 - Layered architecture with clear separation of concerns
@@ -17,6 +20,7 @@ The e2e folder contains a comprehensive test framework library for testing the M
 ## Common Commands
 
 ### Running Tests
+
 ```bash
 # Full workflow validation
 cargo test --package e2e --lib -- --nocapture --test-threads=1
@@ -29,6 +33,7 @@ RUST_LOG=debug cargo test --package e2e -- --nocapture
 ```
 
 ### Prerequisites
+
 - Docker running
 - `anvil` installed (from Foundry)
 - `forge` installed (from Foundry)
@@ -39,7 +44,7 @@ RUST_LOG=debug cargo test --package e2e -- --nocapture
 
 ### Directory Structure
 
-```
+```text
 e2e/
 ├── src/
 │   ├── setup/              # Environment initialization
@@ -67,7 +72,7 @@ e2e/
 
 ### Service Dependencies
 
-```
+```text
 Infrastructure (MongoDB, LocalStack)
          ↓
 L1 Setup (Anvil → Mock Verifier Deployer → Bootstrapper)
@@ -81,16 +86,16 @@ Orchestration (Orchestrator Setup → Runtime)
 
 ### Services Started
 
-| Service | Purpose | Port |
-|---------|---------|------|
-| Anvil | L1 Ethereum chain | 8545 |
-| MongoDB | Orchestrator database | 27017 |
-| LocalStack | AWS S3, SQS, SNS, EventBridge | 4566 |
-| Madara | L2 Starknet sequencer | 9944 (RPC), 9943 (Admin), 8080 (Gateway) |
-| Pathfinder | Starknet full node | 9545 |
-| Bootstrapper | L1/L2 contract initialization | N/A |
-| Orchestrator | Proof pipeline coordinator | N/A |
-| Mock Prover | STARK proof simulator | 3001 |
+| Service      | Purpose                       | Port                                     |
+| ------------ | ----------------------------- | ---------------------------------------- |
+| Anvil        | L1 Ethereum chain             | 8545                                     |
+| MongoDB      | Orchestrator database         | 27017                                    |
+| LocalStack   | AWS S3, SQS, SNS, EventBridge | 4566                                     |
+| Madara       | L2 Starknet sequencer         | 9944 (RPC), 9943 (Admin), 8080 (Gateway) |
+| Pathfinder   | Starknet full node            | 9545                                     |
+| Bootstrapper | L1/L2 contract initialization | N/A                                      |
+| Orchestrator | Proof pipeline coordinator    | N/A                                      |
+| Mock Prover  | STARK proof simulator         | 3001                                     |
 
 ### Configuration Timeouts
 
@@ -109,6 +114,7 @@ complete_orchestration: 2400s (40 min)
 ## Test Framework
 
 ### Test Pattern
+
 ```rust
 #[rstest]
 #[tokio::test]
@@ -119,6 +125,7 @@ async fn test_bridge_deposit_and_withdraw(#[future] setup_chain: ChainSetup) {
 ```
 
 ### Fixture Flow
+
 1. Load `.env.e2e`
 2. Create `ChainSetup` via `SetupConfigBuilder`
 3. Validate dependencies (Docker, Anvil, Forge)
@@ -129,12 +136,15 @@ async fn test_bridge_deposit_and_withdraw(#[future] setup_chain: ChainSetup) {
 8. Clean up via `drop()` handler
 
 ### Test Utilities
+
 Located in `src/tests/deposit_withdraw/utils.rs`:
+
 - `setup_l1_context()`: L1 Ethereum configuration
 - `setup_l2_context()`: L2 Starknet/Madara configuration
 - `wait_for_transactions_finality()`: Block until L2 txns finalize on L1
 
 ### Test Accounts
+
 ```rust
 L2_ACCOUNT: 0x4fe5eea46caa0a1f344fafce82b39d66b552f00d3cd12e89073ef4b4ab37860
 L1_ACCOUNT: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
@@ -143,18 +153,21 @@ L1_ACCOUNT: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 ## Important Implementation Notes
 
 ### When Adding New Tests
+
 1. Use `#[rstest]` fixture for `ChainSetup`
 2. Use `#[tokio::test]` for async tests
 3. Add test utilities in `tests/` module
 4. Consider adding new services if needed
 
 ### When Adding New Services
+
 1. Create service module in `services/`
 2. Implement start/stop logic
 3. Add to service dependency graph in `service_management.rs`
 4. Update shutdown order in `lifecycle_management.rs`
 
 ### When Modifying Configuration
+
 - Timeouts are in `setup/config.rs`
 - Service ports in `services/constants.rs`
 - Chain config in `config/madara.yaml`
@@ -162,7 +175,7 @@ L1_ACCOUNT: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 
 ---
 
-# E2E-Tests (Orchestrator Workflow)
+## E2E-Tests (Orchestrator Workflow)
 
 Located in `../e2e-tests/`, this tests the orchestrator's job processing pipeline with heavily mocked external services.
 
@@ -181,6 +194,7 @@ RUST_LOG=debug cargo test --package e2e-tests test_orchestrator_workflow -- --no
 **Focus:** Orchestrator job pipeline (SNOS → Proving → Aggregation → StateTransition)
 
 **Services:**
+
 - MongoDB (fresh per test)
 - Anvil + contract deployment
 - StarknetClient (mocked)
@@ -188,6 +202,7 @@ RUST_LOG=debug cargo test --package e2e-tests test_orchestrator_workflow -- --no
 - Orchestrator
 
 **Test Flow:**
+
 1. Initialize MongoDB, StarknetClient (mock), SharpClient (mock), Anvil
 2. Insert SNOS job into database
 3. Insert Proving jobs for all blocks
@@ -198,7 +213,8 @@ RUST_LOG=debug cargo test --package e2e-tests test_orchestrator_workflow -- --no
 8. Validate: Batch creation → SNOS completion → ProofCreation → Aggregator → StateTransition
 
 **Configuration:** Via `.env.test` file with environment variables:
-```
+
+```text
 MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL
 MADARA_ORCHESTRATOR_DATABASE_NAME
 MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL
@@ -211,10 +227,10 @@ MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS
 
 ## Comparison
 
-| Aspect | e2e | e2e-tests |
-|--------|-----|-----------|
-| **Focus** | Bridge transactions | Orchestrator pipeline |
-| **Services** | 13 (full stack) | 4 (minimal + mocks) |
-| **DB Strategy** | Persistent snapshots | Fresh per test |
-| **Mocking** | Minimal (real L1) | Heavy (SHARP, Starknet) |
-| **Test Duration** | ~30+ mins | ~40+ mins |
+| Aspect            | e2e                  | e2e-tests               |
+| ----------------- | -------------------- | ----------------------- |
+| **Focus**         | Bridge transactions  | Orchestrator pipeline   |
+| **Services**      | 13 (full stack)      | 4 (minimal + mocks)     |
+| **DB Strategy**   | Persistent snapshots | Fresh per test          |
+| **Mocking**       | Minimal (real L1)    | Heavy (SHARP, Starknet) |
+| **Test Duration** | ~30+ mins            | ~40+ mins               |

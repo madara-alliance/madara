@@ -4,9 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Bootstrapper-v2 is a CLI application for bootstrapping complete Madara networks with Ethereum as the base layer. It uses a factory pattern for atomic, efficient contract deployments across both L1 (Ethereum) and L2 (Madara).
+Bootstrapper-v2 is a CLI application for bootstrapping complete Madara networks with Ethereum
+as the base layer. It uses a factory pattern for atomic, efficient contract deployments across
+both L1 (Ethereum) and L2 (Madara).
 
 **Key capabilities:**
+
 - Two-phase deployment approach (L1 setup → L2 setup)
 - Factory contracts for atomic deployments
 - Automatic bridge configuration between layers
@@ -17,6 +20,7 @@ Bootstrapper-v2 is a CLI application for bootstrapping complete Madara networks 
 ## Common Commands
 
 ### Building
+
 ```bash
 cargo build --release
 ```
@@ -42,24 +46,27 @@ RUST_LOG=debug cargo run -- \
 
 ### CLI Commands
 
-| Command | Purpose |
-|---------|---------|
-| `setup-base` | Deploy L1 infrastructure (Factory, CoreContract, bridges) |
-| `setup-madara` | Deploy L2 infrastructure (UDC, MadaraFactory, bridges) |
+| Command        | Purpose                                                   |
+| -------------- | --------------------------------------------------------- |
+| `setup-base`   | Deploy L1 infrastructure (Factory, CoreContract, bridges) |
+| `setup-madara` | Deploy L2 infrastructure (UDC, MadaraFactory, bridges)    |
 
 ### Module Structure
 
 **`cli/`** - Command-line interface
+
 - `mod.rs`: CLI argument structure using `clap`
 - `setup_base.rs`: Base layer setup command parameters
 - `setup_madara.rs`: Madara setup command parameters
 
 **`config.rs`** - Configuration management
+
 - `BaseConfigOuter`: Top-level config for base layer
 - `MadaraConfigOuter`: Top-level config for Madara
 - `BaseLayerConfig`: Supports both Ethereum and Starknet base layers
 
 **`setup/base_layer/`** - L1 setup logic
+
 - `mod.rs`: `BaseLayerSetupTrait` definition
 - `ethereum/mod.rs`: `EthereumSetup` implementation
 - `ethereum/factory.rs`: Factory contract deployment and setup
@@ -68,16 +75,19 @@ RUST_LOG=debug cargo run -- \
 - `starknet.rs`: Placeholder for Starknet-as-base-layer support
 
 **`setup/madara/`** - L2 setup logic
+
 - `mod.rs`: `MadaraSetup` implementation
 - `bootstrap_account.rs`: Bootstrap account for initial declaration
 - `class_contracts.rs`: Cairo contract class definitions
 - `constants.rs`: Artifact paths for Cairo contracts
 
 **`error/`** - Error handling
+
 - `mod.rs`: Main `BootstrapperError` enum
 - `madara.rs`: Madara-specific errors
 
 **`utils.rs`** - Shared utilities
+
 - Transaction waiting and receipt handling
 - Contract declaration
 - Address extraction from events
@@ -85,8 +95,9 @@ RUST_LOG=debug cargo run -- \
 ### Deployment Flow
 
 **Base Layer (L1 - Ethereum):**
-```
-1. Deploy implementation contracts (CoreContract, Manager, Registry, MultiBridge, EthBridge, EthBridgeEIC)
+
+```text
+1. Deploy implementation contracts (CoreContract, Manager, Registry, MultiBridge, EthBridge)
 2. Deploy Factory contract with implementation references
 3. Call Factory.setup() → BaseLayerContractsDeployed event
 4. Extract addresses: CoreContract, Manager, Registry, MultiBridge, EthBridge
@@ -94,7 +105,8 @@ RUST_LOG=debug cargo run -- \
 ```
 
 **Madara (L2 - StarkNet):**
-```
+
+```text
 1. Bootstrap account declare (OpenZeppelin Account with special nonce=0)
 2. Deploy user account via OpenZeppelin AccountFactory
 3. Declare Cairo contracts (TokenBridge, ERC20, EIC, UniversalDeployer, MadaraFactory)
@@ -107,6 +119,7 @@ RUST_LOG=debug cargo run -- \
 ## Configuration
 
 ### Config File Format (`configs/config.json`)
+
 ```json
 {
   "base_layer": {
@@ -132,7 +145,8 @@ RUST_LOG=debug cargo run -- \
 ```
 
 ### Environment Variables
-```
+
+```text
 BASE_LAYER_PRIVATE_KEY=0xabcd    # Private key for L1 deployments
 MADARA_PRIVATE_KEY=0xabcd        # Private key for L2 deployments
 RUST_LOG=info                    # Logging level
@@ -141,6 +155,7 @@ RUST_LOG=info                    # Logging level
 ### Output Files
 
 **`output/addresses.json`** (Base Layer):
+
 ```json
 {
   "addresses": {
@@ -158,6 +173,7 @@ RUST_LOG=info                    # Logging level
 ```
 
 **`output/madara_addresses.json`** (Madara):
+
 ```json
 {
   "addresses": {
@@ -177,12 +193,16 @@ RUST_LOG=info                    # Logging level
 ## Contracts
 
 ### L1 Contracts (Solidity)
+
 Located in `contracts/ethereum/`:
+
 - `Factory.sol`: Orchestrates atomic deployment
 - Implementation contracts from StarkGate
 
 ### L2 Contracts (Cairo)
+
 Located in `contracts/madara/`:
+
 - `MadaraFactory`: Orchestrates L2 bridge deployment
 - `EIC`: Extensible Implementation Contract
 - Account contracts from OpenZeppelin
@@ -190,16 +210,19 @@ Located in `contracts/madara/`:
 ## Important Implementation Notes
 
 ### When Working with Base Layer Setup
+
 - Implementation contracts can be pre-deployed and addresses provided in config
 - Factory.setup() waits for BaseLayerContractsDeployed event (5min timeout)
 - Post-Madara setup updates L2 bridge addresses on L1
 
 ### When Working with Madara Setup
+
 - Bootstrap account uses special private key `0x424f4f545354524150` (hex for "BOOTSTRAP")
 - First declaration uses nonce=0 without validation
 - All contracts declared before deployment
 
 ### When Adding New Contract Support
+
 1. Add artifact paths in `constants.rs`
 2. Add class enum variant in `class_contracts.rs`
 3. Update deployment logic in `setup/madara/mod.rs`
@@ -208,6 +231,7 @@ Located in `contracts/madara/`:
 ## Dependencies
 
 **Key Dependencies:**
+
 - `alloy` (1.0.25): Ethereum interactions
 - `starknet-rust` (0.17.0): StarkNet interactions
 - `clap` (4.5.45): CLI parsing
