@@ -8,12 +8,6 @@ use std::sync::Arc;
 use std::{cmp, time::Duration};
 use tokio::time::Instant;
 
-/// Base delay for retry attempts after pipeline/gateway failure.
-const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
-
-/// Maximum delay between retry attempts (exponential backoff cap).
-const RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
-
 pub trait ForwardPipeline {
     fn run(
         &mut self,
