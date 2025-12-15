@@ -19,7 +19,13 @@ use mp_rpc::v0_10_0::{
 // - get_events: EmittedEvent structure changed (has transaction_index and event_index)
 // - estimate_message_fee: needs CONTRACT_NOT_FOUND error check for L1 handler contract
 // - get_storage_proof: ContractStorageKeysItem uses StorageKey instead of Felt
+// - get_block_with_receipts: BlockHeader has new commitment and count fields
+// - get_block_with_txs: BlockHeader has new commitment and count fields
+// - get_block_with_tx_hashes: BlockHeader has new commitment and count fields
 pub mod estimate_message_fee;
+pub mod get_block_with_receipts;
+pub mod get_block_with_tx_hashes;
+pub mod get_block_with_txs;
 pub mod get_events;
 pub mod get_state_update;
 
@@ -67,15 +73,15 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
     }
 
     fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
-        V0_9_0Impl::get_block_with_receipts(self, block_id)
+        Ok(get_block_with_receipts::get_block_with_receipts(self, block_id)?)
     }
 
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedBlockWithTxHashes> {
-        V0_9_0Impl::get_block_with_tx_hashes(self, block_id)
+        Ok(get_block_with_tx_hashes::get_block_with_tx_hashes(self, block_id)?)
     }
 
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedBlockWithTxs> {
-        V0_9_0Impl::get_block_with_txs(self, block_id)
+        Ok(get_block_with_txs::get_block_with_txs(self, block_id)?)
     }
 
     fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<MaybeDeprecatedContractClass> {

@@ -1,30 +1,28 @@
 pub use crate::v0_9_0::{
     AddDeclareTransactionParams, AddDeployAccountTransactionParams, AddInvokeTransactionParams,
     AddInvokeTransactionResult, Address, BlockHash, BlockHashAndNumber, BlockHashAndNumberParams, BlockHashHelper,
-    BlockHeader, BlockNumber, BlockNumberHelper, BlockNumberParams, BlockStatus, BlockTag, BlockWithReceipts,
-    BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2,
-    BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn, CallParams, ChainId,
-    ChainIdParams, ClassAndTxnHash, CommonReceiptProperties, ContractAbi, ContractAbiEntry, ContractAndTxnHash,
-    ContractClass, ContractLeavesDataItem, ContractStorageDiffItem, ContractsProof, DaMode, DataAvailability,
-    DeclareTxn, DeclareTxnReceipt, DeclareTxnV0, DeclareTxnV1, DeclareTxnV2, DeclareTxnV3, DeployAccountTxn,
-    DeployAccountTxnReceipt, DeployAccountTxnV1, DeployAccountTxnV3, DeployTxn, DeployTxnReceipt, DeployedContractItem,
-    DeprecatedCairoEntryPoint, DeprecatedContractClass, DeprecatedEntryPointsByType, EntryPointsByType,
-    EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event, EventAbiEntry, EventAbiType, EventContent,
-    EventFilterWithPageRequest, EventsChunk, ExecutionResources, ExecutionStatus, FeeEstimate, FeeEstimateCommon,
-    FeePayment, FunctionAbiEntry, FunctionAbiType, FunctionCall, FunctionStateMutability,
-    GetBlockTransactionCountParams, GetBlockWithReceiptsParams, GetBlockWithTxHashesParams, GetBlockWithTxsParams,
-    GetClassAtParams, GetClassHashAtParams, GetClassParams, GetEventsParams, GetNonceParams, GetStateUpdateParams,
-    GetStorageAtParams, GetStorageProofResult, GetTransactionByBlockIdAndIndexParams, GetTransactionByHashParams,
-    GetTransactionReceiptParams, GetTransactionStatusParams, GlobalRoots, InvokeTxn, InvokeTxnReceipt, InvokeTxnV0,
-    InvokeTxnV1, InvokeTxnV3, KeyValuePair, L1DaMode, L1HandlerTxn, L1HandlerTxnReceipt, MaybeDeprecatedContractClass,
-    MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs, MerkleNode, MessageFeeEstimate, MsgFromL1,
-    MsgToL1, NewClasses, NodeHashToNodeMappingItem, NonceUpdate, PreConfirmedBlockHeader,
-    PreConfirmedBlockWithReceipts, PreConfirmedBlockWithTxHashes, PreConfirmedBlockWithTxs, PriceUnitFri, PriceUnitWei,
-    ReplacedClass, ResourceBounds, ResourceBoundsMapping, ResourcePrice, SierraEntryPoint, Signature,
-    SimulationFlagForEstimateFee, SpecVersionParams, StarknetGetBlockWithTxsAndReceiptsResult, StorageKey,
-    StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus, TransactionAndReceipt, Txn,
-    TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash, TxnReceipt, TxnReceiptWithBlockInfo,
-    TxnStatus, TxnWithHash, TypedParameter,
+    BlockNumber, BlockNumberHelper, BlockNumberParams, BlockStatus, BlockTag, BroadcastedDeclareTxn,
+    BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn,
+    BroadcastedInvokeTxn, BroadcastedTxn, CallParams, ChainId, ChainIdParams, ClassAndTxnHash, CommonReceiptProperties,
+    ContractAbi, ContractAbiEntry, ContractAndTxnHash, ContractClass, ContractLeavesDataItem, ContractStorageDiffItem,
+    ContractsProof, DaMode, DataAvailability, DeclareTxn, DeclareTxnReceipt, DeclareTxnV0, DeclareTxnV1, DeclareTxnV2,
+    DeclareTxnV3, DeployAccountTxn, DeployAccountTxnReceipt, DeployAccountTxnV1, DeployAccountTxnV3, DeployTxn,
+    DeployTxnReceipt, DeployedContractItem, DeprecatedCairoEntryPoint, DeprecatedContractClass,
+    DeprecatedEntryPointsByType, EntryPointsByType, EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event,
+    EventAbiEntry, EventAbiType, EventContent, EventFilterWithPageRequest, EventsChunk, ExecutionResources,
+    ExecutionStatus, FeeEstimate, FeeEstimateCommon, FeePayment, FunctionAbiEntry, FunctionAbiType, FunctionCall,
+    FunctionStateMutability, GetBlockTransactionCountParams, GetBlockWithReceiptsParams, GetBlockWithTxHashesParams,
+    GetBlockWithTxsParams, GetClassAtParams, GetClassHashAtParams, GetClassParams, GetEventsParams, GetNonceParams,
+    GetStateUpdateParams, GetStorageAtParams, GetStorageProofResult, GetTransactionByBlockIdAndIndexParams,
+    GetTransactionByHashParams, GetTransactionReceiptParams, GetTransactionStatusParams, GlobalRoots, InvokeTxn,
+    InvokeTxnReceipt, InvokeTxnV0, InvokeTxnV1, InvokeTxnV3, KeyValuePair, L1DaMode, L1HandlerTxn, L1HandlerTxnReceipt,
+    MaybeDeprecatedContractClass, MerkleNode, MessageFeeEstimate, MsgFromL1, MsgToL1, NewClasses,
+    NodeHashToNodeMappingItem, NonceUpdate, PreConfirmedBlockHeader, PreConfirmedBlockWithReceipts,
+    PreConfirmedBlockWithTxHashes, PreConfirmedBlockWithTxs, PriceUnitFri, PriceUnitWei, ReplacedClass, ResourceBounds,
+    ResourceBoundsMapping, ResourcePrice, SierraEntryPoint, Signature, SimulationFlagForEstimateFee, SpecVersionParams,
+    StorageKey, StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus,
+    TransactionAndReceipt, Txn, TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash,
+    TxnReceipt, TxnReceiptWithBlockInfo, TxnStatus, TxnWithHash, TypedParameter,
 };
 // Note: StateUpdate is NOT imported from v0.9.0 - we define our own below with v0.10.0's StateDiff
 use serde::{Deserialize, Serialize};
@@ -118,4 +116,105 @@ pub struct ContractStorageKeysItem {
     pub contract_address: Felt,
     /// The storage keys (changed from Vec<Felt> to Vec<StorageKey> in v0.10.0)
     pub storage_keys: Vec<StorageKey>,
+}
+
+/// Block header (v0.10.0: added commitment and count fields)
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct BlockHeader {
+    /// The hash of this block
+    pub block_hash: BlockHash,
+    /// The block number (its height)
+    pub block_number: BlockNumber,
+    /// specifies whether the data of this block is published via blob data or calldata
+    pub l1_da_mode: L1DaMode,
+    /// The price of l1 data gas in the block
+    pub l1_data_gas_price: ResourcePrice,
+    /// The price of l1 gas in the block
+    pub l1_gas_price: ResourcePrice,
+    /// The price of l2 gas in the block
+    pub l2_gas_price: ResourcePrice,
+    /// The new global state root
+    pub new_root: Felt,
+    /// The hash of this block's parent
+    pub parent_hash: BlockHash,
+    /// The StarkNet identity of the sequencer submitting this block
+    pub sequencer_address: Felt,
+    /// Semver of the current Starknet protocol
+    pub starknet_version: String,
+    /// The time in which the block was created, encoded in Unix time
+    pub timestamp: u64,
+    /// A commitment to the events produced in this block (NEW in v0.10.0)
+    pub event_commitment: Felt,
+    /// A commitment to the transactions included in the block (NEW in v0.10.0)
+    pub transaction_commitment: Felt,
+    /// A commitment to the receipts produced in this block (NEW in v0.10.0)
+    pub receipt_commitment: Felt,
+    /// The state diff commitment hash in the block (NEW in v0.10.0)
+    pub state_diff_commitment: Felt,
+    /// The number of events in the block (NEW in v0.10.0)
+    pub event_count: u64,
+    /// The number of transactions in the block (NEW in v0.10.0)
+    pub transaction_count: u64,
+    /// The length of the state diff in the block (NEW in v0.10.0)
+    pub state_diff_length: u64,
+}
+
+/// The block object with receipts
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct BlockWithReceipts {
+    /// The transactions in this block
+    pub transactions: Vec<TransactionAndReceipt>,
+    /// The status of the block
+    pub status: BlockStatus,
+    /// The block header
+    #[serde(flatten)]
+    pub block_header: BlockHeader,
+}
+
+/// The block object with full transactions
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct BlockWithTxs {
+    /// The transactions in this block
+    pub transactions: Vec<TxnWithHash>,
+    /// The status of the block
+    pub status: BlockStatus,
+    /// The block header
+    #[serde(flatten)]
+    pub block_header: BlockHeader,
+}
+
+/// The block object with transaction hashes
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct BlockWithTxHashes {
+    /// The hashes of the transactions included in this block
+    pub transactions: Vec<TxnHash>,
+    /// The status of the block
+    pub status: BlockStatus,
+    /// The block header
+    #[serde(flatten)]
+    pub block_header: BlockHeader,
+}
+
+/// Result of getBlockWithReceipts
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum StarknetGetBlockWithTxsAndReceiptsResult {
+    Block(BlockWithReceipts),
+    PreConfirmed(PreConfirmedBlockWithReceipts),
+}
+
+/// Result of getBlockWithTxHashes
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum MaybePreConfirmedBlockWithTxHashes {
+    Block(BlockWithTxHashes),
+    PreConfirmed(PreConfirmedBlockWithTxHashes),
+}
+
+/// Result of getBlockWithTxs
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum MaybePreConfirmedBlockWithTxs {
+    Block(BlockWithTxs),
+    PreConfirmed(PreConfirmedBlockWithTxs),
 }
