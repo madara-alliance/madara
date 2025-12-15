@@ -2,20 +2,13 @@
 <div align="center">
   <img src="https://github.com/keep-starknet-strange/madara-branding/blob/main/logo/PNGs/Madara%20logomark%20-%20Red%20-%20Duotone.png?raw=true" width="500">
 </div>
-<div align="center">
-<br />
-<!-- markdownlint-restore -->
+
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/madara-alliance/madara)
-[![Workflow - Push](https://github.com/madara-alliance/madara/actions/workflows/push.yml/badge.svg)](https://github.com/madara-alliance/madara/actions/workflows/push.yml)
+[![Workflow - Push](https://github.com/madara-alliance/madara/actions/workflows/release-publish.yml/badge.svg)](https://github.com/madara-alliance/madara/actions/workflows/push.yml)
 [![Project license](https://img.shields.io/github/license/madara-alliance/madara.svg?style=flat-square)](LICENSE)
 [![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/madara-alliance/madara/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
-<a href="https://twitter.com/madara-alliance">
-<img src="https://img.shields.io/twitter/follow/madara-alliance?style=social"/> </a>
-<a href="https://github.com/madara-alliance/madara">
-<img src="https://img.shields.io/github/stars/madara-alliance/madara?style=social"/>
-</a>
-
-</div>
+[![Follow on Twitter](https://img.shields.io/twitter/follow/madara-alliance?style=social)](https://twitter.com/madara-alliance)
+[![GitHub Stars](https://img.shields.io/github/stars/madara-alliance/madara?style=social)](https://github.com/madara-alliance/madara)
 
 # 🥷 Madara: Starknet Client
 
