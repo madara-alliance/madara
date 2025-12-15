@@ -1,10 +1,10 @@
 use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
-use crate::worker::event_handler::triggers::batching_v2::snos::{
+use crate::worker::event_handler::triggers::batching::snos::{
     SnosBatchLimits, SnosHandler, SnosState, SnosStateHandler,
 };
-use crate::worker::event_handler::triggers::batching_v2::BlockProcessingResult;
+use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
 use crate::worker::event_handler::triggers::JobTrigger;
 use orchestrator_utils::layer::Layer;
 use starknet::providers::Provider;

@@ -1,6 +1,6 @@
 pub(crate) mod aggregator;
 pub(crate) mod aggregator_batching;
-pub(crate) mod batching_v2;
+pub(crate) mod batching;
 pub(crate) mod data_submission_worker;
 pub(crate) mod proof_registration;
 pub(crate) mod proving;

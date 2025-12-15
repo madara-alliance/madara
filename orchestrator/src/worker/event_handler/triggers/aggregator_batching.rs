@@ -1,10 +1,10 @@
 use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
-use crate::worker::event_handler::triggers::batching_v2::aggregator::{
+use crate::worker::event_handler::triggers::batching::aggregator::{
     AggregatorBatchLimits, AggregatorHandler, AggregatorState, AggregatorStateHandler,
 };
-use crate::worker::event_handler::triggers::batching_v2::BlockProcessingResult;
+use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
 use crate::worker::event_handler::triggers::JobTrigger;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
