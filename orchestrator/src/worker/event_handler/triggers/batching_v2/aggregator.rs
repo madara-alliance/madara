@@ -23,6 +23,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info};
 
+#[allow(clippy::large_enum_variant)]
 pub enum AggregatorState {
     Empty(EmptyAggregatorState),
     NonEmpty(NonEmptyAggregatorState),
@@ -260,7 +261,7 @@ impl AggregatorHandler {
 
         // Fetch Starknet version for the start block
         // In tests, use a default version if fetch fails due to HTTP mocking limitations
-        let starknet_version = get_block_version(index, self.config.madara_rpc_client()).await?;
+        let starknet_version = get_block_version(start_block, self.config.madara_rpc_client()).await?;
         debug!(
             index = %index,
             start_block = %start_block,
@@ -288,8 +289,7 @@ impl AggregatorHandler {
             .await?,
         );
 
-        let batch =
-            AggregatorBatch::new(index, start_block, bucket_id.clone(), blob_len, weights, starknet_version.clone());
+        let batch = AggregatorBatch::new(index, start_block, bucket_id.clone(), blob_len, weights, starknet_version);
 
         // Record batch creation time with starknet_version in metrics
         let duration = start_time.elapsed();
@@ -364,12 +364,12 @@ impl NonEmptyAggregatorState {
         let squashed_state_update = squash(
             vec![&self.blob, block_state_update],
             if self.batch.start_block == 0 { None } else { Some(self.batch.start_block - 1) },
-            &provider,
+            provider,
         )
         .await?;
         // Compress the squashed state update
         let compressed_state_update = compress_state_update(
-            &provider,
+            provider,
             &squashed_state_update,
             block_num.saturating_sub(1),
             self.batch.starknet_version,
@@ -410,7 +410,7 @@ async fn compress_state_update(
 ) -> Result<Vec<Felt>, JobError> {
     // Perform stateful compression if needed
     let state_update = if madara_version >= StarknetVersion::V0_13_4 {
-        crate::compression::stateful::compress(&blob, end_block, provider)
+        crate::compression::stateful::compress(blob, end_block, provider)
             .await
             .map_err(|err| JobError::Other(OtherError(err)))?
     } else {
