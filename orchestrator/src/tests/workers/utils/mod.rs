@@ -129,7 +129,6 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                 batch_num: block_number,
-                num_blocks: 1,
                 ..Default::default()
             }),
         },

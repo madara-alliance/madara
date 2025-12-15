@@ -1,6 +1,9 @@
-use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchWeights};
+use crate::core::config::StarknetVersion;
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchWeights, SnosBatch};
+use blockifier::bouncer::BouncerWeights;
 use chrono::{SubsecRound, Utc};
 use rstest::fixture;
+use starknet_api::execution_resources::GasAmount;
 use uuid::Uuid;
 
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder, TestConfigBuilderReturns};
@@ -91,13 +94,10 @@ pub fn build_batch(
     AggregatorBatch {
         id: Uuid::new_v4(),
         index,
-        num_snos_batches: 5,
-        start_snos_batch: 10,
-        end_snos_batch: 15,
         num_blocks: end_block - start_block + 1,
         start_block,
         end_block,
-        is_batch_ready: false,
+        blob_len: 0,
         squashed_state_updates_path: String::from("path/to/file.json"),
         blob_path: String::from("path/to/file.json"),
         created_at: Utc::now().round_subsecs(0),
@@ -105,8 +105,26 @@ pub fn build_batch(
         bucket_id: String::from("ABCD1234"),
         status: AggregatorBatchStatus::Open,
         builtin_weights: AggregatorBatchWeights::default(),
-        starknet_version: "0.13.2".to_string(),
+        starknet_version: StarknetVersion::V0_13_2,
     }
+}
+
+/// Helper function to create default BouncerWeights for tests
+pub fn default_test_bouncer_weights() -> BouncerWeights {
+    BouncerWeights {
+        l1_gas: 0,
+        message_segment_length: 0,
+        n_events: 0,
+        state_diff_size: 0,
+        sierra_gas: GasAmount(0),
+        n_txs: 0,
+        proving_gas: GasAmount(0),
+    }
+}
+
+/// Helper function to build a SNOS batch for tests
+pub fn build_snos_batch(index: u64, aggregator_batch_index: Option<u64>, start_block: u64) -> SnosBatch {
+    SnosBatch::new(index, aggregator_batch_index, start_block, default_test_bouncer_weights(), StarknetVersion::V0_13_2)
 }
 
 pub async fn build_test_config_with_real_provider() -> Result<TestConfigBuilderReturns> {

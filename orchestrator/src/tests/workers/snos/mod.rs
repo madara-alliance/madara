@@ -2,6 +2,7 @@
 
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
+use crate::core::config::StarknetVersion;
 use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
@@ -10,6 +11,7 @@ use crate::types::jobs::types::JobType;
 use crate::types::queue::QueueType;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::event_handler::triggers::JobTrigger;
+use blockifier::bouncer::BouncerWeights;
 use httpmock::MockServer;
 use mockall::predicate::eq;
 use orchestrator_da_client_interface::MockDaClient;
@@ -43,12 +45,20 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
 
     db.expect_get_snos_batches_without_jobs().with(eq(SnosBatchStatus::Closed)).returning({
         let completed_snos_batches = completed_snos_batches.clone();
-        move |_| Ok(completed_snos_batches.iter().map(|&index| SnosBatch::new(index, Some(1), index)).collect())
+        move |_| {
+            Ok(completed_snos_batches
+                .iter()
+                .map(|&index| {
+                    SnosBatch::new(index, Some(1), index, BouncerWeights::default(), StarknetVersion::V0_14_0)
+                })
+                .collect())
+        }
     });
 
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
 
-    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, Some(1), 1)));
+    db.expect_update_or_create_snos_batch()
+        .returning(|_, _| Ok(SnosBatch::new(1, Some(1), 1, BouncerWeights::default(), StarknetVersion::V0_14_0)));
 
     // Mock job creation
     for &block_num in &completed_snos_batches {
@@ -146,7 +156,14 @@ async fn test_create_snos_job_for_existing_batch(
     // Getting the list of snos batches without jobs should return the completed snos batches
     db.expect_get_snos_batches_without_jobs().times(1).with(eq(SnosBatchStatus::Closed)).returning({
         let completed_snos_batches = completed_snos_batches.clone();
-        move |_| Ok(completed_snos_batches.iter().map(|&index| SnosBatch::new(index, Some(1), index)).collect())
+        move |_| {
+            Ok(completed_snos_batches
+                .iter()
+                .map(|&index| {
+                    SnosBatch::new(index, Some(1), index, BouncerWeights::default(), StarknetVersion::V0_14_0)
+                })
+                .collect())
+        }
     });
 
     // This is called to check if we have a job with the same internal_id and type
@@ -154,7 +171,8 @@ async fn test_create_snos_job_for_existing_batch(
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
 
     // Doesn't matter what we return here
-    db.expect_update_or_create_snos_batch().returning(|_, _| Ok(SnosBatch::new(1, Some(1), 1)));
+    db.expect_update_or_create_snos_batch()
+        .returning(|_, _| Ok(SnosBatch::new(1, Some(1), 1, BouncerWeights::default(), StarknetVersion::V0_14_0)));
 
     // Mock job creation for our test batch
     for snos_batch_num in completed_snos_batches {

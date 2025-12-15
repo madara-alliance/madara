@@ -95,13 +95,39 @@ macro_rules! versions {
                 write!(f, "{}", self.to_string())
             }
         }
+
+        impl serde::Serialize for StarknetVersion {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                serializer.serialize_str(self.to_string())
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for StarknetVersion {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let s = String::deserialize(deserializer)?;
+                StarknetVersion::from_str(&s).map_err(serde::de::Error::custom)
+            }
+        }
     }
 }
 
 // Add more versions here whenever necessary. Follow the following rules:
 // 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
 // 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
-versions!((V0_13_2, "0.13.2"), (V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_5, "0.13.5"), (V0_14_0, "0.14.0"),);
+versions!(
+    (V0_13_2, "0.13.2"),
+    (V0_13_3, "0.13.3"),
+    (V0_13_4, "0.13.4"),
+    (V0_13_5, "0.13.5"),
+    (V0_14_0, "0.14.0"),
+    (V0_14_1, "0.14.1")
+);
 
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
@@ -302,13 +328,17 @@ impl Config {
     pub(crate) async fn build_database_client(
         db_args: &DatabaseArgs,
     ) -> OrchestratorCoreResult<Box<dyn DatabaseClient + Send + Sync>> {
-        Ok(Box::new(MongoDbClient::new(db_args).await?))
+        let client = Box::new(MongoDbClient::new(db_args).await?);
+        client.ensure_indexes().await?;
+        Ok(client)
     }
 
     pub(crate) async fn build_lock_client(
         args: &DatabaseArgs,
     ) -> OrchestratorCoreResult<Box<dyn LockClient + Send + Sync>> {
-        Ok(Box::new(MongoLockClient::new(args).await?))
+        let client = Box::new(MongoLockClient::new(args).await?);
+        client.ensure_indexes().await?;
+        Ok(client)
     }
 
     pub(crate) async fn build_storage_client(
@@ -580,13 +610,13 @@ impl Config {
         use starknet_api::execution_resources::GasAmount;
 
         BouncerWeights {
-            l1_gas: 1_000_000,                 // 1M L1 gas
-            message_segment_length: 100_000,   // 100K message segment length
-            n_events: 5_000,                   // 5K events
-            state_diff_size: 100_000,          // 100K state diff size
-            sierra_gas: GasAmount(10_000_000), // 10M sierra gas
-            n_txs: 1_000,                      // 1K transactions
-            proving_gas: GasAmount(5_000_000), // 5M proving gas
+            l1_gas: 10_000_000,                 // 1M L1 gas
+            message_segment_length: 1_000_000,  // 100K message segment length
+            n_events: 50_000,                   // 5K events
+            state_diff_size: 1_000_000,         // 100K state diff size
+            sierra_gas: GasAmount(100_000_000), // 10M sierra gas
+            n_txs: 10_000,                      // 1K transactions
+            proving_gas: GasAmount(50_000_000), // 5M proving gas
         }
     }
 }

@@ -22,7 +22,7 @@ pub struct BatchingCliArgs {
     pub batching_worker_lock_duration: u64,
 
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH", long)]
-    pub max_blocks_per_snos_batch: Option<u64>,
+    pub max_blocks_per_snos_batch: u64,
 
     /// Fixed number of blocks allowed in a single SNOS batch.
     /// If this is set, nothing will be checked and every SNOS batch will have these many blocks.

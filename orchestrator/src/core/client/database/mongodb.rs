@@ -17,15 +17,16 @@ use chrono::{SubsecRound, Utc};
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{
-    AggregateOptions, FindOneAndUpdateOptions, FindOptions, InsertOneOptions, ReturnDocument, UpdateOptions,
+    AggregateOptions, FindOneAndUpdateOptions, FindOptions, IndexOptions, InsertOneOptions, ReturnDocument,
+    UpdateOptions,
 };
-use mongodb::{bson, Client, Collection, Database};
+use mongodb::{bson, Client, Collection, Database, IndexModel};
 use opentelemetry::KeyValue;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 pub trait ToDocument {
@@ -76,6 +77,72 @@ impl MongoDbClient {
         let client = Client::with_uri_str(&config.connection_uri).await?;
         let database = Arc::new(client.database(&config.database_name));
         Ok(Self { client, database })
+    }
+
+    pub async fn ensure_indexes(&self) -> Result<(), DatabaseError> {
+        // Create indexes for aggregator batch collection
+        let aggregator_collection = self.get_aggregator_batch_collection();
+
+        let aggregator_indexes = vec![
+            // Unique index on batch index
+            IndexModel::builder()
+                .keys(doc! { "index": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            // Index on status
+            IndexModel::builder().keys(doc! { "status": 1 }).build(),
+            // Index on created_at (descending for latest-first queries)
+            IndexModel::builder().keys(doc! { "created_at": -1 }).build(),
+            // Compound index on start_block and end_block
+            IndexModel::builder().keys(doc! { "start_block": 1, "end_block": 1 }).build(),
+            // Unique index on start_block
+            IndexModel::builder()
+                .keys(doc! { "start_block": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            // Unique index on end_block
+            IndexModel::builder()
+                .keys(doc! { "end_block": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        ];
+
+        aggregator_collection.create_indexes(aggregator_indexes, None).await?;
+        info!("Created indexes for aggregator batch collection");
+
+        // Create indexes for SNOS batch collection
+        let snos_collection = self.get_snos_batch_collection();
+
+        let snos_indexes = vec![
+            // Unique index on batch index
+            IndexModel::builder()
+                .keys(doc! { "index": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            // Index on aggregator_batch_index
+            IndexModel::builder().keys(doc! { "aggregator_batch_index": 1 }).build(),
+            // Index on status
+            IndexModel::builder().keys(doc! { "status": 1 }).build(),
+            // Index on created_at (descending for latest-first queries)
+            IndexModel::builder().keys(doc! { "created_at": -1 }).build(),
+            // Compound index on start_block and end_block
+            IndexModel::builder().keys(doc! { "start_block": 1, "end_block": 1 }).build(),
+            // Unique index on start_block
+            IndexModel::builder()
+                .keys(doc! { "start_block": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            // Unique index on end_block
+            IndexModel::builder()
+                .keys(doc! { "end_block": 1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+        ];
+
+        snos_collection.create_indexes(snos_indexes, None).await?;
+        info!("Created indexes for SNOS batch collection");
+
+        Ok(())
     }
 
     /// Mongodb client uses Arc internally, reducing the cost of clone.
@@ -653,7 +720,7 @@ impl DatabaseClient for MongoDbClient {
 
     async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError> {
         let start = Instant::now();
-        let options = FindOptions::builder().sort(doc! { "snos_batch_id": -1 }).limit(1).build();
+        let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();
 
         let mut cursor = self.get_snos_batch_collection().find(doc! {}, options).await?;
         let batch = cursor.try_next().await?;
@@ -670,7 +737,7 @@ impl DatabaseClient for MongoDbClient {
     async fn get_snos_batches_by_indices(&self, indexes: Vec<u64>) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
-            "snos_batch_id": {
+            "index": {
                 "$in": indexes.iter().map(|id| bson::to_bson(id).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
             }
         };
@@ -690,7 +757,7 @@ impl DatabaseClient for MongoDbClient {
     ) -> Result<SnosBatch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
-            "snos_batch_id": index as i64
+            "index": index as i64
         };
 
         let mut updates_doc = Document::new();
@@ -782,10 +849,6 @@ impl DatabaseClient for MongoDbClient {
         // Add additional fields that are always updated
         if let Some(end_block) = update.end_block {
             non_null_updates.insert("num_blocks", Bson::Int64(end_block as i64 - batch.start_block as i64 + 1));
-        }
-        if let Some(end_snos_batch) = update.end_snos_batch {
-            non_null_updates
-                .insert("num_snos_batches", Bson::Int64(end_snos_batch as i64 - batch.start_snos_batch as i64 + 1));
         }
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
@@ -887,7 +950,7 @@ impl DatabaseClient for MongoDbClient {
                 tracing::error!(batch_id = %batch.id, category = "db_call", "Failed to insert batch");
                 Err(DatabaseError::InsertFailed(format!(
                     "Failed to insert batch {} with id {}: {}",
-                    batch.snos_batch_id, batch.id, err
+                    batch.index, batch.id, err
                 )))
             }
         }
@@ -971,6 +1034,46 @@ impl DatabaseClient for MongoDbClient {
         Ok(batch)
     }
 
+    async fn get_start_snos_batch_for_aggregator(
+        &self,
+        aggregator_index: u64,
+    ) -> Result<Option<SnosBatch>, DatabaseError> {
+        let start = Instant::now();
+
+        // Construct the aggregation pipeline
+        let pipeline = vec![
+            // Stage 1: Match by type + status
+            doc! {
+                "$match": {
+                    "aggregator_batch_index": aggregator_index as i64
+                }
+            },
+            // Stage 2: Sort by index ascending
+            doc! {
+                "$sort": {
+                    "index": 1
+                }
+            },
+            // Stage 3: Take only the top document
+            doc! { "$limit": 1 },
+        ];
+
+        debug!("Fetching first SNOS batch in an Aggregator batch");
+
+        let collection: Collection<SnosBatch> = self.get_snos_batch_collection();
+
+        // Execute pipeline
+        let results = self.execute_pipeline::<SnosBatch, SnosBatch>(collection, pipeline, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_start_snos_batch_for_aggregator")];
+
+        let result = vec_to_single_result(results, "get_start_snos_batch_for_aggregator")?;
+
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(result)
+    }
+
     /// Get aggregator batches filtered by status
     async fn get_aggregator_batches_by_status(
         &self,
@@ -1005,7 +1108,7 @@ impl DatabaseClient for MongoDbClient {
         let filter = doc! {
             "status": status.to_string(),
         };
-        let find_options_builder = FindOptions::builder().sort(doc! {"snos_batch_id": 1});
+        let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
         let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
 
         let batches: Vec<SnosBatch> =
@@ -1043,18 +1146,18 @@ impl DatabaseClient for MongoDbClient {
                 }
             },
             // Stage 2: Lookup to find corresponding SNOS jobs
-            // We look for jobs where internal_id matches the snos_batch_id (as string)
+            // We look for jobs where internal_id matches the index (as string)
             doc! {
                 "$lookup": {
                     "from": JOBS_COLLECTION,
-                    "let": { "snos_batch_id": { "$toString": "$snos_batch_id" } },
+                    "let": { "index": { "$toString": "$index" } },
                     "pipeline": [
                         {
                             "$match": {
                                 "$expr": {
                                     "$and": [
                                         { "$eq": ["$job_type", snos_job_type_bson] },
-                                        { "$eq": ["$internal_id", "$$snos_batch_id"] }
+                                        { "$eq": ["$internal_id", "$$index"] }
                                     ]
                                 }
                             }
@@ -1072,7 +1175,7 @@ impl DatabaseClient for MongoDbClient {
             // Stage 4: Sort by snos_batch_id for consistent ordering
             doc! {
                 "$sort": {
-                    "snos_batch_id": 1
+                    "index": 1
                 }
             },
         ];
@@ -1254,6 +1357,7 @@ impl DatabaseClient for MongoDbClient {
 
     async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
+
         let filter = doc! {
             "status": bson::to_bson(&status)?,
         };
@@ -1279,11 +1383,15 @@ impl DatabaseClient for MongoDbClient {
         aggregator_index: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
+
+        let find_options = FindOptions::builder().sort(doc! { "index": 1 }).build();
+
         let filter = doc! {
             "aggregator_batch_index": aggregator_index as i64
         };
 
-        let batches: Vec<SnosBatch> = self.get_snos_batch_collection().find(filter, None).await?.try_collect().await?;
+        let batches: Vec<SnosBatch> =
+            self.get_snos_batch_collection().find(filter, find_options).await?.try_collect().await?;
 
         tracing::debug!(
             aggregator_index = aggregator_index,
@@ -1327,12 +1435,12 @@ impl DatabaseClient for MongoDbClient {
     /// Get the next available SNOS batch ID
     async fn get_next_snos_batch_id(&self) -> Result<u64, DatabaseError> {
         let start = Instant::now();
-        let options = FindOptions::builder().sort(doc! { "snos_batch_id": -1 }).limit(1).build();
+        let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();
 
         let mut cursor = self.get_snos_batch_collection().find(doc! {}, options).await?;
         let latest_batch = cursor.try_next().await?;
 
-        let next_id = latest_batch.map_or(1, |batch| batch.snos_batch_id + 1);
+        let next_id = latest_batch.map_or(1, |batch| batch.index + 1);
 
         tracing::debug!(next_snos_batch_id = next_id, category = "db_call", "Generated next SNOS batch ID");
 

@@ -31,7 +31,7 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     debug!("Alert Params: {:?}", alert_params);
     debug!("Cron Params: {:?}", cron_params);
 
-    lock_client.initialize().await.map_err(|e| OrchestratorError::SetupError(e.to_string()))?;
+    lock_client.ensure_indexes().await.map_err(|e| OrchestratorError::SetupError(e.to_string()))?;
 
     let resources = match cloud_provider.clone().get_provider_name().as_str() {
         "AWS" => ResourceFactory::new_with_aws(
