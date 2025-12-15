@@ -113,9 +113,7 @@ fn should_keep_vm_traceback(error_stack: &ErrorStack, vm_index: usize) -> bool {
                         }
                     }
                     // Constructor - treat like CallContract
-                    Some((_, PreambleType::Constructor)) => {
-                        has_library_call_before(error_stack, vm_index)
-                    }
+                    Some((_, PreambleType::Constructor)) => has_library_call_before(error_stack, vm_index),
                 }
             }
         }

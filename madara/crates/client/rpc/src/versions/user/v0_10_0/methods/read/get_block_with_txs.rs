@@ -33,13 +33,11 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> StarknetRpc
                 pre_confirmed_block_header: block.header.to_rpc_v0_9(),
             }))
         }
-        MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
-            Ok(MaybePreConfirmedBlockWithTxs::Block(BlockWithTxs {
-                transactions: transactions_with_hash,
-                status,
-                block_header: block.to_rpc_v0_10(),
-            }))
-        }
+        MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => Ok(MaybePreConfirmedBlockWithTxs::Block(BlockWithTxs {
+            transactions: transactions_with_hash,
+            status,
+            block_header: block.to_rpc_v0_10(),
+        })),
     }
 }
 
@@ -57,8 +55,7 @@ mod tests {
 
     #[rstest]
     fn test_get_block_with_txs(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
-        let (SampleChainForBlockGetters { block_hashes, expected_txs_v0_8, .. }, rpc) =
-            sample_chain_for_block_getters;
+        let (SampleChainForBlockGetters { block_hashes, expected_txs_v0_8, .. }, rpc) = sample_chain_for_block_getters;
 
         // Block 0 - verify new v0.10.0 BlockHeader fields
         let result = get_block_with_txs(&rpc, BlockId::Number(0)).unwrap();
@@ -106,9 +103,6 @@ mod tests {
 
         assert_eq!(get_block_with_txs(&rpc, BlockId::Number(99)), Err(StarknetRpcApiError::BlockNotFound));
         let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
-        assert_eq!(
-            get_block_with_txs(&rpc, BlockId::Hash(does_not_exist)),
-            Err(StarknetRpcApiError::BlockNotFound)
-        );
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Hash(does_not_exist)), Err(StarknetRpcApiError::BlockNotFound));
     }
 }

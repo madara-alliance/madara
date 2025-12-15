@@ -28,7 +28,8 @@ pub fn get_block_with_tx_hashes(
             }))
         }
         MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
-            let tx_hashes = view.get_executed_transactions(..)?.into_iter().map(|tx| *tx.receipt.transaction_hash()).collect();
+            let tx_hashes =
+                view.get_executed_transactions(..)?.into_iter().map(|tx| *tx.receipt.transaction_hash()).collect();
             Ok(MaybePreConfirmedBlockWithTxHashes::Block(BlockWithTxHashes {
                 transactions: tx_hashes,
                 status,
@@ -52,8 +53,7 @@ mod tests {
 
     #[rstest]
     fn test_get_block_with_tx_hashes(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
-        let (SampleChainForBlockGetters { block_hashes, tx_hashes, .. }, rpc) =
-            sample_chain_for_block_getters;
+        let (SampleChainForBlockGetters { block_hashes, tx_hashes, .. }, rpc) = sample_chain_for_block_getters;
 
         // Block 0 - verify new v0.10.0 BlockHeader fields
         let result = get_block_with_tx_hashes(&rpc, BlockId::Number(0)).unwrap();
