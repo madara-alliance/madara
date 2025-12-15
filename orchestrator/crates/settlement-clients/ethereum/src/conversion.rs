@@ -3,7 +3,7 @@ use std::fmt::Write;
 use alloy::consensus::BlobTransactionSidecar;
 use alloy::dyn_abi::parser::Error;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
-use alloy::eips::eip7594::BlobTransactionSidecarVariant;
+use alloy::eips::eip7594::{BlobTransactionSidecarEip7594, BlobTransactionSidecarVariant};
 use alloy::primitives::{FixedBytes, U256};
 use c_kzg::{Blob, KzgSettings};
 use color_eyre::eyre::{eyre, ContextCompat};
@@ -147,7 +147,7 @@ pub(crate) fn prepare_sidecar_with_proof(
     )))
 }
 
-// Function to prepare sidecar for EIP 7594 transaction
+// Function to prepare sidecar for EIP 7594 transaction (PeerDAS/Fusaka)
 pub fn prepare_sidecar_with_cells(
     state_diff: &[Vec<u8>],
     trusted_setup: &KzgSettings,
@@ -179,11 +179,11 @@ pub fn prepare_sidecar_with_cells(
     // Format: all proofs for blob 0, then all proofs for blob 1, etc.
     let flat_cell_proofs: Vec<FixedBytes<48>> = all_cell_proofs.into_iter().flatten().collect();
 
-    // Create the sidecar with cell proofs
-    Ok(BlobTransactionSidecarVariant::from(BlobTransactionSidecar::new(
+    // Create the EIP-7594 sidecar with cell proofs (required for Fusaka/PeerDAS)
+    Ok(BlobTransactionSidecarVariant::Eip7594(BlobTransactionSidecarEip7594::new(
         sidecar_blobs,
         sidecar_commitments,
-        flat_cell_proofs, // These are now cell proofs, not blob proofs
+        flat_cell_proofs,
     )))
 }
 
