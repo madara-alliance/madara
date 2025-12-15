@@ -261,7 +261,7 @@ impl NonEmptySnosState {
                     ))));
                 }
                 Some(block_aggregator_batch_index) => {
-                    if snos_batch_aggregator_batch_index == block_aggregator_batch_index {
+                    if snos_batch_aggregator_batch_index != block_aggregator_batch_index {
                         return Ok(None);
                     }
                 }
