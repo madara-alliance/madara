@@ -34,6 +34,10 @@ jobs:
   test-madara:
     uses: ./.github/workflows/task-do-nothing-test-madara.yml
 
+  # Run migration tests
+  test-migration:
+    uses: ./.github/workflows/task-do-nothing-test-migration.yml
+
   # Run coverage tests (Orchestrator)
   test-orchestrator:
     uses: ./.github/workflows/task-do-nothing-test-orchestrator.yml
