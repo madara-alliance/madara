@@ -123,18 +123,8 @@ pub fn default_test_bouncer_weights() -> BouncerWeights {
 }
 
 /// Helper function to build a SNOS batch for tests
-pub fn build_snos_batch(
-    index: u64,
-    aggregator_batch_index: Option<u64>,
-    start_block: u64,
-) -> SnosBatch {
-    SnosBatch::new(
-        index,
-        aggregator_batch_index,
-        start_block,
-        default_test_bouncer_weights(),
-        StarknetVersion::V0_13_2,
-    )
+pub fn build_snos_batch(index: u64, aggregator_batch_index: Option<u64>, start_block: u64) -> SnosBatch {
+    SnosBatch::new(index, aggregator_batch_index, start_block, default_test_bouncer_weights(), StarknetVersion::V0_13_2)
 }
 
 pub async fn build_test_config_with_real_provider() -> Result<TestConfigBuilderReturns> {

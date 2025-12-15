@@ -286,10 +286,7 @@ async fn database_test_update_batch(
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // Create updates for the batch
-    let updates = AggregatorBatchUpdates {
-        end_block: Some(250),
-        status: Some(AggregatorBatchStatus::Closed),
-    };
+    let updates = AggregatorBatchUpdates { end_block: Some(250), status: Some(AggregatorBatchStatus::Closed) };
 
     // Update the batch
     let updated_batch = database_client.update_or_create_aggregator_batch(&batch, &updates).await.unwrap();
