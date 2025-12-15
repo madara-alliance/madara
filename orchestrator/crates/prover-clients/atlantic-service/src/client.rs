@@ -222,6 +222,7 @@ impl AtlanticClient {
     /// Returns a list of Atlantic queries matching the search criteria and total count
     pub async fn search_atlantic_queries(
         &self,
+        atlantic_api_key: impl AsRef<str>,
         search_string: impl AsRef<str>,
         limit: Option<u32>,
         offset: Option<u32>,
@@ -243,6 +244,7 @@ impl AtlanticClient {
                 .request()
                 .method(Method::GET)
                 .path("atlantic-queries")
+                .query_param("apiKey", atlantic_api_key.as_ref())
                 .query_param("search", search_string.as_ref());
 
             // Add optional query parameters

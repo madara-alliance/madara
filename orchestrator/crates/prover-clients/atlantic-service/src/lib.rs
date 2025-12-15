@@ -76,6 +76,7 @@ impl ProverClient for AtlanticProverService {
                 let existing_job = self
                     .atlantic_client
                     .search_atlantic_queries(
+                        &self.atlantic_api_key,
                         &external_id,
                         Some(1),
                         None,
