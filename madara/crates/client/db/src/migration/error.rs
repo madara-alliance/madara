@@ -14,8 +14,11 @@ pub enum MigrationError {
     #[error("Migration lock exists. Delete .db-migration.lock if no other instance running.")]
     MigrationInProgress,
 
-    #[error("Backup failed: {0}")]
-    BackupFailed(String),
+    #[error("Backup failed: {message}: {source}")]
+    BackupFailed { message: &'static str, source: rocksdb::Error },
+
+    #[error("Insufficient disk space: required {required} bytes, available {available} bytes")]
+    InsufficientDiskSpace { required: u64, available: u64 },
 
     #[error("Invalid .db-version file")]
     InvalidVersionFile,

@@ -64,7 +64,9 @@ impl RevertErrorExt for RevertError {
 /// - Always keep VM tracebacks that belong to LibraryCall entries
 /// - For CallContract entries:
 ///   - Keep if there are no more entry points after (deepest level)
-///   - Filter if followed by another CallContract (redundant intermediate traceback)
+///   - If followed by another CallContract:
+///     - Keep if there's a LibraryCall before this CallContract (chain resets after LibraryCall)
+///     - Filter otherwise (redundant intermediate traceback)
 ///   - If followed by a LibraryCall:
 ///     - If this is a SINGLE CallContract (no CallContract before it): keep (transition to library)
 ///     - If this is part of a CHAIN of CallContracts:
@@ -85,24 +87,35 @@ fn should_keep_vm_traceback(error_stack: &ErrorStack, vm_index: usize) -> bool {
                 match get_next_entry_point_info(error_stack, vm_index) {
                     // No more entry points - this is the deepest level, keep the VM
                     None => true,
-                    // Next entry point is a CallContract - filter (it will show its own traceback)
-                    Some((_, PreambleType::CallContract)) => false,
+                    // Next entry point is a CallContract
+                    Some((_, PreambleType::CallContract)) => {
+                        // Keep if there's a LibraryCall before this CallContract
+                        // (LibraryCall breaks/resets the chain)
+                        has_library_call_before(error_stack, vm_index)
+                    }
                     // Next entry point is a LibraryCall
                     Some((next_entry_idx, PreambleType::LibraryCall)) => {
                         // Check if this CallContract is part of a chain (has CallContract before it)
-                        let is_in_chain =
-                            parent_index.map(|idx| has_callcontract_before_parent(error_stack, idx)).unwrap_or(false);
+                        // BUT only if there's no LibraryCall between them (LibraryCall resets the chain)
+                        let is_in_chain = parent_index
+                            .map(|idx| {
+                                has_callcontract_before_parent(error_stack, idx)
+                                    && !has_library_call_before(error_stack, vm_index)
+                            })
+                            .unwrap_or(false);
 
                         if is_in_chain {
                             // Part of a chain: keep only if LibraryCall has NO VM
                             !has_vm_after_entry_point(error_stack, next_entry_idx)
                         } else {
-                            // Single CallContract before LibraryCall: always keep
+                            // Single CallContract before LibraryCall (or after LibraryCall): always keep
                             true
                         }
                     }
                     // Constructor - treat like CallContract
-                    Some((_, PreambleType::Constructor)) => false,
+                    Some((_, PreambleType::Constructor)) => {
+                        has_library_call_before(error_stack, vm_index)
+                    }
                 }
             }
         }
