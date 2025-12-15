@@ -20,18 +20,55 @@ pub use error::MigrationError;
 pub use registry::{get_migrations, get_migrations_for_range, validate_registry, Migration, MigrationFn};
 
 use rocksdb::{DBWithThreadMode, MultiThreaded};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 type DB = DBWithThreadMode<MultiThreaded>;
 
-// File names - exported for tests
+/// Get available disk space at the given path using libc::statvfs (Unix only)
+#[cfg(unix)]
+fn get_available_disk_space(path: &Path) -> std::io::Result<u64> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid path"))?;
+
+    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+    let result = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
+
+    if result != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    Ok(stat.f_bavail as u64 * stat.f_frsize as u64)
+}
+
+/// Calculate total size of a directory recursively
+fn get_directory_size(path: &Path) -> std::io::Result<u64> {
+    let mut total = 0;
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                total += get_directory_size(&path)?;
+            } else {
+                total += entry.metadata()?.len();
+            }
+        }
+    }
+    Ok(total)
+}
+
 pub const DB_VERSION_FILE: &str = ".db-version";
 pub const DB_MIGRATION_LOCK: &str = ".db-migration.lock";
 pub const DB_MIGRATION_STATE: &str = ".db-migration-state";
 const BACKUP_DIR_NAME: &str = "backup_pre_migration";
+const STALE_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug)]
 pub enum MigrationStatus {
@@ -284,47 +321,76 @@ impl MigrationRunner {
     fn acquire_lock(&self) -> Result<MigrationLock, MigrationError> {
         let lock_path = self.base_path.join(DB_MIGRATION_LOCK);
 
-        if lock_path.exists() {
-            let is_stale = match fs::metadata(&lock_path).and_then(|m| m.modified()) {
-                Ok(modified) => match modified.elapsed() {
-                    Ok(age) => age > std::time::Duration::from_secs(24 * 60 * 60),
-                    Err(e) => {
-                        // System time went backwards, treat as stale
-                        tracing::warn!("System time error checking lock age: {}, treating as stale", e);
-                        true
-                    }
-                },
-                Err(e) => {
-                    // Can't determine age, treat as stale
-                    tracing::warn!("Cannot read lock metadata: {}, treating as stale", e);
-                    true
-                }
-            };
-
-            if is_stale {
-                tracing::warn!("Removing stale migration lock");
-                fs::remove_file(&lock_path)?;
-            } else {
-                return Err(MigrationError::MigrationInProgress);
-            }
+        // Try atomic creation first (O_CREAT | O_EXCL)
+        match Self::try_create_lock_file(&lock_path) {
+            Ok(()) => return Ok(MigrationLock { path: lock_path }),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
         }
 
-        fs::write(&lock_path, format!("pid:{}\ntime:{}", std::process::id(), chrono::Utc::now().to_rfc3339()))?;
-        Ok(MigrationLock { path: lock_path })
+        // Lock exists - check if stale
+        let is_stale = match fs::metadata(&lock_path).and_then(|m| m.modified()) {
+            Ok(modified) => modified.elapsed().map(|age| age > STALE_LOCK_TIMEOUT).unwrap_or(true),
+            Err(_) => true,
+        };
+
+        if !is_stale {
+            return Err(MigrationError::MigrationInProgress);
+        }
+
+        tracing::warn!("Removing stale migration lock");
+        let _ = fs::remove_file(&lock_path);
+
+        // Retry atomic creation
+        Self::try_create_lock_file(&lock_path).map(|()| MigrationLock { path: lock_path }).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                MigrationError::MigrationInProgress
+            } else {
+                e.into()
+            }
+        })
     }
 
-    /// Creates a backup using RocksDB checkpoint (uses hard links, very fast).
+    fn try_create_lock_file(lock_path: &Path) -> std::io::Result<()> {
+        let mut file = OpenOptions::new().write(true).create_new(true).open(lock_path)?;
+        writeln!(file, "pid:{}\ntime:{}", std::process::id(), chrono::Utc::now().to_rfc3339())
+    }
+
     fn create_backup(&self, db: &DB) -> Result<(), MigrationError> {
         let backup_path = self.base_path.join(BACKUP_DIR_NAME);
+        let db_path = self.base_path.join("db");
+
+        // Check disk space before backup (Unix only)
+        #[cfg(unix)]
+        {
+            if let Ok(db_size) = get_directory_size(&db_path) {
+                // Need at least db_size + 10% buffer for backup
+                let required_space = db_size + (db_size / 10);
+                if let Ok(available) = get_available_disk_space(&self.base_path) {
+                    if available < required_space {
+                        return Err(MigrationError::InsufficientDiskSpace { required: required_space, available });
+                    }
+                    tracing::info!(
+                        "💾 Disk space check passed: {} bytes available, {} bytes required",
+                        available,
+                        required_space
+                    );
+                }
+            }
+        }
 
         if backup_path.exists() {
             fs::remove_dir_all(&backup_path)?;
         }
 
-        // Checkpoint creates hard links to SST files - fast and space-efficient
-        let checkpoint =
-            rocksdb::checkpoint::Checkpoint::new(db).map_err(|e| MigrationError::BackupFailed(e.to_string()))?;
-        checkpoint.create_checkpoint(&backup_path).map_err(|e| MigrationError::BackupFailed(e.to_string()))?;
+        // Flush WAL to ensure consistent checkpoint
+        db.flush_wal(true).map_err(|e| MigrationError::BackupFailed { message: "Failed to flush WAL", source: e })?;
+
+        let checkpoint = rocksdb::checkpoint::Checkpoint::new(db)
+            .map_err(|e| MigrationError::BackupFailed { message: "Failed to create checkpoint", source: e })?;
+        checkpoint
+            .create_checkpoint(&backup_path)
+            .map_err(|e| MigrationError::BackupFailed { message: "Failed to write checkpoint to disk", source: e })?;
 
         tracing::info!("✅ Backup created at {:?}", backup_path);
         Ok(())

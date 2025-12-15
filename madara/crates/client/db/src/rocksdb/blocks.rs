@@ -7,9 +7,25 @@ use blockifier::bouncer::BouncerWeights;
 use itertools::{Either, Itertools};
 use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
 use mp_convert::Felt;
-use mp_state_update::StateDiff;
+use mp_state_update::{
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
+};
 use rocksdb::{IteratorMode, ReadOptions};
+use starknet_types_core::felt::Felt as StarkFelt;
 use std::iter;
+
+// TODO (mohit, 14/12/2024): Remove this struct once the v8→v9 migration from
+// tmp/0.14.1-with-migration is merged. After that, all databases will have migrated_compiled_classes.
+/// Old StateDiff format without migrated_compiled_classes (for v8 database compatibility)
+#[derive(serde::Deserialize)]
+struct StateDiffV8 {
+    storage_diffs: Vec<ContractStorageDiffItem>,
+    old_declared_contracts: Vec<StarkFelt>,
+    declared_classes: Vec<DeclaredClassItem>,
+    deployed_contracts: Vec<DeployedContractItem>,
+    replaced_classes: Vec<ReplacedClassItem>,
+    nonces: Vec<NonceUpdate>,
+}
 
 /// <block_hash 32 bytes> => bincode(block_n)
 pub const BLOCK_HASH_TO_BLOCK_N_COLUMN: Column = Column::new("block_hash_to_block_n").set_point_lookup();
@@ -65,13 +81,31 @@ impl RocksDBStorageInner {
         Ok(Some(super::deserialize(&res)?))
     }
 
+    // TODO (mohit, 14/12/2024): Remove the fallback logic once the v8→v9 migration from
+    // tmp/0.14.1-with-migration is merged. After that, all databases will have migrated_compiled_classes.
     #[tracing::instrument(skip(self))]
     pub(super) fn get_block_state_diff(&self, block_n: u64) -> Result<Option<StateDiff>> {
         let Some(block_n) = u32::try_from(block_n).ok() else { return Ok(None) }; // Every OOB block_n returns not found.
         let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_STATE_DIFF_COLUMN), block_n.to_be_bytes())? else {
             return Ok(None);
         };
-        Ok(Some(super::deserialize(&res)?))
+
+        // Try deserializing as the new format first (with migrated_compiled_classes)
+        if let Ok(state_diff) = super::deserialize::<StateDiff>(&res) {
+            return Ok(Some(state_diff));
+        }
+
+        // Fallback: try deserializing as the old v8 format (without migrated_compiled_classes)
+        let old: StateDiffV8 = super::deserialize(&res)?;
+        Ok(Some(StateDiff {
+            storage_diffs: old.storage_diffs,
+            old_declared_contracts: old.old_declared_contracts,
+            declared_classes: old.declared_classes,
+            deployed_contracts: old.deployed_contracts,
+            replaced_classes: old.replaced_classes,
+            nonces: old.nonces,
+            migrated_compiled_classes: Vec::new(),
+        }))
     }
 
     #[tracing::instrument(skip(self))]

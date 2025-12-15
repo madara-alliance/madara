@@ -96,24 +96,37 @@ impl JobTrigger for BatchingTrigger {
             }
         }
 
-        // Getting the block range to process
-        let (start_block, end_block) = match config.layer() {
-            Layer::L2 => self.get_range_for_assigning_batches_l2(&config).await?,
-            Layer::L3 => self.get_range_for_assigning_batches_l3(&config).await?,
-        };
+        // Execute the main work and capture the result
+        let result = async {
+            // Getting the block range to process
+            let (start_block, end_block) = match config.layer() {
+                Layer::L2 => self.get_range_for_assigning_batches_l2(&config).await?,
+                Layer::L3 => self.get_range_for_assigning_batches_l3(&config).await?,
+            };
 
-        // Invoking method to assign batches to all the blocks in the range
-        if start_block < end_block {
-            match config.layer() {
-                Layer::L2 => self.assign_batch_to_blocks_l2(start_block, end_block, &config).await?,
-                Layer::L3 => self.assign_batch_to_blocks_l3(start_block, end_block, &config).await?,
+            // Invoking method to assign batches to all the blocks in the range
+            if start_block < end_block {
+                match config.layer() {
+                    Layer::L2 => self.assign_batch_to_blocks_l2(start_block, end_block, &config).await?,
+                    Layer::L3 => self.assign_batch_to_blocks_l3(start_block, end_block, &config).await?,
+                }
             }
+
+            Ok(())
+        }
+        .await;
+
+        // Always release the lock, regardless of whether work succeeded or failed
+        if let Err(e) = config.lock().release_lock("BatchingWorker", None).await {
+            error!("Failed to release BatchingWorker lock: {}", e);
+            // If work succeeded but lock release failed, return the lock release error
+            if result.is_ok() {
+                return Err(e.into());
+            }
+            // If work failed, we still want to return the original work error
         }
 
-        // Releasing the lock
-        config.lock().release_lock("BatchingWorker", None).await?;
-
-        Ok(())
+        result
     }
 }
 
@@ -475,7 +488,7 @@ impl BatchingTrigger {
                                 self.update_aggregator_batch_info(
                                     current_aggregator_batch,
                                     block_number,
-                                    None,
+                                    Some(current_snos_batch.snos_batch_id),
                                     false,
                                     combined_weights,
                                 )
@@ -489,7 +502,7 @@ impl BatchingTrigger {
                         self.update_aggregator_batch_info(
                             current_aggregator_batch,
                             block_number,
-                            None,
+                            Some(current_snos_batch.snos_batch_id),
                             false,
                             current_weights,
                         )
@@ -1036,11 +1049,17 @@ impl BatchingTrigger {
     /// 2. Update it incrementally when adding each block
     /// 3. Here, only fetch the next block's weights (end_block + 1) and check overflow
     async fn should_close_snos_batch(&self, config: &Arc<Config>, batch: &SnosBatch) -> Result<bool, JobError> {
-        if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
-            // If the MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env is set, we use that value
+        if let Some(fixed_blocks_per_snos_batch) = config.params.batching_config.fixed_blocks_per_snos_batch {
+            // If the MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env is set, we use that value
             // Mostly, it'll be used for testing purposes
-            debug!("Using MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {}", max_blocks_per_snos_batch);
-            return Ok(batch.num_blocks >= max_blocks_per_snos_batch);
+            debug!("Using MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {}", fixed_blocks_per_snos_batch);
+            return Ok(batch.num_blocks >= fixed_blocks_per_snos_batch);
+        }
+
+        if let Some(max_blocks_per_snos_batch) = config.params.batching_config.max_blocks_per_snos_batch {
+            if batch.num_blocks >= max_blocks_per_snos_batch {
+                return Ok(true);
+            }
         }
 
         if (Utc::now().round_subsecs(0) - batch.created_at).abs().num_seconds() as u64

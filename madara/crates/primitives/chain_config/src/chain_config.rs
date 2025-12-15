@@ -782,6 +782,12 @@ impl ChainVersionedConstants {
         let mut result = BTreeMap::new();
 
         for (version, path) in version_with_path {
+            tracing::info!(
+                "Loading user specified versioned constants for starknet version {} from file {}",
+                version,
+                path
+            );
+
             // Change the current directory to Madara root
             let mut file = File::open(Path::new(&path)).with_context(|| format!("Failed to open file: {}", path))?;
 

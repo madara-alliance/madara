@@ -14,6 +14,7 @@ use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::MadaraBackend;
 use mc_rpc::versions::user::v0_9_0::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_9_0_trace_block_transactions;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
+use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::{
     block::ProviderBlockPreConfirmed,
@@ -50,13 +51,19 @@ pub async fn handle_get_preconfirmed_block(
         .parse()
         .map_err(|e: std::num::ParseIntError| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
 
-    let mut block =
-        backend.block_view_on_preconfirmed().filter(|block| block.block_number() == block_number).ok_or_else(|| {
-            StarknetError::new(
-                StarknetErrorCode::BlockNotFound,
-                format!("Pre-confirmed block with number {block_number} was not found."),
-            )
-        })?;
+    // Use block_view_on_preconfirmed_or_fake() - this always returns a block
+    let mut block = backend
+        .block_view_on_preconfirmed_or_fake()
+        .map_err(|e| StarknetError::new(StarknetErrorCode::BlockNotFound, e.to_string()))?;
+
+    // Check if the requested block number matches the pre-confirmed block number
+    if block.block_number() != block_number {
+        return Err(StarknetError::new(
+            StarknetErrorCode::BlockNotFound,
+            format!("Pre-confirmed block with number {block_number} was not found. Current pre-confirmed block number is {}.",
+                block.block_number()),
+        ).into());
+    }
 
     block.refresh_with_candidates(); // We want candidates too :)
     let block = {
@@ -117,17 +124,30 @@ pub async fn handle_get_block(
         });
         Ok(create_json_response(hyper::StatusCode::OK, &body))
     } else {
-        // Pending(preconfirmed) blocks can't be returned anymore from this endpoint
-        let Some(block) = block.as_confirmed() else {
-            return Err(StarknetError::block_not_found().into());
-        };
-
-        let status = if block.is_on_l1() { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
-
         let info = block.get_block_info()?;
-        let block_provider =
-            ProviderBlock::new(info.block_hash, info.header, block.get_executed_transactions(..)?, status);
-        Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+        let txs = block.get_executed_transactions(..)?;
+
+        match info {
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(info) => {
+                let status = if block.is_on_l1() { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
+                let block_provider = ProviderBlock::new(info.block_hash, info.header, txs, status);
+                Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+            }
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => {
+                // TODO(@bytezorvin, 2025-12-09): Return preconfirmed block when starknet.rs adds
+                // support for it and migrates feeder gateway to 0.9.0 RPC version from 0.8.1.
+                //
+                // Currently returning the last confirmed block because starknet.rs
+                // SequencerGatewayProvider does NOT support pending/preconfirmed block conversion.
+                // Use get_preconfirmed_block endpoint for madara's preconfirmed block info.
+                let confirmed = backend.block_view_on_last_confirmed().ok_or_else(StarknetError::block_not_found)?;
+                let info = confirmed.get_block_info()?;
+                let txs = confirmed.get_executed_transactions(..)?;
+                let status = if confirmed.is_on_l1() { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
+                let block_provider = ProviderBlock::new(info.block_hash, info.header, txs, status);
+                Ok(create_json_response(hyper::StatusCode::OK, &block_provider))
+            }
+        }
     }
 }
 

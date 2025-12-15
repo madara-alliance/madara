@@ -320,6 +320,8 @@ impl MadaraConfig {
             cmd.env(key, value);
         }
 
+        cmd.env("RUST_LOG", "info,gateway_calls=warn"); // gateway calls create clutter in the logs
+
         cmd
     }
 }

@@ -509,7 +509,7 @@ pub mod implement_client {
         match service {
             ConfigType::Mock(client) => client.into(),
             ConfigType::Actual => {
-                Config::build_prover_service(&params.prover_params, &params.orchestrator_params, None)
+                Config::build_prover_service(&params.prover_params, &params.orchestrator_params, None, None)
             }
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
@@ -750,6 +750,9 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         batching_worker_lock_duration: get_env_var_or_panic("MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS")
             .parse::<u64>()
             .unwrap(),
+        fixed_blocks_per_snos_batch: get_env_var_optional("MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH")
+            .unwrap()
+            .map(|s| s.parse::<u64>().unwrap()),
         max_blocks_per_snos_batch: get_env_var_optional("MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH")
             .unwrap()
             .map(|s| s.parse::<u64>().unwrap()),

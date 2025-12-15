@@ -59,6 +59,7 @@ benchmarking/reports/*.json
 
 # idea
 .idea
+.zed
 
 # local runs
 run.sh
