@@ -76,17 +76,16 @@ impl ProverClient for AtlanticProverService {
                 num_steps: n_steps,
                 external_id,
             }) => {
+                let search_params = crate::api::SearchQueriesParams {
+                    limit: Some(1),
+                    offset: None,
+                    network: Some(self.atlantic_network.as_str()),
+                    status: None,
+                    result: None,
+                };
                 let existing_job = self
                     .atlantic_client
-                    .search_atlantic_queries(
-                        &external_id,
-                        Some(1),
-                        None,
-                        Some(self.atlantic_network.as_str()),
-                        None,
-                        None,
-                        self.atlantic_api_key.clone(),
-                    )
+                    .search_atlantic_queries(&external_id, search_params, self.atlantic_api_key.clone())
                     .await?
                     .atlantic_queries
                     .into_iter()

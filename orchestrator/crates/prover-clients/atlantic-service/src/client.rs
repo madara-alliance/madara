@@ -555,30 +555,30 @@ impl AtlanticClient {
     pub async fn search_atlantic_queries(
         &self,
         search_string: impl AsRef<str>,
-        limit: Option<u32>,
-        offset: Option<u32>,
-        network: Option<&str>,
-        status: Option<&str>,
-        result: Option<&str>,
+        params: crate::api::SearchQueriesParams<'_>,
         api_key: impl AsRef<str>,
     ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
         let search_str = search_string.as_ref();
-        let context =
-            format!("search: {}, limit: {:?}, offset: {:?}, network: {:?}", search_str, limit, offset, network);
+        let context = format!(
+            "search: {}, limit: {:?}, offset: {:?}, network: {:?}",
+            search_str, params.limit, params.offset, params.network
+        );
 
         // Validate API key once using transport layer
         let auth = ApiKeyAuth::new(api_key)?;
         let search_string_owned = search_str.to_string();
-        let network_owned = network.map(|s| s.to_string());
-        let status_owned = status.map(|s| s.to_string());
-        let result_owned = result.map(|s| s.to_string());
+        let network_owned = params.network.map(|s| s.to_string());
+        let status_owned = params.status.map(|s| s.to_string());
+        let result_owned = params.result.map(|s| s.to_string());
+        let limit = params.limit;
+        let offset = params.offset;
 
         debug!(
             operation = "search_atlantic_queries",
             search_string = %search_str,
-            limit = ?limit,
-            offset = ?offset,
-            network = ?network,
+            limit = ?params.limit,
+            offset = ?params.offset,
+            network = ?params.network,
             "Searching Atlantic queries"
         );
 
@@ -591,15 +591,12 @@ impl AtlanticClient {
 
             async move {
                 // Build request using API layer
+                let params = crate::api::SearchQueriesParams { limit, offset, network, status, result };
                 let request = AtlanticApiOperations::build_search_queries_request(
                     self.client.request(),
                     &auth,
                     &search_string,
-                    limit,
-                    offset,
-                    network,
-                    status,
-                    result,
+                    &params,
                 );
 
                 // Send request

@@ -106,6 +106,21 @@ use crate::types::{
 /// // Parse response (API layer)
 /// let result = AtlanticApiOperations::parse_bucket_response(response, "create_bucket").await?;
 /// ```
+/// Parameters for searching Atlantic queries
+#[derive(Debug, Clone, Default)]
+pub struct SearchQueriesParams<'a> {
+    /// Optional limit for the number of results
+    pub limit: Option<u32>,
+    /// Optional offset for pagination
+    pub offset: Option<u32>,
+    /// Optional network filter
+    pub network: Option<&'a str>,
+    /// Optional status filter
+    pub status: Option<&'a str>,
+    /// Optional result filter
+    pub result: Option<&'a str>,
+}
+
 pub struct AtlanticApiOperations;
 
 impl AtlanticApiOperations {
@@ -537,11 +552,7 @@ impl AtlanticApiOperations {
     /// * `builder` - Base request builder from HTTP client
     /// * `auth` - API key authentication
     /// * `search_string` - The search string to filter queries
-    /// * `limit` - Optional limit for the number of results
-    /// * `offset` - Optional offset for pagination
-    /// * `network` - Optional network filter
-    /// * `status` - Optional status filter
-    /// * `result` - Optional result filter
+    /// * `params` - Search parameters (limit, offset, filters)
     ///
     /// # Returns
     /// Configured request builder ready to send
@@ -549,20 +560,16 @@ impl AtlanticApiOperations {
         builder: RequestBuilder<'a>,
         auth: &ApiKeyAuth,
         search_string: &str,
-        limit: Option<u32>,
-        offset: Option<u32>,
-        network: Option<&str>,
-        status: Option<&str>,
-        result: Option<&str>,
+        params: &SearchQueriesParams<'_>,
     ) -> RequestBuilder<'a> {
         debug!(
             operation = "search_atlantic_queries",
             search_string = %search_string,
-            limit = ?limit,
-            offset = ?offset,
-            network = ?network,
-            status = ?status,
-            result = ?result,
+            limit = ?params.limit,
+            offset = ?params.offset,
+            network = ?params.network,
+            status = ?params.status,
+            result = ?params.result,
             "Building search queries request"
         );
 
@@ -572,19 +579,19 @@ impl AtlanticApiOperations {
             .path("atlantic-queries")
             .query_param("search", search_string);
 
-        if let Some(limit_val) = limit {
+        if let Some(limit_val) = params.limit {
             request = request.query_param("limit", &limit_val.to_string());
         }
-        if let Some(offset_val) = offset {
+        if let Some(offset_val) = params.offset {
             request = request.query_param("offset", &offset_val.to_string());
         }
-        if let Some(network_val) = network {
+        if let Some(network_val) = params.network {
             request = request.query_param("network", network_val);
         }
-        if let Some(status_val) = status {
+        if let Some(status_val) = params.status {
             request = request.query_param("status", status_val);
         }
-        if let Some(result_val) = result {
+        if let Some(result_val) = params.result {
             request = request.query_param("result", result_val);
         }
 

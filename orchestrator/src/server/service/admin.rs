@@ -43,10 +43,8 @@ impl AdminService {
         );
 
         // Query all failed jobs with optional type filter
-        let failed_jobs = config
-            .database()
-            .get_jobs_by_types_and_statuses(job_types.clone(), vec![JobStatus::Failed], None)
-            .await?;
+        let failed_jobs =
+            config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![JobStatus::Failed], None).await?;
 
         let total_jobs = failed_jobs.len();
         info!(
@@ -207,20 +205,15 @@ impl AdminService {
     ///
     /// # Returns
     /// * `Result<BulkJobResult, JobError>` - Result containing success and failure counts/IDs
-    pub async fn requeue_created_jobs(
-        job_types: Vec<JobType>,
-        config: Arc<Config>,
-    ) -> Result<BulkJobResult, JobError> {
+    pub async fn requeue_created_jobs(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
         info!(
             job_types = ?job_types,
             "Admin: Starting requeue of created jobs"
         );
 
         // Query all Created jobs with optional type filter
-        let jobs = config
-            .database()
-            .get_jobs_by_types_and_statuses(job_types.clone(), vec![JobStatus::Created], None)
-            .await?;
+        let jobs =
+            config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![JobStatus::Created], None).await?;
 
         let total_jobs = jobs.len();
         info!(

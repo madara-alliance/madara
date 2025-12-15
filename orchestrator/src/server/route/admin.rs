@@ -59,7 +59,9 @@ async fn handle_retry_all_failed_jobs(
     // Check if admin is enabled
     if !config.server_config().admin_enabled {
         error!("Admin endpoints are disabled");
-        return Err(JobRouteError::ProcessingError("Admin endpoints are disabled. Enable with --admin-enabled flag.".to_string()));
+        return Err(JobRouteError::ProcessingError(
+            "Admin endpoints are disabled. Enable with --admin-enabled flag.".to_string(),
+        ));
     }
 
     info!(job_types = ?filter.job_type, "Admin: Retry all failed jobs request received");
@@ -138,7 +140,9 @@ async fn handle_requeue_pending_verification(
     // Check if admin is enabled
     if !config.server_config().admin_enabled {
         error!("Admin endpoints are disabled");
-        return Err(JobRouteError::ProcessingError("Admin endpoints are disabled. Enable with --admin-enabled flag.".to_string()));
+        return Err(JobRouteError::ProcessingError(
+            "Admin endpoints are disabled. Enable with --admin-enabled flag.".to_string(),
+        ));
     }
 
     info!(job_types = ?filter.job_type, "Admin: Requeue pending verification jobs request received");
@@ -218,7 +222,9 @@ async fn handle_requeue_created_jobs(
     // Check if admin is enabled
     if !config.server_config().admin_enabled {
         error!("Admin endpoints are disabled");
-        return Err(JobRouteError::ProcessingError("Admin endpoints are disabled. Enable with --admin-enabled flag.".to_string()));
+        return Err(JobRouteError::ProcessingError(
+            "Admin endpoints are disabled. Enable with --admin-enabled flag.".to_string(),
+        ));
     }
 
     info!(job_types = ?filter.job_type, "Admin: Requeue created jobs request received");
@@ -268,10 +274,9 @@ async fn handle_requeue_created_jobs(
         }
         Err(e) => {
             error!(error = %e, job_types = ?filter.job_type, "Admin: Failed to requeue created jobs");
-            ORCHESTRATOR_METRICS.failed_job_operations.add(
-                1.0,
-                &[KeyValue::new("operation_type", "admin_requeue_created"), KeyValue::new("admin", "true")],
-            );
+            ORCHESTRATOR_METRICS
+                .failed_job_operations
+                .add(1.0, &[KeyValue::new("operation_type", "admin_requeue_created"), KeyValue::new("admin", "true")]);
             Err(JobRouteError::ProcessingError(e.to_string()))
         }
     }
