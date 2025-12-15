@@ -4,9 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-The Madara Orchestrator is a critical service that runs alongside the Madara node to coordinate block processing, proof generation, data submission, and state transitions. It manages a multi-stage job processing pipeline with distributed workers and queue-based execution.
+The Madara Orchestrator is a critical service that runs alongside the Madara node to coordinate
+block processing, proof generation, data submission, and state transitions. It manages a
+multi-stage job processing pipeline with distributed workers and queue-based execution.
 
 **Key capabilities:**
+
 - Queue-based job management with three-phase execution (Creation → Processing → Verification)
 - Distributed worker architecture for scaling job processing
 - Multiple prover backends (SHARP, ATLANTIC)
@@ -19,6 +22,7 @@ The Madara Orchestrator is a critical service that runs alongside the Madara nod
 ## Common Commands
 
 ### Building
+
 ```bash
 # Release build
 cargo build --release
@@ -31,6 +35,7 @@ make snos
 ```
 
 ### Running
+
 ```bash
 # Setup mode (initializes AWS infrastructure)
 cargo run --release --bin orchestrator setup \
@@ -45,6 +50,7 @@ RUST_LOG=info cargo run --release --bin orchestrator run \
 ```
 
 ### Testing
+
 ```bash
 # Unit/Integration tests with coverage
 RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
@@ -62,6 +68,7 @@ RUST_LOG=info cargo test --features testing test_orchestrator_workflow -- --noca
 ```
 
 ### Mock Services
+
 ```bash
 # Mock Atlantic server
 cargo run --bin orchestrator run --mock-atlantic-server
@@ -75,49 +82,53 @@ docker run -p 6000:6000 ocdbytes/mock-prover:latest
 ### Crate Organization
 
 **`crates/da-clients/`** - Data Availability Clients
+
 - `da-client-interface/`: Trait defining DA operations (publish state diff, verify inclusion)
 - `ethereum/`: Ethereum DA client implementation
 - `starknet/`: Starknet DA client implementation
 
 **`crates/prover-clients/`** - Proof Generation Clients
+
 - `prover-client-interface/`: Trait for prover services (submit task, get status, get proof)
 - `sharp-service/`: SHARP prover integration
 - `atlantic-service/`: ATLANTIC prover integration
 - `gps-fact-checker/`: GPS fact verification utilities
 
 **`crates/settlement-clients/`** - Settlement Layer Clients
+
 - `settlement-client-interface/`: Trait for settlement operations (register proof, update state)
 - `ethereum/`: Ethereum settlement client
 - `starknet/`: Starknet settlement client
 
 **`crates/utils/`** - Shared Utilities
+
 - Metrics collection and OpenTelemetry instrumentation
 - HTTP client utilities
 - Layer/environment utilities
 
 ### Source Modules
 
-| Module | Purpose |
-|--------|---------|
-| `cli/` | Command-line argument parsing (Run & Setup modes) |
-| `core/` | Core abstractions and traits |
-| `core/client/` | Client interfaces (DatabaseClient, QueueClient, StorageClient, AlertClient, LockClient) |
-| `core/config/` | Configuration management and cloud provider setup |
-| `worker/` | Job processing workers and event handlers |
-| `worker/event_handler/` | Job-specific handlers (SNOS, Proving, DA, StateUpdate, ProofRegistration, Aggregator) |
-| `worker/event_handler/triggers/` | Workers that trigger job creation |
-| `worker/controller/` | WorkerController that manages all worker lifecycle |
-| `types/` | Domain types and data structures |
-| `types/jobs/` | Job definitions, status enums, metadata |
-| `types/batch/` | Batch and aggregator batch definitions |
-| `compression/` | Blob compression utilities |
-| `setup/` | Resource initialization and AWS setup |
-| `server/` | HTTP API server (Axum-based) |
-| `error/` | Error types and handling |
+| Module                           | Purpose                                                                                 |
+| -------------------------------- | --------------------------------------------------------------------------------------- |
+| `cli/`                           | Command-line argument parsing (Run & Setup modes)                                       |
+| `core/`                          | Core abstractions and traits                                                            |
+| `core/client/`                   | Client interfaces (DatabaseClient, QueueClient, StorageClient, AlertClient, LockClient) |
+| `core/config/`                   | Configuration management and cloud provider setup                                       |
+| `worker/`                        | Job processing workers and event handlers                                               |
+| `worker/event_handler/`          | Job-specific handlers (SNOS, Proving, DA, StateUpdate, ProofRegistration, Aggregator)   |
+| `worker/event_handler/triggers/` | Workers that trigger job creation                                                       |
+| `worker/controller/`             | WorkerController that manages all worker lifecycle                                      |
+| `types/`                         | Domain types and data structures                                                        |
+| `types/jobs/`                    | Job definitions, status enums, metadata                                                 |
+| `types/batch/`                   | Batch and aggregator batch definitions                                                  |
+| `compression/`                   | Blob compression utilities                                                              |
+| `setup/`                         | Resource initialization and AWS setup                                                   |
+| `server/`                        | HTTP API server (Axum-based)                                                            |
+| `error/`                         | Error types and handling                                                                |
 
 ### Job Execution Pipeline
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                   Job Lifecycle                         │
 ├─────────────────────────────────────────────────────────┤
@@ -141,18 +152,18 @@ docker run -p 6000:6000 ocdbytes/mock-prover:latest
 
 ### Job Types
 
-| Job Type | Purpose |
-|----------|---------|
-| `SnosRun` | Execute SNOS on a block |
-| `ProofCreation` | Generate proof from SNOS output |
+| Job Type            | Purpose                            |
+| ------------------- | ---------------------------------- |
+| `SnosRun`           | Execute SNOS on a block            |
+| `ProofCreation`     | Generate proof from SNOS output    |
 | `ProofRegistration` | Register proof on settlement layer |
-| `DataSubmission` | Submit state diff to DA layer |
-| `StateTransition` | Update state on settlement layer |
-| `Aggregator` | Aggregate multiple proofs |
+| `DataSubmission`    | Submit state diff to DA layer      |
+| `StateTransition`   | Update state on settlement layer   |
+| `Aggregator`        | Aggregate multiple proofs          |
 
 ### Job State Machine
 
-```
+```text
 Created → LockedForProcessing → PendingVerification → Completed
                 ↓                       ↓
             VerificationFailed    VerificationTimeout
@@ -165,35 +176,41 @@ Created → LockedForProcessing → PendingVerification → Completed
 ### Required Environment Variables
 
 **AWS Configuration:**
-```
+
+```text
 AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
 AWS_ENDPOINT_URL (for localstack)
 ```
 
 **Database (MongoDB):**
-```
+
+```text
 MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL
 MADARA_ORCHESTRATOR_DATABASE_NAME
 ```
 
 **Prover Services:**
-```
+
+```text
 SHARP: MADARA_ORCHESTRATOR_SHARP_URL, MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID
 ATLANTIC: MADARA_ORCHESTRATOR_ATLANTIC_API_KEY, MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL
 ```
 
 **Atlantic API Documentation:**
-- Swagger UI: https://atlantic.api.herodotus.cloud/docs/
-- OpenAPI JSON: https://atlantic.api.herodotus.cloud/docs/json
+
+- Swagger UI: <https://atlantic.api.herodotus.cloud/docs/>
+- OpenAPI JSON: <https://atlantic.api.herodotus.cloud/docs/json>
 
 **Settlement Layers:**
-```
+
+```text
 Ethereum: MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL, MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY
 Starknet: MADARA_ORCHESTRATOR_STARKNET_SETTLEMENT_RPC_URL, MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY
 ```
 
 **Batching:**
-```
+
+```text
 MADARA_ORCHESTRATOR_MAX_BATCH_TIME_SECONDS
 MADARA_ORCHESTRATOR_MAX_BATCH_SIZE
 MADARA_ORCHESTRATOR_MAX_NUM_BLOBS
@@ -212,6 +229,7 @@ MADARA_ORCHESTRATOR_MAX_NUM_BLOBS
 ## Common Patterns
 
 ### Trait-Based Abstraction
+
 - `DatabaseClient`: Database operations
 - `QueueClient`: Message queue operations
 - `StorageClient`: File storage (S3)
@@ -224,11 +242,13 @@ MADARA_ORCHESTRATOR_MAX_NUM_BLOBS
 - `JobTrigger`: Worker trigger logic
 
 ### Error Handling
+
 - Custom error enums per module (e.g., `JobError`, `QueueError`, `DatabaseError`)
 - `thiserror` for error definition
 - Comprehensive error context in logs
 
 ### Testing Patterns
+
 - `mockall` for automocking traits
 - `mockall_double` for dependency injection in tests
 - `rstest` for parameterized tests
@@ -237,18 +257,21 @@ MADARA_ORCHESTRATOR_MAX_NUM_BLOBS
 ## Important Implementation Notes
 
 ### When Working with Jobs
+
 - Jobs follow the three-phase lifecycle: Creation → Processing → Verification
 - Use `JobHandlerTrait` for job-specific logic
 - Always implement `max_process_attempts()` and `max_verification_attempts()`
 - Orphaned jobs (stuck in LockedForProcessing) are automatically healed
 
 ### When Working with Workers
+
 - Workers are managed by `WorkerController`
 - Each queue type has its own `EventWorker`
 - Use cancellation tokens for graceful shutdown
 - Different queue sets for L2 vs L3
 
 ### When Adding New Job Types
+
 1. Add variant to `JobType` enum in `types/jobs/types.rs`
 2. Implement `JobHandlerTrait` for the new job type
 3. Add corresponding queue types in `types/queue.rs`
@@ -256,6 +279,7 @@ MADARA_ORCHESTRATOR_MAX_NUM_BLOBS
 5. Implement trigger logic if job creation is automatic
 
 ### When Working with Batches
+
 - `SnosBatch`: Groups blocks for SNOS processing
 - `AggregatorBatch`: Groups SNOS batches for proof aggregation
 - Use hierarchical relationship with closure semantics
@@ -271,6 +295,7 @@ MADARA_ORCHESTRATOR_MAX_NUM_BLOBS
 ## Dependencies
 
 **Key Framework Dependencies:**
+
 - `tokio`: Async runtime
 - `axum`: Web framework
 - `serde/serde_json`: Serialization
@@ -278,13 +303,16 @@ MADARA_ORCHESTRATOR_MAX_NUM_BLOBS
 - `opentelemetry`: Observability
 
 **AWS Integration:**
+
 - `aws-sdk-sqs`, `aws-sdk-s3`, `aws-sdk-sns`, `aws-sdk-eventbridge`
 - `omniqueue`: Queue abstraction
 
 **Blockchain:**
+
 - `starknet`: Starknet client
 - `alloy`: Ethereum client
 - `cairo-vm`: Cairo execution
 
 **Database:**
+
 - `mongodb`: NoSQL database
