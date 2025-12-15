@@ -2,9 +2,8 @@ use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{SnosBatch, SnosBatchStatus, SnosBatchUpdates};
-use crate::worker::event_handler::triggers::batching_v2::utils::get_block_builtin_weights;
+use crate::worker::event_handler::triggers::batching_v2::utils::{get_block_builtin_weights, get_block_version};
 use crate::worker::event_handler::triggers::batching_v2::BlockProcessingResult;
-use crate::worker::event_handler::triggers::snos::fetch_block_starknet_version;
 use blockifier::bouncer::BouncerWeights;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
@@ -103,26 +102,18 @@ impl SnosHandler {
     /// Include a block in SNOS batching
     ///
     /// This is the main entry point for processing a block. It handles both empty and non-empty states.
-    /// TODO: For empty state, the caller should determine the next batch index to use.
     /// This method is typically called from the batching trigger which manages state properly.
     pub async fn include_block(
         &self,
         block_num: u64,
         aggregator_batch_index: Option<u64>,
         state: SnosState,
-    ) -> Result<BlockProcessingResult<SnosState>, JobError> {
+    ) -> Result<BlockProcessingResult<SnosState, NonEmptySnosState>, JobError> {
         info!("Including block {} in snos batch", block_num);
         match state {
             SnosState::Empty(ref empty_state) => {
                 // Get the starknet version of the current block
-                let block_version =
-                    fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
-                        JobError::Other(OtherError(eyre!(
-                            "Failed to fetch Starknet version for block {}: {}",
-                            block_num,
-                            e
-                        )))
-                    })?;
+                let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
                 let block_weights = get_block_builtin_weights(
                     block_num,
                     self.config.madara_feeder_gateway_client(),
@@ -138,7 +129,7 @@ impl SnosHandler {
                         block_version,
                     )
                     .await?;
-                Ok(BlockProcessingResult::Accumulated(SnosState::NonEmpty(new_state)))
+                Ok(BlockProcessingResult::Accumulated(new_state))
             }
             SnosState::NonEmpty(state) => {
                 // Process the block with the existing state
@@ -162,7 +153,7 @@ impl SnosHandler {
         block_num: u64,
         aggregator_batch_index: Option<u64>,
         state: NonEmptySnosState,
-    ) -> Result<BlockProcessingResult<SnosState>, JobError> {
+    ) -> Result<BlockProcessingResult<SnosState, NonEmptySnosState>, JobError> {
         // Get the bouncer weights for the current block
         let block_weights = get_block_builtin_weights(
             block_num,
@@ -171,10 +162,7 @@ impl SnosHandler {
         )
         .await?;
         // Get the starknet version of the current block
-        let block_version =
-            fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
-                JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", block_num, e)))
-            })?;
+        let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
 
         match state
             .checked_add_block_with_limits(
@@ -186,7 +174,7 @@ impl SnosHandler {
             )
             .await?
         {
-            Some(updated_state) => Ok(BlockProcessingResult::Accumulated(SnosState::NonEmpty(updated_state))),
+            Some(updated_state) => Ok(BlockProcessingResult::Accumulated(updated_state)),
             None => {
                 info!(
                     snos_batch_index = %state.batch.index,
@@ -196,7 +184,7 @@ impl SnosHandler {
                     "Weights addition failed, closing SNOS batch and starting new batch"
                 );
 
-                let completed_state = SnosState::NonEmpty(state.close());
+                let completed_state = state.close();
                 let new_state = SnosState::NonEmpty(
                     self.start_snos_batch(
                         state.batch.index + 1,

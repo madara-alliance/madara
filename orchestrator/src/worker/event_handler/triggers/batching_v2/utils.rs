@@ -1,8 +1,12 @@
+use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::utils::rest_client::RestClient;
+use crate::worker::event_handler::triggers::snos::fetch_block_starknet_version;
 use blockifier::bouncer::BouncerWeights;
 use color_eyre::eyre::eyre;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::JsonRpcClient;
 use std::sync::Arc;
 use tracing::debug;
 
@@ -47,4 +51,13 @@ pub async fn get_block_builtin_weights(
     }
 
     Ok(bouncer_weights)
+}
+
+pub async fn get_block_version(
+    block_num: u64,
+    provider: &Arc<JsonRpcClient<HttpTransport>>,
+) -> Result<StarknetVersion, JobError> {
+    fetch_block_starknet_version(provider, block_num).await.map_err(|e| {
+        JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", block_num, e)))
+    })
 }

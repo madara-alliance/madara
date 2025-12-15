@@ -94,23 +94,15 @@ impl JobTrigger for SnosBatchingTrigger {
 
                 match batching_handler.include_block(block_num, aggregator_batch_index, state).await? {
                     BlockProcessingResult::Accumulated(updated_state) => {
-                        state = updated_state;
+                        state = SnosState::NonEmpty(updated_state);
                     }
                     BlockProcessingResult::BatchCompleted { completed_state, new_state } => {
-                        match completed_state {
-                            SnosState::Empty(_) => {
-                                warn!("SNOS state contains empty state");
-                                state = completed_state;
-                                break;
-                            }
-                            SnosState::NonEmpty(completed_state) => {
-                                state_handler.save_batch_state(&completed_state).await?;
-                            }
-                        }
+                        state_handler.save_batch_state(&completed_state).await?;
                         state = new_state;
                     }
                     BlockProcessingResult::NotBatched(current_state) => {
                         state = current_state;
+                        // Since this block wasn't able to get batches, we shouldn't move forward
                         break;
                     }
                 }

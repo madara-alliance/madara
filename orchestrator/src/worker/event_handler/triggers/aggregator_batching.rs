@@ -9,7 +9,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 pub struct AggregatorBatchingTrigger;
 
@@ -64,23 +64,15 @@ impl JobTrigger for AggregatorBatchingTrigger {
             for block_num in start_block..=end_block {
                 match batching_handler.include_block(block_num, state).await? {
                     BlockProcessingResult::Accumulated(updated_state) => {
-                        state = updated_state;
+                        state = AggregatorState::NonEmpty(updated_state);
                     }
                     BlockProcessingResult::BatchCompleted { completed_state, new_state } => {
-                        match completed_state {
-                            AggregatorState::Empty(_) => {
-                                warn!("Aggregator state contains empty state");
-                                state = completed_state;
-                                break;
-                            }
-                            AggregatorState::NonEmpty(completed_state) => {
-                                state_handler.save_batch_state(&completed_state).await?;
-                            }
-                        }
+                        state_handler.save_batch_state(&completed_state).await?;
                         state = new_state;
                     }
                     BlockProcessingResult::NotBatched(current_state) => {
                         state = current_state;
+                        // Since this block wasn't able to get batches, we shouldn't move forward
                         break;
                     }
                 }

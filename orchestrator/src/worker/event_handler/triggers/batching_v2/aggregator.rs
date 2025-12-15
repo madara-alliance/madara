@@ -6,14 +6,14 @@ use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::batching_v2::aggregator::AggregatorState::{Empty, NonEmpty};
-use crate::worker::event_handler::triggers::batching_v2::utils::get_block_builtin_weights;
+use crate::worker::event_handler::triggers::batching_v2::utils::{get_block_builtin_weights, get_block_version};
 use crate::worker::event_handler::triggers::batching_v2::BlockProcessingResult;
-use crate::worker::event_handler::triggers::snos::fetch_block_starknet_version;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
+use orchestrator_prover_client_interface::Task;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Update};
@@ -136,13 +136,10 @@ impl AggregatorHandler {
         &self,
         block_num: u64,
         state: AggregatorState,
-    ) -> Result<BlockProcessingResult<AggregatorState>, JobError> {
+    ) -> Result<BlockProcessingResult<AggregatorState, NonEmptyAggregatorState>, JobError> {
         info!("Including block {} in aggregator batch", block_num);
         // Fetch Starknet version for the current block
-        let current_block_starknet_version =
-            fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
-                JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_num, e))
-            })?;
+        let current_block_starknet_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
 
         match state {
             Empty(ref empty_state) => {
@@ -163,11 +160,11 @@ impl AggregatorHandler {
                             current_block_starknet_version,
                         )
                         .await?;
-                        let new_state = NonEmpty(NonEmptyAggregatorState::new(
+                        let new_state = NonEmptyAggregatorState::new(
                             self.start_aggregator_batch(empty_state.index, block_num, compressed_state_update.len())
                                 .await?,
                             state_update,
-                        ));
+                        );
                         Ok(BlockProcessingResult::Accumulated(new_state))
                     }
                     PreConfirmedUpdate(_) => {
@@ -184,7 +181,7 @@ impl AggregatorHandler {
         &self,
         block_num: u64,
         state: NonEmptyAggregatorState,
-    ) -> Result<BlockProcessingResult<AggregatorState>, JobError> {
+    ) -> Result<BlockProcessingResult<AggregatorState, NonEmptyAggregatorState>, JobError> {
         // Fetch block weights for the current block
         let block_weights = AggregatorBatchWeights::from(
             &get_block_builtin_weights(
@@ -196,10 +193,7 @@ impl AggregatorHandler {
         );
 
         // Fetch Starknet version of the current block
-        let block_version =
-            fetch_block_starknet_version(self.config.madara_rpc_client(), block_num).await.map_err(|e| {
-                JobError::ProviderError(format!("Failed to fetch Starknet version for block {}: {}", block_num, e))
-            })?;
+        let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
 
         // Get the state update for the block
         let block_state_update = self
@@ -224,9 +218,9 @@ impl AggregatorHandler {
                     )
                     .await?
                 {
-                    Some(state) => {
+                    Some(updated_state) => {
                         // Can add the given block in this batch
-                        Ok(BlockProcessingResult::Accumulated(NonEmpty(state)))
+                        Ok(BlockProcessingResult::Accumulated(updated_state))
                     }
                     None => {
                         // Can't add the given block in this batch
@@ -244,10 +238,7 @@ impl AggregatorHandler {
                             self.start_aggregator_batch(state.batch.index + 1, block_num, blob_len).await?,
                             state_update,
                         ));
-                        Ok(BlockProcessingResult::BatchCompleted {
-                            completed_state: NonEmpty(completed_state),
-                            new_state,
-                        })
+                        Ok(BlockProcessingResult::BatchCompleted { completed_state, new_state })
                     }
                 }
             }
@@ -269,10 +260,7 @@ impl AggregatorHandler {
 
         // Fetch Starknet version for the start block
         // In tests, use a default version if fetch fails due to HTTP mocking limitations
-        let starknet_version = fetch_block_starknet_version(self.config.madara_rpc_client(), start_block).await.map_err(|e| {
-            error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
-            JobError::Other(OtherError(eyre!("Failed to fetch Starknet version for block {}: {}", start_block, e)))
-        })?;
+        let starknet_version = get_block_version(index, self.config.madara_rpc_client()).await?;
         debug!(
             index = %index,
             start_block = %start_block,
@@ -281,7 +269,7 @@ impl AggregatorHandler {
         );
 
         // Start a new bucket
-        let bucket_id = self.prover_client.submit_task(Task::CreateBucket).await.map_err(|e| {
+        let bucket_id = self.config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
             error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
             JobError::Other(OtherError(eyre!(
                 "Prover Client Error: Failed to submit create bucket task to prover client, {}",
