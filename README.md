@@ -7,11 +7,8 @@
 [![Workflow - Push](https://github.com/madara-alliance/madara/actions/workflows/release-publish.yml/badge.svg)](https://github.com/madara-alliance/madara/actions/workflows/push.yml)
 [![Project license](https://img.shields.io/github/license/madara-alliance/madara.svg?style=flat-square)](LICENSE)
 [![Pull Requests welcome](https://img.shields.io/badge/PRs-welcome-ff69b4.svg?style=flat-square)](https://github.com/madara-alliance/madara/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
-[![Follow on Twitter](https://img.shields.io/twitter/follow/madara-alliance?style=social)](https://twitter.com/madara-alliance) 
+[![Follow on Twitter](https://img.shields.io/twitter/follow/madara-alliance?style=social)](https://twitter.com/madara-alliance)
 [![GitHub Stars](https://img.shields.io/github/stars/madara-alliance/madara?style=social)](https://github.com/madara-alliance/madara)
-
-
-
 
 # 🥷 Madara: Starknet Client
 
