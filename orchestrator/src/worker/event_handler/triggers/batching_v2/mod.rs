@@ -10,5 +10,6 @@ pub enum BlockProcessingResult<S> {
     BatchCompleted { completed_state: S, new_state: S },
 
     /// This can happen when the block is in pre-confirmed state
-    NotBatched,
+    /// Returns the current state unchanged so it can be saved if needed
+    NotBatched(S),
 }

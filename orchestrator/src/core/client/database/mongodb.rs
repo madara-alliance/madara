@@ -653,7 +653,7 @@ impl DatabaseClient for MongoDbClient {
 
     async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError> {
         let start = Instant::now();
-        let options = FindOptions::builder().sort(doc! { "snos_batch_id": -1 }).limit(1).build();
+        let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();
 
         let mut cursor = self.get_snos_batch_collection().find(doc! {}, options).await?;
         let batch = cursor.try_next().await?;
@@ -670,7 +670,7 @@ impl DatabaseClient for MongoDbClient {
     async fn get_snos_batches_by_indices(&self, indexes: Vec<u64>) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
-            "snos_batch_id": {
+            "index": {
                 "$in": indexes.iter().map(|id| bson::to_bson(id).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
             }
         };
@@ -690,7 +690,7 @@ impl DatabaseClient for MongoDbClient {
     ) -> Result<SnosBatch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
-            "snos_batch_id": index as i64
+            "index": index as i64
         };
 
         let mut updates_doc = Document::new();
@@ -1041,7 +1041,7 @@ impl DatabaseClient for MongoDbClient {
         let filter = doc! {
             "status": status.to_string(),
         };
-        let find_options_builder = FindOptions::builder().sort(doc! {"snos_batch_id": 1});
+        let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
         let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
 
         let batches: Vec<SnosBatch> =
@@ -1079,18 +1079,18 @@ impl DatabaseClient for MongoDbClient {
                 }
             },
             // Stage 2: Lookup to find corresponding SNOS jobs
-            // We look for jobs where internal_id matches the snos_batch_id (as string)
+            // We look for jobs where internal_id matches the index (as string)
             doc! {
                 "$lookup": {
                     "from": JOBS_COLLECTION,
-                    "let": { "snos_batch_id": { "$toString": "$snos_batch_id" } },
+                    "let": { "index": { "$toString": "$index" } },
                     "pipeline": [
                         {
                             "$match": {
                                 "$expr": {
                                     "$and": [
                                         { "$eq": ["$job_type", snos_job_type_bson] },
-                                        { "$eq": ["$internal_id", "$$snos_batch_id"] }
+                                        { "$eq": ["$internal_id", "$$index"] }
                                     ]
                                 }
                             }
@@ -1108,7 +1108,7 @@ impl DatabaseClient for MongoDbClient {
             // Stage 4: Sort by snos_batch_id for consistent ordering
             doc! {
                 "$sort": {
-                    "snos_batch_id": 1
+                    "index": 1
                 }
             },
         ];
@@ -1368,7 +1368,7 @@ impl DatabaseClient for MongoDbClient {
     /// Get the next available SNOS batch ID
     async fn get_next_snos_batch_id(&self) -> Result<u64, DatabaseError> {
         let start = Instant::now();
-        let options = FindOptions::builder().sort(doc! { "snos_batch_id": -1 }).limit(1).build();
+        let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();
 
         let mut cursor = self.get_snos_batch_collection().find(doc! {}, options).await?;
         let latest_batch = cursor.try_next().await?;

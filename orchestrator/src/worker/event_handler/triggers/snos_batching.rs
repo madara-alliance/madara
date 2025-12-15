@@ -60,7 +60,7 @@ impl JobTrigger for SnosBatchingTrigger {
 
             // If there are no blocks to process, return early
             if start_block > end_block {
-                debug!("No blocks to process: start_block ({}) > end_block ({})", start_block, end_block);
+                debug!("No SNOS blocks to process: start_block ({}) > end_block ({})", start_block, end_block);
                 return Ok(());
             }
 
@@ -100,6 +100,7 @@ impl JobTrigger for SnosBatchingTrigger {
                         match completed_state {
                             SnosState::Empty(_) => {
                                 warn!("SNOS state contains empty state");
+                                state = completed_state;
                                 break;
                             }
                             SnosState::NonEmpty(completed_state) => {
@@ -109,24 +110,19 @@ impl JobTrigger for SnosBatchingTrigger {
                         state = new_state;
                     }
                     BlockProcessingResult::NotBatched(current_state) => {
-                        match current_state {
-                            SnosState::Empty(_) => {}
-                            SnosState::NonEmpty(state) => {
-                                state_handler.save_batch_state(&state).await?;
-                            }
-                        }
+                        state = current_state;
                         break;
                     }
                 }
             }
 
             // Save the final state if it's non-empty
-            // match state {
-            //     SnosState::Empty(_) => {}
-            //     SnosState::NonEmpty(state) => {
-            //         state_handler.save_batch_state(&state).await?;
-            //     }
-            // }
+            match state {
+                SnosState::Empty(_) => {}
+                SnosState::NonEmpty(state) => {
+                    state_handler.save_batch_state(&state).await?;
+                }
+            }
 
             Ok(())
         }
@@ -239,6 +235,6 @@ impl SnosBatchingTrigger {
     }
 
     fn max_blocks_to_process_at_once(&self) -> u64 {
-        25
+        10
     }
 }

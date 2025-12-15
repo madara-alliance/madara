@@ -88,10 +88,11 @@ impl MongoLockClient {
                 )
                 .build(),
             // Unique index on the key for atomic operations
-            IndexModel::builder()
-                .keys(doc! { "key": 1 })
-                .options(IndexOptions::builder().unique(true).name("key_unique_index".to_string()).build())
-                .build(),
+            // key is stored as _id which already has unique index
+            // IndexModel::builder()
+            //     .keys(doc! { "key": 1 })
+            //     .options(IndexOptions::builder().unique(true).name("key_unique_index".to_string()).build())
+            //     .build(),
             // Index on created_at for analytics
             IndexModel::builder()
                 .keys(doc! { "created_at": 1 })
