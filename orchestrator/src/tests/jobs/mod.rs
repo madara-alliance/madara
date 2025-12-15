@@ -278,6 +278,8 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     database_client.create_job(job_item.clone()).await.unwrap();
 
     let mut job_handler = MockJobHandlerTrait::new();
+    // Expecting check_ready_to_process to return Ok (dependencies are ready)
+    job_handler.expect_check_ready_to_process().times(1).returning(|_| Ok(()));
     // Expecting process job function in job processor to return the external ID.
     job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
@@ -345,6 +347,8 @@ async fn process_job_handles_panic() {
     database_client.create_job(job_item.clone()).await.unwrap();
 
     let mut job_handler = MockJobHandlerTrait::new();
+    // Expecting check_ready_to_process to return Ok (dependencies are ready)
+    job_handler.expect_check_ready_to_process().times(1).returning(|_| Ok(()));
     // Setting up mock to panic when process_job is called
     job_handler
         .expect_process_job()
@@ -511,6 +515,9 @@ async fn process_job_two_workers_process_same_job_works() {
     let _test_lock = acquire_test_lock();
 
     let mut job_handler = MockJobHandlerTrait::new();
+    // Expecting check_ready_to_process to return Ok (dependencies are ready)
+    // Both workers will call check_ready_to_process, so expect 2 calls
+    job_handler.expect_check_ready_to_process().times(2).returning(|_| Ok(()));
     // Expecting process job function in job processor to return the external ID.
     job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
@@ -567,6 +574,8 @@ async fn process_job_job_handler_returns_error_works() {
     let _test_lock = acquire_test_lock();
 
     let mut job_handler = MockJobHandlerTrait::new();
+    // Expecting check_ready_to_process to return Ok (dependencies are ready)
+    job_handler.expect_check_ready_to_process().times(1).returning(|_| Ok(()));
     // Expecting process job function in job processor to return the external ID.
     let failure_reason = "Failed to process job";
     job_handler
