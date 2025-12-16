@@ -269,9 +269,10 @@ pub async fn handle_get_compiled_class_by_class_hash(
     let class_info = view.get_class_info(&class_hash)?.ok_or(StarknetError::class_not_found(class_hash))?;
 
     let compiled_class_hash = match &class_info {
-        ClassInfo::Sierra(_) => class_info
-            .compiled_class_hash()
-            .ok_or(GatewayError::StarknetError(StarknetError::class_not_found(class_hash)))?,
+        ClassInfo::Sierra(_) => {
+            // Sierra classes always have a compiled_class_hash (v2 or v1)
+            class_info.compiled_class_hash().expect("Sierra class must have compiled_class_hash")
+        }
         ClassInfo::Legacy(_) => {
             return Err(GatewayError::StarknetError(StarknetError::sierra_class_not_found(class_hash)))
         }
