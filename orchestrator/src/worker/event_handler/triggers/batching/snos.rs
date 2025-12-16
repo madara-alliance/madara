@@ -8,7 +8,7 @@ use blockifier::bouncer::BouncerWeights;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{info, warn};
 
 pub enum SnosState {
     Empty(EmptySnosState),
@@ -28,11 +28,6 @@ pub struct SnosStateHandler {
 }
 
 impl SnosStateHandler {
-    #[allow(dead_code)]
-    pub fn new(config: Arc<Config>) -> Self {
-        Self { config }
-    }
-
     pub fn from_config(config: &Arc<Config>) -> Self {
         Self { config: config.clone() }
     }
@@ -237,9 +232,13 @@ impl NonEmptySnosState {
         // If a fixed size is set, use only that to decide if we should close the SNOS batch
         if let Some(fixed_blocks_per_snos_batch) = batch_limits.fixed_batch_size {
             // If the MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env is set, we use that value
-            // Mostly, it'll be used for testing purposes
-            debug!("Using MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {}", fixed_blocks_per_snos_batch);
-            return Ok(None);
+            // It should be used only for testing purposes
+            warn!("Using MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {}", fixed_blocks_per_snos_batch);
+            return if self.batch.num_blocks >= fixed_blocks_per_snos_batch {
+                Ok(None)
+            } else {
+                Ok(Some(NonEmptySnosState::new(self.batch.update(block_num, BouncerWeights::empty(), None))))
+            };
         }
 
         if self.batch.status.is_closed()

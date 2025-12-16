@@ -70,7 +70,9 @@ impl JobTrigger for SnosJobTrigger {
             )
                 .await
             {
-                Ok(_) => {}
+                Ok(_) => {
+                    // TODO(prakhar,16/12/2025): Update SNOS batch status to SnosJobCreated
+                }
                 Err(e) => {
                     error!(error = %e,"Failed to create new {:?} job for {}", JobType::SnosRun, snos_batch.index);
                     let attributes = [

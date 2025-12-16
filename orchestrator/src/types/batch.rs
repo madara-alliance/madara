@@ -31,8 +31,6 @@ pub enum AggregatorBatchStatus {
     ReadyForStateUpdate,
     /// Batch processing is complete and state update is done
     Completed,
-    /// Batch creation failed
-    BatchCreationFailed,
     /// Aggregator job failed
     AggregationFailed,
     /// Verification job failed
@@ -200,7 +198,6 @@ impl AggregatorBatch {
         builtin_weights: AggregatorBatchWeights,
         starknet_version: StarknetVersion,
     ) -> Self {
-        // TODO: move get file path methods to this struct
         Self {
             id: Uuid::new_v4(),
             index,
