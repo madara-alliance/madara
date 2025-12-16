@@ -99,11 +99,14 @@ mod tests {
             assert_eq!(block.block_header.transaction_count, 1);
             assert_eq!(block.block_header.event_count, 0); // No events in test data
             assert_eq!(block.block_header.state_diff_length, 0); // Empty state diff in test data
-            // Commitment fields are computed - just verify they exist
-            let _ = block.block_header.event_commitment;
-            let _ = block.block_header.transaction_commitment;
-            let _ = block.block_header.receipt_commitment;
-            let _ = block.block_header.state_diff_commitment;
+            // Commitment fields are computed by the database when adding blocks
+            // event_commitment is zero when there are no events
+            assert_eq!(block.block_header.event_commitment, Felt::ZERO);
+            // transaction_commitment and receipt_commitment are non-zero for blocks with transactions
+            assert_ne!(block.block_header.transaction_commitment, Felt::ZERO);
+            assert_ne!(block.block_header.receipt_commitment, Felt::ZERO);
+            // state_diff_commitment is non-zero (even for "empty" state diff due to commitment calculation)
+            assert_ne!(block.block_header.state_diff_commitment, Felt::ZERO);
         });
 
         // Block by hash
