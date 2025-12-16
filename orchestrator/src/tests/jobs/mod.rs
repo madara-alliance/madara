@@ -525,8 +525,8 @@ async fn process_job_two_workers_process_same_job_works() {
     // Mocking the `get_job_handler` call - both workers will call it before one fails due to lock contention
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx_guard = get_job_handler_context_safe();
-    // Both workers will call get_job_handler (each process_job calls it once), so expect exactly 2 calls
-    ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+    // Due to timing, worker 2 may see an invalid job status and fail early, so expect 1 or 2 calls
+    ctx_guard.expect().times(1..=2).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // building config
     let services = TestConfigBuilder::new()
