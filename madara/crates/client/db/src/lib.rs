@@ -131,6 +131,7 @@ use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
 use mp_transactions::validated::ValidatedTransaction;
+use starknet_types_core::felt::Felt;
 use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
@@ -671,6 +672,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     }
 
     /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
+    /// Note: This function handles SNIP-34 migrations internally when state_diff contains migrated_compiled_classes.
     pub fn close_preconfirmed(
         &self,
         pre_v0_13_2_hash_override: bool,
@@ -683,6 +685,21 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .get_full_block_with_classes()?;
 
         if let Some(mut state_diff) = state_diff {
+            // Update compiled_class_hash_v2 for SNIP-34 migrated classes
+            if !state_diff.migrated_compiled_classes.is_empty() {
+                let migrations: Vec<(Felt, Felt)> = state_diff
+                    .migrated_compiled_classes
+                    .iter()
+                    .map(|m| (m.class_hash, m.compiled_class_hash))
+                    .collect();
+                tracing::debug!(
+                    "Updating {} class v2 hashes (SNIP-34 migrations) for block {}",
+                    migrations.len(),
+                    block.header.block_number
+                );
+                self.inner.db.update_class_v2_hashes(migrations).context("Updating class v2 hashes")?;
+            }
+
             state_diff.old_declared_contracts =
                 std::mem::replace(&mut block.state_diff.old_declared_contracts, state_diff.old_declared_contracts);
             block.state_diff = state_diff;

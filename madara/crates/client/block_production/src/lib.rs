@@ -464,19 +464,8 @@ impl BlockProductionTask {
                 .write_bouncer_weights(block_number, &bouncer_weights)
                 .context("Saving Bouncer Weights for SNOS")?;
 
-            // Update ClassInfo in DB with new v2 hashes (SNIP-34 migration)
-            // This persists the computed BLAKE hashes so future lookups don't need to recompute
-            if !state_diff.migrated_compiled_classes.is_empty() {
-                let migrations: Vec<(Felt, Felt)> = state_diff
-                    .migrated_compiled_classes
-                    .iter()
-                    .map(|item| (item.class_hash, item.compiled_class_hash))
-                    .collect();
-
-                backend.write_access().update_class_v2_hashes(migrations).context("Updating class v2 hashes in DB")?;
-            }
-
             // Close the preconfirmed block with state_diff
+            // Note: close_preconfirmed handles SNIP-34 migrations internally
             backend
                 .write_access()
                 .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
@@ -811,8 +800,12 @@ impl BlockProductionTask {
         // Convert state_diff and close block using helper function
         let mut state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
 
-        // Process migrated class hashes: move them from declared_classes to migrated_compiled_classes
-        // The compiled_class_hashes_for_migration contains Vec<(v2_hash, v1_hash)>
+        // Process SNIP-34 migrated class hashes.
+        // When blockifier executes a transaction that uses a pre-existing class that hasn't been
+        // migrated yet, it returns the new BLAKE hash (v2) in compiled_class_hashes_for_migration.
+        // We need to move these from declared_classes to migrated_compiled_classes in the state diff.
+        // Note: This is different from newly declared classes in v0.14.1+ which directly use v2 hashes
+        // and don't go through this migration path.
         if !block_exec_summary.compiled_class_hashes_for_migration.is_empty() {
             let v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
                 .compiled_class_hashes_for_migration

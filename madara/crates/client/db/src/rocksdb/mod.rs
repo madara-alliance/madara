@@ -393,6 +393,15 @@ impl MadaraStorageWrite for RocksDBStorage {
 
     fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()> {
         tracing::debug!("Writing state diff {block_n}");
+
+        // Update compiled_class_hash_v2 for SNIP-34 migrated classes
+        if !value.migrated_compiled_classes.is_empty() {
+            let migrations: Vec<(Felt, Felt)> =
+                value.migrated_compiled_classes.iter().map(|m| (m.class_hash, m.compiled_class_hash)).collect();
+            tracing::debug!("Updating {} class v2 hashes (SNIP-34 migrations) for block {}", migrations.len(), block_n);
+            self.inner.update_class_v2_hashes(migrations).context("Updating class v2 hashes")?;
+        }
+
         self.inner
             .blocks_store_state_diff(block_n, value)
             .with_context(|| format!("Storing state diff for block_n={block_n}"))?;
