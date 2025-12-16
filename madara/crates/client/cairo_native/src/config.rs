@@ -56,9 +56,6 @@ pub const DEFAULT_MAX_CONCURRENT_COMPILATIONS: usize = 4;
 /// This prevents unbounded growth while still allowing retry for recently failed classes.
 pub const DEFAULT_MAX_FAILED_COMPILATIONS: usize = 1_000_000;
 
-/// Default cache directory path for compiled native classes
-pub const DEFAULT_CACHE_DIR: &str = "/usr/share/madara/data/classes";
-
 /// Native compilation mode determines how compilation failures are handled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeCompilationMode {
@@ -152,7 +149,7 @@ impl Default for NativeConfig {
 impl Default for NativeExecutionConfig {
     fn default() -> Self {
         Self {
-            cache_dir: PathBuf::from(DEFAULT_CACHE_DIR), // Use default path, actual path comes from CLI/config
+            cache_dir: PathBuf::new(), // Must be set via builder or CLI (derived from base_path)
             max_memory_cache_size: Some(DEFAULT_MEMORY_CACHE_SIZE),
             max_disk_cache_size: Some(DEFAULT_DISK_CACHE_SIZE_BYTES),
             max_concurrent_compilations: DEFAULT_MAX_CONCURRENT_COMPILATIONS,
@@ -459,10 +456,17 @@ impl NativeConfig {
                 .map_err(|e| format!("Failed to create cache directory {:?}: {}", config.cache_dir, e))?;
         }
 
-        // Check if directory is writable
+        // Check if path is a directory
         if !config.cache_dir.is_dir() {
             return Err(format!("Cache path {:?} is not a directory", config.cache_dir));
         }
+
+        // Check if directory is writable by attempting to create and delete a test file
+        let test_file = config.cache_dir.join(".write_test");
+        std::fs::write(&test_file, b"test")
+            .map_err(|e| format!("Cache directory {:?} is not writable: {}", config.cache_dir, e))?;
+        std::fs::remove_file(&test_file)
+            .map_err(|e| format!("Failed to clean up write test file {:?}: {}", test_file, e))?;
 
         Ok(())
     }
@@ -555,7 +559,8 @@ mod tests {
             assert_eq!(exec_config.disk_cache_load_timeout.as_secs(), DEFAULT_DISK_CACHE_LOAD_TIMEOUT_SECS);
             assert_eq!(exec_config.compilation_mode, NativeCompilationMode::Async);
             assert!(exec_config.enable_retry);
-            assert_eq!(exec_config.cache_dir, PathBuf::from(DEFAULT_CACHE_DIR));
+            // cache_dir defaults to empty PathBuf - must be set via CLI (derived from base_path)
+            assert_eq!(exec_config.cache_dir, PathBuf::new());
         } else {
             panic!("Expected Enabled variant");
         }
