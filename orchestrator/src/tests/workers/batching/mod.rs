@@ -114,7 +114,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         .returning(|_, _, _, _| Ok(LockResult::Acquired));
 
     lock.expect_release_lock()
-        .withf(move |key, owner| key == "AggregatorBatchingWorker" && owner.is_none())
+        .withf(move |key, owner| (key == "AggregatorBatchingWorker" || key == "SnosBatchingWorker") && owner.is_none())
         .returning(|_, _| Ok(LockResult::Released));
 
     let rpc_block_call_mock = server.mock(|when, then| {
@@ -175,7 +175,8 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         .build()
         .await;
 
-    AggregatorBatchingTrigger.run_worker(services.config).await?;
+    AggregatorBatchingTrigger.run_worker(services.config.clone()).await?;
+    SnosBatchingTrigger.run_worker(services.config).await?;
 
     rpc_block_call_mock.assert();
 

@@ -1,5 +1,6 @@
 pub mod alerts;
 pub mod common;
+pub mod compression;
 pub mod config;
 pub mod data_storage;
 pub mod database;
