@@ -1,3 +1,10 @@
+// New comprehensive test modules
+mod aggregator;
+mod helpers;
+mod integration;
+mod snos;
+
+// Existing E2E tests
 mod e2e;
 
 use crate::core::client::database::MockDatabaseClient;
