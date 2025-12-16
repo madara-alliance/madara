@@ -915,7 +915,7 @@ mod tests {
 
         assert_eq!(result, expected);
     }
-    
+
     #[test]
     fn test_format_for_receipt_filters_callcontract_before_librarycall() {
         // This test case represents the actual error structure observed in production:
