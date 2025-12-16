@@ -27,10 +27,17 @@ fn fixup_missed_mainnet_classes(block_n: u64, classes_from_state_diff: &mut Hash
     }
 }
 
+/// Fetches class definitions from the gateway and creates ClassInfo structures.
+///
+/// # Arguments
+/// * `uses_blake_hash` - If true, the compiled_class_hash from state diff is a BLAKE hash (v0.14.1+)
+///                       and should be stored in `compiled_class_hash_v2`. Otherwise it's a Poseidon
+///                       hash and goes in `compiled_class_hash`.
 pub(crate) async fn get_classes(
     client: &Arc<GatewayProvider>,
     block_id: BlockId,
     classes: &HashMap<Felt, DeclaredClassCompiledClass>,
+    uses_blake_hash: bool,
 ) -> anyhow::Result<Vec<ClassInfoWithHash>> {
     futures::future::try_join_all(classes.iter().map(move |(&class_hash, &compiled_class_hash)| {
         let block_id = block_id.clone();
@@ -47,14 +54,17 @@ pub(crate) async fn get_classes(
                     let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash else {
                         anyhow::bail!("Expected a Sierra class, found a Legacy class")
                     };
-                    // The compiled_class_hash comes from the state diff which contains the correct hash
-                    // for the block's protocol version (v1/Poseidon for pre-v0.14.1, v2/BLAKE for v0.14.1+).
-                    // We store it in compiled_class_hash field; for v0.14.1+ new declarations this is
-                    // technically the v2 hash but compiled_class_hash() will return it correctly.
+                    // For v0.14.1+ blocks, newly declared classes use BLAKE hash (v2).
+                    // For pre-v0.14.1 blocks, classes use Poseidon hash (v1).
+                    let (v1_hash, v2_hash) = if uses_blake_hash {
+                        (None, Some(compiled_class_hash))
+                    } else {
+                        (Some(compiled_class_hash), None)
+                    };
                     ClassInfo::Sierra(SierraClassInfo {
                         contract_class: class.clone(),
-                        compiled_class_hash: Some(compiled_class_hash),
-                        compiled_class_hash_v2: None,
+                        compiled_class_hash: v1_hash,
+                        compiled_class_hash_v2: v2_hash,
                     })
                 }
                 mp_class::ContractClass::Legacy(class) => {
@@ -112,7 +122,17 @@ impl PipelineSteps for ClassesSyncSteps {
             tracing::debug!("Gateway classes parallel step: {block_range:?}");
             let mut out = vec![];
             for (block_n, classes) in block_range.zip(input) {
-                let declared_classes = get_classes(&self.client, BlockId::Number(block_n), &classes).await?;
+                // Get the block's protocol version from the already-saved header
+                // to determine if we should use BLAKE hash (v0.14.1+) or Poseidon hash
+                let uses_blake_hash = self
+                    .backend
+                    .block_view_on_confirmed(block_n)
+                    .and_then(|view| view.get_block_info().ok())
+                    .map(|info| info.header.protocol_version.uses_blake_compiled_class_hash())
+                    .unwrap_or(false);
+
+                let declared_classes =
+                    get_classes(&self.client, BlockId::Number(block_n), &classes, uses_blake_hash).await?;
 
                 let ret = self
                     .importer
