@@ -55,9 +55,6 @@ pub mod state_update_job;
 pub mod snos_job;
 
 #[cfg(test)]
-pub mod batching_job;
-
-#[cfg(test)]
 mod aggregator_job;
 
 use crate::core::client::queue::QueueError;

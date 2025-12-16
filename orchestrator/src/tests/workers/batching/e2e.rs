@@ -7,11 +7,9 @@ use crate::worker::event_handler::triggers::snos_batching::SnosBatchingTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use alloy::hex;
 use color_eyre::Result;
-use num_bigint::BigUint;
 use orchestrator_prover_client_interface::MockProverClient;
 use orchestrator_utils::test_utils::setup_test_data;
 use rstest::*;
-use starknet_core::types::Felt;
 use tracing::warn;
 use url::Url;
 
@@ -84,39 +82,4 @@ fn get_blobs_from_files(file_paths: Vec<&str>) -> Result<Vec<String>> {
         blob.push(read_file_to_string(path)?);
     }
     Ok(blob)
-}
-
-/// Converts a vector of BigUint values to a vector of Felt values
-///
-/// # Arguments
-/// * `biguints` - Vector of BigUint values to convert
-///
-/// # Returns
-/// A Result containing a vector of Felt values or an error
-pub fn convert_biguints_to_felts(biguints: &[BigUint]) -> Result<Vec<Felt>> {
-    biguints
-        .iter()
-        .map(|b| {
-            let bytes = b.to_bytes_be();
-            // Handle empty bytes case
-            if bytes.is_empty() {
-                return Ok(Felt::ZERO);
-            }
-
-            // Create a fixed size array for the bytes
-            let mut field_bytes = [0u8; 32];
-
-            // Copy bytes, padding with zeros if needed
-            if bytes.len() <= 32 {
-                let start_idx = 32 - bytes.len();
-                field_bytes[start_idx..].copy_from_slice(&bytes);
-            } else {
-                // Truncate if bigger than 32 bytes
-                field_bytes.copy_from_slice(&bytes[bytes.len() - 32..]);
-            }
-
-            // Convert to Felt
-            Ok(Felt::from_bytes_be(&field_bytes))
-        })
-        .collect()
 }

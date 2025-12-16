@@ -1,3 +1,5 @@
+mod e2e;
+
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::lock::{LockResult, LockValue, MockLockClient};
 use crate::core::client::storage::MockStorageClient;
