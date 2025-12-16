@@ -85,23 +85,37 @@ impl AtlanticError {
     /// Create a network error from a reqwest error
     pub fn from_reqwest_error(operation: impl Into<String>, source: reqwest::Error) -> Self {
         let operation = operation.into();
+        let url = source.url().map(|u| u.to_string());
 
         // Check if it's a network-level error (retryable)
         if source.is_timeout() || source.is_connect() || source.is_request() {
-            let message = if source.is_timeout() {
-                "request timed out".to_string()
+            let (error_category, detail) = if source.is_timeout() {
+                ("timeout", "request timed out waiting for response".to_string())
             } else if source.is_connect() {
-                format!("connection failed: {}", source)
+                ("connection_refused", format!("failed to establish connection: {}", source))
             } else {
                 // Check for specific hyper errors like IncompleteMessage
                 let error_msg = source.to_string();
                 if error_msg.contains("IncompleteMessage") {
-                    "incomplete message received from server".to_string()
+                    ("incomplete_response", "server closed connection before sending complete response".to_string())
                 } else if error_msg.contains("Canceled") {
-                    "request was canceled".to_string()
+                    ("request_canceled", "request was canceled before completion".to_string())
+                } else if error_msg.contains("dns") || error_msg.contains("DNS") {
+                    ("dns_resolution_failed", format!("failed to resolve hostname: {}", error_msg))
+                } else if error_msg.contains("ssl")
+                    || error_msg.contains("SSL")
+                    || error_msg.contains("tls")
+                    || error_msg.contains("TLS")
+                {
+                    ("tls_error", format!("TLS/SSL handshake failed: {}", error_msg))
                 } else {
-                    format!("request failed: {}", error_msg)
+                    ("request_failed", error_msg)
                 }
+            };
+
+            let message = match &url {
+                Some(u) => format!("{} (url={}, reason={})", error_category, u, detail),
+                None => format!("{} (reason={})", error_category, detail),
             };
 
             AtlanticError::NetworkError { operation, message, response_bytes: None }
@@ -110,7 +124,11 @@ impl AtlanticError {
             AtlanticError::ApiError { operation, status, message: source.to_string(), response_bytes: None }
         } else {
             // Other reqwest errors
-            AtlanticError::NetworkError { operation, message: source.to_string(), response_bytes: None }
+            let message = match &url {
+                Some(u) => format!("unexpected_error (url={}, reason={})", u, source),
+                None => format!("unexpected_error (reason={})", source),
+            };
+            AtlanticError::NetworkError { operation, message, response_bytes: None }
         }
     }
 
