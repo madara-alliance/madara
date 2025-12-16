@@ -493,7 +493,6 @@ impl BlockImporterCtx {
     }
 
     /// Called in a rayon-pool context.
-    /// Note: write_state_diff handles SNIP-34 migrations internally.
     pub fn save_state_diff(&self, block_n: u64, state_diff: StateDiff) -> Result<(), BlockImportError> {
         self.backend.write_access().write_state_diff(block_n, &state_diff).map_err(|error| {
             BlockImportError::InternalDb { error, context: format!("Storing state_diff for {block_n}").into() }

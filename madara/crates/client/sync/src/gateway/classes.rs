@@ -47,11 +47,10 @@ pub(crate) async fn get_classes(
                     let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash else {
                         anyhow::bail!("Expected a Sierra class, found a Legacy class")
                     };
-                    // TODO: For v0.14.1+ blocks, newly declared classes use BLAKE hash (v2) instead of Poseidon (v1).
-                    // Currently we always set the hash as v1. This works for pre-v0.14.1 blocks, and for
-                    // v0.14.1+ the migrated_compiled_classes in state diff handles existing class migrations.
-                    // However, for proper v0.14.1+ gateway sync of NEW class declarations, we should check
-                    // the block's protocol version and set compiled_class_hash_v2 instead when applicable.
+                    // The compiled_class_hash comes from the state diff which contains the correct hash
+                    // for the block's protocol version (v1/Poseidon for pre-v0.14.1, v2/BLAKE for v0.14.1+).
+                    // We store it in compiled_class_hash field; for v0.14.1+ new declarations this is
+                    // technically the v2 hash but compiled_class_hash() will return it correctly.
                     ClassInfo::Sierra(SierraClassInfo {
                         contract_class: class.clone(),
                         compiled_class_hash: Some(compiled_class_hash),
