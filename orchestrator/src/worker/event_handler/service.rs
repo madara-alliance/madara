@@ -16,6 +16,7 @@ use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
+use crate::types::queue::QueueNameForJobType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::utils::metrics_recorder::MetricsRecorder;
 #[double]
@@ -225,6 +226,14 @@ impl JobHandlerService {
         }
 
         let job_handler = factory::get_job_handler(&job.job_type).await;
+
+        // Check if dependencies are ready before processing
+        if let Err(retry_delay) = job_handler.check_ready_to_process(config.clone()).await {
+            debug!(job_id = ?id, job_type = ?job.job_type, delay_secs = ?retry_delay.as_secs(), "Dependencies not ready, requeueing job");
+            JobService::add_job_to_queue(config.clone(), job.id, job.job_type.process_queue_name(), Some(retry_delay))
+                .await?;
+            return Ok(());
+        }
 
         // This updates the version of the job.
         // This ensures that if another thread was about to process the same job,
