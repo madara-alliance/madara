@@ -293,7 +293,14 @@ impl JobHandlerService {
                 // TODO: I think most of the times the errors will not be fixed automatically
                 // if we just retry. But for some failures like DB issues, it might be possible
                 // that retrying will work. So we can add a retry logic here to improve robustness.
-                error!(job_id = ?id, error = ?e, "Failed to process job");
+                error!(
+                    job_id = ?id,
+                    job_type = ?job.job_type,
+                    internal_id = %job.internal_id,
+                    status = ?job.status,
+                    error = ?e,
+                    "Failed to process job"
+                );
                 return JobService::move_job_to_failed(&job, config.clone(), format!("Processing failed: {}", e)).await;
             }
             Err(panic) => {
