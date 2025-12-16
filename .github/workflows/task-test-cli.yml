@@ -6,7 +6,7 @@ on:
   workflow_call:
 jobs:
   test-cli:
-    runs-on: blacksmith-8vcpu-ubuntu-2204
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
