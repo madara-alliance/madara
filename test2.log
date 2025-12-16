@@ -1,0 +1,71 @@
+[2025-11-19 13:25:14:525] INFO 🥷  Madara Node
+[2025-11-19 13:25:14:525] INFO 💁 Support URL: https://github.com/madara-alliance/madara/issues
+[2025-11-19 13:25:14:525] INFO 🏷  Node Name: madara
+[2025-11-19 13:25:14:525] INFO 👤 Role: Sequencer
+[2025-11-19 13:25:14:525] INFO 🌐 Network: Paradex Testnet (chain id `PRIVATE_SN_POTC_SEPOLIA`)
+[2025-11-19 13:25:14:565] INFO 💻 Operating system: Linux 24.04 Ubuntu
+[2025-11-19 13:25:14:565] INFO 💻 CPU architecture: x86_64
+[2025-11-19 13:25:14:565] INFO 💻 CPU: AMD EPYC 7R13 Processor
+[2025-11-19 13:25:14:565] INFO 💻 CPU cores: 8
+[2025-11-19 13:25:14:565] INFO 💻 Memory: 15618MiB
+[2025-11-19 13:25:14:565] INFO 💻 Kernel: 6.14.0-1016-aws
+[2025-11-19 13:25:14:565] INFO 💾 Opening database at: /madara_db/madara/db
+[2025-11-19 13:25:14:565] INFO 💾  Preconfirmed blocks will be saved to database
+[2025-11-19 13:25:14:727] INFO 📝 Database write mode: WAL enabled, fsync disabled (recommended)
+[2025-11-19 13:25:14:728] INFO 💼 Starting chain with block: empty state
+[2025-11-19 13:25:14:781] INFO 🌐 Gateway endpoint started at 0.0.0.0:8080
+[2025-11-19 13:25:14:781] INFO 🌐 Running prometheus metrics endpoint at http://0.0.0.0:9654/metrics
+[2025-11-19 13:25:14:781] INFO 📱 Running JSON-RPC (Admin) server at http://0.0.0.0:4443/rpc/v0.1.0/ (allowed origins=["*"], supported versions=["/rpc/v0.1.0/"])
+[2025-11-19 13:25:14:781] INFO 📱 Running JSON-RPC server at http://0.0.0.0:4444/rpc/v0.9.0/ (allowed origins=["*"], supported versions=["/rpc/v0.7.1/", "/rpc/v0.8.1/", "/rpc/v0.9.0/"])
+[2025-11-19 14:23:17:148] INFO 🥷  Madara Node
+[2025-11-19 14:23:17:150] INFO 💁 Support URL: https://github.com/madara-alliance/madara/issues
+[2025-11-19 14:23:17:150] INFO 🏷  Node Name: madara
+[2025-11-19 14:23:17:150] INFO 👤 Role: Sequencer
+[2025-11-19 14:23:17:150] INFO 🌐 Network: Paradex Testnet (chain id `PRIVATE_SN_POTC_SEPOLIA`)
+[2025-11-19 14:23:17:170] INFO 💻 Operating system: Linux 24.04 Ubuntu
+[2025-11-19 14:23:17:170] INFO 💻 CPU architecture: x86_64
+[2025-11-19 14:23:17:170] INFO 💻 CPU: AMD EPYC 7R13 Processor
+[2025-11-19 14:23:17:170] INFO 💻 CPU cores: 8
+[2025-11-19 14:23:17:170] INFO 💻 Memory: 15618MiB
+[2025-11-19 14:23:17:170] INFO 💻 Kernel: 6.14.0-1016-aws
+[2025-11-19 14:23:17:172] INFO 💾 Opening database at: /madara_db/madara
+[2025-11-19 14:23:17:172] INFO 💾  Preconfirmed blocks will be saved to database
+[2025-11-19 14:23:25:395] INFO 📝 Database write mode: WAL enabled, fsync disabled (recommended)
+[2025-11-19 14:23:57:368] INFO 🥷  Madara Node
+[2025-11-19 14:23:57:368] INFO 💁 Support URL: https://github.com/madara-alliance/madara/issues
+[2025-11-19 14:23:57:368] INFO 🏷  Node Name: madara
+[2025-11-19 14:23:57:368] INFO 👤 Role: Sequencer
+[2025-11-19 14:23:57:368] INFO 🌐 Network: Paradex Testnet (chain id `PRIVATE_SN_POTC_MOCK_SEPOLIA`)
+[2025-11-19 14:23:57:389] INFO 💻 Operating system: Linux 24.04 Ubuntu
+[2025-11-19 14:23:57:389] INFO 💻 CPU architecture: x86_64
+[2025-11-19 14:23:57:389] INFO 💻 CPU: AMD EPYC 7R13 Processor
+[2025-11-19 14:23:57:389] INFO 💻 CPU cores: 8
+[2025-11-19 14:23:57:389] INFO 💻 Memory: 15618MiB
+[2025-11-19 14:23:57:389] INFO 💻 Kernel: 6.14.0-1016-aws
+[2025-11-19 14:23:57:389] INFO 💾 Opening database at: /madara_db/madara
+[2025-11-19 14:23:57:389] INFO 💾  Preconfirmed blocks will be saved to database
+[2025-11-19 14:23:57:450] INFO 📝 Database write mode: WAL enabled, fsync disabled (recommended)
+[2025-11-19 14:23:57:451] INFO 💼 Starting chain with block: confirmed block: #399497
+[2025-11-19 14:23:57:528] INFO 🌐 Running prometheus metrics endpoint at http://0.0.0.0:9654/metrics
+[2025-11-19 14:23:57:532] INFO 🌐 Gateway endpoint started at 0.0.0.0:8080
+[2025-11-19 14:23:57:552] INFO 📱 Running JSON-RPC (Admin) server at http://0.0.0.0:4443/rpc/v0.1.0/ (allowed origins=["*"], supported versions=["/rpc/v0.1.0/"])
+[2025-11-19 14:23:57:552] INFO 📱 Running JSON-RPC server at http://0.0.0.0:4444/rpc/v0.9.0/ (allowed origins=["*"], supported versions=["/rpc/v0.7.1/", "/rpc/v0.8.1/", "/rpc/v0.9.0/"])
+[2025-11-19 14:30:46:707] INFO 🥷  Madara Node
+[2025-11-19 14:30:46:709] INFO 💁 Support URL: https://github.com/madara-alliance/madara/issues
+[2025-11-19 14:30:46:709] INFO 🏷  Node Name: madara
+[2025-11-19 14:30:46:709] INFO 👤 Role: Sequencer
+[2025-11-19 14:30:46:709] INFO 🌐 Network: Paradex Mock Testnet (chain id `PRIVATE_SN_POTC_MOCK_SEPOLIA`)
+[2025-11-19 14:30:46:734] INFO 💻 Operating system: Linux 24.04 Ubuntu
+[2025-11-19 14:30:46:734] INFO 💻 CPU architecture: x86_64
+[2025-11-19 14:30:46:734] INFO 💻 CPU: AMD EPYC 7R13 Processor
+[2025-11-19 14:30:46:734] INFO 💻 CPU cores: 8
+[2025-11-19 14:30:46:734] INFO 💻 Memory: 15618MiB
+[2025-11-19 14:30:46:734] INFO 💻 Kernel: 6.14.0-1016-aws
+[2025-11-19 14:30:46:736] INFO 💾 Opening database at: /madara_db/madara
+[2025-11-19 14:30:46:736] INFO 💾  Preconfirmed blocks will be saved to database
+[2025-11-19 14:30:47:035] INFO 📝 Database write mode: WAL enabled, fsync disabled (recommended)
+[2025-11-19 14:30:47:041] INFO 💼 Starting chain with block: confirmed block: #399497
+[2025-11-19 14:30:47:108] INFO 🌐 Running prometheus metrics endpoint at http://0.0.0.0:9654/metrics
+[2025-11-19 14:30:47:110] INFO 🌐 Gateway endpoint started at 0.0.0.0:8080
+[2025-11-19 14:30:47:121] INFO 📱 Running JSON-RPC server at http://0.0.0.0:4444/rpc/v0.9.0/ (allowed origins=["*"], supported versions=["/rpc/v0.7.1/", "/rpc/v0.8.1/", "/rpc/v0.9.0/"])
+[2025-11-19 14:30:47:121] INFO 📱 Running JSON-RPC (Admin) server at http://0.0.0.0:4443/rpc/v0.1.0/ (allowed origins=["*"], supported versions=["/rpc/v0.1.0/"])

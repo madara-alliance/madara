@@ -24,7 +24,6 @@ pub use crate::v0_9_0::{
     TransactionAndReceipt, Txn, TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash,
     TxnReceipt, TxnReceiptWithBlockInfo, TxnStatus, TxnWithHash, TypedParameter,
 };
-// Note: StateUpdate is NOT imported from v0.9.0 - we define our own below with v0.10.0's StateDiff
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 

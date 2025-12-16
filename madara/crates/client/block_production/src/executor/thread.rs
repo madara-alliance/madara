@@ -429,8 +429,7 @@ impl ExecutorThread {
                         stats.n_added_to_block += 1;
                         stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);
                         block_empty = false;
-                        if let Some(revert_error) = &execution_info.revert_error {
-                            tracing::info!("Transaction {:#x} reverted: {}", btx.tx_hash().to_felt(), revert_error);
+                        if execution_info.revert_error.is_some() {
                             stats.n_reverted += 1;
                         } else if let Some((class_hash, contract_class)) = btx.declared_contract_class() {
                             tracing::debug!("Declared class_hash={:#x}", class_hash.to_felt());

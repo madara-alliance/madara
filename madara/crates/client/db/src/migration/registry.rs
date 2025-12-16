@@ -1,15 +1,28 @@
 //! Migration registry - maps versions to migration functions.
+//!
+//! This module contains the list of all migrations and provides utilities
+//! to find which migrations need to be applied.
 
 use super::context::MigrationContext;
 use super::error::MigrationError;
 
+/// Type alias for migration functions.
+///
+/// A migration function takes a context and returns a Result.
+/// On success, the migration is considered complete.
+/// On failure, the entire migration process stops and the error is propagated.
 pub type MigrationFn = fn(&MigrationContext<'_>) -> Result<(), MigrationError>;
 
+/// Definition of a single migration.
 #[derive(Clone)]
 pub struct Migration {
+    /// Version this migration starts from.
     pub from_version: u32,
+    /// Version this migration upgrades to.
     pub to_version: u32,
+    /// Human-readable name for logging.
     pub name: &'static str,
+    /// The migration function to execute.
     pub migrate: MigrationFn,
 }
 
@@ -19,7 +32,16 @@ impl std::fmt::Debug for Migration {
     }
 }
 
-/// Returns all registered migrations (must be in ascending version order).
+/// Returns all registered migrations.
+///
+/// Migrations must be in ascending order by `from_version`.
+/// Each migration should upgrade exactly one version (from_version + 1 = to_version).
+///
+/// # Adding a new migration
+///
+/// 1. Create a new file in `revisions/` (e.g., `revision_0010.rs`)
+/// 2. Implement a `pub fn migrate(ctx: &MigrationContext) -> Result<(), MigrationError>`
+/// 3. Add the migration to the array below
 pub fn get_migrations() -> &'static [Migration] {
     &[Migration {
         from_version: 8,

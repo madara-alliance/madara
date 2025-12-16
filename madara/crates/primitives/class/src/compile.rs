@@ -619,9 +619,6 @@ mod tests {
         let class_hash = Felt::from_hex_unchecked(class_hash_hex);
         let expected_blake_hash = Felt::from_hex_unchecked(expected_blake_hash_hex);
 
-        println!("Testing class: {:#x}", class_hash);
-        println!("Expected BLAKE hash: {:#x}", expected_blake_hash);
-
         let class: ContractClass = provider
             .get_class(BlockId::Tag(BlockTag::Latest), class_hash)
             .await
@@ -631,11 +628,9 @@ mod tests {
         if let ContractClass::Sierra(sierra) = class {
             // Compile to CASM and get Poseidon hash
             let (poseidon_hash, casm_class) = sierra.compile_to_casm().unwrap();
-            println!("Poseidon compiled class hash: {:#x}", poseidon_hash);
 
             // Compute BLAKE hash using HashVersion::V2
             let blake_hash = super::v2::compute_blake_compiled_class_hash(&casm_class).unwrap();
-            println!("Computed BLAKE hash: {:#x}", blake_hash);
 
             // Verify BLAKE hash matches expected value from Sepolia migration
             assert_eq!(
@@ -646,8 +641,6 @@ mod tests {
 
             // BLAKE and Poseidon hashes should be different
             assert_ne!(poseidon_hash, blake_hash, "BLAKE and Poseidon hashes should be different");
-
-            println!("✅ BLAKE hash matches expected value from Sepolia migration!");
         } else {
             panic!("Not a Sierra contract");
         }

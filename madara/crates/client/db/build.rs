@@ -56,9 +56,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     if let Err(e) = get_db_version() {
-        // Use cargo:warning to make errors visible during build
         println!("cargo:warning=Failed to get DB version: {}", e);
-        eprintln!("cargo:warning=Failed to get DB version: {}", e);
         std::process::exit(1);
     }
 }

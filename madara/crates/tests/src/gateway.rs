@@ -27,16 +27,6 @@ mod tests {
         )
     }
 
-    /// Paradex testnet provider using config from configs/presets/paradex_testnet.yaml
-    #[fixture]
-    fn client_paradex_testnet_local_fixture() -> GatewayProvider {
-        GatewayProvider::new(
-            Url::parse("http://localhost:8181/gateway/").expect("Failed to parse Paradex testnet gateway url"),
-            Url::parse("http://localhost:8181/feeder_gateway/")
-                .expect("Failed to parse Paradex testnet feeder gateway url"),
-        )
-    }
-
     #[rstest]
     #[case::v0_13_0(501_514)]
     #[case::v0_13_1(607_878)]
