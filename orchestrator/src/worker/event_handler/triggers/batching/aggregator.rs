@@ -383,8 +383,7 @@ impl NonEmptyAggregatorState {
         }
 
         // Check time limit
-        let elapsed_seconds =
-            (Utc::now().round_subsecs(0) - self.batch.created_at).abs().num_seconds() as u64;
+        let elapsed_seconds = (Utc::now().round_subsecs(0) - self.batch.created_at).abs().num_seconds() as u64;
         if elapsed_seconds >= batch_limits.max_batch_time_seconds {
             return BatchCheckResult::TimeLimitExceeded;
         }
@@ -538,10 +537,10 @@ mod tests {
     /// Helper to create default test limits
     fn create_test_limits() -> AggregatorBatchLimits {
         AggregatorBatchLimits::new_for_test(
-            10000,                                      // max_blob_size
-            10,                                         // max_batch_size (10 blocks)
+            10000,                                         // max_blob_size
+            10,                                            // max_batch_size (10 blocks)
             AggregatorBatchWeights::new(1_000_000, 10000), // max weights
-            3600,                                       // max_batch_time_seconds (1 hour)
+            3600,                                          // max_batch_time_seconds (1 hour)
         )
     }
 
@@ -760,11 +759,7 @@ mod tests {
         #[test]
         fn test_multiple_version_transitions() {
             // Test all version combinations
-            let versions = [
-                StarknetVersion::V0_13_2,
-                StarknetVersion::V0_13_3,
-                StarknetVersion::V0_13_4,
-            ];
+            let versions = [StarknetVersion::V0_13_2, StarknetVersion::V0_13_3, StarknetVersion::V0_13_4];
 
             for batch_version in &versions {
                 for block_version in &versions {
@@ -857,12 +852,7 @@ mod tests {
 
         #[test]
         fn test_limits_new_for_test() {
-            let limits = AggregatorBatchLimits::new_for_test(
-                5000,
-                20,
-                AggregatorBatchWeights::new(100, 200),
-                7200,
-            );
+            let limits = AggregatorBatchLimits::new_for_test(5000, 20, AggregatorBatchWeights::new(100, 200), 7200);
 
             assert_eq!(limits.max_blob_size, 5000);
             assert_eq!(limits.max_batch_size, 20);

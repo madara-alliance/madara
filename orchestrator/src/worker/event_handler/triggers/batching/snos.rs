@@ -295,8 +295,7 @@ impl NonEmptySnosState {
         }
 
         // Check time limit
-        let elapsed_seconds =
-            (Utc::now().round_subsecs(0) - self.batch.created_at).abs().num_seconds() as u64;
+        let elapsed_seconds = (Utc::now().round_subsecs(0) - self.batch.created_at).abs().num_seconds() as u64;
         if elapsed_seconds >= batch_limits.max_batch_time_seconds {
             return SnosBatchCheckResult::TimeLimitExceeded;
         }
@@ -354,12 +353,10 @@ impl NonEmptySnosState {
                 );
                 Ok(None)
             }
-            SnosBatchCheckResult::MissingAggregatorBatch => {
-                Err(JobError::Other(OtherError(eyre!(
-                    "Aggregator batch not found for block {} during SNOS batching. This should not happen!",
-                    block_num
-                ))))
-            }
+            SnosBatchCheckResult::MissingAggregatorBatch => Err(JobError::Other(OtherError(eyre!(
+                "Aggregator batch not found for block {} during SNOS batching. This should not happen!",
+                block_num
+            )))),
             _ => Ok(None),
         }
     }
@@ -771,11 +768,7 @@ mod tests {
 
         #[test]
         fn test_multiple_version_transitions() {
-            let versions = [
-                StarknetVersion::V0_13_2,
-                StarknetVersion::V0_13_3,
-                StarknetVersion::V0_13_4,
-            ];
+            let versions = [StarknetVersion::V0_13_2, StarknetVersion::V0_13_3, StarknetVersion::V0_13_4];
 
             for batch_version in &versions {
                 for block_version in &versions {
@@ -871,12 +864,7 @@ mod tests {
 
         #[test]
         fn test_limits_new_for_test() {
-            let limits = SnosBatchLimits::new_for_test(
-                20,
-                Some(10),
-                7200,
-                create_test_weights(100, 200),
-            );
+            let limits = SnosBatchLimits::new_for_test(20, Some(10), 7200, create_test_weights(100, 200));
 
             assert_eq!(limits.max_batch_size, 20);
             assert_eq!(limits.fixed_batch_size, Some(10));
@@ -887,12 +875,7 @@ mod tests {
 
         #[test]
         fn test_limits_without_fixed_batch_size() {
-            let limits = SnosBatchLimits::new_for_test(
-                20,
-                None,
-                7200,
-                create_test_weights(100, 200),
-            );
+            let limits = SnosBatchLimits::new_for_test(20, None, 7200, create_test_weights(100, 200));
 
             assert_eq!(limits.fixed_batch_size, None);
         }
