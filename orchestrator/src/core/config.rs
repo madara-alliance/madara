@@ -250,10 +250,12 @@ impl Config {
         }
 
         // Fetch chain details from node with retry logic
-        let mut chain_details = ChainDetails::fetch(&params.madara_rpc_url, &params.madara_feeder_gateway_url)
-            .await
-            .map_err(|e| OrchestratorError::ConfigError(format!("Failed to fetch chain details from node: {}", e)))?;
-        chain_details.is_l3 = layer.is_l3();
+        let chain_details =
+            ChainDetails::fetch(&params.madara_rpc_url, &params.madara_feeder_gateway_url, layer.is_l3())
+                .await
+                .map_err(|e| {
+                    OrchestratorError::ConfigError(format!("Failed to fetch chain details from node: {}", e))
+                })?;
         info!(chain_id = %chain_details.chain_id, is_l3 = %chain_details.is_l3, "Chain details fetched successfully");
 
         // External Clients Initialization

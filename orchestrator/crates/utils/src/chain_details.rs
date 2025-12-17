@@ -70,12 +70,13 @@ impl ChainDetails {
     /// # Arguments
     /// * `rpc_url` - The RPC endpoint URL
     /// * `feeder_gateway_url` - The feeder gateway URL
+    /// * `is_l3` - Whether this is an L3 chain
     ///
     /// # Returns
     /// * `Ok(ChainDetails)` - Successfully fetched chain details
     /// * `Err` - Failed to fetch after timeout
-    pub async fn fetch(rpc_url: &Url, feeder_gateway_url: &Url) -> Result<Self> {
-        Self::fetch_with_config(rpc_url, feeder_gateway_url, DEFAULT_RETRY_INTERVAL, DEFAULT_TIMEOUT).await
+    pub async fn fetch(rpc_url: &Url, feeder_gateway_url: &Url, is_l3: bool) -> Result<Self> {
+        Self::fetch_with_config(rpc_url, feeder_gateway_url, is_l3, DEFAULT_RETRY_INTERVAL, DEFAULT_TIMEOUT).await
     }
 
     /// Fetch chain details with custom retry configuration.
@@ -83,11 +84,13 @@ impl ChainDetails {
     /// # Arguments
     /// * `rpc_url` - The RPC endpoint URL
     /// * `feeder_gateway_url` - The feeder gateway URL
+    /// * `is_l3` - Whether this is an L3 chain
     /// * `retry_interval` - Duration between retry attempts
     /// * `timeout` - Total timeout duration
     pub async fn fetch_with_config(
         rpc_url: &Url,
         feeder_gateway_url: &Url,
+        is_l3: bool,
         retry_interval: Duration,
         timeout: Duration,
     ) -> Result<Self> {
@@ -99,17 +102,25 @@ impl ChainDetails {
         loop {
             attempt += 1;
 
-            match Self::try_fetch(rpc_url, feeder_gateway_url).await {
-                Ok(details) => {
+            let chain_id = Self::fetch_chain_id(rpc_url).await;
+            let addresses = Self::fetch_contract_addresses(feeder_gateway_url).await;
+
+            match (chain_id, addresses) {
+                (Ok(chain_id), Ok(addresses)) => {
                     debug!(
-                        chain_id = %details.chain_id,
-                        strk_fee_token = %details.strk_fee_token_address,
-                        eth_fee_token = %details.eth_fee_token_address,
+                        chain_id = %chain_id,
+                        strk_fee_token = %addresses.strk_l2_token_address,
+                        eth_fee_token = %addresses.eth_l2_token_address,
                         "Chain details fetched"
                     );
-                    return Ok(details);
+                    return Ok(Self {
+                        chain_id,
+                        strk_fee_token_address: addresses.strk_l2_token_address,
+                        eth_fee_token_address: addresses.eth_l2_token_address,
+                        is_l3,
+                    });
                 }
-                Err(e) => {
+                (Err(e), _) | (_, Err(e)) => {
                     let elapsed = start_time.elapsed();
 
                     if elapsed >= timeout {
@@ -128,19 +139,6 @@ impl ChainDetails {
                 }
             }
         }
-    }
-
-    /// Attempt to fetch chain details (single attempt, no retry).
-    async fn try_fetch(rpc_url: &Url, feeder_gateway_url: &Url) -> Result<Self> {
-        let chain_id = Self::fetch_chain_id(rpc_url).await?;
-        let addresses = Self::fetch_contract_addresses(feeder_gateway_url).await?;
-
-        Ok(Self {
-            chain_id,
-            strk_fee_token_address: addresses.strk_l2_token_address,
-            eth_fee_token_address: addresses.eth_l2_token_address,
-            is_l3: false, // Set by caller after fetch
-        })
     }
 
     /// Fetch chain ID from RPC using `starknet_chainId` method.
