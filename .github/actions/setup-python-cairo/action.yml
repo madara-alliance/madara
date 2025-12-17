@@ -38,24 +38,16 @@ runs:
         python3 -m venv sequencer_venv
         source sequencer_venv/bin/activate
 
-        # Pin cairo-lang to exact version required by build scripts
-        # Note: We explicitly pin to 0.14.0.1 instead of using sequencer's requirements.txt
-        # because the sequencer may have a newer alpha version that's incompatible with our build
-        echo "Installing cairo-lang==0.14.0.1 (exact version required by build scripts)..."
+        # Install Cairo dependencies from the single source of truth
+        echo "Installing Cairo dependencies from cairo_requirements.txt..."
         pip install --upgrade pip
-        pip install cairo-lang==0.14.0.1 "numpy<2.0"
+        pip install -r cairo_requirements.txt
 
-        # Verify cairo-compile is available and has the correct version
+        # Verify cairo-compile is available and get its version
         if command -v cairo-compile >/dev/null 2>&1; then
           CAIRO_VERSION=$(cairo-compile --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?' || echo "unknown")
           echo "✓ cairo-compile is available at: $(which cairo-compile)"
           echo "✓ cairo-compile version: $CAIRO_VERSION"
-
-          # Verify the version is exactly what we expect
-          if [[ "$CAIRO_VERSION" != "0.14.0.1" ]]; then
-            echo "⚠️  Warning: cairo-compile version is $CAIRO_VERSION, expected 0.14.0.1"
-            echo "This may cause build failures. Please check cairo-lang installation."
-          fi
         else
           echo "❌ cairo-compile not found in PATH after installing requirements"
           echo "Installed Python packages:"
@@ -63,7 +55,7 @@ runs:
           exit 1
         fi
 
-        echo "✓ Python virtual environment setup complete with cairo-lang==0.14.0.1"
+        echo "✓ Python virtual environment setup complete"
 
     - name: Activate virtual environment for subsequent steps
       shell: bash

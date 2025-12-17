@@ -214,23 +214,8 @@ setup-cairo:
 	else \
 		echo -e "$(PASS)✅ Virtual environment already exists$(RESET)"; \
 	fi
-	@echo -e "$(INFO)Installing Cairo 0 dependencies...$(RESET)"
-	@if [ ! -f sequencer_requirements.txt ]; then \
-		CARGO_HOME=$${CARGO_HOME:-$$HOME/.cargo}; \
-		GIT_CHECKOUTS=$$(readlink -f "$$CARGO_HOME/git" 2>/dev/null || echo "$$CARGO_HOME/git"); \
-		SEQUENCER_REV=$$(grep -A 2 'name = "blockifier"' Cargo.lock | grep 'sequencer?rev=' | sed -E 's/.*rev=([a-f0-9]+).*/\1/' | cut -c1-7); \
-		REQUIREMENTS_PATH=$$(find "$$GIT_CHECKOUTS/checkouts" -type f -path "*/sequencer*/$$SEQUENCER_REV*/scripts/requirements.txt" 2>/dev/null | head -n 1); \
-		if [ -n "$$REQUIREMENTS_PATH" ]; then \
-			sed 's/numpy==2.0.2/numpy<2.0/' "$$REQUIREMENTS_PATH" > sequencer_requirements.txt; \
-			echo -e "$(INFO)Found requirements.txt at: $$REQUIREMENTS_PATH$(RESET)"; \
-		else \
-			echo -e "$(WARN)⚠️  WARNING: Could not find requirements.txt from sequencer checkout$(RESET)"; \
-			echo -e "$(INFO)Creating basic requirements with cairo-lang...$(RESET)"; \
-			echo "cairo-lang==0.14.0.1" > sequencer_requirements.txt; \
-			echo "numpy<2.0" >> sequencer_requirements.txt; \
-		fi; \
-	fi
-	@$(VENV_ACTIVATE) && pip install --upgrade pip > /dev/null 2>&1 && pip install -r sequencer_requirements.txt > /dev/null 2>&1
+	@echo -e "$(INFO)Installing Cairo 0 dependencies from cairo_requirements.txt...$(RESET)"
+	@$(VENV_ACTIVATE) && pip install --upgrade pip > /dev/null 2>&1 && pip install -r cairo_requirements.txt > /dev/null 2>&1
 	@$(VENV_ACTIVATE) && cairo-compile --version > /dev/null 2>&1 && echo -e "$(PASS)✅ Cairo 0 environment ready (cairo-compile $$($(VENV_ACTIVATE) && cairo-compile --version 2>&1))$(RESET)" || (echo -e "$(WARN)❌ Cairo setup failed$(RESET)" && exit 1)
 
 .PHONY: build-madara
