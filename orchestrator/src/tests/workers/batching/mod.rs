@@ -268,7 +268,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     // Mock get_aggregator_batch_for_block - needed for SNOS batching in L2 mode
     // Returns aggregator batch 2 for blocks 4-7
     database.expect_get_aggregator_batch_for_block().returning(move |block_num| {
-        if block_num >= 4 && block_num <= 7 {
+        if (4..=7).contains(&block_num) {
             Ok(Some(crate::types::batch::AggregatorBatch {
                 index: 2,
                 start_block: 4,

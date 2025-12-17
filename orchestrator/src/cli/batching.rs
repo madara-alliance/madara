@@ -40,4 +40,8 @@ pub struct BatchingCliArgs {
     /// This value is used when proving_gas is zero.
     #[arg(env = "MADARA_ORCHESTRATOR_DEFAULT_EMPTY_BLOCK_PROVING_GAS", long, default_value = "1500000")]
     pub default_empty_block_proving_gas: u64,
+
+    /// Maximum number of blocks to batch in one go in aggregator and snos batching worker
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_BLOCKS_TO_BATCH_AT_ONCE", long, default_value = "10")]
+    pub max_blocks_to_batch_at_once: u64,
 }

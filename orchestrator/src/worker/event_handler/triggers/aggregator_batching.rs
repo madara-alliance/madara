@@ -130,13 +130,9 @@ impl AggregatorBatchingTrigger {
 
         debug!(first_block_to_assign_batch = %first_block_to_assign_batch, "Calculated first block number to batch.");
 
-        let max_blocks_to_process_at_once = self.max_blocks_to_process_at_once();
+        let max_blocks_to_process_at_once = config.params.batching_config.max_blocks_to_batch_at_once;
         let end_block =
             min(last_block_to_assign_batch, first_block_to_assign_batch + max_blocks_to_process_at_once - 1);
         Ok((first_block_to_assign_batch, end_block))
-    }
-
-    fn max_blocks_to_process_at_once(&self) -> u64 {
-        10
     }
 }

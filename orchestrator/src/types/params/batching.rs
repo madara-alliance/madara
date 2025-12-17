@@ -21,6 +21,7 @@ pub struct BatchingParams {
     /// has some proving cost (~4,775 steps = ~477,500 gas). We use 1.5M gas (~3x safety margin).
     /// This value is used when proving_gas is zero.
     pub default_empty_block_proving_gas: u64,
+    pub max_blocks_to_batch_at_once: u64,
 }
 
 impl From<BatchingCliArgs> for BatchingParams {
@@ -35,6 +36,7 @@ impl From<BatchingCliArgs> for BatchingParams {
             max_num_blobs: args.max_num_blobs,
             max_blob_size: args.max_num_blobs * BLOB_LEN,
             default_empty_block_proving_gas: args.default_empty_block_proving_gas,
+            max_blocks_to_batch_at_once: args.max_blocks_to_batch_at_once,
         }
     }
 }

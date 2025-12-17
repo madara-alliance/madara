@@ -771,6 +771,9 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         )
         .parse::<u64>()
         .unwrap(),
+        max_blocks_to_batch_at_once: get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_BLOCKS_TO_BATCH_AT_ONCE", "10")
+            .parse::<u64>()
+            .unwrap(),
     };
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
