@@ -82,6 +82,12 @@ impl AggregatorStateHandler {
         )
         .await?;
 
+        // Update batch status in the database
+        self.config
+            .database()
+            .update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default())
+            .await?;
+
         // Update state update and blob in storage
         self.config
             .storage()
@@ -97,12 +103,6 @@ impl AggregatorStateHandler {
                 )
                 .await?;
         }
-
-        // Update batch status in the database
-        self.config
-            .database()
-            .update_or_create_aggregator_batch(&state.batch, &AggregatorBatchUpdates::default())
-            .await?;
 
         Ok(())
     }
