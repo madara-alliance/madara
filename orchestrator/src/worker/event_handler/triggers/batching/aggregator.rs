@@ -411,9 +411,18 @@ impl NonEmptyAggregatorState {
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<Option<Self>, JobError> {
         // Perform synchronous checks first
-        let combined_weights = match self.check_block_sync(block_weights, block_version, batch_limits) {
+        let check_result = self.check_block_sync(block_weights, block_version, batch_limits);
+        let combined_weights = match check_result {
             BatchCheckResult::CanAdd(weights) => weights,
-            _ => return Ok(None),
+            reason => {
+                debug!(
+                    batch_index = %self.batch.index,
+                    block_num = %block_num,
+                    reason = ?reason,
+                    "Closing aggregator batch"
+                );
+                return Ok(None);
+            }
         };
 
         // Check compressed state update is within limits (async)
@@ -434,6 +443,13 @@ impl NonEmptyAggregatorState {
         .await?;
         let blob_len = compressed_state_update.len();
         if blob_len > batch_limits.max_blob_size {
+            debug!(
+                batch_index = %self.batch.index,
+                block_num = %block_num,
+                blob_len = %blob_len,
+                max_blob_size = %batch_limits.max_blob_size,
+                "Closing aggregator batch: BlobSizeExceeded"
+            );
             return Ok(None);
         }
 

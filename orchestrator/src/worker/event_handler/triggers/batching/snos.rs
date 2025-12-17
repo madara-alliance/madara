@@ -8,7 +8,7 @@ use blockifier::bouncer::BouncerWeights;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub enum SnosState {
     Empty(EmptySnosState),
@@ -335,7 +335,9 @@ impl NonEmptySnosState {
         block_aggregator_batch_index: Option<u64>,
         batch_limits: &SnosBatchLimits,
     ) -> Result<Option<Self>, JobError> {
-        match self.check_block_sync(block_weights, block_version, block_aggregator_batch_index, batch_limits) {
+        let check_result =
+            self.check_block_sync(block_weights, block_version, block_aggregator_batch_index, batch_limits);
+        match check_result {
             SnosBatchCheckResult::CanAdd(combined_weights) => {
                 Ok(Some(NonEmptySnosState::new(self.batch.update(block_num, combined_weights, None))))
             }
@@ -347,9 +349,11 @@ impl NonEmptySnosState {
                 Ok(Some(NonEmptySnosState::new(self.batch.update(block_num, BouncerWeights::empty(), None))))
             }
             SnosBatchCheckResult::FixedSizeReached => {
-                warn!(
-                    "Using MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH env variable to close snos batch with max blocks = {:?}",
-                    batch_limits.fixed_batch_size
+                debug!(
+                    batch_index = %self.batch.index,
+                    block_num = %block_num,
+                    fixed_batch_size = ?batch_limits.fixed_batch_size,
+                    "Closing SNOS batch: FixedSizeReached"
                 );
                 Ok(None)
             }
@@ -357,7 +361,15 @@ impl NonEmptySnosState {
                 "Aggregator batch not found for block {} during SNOS batching. This should not happen!",
                 block_num
             )))),
-            _ => Ok(None),
+            reason => {
+                debug!(
+                    batch_index = %self.batch.index,
+                    block_num = %block_num,
+                    reason = ?reason,
+                    "Closing SNOS batch"
+                );
+                Ok(None)
+            }
         }
     }
 
