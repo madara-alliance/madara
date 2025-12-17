@@ -2,8 +2,11 @@ use crate::constants::{CAIRO_PIE_PATH, MAX_RETRIES, RETRY_DELAY};
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
-use orchestrator_atlantic_service::types::{AtlanticCairoVm, AtlanticQueryStep};
-use orchestrator_atlantic_service::{AtlanticProverService, AtlanticQueryStatus, AtlanticValidatedArgs};
+use orchestrator_atlantic_service::types::{
+    AtlanticCairoVm, AtlanticClient, AtlanticQueriesListResponse, AtlanticQuery, AtlanticQueryStatus,
+    AtlanticQueryStep,
+};
+use orchestrator_atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
 use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use url::Url;
@@ -95,48 +98,50 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
             .query_param("limit", "1")
             .query_param("network", "TESTNET");
 
-        then.status(200).header("content-type", "application/json").json_body(serde_json::json!({
-            "atlanticQueries": [{
-                "id": "existing_query_id",
-                "externalId": external_id.clone(),
-                "transactionId": null,
-                "status": "RECEIVED",
-                "step": null,
-                "programHash": null,
-                "integrityFactHash": null,
-                "sharpFactHash": null,
-                "layout": null,
-                "isFactMocked": null,
-                "chain": null,
-                "jobSize": null,
-                "declaredJobSize": null,
-                "cairoVm": null,
-                "cairoVersion": null,
-                "steps": [],
-                "errorReason": null,
-                "submittedByClient": "client",
-                "projectId": "project",
-                "createdAt": "2024-01-01T00:00:00Z",
-                "completedAt": null,
-                "result": null,
-                "network": "TESTNET",
-                "hints": null,
-                "sharpProver": null,
-                "bucketId": bucket_id.clone(),
-                "bucketJobIndex": bucket_job_index,
-                "customerName": null,
-                "isJobSizeValid": true,
-                "isProofMocked": null,
-                "client": {
-                    "clientId": null,
-                    "name": null,
-                    "email": null,
-                    "isEmailVerified": null,
-                    "image": null
-                }
+        let response = AtlanticQueriesListResponse {
+            atlantic_queries: vec![AtlanticQuery {
+                id: "existing_query_id".to_string(),
+                external_id: Some(external_id.clone()),
+                transaction_id: None,
+                status: AtlanticQueryStatus::Received,
+                step: None,
+                program_hash: None,
+                integrity_fact_hash: None,
+                sharp_fact_hash: None,
+                layout: None,
+                is_fact_mocked: None,
+                chain: None,
+                job_size: None,
+                declared_job_size: None,
+                cairo_vm: None,
+                cairo_version: None,
+                steps: vec![],
+                error_reason: None,
+                submitted_by_client: "client".to_string(),
+                project_id: "project".to_string(),
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+                completed_at: None,
+                result: None,
+                network: Some("TESTNET".to_string()),
+                hints: None,
+                sharp_prover: None,
+                bucket_id: Some(bucket_id.clone()),
+                bucket_job_index: Some(bucket_job_index as i32),
+                customer_name: None,
+                is_job_size_valid: true,
+                is_proof_mocked: None,
+                client: AtlanticClient {
+                    client_id: None,
+                    name: None,
+                    email: None,
+                    is_email_verified: None,
+                    image: None,
+                },
             }],
-            "total": 1
-        }));
+            total: 1,
+        };
+
+        then.status(200).header("content-type", "application/json").json_body_obj(&response);
     });
 
     let submit_mock = mock_server.mock(|when, then| {

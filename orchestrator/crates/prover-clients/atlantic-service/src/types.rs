@@ -91,7 +91,7 @@ pub struct AtlanticGetStatusResponse {
     pub metadata_urls: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticQuery {
     pub id: String,
@@ -127,7 +127,7 @@ pub struct AtlanticQuery {
     pub client: AtlanticClient,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticClient {
     pub client_id: Option<String>,
@@ -138,7 +138,7 @@ pub struct AtlanticClient {
 }
 
 /// This is the response struct for the `/atlantic-queries` GET endpoint
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticQueriesListResponse {
     pub atlantic_queries: Vec<AtlanticQuery>,
@@ -181,21 +181,21 @@ pub enum AtlanticBucketType {
     Snos,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AtlanticHints {
     HerodotusEvmGrower,
     HerodotusSnGrower,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AtlanticSharpProver {
     Stone,
     Stwo,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AtlanticQueryStatus {
     Received,
@@ -204,7 +204,7 @@ pub enum AtlanticQueryStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum AtlanticChain {
     L1,
@@ -212,7 +212,7 @@ pub enum AtlanticChain {
     OFFCHAIN,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum AtlanticJobSize {
     S,

@@ -225,16 +225,12 @@ impl AtlanticClient {
         atlantic_api_key: impl AsRef<str>,
         search_string: impl AsRef<str>,
         limit: Option<u32>,
-        offset: Option<u32>,
         network: Option<&str>,
-        status: Option<&str>,
-        result: Option<&str>,
     ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
         debug!(
-            "Atlantic Request: GET /atlantic-queries - searching queries (search: {}, limit: {:?}, offset: {:?}, network: {:?})",
+            "Atlantic Request: GET /atlantic-queries - searching queries (search: {}, limit: {:?}, network: {:?})",
             search_string.as_ref(),
             limit,
-            offset,
             network
         );
 
@@ -251,17 +247,8 @@ impl AtlanticClient {
             if let Some(limit_val) = limit {
                 request = request.query_param("limit", &limit_val.to_string());
             }
-            if let Some(offset_val) = offset {
-                request = request.query_param("offset", &offset_val.to_string());
-            }
             if let Some(network_val) = network {
                 request = request.query_param("network", network_val);
-            }
-            if let Some(status_val) = status {
-                request = request.query_param("status", status_val);
-            }
-            if let Some(result_val) = result {
-                request = request.query_param("result", result_val);
             }
 
             let response = request.send().await.map_err(|e| AtlanticError::GetQueriesFailure {
