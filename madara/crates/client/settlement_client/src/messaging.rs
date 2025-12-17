@@ -104,93 +104,76 @@ async fn sync_inner(
 
     let mut reconnect_delay = RECONNECT_BASE_DELAY;
 
-    // Outer loop for reconnection on stream failure
     loop {
-        // Get start block on each reconnection attempt to resume from last synced position
-        let from_l1_block_n = match get_start_block(&settlement_client, &backend, replay_max_duration).await {
-            Ok(block) => block,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to get start block for L1→L2 message sync: {e:#}, retrying in {:?}",
-                    reconnect_delay
-                );
-                tokio::time::sleep(reconnect_delay).await;
-                reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
-                continue;
-            }
-        };
-
-        tracing::info!(
-            "⟠ Starting L1→L2 message sync from block #{from_l1_block_n} (finality: {finality_blocks} blocks)"
-        );
-
-        let mut stream = match settlement_client.messages_to_l2_stream(from_l1_block_n).await {
-            Ok(s) => {
-                // Reset backoff on successful stream creation
+        match run_message_sync(&settlement_client, &backend, &notify_consumer, replay_max_duration, finality_blocks)
+            .await
+        {
+            Ok(()) => {
+                // Reset backoff on clean exit (shouldn't happen normally)
                 reconnect_delay = RECONNECT_BASE_DELAY;
-                s
             }
             Err(e) => {
-                tracing::warn!("Failed to create L1 message stream: {e:#}, retrying in {:?}", reconnect_delay);
-                tokio::time::sleep(reconnect_delay).await;
-                reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
-                continue;
+                tracing::warn!("L1 message sync failed: {e:#}, reconnecting in {reconnect_delay:?}");
             }
-        };
+        }
 
-        // Buffer for events waiting for finality
-        let mut pending_events: VecDeque<MessageToL2WithMetadata> = VecDeque::new();
+        tokio::time::sleep(reconnect_delay).await;
+        reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
+    }
+}
 
-        // Inner loop for processing stream events
-        let stream_ended = loop {
-            // Poll stream with timeout. Finality check runs after EVERY iteration (event or timeout).
-            // Timeout ensures finality is checked even when L1 is quiet (no new messages arriving).
-            let timeout = tokio::time::sleep(STREAM_POLL_INTERVAL);
-            tokio::select! {
-                biased;
+/// Runs a single message sync session. Returns when the stream ends or an error occurs.
+async fn run_message_sync(
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
+    backend: &Arc<MadaraBackend>,
+    notify_consumer: &Notify,
+    replay_max_duration: Duration,
+    finality_blocks: u64,
+) -> Result<(), SettlementClientError> {
+    let from_l1_block_n = get_start_block(settlement_client, backend, replay_max_duration).await?;
 
-                event = stream.next() => {
-                    match event {
-                        Some(Ok(msg)) => {
-                            tracing::debug!(
-                                "L1→L2 message received: block={}, nonce={}, tx={:#x}",
-                                msg.l1_block_number, msg.message.tx.nonce, msg.l1_transaction_hash
-                            );
-                            pending_events.push_back(msg);
-                        }
-                        Some(Err(e)) => {
-                            tracing::warn!("L1 event stream error: {e:#}");
-                        }
-                        None => {
-                            // Stream ended unexpectedly - reconnect with backoff
-                            break true;
-                        }
+    tracing::info!("⟠ Starting L1→L2 message sync from block #{from_l1_block_n} (finality: {finality_blocks} blocks)");
+
+    let mut stream = settlement_client.messages_to_l2_stream(from_l1_block_n).await?;
+    let mut pending_events: VecDeque<MessageToL2WithMetadata> = VecDeque::new();
+
+    loop {
+        // Poll stream with timeout. Finality check runs after EVERY iteration (event or timeout).
+        // Timeout ensures finality is checked even when L1 is quiet (no new messages arriving).
+        let timeout = tokio::time::sleep(STREAM_POLL_INTERVAL);
+        tokio::select! {
+            biased;
+
+            event = stream.next() => {
+                match event {
+                    Some(Ok(msg)) => {
+                        tracing::debug!(
+                            "L1→L2 message received: block={}, nonce={}, tx={:#x}",
+                            msg.l1_block_number, msg.message.tx.nonce, msg.l1_transaction_hash
+                        );
+                        pending_events.push_back(msg);
+                    }
+                    Some(Err(e)) => {
+                        tracing::warn!("L1 event stream error: {e:#}");
+                    }
+                    None => {
+                        // Stream ended - return error to trigger reconnection
+                        return Err(SettlementClientError::StreamProcessing(
+                            "L1 event stream ended unexpectedly".into(),
+                        ));
                     }
                 }
-
-                _ = timeout => {}
             }
 
-            // Process finalized events
-            if let Err(e) = process_finalized_events(
-                &settlement_client,
-                &backend,
-                &notify_consumer,
-                &mut pending_events,
-                finality_blocks,
-            )
-            .await
-            {
-                tracing::warn!("Error processing finalized events: {e:#}");
-                // Continue processing - transient errors shouldn't stop the sync
-            }
-        };
+            _ = timeout => {}
+        }
 
-        if stream_ended {
-            tracing::warn!("L1 event stream ended unexpectedly, reconnecting in {:?}", reconnect_delay);
-            tokio::time::sleep(reconnect_delay).await;
-            reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
-            // Continue outer loop to recreate stream
+        // Process finalized events - continue on transient errors
+        if let Err(e) =
+            process_finalized_events(settlement_client, backend, notify_consumer, &mut pending_events, finality_blocks)
+                .await
+        {
+            tracing::warn!("Error processing finalized events: {e:#}");
         }
     }
 }
