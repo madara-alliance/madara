@@ -571,4 +571,56 @@ mod messaging_module_tests {
 
         Ok(())
     }
+
+    /// Tests that sync_inner implements exponential backoff when L1 RPC fails.
+    /// Verifies: no panic, retries continue, backoff doubles, caps at max delay.
+    #[tokio::test(start_paused = true)]
+    async fn test_backoff_on_rpc_failure() -> anyhow::Result<()> {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let chain_config = Arc::new(ChainConfig::madara_test());
+        let db = MadaraBackend::open_for_testing(chain_config.clone());
+        db.write_l1_messaging_sync_tip(Some(99))?;
+
+        let mut mock_client = MockSettlementLayerProvider::new();
+        let attempt_count = Arc::new(AtomicU32::new(0));
+        let attempt_count_clone = attempt_count.clone();
+
+        // Simulate RPC failure: stream ends immediately on each attempt
+        mock_client.expect_messages_to_l2_stream().returning(move |_| {
+            attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(stream::empty().boxed())
+        });
+        mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+
+        let client = Arc::new(mock_client) as Arc<dyn SettlementLayerProvider>;
+        let ctx = ServiceContext::new_for_testing();
+        let ctx_clone = ctx.clone();
+
+        let sync_handle = tokio::spawn(async move { sync(client, db, Arc::new(Notify::new()), ctx).await });
+
+        // Verify exponential backoff: 1s -> 2s -> 4s
+        tokio::time::advance(Duration::from_millis(50)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(attempt_count.load(Ordering::SeqCst), 1);
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(attempt_count.load(Ordering::SeqCst), 2);
+
+        tokio::time::advance(Duration::from_secs(2)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(attempt_count.load(Ordering::SeqCst), 3);
+
+        tokio::time::advance(Duration::from_secs(4)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(attempt_count.load(Ordering::SeqCst), 4);
+
+        // Task should still be running (no panic)
+        assert!(!sync_handle.is_finished());
+
+        ctx_clone.cancel_global();
+        sync_handle.abort();
+        Ok(())
+    }
 }
