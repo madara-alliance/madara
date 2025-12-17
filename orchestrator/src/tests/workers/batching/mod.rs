@@ -491,3 +491,247 @@ fn get_dummy_builtin_weights() -> serde_json::Value {
 
     serde_json::to_value(response).unwrap()
 }
+
+// =============================================================================
+// Error Resilience Tests
+// =============================================================================
+
+/// Test that aggregator batching worker gracefully handles when lock acquisition fails
+#[rstest]
+#[tokio::test]
+async fn test_aggregator_lock_acquisition_fails() -> Result<(), Box<dyn Error>> {
+    let server = MockServer::start();
+    let database = MockDatabaseClient::new();
+    let storage = MockStorageClient::new();
+    let mut lock = MockLockClient::new();
+
+    let provider_url = format!("http://localhost:{}", server.port());
+
+    // Mock lock client to return an error (simulating lock already held by another worker)
+    lock.expect_acquire_lock()
+        .withf(|key, _, _, _| key == "AggregatorBatchingWorker")
+        .returning(|_, _, _, _| Err(LockError::LockAlreadyHeld { current_owner: "other_worker".to_string() }));
+
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(&provider_url).expect("Failed to parse URL"),
+    ));
+
+    let prover_client = MockProverClient::new();
+
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(provider.into())
+        .configure_madara_feeder_gateway_url(&provider_url)
+        .configure_prover_client(prover_client.into())
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
+        .configure_lock_client(lock.into())
+        .build()
+        .await;
+
+    // Should complete successfully (gracefully exit when lock acquisition fails)
+    let result = AggregatorBatchingTrigger.run_worker(services.config).await;
+    assert!(result.is_ok(), "Worker should gracefully exit when lock acquisition fails");
+
+    Ok(())
+}
+
+/// Test that SNOS batching worker gracefully handles when lock acquisition fails
+#[rstest]
+#[tokio::test]
+async fn test_snos_lock_acquisition_fails() -> Result<(), Box<dyn Error>> {
+    let server = MockServer::start();
+    let database = MockDatabaseClient::new();
+    let storage = MockStorageClient::new();
+    let mut lock = MockLockClient::new();
+
+    let provider_url = format!("http://localhost:{}", server.port());
+
+    // Mock lock client to return an error (simulating lock already held by another worker)
+    lock.expect_acquire_lock()
+        .withf(|key, _, _, _| key == "SnosBatchingWorker")
+        .returning(|_, _, _, _| Err(LockError::LockAlreadyHeld { current_owner: "other_worker".to_string() }));
+
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(&provider_url).expect("Failed to parse URL"),
+    ));
+
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(provider.into())
+        .configure_madara_feeder_gateway_url(&provider_url)
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
+        .configure_lock_client(lock.into())
+        .build()
+        .await;
+
+    // Should complete successfully (gracefully exit when lock acquisition fails)
+    let result = SnosBatchingTrigger.run_worker(services.config).await;
+    assert!(result.is_ok(), "Worker should gracefully exit when lock acquisition fails");
+
+    Ok(())
+}
+
+/// Test that aggregator batching worker handles RPC failure when fetching block number
+#[rstest]
+#[tokio::test]
+async fn test_aggregator_rpc_block_number_failure() -> Result<(), Box<dyn Error>> {
+    let server = MockServer::start();
+    let mut database = MockDatabaseClient::new();
+    let storage = MockStorageClient::new();
+    let mut lock = MockLockClient::new();
+
+    let provider_url = format!("http://localhost:{}", server.port());
+
+    // Setup database mocks
+    database.expect_get_latest_aggregator_batch().returning(|| Ok(None));
+
+    // Mock lock client
+    lock.expect_acquire_lock()
+        .withf(|key, _, _, _| key == "AggregatorBatchingWorker")
+        .returning(|_, _, _, _| Ok(LockResult::Acquired));
+    lock.expect_release_lock()
+        .withf(|key, _| key == "AggregatorBatchingWorker")
+        .returning(|_, _| Ok(LockResult::Released));
+
+    // Mock RPC to return an error for block number
+    server.mock(|when, then| {
+        when.path("/").body_includes("starknet_blockNumber");
+        then.status(500).body(r#"{"error": "Internal server error"}"#);
+    });
+
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(&provider_url).expect("Failed to parse URL"),
+    ));
+
+    let prover_client = MockProverClient::new();
+
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(provider.into())
+        .configure_madara_feeder_gateway_url(&provider_url)
+        .configure_prover_client(prover_client.into())
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
+        .configure_lock_client(lock.into())
+        .build()
+        .await;
+
+    // Should return an error when RPC fails
+    let result = AggregatorBatchingTrigger.run_worker(services.config).await;
+    assert!(result.is_err(), "Worker should return error when RPC fails");
+
+    Ok(())
+}
+
+/// Test that SNOS batching worker handles RPC failure when fetching block number (L3 mode)
+#[rstest]
+#[tokio::test]
+async fn test_snos_rpc_block_number_failure_l3() -> Result<(), Box<dyn Error>> {
+    let server = MockServer::start();
+    let mut database = MockDatabaseClient::new();
+    let storage = MockStorageClient::new();
+    let mut lock = MockLockClient::new();
+
+    let provider_url = format!("http://localhost:{}", server.port());
+
+    // Setup database mocks
+    database.expect_get_latest_snos_batch().returning(|| Ok(None));
+
+    // Mock lock client
+    lock.expect_acquire_lock()
+        .withf(|key, _, _, _| key == "SnosBatchingWorker")
+        .returning(|_, _, _, _| Ok(LockResult::Acquired));
+    lock.expect_release_lock()
+        .withf(|key, _| key == "SnosBatchingWorker")
+        .returning(|_, _| Ok(LockResult::Released));
+
+    // Mock RPC to return an error for block number
+    server.mock(|when, then| {
+        when.path("/").body_includes("starknet_blockNumber");
+        then.status(500).body(r#"{"error": "Internal server error"}"#);
+    });
+
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(&provider_url).expect("Failed to parse URL"),
+    ));
+
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(provider.into())
+        .configure_madara_feeder_gateway_url(&provider_url)
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
+        .configure_lock_client(lock.into())
+        .configure_layer(Layer::L3)
+        .build()
+        .await;
+
+    // Should return an error when RPC fails
+    let result = SnosBatchingTrigger.run_worker(services.config).await;
+    assert!(result.is_err(), "Worker should return error when RPC fails");
+
+    Ok(())
+}
+
+/// Test that worker handles case when no new blocks are available
+#[rstest]
+#[tokio::test]
+async fn test_aggregator_no_new_blocks() -> Result<(), Box<dyn Error>> {
+    let server = MockServer::start();
+    let mut database = MockDatabaseClient::new();
+    let mut storage = MockStorageClient::new();
+    let mut lock = MockLockClient::new();
+
+    let provider_url = format!("http://localhost:{}", server.port());
+
+    // Setup: Existing batch that's up to date
+    let existing_batch = crate::types::batch::AggregatorBatch {
+        index: 1,
+        start_block: 0,
+        end_block: 9,
+        num_blocks: 10,
+        blob_len: 0,
+        squashed_state_updates_path: "state_update/batch/1.json".to_string(),
+        starknet_version: StarknetVersion::V0_13_2,
+        ..Default::default()
+    };
+
+    database.expect_get_latest_aggregator_batch().returning(move || Ok(Some(existing_batch.clone())));
+
+    // Mock storage for loading state
+    storage.expect_get_data().returning(|_| Ok(Bytes::from(get_dummy_state_update(1).to_string())));
+
+    // Mock lock client
+    lock.expect_acquire_lock()
+        .withf(|key, _, _, _| key == "AggregatorBatchingWorker")
+        .returning(|_, _, _, _| Ok(LockResult::Acquired));
+    lock.expect_release_lock()
+        .withf(|key, _| key == "AggregatorBatchingWorker")
+        .returning(|_, _| Ok(LockResult::Released));
+
+    // Mock RPC to return block 9 (same as batch end_block)
+    server.mock(|when, then| {
+        when.path("/").body_includes("starknet_blockNumber");
+        then.status(200).body(serde_json::to_vec(&json!({ "id": 1, "jsonrpc": "2.0", "result": 9 })).unwrap());
+    });
+
+    let provider = JsonRpcClient::new(HttpTransport::new(
+        Url::parse(&provider_url).expect("Failed to parse URL"),
+    ));
+
+    let prover_client = MockProverClient::new();
+
+    let services = TestConfigBuilder::new()
+        .configure_starknet_client(provider.into())
+        .configure_madara_feeder_gateway_url(&provider_url)
+        .configure_prover_client(prover_client.into())
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
+        .configure_lock_client(lock.into())
+        .build()
+        .await;
+
+    // Should complete successfully with no work to do
+    let result = AggregatorBatchingTrigger.run_worker(services.config).await;
+    assert!(result.is_ok(), "Worker should complete successfully when no new blocks");
+
+    Ok(())
+}
