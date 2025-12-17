@@ -596,7 +596,7 @@ mod messaging_module_tests {
         });
         mock_client.expect_get_client_type().returning(|| ClientType::Eth);
 
-        let client = Arc::new(mock_client) as Arc<dyn SettlementLayerProvider>;
+        let client = Arc::new(mock_client);
         let ctx = ServiceContext::new_for_testing();
 
         let sync_handle = tokio::spawn(async move { sync(client, db, Arc::new(Notify::new()), ctx).await });
