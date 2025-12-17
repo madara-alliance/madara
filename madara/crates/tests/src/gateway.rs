@@ -5,7 +5,6 @@ mod tests {
     use mp_state_update::StateDiff;
     use rstest::{fixture, rstest};
     use starknet_api::core::ChainId;
-    use url::Url;
 
     #[fixture]
     fn client_mainnet_fixture() -> GatewayProvider {

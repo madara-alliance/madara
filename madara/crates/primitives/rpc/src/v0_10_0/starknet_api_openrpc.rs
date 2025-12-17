@@ -195,6 +195,7 @@ pub struct BlockWithTxHashes {
 }
 
 /// Result of getBlockWithReceipts
+#[allow(clippy::large_enum_variant)]
 #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum StarknetGetBlockWithTxsAndReceiptsResult {
@@ -203,6 +204,7 @@ pub enum StarknetGetBlockWithTxsAndReceiptsResult {
 }
 
 /// Result of getBlockWithTxHashes
+#[allow(clippy::large_enum_variant)]
 #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum MaybePreConfirmedBlockWithTxHashes {
@@ -211,6 +213,7 @@ pub enum MaybePreConfirmedBlockWithTxHashes {
 }
 
 /// Result of getBlockWithTxs
+#[allow(clippy::large_enum_variant)]
 #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum MaybePreConfirmedBlockWithTxs {

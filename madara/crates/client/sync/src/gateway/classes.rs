@@ -31,8 +31,8 @@ fn fixup_missed_mainnet_classes(block_n: u64, classes_from_state_diff: &mut Hash
 ///
 /// # Arguments
 /// * `uses_blake_hash` - If true, the compiled_class_hash from state diff is a BLAKE hash (v0.14.1+)
-///                       and should be stored in `compiled_class_hash_v2`. Otherwise it's a Poseidon
-///                       hash and goes in `compiled_class_hash`.
+///   and should be stored in `compiled_class_hash_v2`. Otherwise it's a Poseidon
+///   hash and goes in `compiled_class_hash`.
 pub(crate) async fn get_classes(
     client: &Arc<GatewayProvider>,
     block_id: BlockId,

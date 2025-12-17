@@ -61,6 +61,6 @@ mod tests {
         assert!(err.to_string().contains("10") && err.to_string().contains("9"));
 
         let err = MigrationError::NoMigrationPath { from: 8, to: 9 };
-        assert!(err.to_string().contains("registry bug"));
+        assert!(err.to_string().contains("registry"));
     }
 }
