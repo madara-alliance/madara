@@ -47,6 +47,12 @@ pub struct OrchestratorMetrics {
     // Job Status Tracking
     pub job_status_tracker: JobStatusTracker,
     // Atlantic Service Metrics
+    // These metrics use an "operation" label to distinguish between different API calls
+    // (e.g., "add_job", "get_job_status", "submit_l2_query", "create_bucket", etc.)
+    // Query by operation for specific insights:
+    //   - Proof generation: operation="add_job"
+    //   - L2 verification: operation="submit_l2_query"
+    //   - Status checks: operation="get_job_status"
     pub atlantic_api_call_duration: Gauge<f64>,
     pub atlantic_api_calls_total: Counter<f64>,
     pub atlantic_api_errors_total: Counter<f64>,

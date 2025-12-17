@@ -10,7 +10,7 @@ use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{SdkTracerProvider, Tracer};
 use opentelemetry_sdk::Resource;
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::EnvFilter;
@@ -41,7 +41,7 @@ impl OrchestratorInstrumentation {
                 Ok(Self { otel_config: config.clone(), meter_provider: None })
             }
             Some(ref endpoint) => {
-                info!(
+                debug!(
                     service_name = %config.service_name,
                     "Initializing OpenTelemetry exporters..."
                 );
@@ -98,7 +98,7 @@ impl OrchestratorInstrumentation {
                     let _ = tracing::subscriber::set_global_default(subscriber);
                 }
 
-                info!(
+                debug!(
                     service_name = %config.service_name,
                     log_format = %log_format,
                     "OpenTelemetry ready - all services active (metrics, traces, logs)"

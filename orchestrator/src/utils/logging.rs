@@ -387,7 +387,10 @@ pub fn init_logging() {
 ///
 /// - **Orchestrator crates** → Specific service names (ATLANTIC, UTILS, GPS_FACT_CHK, etc.)
 /// - **Generic orchestrator** → "-" (no specific service, core orchestrator code)
-/// - **Third-party dependencies** → "EXTERNAL" (logs from external crates like tokio, hyper, etc.)
+/// - **Third-party dependencies** → "EXTERNAL" (logs from Rust ecosystem crates)
+///
+/// Note: "EXTERNAL" refers to third-party Rust crates (tokio, hyper, reqwest, etc.),
+/// NOT external services like Atlantic. Atlantic logs are tagged as "ATLANTIC".
 ///
 /// # Examples
 ///

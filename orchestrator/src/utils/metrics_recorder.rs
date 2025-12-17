@@ -211,9 +211,17 @@ impl MetricsRecorder {
 
         // Record errors if any
         if !success {
+            // Ensure error_type is provided for failures - "unknown" indicates a bug in the caller
+            let error_type_value = error_type.unwrap_or_else(|| {
+                tracing::warn!(
+                    operation = operation,
+                    "Atlantic API failure recorded without error_type - this indicates a bug"
+                );
+                "unknown"
+            });
             let error_attrs = [
                 KeyValue::new("operation", operation.to_string()),
-                KeyValue::new("error_type", error_type.unwrap_or("unknown").to_string()),
+                KeyValue::new("error_type", error_type_value.to_string()),
             ];
             ORCHESTRATOR_METRICS.atlantic_api_errors_total.add(1.0, &error_attrs);
         }

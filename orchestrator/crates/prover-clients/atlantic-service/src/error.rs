@@ -53,7 +53,15 @@ pub enum AtlanticError {
 }
 
 impl AtlanticError {
-    /// Check if this error is retryable
+    /// Check if this error is retryable.
+    ///
+    /// Only `NetworkError` is retryable - these are infrastructure-level errors
+    /// (timeouts, connection issues, gateway errors) that may resolve on retry.
+    ///
+    /// `ApiError` (including 5xx responses with valid JSON from the Atlantic API)
+    /// is intentionally NOT retried, as these indicate application-level failures.
+    ///
+    /// See the enum-level documentation for full details on retry behavior.
     pub fn is_retryable(&self) -> bool {
         matches!(self, AtlanticError::NetworkError { .. })
     }

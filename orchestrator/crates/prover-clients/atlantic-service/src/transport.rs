@@ -140,9 +140,10 @@ impl HttpResponseClassifier {
             return true;
         }
 
-        // Weird JSON-encoded string format observed during stress testing
-        // Example: {"0":"4","1":"0","2":"4",...} encoding "404 page not found"
-        // This occurs when nginx returns a character-by-character JSON object
+        // Edge case: nginx sometimes returns a character-by-character JSON encoding
+        // of error strings under high load. Observed during stress testing when nginx
+        // buffers get corrupted. Example: {"0":"4","1":"0","2":"4",...} for "404 page not found"
+        // This is a valid JSON object but NOT a valid Atlantic API response.
         if response_text.starts_with("{\"0\":") && response_text.contains("\"4\"") && response_text.contains("\"0\"") {
             return true;
         }
@@ -156,22 +157,27 @@ impl HttpResponseClassifier {
         }
 
         // Special handling for 404 errors - need to distinguish infrastructure vs API errors
+        // Infrastructure 404: nginx/load balancer couldn't route the request
+        // API 404: Atlantic received the request but resource doesn't exist
         if status == StatusCode::NOT_FOUND {
-            // First, check if it's valid JSON
+            // Primary check: valid JSON indicates a real API response
+            // Atlantic API always returns structured JSON for its errors
             if serde_json::from_str::<serde_json::Value>(response_text).is_ok() {
                 // Valid JSON = real API response from Atlantic, not infrastructure error
+                // This includes {"error": "not found"} style responses
                 return false;
             }
 
-            // Not valid JSON - likely an infrastructure error page
-            // Double-check by looking for API-specific keywords
+            // Not valid JSON - likely an infrastructure error page (nginx, CDN, etc.)
+            // Secondary check: look for API-specific keywords as a fallback
+            // in case the response is plain text from the API (unlikely but defensive)
             let has_api_keywords = response_text.contains("bucket")
                 || response_text.contains("query")
                 || response_text.contains("job")
                 || response_text.contains("error")
                 || response_text.contains("message");
 
-            // If no API keywords and not valid JSON, it's infrastructure
+            // If no API keywords and not valid JSON, treat as infrastructure error
             !has_api_keywords
         } else {
             false
