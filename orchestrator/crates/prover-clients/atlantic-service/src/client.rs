@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::constants::{
-    AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL, RETRY_DELAY_SECONDS, RETRY_MAX_ATTEMPTS,
+    AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL, RETRY_BASE_DELAY_SECONDS, RETRY_TIMEOUT_SECONDS,
 };
 use crate::error::AtlanticError;
 use crate::metrics::ATLANTIC_METRICS;
@@ -109,8 +109,12 @@ impl AtlanticClient {
 
     /// Generic retry mechanism for all Atlantic API calls (GET and POST)
     ///
+    /// Uses exponential backoff with a total timeout instead of max attempts:
+    /// - Base delay: 2s, doubles each retry (2s → 4s → 8s → 16s → 32s → ...)
+    /// - Total timeout: 2 minutes (retries stop when elapsed time exceeds this)
+    ///
     /// Retries network-level errors (timeouts, incomplete messages, connection issues)
-    /// Does NOT retry API-level errors (4xx, 5xx with proper Atlantic responses)
+    /// Does NOT retry API-level errors (4xx, 5xx with proper Atlantic responses) - fast fail
     ///
     /// # Arguments
     /// * `operation_name` - Name of the operation for logging (e.g., "add_job", "get_bucket")
@@ -122,17 +126,16 @@ impl AtlanticClient {
         Fut: std::future::Future<Output = Result<T, AtlanticError>>,
     {
         let start_time = Instant::now();
-        let mut last_error = None;
-        let mut total_attempts = 0;
-        let retry_count;
+        let timeout = Duration::from_secs(RETRY_TIMEOUT_SECONDS);
+        let mut attempt: u32 = 0;
 
-        for attempt in 1..=RETRY_MAX_ATTEMPTS {
-            total_attempts = attempt;
+        loop {
+            attempt += 1;
 
             match f().await {
                 Ok(result) => {
                     let duration_s = start_time.elapsed().as_secs_f64();
-                    retry_count = attempt.saturating_sub(1);
+                    let retry_count = attempt.saturating_sub(1);
 
                     // Record OTEL metrics
                     ATLANTIC_METRICS.record_success(operation_name, duration_s, retry_count);
@@ -155,66 +158,65 @@ impl AtlanticClient {
                     return Ok(result);
                 }
                 Err(err) => {
-                    // Check if error is retryable
+                    let elapsed = start_time.elapsed();
                     let is_retryable = err.is_retryable();
 
-                    if is_retryable && attempt < RETRY_MAX_ATTEMPTS {
-                        warn!(
-                            operation = operation_name,
-                            attempt = attempt,
-                            max_attempts = RETRY_MAX_ATTEMPTS,
-                            error = %err,
-                            "Atlantic API failed, retrying"
-                        );
-                        last_error = Some(err);
-                        tokio::time::sleep(Duration::from_secs(RETRY_DELAY_SECONDS)).await;
-                    } else {
-                        // Non-retryable error or last attempt
-                        let duration_s = start_time.elapsed().as_secs_f64();
-                        retry_count = attempt.saturating_sub(1);
-
+                    // Fast fail on non-retryable errors (ApiError, ParseError, etc.)
+                    if !is_retryable {
+                        let duration_s = elapsed.as_secs_f64();
+                        let retry_count = attempt.saturating_sub(1);
                         let error_type = err.error_type();
 
-                        // Record OTEL metrics for failure
                         ATLANTIC_METRICS.record_failure(operation_name, duration_s, error_type, retry_count);
 
-                        // Log failure with error details
                         warn!(
                             operation = operation_name,
                             error_type = error_type,
                             retry_count = retry_count,
                             error = %err,
-                            "Atlantic API call failed"
+                            "Atlantic API call failed (non-retryable)"
                         );
                         return Err(err);
                     }
+
+                    // Check if we've exceeded the total timeout
+                    if elapsed >= timeout {
+                        let duration_s = elapsed.as_secs_f64();
+                        let retry_count = attempt.saturating_sub(1);
+                        let error_type = err.error_type();
+
+                        ATLANTIC_METRICS.record_failure(operation_name, duration_s, error_type, retry_count);
+
+                        warn!(
+                            operation = operation_name,
+                            duration_seconds = duration_s,
+                            retry_count = retry_count,
+                            error_type = error_type,
+                            context = context,
+                            error = %err,
+                            "Atlantic API request failed after timeout"
+                        );
+                        return Err(err);
+                    }
+
+                    // Calculate exponential backoff delay: base * 2^(attempt-1)
+                    // Uses saturating_mul to prevent overflow; shift is capped at 31 to avoid panic
+                    let delay_secs = RETRY_BASE_DELAY_SECONDS.saturating_mul(1u64 << (attempt - 1).min(31));
+
+                    warn!(
+                        operation = operation_name,
+                        attempt = attempt,
+                        next_delay_secs = delay_secs,
+                        elapsed_secs = elapsed.as_secs(),
+                        timeout_secs = RETRY_TIMEOUT_SECONDS,
+                        error = %err,
+                        "Atlantic API failed, retrying with exponential backoff"
+                    );
+
+                    tokio::time::sleep(Duration::from_secs(delay_secs)).await;
                 }
             }
         }
-
-        // All retries exhausted
-        let total_duration_s = start_time.elapsed().as_secs_f64();
-        // Safety: The loop above runs at least once (RETRY_MAX_ATTEMPTS >= 1),
-        // so last_error is always Some when we reach this point.
-        let final_error = last_error.expect("loop guarantees at least one attempt was made");
-        retry_count = total_attempts - 1;
-        let error_type = final_error.error_type();
-
-        // Record OTEL metrics for exhausted retries
-        ATLANTIC_METRICS.record_failure(operation_name, total_duration_s, error_type, retry_count);
-
-        // Log exhausted retries
-        warn!(
-            operation = operation_name,
-            duration_seconds = total_duration_s,
-            retry_count = retry_count,
-            error_type = error_type,
-            context = context,
-            error = %final_error,
-            "Atlantic API request failed after all retries"
-        );
-
-        Err(final_error)
     }
 
     /// Fetch an artifact from the given path.
