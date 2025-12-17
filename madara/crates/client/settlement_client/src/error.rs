@@ -84,3 +84,11 @@ impl From<StarknetClientError> for SettlementClientError {
         SettlementClientError::Starknet(err)
     }
 }
+
+impl SettlementClientError {
+    /// Returns true if the error is recoverable (stream/connection ended).
+    /// Non-recoverable errors (e.g., contract issues) should not be retried.
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self, Self::StreamProcessing(_) | Self::StateEventListener(_))
+    }
+}

@@ -25,7 +25,6 @@ pub struct StateUpdate {
 pub type L1HeadReceiver = tokio::sync::watch::Receiver<Option<StateUpdate>>;
 pub type L1HeadSender = tokio::sync::watch::Sender<Option<StateUpdate>>;
 
-#[derive(Clone)]
 pub struct StateUpdateWorker {
     block_metrics: Arc<L1BlockMetrics>,
     backend: Arc<MadaraBackend>,
@@ -69,7 +68,11 @@ pub async fn state_update_worker(
     l1_head_sender: L1HeadSender,
     block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError> {
-    let state = StateUpdateWorker { block_metrics, backend, l1_head_sender };
+    let state = StateUpdateWorker {
+        block_metrics: block_metrics.clone(),
+        backend: backend.clone(),
+        l1_head_sender: l1_head_sender.clone(),
+    };
 
     // Clear L1 confirmed block at startup
     // TODO: remove this
@@ -80,55 +83,44 @@ pub async fn state_update_worker(
 
     let mut reconnect_delay = RECONNECT_BASE_DELAY;
 
-    // Outer loop for reconnection on stream/connection failure
     loop {
-        // Get initial state on each reconnection attempt
-        let initial_state = match ctx.run_until_cancelled(settlement_client.get_current_core_contract_state()).await {
-            Some(Ok(state)) => {
-                // Reset backoff on successful state fetch
-                reconnect_delay = RECONNECT_BASE_DELAY;
-                state
+        match ctx
+            .run_until_cancelled(try_sync_once(
+                &settlement_client,
+                block_metrics.clone(),
+                backend.clone(),
+                l1_head_sender.clone(),
+                ctx.clone(),
+            ))
+            .await
+        {
+            None => return Ok(()), // Service shutdown
+            Some(Ok(())) => {
+                return Ok(()); // Clean exit
             }
-            Some(Err(e)) => {
-                tracing::warn!("Failed to get initial L1 state: {e:#}, retrying in {:?}", reconnect_delay);
+            Some(Err(e)) if e.is_recoverable() => {
+                tracing::warn!("L1 state sync failed: {e:#}, reconnecting in {reconnect_delay:?}");
                 tokio::time::sleep(reconnect_delay).await;
                 reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
-                continue;
             }
-            None => return Ok(()), // Service shutdown while getting initial state
-        };
-
-        tracing::info!("Subscribed to L1 state verification");
-
-        if let Err(e) = state.update_state(initial_state) {
-            tracing::warn!("Failed to update L1 with initial state: {e:#}");
-            // Continue to try listening anyway - the state might still be valid
-        }
-
-        // Listen for state update events
-        match settlement_client.listen_for_update_state_events(ctx.clone(), state.clone()).await {
-            Ok(()) => return Ok(()), // Clean shutdown (context cancelled)
-            Err(e) if is_stream_ended_error(&e) => {
-                // Check if context was cancelled during the listen call
-                if ctx.is_cancelled() {
-                    return Ok(());
-                }
-                tracing::warn!("L1 state update stream ended: {e:#}, reconnecting in {:?}", reconnect_delay);
-                tokio::time::sleep(reconnect_delay).await;
-                reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
-                // Continue outer loop to reconnect
-            }
-            Err(e) => {
-                // Non-recoverable error (e.g., contract issues)
-                return Err(SettlementClientError::StateEventListener(format!(
-                    "Failed to listen for update state events: {e:#}"
-                )));
-            }
+            Some(Err(e)) => return Err(e), // Non-recoverable
         }
     }
 }
 
-/// Check if the error indicates a stream/connection ended (recoverable)
-fn is_stream_ended_error(e: &SettlementClientError) -> bool {
-    matches!(e, SettlementClientError::StreamProcessing(_) | SettlementClientError::StateEventListener(_))
+/// Runs a single state sync session. Returns when the stream ends or an error occurs.
+async fn try_sync_once(
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
+    block_metrics: Arc<L1BlockMetrics>,
+    backend: Arc<MadaraBackend>,
+    l1_head_sender: L1HeadSender,
+    ctx: ServiceContext,
+) -> Result<(), SettlementClientError> {
+    let state = StateUpdateWorker { block_metrics, backend, l1_head_sender };
+    let initial_state = settlement_client.get_current_core_contract_state().await?;
+
+    tracing::info!("Subscribed to L1 state verification");
+    state.update_state(initial_state)?;
+
+    settlement_client.listen_for_update_state_events(ctx, state).await
 }
