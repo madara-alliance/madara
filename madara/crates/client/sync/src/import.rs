@@ -375,15 +375,15 @@ impl BlockImporterCtx {
                     .unwrap_or(false);
 
                 // Compile and get both Poseidon and BLAKE hashes
-                let (poseidon_hash, blake_hash, compiled_class) = sierra
+                let hashes = sierra
                     .contract_class
-                    .compile_to_casm_with_blake_hash()
+                    .compile_to_casm_with_hashes()
                     .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: e })?;
 
                 // Verify compiled class hash based on protocol version
                 // For v0.14.1+: gateway provides BLAKE hash
                 // For pre-v0.14.1: gateway provides Poseidon hash
-                let expected_hash = if uses_blake { blake_hash } else { poseidon_hash };
+                let expected_hash = if uses_blake { hashes.blake_hash } else { hashes.poseidon_hash };
                 if !self.config.no_check && expected_hash != gateway_hash {
                     return Err(BlockImportError::CompiledClassHash {
                         class_hash,
@@ -396,7 +396,7 @@ impl BlockImporterCtx {
                 // - For v0.14.1+: compiled_class_hash = None, compiled_class_hash_v2 = BLAKE
                 // - For pre-v0.14.1: compiled_class_hash = Poseidon, compiled_class_hash_v2 = None
                 let (stored_poseidon, stored_blake) =
-                    if uses_blake { (None, Some(blake_hash)) } else { (Some(poseidon_hash), None) };
+                    if uses_blake { (None, Some(hashes.blake_hash)) } else { (Some(hashes.poseidon_hash), None) };
 
                 Ok(ConvertedClass::Sierra(SierraConvertedClass {
                     class_hash,
@@ -405,7 +405,7 @@ impl BlockImporterCtx {
                         compiled_class_hash: stored_poseidon,
                         compiled_class_hash_v2: stored_blake,
                     },
-                    compiled: Arc::new((&compiled_class).try_into().map_err(|e| {
+                    compiled: Arc::new((&hashes.casm_class).try_into().map_err(|e| {
                         BlockImportError::CompilationClassError {
                             class_hash,
                             error: ClassCompilationError::ParsingProgramJsonFailed(e),

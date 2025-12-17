@@ -240,15 +240,13 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
             ClassInfo::Sierra(sierra_class_info) => {
                 // Try v2 hash first, then fall back to v1 (for migrated classes where
                 // the compiled Sierra may still be stored under the v1 hash).
-                let compiled = [sierra_class_info.compiled_class_hash_v2, sierra_class_info.compiled_class_hash]
-                    .into_iter()
-                    .flatten()
-                    .try_fold(None, |acc, hash| -> Result<Option<_>> {
-                        if acc.is_some() {
-                            return Ok(acc);
-                        }
-                        self.get_class_compiled(&hash).context("Getting class compiled")
-                    })?;
+                let compiled = if let Some(hash) = sierra_class_info.compiled_class_hash_v2 {
+                    self.get_class_compiled(&hash).context("Getting class compiled from v2 hash")?
+                } else if let Some(hash) = sierra_class_info.compiled_class_hash {
+                    self.get_class_compiled(&hash).context("Getting class compiled from v1 hash")?
+                } else {
+                    None
+                };
 
                 ConvertedClass::Sierra(SierraConvertedClass {
                     class_hash: *class_hash,

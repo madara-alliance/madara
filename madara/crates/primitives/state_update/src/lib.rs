@@ -327,13 +327,30 @@ impl StateDiff {
     }
 }
 
-// Add conversion from blockifier::state::cached_state::CommitmentStateDiff
-impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {
-    fn from(commitment_state_diff: blockifier::state::cached_state::CommitmentStateDiff) -> Self {
+impl StateDiff {
+    /// Convert from blockifier's CommitmentStateDiff, properly separating declared classes
+    /// from migrated classes using the migration information.
+    ///
+    /// # Arguments
+    /// * `commitment_state_diff` - The state diff from blockifier's block execution
+    /// * `migration_v2_hashes` - Set of compiled_class_hash_v2 values for classes that were
+    ///   migrated during execution (SNIP-34). These will be placed in `migrated_compiled_classes`
+    ///   instead of `declared_classes`.
+    ///
+    /// # Note
+    /// Blockifier puts both newly declared classes AND migrated classes into
+    /// `class_hash_to_compiled_class_hash`. This method separates them:
+    /// - If the compiled_class_hash is in `migration_v2_hashes` → `migrated_compiled_classes`
+    /// - Otherwise → `declared_classes`
+    pub fn from_blockifier(
+        commitment_state_diff: blockifier::state::cached_state::CommitmentStateDiff,
+        migration_v2_hashes: &std::collections::HashSet<Felt>,
+    ) -> Self {
         let mut storage_diffs = Vec::new();
         let mut deployed_contracts = Vec::new();
         let replaced_classes = Vec::new();
         let mut declared_classes = Vec::new();
+        let mut migrated_compiled_classes = Vec::new();
         let mut nonces = Vec::new();
 
         // Convert storage updates
@@ -346,20 +363,30 @@ impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {
             }
         }
 
-        // Convert deployed contracts and replaced classes
+        // Convert deployed contracts
         for (address, class_hash) in commitment_state_diff.address_to_class_hash {
-            // Check if this is a new deployment or class replacement
-            // For simplicity, we'll treat all as deployed contracts
             deployed_contracts
                 .push(DeployedContractItem { address: address.to_felt(), class_hash: class_hash.to_felt() });
         }
 
-        // Convert declared classes
+        // Convert class declarations, separating migrated from newly declared
         for (class_hash, compiled_class_hash) in commitment_state_diff.class_hash_to_compiled_class_hash {
-            declared_classes.push(DeclaredClassItem {
-                class_hash: class_hash.to_felt(),
-                compiled_class_hash: compiled_class_hash.to_felt(),
-            });
+            let class_hash_felt = class_hash.to_felt();
+            let compiled_class_hash_felt = compiled_class_hash.to_felt();
+
+            if migration_v2_hashes.contains(&compiled_class_hash_felt) {
+                // This is a migrated class (class was used, not declared)
+                migrated_compiled_classes.push(MigratedClassItem {
+                    class_hash: class_hash_felt,
+                    compiled_class_hash: compiled_class_hash_felt,
+                });
+            } else {
+                // This is a newly declared class
+                declared_classes.push(DeclaredClassItem {
+                    class_hash: class_hash_felt,
+                    compiled_class_hash: compiled_class_hash_felt,
+                });
+            }
         }
 
         // Convert nonces
@@ -369,12 +396,12 @@ impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {
 
         StateDiff {
             storage_diffs,
-            old_declared_contracts: Vec::new(), // This would need to be determined from context
+            old_declared_contracts: Vec::new(),
             declared_classes,
             deployed_contracts,
             replaced_classes,
             nonces,
-            migrated_compiled_classes: Vec::new(), // Migrated classes are handled separately
+            migrated_compiled_classes,
         }
     }
 }
@@ -437,7 +464,12 @@ pub struct NonceUpdate {
 
 #[cfg(test)]
 mod tests {
+    use blockifier::state::cached_state::CommitmentStateDiff;
+    use indexmap::IndexMap;
+    use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
+    use starknet_api::state::StorageKey;
     use starknet_types_core::felt::Felt;
+    use std::collections::HashSet;
 
     use super::*;
 
@@ -523,5 +555,96 @@ mod tests {
             ],
             migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Add value here and update the test
         }
+    }
+
+    /// Test that from_blockifier correctly separates declared classes from migrated classes
+    #[test]
+    fn test_from_blockifier_separates_migrations() {
+        // Create class hashes for testing
+        let declared_class_hash = ClassHash(Felt::from(100u64));
+        let declared_compiled_hash = CompiledClassHash(Felt::from(101u64));
+
+        let migrated_class_hash = ClassHash(Felt::from(200u64));
+        let migrated_compiled_hash_v2 = CompiledClassHash(Felt::from(201u64)); // v2 BLAKE hash
+
+        let another_migrated_class_hash = ClassHash(Felt::from(300u64));
+        let another_migrated_compiled_hash_v2 = CompiledClassHash(Felt::from(301u64));
+
+        // Build the CommitmentStateDiff with mixed declared and migrated classes
+        let mut class_hash_to_compiled = IndexMap::new();
+        class_hash_to_compiled.insert(declared_class_hash, declared_compiled_hash);
+        class_hash_to_compiled.insert(migrated_class_hash, migrated_compiled_hash_v2);
+        class_hash_to_compiled.insert(another_migrated_class_hash, another_migrated_compiled_hash_v2);
+
+        // Add some storage updates and nonces
+        let mut storage_updates: IndexMap<ContractAddress, IndexMap<StorageKey, Felt>> = IndexMap::new();
+        let mut contract_storage = IndexMap::new();
+        contract_storage.insert(StorageKey::from(1u32), Felt::from(42u64));
+        storage_updates.insert(ContractAddress::from(1u64), contract_storage);
+
+        let mut address_to_nonce = IndexMap::new();
+        address_to_nonce.insert(ContractAddress::from(1u64), Nonce(Felt::from(5u64)));
+
+        let commitment_state_diff = CommitmentStateDiff {
+            address_to_class_hash: IndexMap::new(),
+            address_to_nonce,
+            storage_updates,
+            class_hash_to_compiled_class_hash: class_hash_to_compiled,
+        };
+
+        // Build the migration set (v2 hashes that identify migrated classes)
+        let mut migration_v2_hashes = HashSet::new();
+        migration_v2_hashes.insert(migrated_compiled_hash_v2.0);
+        migration_v2_hashes.insert(another_migrated_compiled_hash_v2.0);
+
+        // Convert using from_blockifier
+        let state_diff = StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes);
+
+        // Verify declared_classes contains only the non-migrated class
+        assert_eq!(state_diff.declared_classes.len(), 1);
+        assert_eq!(state_diff.declared_classes[0].class_hash, declared_class_hash.0);
+        assert_eq!(state_diff.declared_classes[0].compiled_class_hash, declared_compiled_hash.0);
+
+        // Verify migrated_compiled_classes contains the migrated classes
+        assert_eq!(state_diff.migrated_compiled_classes.len(), 2);
+
+        let migrated_hashes: HashSet<Felt> =
+            state_diff.migrated_compiled_classes.iter().map(|m| m.class_hash).collect();
+        assert!(migrated_hashes.contains(&migrated_class_hash.0));
+        assert!(migrated_hashes.contains(&another_migrated_class_hash.0));
+
+        // Verify other fields are converted correctly
+        assert_eq!(state_diff.storage_diffs.len(), 1);
+        assert_eq!(state_diff.nonces.len(), 1);
+        assert_eq!(state_diff.nonces[0].nonce, Felt::from(5u64));
+    }
+
+    /// Test that from_blockifier with empty migrations puts all classes in declared_classes
+    #[test]
+    fn test_from_blockifier_no_migrations() {
+        let class_hash_1 = ClassHash(Felt::from(100u64));
+        let compiled_hash_1 = CompiledClassHash(Felt::from(101u64));
+        let class_hash_2 = ClassHash(Felt::from(200u64));
+        let compiled_hash_2 = CompiledClassHash(Felt::from(201u64));
+
+        let mut class_hash_to_compiled = IndexMap::new();
+        class_hash_to_compiled.insert(class_hash_1, compiled_hash_1);
+        class_hash_to_compiled.insert(class_hash_2, compiled_hash_2);
+
+        let commitment_state_diff = CommitmentStateDiff {
+            address_to_class_hash: IndexMap::new(),
+            address_to_nonce: IndexMap::new(),
+            storage_updates: IndexMap::new(),
+            class_hash_to_compiled_class_hash: class_hash_to_compiled,
+        };
+
+        // No migrations
+        let migration_v2_hashes = HashSet::new();
+
+        let state_diff = StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes);
+
+        // All classes should be in declared_classes
+        assert_eq!(state_diff.declared_classes.len(), 2);
+        assert!(state_diff.migrated_compiled_classes.is_empty());
     }
 }

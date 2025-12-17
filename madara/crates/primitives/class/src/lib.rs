@@ -188,11 +188,11 @@ impl SierraClassInfo {
         // Verify against the canonical hash (v2 if present, else v1)
         if let Some(expected) = self.compiled_class_hash_v2 {
             // Has BLAKE hash - verify against it
-            let (_, blake_hash, compiled) = self.contract_class.compile_to_casm_with_blake_hash()?;
-            if expected != blake_hash {
-                return Err(ClassCompilationError::CompiledClassHashMismatch { expected, got: blake_hash });
+            let hashes = self.contract_class.compile_to_casm_with_hashes()?;
+            if expected != hashes.blake_hash {
+                return Err(ClassCompilationError::CompiledClassHashMismatch { expected, got: hashes.blake_hash });
             }
-            Ok((&compiled).try_into()?)
+            Ok((&hashes.casm_class).try_into()?)
         } else if let Some(expected) = self.compiled_class_hash {
             // Has Poseidon hash only - verify against it
             let (poseidon_hash, compiled) = self.contract_class.compile_to_casm()?;

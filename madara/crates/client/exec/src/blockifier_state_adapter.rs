@@ -159,9 +159,9 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
         })?;
 
         // For legacy (Cairo 0) classes, there is no compiled_class_hash concept.
-        // Return ZERO for legacy classes as per Starknet protocol.
-        let value = match &class_info {
-            mp_class::ClassInfo::Legacy(_) => Felt::ZERO,
+        // Return default (ZERO) for legacy classes as per blockifier StateReader trait contract.
+        let compiled_class_hash = match &class_info {
+            mp_class::ClassInfo::Legacy(_) => CompiledClassHash::default().0,
             mp_class::ClassInfo::Sierra(_) => {
                 // Return the canonical compiled_class_hash (v2 if present, else v1).
                 // - If v2 exists: either declared in v0.14.1+ OR already migrated, state uses v2
@@ -177,12 +177,12 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
         };
 
         tracing::debug!(
-            "get_compiled_class_hash: on={}, class_hash={:#x} => {value:#x}",
+            "get_compiled_class_hash: on={}, class_hash={:#x} => {compiled_class_hash:#x}",
             self.view,
             class_hash.to_felt(),
         );
 
-        Ok(CompiledClassHash(value))
+        Ok(CompiledClassHash(compiled_class_hash))
     }
 
     fn get_compiled_class_hash_v2(

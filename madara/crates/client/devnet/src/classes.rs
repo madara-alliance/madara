@@ -35,8 +35,8 @@ impl InitiallyDeclaredClass {
             class.flatten().with_context(|| "Flattening sierra class".to_string())?.into();
         let class_hash = contract_class.compute_class_hash().context("Computing sierra class hash")?;
         // Use BLAKE hash (v2) for v0.14.1+ compatibility
-        let (_poseidon_hash, compiled_class_hash, _casm) =
-            contract_class.compile_to_casm_with_blake_hash().context("Compiling sierra class")?;
+        let hashes = contract_class.compile_to_casm_with_hashes().context("Compiling sierra class")?;
+        let compiled_class_hash = hashes.blake_hash;
 
         Ok(Self::Sierra(InitiallyDeclaredSierraClass { contract_class, class_hash, compiled_class_hash }))
     }

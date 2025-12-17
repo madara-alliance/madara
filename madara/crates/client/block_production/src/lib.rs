@@ -465,7 +465,6 @@ impl BlockProductionTask {
                 .context("Saving Bouncer Weights for SNOS")?;
 
             // Close the preconfirmed block with state_diff
-            // Note: close_preconfirmed handles SNIP-34 migrations internally
             backend
                 .write_access()
                 .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
@@ -693,8 +692,17 @@ impl BlockProductionTask {
             .filter_map(|tx| tx.transaction.transaction.as_l1_handler().map(|l1_tx| l1_tx.nonce))
             .collect();
 
-        // Convert state_diff and close block using helper function
-        let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+        // Build set of v2 hashes for SNIP-34 migrated classes
+        let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
+            .compiled_class_hashes_for_migration
+            .iter()
+            .map(|(v2_hash, _v1_hash)| v2_hash.0)
+            .collect();
+
+        // Convert state_diff, separating declared classes from migrated classes
+        let state_diff =
+            mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
+
         Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
             block_number,
@@ -797,35 +805,18 @@ impl BlockProductionTask {
             .context("No current pre-confirmed block")?
             .num_executed_transactions();
 
-        // Convert state_diff and close block using helper function
-        let mut state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+        // Build set of v2 hashes for SNIP-34 migrated classes.
+        // These are classes that were USED (not declared) in this block and need their
+        // compiled_class_hash updated from Poseidon (v1) to BLAKE (v2).
+        let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
+            .compiled_class_hashes_for_migration
+            .iter()
+            .map(|(v2_hash, _v1_hash)| v2_hash.0)
+            .collect();
 
-        // Process SNIP-34 migrated class hashes.
-        // When blockifier executes a transaction that uses a pre-existing class that hasn't been
-        // migrated yet, it returns the new BLAKE hash (v2) in compiled_class_hashes_for_migration.
-        // We need to move these from declared_classes to migrated_compiled_classes in the state diff.
-        // Note: This is different from newly declared classes in v0.14.1+ which directly use v2 hashes
-        // and don't go through this migration path.
-        if !block_exec_summary.compiled_class_hashes_for_migration.is_empty() {
-            let v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
-                .compiled_class_hashes_for_migration
-                .iter()
-                .map(|(v2_hash, _v1_hash)| v2_hash.0)
-                .collect();
-
-            // Partition declared_classes into newly declared and migrated
-            let (migrated, declared): (Vec<_>, Vec<_>) =
-                state_diff.declared_classes.into_iter().partition(|item| v2_hashes.contains(&item.compiled_class_hash));
-
-            state_diff.declared_classes = declared;
-            state_diff.migrated_compiled_classes = migrated
-                .into_iter()
-                .map(|item| mp_state_update::MigratedClassItem {
-                    class_hash: item.class_hash,
-                    compiled_class_hash: item.compiled_class_hash,
-                })
-                .collect();
-        }
+        // Convert state_diff, separating declared classes from migrated classes
+        let state_diff =
+            mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
 
         Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
@@ -1172,8 +1163,8 @@ pub(crate) mod tests {
         let flattened_class: mp_class::FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
 
         // Use BLAKE hash (v2) for v0.14.1+ compatibility
-        let (_poseidon_hash, compiled_contract_class_hash, _compiled_class) =
-            flattened_class.compile_to_casm_with_blake_hash().unwrap();
+        let hashes = flattened_class.compile_to_casm_with_hashes().unwrap();
+        let compiled_contract_class_hash = hashes.blake_hash;
 
         let mut declare_txn: BroadcastedDeclareTxn = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
             sender_address: contract.address,

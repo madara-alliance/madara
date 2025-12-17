@@ -322,12 +322,12 @@ fn handle_class_sierra(
     let uses_blake = starknet_version.uses_blake_compiled_class_hash();
 
     // Compile and get both Poseidon and BLAKE hashes
-    let (poseidon_hash, blake_hash, compiled) = contract_class.compile_to_casm_with_blake_hash()?;
+    let hashes = contract_class.compile_to_casm_with_hashes()?;
 
     // Verify against the appropriate hash based on protocol version
     // For v0.14.1+: users submit BLAKE hash
     // For pre-v0.14.1: users submit Poseidon hash
-    let computed_hash = if uses_blake { blake_hash } else { poseidon_hash };
+    let computed_hash = if uses_blake { hashes.blake_hash } else { hashes.poseidon_hash };
     if expected_compiled_class_hash != computed_hash {
         return Err(ToBlockifierError::CompiledClassHashMismatch {
             expected: expected_compiled_class_hash,
@@ -339,7 +339,7 @@ fn handle_class_sierra(
     // - For v0.14.1+: compiled_class_hash = None, compiled_class_hash_v2 = BLAKE
     // - For pre-v0.14.1: compiled_class_hash = Poseidon, compiled_class_hash_v2 = None
     let (stored_poseidon, stored_blake) =
-        if uses_blake { (None, Some(blake_hash)) } else { (Some(poseidon_hash), None) };
+        if uses_blake { (None, Some(hashes.blake_hash)) } else { (Some(hashes.poseidon_hash), None) };
 
     let converted_class = ConvertedClass::Sierra(SierraConvertedClass {
         class_hash,
@@ -348,7 +348,7 @@ fn handle_class_sierra(
             compiled_class_hash: stored_poseidon,
             compiled_class_hash_v2: stored_blake,
         },
-        compiled: Arc::new((&compiled).try_into()?),
+        compiled: Arc::new((&hashes.casm_class).try_into()?),
     });
     let api_class_info = (&converted_class).try_into()?;
     Ok((Some(api_class_info), Some(converted_class), Some(class_hash)))

@@ -47,6 +47,20 @@ pub enum ClassCompilationError {
     ExtractSierraProgramFailed(String), // use String due to original error type Felt252SerdeError not being available publicly
 }
 
+/// Result of compiling a Sierra class to CASM with both hash variants.
+///
+/// This struct contains both the Poseidon (pre-SNIP-34) and BLAKE2s (post-SNIP-34)
+/// compiled class hashes, along with the compiled CASM class itself.
+#[derive(Debug, Clone)]
+pub struct CompiledClassHashes {
+    /// Poseidon compiled class hash (pre-SNIP-34, v1)
+    pub poseidon_hash: Felt,
+    /// BLAKE2s compiled class hash (post-SNIP-34, v2)
+    pub blake_hash: Felt,
+    /// The compiled CASM class
+    pub casm_class: CasmContractClass,
+}
+
 impl CompressedLegacyContractClass {
     // Returns `impl serde::Serialize` because the fact that it returns a serde_json::Value is an impl detail
     pub fn abi(&self) -> Result<impl serde::Serialize, ClassCompilationError> {
@@ -155,14 +169,14 @@ impl FlattenedSierraClass {
     ///
     /// # Returns
     ///
-    /// A tuple containing:
-    /// - Poseidon compiled class hash (pre-SNIP-34)
-    /// - BLAKE2s compiled class hash (post-SNIP-34)
-    /// - The compiled CASM class
-    pub fn compile_to_casm_with_blake_hash(&self) -> Result<(Felt, Felt, CasmContractClass), ClassCompilationError> {
+    /// A [CompiledClassHashes] struct containing:
+    /// - `poseidon_hash`: Poseidon compiled class hash (pre-SNIP-34, v1)
+    /// - `blake_hash`: BLAKE2s compiled class hash (post-SNIP-34, v2)
+    /// - `casm_class`: The compiled CASM class
+    pub fn compile_to_casm_with_hashes(&self) -> Result<CompiledClassHashes, ClassCompilationError> {
         let (poseidon_hash, casm_class) = self.compile_to_casm()?;
         let blake_hash = v2::compute_blake_compiled_class_hash(&casm_class)?;
-        Ok((poseidon_hash, blake_hash, casm_class))
+        Ok(CompiledClassHashes { poseidon_hash, blake_hash, casm_class })
     }
 
     /// Compile this Sierra class to Cairo Native format.
@@ -557,9 +571,7 @@ mod tests {
         let class: ContractClass = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap().into();
 
         if let ContractClass::Sierra(sierra) = class {
-            let start = std::time::Instant::now();
             let (compiled_class_hash, _casm_definition) = sierra.compile_to_casm().unwrap();
-            println!("compile time: {:?}", start.elapsed());
             assert_eq!(compiled_class_hash, expected_compiled_class_hash);
         } else {
             panic!("Not a Sierra contract");

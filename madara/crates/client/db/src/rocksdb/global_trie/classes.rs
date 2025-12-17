@@ -114,4 +114,45 @@ mod tests {
             Felt::from_hex_unchecked("0x9e521cb5e73189fe985db9dfd50b1dcdefc95ca4e1ebf23b0a4408a81bb610")
         );
     }
+
+    /// Test that migrated_compiled_classes are correctly incorporated into the class trie.
+    /// This validates SNIP-34 migration handling where existing classes get new BLAKE hashes.
+    #[rstest]
+    fn test_class_trie_root_with_migrated_classes(setup_test_backend: Arc<MadaraBackend>) {
+        let backend = setup_test_backend;
+
+        // Create a newly declared class
+        let declared_classes = vec![DeclaredClassItem {
+            class_hash: Felt::from_hex_unchecked(
+                "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            ),
+            compiled_class_hash: Felt::from_hex_unchecked(
+                "0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
+            ),
+        }];
+
+        // Create a migrated class (SNIP-34)
+        let migrated_classes = vec![MigratedClassItem {
+            class_hash: Felt::from_hex_unchecked(
+                "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+            ),
+            compiled_class_hash: Felt::from_hex_unchecked(
+                "0x1234567890abcdeffedcba09876543211234567890abcdeffedcba0987654321",
+            ),
+        }];
+
+        let block_number = 1;
+
+        // Call the class_trie_root function with both declared and migrated classes
+        let result = class_trie_root(&backend.db, &declared_classes, &migrated_classes, block_number).unwrap();
+
+        // The result should incorporate both declared and migrated classes.
+        // The expected hash is computed by inserting both class leaf hashes into the trie.
+        // Since this test uses the same class_hash/compiled_class_hash pairs as the original test
+        // (just split between declared and migrated), the root hash should be the same.
+        assert_eq!(
+            result,
+            Felt::from_hex_unchecked("0x9e521cb5e73189fe985db9dfd50b1dcdefc95ca4e1ebf23b0a4408a81bb610")
+        );
+    }
 }
