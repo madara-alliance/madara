@@ -250,18 +250,11 @@ impl Config {
         }
 
         // Fetch chain details from node with retry logic
-        info!("Fetching chain details from node...");
         let mut chain_details = ChainDetails::fetch(&params.madara_rpc_url, &params.madara_feeder_gateway_url)
             .await
             .map_err(|e| OrchestratorError::ConfigError(format!("Failed to fetch chain details from node: {}", e)))?;
         chain_details.is_l3 = layer.is_l3();
-        info!(
-            chain_id = %chain_details.chain_id,
-            strk_fee_token = %chain_details.strk_fee_token_address,
-            eth_fee_token = %chain_details.eth_fee_token_address,
-            is_l3 = %chain_details.is_l3,
-            "Chain details fetched successfully"
-        );
+        info!(chain_id = %chain_details.chain_id, is_l3 = %chain_details.is_l3, "Chain details fetched successfully");
 
         // External Clients Initialization
         let prover_client = Self::build_prover_service(

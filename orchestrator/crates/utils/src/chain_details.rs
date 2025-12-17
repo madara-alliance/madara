@@ -11,7 +11,7 @@ use color_eyre::eyre::{eyre, Result};
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::time::{sleep, Instant};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use url::Url;
 
 /// Retry interval for fetching chain details (default: 5 seconds)
@@ -94,64 +94,26 @@ impl ChainDetails {
         let start_time = Instant::now();
         let mut attempt = 0u32;
 
-        info!(
-            rpc_url = %rpc_url,
-            feeder_gateway_url = %feeder_gateway_url,
-            retry_interval_secs = retry_interval.as_secs(),
-            timeout_secs = timeout.as_secs(),
-            "Starting chain details fetch with retry"
-        );
+        info!("Fetching chain details from node");
 
         loop {
             attempt += 1;
 
-            debug!(
-                attempt = attempt,
-                elapsed_secs = start_time.elapsed().as_secs(),
-                "Attempting to fetch chain details"
-            );
-
             match Self::try_fetch(rpc_url, feeder_gateway_url).await {
                 Ok(details) => {
-                    let elapsed = start_time.elapsed();
-
-                    if attempt > 1 {
-                        info!(
-                            attempts = attempt,
-                            elapsed_secs = elapsed.as_secs(),
-                            chain_id = %details.chain_id,
-                            "Successfully fetched chain details after retries"
-                        );
-                    } else {
-                        info!(
-                            chain_id = %details.chain_id,
-                            elapsed_ms = elapsed.as_millis(),
-                            "Successfully fetched chain details on first attempt"
-                        );
-                    }
-
                     debug!(
                         chain_id = %details.chain_id,
                         strk_fee_token = %details.strk_fee_token_address,
                         eth_fee_token = %details.eth_fee_token_address,
-                        "Chain details retrieved"
+                        "Chain details fetched"
                     );
-
                     return Ok(details);
                 }
                 Err(e) => {
                     let elapsed = start_time.elapsed();
 
                     if elapsed >= timeout {
-                        error!(
-                            attempts = attempt,
-                            elapsed_secs = elapsed.as_secs(),
-                            timeout_secs = timeout.as_secs(),
-                            error = %e,
-                            rpc_url = %rpc_url,
-                            feeder_gateway_url = %feeder_gateway_url,
-                            "Failed to fetch chain details after timeout - orchestrator cannot start"
-                        );
+                        error!("Failed to fetch chain details after timeout");
                         return Err(eyre!(
                             "Failed to fetch chain details after {} attempts over {} seconds: {}",
                             attempt,
@@ -160,15 +122,8 @@ impl ChainDetails {
                         ));
                     }
 
-                    warn!(
-                        attempt = attempt,
-                        elapsed_secs = elapsed.as_secs(),
-                        remaining_secs = (timeout - elapsed).as_secs(),
-                        error = %e,
-                        retry_in_secs = retry_interval.as_secs(),
-                        "Failed to fetch chain details, will retry"
-                    );
-
+                    info!("Failed to fetch chain details, retrying");
+                    debug!(error = %e, "Retry reason");
                     sleep(retry_interval).await;
                 }
             }
@@ -177,21 +132,8 @@ impl ChainDetails {
 
     /// Attempt to fetch chain details (single attempt, no retry).
     async fn try_fetch(rpc_url: &Url, feeder_gateway_url: &Url) -> Result<Self> {
-        debug!(rpc_url = %rpc_url, "Fetching chain_id from RPC");
-
-        // Fetch chain_id from RPC
         let chain_id = Self::fetch_chain_id(rpc_url).await?;
-        debug!(chain_id = %chain_id, "Successfully fetched chain_id");
-
-        debug!(feeder_gateway_url = %feeder_gateway_url, "Fetching contract addresses from feeder gateway");
-
-        // Fetch contract addresses from feeder gateway
         let addresses = Self::fetch_contract_addresses(feeder_gateway_url).await?;
-        debug!(
-            strk_token = %addresses.strk_l2_token_address,
-            eth_token = %addresses.eth_l2_token_address,
-            "Successfully fetched contract addresses"
-        );
 
         Ok(Self {
             chain_id,
@@ -205,8 +147,6 @@ impl ChainDetails {
     async fn fetch_chain_id(rpc_url: &Url) -> Result<String> {
         let client = reqwest::Client::new();
 
-        debug!(url = %rpc_url, method = "starknet_chainId", "Sending RPC request");
-
         let response = client
             .post(rpc_url.as_str())
             .header("Content-Type", "application/json")
@@ -218,19 +158,15 @@ impl ChainDetails {
             }))
             .send()
             .await
-            .map_err(|e| eyre!("Failed to send chain_id request to {}: {}", rpc_url, e))?;
+            .map_err(|e| eyre!("Failed to send chain_id request: {}", e))?;
 
-        let status = response.status();
-        debug!(status = %status, "Received RPC response");
-
-        if !status.is_success() {
-            return Err(eyre!("Chain ID request to {} failed with status: {}", rpc_url, status));
+        if !response.status().is_success() {
+            return Err(eyre!("Chain ID request failed with status: {}", response.status()));
         }
 
         let json: serde_json::Value =
             response.json().await.map_err(|e| eyre!("Failed to parse chain_id response: {}", e))?;
 
-        // Check for JSON-RPC error
         if let Some(error) = json.get("error") {
             return Err(eyre!("RPC error fetching chain_id: {}", error));
         }
@@ -238,42 +174,28 @@ impl ChainDetails {
         let chain_id_hex =
             json["result"].as_str().ok_or_else(|| eyre!("Invalid chain_id response: missing result field"))?;
 
-        debug!(chain_id_hex = %chain_id_hex, "Received chain_id in hex format");
-
-        // Decode hex chain ID to string (e.g., "0x534e5f4d41494e" -> "SN_MAIN")
-        let chain_id_decoded = Self::decode_chain_id(chain_id_hex)?;
-
-        Ok(chain_id_decoded)
+        Self::decode_chain_id(chain_id_hex)
     }
 
     /// Fetch contract addresses from feeder gateway.
     async fn fetch_contract_addresses(feeder_gateway_url: &Url) -> Result<ContractAddressesResponse> {
         let client = reqwest::Client::new();
 
-        // Build the endpoint URL
         let endpoint = feeder_gateway_url
             .join("feeder_gateway/get_contract_addresses")
             .map_err(|e| eyre!("Failed to build contract addresses URL: {}", e))?;
-
-        debug!(url = %endpoint, "Sending feeder gateway request");
 
         let response = client
             .get(endpoint.as_str())
             .send()
             .await
-            .map_err(|e| eyre!("Failed to send contract addresses request to {}: {}", endpoint, e))?;
+            .map_err(|e| eyre!("Failed to send contract addresses request: {}", e))?;
 
-        let status = response.status();
-        debug!(status = %status, "Received feeder gateway response");
-
-        if !status.is_success() {
-            return Err(eyre!("Contract addresses request to {} failed with status: {}", endpoint, status));
+        if !response.status().is_success() {
+            return Err(eyre!("Contract addresses request failed with status: {}", response.status()));
         }
 
-        let addresses: ContractAddressesResponse =
-            response.json().await.map_err(|e| eyre!("Failed to parse contract addresses response: {}", e))?;
-
-        Ok(addresses)
+        response.json().await.map_err(|e| eyre!("Failed to parse contract addresses response: {}", e))
     }
 
     /// Decode a hex-encoded chain ID to a string.
