@@ -9,7 +9,7 @@ pub use crate::v0_9_0::{
     DeclareTxnV3, DeployAccountTxn, DeployAccountTxnReceipt, DeployAccountTxnV1, DeployAccountTxnV3, DeployTxn,
     DeployTxnReceipt, DeployedContractItem, DeprecatedCairoEntryPoint, DeprecatedContractClass,
     DeprecatedEntryPointsByType, EntryPointsByType, EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event,
-    EventAbiEntry, EventAbiType, EventContent, EventFilterWithPageRequest, EventsChunk, ExecutionResources,
+    EventAbiEntry, EventAbiType, EventContent, EventFilterWithPageRequest, ExecutionResources,
     ExecutionStatus, FeeEstimate, FeeEstimateCommon, FeePayment, FunctionAbiEntry, FunctionAbiType, FunctionCall,
     FunctionStateMutability, GetBlockTransactionCountParams, GetBlockWithReceiptsParams, GetBlockWithTxHashesParams,
     GetBlockWithTxsParams, GetClassAtParams, GetClassHashAtParams, GetClassParams, GetEventsParams, GetNonceParams,
@@ -49,6 +49,7 @@ pub struct StateDiff {
     /// The storage diffs
     pub storage_diffs: Vec<ContractStorageDiffItem>,
     /// The migrated compiled classes (NEW in v0.10.0)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub migrated_compiled_classes: Vec<MigratedClassItem>,
 }
 
@@ -106,6 +107,16 @@ pub struct EmittedEvent {
     pub transaction_index: u64,
     /// The index of the event within the transaction
     pub event_index: u64,
+}
+
+/// A chunk of events returned by getEvents (v0.10.0: uses EmittedEvent with event_index and transaction_index)
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct EventsChunk {
+    /// Use this token in a subsequent query to obtain the next page. Should not appear if there are no more pages.
+    #[serde(default)]
+    pub continuation_token: Option<String>,
+    /// The events matching the filter
+    pub events: Vec<EmittedEvent>,
 }
 
 /// Contract storage keys item (v0.10.0: changed storage_keys type from Vec<Felt> to Vec<StorageKey>)

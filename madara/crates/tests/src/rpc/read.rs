@@ -856,7 +856,7 @@ mod test_rpc_read_calls {
                     )
                     .unwrap(),
                     event_index: 0,
-                    transaction_index: 0,
+                    transaction_index: 5,
                 },
                 EmittedEvent {
                     from_address: Felt::from_hex("0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7")
@@ -875,8 +875,8 @@ mod test_rpc_read_calls {
                         "0x1bec64a9f5ff52154b560fd489ae2aabbfcb31062f7ea70c3c674ddf14b0add",
                     )
                     .unwrap(),
-                    event_index: 0,
-                    transaction_index: 0,
+                    event_index: 1,
+                    transaction_index: 5,
                 },
             ],
             continuation_token: Some("4-0".to_string()),
@@ -992,7 +992,7 @@ mod test_rpc_read_calls {
                     )
                     .unwrap(),
                     event_index: 0,
-                    transaction_index: 0,
+                    transaction_index: 1,
                 },
             ],
             continuation_token: Some("6-0".to_string()),
