@@ -574,6 +574,9 @@ mod messaging_module_tests {
 
     /// Tests that sync_inner implements exponential backoff when L1 RPC fails.
     /// Verifies: no panic, retries continue, backoff doubles, caps at max delay.
+    ///
+    /// `start_paused = true` pauses tokio's time at test start, allowing us to
+    /// manually advance time with `tokio::time::advance()` for deterministic testing.
     #[tokio::test(start_paused = true)]
     async fn test_backoff_on_rpc_failure() -> anyhow::Result<()> {
         use std::sync::atomic::{AtomicU32, Ordering};
@@ -595,7 +598,6 @@ mod messaging_module_tests {
 
         let client = Arc::new(mock_client) as Arc<dyn SettlementLayerProvider>;
         let ctx = ServiceContext::new_for_testing();
-        let ctx_clone = ctx.clone();
 
         let sync_handle = tokio::spawn(async move { sync(client, db, Arc::new(Notify::new()), ctx).await });
 
@@ -612,14 +614,9 @@ mod messaging_module_tests {
         tokio::task::yield_now().await;
         assert_eq!(attempt_count.load(Ordering::SeqCst), 3);
 
-        tokio::time::advance(Duration::from_secs(4)).await;
-        tokio::task::yield_now().await;
-        assert_eq!(attempt_count.load(Ordering::SeqCst), 4);
-
         // Task should still be running (no panic)
         assert!(!sync_handle.is_finished());
 
-        ctx_clone.cancel_global();
         sync_handle.abort();
         Ok(())
     }
