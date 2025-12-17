@@ -241,7 +241,19 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
                 // Try v2 hash first, then fall back to v1 (for migrated classes where
                 // the compiled Sierra may still be stored under the v1 hash).
                 let compiled = if let Some(hash) = sierra_class_info.compiled_class_hash_v2 {
-                    self.get_class_compiled(&hash).context("Getting class compiled from v2 hash")?
+                    // Try v2 first, fall back to v1 if not found (migration case)
+                    match self.get_class_compiled(&hash).context("Getting class compiled from v2 hash")? {
+                        Some(c) => Some(c),
+                        None => {
+                            // Fallback to v1 hash - compiled class may be stored under old hash
+                            if let Some(v1_hash) = sierra_class_info.compiled_class_hash {
+                                self.get_class_compiled(&v1_hash)
+                                    .context("Getting class compiled from v1 hash fallback")?
+                            } else {
+                                None
+                            }
+                        }
+                    }
                 } else if let Some(hash) = sierra_class_info.compiled_class_hash {
                     self.get_class_compiled(&hash).context("Getting class compiled from v1 hash")?
                 } else {
