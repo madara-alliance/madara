@@ -1,0 +1,5 @@
+# Cairo 0 dependencies required for building Madara Systems
+# This is the single source of truth for Cairo version requirements
+# Used by both Makefile and GitHub CI workflows
+cairo-lang==0.14.0.1
+numpy<2.0
