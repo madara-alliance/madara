@@ -109,7 +109,6 @@ async fn sync_inner(
             .await
         {
             Ok(()) => {
-                // Reset backoff on clean exit (shouldn't happen normally)
                 reconnect_delay = RECONNECT_BASE_DELAY;
             }
             Err(e) => {

@@ -86,9 +86,18 @@ impl From<StarknetClientError> for SettlementClientError {
 }
 
 impl SettlementClientError {
-    /// Returns true if the error is recoverable (stream/connection ended).
-    /// Non-recoverable errors (e.g., contract issues) should not be retried.
+    /// Returns true if the error is recoverable (RPC/network errors, stream ended).
+    /// These are transient errors that should be retried with backoff.
+    /// Non-recoverable errors (e.g., invalid contract, conversion errors) should not be retried.
     pub fn is_recoverable(&self) -> bool {
-        matches!(self, Self::StreamProcessing(_) | Self::StateEventListener(_))
+        match self {
+            // Delegate to inner error types for fine-grained recoverability
+            Self::Ethereum(e) => e.is_recoverable(),
+            Self::Starknet(e) => e.is_recoverable(),
+            // Stream/connection errors are always recoverable
+            Self::StreamProcessing(_) | Self::StateEventListener(_) => true,
+            // All other errors are not recoverable
+            _ => false,
+        }
     }
 }

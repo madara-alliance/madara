@@ -95,9 +95,7 @@ pub async fn state_update_worker(
             .await
         {
             None => return Ok(()), // Service shutdown
-            Some(Ok(())) => {
-                return Ok(()); // Clean exit
-            }
+            Some(Ok(())) => return Ok(()), // Clean exit
             Some(Err(e)) if e.is_recoverable() => {
                 tracing::warn!("L1 state sync failed: {e:#}, reconnecting in {reconnect_delay:?}");
                 tokio::time::sleep(reconnect_delay).await;
