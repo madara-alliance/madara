@@ -98,7 +98,7 @@ pub async fn state_update_worker(
             None => return Ok(()), // Service shutdown while getting initial state
         };
 
-        tracing::info!("🚀 Subscribed to L1 state verification");
+        tracing::info!("Subscribed to L1 state verification");
 
         if let Err(e) = state.update_state(initial_state) {
             tracing::warn!("Failed to update L1 with initial state: {e:#}");
