@@ -225,7 +225,12 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     let start_block = 4;
     let end_block = 7;
 
-    database.expect_get_latest_aggregator_batch().returning(move || Ok(Some(existing_aggregator_batch.clone())));
+    // Use a shared variable to track the latest aggregator batch
+    let latest_aggregator_batch = Arc::new(Mutex::new(existing_aggregator_batch.clone()));
+    let latest_aggregator_batch_clone = latest_aggregator_batch.clone();
+    database
+        .expect_get_latest_aggregator_batch()
+        .returning(move || Ok(Some(latest_aggregator_batch_clone.lock().unwrap().clone())));
     database.expect_get_latest_snos_batch().returning(move || Ok(Some(existing_snos_batch.clone())));
 
     storage.expect_get_data().returning(|_| Ok(Bytes::from(get_dummy_state_update(1).to_string())));
@@ -234,19 +239,50 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
 
     let batches_updated = Arc::new(Mutex::new(Vec::new()));
     let batches_updated_clone = batches_updated.clone();
+    let latest_aggregator_batch_update = latest_aggregator_batch.clone();
     database.expect_update_or_create_aggregator_batch().returning(move |batch, _| {
         batches_updated_clone.lock().unwrap().push(batch.clone());
+        // Update the latest aggregator batch so SNOS batching sees the updated value
+        *latest_aggregator_batch_update.lock().unwrap() = batch.clone();
         Ok(batch.clone())
     });
 
     database.expect_create_aggregator_batch().returning(Ok);
 
-    // Mock SNOS batch operations
-    database.expect_create_snos_batch().returning(Ok);
-    database.expect_update_or_create_snos_batch().returning(|batch, _| Ok(batch.clone()));
+    // Mock SNOS batch operations with tracking
+    let snos_batches_updated = Arc::new(Mutex::new(Vec::new()));
+    let snos_batches_created_clone = snos_batches_updated.clone();
+    let snos_batches_updated_clone = snos_batches_updated.clone();
+    database.expect_create_snos_batch().returning(move |batch| {
+        snos_batches_created_clone.lock().unwrap().push(batch.clone());
+        Ok(batch)
+    });
+    database.expect_update_or_create_snos_batch().returning(move |batch, _| {
+        snos_batches_updated_clone.lock().unwrap().push(batch.clone());
+        Ok(batch.clone())
+    });
     database.expect_get_next_snos_batch_id().returning(|| Ok(2));
     database.expect_get_open_snos_batches_by_aggregator_index().returning(|_| Ok(vec![]));
     database.expect_close_all_snos_batches_for_aggregator().returning(|_| Ok(vec![]));
+
+    // Mock get_aggregator_batch_for_block - needed for SNOS batching in L2 mode
+    // Returns aggregator batch 2 for blocks 4-7
+    database.expect_get_aggregator_batch_for_block().returning(move |block_num| {
+        if block_num >= 4 && block_num <= 7 {
+            Ok(Some(crate::types::batch::AggregatorBatch {
+                index: 2,
+                start_block: 4,
+                end_block: 7,
+                num_blocks: 4,
+                blob_len: 0,
+                squashed_state_updates_path: "state_update/batch/2.json".to_string(),
+                starknet_version: StarknetVersion::V0_13_2,
+                ..Default::default()
+            }))
+        } else {
+            Ok(None)
+        }
+    });
 
     lock.expect_acquire_lock()
         .withf(move |key, value, expiry_seconds, owner| {
@@ -334,6 +370,34 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
     assert_eq!(batch_2.start_block, 4, "Batch 2 should start at block 4");
     assert_eq!(batch_2.end_block, 7, "Batch 2 should end at block 5");
     assert_eq!(batch_2.starknet_version, StarknetVersion::V0_13_2, "Batch 2 should have version 0.13.2");
+
+    // Verify SNOS batches respect aggregator batch boundaries
+    let updated_snos_batches = snos_batches_updated.lock().unwrap();
+    assert!(!updated_snos_batches.is_empty(), "Expected at least one SNOS batch to be updated");
+
+    // All SNOS batches should be linked to aggregator batch 2 (since we're processing blocks 4-7)
+    for snos_batch in updated_snos_batches.iter() {
+        assert_eq!(
+            snos_batch.aggregator_batch_index,
+            Some(2),
+            "SNOS batch {} should be linked to aggregator batch 2, got {:?}",
+            snos_batch.index,
+            snos_batch.aggregator_batch_index
+        );
+        // Verify SNOS batch block range is within aggregator batch range
+        assert!(
+            snos_batch.start_block >= batch_2.start_block,
+            "SNOS batch start_block {} should be >= aggregator batch start_block {}",
+            snos_batch.start_block,
+            batch_2.start_block
+        );
+        assert!(
+            snos_batch.end_block <= batch_2.end_block,
+            "SNOS batch end_block {} should be <= aggregator batch end_block {}",
+            snos_batch.end_block,
+            batch_2.end_block
+        );
+    }
 
     Ok(())
 }
@@ -512,9 +576,7 @@ async fn test_aggregator_lock_acquisition_fails() -> Result<(), Box<dyn Error>> 
         .withf(|key, _, _, _| key == "AggregatorBatchingWorker")
         .returning(|_, _, _, _| Err(LockError::LockAlreadyHeld { current_owner: "other_worker".to_string() }));
 
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&provider_url).expect("Failed to parse URL"),
-    ));
+    let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&provider_url).expect("Failed to parse URL")));
 
     let prover_client = MockProverClient::new();
 
@@ -551,9 +613,7 @@ async fn test_snos_lock_acquisition_fails() -> Result<(), Box<dyn Error>> {
         .withf(|key, _, _, _| key == "SnosBatchingWorker")
         .returning(|_, _, _, _| Err(LockError::LockAlreadyHeld { current_owner: "other_worker".to_string() }));
 
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&provider_url).expect("Failed to parse URL"),
-    ));
+    let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&provider_url).expect("Failed to parse URL")));
 
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
@@ -599,9 +659,7 @@ async fn test_aggregator_rpc_block_number_failure() -> Result<(), Box<dyn Error>
         then.status(500).body(r#"{"error": "Internal server error"}"#);
     });
 
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&provider_url).expect("Failed to parse URL"),
-    ));
+    let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&provider_url).expect("Failed to parse URL")));
 
     let prover_client = MockProverClient::new();
 
@@ -640,9 +698,7 @@ async fn test_snos_rpc_block_number_failure_l3() -> Result<(), Box<dyn Error>> {
     lock.expect_acquire_lock()
         .withf(|key, _, _, _| key == "SnosBatchingWorker")
         .returning(|_, _, _, _| Ok(LockResult::Acquired));
-    lock.expect_release_lock()
-        .withf(|key, _| key == "SnosBatchingWorker")
-        .returning(|_, _| Ok(LockResult::Released));
+    lock.expect_release_lock().withf(|key, _| key == "SnosBatchingWorker").returning(|_, _| Ok(LockResult::Released));
 
     // Mock RPC to return an error for block number
     server.mock(|when, then| {
@@ -650,9 +706,7 @@ async fn test_snos_rpc_block_number_failure_l3() -> Result<(), Box<dyn Error>> {
         then.status(500).body(r#"{"error": "Internal server error"}"#);
     });
 
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&provider_url).expect("Failed to parse URL"),
-    ));
+    let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&provider_url).expect("Failed to parse URL")));
 
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
@@ -713,9 +767,7 @@ async fn test_aggregator_no_new_blocks() -> Result<(), Box<dyn Error>> {
         then.status(200).body(serde_json::to_vec(&json!({ "id": 1, "jsonrpc": "2.0", "result": 9 })).unwrap());
     });
 
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&provider_url).expect("Failed to parse URL"),
-    ));
+    let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&provider_url).expect("Failed to parse URL")));
 
     let prover_client = MockProverClient::new();
 
