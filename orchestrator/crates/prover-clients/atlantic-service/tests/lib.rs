@@ -33,6 +33,21 @@ async fn atlantic_client_submit_task_when_mock_works() {
     // Start a mock server
     let mock_server = MockServer::start();
 
+    // Create a mock for the search endpoint (returns empty list - no existing queries)
+    let network = atlantic_params.atlantic_network.clone();
+    let search_mock = mock_server.mock(|when, then| {
+        when.method("GET")
+            .path("/atlantic-queries")
+            .query_param_exists("apiKey")
+            .query_param_exists("search")
+            .query_param("limit", "1")
+            .query_param("network", network.as_str());
+
+        let response = AtlanticQueriesListResponse { atlantic_queries: vec![], total: 0 };
+
+        then.status(200).header("content-type", "application/json").json_body_obj(&response);
+    });
+
     // Create a mock for the submit endpoint
     let submit_mock = mock_server.mock(|when, then| {
         when.method("POST").path("/atlantic-query");
@@ -60,6 +75,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
         .await;
 
     assert!(task_result.is_ok());
+    search_mock.assert();
     submit_mock.assert();
 }
 
