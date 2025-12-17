@@ -90,6 +90,13 @@ pub enum AtlanticError {
         #[source]
         source: reqwest::Error,
     },
+
+    #[error("Failed to search Atlantic queries ({context}): {source}")]
+    GetQueriesFailure {
+        context: String,
+        #[source]
+        source: reqwest::Error,
+    },
 }
 
 impl From<AtlanticError> for ProverClientError {
