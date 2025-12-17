@@ -16,7 +16,7 @@ env:
 jobs:
   # Run prettier for code formatting
   prettier:
-    runs-on: blacksmith-16vcpu-ubuntu-2204
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
 
   # Check markdown files for style consistency
   markdown-lint:
-    runs-on: blacksmith-16vcpu-ubuntu-2204
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
 
   # Check TOML files for formatting
   toml-lint:
-    runs-on: blacksmith-16vcpu-ubuntu-2204
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v4
         with:

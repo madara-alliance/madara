@@ -55,6 +55,7 @@ async fn prover_client_submit_task_works() {
             bucket_id: None,
             bucket_job_index: None,
             num_steps: None,
+            external_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await
         .is_ok());
