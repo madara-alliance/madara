@@ -3,8 +3,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
 use orchestrator_atlantic_service::types::{
-    AtlanticCairoVm, AtlanticClient, AtlanticQueriesListResponse, AtlanticQuery, AtlanticQueryStatus,
-    AtlanticQueryStep,
+    AtlanticCairoVm, AtlanticClient, AtlanticQueriesListResponse, AtlanticQuery, AtlanticQueryStatus, AtlanticQueryStep,
 };
 use orchestrator_atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
 use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task};
