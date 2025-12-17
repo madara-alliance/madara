@@ -123,9 +123,7 @@ mod tests {
 
         // Create a newly declared class
         let declared_classes = vec![DeclaredClassItem {
-            class_hash: Felt::from_hex_unchecked(
-                "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-            ),
+            class_hash: Felt::from_hex_unchecked("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"),
             compiled_class_hash: Felt::from_hex_unchecked(
                 "0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
             ),
@@ -133,9 +131,7 @@ mod tests {
 
         // Create a migrated class (SNIP-34)
         let migrated_classes = vec![MigratedClassItem {
-            class_hash: Felt::from_hex_unchecked(
-                "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-            ),
+            class_hash: Felt::from_hex_unchecked("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"),
             compiled_class_hash: Felt::from_hex_unchecked(
                 "0x1234567890abcdeffedcba09876543211234567890abcdeffedcba0987654321",
             ),
