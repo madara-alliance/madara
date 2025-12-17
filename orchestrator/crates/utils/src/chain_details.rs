@@ -7,7 +7,6 @@
 //! The fetched details are cached in the orchestrator Config and used throughout
 //! the application, avoiding redundant network calls during job processing.
 
-use crate::layer::Layer;
 use color_eyre::eyre::{eyre, Result};
 use serde::Deserialize;
 use std::time::Duration;
@@ -51,7 +50,7 @@ pub struct ChainDetails {
     pub strk_fee_token_address: String,
     /// The ETH fee token address (parent fee token)
     pub eth_fee_token_address: String,
-    /// Whether this is an L3 chain
+    /// Whether this is an L3 chain (set by caller after fetch)
     pub is_l3: bool,
 }
 
@@ -71,13 +70,12 @@ impl ChainDetails {
     /// # Arguments
     /// * `rpc_url` - The RPC endpoint URL
     /// * `feeder_gateway_url` - The feeder gateway URL
-    /// * `layer` - The layer configuration (L2 or L3)
     ///
     /// # Returns
     /// * `Ok(ChainDetails)` - Successfully fetched chain details
     /// * `Err` - Failed to fetch after timeout
-    pub async fn fetch(rpc_url: &Url, feeder_gateway_url: &Url, layer: &Layer) -> Result<Self> {
-        Self::fetch_with_config(rpc_url, feeder_gateway_url, layer, DEFAULT_RETRY_INTERVAL, DEFAULT_TIMEOUT).await
+    pub async fn fetch(rpc_url: &Url, feeder_gateway_url: &Url) -> Result<Self> {
+        Self::fetch_with_config(rpc_url, feeder_gateway_url, DEFAULT_RETRY_INTERVAL, DEFAULT_TIMEOUT).await
     }
 
     /// Fetch chain details with custom retry configuration.
@@ -85,13 +83,11 @@ impl ChainDetails {
     /// # Arguments
     /// * `rpc_url` - The RPC endpoint URL
     /// * `feeder_gateway_url` - The feeder gateway URL
-    /// * `layer` - The layer configuration (L2 or L3)
     /// * `retry_interval` - Duration between retry attempts
     /// * `timeout` - Total timeout duration
     pub async fn fetch_with_config(
         rpc_url: &Url,
         feeder_gateway_url: &Url,
-        layer: &Layer,
         retry_interval: Duration,
         timeout: Duration,
     ) -> Result<Self> {
@@ -101,7 +97,6 @@ impl ChainDetails {
         info!(
             rpc_url = %rpc_url,
             feeder_gateway_url = %feeder_gateway_url,
-            layer = ?layer,
             retry_interval_secs = retry_interval.as_secs(),
             timeout_secs = timeout.as_secs(),
             "Starting chain details fetch with retry"
@@ -116,7 +111,7 @@ impl ChainDetails {
                 "Attempting to fetch chain details"
             );
 
-            match Self::try_fetch(rpc_url, feeder_gateway_url, layer).await {
+            match Self::try_fetch(rpc_url, feeder_gateway_url).await {
                 Ok(details) => {
                     let elapsed = start_time.elapsed();
 
@@ -139,7 +134,6 @@ impl ChainDetails {
                         chain_id = %details.chain_id,
                         strk_fee_token = %details.strk_fee_token_address,
                         eth_fee_token = %details.eth_fee_token_address,
-                        is_l3 = details.is_l3,
                         "Chain details retrieved"
                     );
 
@@ -182,7 +176,7 @@ impl ChainDetails {
     }
 
     /// Attempt to fetch chain details (single attempt, no retry).
-    async fn try_fetch(rpc_url: &Url, feeder_gateway_url: &Url, layer: &Layer) -> Result<Self> {
+    async fn try_fetch(rpc_url: &Url, feeder_gateway_url: &Url) -> Result<Self> {
         debug!(rpc_url = %rpc_url, "Fetching chain_id from RPC");
 
         // Fetch chain_id from RPC
@@ -203,7 +197,7 @@ impl ChainDetails {
             chain_id,
             strk_fee_token_address: addresses.strk_l2_token_address,
             eth_fee_token_address: addresses.eth_l2_token_address,
-            is_l3: layer.is_l3(),
+            is_l3: false, // Set by caller after fetch
         })
     }
 

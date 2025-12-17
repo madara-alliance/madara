@@ -251,9 +251,10 @@ impl Config {
 
         // Fetch chain details from node with retry logic
         info!("Fetching chain details from node...");
-        let chain_details = ChainDetails::fetch(&params.madara_rpc_url, &params.madara_feeder_gateway_url, &layer)
+        let mut chain_details = ChainDetails::fetch(&params.madara_rpc_url, &params.madara_feeder_gateway_url)
             .await
             .map_err(|e| OrchestratorError::ConfigError(format!("Failed to fetch chain details from node: {}", e)))?;
+        chain_details.is_l3 = layer.is_l3();
         info!(
             chain_id = %chain_details.chain_id,
             strk_fee_token = %chain_details.strk_fee_token_address,
