@@ -1,13 +1,8 @@
-// New comprehensive test modules
-mod aggregator;
-mod helpers;
-mod integration;
-mod snos;
-
-// Existing E2E tests
+// E2E tests
 mod e2e;
 
 use crate::core::client::database::MockDatabaseClient;
+use crate::core::client::lock::error::LockError;
 use crate::core::client::lock::{LockResult, LockValue, MockLockClient};
 use crate::core::client::storage::MockStorageClient;
 use crate::core::config::StarknetVersion;
