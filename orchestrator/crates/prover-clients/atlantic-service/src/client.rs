@@ -143,17 +143,11 @@ impl AtlanticClient {
             match f().await {
                 Ok(result) => {
                     let duration_s = start_time.elapsed().as_secs_f64();
-                    let response_size_bytes = metrics_extractor(&result);
+                    let _response_size_bytes = metrics_extractor(&result);
                     retry_count = attempt.saturating_sub(1);
 
                     // Record OTEL metrics
-                    ATLANTIC_METRICS.record_success(
-                        operation_name,
-                        duration_s,
-                        data_size_bytes,
-                        response_size_bytes,
-                        retry_count,
-                    );
+                    ATLANTIC_METRICS.record_success(operation_name, duration_s, retry_count);
 
                     // Only log if retries were needed (interesting case)
                     if attempt > 1 {
@@ -197,13 +191,7 @@ impl AtlanticClient {
                         let error_type = err.error_type();
 
                         // Record OTEL metrics for failure
-                        ATLANTIC_METRICS.record_failure(
-                            operation_name,
-                            duration_s,
-                            data_size_bytes,
-                            error_type,
-                            retry_count,
-                        );
+                        ATLANTIC_METRICS.record_failure(operation_name, duration_s, error_type, retry_count);
 
                         // Log failure with error details
                         warn!(
@@ -226,7 +214,7 @@ impl AtlanticClient {
         let error_type = final_error.error_type();
 
         // Record OTEL metrics for exhausted retries
-        ATLANTIC_METRICS.record_failure(operation_name, total_duration_s, data_size_bytes, error_type, retry_count);
+        ATLANTIC_METRICS.record_failure(operation_name, total_duration_s, error_type, retry_count);
 
         // Emit metrics event for exhausted retries
         warn!(

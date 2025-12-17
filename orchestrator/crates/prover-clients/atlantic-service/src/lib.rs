@@ -359,7 +359,7 @@ impl AtlanticProverService {
         fee_token_address: Option<Felt252>,
     ) -> Result<Self, ProverClientError> {
         let atlantic_client =
-            AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params)?;
+            AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
 
         let fact_checker = Self::get_fact_checker(atlantic_params);
 
@@ -386,7 +386,7 @@ impl AtlanticProverService {
         proof_layout: &LayoutName,
     ) -> Result<Self, ProverClientError> {
         let atlantic_client =
-            AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params)?;
+            AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params);
 
         let fact_checker = Self::get_fact_checker(atlantic_params);
 
