@@ -519,7 +519,7 @@ async fn process_job_two_workers_process_same_job_works() {
     // Both workers will call check_ready_to_process, so expect 2 calls
     job_handler.expect_check_ready_to_process().times(1..=2).returning(|_| Ok(()));
     // Expecting process job function in job processor to return the external ID.
-    job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
+    job_handler.expect_process_job().times(1..=2).returning(move |_, _| Ok("0xbeef".to_string()));
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
 
     // Mocking the `get_job_handler` call - both workers will call it before one fails due to lock contention
