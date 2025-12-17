@@ -7,7 +7,7 @@ use jobs::job_router;
 use public::local_route;
 use std::sync::Arc;
 
-pub(super) mod admin;
+pub mod admin;
 pub(super) mod blocks;
 pub(super) mod jobs;
 
