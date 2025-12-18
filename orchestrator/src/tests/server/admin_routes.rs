@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use httpmock::MockServer;
 use mockall::predicate::eq;
 use rstest::*;
@@ -9,7 +7,6 @@ use url::Url;
 
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
-use crate::core::config::Config;
 use crate::server::route::admin::BulkJobResponse;
 use crate::server::types::ApiResponse;
 use crate::tests::config::TestConfigBuilder;
@@ -28,7 +25,7 @@ fn setup_env() {
     }
 }
 
-async fn build_test_config(db: MockDatabaseClient, queue: MockQueueClient) -> (Arc<Config>, String) {
+async fn build_test_config(db: MockDatabaseClient, queue: MockQueueClient) -> String {
     let server = MockServer::start();
     let provider = JsonRpcClient::new(HttpTransport::new(
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
@@ -43,8 +40,7 @@ async fn build_test_config(db: MockDatabaseClient, queue: MockQueueClient) -> (A
         .configure_api_server(crate::tests::config::ConfigType::Actual)
         .build()
         .await;
-    let addr = services.api_server_address.unwrap();
-    (services.config, addr.to_string())
+    services.api_server_address.unwrap().to_string()
 }
 
 async fn call_endpoint(addr: &str, path: &str) -> ApiResponse<BulkJobResponse> {
@@ -81,7 +77,7 @@ async fn test_admin_retry_all_failed_jobs() {
     db.expect_update_job().times(2).returning(|job, _| Ok(job.clone()));
     queue.expect_send_message().times(2).returning(|_, _, _| Ok(()));
 
-    let (_, addr) = build_test_config(db, queue).await;
+    let addr = build_test_config(db, queue).await;
     let resp = call_endpoint(&addr, "/admin/jobs/retry/failed").await;
     assert!(resp.success);
     assert_eq!(resp.data.unwrap().success_count, 2);
@@ -107,7 +103,7 @@ async fn test_admin_retry_verification_timeout_jobs() {
     db.expect_update_job().times(1).returning(|job, _| Ok(job.clone()));
     queue.expect_send_message().times(1).returning(|_, _, _| Ok(()));
 
-    let (_, addr) = build_test_config(db, queue).await;
+    let addr = build_test_config(db, queue).await;
     let resp = call_endpoint(&addr, "/admin/jobs/retry/verification-timeout").await;
     assert!(resp.success);
     assert_eq!(resp.data.unwrap().success_count, 1);
@@ -133,7 +129,7 @@ async fn test_admin_requeue_pending_verification() {
         .withf(|qt, _, _| *qt == QueueType::DataSubmissionJobVerification)
         .returning(|_, _, _| Ok(()));
 
-    let (_, addr) = build_test_config(db, queue).await;
+    let addr = build_test_config(db, queue).await;
     let resp = call_endpoint(&addr, "/admin/jobs/requeue/pending-verification").await;
     assert!(resp.success);
     assert_eq!(resp.data.unwrap().success_count, 1);
@@ -159,7 +155,7 @@ async fn test_admin_requeue_created_jobs() {
         .withf(|qt, _, _| *qt == QueueType::DataSubmissionJobProcessing)
         .returning(|_, _, _| Ok(()));
 
-    let (_, addr) = build_test_config(db, queue).await;
+    let addr = build_test_config(db, queue).await;
     let resp = call_endpoint(&addr, "/admin/jobs/requeue/created").await;
     assert!(resp.success);
     assert_eq!(resp.data.unwrap().success_count, 1);
