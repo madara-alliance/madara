@@ -42,3 +42,11 @@ impl From<sol_types::Error> for EthereumClientError {
         EthereumClientError::Contract(e.to_string())
     }
 }
+
+impl EthereumClientError {
+    /// Returns true if the error is recoverable (network/connection issues).
+    /// These are transient errors that should be retried with backoff.
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self, Self::Rpc(_) | Self::EventStream { .. } | Self::NetworkConnection { .. })
+    }
+}

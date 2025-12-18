@@ -1,6 +1,7 @@
 use crate::client::SettlementLayerProvider;
 use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
+use crate::{RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY};
 use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
 use mp_utils::trim_hash;
@@ -61,7 +62,11 @@ pub async fn state_update_worker(
     l1_head_sender: L1HeadSender,
     block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError> {
-    let state = StateUpdateWorker { block_metrics, backend, l1_head_sender };
+    let state = StateUpdateWorker {
+        block_metrics: block_metrics.clone(),
+        backend: backend.clone(),
+        l1_head_sender: l1_head_sender.clone(),
+    };
 
     // Clear L1 confirmed block at startup
     // TODO: remove this
@@ -70,22 +75,44 @@ pub async fn state_update_worker(
     })?;
     tracing::debug!("update_l1: cleared confirmed block number");
 
-    let Some(initial_state) = ctx
-        .run_until_cancelled(settlement_client.get_current_core_contract_state())
-        .await
-        .transpose()
-        .map_err(|e| SettlementClientError::StateInitialization(format!("Failed to get initial state: {e:#}")))?
-    else {
-        return Ok(()); // Service shutdown while getting initial state
-    };
+    let mut reconnect_delay = RECONNECT_BASE_DELAY;
 
-    tracing::info!("🚀 Subscribed to L1 state verification");
+    loop {
+        match ctx
+            .run_until_cancelled(try_sync_once(
+                &settlement_client,
+                block_metrics.clone(),
+                backend.clone(),
+                l1_head_sender.clone(),
+                ctx.clone(),
+            ))
+            .await
+        {
+            None => return Ok(()),         // Service shutdown
+            Some(Ok(())) => return Ok(()), // Clean exit
+            Some(Err(e)) if e.is_recoverable() => {
+                tracing::warn!("L1 state sync failed: {e:#}, reconnecting in {reconnect_delay:?}");
+                tokio::time::sleep(reconnect_delay).await;
+                reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
+            }
+            Some(Err(e)) => return Err(e), // Non-recoverable
+        }
+    }
+}
 
-    state
-        .update_state(initial_state)
-        .map_err(|e| SettlementClientError::StateUpdate(format!("Failed to update L1 with initial state: {e:#}")))?;
+/// Runs a single state sync session. Returns when the stream ends or an error occurs.
+async fn try_sync_once(
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
+    block_metrics: Arc<L1BlockMetrics>,
+    backend: Arc<MadaraBackend>,
+    l1_head_sender: L1HeadSender,
+    ctx: ServiceContext,
+) -> Result<(), SettlementClientError> {
+    let state = StateUpdateWorker { block_metrics, backend, l1_head_sender };
+    let initial_state = settlement_client.get_current_core_contract_state().await?;
 
-    settlement_client.listen_for_update_state_events(ctx.clone(), state).await.map_err(|e| {
-        SettlementClientError::StateEventListener(format!("Failed to listen for update state events: {e:#}"))
-    })
+    tracing::info!("Subscribed to L1 state verification");
+    state.update_state(initial_state)?;
+
+    settlement_client.listen_for_update_state_events(ctx, state).await
 }
