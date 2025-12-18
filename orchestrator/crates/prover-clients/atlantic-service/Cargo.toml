@@ -12,7 +12,6 @@ color-eyre.workspace = true
 dotenvy.workspace = true
 env_logger.workspace = true
 hex.workspace = true
-httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 once_cell.workspace = true
 opentelemetry.workspace = true
 orchestrator-gps-fact-checker.workspace = true

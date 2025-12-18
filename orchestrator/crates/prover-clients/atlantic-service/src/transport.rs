@@ -1,75 +1,30 @@
 //! HTTP transport utilities for Atlantic API
 //!
 //! This module provides HTTP transport utilities for the Atlantic API client:
-//! authentication and error classification.
+//! authentication header and error classification.
 //!
 //! # Components
 //!
-//! - [`ApiKeyAuth`]: Validates and stores API keys, providing header injection for authenticated requests.
+//! - [`ApiKeyAuth`]: Provides the API key header name constant for authenticated requests.
 //!
 //! - [`HttpResponseClassifier`]: Classifies HTTP error responses as either infrastructure errors
 //!   (retryable) or API errors (non-retryable). This enables smart retry logic that only
 //!   retries transient failures.
 
-use reqwest::header::{HeaderName, HeaderValue};
+use reqwest::header::HeaderName;
 use reqwest::StatusCode;
 
-use crate::error::AtlanticError;
-
-/// Wraps API key and provides header injection for authenticated requests
+/// API key authentication header utilities
 ///
-/// This struct centralizes API key validation and header injection,
-/// eliminating code duplication across multiple API methods.
-///
-/// # Example
-/// ```ignore
-/// let auth = ApiKeyAuth::new(&api_key)?;
-/// let header_value = auth.header_value();
-/// request.header(HeaderName::from_static("api-key"), header_value)
-/// ```
-#[derive(Clone, Debug)]
-pub struct ApiKeyAuth {
-    header_value: HeaderValue,
-}
+/// Provides the header name for API key authentication.
+/// The header value is created inline in client.rs using `HeaderValue::from_str(&api_key)`.
+pub struct ApiKeyAuth;
 
 impl ApiKeyAuth {
-    /// Creates a new API key authentication handler
-    ///
-    /// Validates the API key format at construction time.
-    ///
-    /// # Arguments
-    /// * `api_key` - The API key string
-    ///
-    /// # Errors
-    /// Returns an error if the API key is empty or contains invalid header characters
-    pub fn new(api_key: impl AsRef<str>) -> Result<Self, AtlanticError> {
-        let api_key = api_key.as_ref();
-
-        if api_key.is_empty() {
-            return Err(AtlanticError::Other {
-                operation: "authentication".to_string(),
-                message: "API key cannot be empty".to_string(),
-            });
-        }
-
-        let header_value = HeaderValue::from_str(api_key).map_err(|e| AtlanticError::Other {
-            operation: "authentication".to_string(),
-            message: format!("Invalid API key format: {}", e),
-        })?;
-
-        Ok(Self { header_value })
-    }
-
-    /// Returns the header name for the API key
+    /// Returns the header name for the API key ("api-key")
     #[inline]
     pub fn header_name() -> HeaderName {
         HeaderName::from_static("api-key")
-    }
-
-    /// Returns the header value for the API key
-    #[inline]
-    pub fn header_value(&self) -> HeaderValue {
-        self.header_value.clone()
     }
 }
 
@@ -163,34 +118,8 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_valid_api_key() {
-            let auth = ApiKeyAuth::new("valid-api-key-123");
-            assert!(auth.is_ok());
-        }
-
-        #[test]
-        fn test_empty_api_key_rejected() {
-            let auth = ApiKeyAuth::new("");
-            assert!(auth.is_err());
-
-            let err = auth.unwrap_err();
-            match err {
-                AtlanticError::Other { message, .. } => {
-                    assert!(message.contains("empty"));
-                }
-                _ => panic!("Expected Other error"),
-            }
-        }
-
-        #[test]
         fn test_header_name() {
             assert_eq!(ApiKeyAuth::header_name().as_str(), "api-key");
-        }
-
-        #[test]
-        fn test_header_value() {
-            let auth = ApiKeyAuth::new("test-key").unwrap();
-            assert_eq!(auth.header_value().to_str().unwrap(), "test-key");
         }
     }
 
