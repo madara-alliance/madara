@@ -2,7 +2,7 @@ use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::worker::event_handler::triggers::batching::aggregator::{
-    AggregatorBatchLimits, AggregatorHandler, AggregatorState, AggregatorStateHandler,
+    AggregatorBatchConfig, AggregatorHandler, AggregatorState, AggregatorStateHandler,
 };
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -10,6 +10,8 @@ use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
 use tracing::{debug, error, info};
+
+pub const AGGREGATOR_BATCHING_WORKER_KEY: &str = "AggregatorBatchingWorker";
 
 pub struct AggregatorBatchingTrigger;
 
@@ -20,7 +22,7 @@ impl JobTrigger for AggregatorBatchingTrigger {
         match config
             .lock()
             .acquire_lock(
-                "AggregatorBatchingWorker",
+                AGGREGATOR_BATCHING_WORKER_KEY,
                 LockValue::Boolean(false),
                 config.params.batching_config.batching_worker_lock_duration,
                 None,
@@ -29,21 +31,18 @@ impl JobTrigger for AggregatorBatchingTrigger {
         {
             Ok(_) => {
                 // Lock acquired successfully
-                debug!("AggregatorBatchingWorker acquired lock");
+                debug!("{} acquired lock", AGGREGATOR_BATCHING_WORKER_KEY);
             }
             Err(err) => {
                 // Failed to acquire lock
                 // Returning safely
-                debug!("AggregatorBatchingWorker failed to acquire lock, returning safely: {}", err);
+                debug!("{} failed to acquire lock, returning safely: {}", AGGREGATOR_BATCHING_WORKER_KEY, err);
                 return Ok(());
             }
         }
 
-        let batching_handler = AggregatorHandler::new(
-            config.clone(),
-            AggregatorBatchLimits::from_config(&config.params),
-            config.params.batching_config.default_empty_block_proving_gas,
-        );
+        let batching_handler =
+            AggregatorHandler::new(config.clone(), AggregatorBatchConfig::from_config(&config.params));
 
         let state_handler = AggregatorStateHandler::from_config(&config);
 
@@ -90,8 +89,8 @@ impl JobTrigger for AggregatorBatchingTrigger {
         .await;
 
         // Always release the lock, regardless of whether work succeeded or failed
-        if let Err(e) = config.lock().release_lock("AggregatorBatchingWorker", None).await {
-            error!("Failed to release AggregatorBatchingWorker lock: {}", e);
+        if let Err(e) = config.lock().release_lock(AGGREGATOR_BATCHING_WORKER_KEY, None).await {
+            error!("Failed to release {} lock: {}", AGGREGATOR_BATCHING_WORKER_KEY, e);
             // If work succeeded but lock release failed, return the lock release error
             if result.is_ok() {
                 return Err(e.into());
@@ -109,7 +108,7 @@ impl AggregatorBatchingTrigger {
         let latest_batch = config.database().get_latest_aggregator_batch().await?;
 
         // Getting the latest block numbers for aggregator and snos batches from DB
-        let last_block_in_batches = latest_batch.map_or(-1, |batch| batch.end_block as i64);
+        let last_processed_block = latest_batch.map_or(-1, |batch| batch.end_block as i64);
 
         // Getting the latest block number from the sequencer
         let provider = config.madara_rpc_client();
@@ -117,22 +116,19 @@ impl AggregatorBatchingTrigger {
             provider.block_number().await.map_err(|e| JobError::ProviderError(e.to_string()))?;
 
         // Calculating the last block number that needs to be assigned to a batch
-        let last_block_to_assign_batch = config
+        let last_block = config
             .service_config()
             .max_block_to_process
             .map_or(last_block_in_provider, |max_block| min(max_block, last_block_in_provider));
 
-        debug!(latest_block_number = %last_block_to_assign_batch, "Calculated last block number to batch.");
+        debug!(last_block = %last_block, "Calculated last block number to batch.");
 
         // Calculating the first block number to for which a batch needs to be assigned
-        let first_block_to_assign_batch =
-            max(config.service_config().min_block_to_process, (last_block_in_batches + 1) as u64);
+        let first_block = max(config.service_config().min_block_to_process, (last_processed_block + 1) as u64);
 
-        debug!(first_block_to_assign_batch = %first_block_to_assign_batch, "Calculated first block number to batch.");
+        debug!(first_block = %first_block, "Calculated first block number to batch.");
 
-        let max_blocks_to_process_at_once = config.params.batching_config.max_blocks_to_batch_at_once;
-        let end_block =
-            min(last_block_to_assign_batch, first_block_to_assign_batch + max_blocks_to_process_at_once - 1);
-        Ok((first_block_to_assign_batch, end_block))
+        let last_block = min(last_block, first_block + config.params.batching_config.max_batch_processing_size - 1);
+        Ok((first_block, last_block))
     }
 }

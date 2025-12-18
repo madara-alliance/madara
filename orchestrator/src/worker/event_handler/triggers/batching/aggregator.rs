@@ -68,7 +68,7 @@ impl AggregatorStateHandler {
     ///
     /// IMPORTANT:
     /// 1. Assuming all the details are already updated in state
-    /// 2. Not making database and storage updates atomically. It might happen that one fail and other pass
+    /// 2. Not making database and storage updates atomically. It might happen that one fails and the other passes
     pub async fn save_batch_state(&self, state: &NonEmptyAggregatorState) -> Result<(), JobError> {
         info!(batch=?state.batch, "Saving aggregator batch state");
         // Compressing the state update into vector of felts
@@ -108,20 +108,22 @@ impl AggregatorStateHandler {
     }
 }
 
-pub struct AggregatorBatchLimits {
+pub struct AggregatorBatchConfig {
     pub max_blob_size: usize,
     pub max_batch_size: u64,
     pub max_batch_builtin_weights: AggregatorBatchWeights,
     pub max_batch_time_seconds: u64,
+    pub empty_block_proving_gas: u64,
 }
 
-impl AggregatorBatchLimits {
+impl AggregatorBatchConfig {
     pub fn from_config(config: &ConfigParam) -> Self {
         Self {
             max_blob_size: config.batching_config.max_blob_size,
             max_batch_size: config.batching_config.max_batch_size,
             max_batch_builtin_weights: config.aggregator_batch_weights_limit.clone(),
             max_batch_time_seconds: config.batching_config.max_batch_time_seconds,
+            empty_block_proving_gas: config.batching_config.default_empty_block_proving_gas,
         }
     }
 
@@ -132,15 +134,21 @@ impl AggregatorBatchLimits {
         max_batch_size: u64,
         max_batch_builtin_weights: AggregatorBatchWeights,
         max_batch_time_seconds: u64,
+        empty_block_proving_gas: u64,
     ) -> Self {
-        Self { max_blob_size, max_batch_size, max_batch_builtin_weights, max_batch_time_seconds }
+        Self {
+            max_blob_size,
+            max_batch_size,
+            max_batch_builtin_weights,
+            max_batch_time_seconds,
+            empty_block_proving_gas,
+        }
     }
 }
 
 pub struct AggregatorHandler {
     config: Arc<Config>,
-    limits: AggregatorBatchLimits,
-    empty_block_proving_gas: u64,
+    batch_config: AggregatorBatchConfig,
 }
 
 impl AggregatorHandler {
@@ -199,7 +207,7 @@ impl AggregatorHandler {
             &get_block_builtin_weights(
                 block_num,
                 self.config.madara_feeder_gateway_client(),
-                self.empty_block_proving_gas,
+                self.batch_config.empty_block_proving_gas,
             )
             .await?,
         );
@@ -225,7 +233,7 @@ impl AggregatorHandler {
                         &state_update,
                         &block_weights,
                         block_version,
-                        &self.limits,
+                        &self.batch_config,
                         self.config.madara_rpc_client(),
                     )
                     .await?
@@ -295,7 +303,7 @@ impl AggregatorHandler {
             &get_block_builtin_weights(
                 start_block,
                 self.config.madara_feeder_gateway_client(),
-                self.empty_block_proving_gas,
+                self.batch_config.empty_block_proving_gas,
             )
             .await?,
         );
@@ -365,7 +373,7 @@ impl NonEmptyAggregatorState {
         &self,
         block_weights: &AggregatorBatchWeights,
         block_version: StarknetVersion,
-        batch_limits: &AggregatorBatchLimits,
+        batch_limits: &AggregatorBatchConfig,
     ) -> BatchCheckResult {
         // Check if batch is already closed
         if self.batch.status.is_closed() {
@@ -407,7 +415,7 @@ impl NonEmptyAggregatorState {
         block_state_update: &StateUpdate,
         block_weights: &AggregatorBatchWeights,
         block_version: StarknetVersion,
-        batch_limits: &AggregatorBatchLimits,
+        batch_limits: &AggregatorBatchConfig,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<Option<Self>, JobError> {
         // Perform synchronous checks first
@@ -467,8 +475,8 @@ impl NonEmptyAggregatorState {
 }
 
 impl AggregatorHandler {
-    pub fn new(config: Arc<Config>, limits: AggregatorBatchLimits, empty_block_proving_gas: u64) -> AggregatorHandler {
-        AggregatorHandler { config, limits, empty_block_proving_gas }
+    pub fn new(config: Arc<Config>, batch_config: AggregatorBatchConfig) -> AggregatorHandler {
+        AggregatorHandler { config, batch_config }
     }
 }
 
@@ -551,12 +559,13 @@ mod tests {
     }
 
     /// Helper to create default test limits
-    fn create_test_limits() -> AggregatorBatchLimits {
-        AggregatorBatchLimits::new_for_test(
+    fn create_test_limits() -> AggregatorBatchConfig {
+        AggregatorBatchConfig::new_for_test(
             10000,                                         // max_blob_size
             10,                                            // max_batch_size (10 blocks)
             AggregatorBatchWeights::new(1_000_000, 10000), // max weights
             3600,                                          // max_batch_time_seconds (1 hour)
+            100,                                           // empty block's proving gas
         )
     }
 
@@ -868,13 +877,15 @@ mod tests {
 
         #[test]
         fn test_limits_new_for_test() {
-            let limits = AggregatorBatchLimits::new_for_test(5000, 20, AggregatorBatchWeights::new(100, 200), 7200);
+            let limits =
+                AggregatorBatchConfig::new_for_test(5000, 20, AggregatorBatchWeights::new(100, 200), 7200, 100);
 
             assert_eq!(limits.max_blob_size, 5000);
             assert_eq!(limits.max_batch_size, 20);
             assert_eq!(limits.max_batch_builtin_weights.l1_gas, 100);
             assert_eq!(limits.max_batch_builtin_weights.message_segment_length, 200);
             assert_eq!(limits.max_batch_time_seconds, 7200);
+            assert_eq!(limits.empty_block_proving_gas, 100);
         }
     }
 }

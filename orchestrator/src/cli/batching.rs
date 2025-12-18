@@ -9,7 +9,7 @@ pub struct BatchingCliArgs {
     pub max_batch_time_seconds: u64,
 
     /// Max batch size.
-    #[arg(env = "MADARA_ORCHESTRATOR_MAX_BATCH_SIZE", long)]
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_BATCH_SIZE", long, default_value = "100")]
     pub max_batch_size: u64,
 
     /// Max number of blobs to attach in a single state update transaction
@@ -24,7 +24,7 @@ pub struct BatchingCliArgs {
     /// Maximum number of blocks allowed in a single SNOS batch.
     /// Keep this None if you don't want to specify a hard limit.
     /// This can be used to test with RPC other than Madara.
-    #[arg(env = "MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH", long)]
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH", long, default_value = "10")]
     pub max_blocks_per_snos_batch: u64,
 
     #[arg(env = "MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH", long)]
@@ -42,6 +42,6 @@ pub struct BatchingCliArgs {
     pub default_empty_block_proving_gas: u64,
 
     /// Maximum number of blocks to batch in one go in aggregator and snos batching worker
-    #[arg(env = "MADARA_ORCHESTRATOR_MAX_BLOCKS_TO_BATCH_AT_ONCE", long, default_value = "10")]
-    pub max_blocks_to_batch_at_once: u64,
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_BATCH_PROCESSING_SIZE", long, default_value = "10")]
+    pub max_batch_processing_size: u64,
 }

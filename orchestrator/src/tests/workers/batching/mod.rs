@@ -9,8 +9,10 @@ use crate::core::config::StarknetVersion;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::default_test_bouncer_weights;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
-use crate::worker::event_handler::triggers::aggregator_batching::AggregatorBatchingTrigger;
-use crate::worker::event_handler::triggers::snos_batching::SnosBatchingTrigger;
+use crate::worker::event_handler::triggers::aggregator_batching::{
+    AggregatorBatchingTrigger, AGGREGATOR_BATCHING_WORKER_KEY,
+};
+use crate::worker::event_handler::triggers::snos_batching::{SnosBatchingTrigger, SNOS_BATCHING_WORKER_KEY};
 use crate::worker::event_handler::triggers::JobTrigger;
 use blockifier::bouncer::BouncerWeights;
 use bytes::Bytes;
@@ -110,7 +112,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     // Mock lock client response
     lock.expect_acquire_lock()
         .withf(move |key, value, expiry_seconds, owner| {
-            (key == "AggregatorBatchingWorker" || key == "SnosBatchingWorker")
+            (key == AGGREGATOR_BATCHING_WORKER_KEY || key == SNOS_BATCHING_WORKER_KEY)
                 && *value == LockValue::Boolean(false)
                 && *expiry_seconds == 3600
                 && owner.is_none()
@@ -118,7 +120,9 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         .returning(|_, _, _, _| Ok(LockResult::Acquired));
 
     lock.expect_release_lock()
-        .withf(move |key, owner| (key == "AggregatorBatchingWorker" || key == "SnosBatchingWorker") && owner.is_none())
+        .withf(move |key, owner| {
+            (key == AGGREGATOR_BATCHING_WORKER_KEY || key == SNOS_BATCHING_WORKER_KEY) && owner.is_none()
+        })
         .returning(|_, _| Ok(LockResult::Released));
 
     let rpc_block_call_mock = server.mock(|when, then| {
@@ -286,7 +290,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
 
     lock.expect_acquire_lock()
         .withf(move |key, value, expiry_seconds, owner| {
-            (key == "AggregatorBatchingWorker" || key == "SnosBatchingWorker")
+            (key == AGGREGATOR_BATCHING_WORKER_KEY || key == SNOS_BATCHING_WORKER_KEY)
                 && *value == LockValue::Boolean(false)
                 && *expiry_seconds == 3600
                 && owner.is_none()
@@ -294,7 +298,9 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         .returning(|_, _, _, _| Ok(LockResult::Acquired));
 
     lock.expect_release_lock()
-        .withf(move |key, owner| (key == "AggregatorBatchingWorker" || key == "SnosBatchingWorker") && owner.is_none())
+        .withf(move |key, owner| {
+            (key == AGGREGATOR_BATCHING_WORKER_KEY || key == SNOS_BATCHING_WORKER_KEY) && owner.is_none()
+        })
         .returning(|_, _| Ok(LockResult::Released));
 
     // Mock starknet_blockNumber - single mock that's reusable
@@ -573,7 +579,7 @@ async fn test_aggregator_lock_acquisition_fails() -> Result<(), Box<dyn Error>> 
 
     // Mock lock client to return an error (simulating lock already held by another worker)
     lock.expect_acquire_lock()
-        .withf(|key, _, _, _| key == "AggregatorBatchingWorker")
+        .withf(|key, _, _, _| key == AGGREGATOR_BATCHING_WORKER_KEY)
         .returning(|_, _, _, _| Err(LockError::LockAlreadyHeld { current_owner: "other_worker".to_string() }));
 
     let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&provider_url).expect("Failed to parse URL")));
@@ -610,7 +616,7 @@ async fn test_snos_lock_acquisition_fails() -> Result<(), Box<dyn Error>> {
 
     // Mock lock client to return an error (simulating lock already held by another worker)
     lock.expect_acquire_lock()
-        .withf(|key, _, _, _| key == "SnosBatchingWorker")
+        .withf(|key, _, _, _| key == SNOS_BATCHING_WORKER_KEY)
         .returning(|_, _, _, _| Err(LockError::LockAlreadyHeld { current_owner: "other_worker".to_string() }));
 
     let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&provider_url).expect("Failed to parse URL")));
@@ -647,10 +653,10 @@ async fn test_aggregator_rpc_block_number_failure() -> Result<(), Box<dyn Error>
 
     // Mock lock client
     lock.expect_acquire_lock()
-        .withf(|key, _, _, _| key == "AggregatorBatchingWorker")
+        .withf(|key, _, _, _| key == AGGREGATOR_BATCHING_WORKER_KEY)
         .returning(|_, _, _, _| Ok(LockResult::Acquired));
     lock.expect_release_lock()
-        .withf(|key, _| key == "AggregatorBatchingWorker")
+        .withf(|key, _| key == AGGREGATOR_BATCHING_WORKER_KEY)
         .returning(|_, _| Ok(LockResult::Released));
 
     // Mock RPC to return an error for block number
@@ -696,9 +702,11 @@ async fn test_snos_rpc_block_number_failure_l3() -> Result<(), Box<dyn Error>> {
 
     // Mock lock client
     lock.expect_acquire_lock()
-        .withf(|key, _, _, _| key == "SnosBatchingWorker")
+        .withf(|key, _, _, _| key == SNOS_BATCHING_WORKER_KEY)
         .returning(|_, _, _, _| Ok(LockResult::Acquired));
-    lock.expect_release_lock().withf(|key, _| key == "SnosBatchingWorker").returning(|_, _| Ok(LockResult::Released));
+    lock.expect_release_lock()
+        .withf(|key, _| key == SNOS_BATCHING_WORKER_KEY)
+        .returning(|_, _| Ok(LockResult::Released));
 
     // Mock RPC to return an error for block number
     server.mock(|when, then| {
@@ -755,10 +763,10 @@ async fn test_aggregator_no_new_blocks() -> Result<(), Box<dyn Error>> {
 
     // Mock lock client
     lock.expect_acquire_lock()
-        .withf(|key, _, _, _| key == "AggregatorBatchingWorker")
+        .withf(|key, _, _, _| key == AGGREGATOR_BATCHING_WORKER_KEY)
         .returning(|_, _, _, _| Ok(LockResult::Acquired));
     lock.expect_release_lock()
-        .withf(|key, _| key == "AggregatorBatchingWorker")
+        .withf(|key, _| key == AGGREGATOR_BATCHING_WORKER_KEY)
         .returning(|_, _| Ok(LockResult::Released));
 
     // Mock RPC to return block 9 (same as batch end_block)

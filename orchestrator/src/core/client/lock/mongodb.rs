@@ -1,5 +1,4 @@
 use crate::cli::database::mongodb::MongoDBCliArgs;
-use crate::cli::{RunCmd, SetupCmd};
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
 use crate::core::client::lock::error::LockError;
 use crate::core::client::lock::{LockClient, LockInfo, LockResult, LockValue};
@@ -38,23 +37,6 @@ impl MongoLockClient {
             database: Arc::new(client.database(&database_name)),
             collection_name: String::from(LOCKS_COLLECTION),
         })
-    }
-    /// Create MongoLockClient from the setup command
-    ///
-    /// # Arguments
-    /// * `cmd` - The setup command
-    ///
-    /// # Returns
-    ///  the lock client
-    ///
-    /// # Errors
-    /// Returns an error if database args are invalid
-    pub async fn from_setup_cmd(setup_cmd: SetupCmd) -> Result<Self, OrchestratorError> {
-        Self::from_mongodb_args(setup_cmd.mongodb_args).await
-    }
-
-    pub async fn from_run_cmd(run_cmd: RunCmd) -> Result<Self, OrchestratorError> {
-        Self::from_mongodb_args(run_cmd.mongodb_args).await
     }
 
     /// Creates a new MongolockClient instance

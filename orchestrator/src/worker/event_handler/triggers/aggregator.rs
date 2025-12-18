@@ -115,23 +115,27 @@ impl AggregatorJobTrigger {
             return Ok(false);
         } else {
             // unwraps are safe here
-            let first = snos_batches.first().unwrap();
-            let last = snos_batches.last().unwrap();
+            let first_snos_batch = snos_batches.first().unwrap();
+            let last_snos_batch = snos_batches.last().unwrap();
 
-            if first.start_block != aggregator_batch.start_block || last.end_block != aggregator_batch.end_block {
+            // checking if the boundaries of aggregator batch snos batches are same
+            if first_snos_batch.start_block != aggregator_batch.start_block
+                || last_snos_batch.end_block != aggregator_batch.end_block
+            {
                 return Ok(false);
             }
 
-            let mut start = first.start_block;
+            // confirming that there are no gaps in the batches and all snos batches are closed
+            let mut expected_start_block = first_snos_batch.start_block;
             for batch in snos_batches.iter() {
-                if !batch.status.is_closed() || batch.start_block != start {
+                if !batch.status.is_closed() || batch.start_block != expected_start_block {
                     return Ok(false);
                 } else {
-                    start = batch.end_block + 1;
+                    expected_start_block = batch.end_block + 1;
                 }
             }
 
-            (first.index, last.index)
+            (first_snos_batch.index, last_snos_batch.index)
         };
 
         let jobs =

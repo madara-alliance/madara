@@ -126,15 +126,13 @@ impl SnosHandler {
                     self.empty_block_proving_gas,
                 )
                 .await?;
-                let new_state = self
-                    .start_snos_batch(
-                        empty_state.index,
-                        aggregator_batch_index,
-                        block_num,
-                        block_weights,
-                        block_version,
-                    )
-                    .await?;
+                let new_state = NonEmptySnosState::new(SnosBatch::new(
+                    empty_state.index,
+                    aggregator_batch_index,
+                    block_num,
+                    block_weights,
+                    block_version,
+                ));
                 Ok(BlockProcessingResult::Accumulated(new_state))
             }
             SnosState::NonEmpty(state) => {
@@ -191,33 +189,16 @@ impl SnosHandler {
                 );
 
                 let completed_state = state.close();
-                let new_state = SnosState::NonEmpty(
-                    self.start_snos_batch(
-                        state.batch.index + 1,
-                        aggregator_batch_index,
-                        block_num,
-                        block_weights,
-                        block_version,
-                    )
-                    .await?,
-                );
-
+                let new_state = SnosState::NonEmpty(NonEmptySnosState::new(SnosBatch::new(
+                    state.batch.index + 1,
+                    aggregator_batch_index,
+                    block_num,
+                    block_weights,
+                    block_version,
+                )));
                 Ok(BlockProcessingResult::BatchCompleted { completed_state, new_state })
             }
         }
-    }
-
-    /// Start a new SNOS batch with the given parameters
-    pub async fn start_snos_batch(
-        &self,
-        index: u64,
-        aggregator_batch_index: Option<u64>,
-        start_block: u64,
-        initial_weights: BouncerWeights,
-        version: StarknetVersion,
-    ) -> Result<NonEmptySnosState, JobError> {
-        let batch = SnosBatch::new(index, aggregator_batch_index, start_block, initial_weights, version);
-        Ok(NonEmptySnosState::new(batch))
     }
 }
 
@@ -306,8 +287,8 @@ impl NonEmptySnosState {
                 None => {
                     return SnosBatchCheckResult::MissingAggregatorBatch;
                 }
-                Some(block_agg_index) => {
-                    if snos_batch_aggregator_batch_index != block_agg_index {
+                Some(block_aggregator_batch_index) => {
+                    if snos_batch_aggregator_batch_index != block_aggregator_batch_index {
                         return SnosBatchCheckResult::AggregatorBatchMismatch;
                     }
                 }

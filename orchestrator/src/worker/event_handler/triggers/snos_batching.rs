@@ -14,6 +14,8 @@ use tracing::{debug, error, info, warn};
 
 pub struct SnosBatchingTrigger;
 
+pub const SNOS_BATCHING_WORKER_KEY: &str = "SnosBatchingWorker";
+
 #[async_trait::async_trait]
 impl JobTrigger for SnosBatchingTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
@@ -21,7 +23,7 @@ impl JobTrigger for SnosBatchingTrigger {
         match config
             .lock()
             .acquire_lock(
-                "SnosBatchingWorker",
+                SNOS_BATCHING_WORKER_KEY,
                 LockValue::Boolean(false),
                 config.params.batching_config.batching_worker_lock_duration,
                 None,
@@ -30,12 +32,12 @@ impl JobTrigger for SnosBatchingTrigger {
         {
             Ok(_) => {
                 // Lock acquired successfully
-                debug!("SnosBatchingWorker acquired lock");
+                debug!("{} acquired lock", SNOS_BATCHING_WORKER_KEY);
             }
             Err(err) => {
                 // Failed to acquire lock
                 // Returning safely
-                debug!("SnosBatchingWorker failed to acquire lock, returning safely: {}", err);
+                debug!("{} failed to acquire lock, returning safely: {}", SNOS_BATCHING_WORKER_KEY, err);
                 return Ok(());
             }
         }
@@ -121,8 +123,8 @@ impl JobTrigger for SnosBatchingTrigger {
         .await;
 
         // Always release the lock, regardless of whether work succeeded or failed
-        if let Err(e) = config.lock().release_lock("SnosBatchingWorker", None).await {
-            error!("Failed to release SnosBatchingWorker lock: {}", e);
+        if let Err(e) = config.lock().release_lock(SNOS_BATCHING_WORKER_KEY, None).await {
+            error!("Failed to release {} lock: {}", SNOS_BATCHING_WORKER_KEY, e);
             // If work succeeded but lock release failed, return the lock release error
             if result.is_ok() {
                 return Err(e.into());
@@ -148,10 +150,10 @@ impl SnosBatchingTrigger {
         let latest_aggregator_batch = config.database().get_latest_aggregator_batch().await?;
 
         // Get the last block processed by SNOS batching
-        let last_snos_block_in_db = latest_snos_batch.map_or(-1, |batch| batch.end_block as i64);
+        let last_block_in_snos_batches = latest_snos_batch.map_or(-1, |batch| batch.end_block as i64);
 
         // Get the last block processed by aggregator batching
-        let last_aggregator_block_in_db = match latest_aggregator_batch {
+        let last_block_in_aggregator_batches = match latest_aggregator_batch {
             Some(batch) => batch.end_block as i64,
             None => {
                 // No aggregator batch exists, so we can't process any SNOS batches
@@ -161,28 +163,25 @@ impl SnosBatchingTrigger {
         };
 
         // Calculate the first block to assign to SNOS batch
-        let first_block_to_assign_batch =
-            max(config.service_config().min_block_to_process, (last_snos_block_in_db + 1) as u64);
+        let first_block = max(config.service_config().min_block_to_process, (last_block_in_snos_batches + 1) as u64);
 
         // Calculate the last block to assign to SNOS batch
         // For L2s, we can only process blocks that have been assigned to aggregator batches
-        let last_block_to_assign_batch = config
-            .service_config()
-            .max_block_to_process
-            .map_or(last_aggregator_block_in_db as u64, |max_block| min(max_block, last_aggregator_block_in_db as u64));
+        let last_block =
+            config.service_config().max_block_to_process.map_or(last_block_in_aggregator_batches as u64, |max_block| {
+                min(max_block, last_block_in_aggregator_batches as u64)
+            });
 
         debug!(
-            first_block_to_assign_batch = %first_block_to_assign_batch,
-            last_block_to_assign_batch = %last_block_to_assign_batch,
+            first_block = %first_block,
+            last_block = %last_block,
             "Calculated SNOS batch range for L2"
         );
 
         // Cap the range by max_blocks_to_process_at_once
-        let max_blocks_to_process_at_once = config.params.batching_config.max_blocks_to_batch_at_once;
-        let end_block =
-            min(last_block_to_assign_batch, first_block_to_assign_batch + max_blocks_to_process_at_once - 1);
+        let last_block = min(last_block, first_block + config.params.batching_config.max_batch_processing_size - 1);
 
-        Ok((first_block_to_assign_batch, end_block))
+        Ok((first_block, last_block))
     }
 
     /// Calculate the range of blocks to process for L3s
@@ -195,7 +194,7 @@ impl SnosBatchingTrigger {
         let latest_snos_batch = config.database().get_latest_snos_batch().await?;
 
         // Get the last block processed by SNOS batching
-        let last_snos_block_in_db = latest_snos_batch.map_or(-1, |batch| batch.end_block as i64);
+        let last_processed_block = latest_snos_batch.map_or(-1, |batch| batch.end_block as i64);
 
         // Get the latest block number from the sequencer
         let provider = config.madara_rpc_client();
@@ -203,26 +202,23 @@ impl SnosBatchingTrigger {
             provider.block_number().await.map_err(|e| JobError::ProviderError(e.to_string()))?;
 
         // Calculate the first block to assign to SNOS batch
-        let first_block_to_assign_batch =
-            max(config.service_config().min_block_to_process, (last_snos_block_in_db + 1) as u64);
+        let first_block = max(config.service_config().min_block_to_process, (last_processed_block + 1) as u64);
 
         // Calculate the last block to assign to SNOS batch
-        let last_block_to_assign_batch = config
+        let last_block = config
             .service_config()
             .max_block_to_process
             .map_or(block_number_provider, |max_block| min(max_block, block_number_provider));
 
         debug!(
-            first_block_to_assign_batch = %first_block_to_assign_batch,
-            last_block_to_assign_batch = %last_block_to_assign_batch,
+            first_block = %first_block,
+            last_block = %last_block,
             "Calculated SNOS batch range for L3"
         );
 
         // Cap the range by max_blocks_to_process_at_once
-        let max_blocks_to_process_at_once = config.params.batching_config.max_blocks_to_batch_at_once;
-        let end_block =
-            min(last_block_to_assign_batch, first_block_to_assign_batch + max_blocks_to_process_at_once - 1);
+        let last_block = min(last_block, first_block + config.params.batching_config.max_batch_processing_size - 1);
 
-        Ok((first_block_to_assign_batch, end_block))
+        Ok((first_block, last_block))
     }
 }
