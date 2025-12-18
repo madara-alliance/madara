@@ -97,7 +97,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
         JobType::SnosRun => JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Snos(SnosMetadata {
-                snos_batch_index: 1,
+                snos_batch_index: block_number,
                 start_block: block_number,
                 end_block: block_number,
                 num_blocks: 1,
