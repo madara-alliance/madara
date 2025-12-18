@@ -1,22 +1,10 @@
-//! Atlantic API operations layer
+//! Atlantic API operations layer (middle layer)
 //!
 //! This module handles request building and response parsing for all Atlantic API endpoints.
 //! It encapsulates the API structure (paths, form fields, JSON shapes) while remaining
 //! agnostic to HTTP transport details, retry logic, and metrics collection.
 //!
-//! # Architecture
-//!
-//! This is the middle layer in the three-layer architecture:
-//!
-//! ```text
-//! ┌─────────────────────────────┐
-//! │      Client Layer           │  ← Retry logic, metrics, public API
-//! ├─────────────────────────────┤
-//! │     API Layer (here)        │  ← Request building, response parsing
-//! ├─────────────────────────────┤
-//! │    Transport Layer          │  ← Authentication, error classification
-//! └─────────────────────────────┘
-//! ```
+//! See [`transport`] module for the full architecture diagram.
 //!
 //! # Design Principles
 //!
@@ -44,25 +32,6 @@
 //! | Submit L2 query | `build_submit_l2_query_request` | `parse_job_response` |
 //! | Get artifacts | (direct HTTP) | `parse_artifacts_response` |
 //! | Get proof | (direct HTTP) | `parse_proof_response` |
-//!
-//! # Example
-//!
-//! ```ignore
-//! // Build request (API layer)
-//! let request = AtlanticApiOperations::build_create_bucket_request(
-//!     client.request(),
-//!     &auth,
-//!     mock_proof,
-//!     chain_id_hex,
-//!     fee_token_address,
-//! )?;
-//!
-//! // Send request (handled by client layer)
-//! let response = request.send().await?;
-//!
-//! // Parse response (API layer)
-//! let result = AtlanticApiOperations::parse_bucket_response(response, "create_bucket").await?;
-//! ```
 
 use std::path::Path;
 

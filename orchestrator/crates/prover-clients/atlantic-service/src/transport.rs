@@ -26,20 +26,6 @@
 //! │    Transport Layer (here)   │  ← Authentication, error classification
 //! └─────────────────────────────┘
 //! ```
-//!
-//! # Example
-//!
-//! ```ignore
-//! use crate::transport::{ApiKeyAuth, HttpResponseClassifier};
-//!
-//! // Create authenticated request
-//! let auth = ApiKeyAuth::new("my-api-key")?;
-//! let request = client.request()
-//!     .header(ApiKeyAuth::header_name(), auth.header_value());
-//!
-//! // Classify error response
-//! let is_retryable = HttpResponseClassifier::is_infrastructure_error(status, &response_text);
-//! ```
 
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::StatusCode;
