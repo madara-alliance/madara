@@ -379,11 +379,7 @@ impl AtlanticProverService {
         )
     }
 
-    pub fn with_test_params(
-        port: u16,
-        atlantic_params: &AtlanticValidatedArgs,
-        proof_layout: &LayoutName,
-    ) -> Self {
+    pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params);
 
