@@ -153,8 +153,16 @@ where
         write!(writer, "{}{:<14}{} ", queue_color, queue.1, reset)?;
         write!(writer, "{}|{} ", dim_color, reset)?;
 
-        // Write the main message
-        write!(writer, "{}{}{}", msg_color, visitor.message, reset)?;
+        // Add service/package as prefix to message
+        let service = extract_service_name(meta.target());
+
+        // Write the service prefix and main message
+        if service != "-" {
+            write!(writer, "{}{}: {}{}", queue_color, service, msg_color, visitor.message)?;
+        } else {
+            write!(writer, "{}{}{}", msg_color, visitor.message, reset)?;
+        }
+        write!(writer, "{}", reset)?;
 
         // Write fields separately with proper formatting (excluding queue which is already shown)
         if !visitor.meta.is_empty() || !visitor.fields.is_empty() {
@@ -276,6 +284,7 @@ where
         root.insert("timestamp".to_string(), Value::String(ts));
         root.insert("level".to_string(), Value::String(meta.level().to_string()));
         root.insert("target".to_string(), Value::String(meta.target().to_string()));
+        root.insert("service".to_string(), Value::String(extract_service_name(meta.target()).to_string()));
         if let Some(file) = meta.file() {
             root.insert("filename".to_string(), Value::String(file.to_string()));
         }
@@ -367,6 +376,44 @@ pub fn init_logging() {
             .with(fmt_layer)
             .with(ErrorLayer::default());
         tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
+    }
+}
+
+/// Extract service/package name from the tracing target
+///
+/// Maps crate names to short display names for service identification in logs.
+///
+/// # Classification
+///
+/// - **Orchestrator crates** → Specific service names (ATLANTIC, UTILS, GPS_FACT_CHK, etc.)
+/// - **Generic orchestrator** → "-" (no specific service, core orchestrator code)
+/// - **Third-party dependencies** → "EXTERNAL" (logs from Rust ecosystem crates)
+///
+/// Note: "EXTERNAL" refers to third-party Rust crates (tokio, hyper, reqwest, etc.),
+/// NOT external services like Atlantic. Atlantic logs are tagged as "ATLANTIC".
+///
+/// # Examples
+///
+/// ```ignore
+/// extract_service_name("orchestrator_atlantic_service::client") → "ATLANTIC"
+/// extract_service_name("orchestrator_utils::logging")           → "UTILS"
+/// extract_service_name("orchestrator::core::config")            → "-"
+/// extract_service_name("tokio::runtime")                        → "EXTERNAL"
+/// extract_service_name("hyper::client")                         → "EXTERNAL"
+/// ```
+fn extract_service_name(target: &str) -> &'static str {
+    if target.starts_with("orchestrator_atlantic_service") {
+        "ATLANTIC"
+    } else if target.starts_with("orchestrator_gps_fact_checker") {
+        "GPS_FACT_CHK"
+    } else if target.starts_with("orchestrator_prover_client_interface") {
+        "PROVER_IFACE"
+    } else if target.starts_with("orchestrator_utils") {
+        "UTILS"
+    } else if target.starts_with("orchestrator") {
+        "-"
+    } else {
+        "EXTERNAL"
     }
 }
 

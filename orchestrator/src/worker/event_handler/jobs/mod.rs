@@ -12,6 +12,7 @@ use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Job Trait
 ///
@@ -69,4 +70,22 @@ pub trait JobHandlerTrait: Send + Sync {
 
     /// Should return the number of seconds to wait before polling for verification
     fn verification_polling_delay_seconds(&self) -> u64;
+
+    /// Check if external dependencies are ready before processing.
+    ///
+    /// This method is called before locking the job for processing. It allows handlers
+    /// to verify that required external services (e.g., RPC endpoints) are available.
+    ///
+    /// # Arguments
+    /// * `config` - Shared configuration for the job
+    ///
+    /// # Returns
+    /// * `Ok(())` - Dependencies are ready, proceed with processing
+    /// * `Err(Duration)` - Dependencies unavailable, requeue job with the specified delay
+    ///
+    /// # Default Implementation
+    /// Returns `Ok(())` - always ready to process
+    async fn check_ready_to_process(&self, _config: Arc<Config>) -> Result<(), Duration> {
+        Ok(())
+    }
 }
