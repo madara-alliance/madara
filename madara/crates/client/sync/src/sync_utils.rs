@@ -55,6 +55,7 @@ pub async fn compress_state_diff(
         old_declared_contracts: raw_state_diff.old_declared_contracts,
         nonces: raw_state_diff.nonces,
         replaced_classes,
+        migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Update this
     };
 
     compressed_diff.sort();
@@ -169,6 +170,7 @@ impl StateDiffMap {
             old_declared_contracts: deprecated_declared_classes,
             nonces,
             replaced_classes,
+            migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Update this
         }
     }
 }

@@ -649,6 +649,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
             deployed_contracts: vec![DeployedContractItem { address: contracts[0], class_hash: class_hashes[0] }],
             replaced_classes: vec![],
             nonces: vec![],
+            migrated_compiled_classes: vec![],
         },
         StateDiff {
             storage_diffs: vec![
@@ -672,6 +673,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
                 NonceUpdate { contract_address: contracts[0], nonce: 1.into() },
                 NonceUpdate { contract_address: contracts[2], nonce: 2.into() },
             ],
+            migrated_compiled_classes: vec![],
         },
         StateDiff {
             storage_diffs: vec![
@@ -689,6 +691,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
             deployed_contracts: vec![],
             replaced_classes: vec![],
             nonces: vec![],
+            migrated_compiled_classes: vec![],
         },
         StateDiff {
             storage_diffs: vec![ContractStorageDiffItem {
@@ -709,6 +712,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
                 NonceUpdate { contract_address: contracts[0], nonce: 3.into() },
                 NonceUpdate { contract_address: contracts[1], nonce: 2.into() },
             ],
+            migrated_compiled_classes: vec![],
         },
     ];
 
