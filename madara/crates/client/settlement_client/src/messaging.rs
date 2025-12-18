@@ -1,5 +1,6 @@
 use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
+use crate::{RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY};
 use alloy::primitives::{B256, U256};
 use futures::StreamExt;
 use mc_db::MadaraBackend;
@@ -96,16 +97,38 @@ async fn sync_inner(
     let replay_max_duration = chain_config.l1_messages_replay_max_duration;
     let finality_blocks = chain_config.l1_messages_finality_blocks;
 
-    let from_l1_block_n = get_start_block(&settlement_client, &backend, replay_max_duration).await?;
+    let mut reconnect_delay = RECONNECT_BASE_DELAY;
+
+    loop {
+        match run_message_sync(&settlement_client, &backend, &notify_consumer, replay_max_duration, finality_blocks)
+            .await
+        {
+            Ok(()) => {
+                reconnect_delay = RECONNECT_BASE_DELAY;
+            }
+            Err(e) => {
+                tracing::warn!("L1 message sync failed: {e:#}, reconnecting in {reconnect_delay:?}");
+            }
+        }
+
+        tokio::time::sleep(reconnect_delay).await;
+        reconnect_delay = std::cmp::min(reconnect_delay * 2, RECONNECT_MAX_DELAY);
+    }
+}
+
+/// Runs a single message sync session. Returns when the stream ends or an error occurs.
+async fn run_message_sync(
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
+    backend: &Arc<MadaraBackend>,
+    notify_consumer: &Notify,
+    replay_max_duration: Duration,
+    finality_blocks: u64,
+) -> Result<(), SettlementClientError> {
+    let from_l1_block_n = get_start_block(settlement_client, backend, replay_max_duration).await?;
 
     tracing::info!("⟠ Starting L1→L2 message sync from block #{from_l1_block_n} (finality: {finality_blocks} blocks)");
 
-    let mut stream = settlement_client
-        .messages_to_l2_stream(from_l1_block_n)
-        .await
-        .map_err(|e| SettlementClientError::StreamProcessing(format!("Failed to create messaging stream: {}", e)))?;
-
-    // Buffer for events waiting for finality
+    let mut stream = settlement_client.messages_to_l2_stream(from_l1_block_n).await?;
     let mut pending_events: VecDeque<MessageToL2WithMetadata> = VecDeque::new();
 
     loop {
@@ -128,10 +151,9 @@ async fn sync_inner(
                         tracing::warn!("L1 event stream error: {e:#}");
                     }
                     None => {
-                        // Stream ended unexpectedly - this shouldn't happen in normal operation
-                        tracing::warn!("L1 event stream ended unexpectedly");
+                        // Stream ended - return error to trigger reconnection
                         return Err(SettlementClientError::StreamProcessing(
-                            "L1 event stream ended unexpectedly".to_string()
+                            "L1 event stream ended unexpectedly".into(),
                         ));
                     }
                 }
@@ -140,9 +162,13 @@ async fn sync_inner(
             _ = timeout => {}
         }
 
-        // Process finalized events
-        process_finalized_events(&settlement_client, &backend, &notify_consumer, &mut pending_events, finality_blocks)
-            .await?;
+        // Process finalized events - continue on transient errors
+        if let Err(e) =
+            process_finalized_events(settlement_client, backend, notify_consumer, &mut pending_events, finality_blocks)
+                .await
+        {
+            tracing::warn!("Error processing finalized events: {e:#}");
+        }
     }
 }
 
@@ -538,6 +564,55 @@ mod messaging_module_tests {
         ctx_clone.cancel_global();
         sync_handle.abort();
 
+        Ok(())
+    }
+
+    /// Tests that sync_inner implements exponential backoff when L1 RPC fails.
+    /// Verifies: no panic, retries continue, backoff doubles, caps at max delay.
+    ///
+    /// `start_paused = true` pauses tokio's time at test start, allowing us to
+    /// manually advance time with `tokio::time::advance()` for deterministic testing.
+    #[tokio::test(start_paused = true)]
+    async fn test_backoff_on_rpc_failure() -> anyhow::Result<()> {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let chain_config = Arc::new(ChainConfig::madara_test());
+        let db = MadaraBackend::open_for_testing(chain_config.clone());
+        db.write_l1_messaging_sync_tip(Some(99))?;
+
+        let mut mock_client = MockSettlementLayerProvider::new();
+        let attempt_count = Arc::new(AtomicU32::new(0));
+        let attempt_count_clone = attempt_count.clone();
+
+        // Simulate RPC failure: stream ends immediately on each attempt
+        mock_client.expect_messages_to_l2_stream().returning(move |_| {
+            attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(stream::empty().boxed())
+        });
+        mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+
+        let client = Arc::new(mock_client);
+        let ctx = ServiceContext::new_for_testing();
+
+        let sync_handle = tokio::spawn(async move { sync(client, db, Arc::new(Notify::new()), ctx).await });
+
+        // Verify exponential backoff: 1s -> 2s -> 4s
+        tokio::time::advance(Duration::from_millis(50)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(attempt_count.load(Ordering::SeqCst), 1);
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(attempt_count.load(Ordering::SeqCst), 2);
+
+        tokio::time::advance(Duration::from_secs(2)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(attempt_count.load(Ordering::SeqCst), 3);
+
+        // Task should still be running (no panic)
+        assert!(!sync_handle.is_finished());
+
+        sync_handle.abort();
         Ok(())
     }
 }

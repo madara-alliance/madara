@@ -11,7 +11,7 @@ on:
 
 jobs:
   hive-madara:
-    runs-on: blacksmith-16vcpu-ubuntu-2204
+    runs-on: blacksmith-8vcpu-ubuntu-2204
 
     steps:
       - name: Download madara
