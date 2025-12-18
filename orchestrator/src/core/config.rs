@@ -335,15 +335,12 @@ impl Config {
             ProverConfig::Sharp(sharp_params) => {
                 Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
             }
-            ProverConfig::Atlantic(atlantic_params) => Box::new(
-                AtlanticProverService::new_with_args(
-                    atlantic_params,
-                    &params.prover_layout_name,
-                    chain_id_hex,
-                    fee_token_address,
-                )
-                .expect("Failed to create Atlantic prover service"),
-            ),
+            ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(
+                atlantic_params,
+                &params.prover_layout_name,
+                chain_id_hex,
+                fee_token_address,
+            )),
         }
     }
 
