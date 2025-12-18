@@ -648,8 +648,7 @@ impl JobHandlerService {
         .await
     }
 
-    /// Retries a failed job by reprocessing it.
-    /// Only jobs with Failed status can be retried.
+    /// Retries a failed or verification-timed-out job by reprocessing it.
     ///
     /// # Arguments
     /// * `id` - UUID of the job to retry
@@ -660,9 +659,10 @@ impl JobHandlerService {
     ///
     /// # State Transitions
     /// * `Failed` -> `PendingRetry` -> (normal processing flow)
+    /// * `VerificationTimeout` -> `PendingRetry` -> (normal processing flow)
     ///
     /// # Notes
-    /// * Only jobs in Failed status can be retried
+    /// * Only jobs in `Failed` or `VerificationTimeout` status can be retried
     /// * Transitions through PendingRetry status before normal processing
     /// * Uses standard process_job function after status update
     pub async fn retry_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
@@ -676,11 +676,11 @@ impl JobHandlerService {
             block_no = %internal_id,
             "General retry job started for block"
         );
-        if job.status != JobStatus::Failed {
+        if !matches!(job.status, JobStatus::Failed | JobStatus::VerificationTimeout) {
             error!(
                 job_id = ?id,
                 status = ?job.status,
-                "Cannot retry job: invalid status"
+                "Cannot retry job: invalid status (must be Failed or VerificationTimeout)"
             );
             return Err(JobError::InvalidStatus { id, job_status: job.status });
         }

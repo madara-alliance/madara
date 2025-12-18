@@ -119,10 +119,111 @@ async fn handle_retry_all_failed_jobs(
     }
 }
 
+/// Handles HTTP requests to retry all verification-timed-out jobs.
+///
+/// This endpoint initiates the retry process for all jobs in VerificationTimeout status.
+/// Jobs are transitioned to PendingRetry and re-processed from scratch.
+/// Optionally filters by job types if provided in query parameters.
+///
+/// # Arguments
+/// * `State(config)` - Shared application configuration
+/// * `Query(filter)` - Optional job types filter from query parameters
+///
+/// # Returns
+/// * `JobRouteResult` - Success response with job count and IDs, or error details
+///
+/// # Errors
+/// * `JobRouteError::ProcessingError` - If the bulk retry operation fails
+async fn handle_retry_verification_timeout_jobs(
+    State(config): State<Arc<Config>>,
+    Query(filter): Query<JobTypeFilter>,
+) -> JobRouteResult {
+    // Check if admin is enabled
+    if !config.server_config().admin_enabled {
+        error!("Admin endpoints are disabled");
+        return Err(JobRouteError::ProcessingError(
+            "Admin endpoints are disabled. Enable with --admin-enabled flag.".to_string(),
+        ));
+    }
+
+    info!(job_types = ?filter.job_type, "Admin: Retry all verification-timeout jobs request received");
+
+    match AdminService::retry_all_verification_timeout_jobs(filter.job_type.clone(), config.clone()).await {
+        Ok(result) => {
+            info!(
+                success = result.success_count,
+                failed = result.failed_count,
+                job_types = ?filter.job_type,
+                "Admin: Completed retry of verification-timeout jobs"
+            );
+
+            ORCHESTRATOR_METRICS.successful_job_operations.add(
+                result.success_count as f64,
+                &[KeyValue::new("operation_type", "admin_retry_verification_timeout"), KeyValue::new("admin", "true")],
+            );
+
+            if result.failed_count > 0 {
+                ORCHESTRATOR_METRICS.failed_job_operations.add(
+                    result.failed_count as f64,
+                    &[
+                        KeyValue::new("operation_type", "admin_retry_verification_timeout"),
+                        KeyValue::new("admin", "true"),
+                    ],
+                );
+            }
+
+            let message = if result.success_count == 0 && result.failed_count == 0 {
+                "No verification-timeout jobs to retry".to_string()
+            } else if result.failed_count > 0 {
+                format!(
+                    "Queued {} verification-timeout job(s) for retry. {} job(s) failed to queue.",
+                    result.success_count, result.failed_count
+                )
+            } else {
+                format!("Successfully queued {} verification-timeout job(s) for retry", result.success_count)
+            };
+
+            Ok(Json(ApiResponse::<BulkJobResponse>::success_with_data(
+                BulkJobResponse {
+                    success_count: result.success_count,
+                    successful_job_ids: result.successful_job_ids,
+                    failed_count: result.failed_count,
+                    failed_job_ids: result.failed_job_ids,
+                },
+                Some(message),
+            ))
+            .into_response())
+        }
+        Err(e) => {
+            error!(error = %e, job_types = ?filter.job_type, "Admin: Failed to retry verification-timeout jobs");
+            ORCHESTRATOR_METRICS.failed_job_operations.add(
+                1.0,
+                &[KeyValue::new("operation_type", "admin_retry_verification_timeout"), KeyValue::new("admin", "true")],
+            );
+            Err(JobRouteError::ProcessingError(e.to_string()))
+        }
+    }
+}
+
 /// Handles HTTP requests to re-queue all pending verification jobs.
 ///
 /// This endpoint re-adds all jobs in PendingVerification status to their
 /// respective verification queues based on their job types.
+///
+/// # Warning
+/// **RECOVERY ENDPOINT - Use with caution.**
+///
+/// This endpoint blindly re-queues ALL jobs in PendingVerification state, including those
+/// that may already be in the queue. This can result in duplicate queue messages.
+/// Duplicate messages are handled gracefully (job status check will reject them with an error),
+/// but will generate error logs.
+///
+/// **Recommended use cases:**
+/// - After queue consumer crashes/restarts
+/// - After infrastructure issues where messages may have been lost
+/// - NOT for regular operational use
+///
+/// Consider pausing queue consumers before calling this endpoint to avoid races.
 ///
 /// # Arguments
 /// * `State(config)` - Shared application configuration
@@ -205,6 +306,21 @@ async fn handle_requeue_pending_verification(
 ///
 /// This endpoint re-adds all jobs in Created status to their respective
 /// processing queues based on their job types.
+///
+/// # Warning
+/// **RECOVERY ENDPOINT - Use with caution.**
+///
+/// This endpoint blindly re-queues ALL jobs in Created state, including those
+/// that may already be in the queue. This can result in duplicate queue messages.
+/// Duplicate messages are handled gracefully (job status check will reject them with an error),
+/// but will generate error logs.
+///
+/// **Recommended use cases:**
+/// - After queue consumer crashes/restarts
+/// - After infrastructure issues where messages may have been lost
+/// - NOT for regular operational use
+///
+/// Consider pausing queue consumers before calling this endpoint to avoid races.
 ///
 /// # Arguments
 /// * `State(config)` - Shared application configuration
@@ -295,11 +411,13 @@ async fn handle_requeue_created_jobs(
 ///
 /// # Available Endpoints
 /// * `POST /jobs/retry/failed` - Retry all failed jobs (optionally filtered by job_type[])
-/// * `POST /jobs/requeue/pending-verification` - Re-queue pending verification jobs
-/// * `POST /jobs/requeue/created` - Re-queue created jobs
+/// * `POST /jobs/retry/verification-timeout` - Retry all verification-timeout jobs
+/// * `POST /jobs/requeue/pending-verification` - Re-queue pending verification jobs (recovery only)
+/// * `POST /jobs/requeue/created` - Re-queue created jobs (recovery only)
 pub fn admin_router(config: Arc<Config>) -> Router {
     Router::new()
         .route("/jobs/retry/failed", post(handle_retry_all_failed_jobs))
+        .route("/jobs/retry/verification-timeout", post(handle_retry_verification_timeout_jobs))
         .route("/jobs/requeue/pending-verification", post(handle_requeue_pending_verification))
         .route("/jobs/requeue/created", post(handle_requeue_created_jobs))
         .with_state(config)

@@ -25,39 +25,46 @@ pub struct BulkJobResult {
 pub struct AdminService;
 
 impl AdminService {
-    /// Retry all failed jobs, optionally filtered by job types
+    /// Retry all jobs in the specified status, optionally filtered by job types.
+    ///
+    /// This is an internal helper that handles retrying jobs in `Failed` or `VerificationTimeout` status.
+    /// Jobs are transitioned to `PendingRetry` and added to the process queue.
     ///
     /// # Arguments
+    /// * `status` - The job status to filter by (must be `Failed` or `VerificationTimeout`)
     /// * `job_types` - Optional vector of job types to filter by (empty vec = all types)
     /// * `config` - Shared configuration
     ///
     /// # Returns
     /// * `Result<BulkJobResult, JobError>` - Result containing success and failure counts/IDs
-    pub async fn retry_all_failed_jobs(
+    async fn retry_jobs_by_status(
+        status: JobStatus,
         job_types: Vec<JobType>,
         config: Arc<Config>,
     ) -> Result<BulkJobResult, JobError> {
         info!(
             job_types = ?job_types,
-            "Admin: Starting retry of all failed jobs"
+            status = ?status,
+            "Admin: Starting retry of all {} jobs", status
         );
 
-        // Query all failed jobs with optional type filter
-        let failed_jobs =
-            config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![JobStatus::Failed], None).await?;
+        // Query all jobs with the specified status and optional type filter
+        let jobs =
+            config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![status.clone()], None).await?;
 
-        let total_jobs = failed_jobs.len();
+        let total_jobs = jobs.len();
         info!(
             job_types = ?job_types,
+            status = ?status,
             count = total_jobs,
-            "Admin: Found failed jobs to retry"
+            "Admin: Found {} jobs to retry", status
         );
 
         let mut successful_job_ids = Vec::new();
         let mut failed_job_ids = Vec::new();
 
-        // Retry each failed job
-        for job in failed_jobs {
+        // Retry each job
+        for job in jobs {
             match JobHandlerService::retry_job(job.id, config.clone()).await {
                 Ok(_) => {
                     successful_job_ids.push(job.id);
@@ -65,7 +72,8 @@ impl AdminService {
                         job_id = %job.id,
                         job_type = ?job.job_type,
                         internal_id = %job.internal_id,
-                        "Admin: Successfully retried failed job"
+                        status = ?status,
+                        "Admin: Successfully retried {} job", status
                     );
                 }
                 Err(e) => {
@@ -74,8 +82,9 @@ impl AdminService {
                         job_id = %job.id,
                         job_type = ?job.job_type,
                         internal_id = %job.internal_id,
+                        status = ?status,
                         error = %e,
-                        "Admin: Failed to retry job - job remains in Failed status"
+                        "Admin: Failed to retry job - job remains in {} status", status
                     );
                     // Continue with other jobs even if one fails
                 }
@@ -92,22 +101,59 @@ impl AdminService {
         if result.failed_count > 0 {
             warn!(
                 job_types = ?job_types,
+                status = ?status,
                 total = total_jobs,
                 success = result.success_count,
                 failed = result.failed_count,
                 failed_job_ids = ?failed_job_ids,
-                "Admin: Completed retry of failed jobs with some failures"
+                "Admin: Completed retry of {} jobs with some failures", status
             );
         } else {
             info!(
                 job_types = ?job_types,
+                status = ?status,
                 total = total_jobs,
                 success = result.success_count,
-                "Admin: Completed retry of failed jobs - all successful"
+                "Admin: Completed retry of {} jobs - all successful", status
             );
         }
 
         Ok(result)
+    }
+
+    /// Retry all failed jobs, optionally filtered by job types.
+    ///
+    /// Jobs are transitioned from `Failed` -> `PendingRetry` and added to the process queue.
+    ///
+    /// # Arguments
+    /// * `job_types` - Optional vector of job types to filter by (empty vec = all types)
+    /// * `config` - Shared configuration
+    ///
+    /// # Returns
+    /// * `Result<BulkJobResult, JobError>` - Result containing success and failure counts/IDs
+    pub async fn retry_all_failed_jobs(
+        job_types: Vec<JobType>,
+        config: Arc<Config>,
+    ) -> Result<BulkJobResult, JobError> {
+        Self::retry_jobs_by_status(JobStatus::Failed, job_types, config).await
+    }
+
+    /// Retry all verification-timed-out jobs, optionally filtered by job types.
+    ///
+    /// Jobs are transitioned from `VerificationTimeout` -> `PendingRetry` and added to the process queue.
+    /// This re-processes the job from scratch rather than just re-attempting verification.
+    ///
+    /// # Arguments
+    /// * `job_types` - Optional vector of job types to filter by (empty vec = all types)
+    /// * `config` - Shared configuration
+    ///
+    /// # Returns
+    /// * `Result<BulkJobResult, JobError>` - Result containing success and failure counts/IDs
+    pub async fn retry_all_verification_timeout_jobs(
+        job_types: Vec<JobType>,
+        config: Arc<Config>,
+    ) -> Result<BulkJobResult, JobError> {
+        Self::retry_jobs_by_status(JobStatus::VerificationTimeout, job_types, config).await
     }
 
     /// Re-add all PendingVerification jobs to verification queue
