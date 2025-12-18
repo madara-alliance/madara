@@ -1,4 +1,4 @@
-export const RPC_URL = "http://127.0.0.1:9944/rpc/v0.8.1/";
+export const RPC_URL = "http://127.0.0.1:9944/rpc/v0.10.0/";
 export const SIGNER_CONTRACT_ADDRESS =
   "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d";
 export const SIGNER_PRIVATE =

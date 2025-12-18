@@ -4,8 +4,6 @@ import {
   Contract,
   CallData,
   cairo,
-  GetTransactionReceiptResponse,
-  SuccessfulTransactionReceiptResponse,
 } from "starknet";
 import {
   RPC_URL,
@@ -52,7 +50,11 @@ describe("Starknet Contract Tests", () => {
   beforeAll(async () => {
     // Initialize provider and account
     provider = new RpcProvider({ nodeUrl: RPC_URL });
-    account = new Account(provider, SIGNER_CONTRACT_ADDRESS, SIGNER_PRIVATE);
+    account = new Account({
+      provider,
+      address: SIGNER_CONTRACT_ADDRESS,
+      signer: SIGNER_PRIVATE,
+    });
   });
 
   // Run tests in specified order
@@ -93,7 +95,8 @@ async function declareContract({ provider, account }: TestContext) {
   expect(declareResponse.class_hash).toBeTruthy();
 
   // Retrieve the declared class from the network
-  let response = await provider.getClass(declareResponse.class_hash);
+  // Use "pre_confirmed" block ID since the transaction may not be in a finalized block yet
+  let response = await provider.getClass(declareResponse.class_hash, "pre_confirmed");
 
   // Verify the retrieved class matches the declared contract
   if ("sierra_program" in response) {
@@ -165,13 +168,13 @@ async function deployAccount({ provider, account }: TestContext) {
   const publicKey = ec.starkCurve.getStarkKey(privateKey);
 
   // Prepare the constructor calldata with the public key
-  const calldata = { publicKey: publicKey };
+  const constructorCalldata = CallData.compile({ publicKey: publicKey });
 
   // Calculate the future address of the account contract
   const accountAddress = hash.calculateContractAddressFromHash(
     publicKey,
     classHash,
-    calldata,
+    constructorCalldata,
     0,
   );
 
@@ -189,13 +192,17 @@ async function deployAccount({ provider, account }: TestContext) {
   await provider.waitForTransaction(transferResponse.transaction_hash);
 
   // Create a new Account instance with the calculated address and private key
-  const newAccount = new Account(provider, accountAddress, privateKey);
+  const newAccount = new Account({
+    provider,
+    address: accountAddress,
+    signer: privateKey,
+  });
 
   // Deploy the account contract
   const { transaction_hash, contract_address } = await newAccount.deployAccount(
     {
       classHash: classHash,
-      constructorCalldata: calldata,
+      constructorCalldata: constructorCalldata,
       addressSalt: publicKey,
     },
   );
@@ -227,15 +234,12 @@ async function transferFunds({ provider, account }: TestContext) {
     "openzeppelin_ERC20Upgradeable",
   );
 
-  // Create an instance of the ERC20 contract
-  const erc20Instance = new Contract(
-    erc20ContractData.abi,
-    ERC20_CONTRACT_ADDRESS,
-    provider,
-  );
-
-  // Connect the account to the ERC20 contract instance
-  erc20Instance.connect(account);
+  // Create an instance of the ERC20 contract (pass account for write operations)
+  const erc20Instance = new Contract({
+    abi: erc20ContractData.abi,
+    address: ERC20_CONTRACT_ADDRESS,
+    providerOrAccount: account,
+  });
 
   // Get the initial balances of sender and receiver
   const preTransactSenderBalance = await erc20Instance.balance_of(
@@ -255,17 +259,18 @@ async function transferFunds({ provider, account }: TestContext) {
   });
 
   // Wait for the transfer transaction to be confirmed
-  const res = await provider.waitForTransaction(
+  const receipt = await provider.waitForTransaction(
     transferResponse.transaction_hash,
   );
-  expect(res.isSuccess()).toBe(true);
-  const receipt = res.value as SuccessfulTransactionReceiptResponse;
+  expect(receipt.isSuccess()).toBe(true);
 
   // Get the final balances of sender and receiver
   const postTransactSenderBalance = await erc20Instance.balance_of(
     SIGNER_CONTRACT_ADDRESS,
   );
-  const paidFee = BigInt(receipt.actual_fee.amount);
+  // Access actual_fee from the receipt (available on success receipts)
+  const actualFee = (receipt as any).actual_fee;
+  const paidFee = actualFee ? BigInt(actualFee.amount) : 0n;
   const postTransactReceiverBalance =
     await erc20Instance.balance_of(RECEIVER_ADDRESS);
 
