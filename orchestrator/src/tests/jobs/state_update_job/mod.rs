@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::storage::MockStorageClient;
+use crate::core::config::StarknetVersion;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::tests::common::default_job_item;
@@ -83,12 +84,10 @@ async fn test_process_job_works(
         Ok(vec![AggregatorBatch::new(
             0,
             last_block_to_process + 1,
-            1,
             String::from(""),
-            String::from(""),
-            String::from(""),
+            256,
             AggregatorBatchWeights::default(),
-            "0.13.2".to_string(),
+            StarknetVersion::V0_13_2,
         )])
     });
 
@@ -249,13 +248,11 @@ async fn process_job_works_unit_test() {
     database_client.expect_get_aggregator_batches_by_indexes().returning(|_| {
         Ok(vec![AggregatorBatch::new(
             0,
-            1,
             651057,
             String::from(""),
-            String::from(""),
-            String::from(""),
+            1,
             AggregatorBatchWeights::default(),
-            "0.13.2".to_string(),
+            StarknetVersion::V0_13_2,
         )])
     });
 
