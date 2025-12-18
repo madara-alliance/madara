@@ -1,4 +1,3 @@
-pub mod api;
 pub mod client;
 pub mod constants;
 pub mod error;
