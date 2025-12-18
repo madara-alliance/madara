@@ -167,6 +167,7 @@ impl SettlementLayerProvider for EthereumClient {
     ///
     /// # Note
     /// This is a long-running function that blocks the current task until cancelled.
+    /// Returns an error if the event stream ends unexpectedly (not due to cancellation).
     async fn listen_for_update_state_events(
         &self,
         mut ctx: ServiceContext,
@@ -180,10 +181,10 @@ impl SettlementLayerProvider for EthereumClient {
                     EthereumClientError::EventStream { message: format!("Failed to watch events: {}", e) }.into()
                 })?
                 .into_stream(),
-            None => return Ok(()),
+            None => return Ok(()), // Context cancelled during setup
         };
 
-        // Process events in a loop until the context is cancelled
+        // Process events in a loop until the context is cancelled or stream ends
         while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
             let log = event_result.map_err(|e| -> SettlementClientError {
                 EthereumClientError::EventStream { message: format!("Failed to process event: {e:#}") }.into()
@@ -199,7 +200,14 @@ impl SettlementLayerProvider for EthereumClient {
             })?;
         }
 
-        Ok(())
+        // Check if we exited due to cancellation or stream ending unexpectedly
+        if ctx.is_cancelled() {
+            Ok(())
+        } else {
+            Err(SettlementClientError::StateEventListener(
+                "L1 state update event stream ended unexpectedly".to_string(),
+            ))
+        }
     }
 
     async fn get_gas_prices(&self) -> Result<(u128, u128), SettlementClientError> {
