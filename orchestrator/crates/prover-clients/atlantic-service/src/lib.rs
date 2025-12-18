@@ -155,7 +155,7 @@ impl ProverClient for AtlanticProverService {
             }
             Task::CloseBucket(bucket_id) => {
                 let response = self.atlantic_client.close_bucket(&bucket_id, self.atlantic_api_key.clone()).await?;
-                tracing::debug!(bucker_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
+                tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
         }

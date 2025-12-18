@@ -63,6 +63,8 @@ pub struct AtlanticBucketInfo {
 pub struct AtlanticClient {
     client: HttpClient,
     proving_layer: Box<dyn ProvingLayer>,
+    /// Shared HTTP client for external requests (artifacts, proofs from storage)
+    external_client: reqwest::Client,
 }
 
 impl AtlanticClient {
@@ -78,7 +80,9 @@ impl AtlanticClient {
         let proving_layer =
             create_proving_layer(&atlantic_params.atlantic_settlement_layer).expect("Failed to create proving layer");
 
-        Self { client, proving_layer }
+        let external_client = reqwest::Client::new();
+
+        Self { client, proving_layer, external_client }
     }
 
     /// Generic retry mechanism for all Atlantic API calls (GET and POST)
@@ -217,8 +221,8 @@ impl AtlanticClient {
                         "Fetching artifact"
                     );
 
-                    let client = reqwest::Client::new();
-                    let response = client
+                    let response = self
+                        .external_client
                         .get(&artifact_path)
                         .send()
                         .await
@@ -336,7 +340,6 @@ impl AtlanticClient {
         limit: Option<u32>,
         network: Option<&str>,
     ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
-        let start_time = Instant::now();
         let search = search_string.as_ref().to_string();
         let context = format!("search: {}, limit: {:?}, network: {:?}", search, limit, network);
 
@@ -414,14 +417,6 @@ impl AtlanticClient {
                 }
             })
             .await?;
-
-        info!(
-            operation = "search_atlantic_queries",
-            search = %search,
-            total_results = result.total,
-            duration_ms = start_time.elapsed().as_millis(),
-            "Search Atlantic queries completed"
-        );
 
         Ok(result)
     }
@@ -856,8 +851,8 @@ impl AtlanticClient {
                         "Fetching proof"
                     );
 
-                    let client = reqwest::Client::new();
-                    let response = client
+                    let response = self
+                        .external_client
                         .get(&proof_path)
                         .send()
                         .await
