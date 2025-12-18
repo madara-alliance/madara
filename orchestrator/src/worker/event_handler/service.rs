@@ -111,7 +111,7 @@ impl JobHandlerService {
             KeyValue::new("operation_type", "create_job"),
         ];
 
-        info!(job_id = %job_item.id, "📝 Successfully created new {:?} job with internal id {}", job_type, internal_id);
+        info!(job_id = %job_item.id, "Successfully created new {:?} job with internal id {}", job_type, internal_id);
 
         debug!(
             log_type = "completed",

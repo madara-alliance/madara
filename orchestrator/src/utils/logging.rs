@@ -419,6 +419,7 @@ pub fn init_logging() {
             .with_thread_ids(false)
             .with_file(true)
             .with_line_number(true)
+            .with_ansi(false)
             .event_format(JsonEventFormatter);
 
         let field_collector_layer = FieldCollectorLayer;
@@ -435,6 +436,7 @@ pub fn init_logging() {
             .with_thread_ids(false)
             .with_file(true)
             .with_line_number(true)
+            .with_ansi(false)
             .event_format(PrettyFormatter);
 
         let field_collector_layer = FieldCollectorLayer;
