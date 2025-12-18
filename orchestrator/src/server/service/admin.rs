@@ -87,7 +87,7 @@ impl AdminService {
         .await
     }
 
-    pub async fn retry_all_verification_timeout_jobs(
+    pub async fn reverify_all_verification_timeout_jobs(
         job_types: Vec<JobType>,
         config: Arc<Config>,
     ) -> Result<BulkJobResult, JobError> {
@@ -95,8 +95,8 @@ impl AdminService {
             JobStatus::VerificationTimeout,
             job_types,
             config.clone(),
-            "retry verification-timeout",
-            |id, _, cfg| async move { JobHandlerService::retry_job(id, cfg).await },
+            "reverify verification-timeout",
+            |id, job_type, cfg| async move { JobService::add_job_to_verify_queue(cfg, id, &job_type, None).await },
         )
         .await
     }

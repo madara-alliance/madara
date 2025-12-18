@@ -125,7 +125,7 @@ async fn handle_retry_all_failed_jobs(
     .await
 }
 
-async fn handle_retry_verification_timeout_jobs(
+async fn handle_reverify_verification_timeout_jobs(
     State(config): State<Arc<Config>>,
     Query(filter): Query<JobTypeFilter>,
 ) -> JobRouteResult {
@@ -133,12 +133,12 @@ async fn handle_retry_verification_timeout_jobs(
         config,
         filter,
         AdminOp {
-            name: "retry verification-timeout jobs",
-            metric_key: "admin_retry_verification_timeout",
-            empty_msg: "No verification-timeout jobs to retry",
-            success_msg: "Queued for retry:",
+            name: "reverify verification-timeout jobs",
+            metric_key: "admin_reverify_verification_timeout",
+            empty_msg: "No verification-timeout jobs to reverify",
+            success_msg: "Queued for verification:",
         },
-        AdminService::retry_all_verification_timeout_jobs,
+        AdminService::reverify_all_verification_timeout_jobs,
     )
     .await
 }
@@ -188,7 +188,7 @@ async fn handle_requeue_created_jobs(
 pub fn admin_router(config: Arc<Config>) -> Router {
     Router::new()
         .route("/jobs/retry/failed", post(handle_retry_all_failed_jobs))
-        .route("/jobs/retry/verification-timeout", post(handle_retry_verification_timeout_jobs))
+        .route("/jobs/reverify/verification-timeout", post(handle_reverify_verification_timeout_jobs))
         .route("/jobs/requeue/pending-verification", post(handle_requeue_pending_verification))
         .route("/jobs/requeue/created", post(handle_requeue_created_jobs))
         .with_state(config)

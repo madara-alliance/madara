@@ -85,26 +85,26 @@ async fn test_admin_retry_all_failed_jobs() {
 
 #[tokio::test]
 #[rstest]
-async fn test_admin_retry_verification_timeout_jobs() {
+async fn test_admin_reverify_verification_timeout_jobs() {
     setup_env();
     let mut db = MockDatabaseClient::new();
     let mut queue = MockQueueClient::new();
 
     let job = build_job_item(JobType::DataSubmission, JobStatus::VerificationTimeout, 4001);
-    let job_id = job.id;
     let jobs = vec![job.clone()];
 
     db.expect_get_jobs_by_types_and_statuses()
         .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::VerificationTimeout])
         .times(1)
         .returning(move |_, _, _| Ok(jobs.clone()));
-    let jc = job.clone();
-    db.expect_get_job_by_id().with(eq(job_id)).times(1).returning(move |_| Ok(Some(jc.clone())));
-    db.expect_update_job().times(1).returning(|job, _| Ok(job.clone()));
-    queue.expect_send_message().times(1).returning(|_, _, _| Ok(()));
+    queue
+        .expect_send_message()
+        .times(1)
+        .withf(|qt, _, _| *qt == QueueType::DataSubmissionJobVerification)
+        .returning(|_, _, _| Ok(()));
 
     let addr = build_test_config(db, queue).await;
-    let resp = call_endpoint(&addr, "/admin/jobs/retry/verification-timeout").await;
+    let resp = call_endpoint(&addr, "/admin/jobs/reverify/verification-timeout").await;
     assert!(resp.success);
     assert_eq!(resp.data.unwrap().success_count, 1);
 }
