@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::Felt252;
 use orchestrator_utils::http_client::extract_http_error_text;
-use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
-use reqwest::header::{HeaderName, HeaderValue, ACCEPT, CONTENT_TYPE};
+use orchestrator_utils::http_client::HttpClient;
+use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::Method;
 use tracing::{debug, info, warn};
 use url::Url;
@@ -15,15 +15,14 @@ use crate::constants::{
 };
 use crate::error::AtlanticError;
 use crate::metrics::ATLANTIC_METRICS;
+use crate::proving::{create_proving_layer, ProvingLayer, ProvingParams};
+use crate::transport::ApiKeyAuth;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
     AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQueryStep,
 };
 use crate::AtlanticValidatedArgs;
-
-/// API key header name used by Atlantic service
-const API_KEY_HEADER: &str = "api-key";
 
 /// Struct to store job info
 pub struct AtlanticJobInfo {
@@ -57,39 +56,17 @@ pub struct AtlanticBucketInfo {
     pub bucket_job_index: Option<u64>,
 }
 
-struct ProvingParams {
-    /// Layout to be used
-    layout: LayoutName,
-}
-
-trait ProvingLayer: Send + Sync {
-    fn add_proving_params<'a>(&self, request: RequestBuilder<'a>, params: ProvingParams) -> RequestBuilder<'a>;
-}
-
-struct EthereumLayer;
-impl ProvingLayer for EthereumLayer {
-    fn add_proving_params<'a>(&self, request: RequestBuilder<'a>, _params: ProvingParams) -> RequestBuilder<'a> {
-        request
-    }
-}
-
-struct StarknetLayer;
-impl ProvingLayer for StarknetLayer {
-    fn add_proving_params<'a>(&self, request: RequestBuilder<'a>, params: ProvingParams) -> RequestBuilder<'a> {
-        request
-            .form_text("result", &AtlanticQueryStep::ProofGeneration.to_string())
-            .form_text("layout", params.layout.to_str())
-    }
-}
-
-/// SHARP API async wrapper
+/// Atlantic API client
+///
+/// Handles all HTTP communication with the Atlantic proving service,
+/// including retry logic with exponential backoff and metrics collection.
 pub struct AtlanticClient {
     client: HttpClient,
     proving_layer: Box<dyn ProvingLayer>,
 }
 
 impl AtlanticClient {
-    /// We need to set up the client with the API_KEY.
+    /// Creates a new Atlantic client with the given URL and parameters.
     pub fn new_with_args(url: Url, atlantic_params: &AtlanticValidatedArgs) -> Self {
         let mock_fact_hash = atlantic_params.atlantic_mock_fact_hash.clone();
         let client = HttpClient::builder(url.as_str())
@@ -98,11 +75,8 @@ impl AtlanticClient {
             .build()
             .expect("Failed to build HTTP client");
 
-        let proving_layer: Box<dyn ProvingLayer> = match atlantic_params.atlantic_settlement_layer.as_str() {
-            "ethereum" => Box::new(EthereumLayer),
-            "starknet" => Box::new(StarknetLayer),
-            _ => panic!("Invalid settlement layer: {}", atlantic_params.atlantic_settlement_layer),
-        };
+        let proving_layer =
+            create_proving_layer(&atlantic_params.atlantic_settlement_layer).expect("Failed to create proving layer");
 
         Self { client, proving_layer }
     }
@@ -389,7 +363,7 @@ impl AtlanticClient {
                         .request()
                         .method(Method::GET)
                         .header(
-                            HeaderName::from_static(API_KEY_HEADER),
+                            ApiKeyAuth::header_name(),
                             HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
                                 operation: "search_atlantic_queries".to_string(),
                                 message: format!("Invalid API key header value: {}", e),
@@ -479,25 +453,6 @@ impl AtlanticClient {
         let api_key = atlantic_api_key.as_ref().to_string();
         let chain_id_clone = chain_id_hex.clone();
 
-        let bucket_request = AtlanticCreateBucketRequest {
-            external_id: None,
-            node_width: None,
-            aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_3,
-            aggregator_params: AtlanticAggregatorParams {
-                use_kzg_da: AGGREGATOR_USE_KZG_DA,
-                full_output: AGGREGATOR_FULL_OUTPUT,
-                chain_id_hex: chain_id_hex.clone(),
-                fee_token_address,
-            },
-            mock_proof,
-        };
-
-        debug!(
-            operation = "create_bucket",
-            request = ?bucket_request,
-            "Create bucket request details"
-        );
-
         let result = self
             .retry_request("create_bucket", &context, || {
                 let api_key = api_key.clone();
@@ -515,6 +470,11 @@ impl AtlanticClient {
                 };
 
                 async move {
+                    debug!(
+                        operation = "create_bucket",
+                        request = ?bucket_request,
+                        "Sending create bucket request"
+                    );
                     // TODO(prakhar,19/11/2025): Use the aggregator version calculated from Madara Version being passed through ENV
                     let response = self
                         .client
@@ -523,7 +483,7 @@ impl AtlanticClient {
                         .header(ACCEPT, HeaderValue::from_static("application/json"))
                         .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
                         .header(
-                            HeaderName::from_static(API_KEY_HEADER),
+                            ApiKeyAuth::header_name(),
                             HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
                                 operation: "create_bucket".to_string(),
                                 message: format!("Invalid API key header value: {}", e),
@@ -608,7 +568,7 @@ impl AtlanticClient {
                         .method(Method::POST)
                         .header(ACCEPT, HeaderValue::from_static("application/json"))
                         .header(
-                            HeaderName::from_static(API_KEY_HEADER),
+                            ApiKeyAuth::header_name(),
                             HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
                                 operation: "close_bucket".to_string(),
                                 message: format!("Invalid API key header value: {}", e),
@@ -734,7 +694,7 @@ impl AtlanticClient {
                             .request()
                             .method(Method::POST)
                             .header(
-                                HeaderName::from_static(API_KEY_HEADER),
+                                ApiKeyAuth::header_name(),
                                 HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
                                     operation: "add_job".to_string(),
                                     message: format!("Invalid API key header value: {}", e),
@@ -986,7 +946,7 @@ impl AtlanticClient {
                         .request()
                         .method(Method::POST)
                         .header(
-                            HeaderName::from_static(API_KEY_HEADER),
+                            ApiKeyAuth::header_name(),
                             HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
                                 operation: "submit_l2_query".to_string(),
                                 message: format!("Invalid API key header value: {}", e),

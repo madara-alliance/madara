@@ -29,11 +29,11 @@ use crate::transport::HttpResponseClassifier;
 pub enum AtlanticError {
     /// Network/transport errors that may be retryable (timeouts, incomplete messages, etc.)
     #[error("Network error during {operation}: {message}")]
-    NetworkError { operation: String, message: String, response_bytes: Option<u64> },
+    NetworkError { operation: String, message: String },
 
     /// Atlantic API returned an error response (4xx/5xx status codes)
     #[error("Atlantic API error during {operation} (status {status}): {message}")]
-    ApiError { operation: String, status: StatusCode, message: String, response_bytes: Option<u64> },
+    ApiError { operation: String, status: StatusCode, message: String },
 
     /// File system errors
     #[error("File error during {operation}: {message}")]
@@ -126,17 +126,17 @@ impl AtlanticError {
                 None => format!("{} (reason={})", error_category, detail),
             };
 
-            AtlanticError::NetworkError { operation, message, response_bytes: None }
+            AtlanticError::NetworkError { operation, message }
         } else if let Some(status) = source.status() {
             // HTTP error with status code (non-retryable)
-            AtlanticError::ApiError { operation, status, message: source.to_string(), response_bytes: None }
+            AtlanticError::ApiError { operation, status, message: source.to_string() }
         } else {
             // Other reqwest errors
             let message = match &url {
                 Some(u) => format!("unexpected_error (url={}, reason={})", u, source),
                 None => format!("unexpected_error (reason={})", source),
             };
-            AtlanticError::NetworkError { operation, message, response_bytes: None }
+            AtlanticError::NetworkError { operation, message }
         }
     }
 
@@ -152,7 +152,7 @@ impl AtlanticError {
 
     /// Create an API error with custom message
     pub fn api_error(operation: impl Into<String>, status: StatusCode, message: impl Into<String>) -> Self {
-        AtlanticError::ApiError { operation: operation.into(), status, message: message.into(), response_bytes: None }
+        AtlanticError::ApiError { operation: operation.into(), status, message: message.into() }
     }
 
     /// Create an error from HTTP response, detecting infrastructure errors
@@ -178,18 +178,16 @@ impl AtlanticError {
     ) -> Self {
         let operation = operation.into();
         let text = response_text.as_ref();
-        let response_bytes = Some(text.len() as u64);
 
         if HttpResponseClassifier::is_infrastructure_error(status, text) {
             // Treat as network error (retryable)
             AtlanticError::NetworkError {
                 operation,
                 message: format!("infrastructure error (status {}): {}", status, text),
-                response_bytes,
             }
         } else {
             // Real API error (non-retryable)
-            AtlanticError::ApiError { operation, status, message: text.to_string(), response_bytes }
+            AtlanticError::ApiError { operation, status, message: text.to_string() }
         }
     }
 }
