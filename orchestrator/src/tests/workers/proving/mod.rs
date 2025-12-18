@@ -8,7 +8,7 @@ use crate::core::client::queue::MockQueueClient;
 use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_context_safe};
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::{db_checks_proving_worker, get_job_by_mock_id_vector};
-use crate::types::batch::AggregatorBatch;
+use crate::types::batch::{AggregatorBatch, SnosBatch};
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
@@ -53,7 +53,12 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
 
     db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
     db.expect_get_aggregator_batch_for_block().returning(|_| {
-        Ok(Some(AggregatorBatch { bucket_id: String::from("ABCD1234"), start_block: 0, ..Default::default() }))
+        Ok(Some(AggregatorBatch {
+            index: 1,
+            bucket_id: String::from("ABCD1234"),
+            start_block: 0,
+            ..Default::default()
+        }))
     });
 
     for i in 1..=num_jobs {
@@ -71,6 +76,10 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
         }
 
         snos_jobs.push(job);
+        db.expect_get_start_snos_batch_for_aggregator()
+            .times(1)
+            .withf(|index| *index == 1)
+            .returning(move |_| Ok(Some(SnosBatch { index: i, ..Default::default() })));
     }
 
     // Mock db call for getting successful SNOS jobs without successor
