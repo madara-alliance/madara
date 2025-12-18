@@ -18,8 +18,9 @@ pub enum WorkerTriggerType {
     ProofRegistration,
     DataSubmission,
     UpdateState,
-    Batching,
     Aggregator,
+    AggregatorBatching,
+    SnosBatching,
 }
 
 #[derive(Debug, Serialize, Clone)]
