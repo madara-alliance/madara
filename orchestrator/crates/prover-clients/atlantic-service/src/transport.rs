@@ -1,31 +1,15 @@
-//! HTTP transport layer for Atlantic API
+//! HTTP transport utilities for Atlantic API
 //!
-//! This module provides low-level HTTP transport abstractions for the Atlantic API client.
-//! It handles authentication and HTTP error classification, separating these concerns
-//! from business logic and API-specific request/response handling.
+//! This module provides HTTP transport utilities for the Atlantic API client:
+//! authentication and error classification.
 //!
 //! # Components
 //!
 //! - [`ApiKeyAuth`]: Validates and stores API keys, providing header injection for authenticated requests.
-//!   Centralizes API key handling to eliminate code duplication across API methods.
 //!
 //! - [`HttpResponseClassifier`]: Classifies HTTP error responses as either infrastructure errors
 //!   (retryable) or API errors (non-retryable). This enables smart retry logic that only
 //!   retries transient failures.
-//!
-//! # Architecture
-//!
-//! This is the lowest layer in the three-layer architecture:
-//!
-//! ```text
-//! ┌─────────────────────────────┐
-//! │      Client Layer           │  ← Retry logic, metrics, public API
-//! ├─────────────────────────────┤
-//! │       API Layer             │  ← Request building, response parsing
-//! ├─────────────────────────────┤
-//! │    Transport Layer (here)   │  ← Authentication, error classification
-//! └─────────────────────────────┘
-//! ```
 
 use reqwest::header::{HeaderName, HeaderValue};
 use reqwest::StatusCode;
