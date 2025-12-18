@@ -71,10 +71,18 @@ impl JobHandlerTrait for ProvingJobHandler {
                 bucket_id: proving_metadata.bucket_id,
                 bucket_job_index: proving_metadata.bucket_job_index,
                 num_steps: proving_metadata.n_steps,
+                external_id: job.id.to_string(),
             }))
             .await
             .inspect_err(|e| {
-                error!(error = %e, "Failed to submit task to prover client");
+                error!(
+                    job_id = %job.id,
+                    job_type = ?JobType::ProofCreation,
+                    internal_id = %internal_id,
+                    status = %job.status,
+                    error = %e,
+                    "Failed to submit task to prover client"
+                );
             })?;
 
         // Record proof submission time (this is just the submission, actual proof generation is async)

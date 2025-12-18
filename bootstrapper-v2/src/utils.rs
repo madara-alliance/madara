@@ -19,6 +19,16 @@ use std::io::Error as IoError;
 
 use crate::error::madara::MadaraError;
 
+/// Returns the Starknet selector for a given function name.
+///
+/// # Panics
+/// Panics if `name` contains non-ASCII characters. This is safe for all
+/// standard Starknet function names which are ASCII-only.
+pub fn get_selector_or_panic(name: &str) -> Felt {
+    get_selector_from_name(name)
+        .unwrap_or_else(|_| panic!("Failed to get selector from name: '{}'. Selector names must be ASCII-only.", name))
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum FileError {
     #[error("Failed to create parent directories with path: {0} due to: {1}")]
@@ -181,7 +191,7 @@ pub async fn get_contract_address_from_deploy_tx(
             receipt
                 .events
                 .iter()
-                .find(|e| e.keys[0] == get_selector_from_name("ContractDeployed").unwrap())
+                .find(|e| e.keys[0] == get_selector_or_panic("ContractDeployed"))
                 .ok_or(MadaraError::FailedToGetEventFromTransactionReceipt("ContractDeployed".to_string()))?
                 .data[0]
         }
@@ -205,7 +215,7 @@ pub async fn get_contracts_deployed_addresses(
         TransactionReceiptWithBlockInfo { receipt: TransactionReceipt::Invoke(receipt), .. } => receipt
             .events
             .iter()
-            .find(|e| e.keys[0] == get_selector_from_name("ContractsDeployed").unwrap())
+            .find(|e| e.keys[0] == get_selector_or_panic("ContractsDeployed"))
             .ok_or_else(|| MadaraError::FailedToGetEventFromTransactionReceipt("ContractsDeployed".to_string()))?
             .clone(),
         _ => return Err(MadaraError::ExpectedInvokeTransactionReceipt),

@@ -46,6 +46,18 @@ pub struct OrchestratorMetrics {
     pub batch_creation_time: Gauge<f64>,
     // Job Status Tracking
     pub job_status_tracker: JobStatusTracker,
+    // Atlantic Service Metrics
+    // These metrics use an "operation" label to distinguish between different API calls
+    // (e.g., "add_job", "get_job_status", "submit_l2_query", "create_bucket", etc.)
+    // Query by operation for specific insights:
+    //   - Proof generation: operation="add_job"
+    //   - L2 verification: operation="submit_l2_query"
+    //   - Status checks: operation="get_job_status"
+    pub atlantic_api_call_duration: Gauge<f64>,
+    pub atlantic_api_calls_total: Counter<f64>,
+    pub atlantic_api_errors_total: Counter<f64>,
+    pub atlantic_api_retries_total: Counter<f64>,
+    pub atlantic_data_transfer_bytes: Counter<f64>,
 }
 
 impl Metrics for OrchestratorMetrics {
@@ -275,6 +287,42 @@ impl Metrics for OrchestratorMetrics {
 
         let job_status_tracker = JobStatusTracker { job_status_gauge, job_transition_gauge, job_details_gauge };
 
+        // Atlantic Service Metrics
+        let atlantic_api_call_duration = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "atlantic_api_call_duration".to_string(),
+            "Duration of Atlantic API calls".to_string(),
+            "s".to_string(),
+        );
+
+        let atlantic_api_calls_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "atlantic_api_calls_total".to_string(),
+            "Total number of Atlantic API calls".to_string(),
+            "calls".to_string(),
+        );
+
+        let atlantic_api_errors_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "atlantic_api_errors_total".to_string(),
+            "Total number of Atlantic API errors".to_string(),
+            "errors".to_string(),
+        );
+
+        let atlantic_api_retries_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "atlantic_api_retries_total".to_string(),
+            "Total number of Atlantic API retries".to_string(),
+            "retries".to_string(),
+        );
+
+        let atlantic_data_transfer_bytes = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "atlantic_data_transfer_bytes".to_string(),
+            "Total bytes transferred to/from Atlantic API".to_string(),
+            "bytes".to_string(),
+        );
+
         Self {
             block_gauge,
             successful_job_operations,
@@ -304,6 +352,11 @@ impl Metrics for OrchestratorMetrics {
             batching_rate,
             batch_creation_time,
             job_status_tracker,
+            atlantic_api_call_duration,
+            atlantic_api_calls_total,
+            atlantic_api_errors_total,
+            atlantic_api_retries_total,
+            atlantic_data_transfer_bytes,
         }
     }
 }

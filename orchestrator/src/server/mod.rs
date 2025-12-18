@@ -1,6 +1,7 @@
 pub mod error;
 pub mod middleware;
 pub mod route;
+pub mod service;
 pub mod types;
 
 use crate::core::config::Config;

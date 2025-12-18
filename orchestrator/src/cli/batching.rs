@@ -27,6 +27,9 @@ pub struct BatchingCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH", long)]
     pub max_blocks_per_snos_batch: Option<u64>,
 
+    #[arg(env = "MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH", long)]
+    pub fixed_blocks_per_snos_batch: Option<u64>,
+
     /// Maximum number of SNOS batches that can be children of one aggregator batch.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH", long, default_value = "50")]
     pub max_snos_batches_per_aggregator_batch: u64,

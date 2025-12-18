@@ -40,7 +40,7 @@ impl JobService {
     ///
     /// # Returns
     /// * `Result<(), JobError>` - Success or an error
-    async fn add_job_to_queue(
+    pub(crate) async fn add_job_to_queue(
         config: Arc<Config>,
         id: Uuid,
         queue: QueueType,

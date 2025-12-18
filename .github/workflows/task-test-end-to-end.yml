@@ -30,7 +30,7 @@ on:
 
 jobs:
   test-end-to-end:
-    runs-on: blacksmith-16vcpu-ubuntu-2204
+    runs-on: blacksmith-8vcpu-ubuntu-2204
 
     steps:
       - name: Checkout Repository
@@ -82,7 +82,7 @@ jobs:
       - name: Download and extract Pathfinder binary
         run: |
           mkdir -p target/release/
-          curl -L -o pathfinder.tar.gz https://github.com/karnotxyz/pathfinder/releases/download/v0.13.2.1-no-charge-fee/pathfinder-x86_64-unknown-linux-gnu.tar.gz
+          curl -L -o pathfinder.tar.gz https://github.com/karnotxyz/pathfinder/releases/download/v0.14.1-alpha.1/pathfinder-x86_64-unknown-linux-gnu.tar.gz
           tar -xf pathfinder.tar.gz -C target/release/
           rm pathfinder.tar.gz
 

@@ -178,7 +178,7 @@ async fn test_eth_deposit_flow(
 
     // Wait for message processing
     println!("⏳ Waiting for L1 message processing...");
-    sleep(Duration::from_secs(10)).await;
+    sleep(Duration::from_secs(20)).await;
 
     // Verify L2 balance increased
     let final_l2_balance =
@@ -214,7 +214,7 @@ async fn test_erc20_deposit_flow(
 
     // Wait for message processing
     println!("⏳ Waiting for L1 message processing...");
-    sleep(Duration::from_secs(10)).await;
+    sleep(Duration::from_secs(20)).await;
 
     // Verify L2 balance increased
     let final_l2_balance =

@@ -7,10 +7,11 @@ use url::Url;
 // Getting the default fee token addresses from the SNOS
 use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STRK_FEE_TOKEN};
 
-fn parse_constants(path: &str) -> Result<VersionedConstants, String> {
+fn parse_constants(path: &str) -> color_eyre::Result<VersionedConstants> {
     let path_buf = PathBuf::from(path);
-    tracing::debug!(file_path = %path_buf.display(), "Loading versioned constants from file");
-    VersionedConstants::from_path(&path_buf).map_err(|e| format!("Failed to load versioned constants from file: {}", e))
+    tracing::info!(file_path = %path_buf.display(), "Loading versioned constants from file");
+    VersionedConstants::from_path(&path_buf)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to load versioned constants from file: {}", e))
 }
 
 #[derive(Debug, Clone, Args)]

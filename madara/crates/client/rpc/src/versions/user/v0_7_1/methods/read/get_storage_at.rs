@@ -40,7 +40,10 @@ pub fn get_storage_at(
 
     // Felt::ONE is a special contract address that is a mapping of the block number to the block hash.
     // no contract is deployed at this address, so we skip the contract check.
-    if contract_address != Felt::ONE && !view.is_contract_deployed(&contract_address)? {
+    if contract_address != Felt::ONE
+        && contract_address != Felt::TWO
+        && !view.is_contract_deployed(&contract_address)?
+    {
         return Err(StarknetRpcApiError::contract_not_found());
     }
 
