@@ -15,7 +15,6 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
 use crate::worker::parser::job_queue_message::JobQueueMessage;
-use crate::worker::parser::priority_queue_message::PriorityQueueMessage;
 
 pub struct JobService;
 
@@ -72,22 +71,23 @@ impl JobService {
         Self::add_job_to_queue(config, id, job_type.verify_queue_name(), delay).await
     }
 
-    /// Adds a job to the priority queue
-    async fn add_job_to_priority_queue(
-        id: Uuid,
-        job_type: JobType,
-        action: JobAction,
-        config: Arc<Config>,
-    ) -> Result<(), JobError> {
+    /// Adds a job to the appropriate priority queue based on action
+    async fn add_job_to_priority_queue(id: Uuid, action: JobAction, config: Arc<Config>) -> Result<(), JobError> {
+        // Determine which priority queue to use based on action
+        let queue_type = match action {
+            JobAction::Process => QueueType::PriorityProcessingQueue,
+            JobAction::Verify => QueueType::PriorityVerificationQueue,
+        };
+
         // Check priority queue depth before adding
-        let queue_depth = config.queue().get_queue_depth(QueueType::PriorityJobQueue).await?;
+        let queue_depth = config.queue().get_queue_depth(queue_type.clone()).await?;
         let max_size = *MAX_PRIORITY_QUEUE_SIZE;
 
         if queue_depth >= max_size {
             tracing::warn!(
                 job_id = %id,
-                job_type = ?job_type,
                 action = ?action,
+                queue = ?queue_type,
                 current_size = queue_depth,
                 max_size = max_size,
                 "Priority queue is full, rejecting job"
@@ -95,16 +95,16 @@ impl JobService {
             return Err(JobError::PriorityQueueFull { current_size: queue_depth, max_size });
         }
 
-        let priority_message = PriorityQueueMessage { id, job_type: job_type.clone(), action: action.clone() };
+        // Use same message format as normal job queue (just id)
+        let message = JobQueueMessage { id };
+        let payload = serde_json::to_string(&message)?;
 
-        let payload = serde_json::to_string(&priority_message)?;
-
-        config.queue().send_message(QueueType::PriorityJobQueue, payload, None).await?;
+        config.queue().send_message(queue_type.clone(), payload, None).await?;
 
         tracing::info!(
             job_id = %id,
-            job_type = ?job_type,
             action = ?action,
+            queue = ?queue_type,
             current_queue_depth = queue_depth,
             max_queue_size = max_size,
             "Job added to priority queue"
@@ -129,8 +129,8 @@ impl JobService {
         let job = Self::get_job(id, config.clone()).await?;
 
         if priority {
-            // Send to priority queue with job_type and action
-            Self::add_job_to_priority_queue(id, job.job_type, JobAction::Process, config).await?;
+            // Send to priority processing queue
+            Self::add_job_to_priority_queue(id, JobAction::Process, config).await?;
         } else {
             // Add to process queue directly
             Self::add_job_to_process_queue(id, &job.job_type, config).await?;
@@ -179,8 +179,8 @@ impl JobService {
             .await?;
 
         if priority {
-            // Send to priority queue with job_type and action
-            Self::add_job_to_priority_queue(id, job.job_type, JobAction::Verify, config).await?;
+            // Send to priority verification queue
+            Self::add_job_to_priority_queue(id, JobAction::Verify, config).await?;
         } else {
             // Add to verification queue with appropriate delay
             Self::add_job_to_verify_queue(

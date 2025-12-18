@@ -4,6 +4,7 @@ use crate::error::event::EventSystemResult;
 use crate::types::queue::QueueType;
 use crate::types::Layer;
 use crate::worker::controller::event_worker::EventWorker;
+use crate::worker::controller::priority_queue_worker::{PriorityAction, PriorityQueueWorker};
 
 use futures::future::try_join_all;
 use std::sync::Arc;
@@ -55,6 +56,37 @@ impl WorkerController {
             Layer::L3 => Self::get_l3_queues(),
         };
         let mut worker_set = tokio::task::JoinSet::new();
+
+        // Spawn the dedicated Priority Queue Workers (one for processing, one for verification)
+        let config_processing = self.config.clone();
+        let token_processing = self.cancellation_token.child_token();
+        worker_set.spawn(async move {
+            let span = info_span!("priority_queue_worker", action = "processing");
+            async move {
+                let pq_worker =
+                    PriorityQueueWorker::new(config_processing, PriorityAction::Processing, token_processing);
+                pq_worker.run().await
+            }
+            .instrument(span)
+            .await
+        });
+        info!("Spawned Priority Processing Queue Worker");
+
+        let config_verification = self.config.clone();
+        let token_verification = self.cancellation_token.child_token();
+        worker_set.spawn(async move {
+            let span = info_span!("priority_queue_worker", action = "verification");
+            async move {
+                let pq_worker =
+                    PriorityQueueWorker::new(config_verification, PriorityAction::Verification, token_verification);
+                pq_worker.run().await
+            }
+            .instrument(span)
+            .await
+        });
+        info!("Spawned Priority Verification Queue Worker");
+
+        // Spawn regular event workers for each queue type
         for queue_type in queues.into_iter() {
             let queue_type = queue_type.clone();
             let self_clone = self.clone();

@@ -129,12 +129,10 @@ impl IntoResponse for JobRouteError {
 impl From<JobError> for JobRouteError {
     fn from(err: JobError) -> Self {
         match err {
-            JobError::PriorityQueueFull { current_size, max_size } => {
-                JobRouteError::QueueCapacityExceeded(format!(
-                    "Priority queue is full (current: {}, max: {}). Please try again later or use normal queue.",
-                    current_size, max_size
-                ))
-            }
+            JobError::PriorityQueueFull { current_size, max_size } => JobRouteError::QueueCapacityExceeded(format!(
+                "Priority queue is full (current: {}, max: {}). Please try again later or use normal queue.",
+                current_size, max_size
+            )),
             _ => JobRouteError::ProcessingError(err.to_string()),
         }
     }

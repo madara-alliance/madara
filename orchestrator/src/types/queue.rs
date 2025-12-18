@@ -45,8 +45,10 @@ pub enum QueueType {
     JobHandleFailure,
     #[strum(serialize = "worker_trigger")]
     WorkerTrigger,
-    #[strum(serialize = "priority_job_queue")]
-    PriorityJobQueue,
+    #[strum(serialize = "priority_processing_queue")]
+    PriorityProcessingQueue,
+    #[strum(serialize = "priority_verification_queue")]
+    PriorityVerificationQueue,
 }
 
 impl TryFrom<QueueType> for JobState {
@@ -67,7 +69,12 @@ impl TryFrom<QueueType> for JobState {
             QueueType::AggregatorJobVerification => JobState::Verification,
             QueueType::JobHandleFailure => Err(Self::Error::InvalidJobType(QueueType::JobHandleFailure.to_string()))?,
             QueueType::WorkerTrigger => Err(Self::Error::InvalidJobType(QueueType::WorkerTrigger.to_string()))?,
-            QueueType::PriorityJobQueue => Err(Self::Error::InvalidJobType(QueueType::PriorityJobQueue.to_string()))?,
+            QueueType::PriorityProcessingQueue => {
+                Err(Self::Error::InvalidJobType(QueueType::PriorityProcessingQueue.to_string()))?
+            }
+            QueueType::PriorityVerificationQueue => {
+                Err(Self::Error::InvalidJobType(QueueType::PriorityVerificationQueue.to_string()))?
+            }
         };
         Ok(state)
     }
@@ -116,13 +123,16 @@ impl QueueType {
             Self::DataSubmissionJobProcessing | Self::DataSubmissionJobVerification => Some(JobType::DataSubmission),
             Self::UpdateStateJobProcessing | Self::UpdateStateJobVerification => Some(JobType::StateTransition),
             Self::AggregatorJobProcessing | Self::AggregatorJobVerification => Some(JobType::Aggregator),
-            Self::WorkerTrigger | Self::JobHandleFailure | Self::PriorityJobQueue => None,
+            Self::WorkerTrigger
+            | Self::JobHandleFailure
+            | Self::PriorityProcessingQueue
+            | Self::PriorityVerificationQueue => None,
         }
     }
 
     /// Returns the action this queue performs, if applicable.
     ///
-    /// Returns `None` for system queues (WorkerTrigger, JobHandleFailure, PriorityJobQueue)
+    /// Returns `None` for system queues (WorkerTrigger, JobHandleFailure, Priority queues)
     /// that don't perform specific actions.
     pub fn target_action(&self) -> Option<JobAction> {
         match self {
@@ -138,7 +148,10 @@ impl QueueType {
             | Self::DataSubmissionJobVerification
             | Self::UpdateStateJobVerification
             | Self::AggregatorJobVerification => Some(JobAction::Verify),
-            Self::WorkerTrigger | Self::JobHandleFailure | Self::PriorityJobQueue => None,
+            Self::WorkerTrigger
+            | Self::JobHandleFailure
+            | Self::PriorityProcessingQueue
+            | Self::PriorityVerificationQueue => None,
         }
     }
 }

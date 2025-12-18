@@ -12,6 +12,31 @@ pub static MAX_PRIORITY_QUEUE_SIZE: LazyLock<usize> = LazyLock::new(|| {
         .expect("MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE must be a valid integer")
 });
 
+/// Maximum time (in seconds) to wait for the priority slot to become empty.
+/// Can be configured via MADARA_ORCHESTRATOR_PRIORITY_SLOT_WAIT_TIMEOUT environment variable
+pub static PRIORITY_SLOT_WAIT_TIMEOUT_SECS: LazyLock<u64> = LazyLock::new(|| {
+    get_env_var_or_default("MADARA_ORCHESTRATOR_PRIORITY_SLOT_WAIT_TIMEOUT", "300")
+        .parse()
+        .expect("MADARA_ORCHESTRATOR_PRIORITY_SLOT_WAIT_TIMEOUT must be a valid integer")
+});
+
+/// Maximum time (in seconds) a message can sit in the priority slot before being
+/// considered stale. Stale messages are NACKed to enable DLQ flow.
+/// Can be configured via MADARA_ORCHESTRATOR_PRIORITY_SLOT_STALENESS_TIMEOUT environment variable
+pub static PRIORITY_SLOT_STALENESS_TIMEOUT_SECS: LazyLock<u64> = LazyLock::new(|| {
+    get_env_var_or_default("MADARA_ORCHESTRATOR_PRIORITY_SLOT_STALENESS_TIMEOUT", "300")
+        .parse()
+        .expect("MADARA_ORCHESTRATOR_PRIORITY_SLOT_STALENESS_TIMEOUT must be a valid integer")
+});
+
+/// Interval (in milliseconds) between priority slot availability checks.
+/// Can be configured via MADARA_ORCHESTRATOR_PRIORITY_SLOT_CHECK_INTERVAL_MS environment variable
+pub static PRIORITY_SLOT_CHECK_INTERVAL_MS: LazyLock<u64> = LazyLock::new(|| {
+    get_env_var_or_default("MADARA_ORCHESTRATOR_PRIORITY_SLOT_CHECK_INTERVAL_MS", "1000")
+        .parse()
+        .expect("MADARA_ORCHESTRATOR_PRIORITY_SLOT_CHECK_INTERVAL_MS must be a valid integer")
+});
+
 #[derive(Clone)]
 pub struct DlqConfig {
     pub max_receive_count: u32,
@@ -182,11 +207,20 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         },
     );
     map.insert(
-        QueueType::PriorityJobQueue,
+        QueueType::PriorityProcessingQueue,
         QueueConfig {
-            visibility_timeout: 300,
-            dlq_config: None, // No DLQ - failed priority jobs go through normal error handling
-            queue_control: QueueControlConfig::new(10), // Not used directly, but set for consistency
+            visibility_timeout: 600, // 2x expected max processing time for slot wait + processing
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
+            queue_control: QueueControlConfig::new(1), // Single reader (PQ Worker)
+            supported_layers: vec![Layer::L2, Layer::L3],
+        },
+    );
+    map.insert(
+        QueueType::PriorityVerificationQueue,
+        QueueConfig {
+            visibility_timeout: 600, // 2x expected max processing time for slot wait + processing
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
+            queue_control: QueueControlConfig::new(1), // Single reader (PQ Worker)
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
