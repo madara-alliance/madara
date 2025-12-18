@@ -28,10 +28,11 @@ impl From<ServiceCliArgs> for ServiceParams {
 pub struct ServerParams {
     pub host: String,
     pub port: u16,
+    pub admin_enabled: bool,
 }
 
 impl From<ServerCliArgs> for ServerParams {
     fn from(value: ServerCliArgs) -> Self {
-        Self { host: value.host, port: value.port }
+        Self { host: value.host, port: value.port, admin_enabled: value.admin_enabled }
     }
 }

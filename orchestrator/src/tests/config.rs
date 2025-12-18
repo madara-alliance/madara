@@ -806,6 +806,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         port: get_env_var_or_panic("MADARA_ORCHESTRATOR_PORT")
             .parse()
             .expect("Failed to parse MADARA_ORCHESTRATOR_PORT"),
+        admin_enabled: true, // Enable admin endpoints for tests
     };
 
     let orchestrator_params = ConfigParam {
