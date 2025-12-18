@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use blockifier::blockifier_versioned_constants::VersionedConstants;
 use clap::Args;
+use generate_pie::constants::{DEFAULT_SEPOLIA_ETH_FEE_TOKEN, DEFAULT_SEPOLIA_STRK_FEE_TOKEN};
 use url::Url;
 
 fn parse_constants(path: &str) -> color_eyre::Result<VersionedConstants> {
