@@ -11,13 +11,9 @@ use crate::worker::service::JobService;
 /// Result of a bulk job operation
 #[derive(Debug, Clone)]
 pub struct BulkJobResult {
-    /// Number of jobs successfully queued
     pub success_count: u64,
-    /// IDs of jobs that were successfully queued
     pub successful_job_ids: Vec<Uuid>,
-    /// Number of jobs that failed to queue
     pub failed_count: u64,
-    /// IDs of jobs that failed to queue
     pub failed_job_ids: Vec<Uuid>,
 }
 
@@ -25,68 +21,33 @@ pub struct BulkJobResult {
 pub struct AdminService;
 
 impl AdminService {
-    /// Retry all jobs in the specified status, optionally filtered by job types.
-    ///
-    /// This is an internal helper that handles retrying jobs in `Failed` or `VerificationTimeout` status.
-    /// Jobs are transitioned to `PendingRetry` and added to the process queue.
-    ///
-    /// # Arguments
-    /// * `status` - The job status to filter by (must be `Failed` or `VerificationTimeout`)
-    /// * `job_types` - Optional vector of job types to filter by (empty vec = all types)
-    /// * `config` - Shared configuration
-    ///
-    /// # Returns
-    /// * `Result<BulkJobResult, JobError>` - Result containing success and failure counts/IDs
-    async fn retry_jobs_by_status(
+    /// Internal helper: query jobs by status and process each with given function
+    async fn process_jobs_by_status<F, Fut>(
         status: JobStatus,
         job_types: Vec<JobType>,
         config: Arc<Config>,
-    ) -> Result<BulkJobResult, JobError> {
-        info!(
-            job_types = ?job_types,
-            status = ?status,
-            "Admin: Starting retry of all {} jobs", status
-        );
-
-        // Query all jobs with the specified status and optional type filter
-        let jobs =
-            config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![status.clone()], None).await?;
-
-        let total_jobs = jobs.len();
-        info!(
-            job_types = ?job_types,
-            status = ?status,
-            count = total_jobs,
-            "Admin: Found {} jobs to retry", status
-        );
+        op_name: &str,
+        process_fn: F,
+    ) -> Result<BulkJobResult, JobError>
+    where
+        F: Fn(Uuid, JobType, Arc<Config>) -> Fut,
+        Fut: std::future::Future<Output = Result<(), JobError>>,
+    {
+        let jobs = config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![status.clone()], None).await?;
+        info!(job_types = ?job_types, status = ?status, count = jobs.len(), "Admin: {} - found jobs", op_name);
 
         let mut successful_job_ids = Vec::new();
         let mut failed_job_ids = Vec::new();
 
-        // Retry each job
-        for job in jobs {
-            match JobHandlerService::retry_job(job.id, config.clone()).await {
+        for job in &jobs {
+            match process_fn(job.id, job.job_type.clone(), config.clone()).await {
                 Ok(_) => {
                     successful_job_ids.push(job.id);
-                    info!(
-                        job_id = %job.id,
-                        job_type = ?job.job_type,
-                        internal_id = %job.internal_id,
-                        status = ?status,
-                        "Admin: Successfully retried {} job", status
-                    );
+                    info!(job_id = %job.id, job_type = ?job.job_type, "Admin: {} - success", op_name);
                 }
                 Err(e) => {
                     failed_job_ids.push(job.id);
-                    error!(
-                        job_id = %job.id,
-                        job_type = ?job.job_type,
-                        internal_id = %job.internal_id,
-                        status = ?status,
-                        error = %e,
-                        "Admin: Failed to retry job - job remains in {} status", status
-                    );
-                    // Continue with other jobs even if one fails
+                    error!(job_id = %job.id, error = %e, "Admin: {} - failed", op_name);
                 }
             }
         }
@@ -99,229 +60,37 @@ impl AdminService {
         };
 
         if result.failed_count > 0 {
-            warn!(
-                job_types = ?job_types,
-                status = ?status,
-                total = total_jobs,
-                success = result.success_count,
-                failed = result.failed_count,
-                failed_job_ids = ?failed_job_ids,
-                "Admin: Completed retry of {} jobs with some failures", status
-            );
-        } else {
-            info!(
-                job_types = ?job_types,
-                status = ?status,
-                total = total_jobs,
-                success = result.success_count,
-                "Admin: Completed retry of {} jobs - all successful", status
-            );
+            warn!(total = jobs.len(), success = result.success_count, failed = result.failed_count, "Admin: {} - completed with failures", op_name);
         }
 
         Ok(result)
     }
 
-    /// Retry all failed jobs, optionally filtered by job types.
-    ///
-    /// Jobs are transitioned from `Failed` -> `PendingRetry` and added to the process queue.
-    ///
-    /// # Arguments
-    /// * `job_types` - Optional vector of job types to filter by (empty vec = all types)
-    /// * `config` - Shared configuration
-    ///
-    /// # Returns
-    /// * `Result<BulkJobResult, JobError>` - Result containing success and failure counts/IDs
-    pub async fn retry_all_failed_jobs(
-        job_types: Vec<JobType>,
-        config: Arc<Config>,
-    ) -> Result<BulkJobResult, JobError> {
-        Self::retry_jobs_by_status(JobStatus::Failed, job_types, config).await
+    pub async fn retry_all_failed_jobs(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
+        Self::process_jobs_by_status(JobStatus::Failed, job_types, config.clone(), "retry failed", |id, _, cfg| async move {
+            JobHandlerService::retry_job(id, cfg).await
+        })
+        .await
     }
 
-    /// Retry all verification-timed-out jobs, optionally filtered by job types.
-    ///
-    /// Jobs are transitioned from `VerificationTimeout` -> `PendingRetry` and added to the process queue.
-    /// This re-processes the job from scratch rather than just re-attempting verification.
-    ///
-    /// # Arguments
-    /// * `job_types` - Optional vector of job types to filter by (empty vec = all types)
-    /// * `config` - Shared configuration
-    ///
-    /// # Returns
-    /// * `Result<BulkJobResult, JobError>` - Result containing success and failure counts/IDs
-    pub async fn retry_all_verification_timeout_jobs(
-        job_types: Vec<JobType>,
-        config: Arc<Config>,
-    ) -> Result<BulkJobResult, JobError> {
-        Self::retry_jobs_by_status(JobStatus::VerificationTimeout, job_types, config).await
+    pub async fn retry_all_verification_timeout_jobs(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
+        Self::process_jobs_by_status(JobStatus::VerificationTimeout, job_types, config.clone(), "retry verification-timeout", |id, _, cfg| async move {
+            JobHandlerService::retry_job(id, cfg).await
+        })
+        .await
     }
 
-    /// Re-add all PendingVerification jobs to verification queue
-    ///
-    /// # Arguments
-    /// * `job_types` - Optional vector of job types to filter by (empty vec = all types)
-    /// * `config` - Shared configuration
-    ///
-    /// # Returns
-    /// * `Result<BulkJobResult, JobError>` - Result containing success and failure counts/IDs
-    pub async fn requeue_pending_verification(
-        job_types: Vec<JobType>,
-        config: Arc<Config>,
-    ) -> Result<BulkJobResult, JobError> {
-        info!(
-            job_types = ?job_types,
-            "Admin: Starting requeue of pending verification jobs"
-        );
-
-        // Query all PendingVerification jobs with optional type filter
-        let jobs = config
-            .database()
-            .get_jobs_by_types_and_statuses(job_types.clone(), vec![JobStatus::PendingVerification], None)
-            .await?;
-
-        let total_jobs = jobs.len();
-        info!(
-            job_types = ?job_types,
-            count = total_jobs,
-            "Admin: Found pending verification jobs to requeue"
-        );
-
-        let mut successful_job_ids = Vec::new();
-        let mut failed_job_ids = Vec::new();
-
-        // Queue each job to appropriate verification queue
-        for job in jobs {
-            match JobService::add_job_to_verify_queue(config.clone(), job.id, &job.job_type, None).await {
-                Ok(_) => {
-                    successful_job_ids.push(job.id);
-                    info!(
-                        job_id = %job.id,
-                        job_type = ?job.job_type,
-                        internal_id = %job.internal_id,
-                        "Admin: Successfully re-queued job for verification"
-                    );
-                }
-                Err(e) => {
-                    failed_job_ids.push(job.id);
-                    error!(
-                        job_id = %job.id,
-                        job_type = ?job.job_type,
-                        internal_id = %job.internal_id,
-                        error = %e,
-                        "Admin: Failed to queue job for verification - job remains in PendingVerification status"
-                    );
-                    // Continue with other jobs even if one fails
-                }
-            }
-        }
-
-        let result = BulkJobResult {
-            success_count: successful_job_ids.len() as u64,
-            successful_job_ids,
-            failed_count: failed_job_ids.len() as u64,
-            failed_job_ids: failed_job_ids.clone(),
-        };
-
-        if result.failed_count > 0 {
-            warn!(
-                job_types = ?job_types,
-                total = total_jobs,
-                success = result.success_count,
-                failed = result.failed_count,
-                failed_job_ids = ?failed_job_ids,
-                "Admin: Completed requeue of pending verification jobs with some failures"
-            );
-        } else {
-            info!(
-                job_types = ?job_types,
-                total = total_jobs,
-                success = result.success_count,
-                "Admin: Completed requeue of pending verification jobs - all successful"
-            );
-        }
-
-        Ok(result)
+    pub async fn requeue_pending_verification(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
+        Self::process_jobs_by_status(JobStatus::PendingVerification, job_types, config.clone(), "requeue pending-verification", |id, job_type, cfg| async move {
+            JobService::add_job_to_verify_queue(cfg, id, &job_type, None).await
+        })
+        .await
     }
 
-    /// Re-add all Created jobs to processing queue
-    ///
-    /// # Arguments
-    /// * `job_types` - Optional vector of job types to filter by (empty vec = all types)
-    /// * `config` - Shared configuration
-    ///
-    /// # Returns
-    /// * `Result<BulkJobResult, JobError>` - Result containing success and failure counts/IDs
     pub async fn requeue_created_jobs(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
-        info!(
-            job_types = ?job_types,
-            "Admin: Starting requeue of created jobs"
-        );
-
-        // Query all Created jobs with optional type filter
-        let jobs =
-            config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![JobStatus::Created], None).await?;
-
-        let total_jobs = jobs.len();
-        info!(
-            job_types = ?job_types,
-            count = total_jobs,
-            "Admin: Found created jobs to requeue"
-        );
-
-        let mut successful_job_ids = Vec::new();
-        let mut failed_job_ids = Vec::new();
-
-        // Queue each job to appropriate processing queue
-        for job in jobs {
-            match JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await {
-                Ok(_) => {
-                    successful_job_ids.push(job.id);
-                    info!(
-                        job_id = %job.id,
-                        job_type = ?job.job_type,
-                        internal_id = %job.internal_id,
-                        "Admin: Successfully re-queued created job for processing"
-                    );
-                }
-                Err(e) => {
-                    failed_job_ids.push(job.id);
-                    error!(
-                        job_id = %job.id,
-                        job_type = ?job.job_type,
-                        internal_id = %job.internal_id,
-                        error = %e,
-                        "Admin: Failed to queue job for processing - job remains in Created status"
-                    );
-                    // Continue with other jobs even if one fails
-                }
-            }
-        }
-
-        let result = BulkJobResult {
-            success_count: successful_job_ids.len() as u64,
-            successful_job_ids,
-            failed_count: failed_job_ids.len() as u64,
-            failed_job_ids: failed_job_ids.clone(),
-        };
-
-        if result.failed_count > 0 {
-            warn!(
-                job_types = ?job_types,
-                total = total_jobs,
-                success = result.success_count,
-                failed = result.failed_count,
-                failed_job_ids = ?failed_job_ids,
-                "Admin: Completed requeue of created jobs with some failures"
-            );
-        } else {
-            info!(
-                job_types = ?job_types,
-                total = total_jobs,
-                success = result.success_count,
-                "Admin: Completed requeue of created jobs - all successful"
-            );
-        }
-
-        Ok(result)
+        Self::process_jobs_by_status(JobStatus::Created, job_types, config.clone(), "requeue created", |id, job_type, cfg| async move {
+            JobService::add_job_to_process_queue(id, &job_type, cfg).await
+        })
+        .await
     }
 }
