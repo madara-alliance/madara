@@ -45,3 +45,11 @@ impl From<StarknetError> for StarknetClientError {
         StarknetClientError::Provider(e.to_string())
     }
 }
+
+impl StarknetClientError {
+    /// Returns true if the error is recoverable (network/connection issues).
+    /// These are transient errors that should be retried with backoff.
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self, Self::Provider(_) | Self::EventSubscription { .. } | Self::NetworkConnection { .. })
+    }
+}
