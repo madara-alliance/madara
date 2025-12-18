@@ -1,10 +1,4 @@
-import {
-  RpcProvider,
-  Account,
-  Contract,
-  CallData,
-  cairo,
-} from "starknet";
+import { RpcProvider, Account, Contract, CallData, cairo } from "starknet";
 import {
   RPC_URL,
   SIGNER_PRIVATE,
@@ -96,7 +90,10 @@ async function declareContract({ provider, account }: TestContext) {
 
   // Retrieve the declared class from the network
   // Use "pre_confirmed" block ID since the transaction may not be in a finalized block yet
-  let response = await provider.getClass(declareResponse.class_hash, "pre_confirmed");
+  let response = await provider.getClass(
+    declareResponse.class_hash,
+    "pre_confirmed",
+  );
 
   // Verify the retrieved class matches the declared contract
   if ("sierra_program" in response) {
