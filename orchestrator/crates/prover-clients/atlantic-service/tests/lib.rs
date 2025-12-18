@@ -38,7 +38,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
     let search_mock = mock_server.mock(|when, then| {
         when.method("GET")
             .path("/atlantic-queries")
-            .query_param_exists("apiKey")
+            .header_exists("api-key")
             .query_param_exists("search")
             .query_param("limit", "1")
             .query_param("network", network.as_str());

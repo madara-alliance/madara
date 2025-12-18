@@ -187,4 +187,63 @@ impl MetricsRecorder {
 
         ORCHESTRATOR_METRICS.orphaned_jobs.add(1.0, &attributes);
     }
+
+    /// Record Atlantic API call metrics
+    pub fn record_atlantic_api_call(
+        operation: &str,
+        duration_seconds: f64,
+        data_size_bytes: u64,
+        success: bool,
+        retry_count: u32,
+        error_type: Option<&str>,
+    ) {
+        // Record call duration
+        let duration_attrs =
+            [KeyValue::new("operation", operation.to_string()), KeyValue::new("success", success.to_string())];
+        ORCHESTRATOR_METRICS.atlantic_api_call_duration.record(duration_seconds, &duration_attrs);
+
+        // Record total calls
+        let call_attrs = [
+            KeyValue::new("operation", operation.to_string()),
+            KeyValue::new("status", if success { "success" } else { "error" }),
+        ];
+        ORCHESTRATOR_METRICS.atlantic_api_calls_total.add(1.0, &call_attrs);
+
+        // Record errors if any
+        if !success {
+            // Ensure error_type is provided for failures - "unknown" indicates a bug in the caller
+            let error_type_value = error_type.unwrap_or_else(|| {
+                tracing::warn!(
+                    operation = operation,
+                    "Atlantic API failure recorded without error_type - this indicates a bug"
+                );
+                "unknown"
+            });
+            let error_attrs = [
+                KeyValue::new("operation", operation.to_string()),
+                KeyValue::new("error_type", error_type_value.to_string()),
+            ];
+            ORCHESTRATOR_METRICS.atlantic_api_errors_total.add(1.0, &error_attrs);
+        }
+
+        // Record retries if any
+        if retry_count > 0 {
+            let retry_attrs = [KeyValue::new("operation", operation.to_string())];
+            ORCHESTRATOR_METRICS.atlantic_api_retries_total.add(retry_count as f64, &retry_attrs);
+        }
+
+        // Record data transfer
+        if data_size_bytes > 0 {
+            let data_attrs = [KeyValue::new("operation", operation.to_string()), KeyValue::new("direction", "request")];
+            ORCHESTRATOR_METRICS.atlantic_data_transfer_bytes.add(data_size_bytes as f64, &data_attrs);
+        }
+    }
+
+    /// Record Atlantic API response data size
+    pub fn record_atlantic_response_size(operation: &str, data_size_bytes: u64) {
+        if data_size_bytes > 0 {
+            let attrs = [KeyValue::new("operation", operation.to_string()), KeyValue::new("direction", "response")];
+            ORCHESTRATOR_METRICS.atlantic_data_transfer_bytes.add(data_size_bytes as f64, &attrs);
+        }
+    }
 }

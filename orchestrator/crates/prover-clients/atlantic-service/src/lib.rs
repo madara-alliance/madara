@@ -1,6 +1,9 @@
 pub mod client;
 pub mod constants;
 pub mod error;
+pub mod metrics;
+pub mod proving;
+pub mod transport;
 pub mod types;
 
 use std::str::FromStr;
@@ -57,7 +60,6 @@ pub struct AtlanticProverService {
 
 #[async_trait]
 impl ProverClient for AtlanticProverService {
-    #[tracing::instrument(skip(self, task))]
     async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
@@ -153,7 +155,7 @@ impl ProverClient for AtlanticProverService {
             }
             Task::CloseBucket(bucket_id) => {
                 let response = self.atlantic_client.close_bucket(&bucket_id, self.atlantic_api_key.clone()).await?;
-                tracing::debug!(bucker_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
+                tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
         }
@@ -169,7 +171,6 @@ impl ProverClient for AtlanticProverService {
     ///
     /// # Returns
     /// Status of the task
-    #[tracing::instrument(skip(self))]
     async fn get_task_status(
         &self,
         task: TaskType,
