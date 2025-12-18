@@ -26,7 +26,7 @@ use std::time::Instant;
 ///
 /// # Relationship Rules
 /// - Each SNOS batch belongs to exactly one aggregator batch
-/// - Multiple SNOS batches can exist within one aggregator batch  
+/// - Multiple SNOS batches can exist within one aggregator batch
 /// - When an aggregator batch closes, all its SNOS batches are closed
 /// - SNOS batches can close independently within an open aggregator batch
 #[cfg_attr(test, mockall::automock)]
