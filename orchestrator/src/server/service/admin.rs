@@ -33,7 +33,8 @@ impl AdminService {
         F: Fn(Uuid, JobType, Arc<Config>) -> Fut,
         Fut: std::future::Future<Output = Result<(), JobError>>,
     {
-        let jobs = config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![status.clone()], None).await?;
+        let jobs =
+            config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![status.clone()], None).await?;
         info!(job_types = ?job_types, status = ?status, count = jobs.len(), "Admin: {} - found jobs", op_name);
 
         let mut successful_job_ids = Vec::new();
@@ -60,37 +61,68 @@ impl AdminService {
         };
 
         if result.failed_count > 0 {
-            warn!(total = jobs.len(), success = result.success_count, failed = result.failed_count, "Admin: {} - completed with failures", op_name);
+            warn!(
+                total = jobs.len(),
+                success = result.success_count,
+                failed = result.failed_count,
+                "Admin: {} - completed with failures",
+                op_name
+            );
         }
 
         Ok(result)
     }
 
-    pub async fn retry_all_failed_jobs(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
-        Self::process_jobs_by_status(JobStatus::Failed, job_types, config.clone(), "retry failed", |id, _, cfg| async move {
-            JobHandlerService::retry_job(id, cfg).await
-        })
+    pub async fn retry_all_failed_jobs(
+        job_types: Vec<JobType>,
+        config: Arc<Config>,
+    ) -> Result<BulkJobResult, JobError> {
+        Self::process_jobs_by_status(
+            JobStatus::Failed,
+            job_types,
+            config.clone(),
+            "retry failed",
+            |id, _, cfg| async move { JobHandlerService::retry_job(id, cfg).await },
+        )
         .await
     }
 
-    pub async fn retry_all_verification_timeout_jobs(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
-        Self::process_jobs_by_status(JobStatus::VerificationTimeout, job_types, config.clone(), "retry verification-timeout", |id, _, cfg| async move {
-            JobHandlerService::retry_job(id, cfg).await
-        })
+    pub async fn retry_all_verification_timeout_jobs(
+        job_types: Vec<JobType>,
+        config: Arc<Config>,
+    ) -> Result<BulkJobResult, JobError> {
+        Self::process_jobs_by_status(
+            JobStatus::VerificationTimeout,
+            job_types,
+            config.clone(),
+            "retry verification-timeout",
+            |id, _, cfg| async move { JobHandlerService::retry_job(id, cfg).await },
+        )
         .await
     }
 
-    pub async fn requeue_pending_verification(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
-        Self::process_jobs_by_status(JobStatus::PendingVerification, job_types, config.clone(), "requeue pending-verification", |id, job_type, cfg| async move {
-            JobService::add_job_to_verify_queue(cfg, id, &job_type, None).await
-        })
+    pub async fn requeue_pending_verification(
+        job_types: Vec<JobType>,
+        config: Arc<Config>,
+    ) -> Result<BulkJobResult, JobError> {
+        Self::process_jobs_by_status(
+            JobStatus::PendingVerification,
+            job_types,
+            config.clone(),
+            "requeue pending-verification",
+            |id, job_type, cfg| async move { JobService::add_job_to_verify_queue(cfg, id, &job_type, None).await },
+        )
         .await
     }
 
     pub async fn requeue_created_jobs(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
-        Self::process_jobs_by_status(JobStatus::Created, job_types, config.clone(), "requeue created", |id, job_type, cfg| async move {
-            JobService::add_job_to_process_queue(id, &job_type, cfg).await
-        })
+        Self::process_jobs_by_status(
+            JobStatus::Created,
+            job_types,
+            config.clone(),
+            "requeue created",
+            |id, job_type, cfg| async move { JobService::add_job_to_process_queue(id, &job_type, cfg).await },
+        )
         .await
     }
 }
