@@ -162,8 +162,15 @@ use futures::{
 use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Notify;
 use url::Url;
+
+/// Base delay for reconnection attempts after stream failure.
+pub(crate) const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
+
+/// Maximum delay between reconnection attempts (exponential backoff cap).
+pub(crate) const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
 
 mod client;
 pub mod error;

@@ -1,5 +1,6 @@
 use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
+use crate::{RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY};
 use alloy::primitives::{B256, U256};
 use futures::StreamExt;
 use mc_db::MadaraBackend;
@@ -15,12 +16,6 @@ mod find_start_block;
 
 /// Interval for polling the stream and checking finality on queued events.
 const STREAM_POLL_INTERVAL: Duration = Duration::from_millis(100);
-
-/// Base delay for reconnection attempts after stream failure.
-const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
-
-/// Maximum delay between reconnection attempts (exponential backoff cap).
-const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug)]
 pub struct MessageToL2WithMetadata {

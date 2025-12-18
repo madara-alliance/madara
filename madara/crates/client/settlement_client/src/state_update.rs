@@ -1,19 +1,13 @@
 use crate::client::SettlementLayerProvider;
 use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
+use crate::{RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY};
 use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
 use mp_utils::trim_hash;
 use serde::Deserialize;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-use std::time::Duration;
-
-/// Base delay for reconnection attempts after stream failure.
-const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
-
-/// Maximum delay between reconnection attempts (exponential backoff cap).
-const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct StateUpdate {
