@@ -200,7 +200,7 @@ impl AggregatorHandler {
     async fn process_block(
         &self,
         block_num: u64,
-        state: NonEmptyAggregatorState,
+        mut state: NonEmptyAggregatorState,
     ) -> Result<BlockProcessingResult<AggregatorState, NonEmptyAggregatorState>, JobError> {
         // Fetch block weights for the current block
         let block_weights = AggregatorBatchWeights::from(
@@ -244,7 +244,7 @@ impl AggregatorHandler {
                     }
                     None => {
                         // Can't add the given block in this batch
-                        let completed_state = state.close();
+                        state.close();
 
                         let blob_len = compress_state_update(
                             self.config.madara_rpc_client(),
@@ -258,7 +258,7 @@ impl AggregatorHandler {
                             self.start_aggregator_batch(state.batch.index + 1, block_num, blob_len).await?,
                             state_update,
                         ));
-                        Ok(BlockProcessingResult::BatchCompleted { completed_state, new_state })
+                        Ok(BlockProcessingResult::BatchCompleted { completed_state: state, new_state })
                     }
                 }
             }
@@ -467,10 +467,8 @@ impl NonEmptyAggregatorState {
         }))
     }
 
-    pub fn close(&self) -> NonEmptyAggregatorState {
-        let mut batch = self.batch.clone();
-        batch.status = AggregatorBatchStatus::Closed;
-        NonEmptyAggregatorState { batch, blob: self.blob.clone() }
+    pub fn close(&mut self) {
+        self.batch.status = AggregatorBatchStatus::Closed;
     }
 }
 
@@ -833,11 +831,11 @@ mod tests {
                 AggregatorBatchWeights::new(100, 100),
                 Utc::now(),
             );
-            let state = NonEmptyAggregatorState::new(batch, create_test_state_update());
+            let mut state = NonEmptyAggregatorState::new(batch, create_test_state_update());
 
-            let closed_state = state.close();
+            state.close();
 
-            assert_eq!(closed_state.batch.status, AggregatorBatchStatus::Closed);
+            assert_eq!(state.batch.status, AggregatorBatchStatus::Closed);
         }
 
         #[test]
@@ -852,13 +850,13 @@ mod tests {
             let original_index = batch.index;
             let original_start_block = batch.start_block;
             let original_end_block = batch.end_block;
-            let state = NonEmptyAggregatorState::new(batch, create_test_state_update());
+            let mut state = NonEmptyAggregatorState::new(batch, create_test_state_update());
 
-            let closed_state = state.close();
+            state.close();
 
-            assert_eq!(closed_state.batch.index, original_index);
-            assert_eq!(closed_state.batch.start_block, original_start_block);
-            assert_eq!(closed_state.batch.end_block, original_end_block);
+            assert_eq!(state.batch.index, original_index);
+            assert_eq!(state.batch.start_block, original_start_block);
+            assert_eq!(state.batch.end_block, original_end_block);
         }
     }
 

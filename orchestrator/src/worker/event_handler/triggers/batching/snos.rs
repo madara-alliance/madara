@@ -156,7 +156,7 @@ impl SnosHandler {
         &self,
         block_num: u64,
         aggregator_batch_index: Option<u64>,
-        state: NonEmptySnosState,
+        mut state: NonEmptySnosState,
     ) -> Result<BlockProcessingResult<SnosState, NonEmptySnosState>, JobError> {
         // Get the bouncer weights for the current block
         let block_weights = get_block_builtin_weights(
@@ -188,7 +188,7 @@ impl SnosHandler {
                     "Weights addition failed, closing SNOS batch and starting new batch"
                 );
 
-                let completed_state = state.close();
+                state.close();
                 let new_state = SnosState::NonEmpty(NonEmptySnosState::new(SnosBatch::new(
                     state.batch.index + 1,
                     aggregator_batch_index,
@@ -196,7 +196,7 @@ impl SnosHandler {
                     block_weights,
                     block_version,
                 )));
-                Ok(BlockProcessingResult::BatchCompleted { completed_state, new_state })
+                Ok(BlockProcessingResult::BatchCompleted { completed_state: state, new_state })
             }
         }
     }
@@ -357,10 +357,8 @@ impl NonEmptySnosState {
     /// Close the current batch
     ///
     /// Returns a new state with the batch status set to Closed
-    pub fn close(&self) -> Self {
-        let mut closed_batch = self.batch.clone();
-        closed_batch.status = SnosBatchStatus::Closed;
-        Self { batch: closed_batch }
+    pub fn close(&mut self) {
+        self.batch.status = SnosBatchStatus::Closed;
     }
 }
 
@@ -812,11 +810,11 @@ mod tests {
                 None,
                 Utc::now(),
             );
-            let state = NonEmptySnosState::new(batch);
+            let mut state = NonEmptySnosState::new(batch);
 
-            let closed_state = state.close();
+            state.close();
 
-            assert_eq!(closed_state.batch.status, SnosBatchStatus::Closed);
+            assert_eq!(state.batch.status, SnosBatchStatus::Closed);
         }
 
         #[test]
@@ -832,13 +830,13 @@ mod tests {
             let original_index = batch.index;
             let original_start_block = batch.start_block;
             let original_aggregator_batch_index = batch.aggregator_batch_index;
-            let state = NonEmptySnosState::new(batch);
+            let mut state = NonEmptySnosState::new(batch);
 
-            let closed_state = state.close();
+            state.close();
 
-            assert_eq!(closed_state.batch.index, original_index);
-            assert_eq!(closed_state.batch.start_block, original_start_block);
-            assert_eq!(closed_state.batch.aggregator_batch_index, original_aggregator_batch_index);
+            assert_eq!(state.batch.index, original_index);
+            assert_eq!(state.batch.start_block, original_start_block);
+            assert_eq!(state.batch.aggregator_batch_index, original_aggregator_batch_index);
         }
     }
 
