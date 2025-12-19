@@ -26,8 +26,7 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use starknet_api::execution_resources::GasAmount;
 use starknet_core::types::{
-    BlockStatus, BlockWithTxHashes, Felt, L1DataAvailabilityMode, ResourcePrice,
-    StateDiff, StateUpdate,
+    BlockStatus, BlockWithTxHashes, Felt, L1DataAvailabilityMode, ResourcePrice, StateDiff, StateUpdate,
 };
 use std::error::Error;
 use std::sync::{Arc, Mutex};
