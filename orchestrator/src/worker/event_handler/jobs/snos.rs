@@ -206,12 +206,6 @@ impl JobHandlerTrait for SnosJobHandler {
             // SNOS is down - signal to requeue with delay
             warn!(snos_url = %snos_url, "SNOS RPC is unavailable, job will be requeued");
 
-            let alert_msg =
-                format!("SNOS RPC {} is unavailable. SnosRun jobs will be requeued until it recovers.", snos_url);
-            if let Err(e) = config.alerts().send_message(alert_msg).await {
-                error!(error = ?e, "Failed to send SNOS unavailability alert");
-            }
-
             return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
         }
 
