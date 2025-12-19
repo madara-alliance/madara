@@ -1,9 +1,17 @@
-import { RpcProvider, Account, Contract, CallData, cairo } from "starknet";
+import {
+  RpcProvider,
+  Account,
+  Contract,
+  CallData,
+  cairo,
+  Deployer,
+} from "starknet";
 import {
   RPC_URL,
   SIGNER_PRIVATE,
   SIGNER_CONTRACT_ADDRESS,
   ERC20_CONTRACT_ADDRESS,
+  UDC_ADDRESS,
 } from "./constant";
 import {
   readContractSierra,
@@ -44,10 +52,14 @@ describe("Starknet Contract Tests", () => {
   beforeAll(async () => {
     // Initialize provider and account
     provider = new RpcProvider({ nodeUrl: RPC_URL });
+    // Create a custom deployer with Madara's UDC address and legacy entrypoint
+    // Madara uses the legacy UDC with camelCase entrypoint "deployContract"
+    const madaraDeployer = new Deployer(UDC_ADDRESS, "deployContract");
     account = new Account({
       provider,
       address: SIGNER_CONTRACT_ADDRESS,
       signer: SIGNER_PRIVATE,
+      deployer: madaraDeployer,
     });
   });
 
@@ -95,6 +107,8 @@ async function declareContract({ provider, account }: TestContext) {
     "pre_confirmed",
   );
 
+  await new Promise((resolve) => setTimeout(resolve, 15000));
+
   // Verify the retrieved class matches the declared contract
   if ("sierra_program" in response) {
     expect(response.sierra_program).toEqual(sierra.sierra_program);
@@ -133,6 +147,7 @@ async function deployContract({ provider, account }: TestContext) {
   // Retrieve the class hash for the deployed contract
   let response = await provider.getClassHashAt(
     deployResult.contract_address[0],
+    "pre_confirmed",
   );
 
   // Verify that the retrieved class hash matches the computed class hash
@@ -208,7 +223,10 @@ async function deployAccount({ provider, account }: TestContext) {
   let transactionReceipt = await provider.waitForTransaction(transaction_hash);
 
   // Retrieve the class hash for the deployed account contract
-  let response = await provider.getClassHashAt(contract_address);
+  let response = await provider.getClassHashAt(
+    contract_address,
+    "pre_confirmed",
+  );
 
   // Verify that the deployed contract's class hash matches the expected class hash
   expect(response).toEqual(classHash);
@@ -261,7 +279,10 @@ async function transferFunds({ provider, account }: TestContext) {
   );
   expect(receipt.isSuccess()).toBe(true);
 
-  // Get the final balances of sender and receiver
+  // Wait for the block to be fully propagated (block time is 3 seconds)
+  await new Promise((resolve) => setTimeout(resolve, 15000));
+
+  // Get the final balances of sender and receiver using "latest" block
   const postTransactSenderBalance = await erc20Instance.balance_of(
     SIGNER_CONTRACT_ADDRESS,
   );
