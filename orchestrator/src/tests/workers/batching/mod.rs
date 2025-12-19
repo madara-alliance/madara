@@ -25,7 +25,10 @@ use serde_json::json;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use starknet_api::execution_resources::GasAmount;
-use starknet_core::types::{Felt, MaybePreConfirmedStateUpdate, StateDiff, StateUpdate};
+use starknet_core::types::{
+    BlockStatus, BlockWithTxHashes, Felt, L1DataAvailabilityMode, ResourcePrice,
+    StateDiff, StateUpdate,
+};
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 use url::Url;
@@ -34,7 +37,7 @@ use url::Url;
 #[case(false)]
 #[case(true)]
 #[tokio::test]
-async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Box<dyn Error>> {
+async fn test_batching_worker_only(#[case] has_existing_batch: bool) -> Result<(), Box<dyn Error>> {
     let server = MockServer::start();
     let mut database = MockDatabaseClient::new();
     let mut storage = MockStorageClient::new();
@@ -504,34 +507,34 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
 }
 
 fn get_dummy_block_with_tx_hashes(block_num: u64, starknet_version: &str) -> serde_json::Value {
-    json!({
-        "status": "ACCEPTED_ON_L1",
-        "block_hash": format!("0x{:x}", block_num),
-        "parent_hash": format!("0x{:x}", block_num.saturating_sub(1)),
-        "block_number": block_num,
-        "new_root": format!("0x{:x}", block_num + 1),
-        "timestamp": 1234567890 + block_num,
-        "sequencer_address": "0x0",
-        "l1_gas_price": {
-            "price_in_fri": "0x1",
-            "price_in_wei": "0x1"
-        },
-        "l2_gas_price": {
-            "price_in_fri": "0x1",
-            "price_in_wei": "0x1"
-        },
-        "l1_data_gas_price": {
-            "price_in_fri": "0x1",
-            "price_in_wei": "0x1"
-        },
-        "l1_da_mode": "CALLDATA",
-        "starknet_version": starknet_version,
-        "transactions": []
-    })
+    let block_with_tx_hashes = BlockWithTxHashes {
+        status: BlockStatus::AcceptedOnL1,
+        block_hash: Default::default(),
+        parent_hash: Default::default(),
+        block_number: block_num,
+        new_root: Default::default(),
+        timestamp: 0,
+        sequencer_address: Default::default(),
+        l1_gas_price: ResourcePrice { price_in_fri: Default::default(), price_in_wei: Default::default() },
+        l2_gas_price: ResourcePrice { price_in_fri: Default::default(), price_in_wei: Default::default() },
+        l1_data_gas_price: ResourcePrice { price_in_fri: Default::default(), price_in_wei: Default::default() },
+        l1_da_mode: L1DataAvailabilityMode::Blob,
+        starknet_version: starknet_version.to_string(),
+        event_commitment: Default::default(),
+        transaction_commitment: Default::default(),
+        receipt_commitment: Default::default(),
+        state_diff_commitment: Default::default(),
+        event_count: 0,
+        transaction_count: 0,
+        state_diff_length: 0,
+        transactions: vec![],
+    };
+
+    serde_json::to_value(&block_with_tx_hashes).unwrap()
 }
 
 fn get_dummy_state_update(block_num: u64) -> serde_json::Value {
-    let state_update = MaybePreConfirmedStateUpdate::Update(StateUpdate {
+    let state_update = StateUpdate {
         block_hash: Felt::from_u64(block_num).unwrap(),
         new_root: Felt::from_u64(block_num + 1).unwrap(),
         old_root: Felt::from_u64(block_num).unwrap(),
@@ -544,7 +547,7 @@ fn get_dummy_state_update(block_num: u64) -> serde_json::Value {
             nonces: vec![],
             migrated_compiled_classes: None,
         },
-    });
+    };
 
     serde_json::to_value(&state_update).unwrap()
 }
