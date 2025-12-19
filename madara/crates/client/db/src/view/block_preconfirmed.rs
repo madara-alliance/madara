@@ -364,7 +364,6 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
             nonces,
             deployed_contracts,
             replaced_classes,
-            migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Update this
         })
     }
 
@@ -462,7 +461,6 @@ mod tests {
                         }],
                         old_declared_contracts: vec![Felt::from(400u64)],
                         replaced_classes: vec![],
-                        migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Add value here and update tests
                     },
                     transactions: vec![],
                     events: vec![],
@@ -603,7 +601,6 @@ mod tests {
                     NonceUpdate { contract_address: Felt::from(101u64), nonce: Felt::from(1u64) }, // 0->1
                     NonceUpdate { contract_address: Felt::from(102u64), nonce: Felt::from(2u64) }, // 0->2
                 ],
-                migrated_compiled_classes: vec![] // TODO(prakhar,22/11/2025): Add value here and update tests
             }
         );
     }

@@ -40,20 +40,6 @@ impl From<EventWithInfo> for mp_rpc::v0_7_1::EmittedEvent {
     }
 }
 
-impl From<EventWithInfo> for mp_rpc::v0_10_0::EmittedEvent {
-    fn from(event_with_info: EventWithInfo) -> Self {
-        mp_rpc::v0_10_0::EmittedEvent {
-            event: event_with_info.event.into(),
-            block_hash: event_with_info.block_hash,
-            // v0_10_0 expects None when the event is in the pending block.
-            block_number: if event_with_info.in_preconfirmed { None } else { Some(event_with_info.block_number) },
-            transaction_hash: event_with_info.transaction_hash,
-            transaction_index: event_with_info.transaction_index,
-            event_index: event_with_info.event_index_in_block,
-        }
-    }
-}
-
 /// Filters events based on the provided address and keys.
 ///
 /// This function checks if an event matches the given address and keys.

@@ -235,7 +235,6 @@ impl ChainGenesisDescription {
                     deployed_contracts: self.deployed_contracts.as_state_diff(),
                     replaced_classes: vec![],
                     nonces: vec![],
-                    migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Update this
                 },
                 transactions: vec![],
                 events: vec![],
