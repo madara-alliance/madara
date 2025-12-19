@@ -273,12 +273,7 @@ fn is_next_entry_library_call_without_vm(error_stack: &ErrorStack, vm_index: usi
 
 /// Finds the index of the EntryPoint that owns the VM traceback at the given index.
 fn find_parent_entry_point_index(error_stack: &ErrorStack, vm_index: usize) -> Option<usize> {
-    for i in (0..vm_index).rev() {
-        if matches!(&error_stack.stack[i], ErrorStackSegment::EntryPoint(_)) {
-            return Some(i);
-        }
-    }
-    None
+    (0..vm_index).rev().find(|&i| matches!(&error_stack.stack[i], ErrorStackSegment::EntryPoint(_)))
 }
 
 /// Checks if the next CallContract after this VM traceback is the last one before the error.
