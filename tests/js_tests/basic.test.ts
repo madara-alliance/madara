@@ -190,6 +190,9 @@ async function deployAccount({ provider, account }: TestContext) {
     0,
   );
 
+  // Wait for the block to be fully propagated (block time is 3 seconds)
+  await new Promise((resolve) => setTimeout(resolve, 15000));
+
   // Transfert funds to pay deployement fee
   const transferResponse = await account.execute({
     contractAddress: ERC20_CONTRACT_ADDRESS,
@@ -262,6 +265,9 @@ async function transferFunds({ provider, account }: TestContext) {
   );
   const preTransactReceiverBalance =
     await erc20Instance.balance_of(RECEIVER_ADDRESS);
+
+  // Wait for the block to be fully propagated (block time is 3 seconds)
+  await new Promise((resolve) => setTimeout(resolve, 15000));
 
   // Execute the transfer
   const transferResponse = await account.execute({
