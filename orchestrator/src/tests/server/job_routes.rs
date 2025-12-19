@@ -1,3 +1,5 @@
+#![allow(clippy::await_holding_lock)]
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
