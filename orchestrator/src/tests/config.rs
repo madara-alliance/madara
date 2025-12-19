@@ -375,7 +375,8 @@ impl TestConfigBuilder {
             params.orchestrator_params.madara_feeder_gateway_url = Url::parse(&madara_feeder_gateway_url).unwrap();
         }
         if let Some(max_blocks_per_snos_batch) = max_blocks_per_snos_batch {
-            params.orchestrator_params.batching_config.max_blocks_per_snos_batch = max_blocks_per_snos_batch;
+            params.orchestrator_params.batching_config.max_blocks_per_snos_batch =
+                max_blocks_per_snos_batch.unwrap_or(100);
         }
 
         let madara_feeder_gateway_client =
@@ -753,9 +754,9 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         fixed_blocks_per_snos_batch: get_env_var_optional("MADARA_ORCHESTRATOR_FIXED_BLOCKS_PER_SNOS_BATCH")
             .unwrap()
             .map(|s| s.parse::<u64>().unwrap()),
-        max_blocks_per_snos_batch: get_env_var_optional("MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH")
-            .unwrap()
-            .map(|s| s.parse::<u64>().unwrap()),
+        max_blocks_per_snos_batch: get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH")
+            .parse::<u64>()
+            .unwrap(),
         max_snos_batches_per_aggregator_batch: get_env_var_or_default(
             "MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH",
             "50",
@@ -770,6 +771,9 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         )
         .parse::<u64>()
         .unwrap(),
+        max_batch_processing_size: get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_BATCH_PROCESSING_SIZE", "10")
+            .parse::<u64>()
+            .unwrap(),
     };
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
@@ -806,6 +810,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         port: get_env_var_or_panic("MADARA_ORCHESTRATOR_PORT")
             .parse()
             .expect("Failed to parse MADARA_ORCHESTRATOR_PORT"),
+        admin_enabled: true, // Enable admin endpoints for tests
     };
 
     let orchestrator_params = ConfigParam {

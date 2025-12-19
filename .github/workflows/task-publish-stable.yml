@@ -36,7 +36,7 @@ permissions:
 
 jobs:
   build-release:
-    runs-on: blacksmith-16vcpu-ubuntu-2204
+    runs-on: blacksmith-8vcpu-ubuntu-2204
 
     steps:
       - name: Checkout repository

@@ -246,7 +246,7 @@ impl StateUpdateJobHandler {
                 let batches = config.database().get_snos_batches_by_indices(vec![*last_settled]).await?;
                 if let Some(batch) = batches.first() {
                     // Return the end block of the last batch
-                    Ok((batch.end_block, batch.snos_batch_id))
+                    Ok((batch.end_block, batch.index))
                 } else {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
                 }

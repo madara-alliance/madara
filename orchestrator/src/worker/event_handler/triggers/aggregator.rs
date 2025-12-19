@@ -1,5 +1,5 @@
 use crate::core::config::Config;
-use crate::types::batch::AggregatorBatchStatus;
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR,
     STORAGE_BLOB_DIR,
@@ -31,7 +31,7 @@ impl JobTrigger for AggregatorJobTrigger {
         // Process each batch
         for batch in closed_batches {
             // Check if all the child jobs are Completed
-            match self.check_child_jobs_status(batch.start_snos_batch, batch.end_snos_batch, config.clone()).await {
+            match self.check_child_jobs_status(&batch, &config).await {
                 Ok(are_completed) => {
                     if are_completed {
                         debug!(batch_id = %batch.id, batch_index = %batch.index, "All child jobs are completed");
@@ -52,10 +52,6 @@ impl JobTrigger for AggregatorJobTrigger {
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                     batch_num: batch.index,
                     bucket_id: batch.bucket_id,
-                    num_blocks: batch.num_blocks,
-                    num_snos_batches: batch.num_snos_batches,
-                    start_block: batch.start_block,
-                    end_block: batch.end_block,
                     download_proof: if config.params.store_audit_artifacts {
                         Some(format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME))
                     } else {
@@ -108,14 +104,42 @@ impl AggregatorJobTrigger {
     /// Check if all the child jobs for blocks from `start_block` to `end_block` are Completed
     async fn check_child_jobs_status(
         &self,
-        start_block: u64,
-        end_block: u64,
-        config: Arc<Config>,
+        aggregator_batch: &AggregatorBatch,
+        config: &Arc<Config>,
     ) -> color_eyre::Result<bool> {
-        let jobs = config
-            .database()
-            .get_jobs_between_internal_ids(JobType::ProofCreation, JobStatus::Completed, start_block, end_block)
-            .await?;
-        Ok(jobs.len() == (end_block - start_block + 1) as usize)
+        let database = config.database();
+
+        // Fetch sorted SNOS batches from DB
+        let snos_batches = database.get_snos_batches_by_aggregator_index(aggregator_batch.index).await?;
+        let (first, last) = if snos_batches.is_empty() {
+            return Ok(false);
+        } else {
+            // unwraps are safe here
+            let first_snos_batch = snos_batches.first().unwrap();
+            let last_snos_batch = snos_batches.last().unwrap();
+
+            // checking if the boundaries of aggregator batch snos batches are same
+            if first_snos_batch.start_block != aggregator_batch.start_block
+                || last_snos_batch.end_block != aggregator_batch.end_block
+            {
+                return Ok(false);
+            }
+
+            // confirming that there are no gaps in the batches and all snos batches are closed
+            let mut expected_start_block = first_snos_batch.start_block;
+            for batch in snos_batches.iter() {
+                if !batch.status.is_closed() || batch.start_block != expected_start_block {
+                    return Ok(false);
+                } else {
+                    expected_start_block = batch.end_block + 1;
+                }
+            }
+
+            (first_snos_batch.index, last_snos_batch.index)
+        };
+
+        let jobs =
+            database.get_jobs_between_internal_ids(JobType::ProofCreation, JobStatus::Completed, first, last).await?;
+        Ok(jobs.len() == (last - first + 1) as usize)
     }
 }

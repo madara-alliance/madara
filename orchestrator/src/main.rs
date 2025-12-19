@@ -16,7 +16,6 @@
 use clap::Parser as _;
 use dotenvy::dotenv;
 use orchestrator::cli::{Cli, Commands, RunCmd, SetupCmd};
-use orchestrator::core::client::lock::mongodb::MongoLockClient;
 use orchestrator::core::config::Config;
 use orchestrator::server::setup_server;
 use orchestrator::setup::setup;
@@ -26,7 +25,7 @@ use orchestrator::utils::logging::init_logging;
 use orchestrator::utils::preflight::run_preflight_checks;
 use orchestrator::utils::signal_handler::SignalHandler;
 use orchestrator::worker::initialize_worker;
-use orchestrator::{OrchestratorError, OrchestratorResult};
+use orchestrator::OrchestratorResult;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -94,11 +93,6 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     setup_server(config.clone()).await?;
 
     debug!("Application router initialized");
-
-    info!("Initializing MongoDB lock client");
-    let lock_client = MongoLockClient::from_run_cmd(run_cmd.clone()).await?;
-    lock_client.initialize().await.map_err(|e| OrchestratorError::SetupError(e.to_string()))?;
-    info!("MongoDB lock client initialize successfully");
 
     // Set up comprehensive signal handling for Docker/Kubernetes
     info!("Setting up signal handler for graceful shutdown");

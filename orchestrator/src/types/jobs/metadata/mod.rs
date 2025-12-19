@@ -98,14 +98,6 @@ pub struct AggregatorMetadata {
     pub batch_num: u64,
     /// Bucker ID received from the prover client
     pub bucket_id: String,
-    /// Number of SNOS batches in aggregator job
-    pub num_snos_batches: u64,
-    /// Number of blocks in the aggregator job
-    pub num_blocks: u64,
-    /// Start block of the batch (inclusive)
-    pub start_block: u64,
-    /// End block of the batch (inclusive)
-    pub end_block: u64,
 
     /// Aggregator fact to check for on-chain registration during verification.
     /// If `None`, no on-chain check is performed.
