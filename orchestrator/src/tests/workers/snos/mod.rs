@@ -7,7 +7,7 @@ use crate::tests::common::test_utils::{acquire_test_lock, get_job_handler_contex
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::types::batch::{SnosBatch, SnosBatchStatus};
-use crate::types::jobs::types::JobType;
+use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -43,17 +43,27 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
 
     db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
 
-    db.expect_get_snos_batches_without_jobs().with(eq(SnosBatchStatus::Closed)).returning({
-        let completed_snos_batches = completed_snos_batches.clone();
-        move |_| {
-            Ok(completed_snos_batches
-                .iter()
-                .map(|&index| {
-                    SnosBatch::new(index, Some(1), index, BouncerWeights::default(), StarknetVersion::V0_14_0)
-                })
-                .collect())
-        }
-    });
+    db.expect_get_latest_job_by_type()
+        .with(eq(JobType::SnosRun))
+        .returning(move |_| Ok(Some(get_job_item_mock_by_id("20".to_string(), Uuid::new_v4()))));
+
+    db.expect_get_oldest_job_by_type_excluding_statuses()
+        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]))
+        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id("10".to_string(), Uuid::new_v4()))));
+
+    db.expect_get_snos_batches_without_jobs()
+        .withf(|job_status, limit| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
+        .returning({
+            let completed_snos_batches = completed_snos_batches.clone();
+            move |_, _| {
+                Ok(completed_snos_batches
+                    .iter()
+                    .map(|&index| {
+                        SnosBatch::new(index, Some(1), index, BouncerWeights::default(), StarknetVersion::V0_14_0)
+                    })
+                    .collect())
+            }
+        });
 
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
 
@@ -153,18 +163,27 @@ async fn test_create_snos_job_for_existing_batch(
     // No orphaned jobs
     db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
 
-    // Getting the list of snos batches without jobs should return the completed snos batches
-    db.expect_get_snos_batches_without_jobs().times(1).with(eq(SnosBatchStatus::Closed)).returning({
-        let completed_snos_batches = completed_snos_batches.clone();
-        move |_| {
-            Ok(completed_snos_batches
-                .iter()
-                .map(|&index| {
-                    SnosBatch::new(index, Some(1), index, BouncerWeights::default(), StarknetVersion::V0_14_0)
-                })
-                .collect())
-        }
-    });
+    db.expect_get_latest_job_by_type()
+        .with(eq(JobType::SnosRun))
+        .returning(move |_| Ok(Some(get_job_item_mock_by_id("20".to_string(), Uuid::new_v4()))));
+
+    db.expect_get_oldest_job_by_type_excluding_statuses()
+        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]))
+        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id("10".to_string(), Uuid::new_v4()))));
+
+    db.expect_get_snos_batches_without_jobs()
+        .withf(|job_status, limit| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
+        .returning({
+            let completed_snos_batches = completed_snos_batches.clone();
+            move |_, _| {
+                Ok(completed_snos_batches
+                    .iter()
+                    .map(|&index| {
+                        SnosBatch::new(index, Some(1), index, BouncerWeights::default(), StarknetVersion::V0_14_0)
+                    })
+                    .collect())
+            }
+        });
 
     // This is called to check if we have a job with the same internal_id and type
     // Since we don't have any jobs, we should return None for all calls

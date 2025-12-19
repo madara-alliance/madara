@@ -643,7 +643,7 @@ async fn test_get_snos_batches_without_jobs() {
     let job = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
     database_client.create_job(job).await.unwrap();
 
-    let batches_without_jobs = database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed).await.unwrap();
+    let batches_without_jobs = database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5).await.unwrap();
 
     assert_eq!(batches_without_jobs.len(), 1);
     assert_eq!(batches_without_jobs[0].index, 2);
