@@ -9,6 +9,7 @@ pub struct ServiceParams {
     pub max_concurrent_snos_jobs: Option<usize>,
     pub max_concurrent_proving_jobs: Option<usize>,
     pub job_processing_timeout_seconds: u64,
+    pub snos_job_buffer_size: u64,
 }
 
 impl From<ServiceCliArgs> for ServiceParams {
@@ -20,6 +21,7 @@ impl From<ServiceCliArgs> for ServiceParams {
             max_concurrent_snos_jobs: args.max_concurrent_snos_jobs,
             max_concurrent_proving_jobs: args.max_concurrent_proving_jobs,
             job_processing_timeout_seconds: args.job_processing_timeout_seconds,
+            snos_job_buffer_size: args.snos_job_buffer_size,
         }
     }
 }

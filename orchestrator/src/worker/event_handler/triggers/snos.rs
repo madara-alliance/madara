@@ -25,8 +25,6 @@ use tracing::{debug, error, info};
 /// - Ensuring proper ordering and dependencies between jobs
 pub struct SnosJobTrigger;
 
-const MIN_COMPLETED_SNOS_JOBS_THRESHOLD: u64 = 50;
-
 #[async_trait]
 impl JobTrigger for SnosJobTrigger {
     /// Main entry point for SNOS job creation workflow.
@@ -52,6 +50,9 @@ impl JobTrigger for SnosJobTrigger {
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::SnosRun).await {
             error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
         }
+
+        // Get the target buffer size from config (configurable via env, defaults to 50)
+        let snos_job_buffer_size = config.service_config().snos_job_buffer_size;
 
         // Calculate the maximum number of snos jobs to create
         let max_jobs_to_create =
@@ -83,12 +84,12 @@ impl JobTrigger for SnosJobTrigger {
                         })?;
 
                     let num_jobs_in_buffer = latest_internal_id - oldest_incomplete_internal_id + 1;
-                    MIN_COMPLETED_SNOS_JOBS_THRESHOLD.saturating_sub(num_jobs_in_buffer)
+                    snos_job_buffer_size.saturating_sub(num_jobs_in_buffer)
                 } else {
-                    MIN_COMPLETED_SNOS_JOBS_THRESHOLD
+                    snos_job_buffer_size
                 }
             } else {
-                MIN_COMPLETED_SNOS_JOBS_THRESHOLD
+                snos_job_buffer_size
             };
 
         info!("Creating max {} {:?} jobs", max_jobs_to_create, JobType::SnosRun);

@@ -25,4 +25,9 @@ pub struct ServiceCliArgs {
     /// Timeout in seconds for jobs stuck in LockedForProcessing status before self-healing recovery.
     #[arg(env = "MADARA_ORCHESTRATOR_JOB_PROCESSING_TIMEOUT_SECONDS", long, default_value = "1800")]
     pub job_processing_timeout_seconds: u64,
+
+    /// Target number of SNOS jobs to maintain in the processing pipeline/buffer.
+    /// New jobs are created when the buffer drops below this size.
+    #[arg(env = "MADARA_ORCHESTRATOR_SNOS_JOB_BUFFER_SIZE", long, default_value = "50")]
+    pub snos_job_buffer_size: u64,
 }
