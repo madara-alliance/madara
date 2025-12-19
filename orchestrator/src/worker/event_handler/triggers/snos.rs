@@ -53,38 +53,50 @@ impl JobTrigger for SnosJobTrigger {
             error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
         }
 
-        let latest_snos_job = config.database().get_latest_job_by_type(JobType::SnosRun).await?;
-        if let Some(latest_snos_job) = latest_snos_job {
-            let latest_internal_id: u64 = latest_snos_job.internal_id.parse().map_err(|e| {
-                eyre!(
-                    "Failed to parse internal id {} for SNOS with id {}: {}",
-                    latest_snos_job.internal_id,
-                    latest_snos_job.id,
-                    e
-                )
-            })?;
+        // Calculate the maximum number of snos jobs to create
+        let max_jobs_to_create =
+            if let Some(latest_snos_job) = config.database().get_latest_job_by_type(JobType::SnosRun).await? {
+                // Get the internal ID of the latest snos job in DB
+                let latest_internal_id: u64 = latest_snos_job.internal_id.parse().map_err(|e| {
+                    eyre!(
+                        "Failed to parse internal id {} for SNOS with id {}: {}",
+                        latest_snos_job.internal_id,
+                        latest_snos_job.id,
+                        e
+                    )
+                })?;
 
-            let pending_jobs = config
-                .database()
-                .get_jobs_excluding_statuses_up_to_internal_id(
-                    JobType::SnosRun,
-                    vec![JobStatus::Completed],
-                    latest_internal_id - MIN_COMPLETED_SNOS_JOBS_THRESHOLD,
-                )
-                .await?;
+                if let Some(oldest_incomplete_snos_job) = config
+                    .database()
+                    .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed])
+                    .await?
+                {
+                    // Get the internal ID of the oldest incomplete snos job in DB
+                    let oldest_incomplete_internal_id: u64 =
+                        oldest_incomplete_snos_job.internal_id.parse().map_err(|e| {
+                            eyre!(
+                                "Failed to parse internal id {} for SNOS with id {}: {}",
+                                oldest_incomplete_snos_job.internal_id,
+                                oldest_incomplete_snos_job.id,
+                                e
+                            )
+                        })?;
 
-            if !pending_jobs.is_empty() {
-                info!(
-                    "Skipping SNOS job creation: {} non-completed jobs found in buffer window (internal_id ≤ {}). Waiting for buffer to clear.",
-                    pending_jobs.len(),
-                    latest_internal_id - MIN_COMPLETED_SNOS_JOBS_THRESHOLD
-                );
-                return Ok(());
-            }
-        }
+                    let num_jobs_in_buffer = latest_internal_id - oldest_incomplete_internal_id + 1;
+                    MIN_COMPLETED_SNOS_JOBS_THRESHOLD.saturating_sub(num_jobs_in_buffer)
+                } else {
+                    MIN_COMPLETED_SNOS_JOBS_THRESHOLD
+                }
+            } else {
+                MIN_COMPLETED_SNOS_JOBS_THRESHOLD
+            };
+
+        info!("Creating max {} {:?} jobs", max_jobs_to_create, JobType::SnosRun);
 
         // Get all snos batches that are closed but don't have a SnosRun job created yet
-        for snos_batch in config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed).await? {
+        for snos_batch in
+            config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed, max_jobs_to_create).await?
+        {
             // Create SNOS job metadata
             let snos_metadata = create_job_metadata(
                 snos_batch.index,

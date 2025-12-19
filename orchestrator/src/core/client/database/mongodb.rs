@@ -1130,6 +1130,7 @@ impl DatabaseClient for MongoDbClient {
     async fn get_snos_batches_without_jobs(
         &self,
         snos_batch_status: SnosBatchStatus,
+        limit: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
 
@@ -1171,6 +1172,9 @@ impl DatabaseClient for MongoDbClient {
                 "$match": {
                     "corresponding_jobs": { "$eq": [] }
                 }
+            },
+            doc! {
+                "$limit": limit as i64
             },
             // Stage 4: Sort by snos_batch_id for consistent ordering
             doc! {
@@ -1266,37 +1270,54 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    async fn get_jobs_excluding_statuses_up_to_internal_id(
+    async fn get_oldest_job_by_type_excluding_statuses(
         &self,
         job_type: JobType,
         job_statuses: Vec<JobStatus>,
-        max_internal_id: u64,
-    ) -> Result<Vec<JobItem>, DatabaseError> {
+    ) -> Result<Option<JobItem>, DatabaseError> {
         let start = Instant::now();
-        let filter = doc! {
-            "job_type": bson::to_bson(&job_type)?,
-            "status": {
+        let pipeline = vec![
+            doc! {
+                "$match": {
+                    "job_type": bson::to_bson(&job_type)?
+                }
+            },
+            doc! {
+                  "status": {
                 "$nin": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
             },
-            "$expr": {
-                "$lte": [
-                    { "$toInt": "$internal_id" },  // Convert stored string to number
-                    max_internal_id as i64
-                ]
-            }
-        };
+                },
+            doc! {
+                "$addFields": {
+                    "numeric_internal_id": { "$toLong": "$internal_id" }
+                }
+            },
+            doc! {
+                "$sort": {
+                    "numeric_internal_id": 1
+                }
+            },
+            doc! {
+                "$limit": 1
+            },
+            doc! {
+                "$project": {
+                    "numeric_internal_id": 0  // Remove the temporary field
+                }
+            },
+        ];
 
-        let find_options = FindOptions::builder().sort(doc! { "internal_id": -1 }).build();
+        debug!("Fetching oldest job by type and excluding statuses");
 
-        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+        let results = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
 
-        debug!(job_count = jobs.len(), "Retrieved jobs by type and statuses with internal_id <= {}", max_internal_id);
-
-        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_type_and_status_ne")];
+        let attributes = [KeyValue::new("db_operation_name", "get_oldest_job_by_type_excluding_statuses")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
-        Ok(jobs)
+        let result = vec_to_single_result(results, "get_oldest_job_by_type_excluding_statuses")?;
+
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(result)
     }
 
     async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError> {
