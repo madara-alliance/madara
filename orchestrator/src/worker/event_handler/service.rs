@@ -250,6 +250,9 @@ impl JobHandlerService {
                 KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             ],
         );
+
+        // MULTI-ORCHESTRATOR FIX: Clear claimed_by when transitioning to LockedForProcessing
+        // This ensures the job can be claimed again for verification by any orchestrator
         let mut job = config
             .database()
             .update_job(
@@ -257,6 +260,7 @@ impl JobHandlerService {
                 JobItemUpdates::new()
                     .update_status(JobStatus::LockedForProcessing)
                     .update_metadata(job.metadata.clone())
+                    .clear_claim() // Clear the greedy mode claim
                     .build(),
             )
             .await
@@ -323,7 +327,8 @@ impl JobHandlerService {
         // Increment process attempt counter
         job.metadata.common.process_attempt_no += 1;
 
-        // Update job status and metadata
+        // MULTI-ORCHESTRATOR FIX: Clear claim when moving to PendingVerification
+        // This allows any orchestrator to claim it for verification
         config
             .database()
             .update_job(
@@ -332,6 +337,7 @@ impl JobHandlerService {
                     .update_status(JobStatus::PendingVerification)
                     .update_metadata(job.metadata.clone())
                     .update_external_id(external_id.clone().into())
+                    .clear_claim() // Clear greedy mode claim
                     .build(),
             )
             .await
@@ -488,6 +494,7 @@ impl JobHandlerService {
                 // Check SLA compliance (example: 5 minute SLA)
                 MetricsRecorder::check_and_record_sla_breach(&job, 300, "e2e_time");
 
+                // MULTI-ORCHESTRATOR FIX: Clear claim when job completes
                 config
                     .database()
                     .update_job(
@@ -495,6 +502,7 @@ impl JobHandlerService {
                         JobItemUpdates::new()
                             .update_metadata(job.metadata.clone())
                             .update_status(JobStatus::Completed)
+                            .clear_claim() // Clear greedy mode claim on completion
                             .build(),
                     )
                     .await
@@ -539,6 +547,7 @@ impl JobHandlerService {
                         "Verification failed. Retrying job processing"
                     );
 
+                    // MULTI-ORCHESTRATOR FIX: Clear claim when moving to VerificationFailed
                     config
                         .database()
                         .update_job(
@@ -546,6 +555,7 @@ impl JobHandlerService {
                             JobItemUpdates::new()
                                 .update_status(JobStatus::VerificationFailed)
                                 .update_metadata(job.metadata.clone())
+                                .clear_claim() // Clear greedy mode claim for retry
                                 .build(),
                         )
                         .await
@@ -578,9 +588,16 @@ impl JobHandlerService {
                     // Record timeout metric
                     MetricsRecorder::record_job_timeout(&job);
 
+                    // MULTI-ORCHESTRATOR FIX: Clear claim when timeout occurs
                     config
                         .database()
-                        .update_job(&job, JobItemUpdates::new().update_status(JobStatus::VerificationTimeout).build())
+                        .update_job(
+                            &job,
+                            JobItemUpdates::new()
+                                .update_status(JobStatus::VerificationTimeout)
+                                .clear_claim() // Clear greedy mode claim
+                                .build(),
+                        )
                         .await
                         .map_err(|e| {
                             error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationTimeout");

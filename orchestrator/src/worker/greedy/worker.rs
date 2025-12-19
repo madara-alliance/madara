@@ -6,7 +6,6 @@ use super::config::GreedyWorkerConfig;
 use super::metrics;
 use crate::core::config::Config;
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::types::JobStatus;
 use crate::worker::event_handler::service::JobHandlerService;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -157,27 +156,18 @@ impl GreedyWorker {
     ///
     /// Returns Ok(true) if a job was processed, Ok(false) if no jobs available
     async fn poll_and_process(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        // Check current concurrency level before claiming
-        let current_processing = self
-            .orchestrator_config
-            .database()
-            .count_jobs_by_type_and_status(&self.config.job_type, JobStatus::LockedForProcessing)
-            .await?;
+        // MULTI-ORCHESTRATOR FIX: Check current concurrency level for THIS orchestrator only
+        // Count only jobs claimed by this orchestrator instance to avoid global throttling
+        let claimed_by_this_orchestrator =
+            self.orchestrator_config.database().count_claimed_jobs(&self.orchestrator_id).await?;
 
-        let current_verification = self
-            .orchestrator_config
-            .database()
-            .count_jobs_by_type_and_status(&self.config.job_type, JobStatus::PendingVerification)
-            .await?;
-
-        let total_active = current_processing + current_verification;
-
-        if total_active >= self.config.max_concurrent_jobs as u64 {
+        if claimed_by_this_orchestrator >= self.config.max_concurrent_jobs as u64 {
             debug!(
                 job_type = ?self.config.job_type,
-                total_active = total_active,
+                orchestrator_id = %self.orchestrator_id,
+                claimed_count = claimed_by_this_orchestrator,
                 max_concurrent = self.config.max_concurrent_jobs,
-                "Concurrency limit reached, skipping claim"
+                "Per-orchestrator concurrency limit reached, skipping claim"
             );
             return Ok(false);
         }

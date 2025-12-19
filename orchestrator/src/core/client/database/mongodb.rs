@@ -1461,6 +1461,7 @@ impl DatabaseClient for MongoDbClient {
         let now = Utc::now().trunc_subsecs(3);
 
         // FIX-02: Support both greedy (available_at exists) and legacy (available_at null) jobs
+        // Use $and to combine multiple conditions properly
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,
             "status": {
@@ -1470,14 +1471,20 @@ impl DatabaseClient for MongoDbClient {
                     bson::to_bson(&JobStatus::PendingRetry)?,
                 ]
             },
-            "$or": [
-                { "available_at": { "$exists": false } },  // Legacy jobs
-                { "available_at": null },                   // Explicitly null
-                { "available_at": { "$lte": now } }        // Greedy jobs ready now
-            ],
-            "$or": [
-                { "claimed_by": { "$exists": false } },     // Legacy jobs
-                { "claimed_by": null }                      // Not claimed
+            "$and": [
+                {
+                    "$or": [
+                        { "available_at": { "$exists": false } },  // Legacy jobs
+                        { "available_at": null },                   // Explicitly null
+                        { "available_at": { "$lte": now } }        // Greedy jobs ready now
+                    ]
+                },
+                {
+                    "$or": [
+                        { "claimed_by": { "$exists": false } },     // Legacy jobs
+                        { "claimed_by": null }                      // Not claimed
+                    ]
+                }
             ]
         };
 
@@ -1520,17 +1527,24 @@ impl DatabaseClient for MongoDbClient {
         let now = Utc::now().trunc_subsecs(3);
 
         // FIX-02: Support both greedy (available_at exists) and legacy (available_at null) jobs
+        // Use $and to combine multiple conditions properly
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,
             "status": bson::to_bson(&JobStatus::Completed)?,
-            "$or": [
-                { "available_at": { "$exists": false } },  // Legacy jobs
-                { "available_at": null },                   // Explicitly null
-                { "available_at": { "$lte": now } }        // Greedy jobs ready now
-            ],
-            "$or": [
-                { "claimed_by": { "$exists": false } },     // Legacy jobs
-                { "claimed_by": null }                      // Not claimed
+            "$and": [
+                {
+                    "$or": [
+                        { "available_at": { "$exists": false } },  // Legacy jobs
+                        { "available_at": null },                   // Explicitly null
+                        { "available_at": { "$lte": now } }        // Greedy jobs ready now
+                    ]
+                },
+                {
+                    "$or": [
+                        { "claimed_by": { "$exists": false } },     // Legacy jobs
+                        { "claimed_by": null }                      // Not claimed
+                    ]
+                }
             ]
         };
 

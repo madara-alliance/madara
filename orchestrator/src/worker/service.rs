@@ -211,11 +211,16 @@ impl JobService {
         // Update failure information in common metadata
         job_metadata.common.failure_reason = Some(reason.clone());
 
+        // MULTI-ORCHESTRATOR FIX: Clear claim when job fails
         match config
             .database()
             .update_job(
                 job,
-                JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(job_metadata).build(),
+                JobItemUpdates::new()
+                    .update_status(JobStatus::Failed)
+                    .update_metadata(job_metadata)
+                    .clear_claim() // Clear greedy mode claim on failure
+                    .build(),
             )
             .await
         {
