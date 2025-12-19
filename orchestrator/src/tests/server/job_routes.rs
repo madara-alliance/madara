@@ -194,9 +194,14 @@ async fn test_trigger_verify_job(#[case] is_priority: bool, #[future] setup_trig
     assert_eq!(job_fetched.metadata.common.verification_retry_attempt_no, 1);
 }
 
-#[tokio::test]
 #[rstest]
-async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr, Arc<Config>)) {
+#[case(false)]
+#[case(true)]
+#[tokio::test]
+async fn test_trigger_retry_job_when_failed(
+    #[case] is_priority: bool,
+    #[future] setup_trigger: (SocketAddr, Arc<Config>),
+) {
     let (addr, config) = setup_trigger.await;
     let job_type = JobType::DataSubmission;
 
@@ -206,7 +211,17 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
 
     let client = hyper::Client::new();
     let response = client
-        .request(Request::builder().uri(format!("http://{}/jobs/{}/retry", addr, job_id)).body(Body::empty()).unwrap())
+        .request(
+            Request::builder()
+                .uri(format!(
+                    "http://{}/jobs/{}/retry{}",
+                    addr,
+                    job_id,
+                    if is_priority { "?priority=true" } else { "" }
+                ))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
@@ -214,12 +229,15 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
     let response: ApiResponse = serde_json::from_slice(&body_bytes).unwrap();
     assert!(response.success);
-    assert_eq!(response.message, Some(format!("Job with id {} retry initiated", job_id)));
+    assert_eq!(
+        response.message,
+        Some(format!("Job with id {} queued for {} retry", job_id, if is_priority { "PRIORITY" } else { "normal" }))
+    );
 
-    // Verify job was added to process queue - retry a few times in case of timing issues
+    // Verify job was added to the correct queue - retry a few times in case of timing issues
     let queue_message = consume_message_with_retry(
         config.queue(),
-        job_type.process_queue_name(),
+        if is_priority { QueueType::PriorityProcessingQueue } else { job_type.process_queue_name() },
         QUEUE_CONSUME_MAX_RETRIES,
         QUEUE_CONSUME_RETRY_DELAY_SECS,
     )
