@@ -35,17 +35,11 @@ impl OrchestratorInstrumentation {
             None => {
                 warn!(
                     service_name = %config.service_name,
-                    "OTEL collector endpoint not configured. Telemetry export disabled. \
-                    Set MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT to enable metrics/traces/logs export."
+                    "OTEL endpoint not configured. Telemetry disabled. | Use MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT"
                 );
                 Ok(Self { otel_config: config.clone(), meter_provider: None })
             }
             Some(ref endpoint) => {
-                debug!(
-                    service_name = %config.service_name,
-                    "Initializing OpenTelemetry exporters..."
-                );
-
                 let meter_provider = Self::instrument_metric_provider(config, endpoint)?;
                 debug!(
                     service_name = format!("{}_meter_service", config.service_name),
@@ -77,6 +71,7 @@ impl OrchestratorInstrumentation {
                                 .with_thread_ids(false)
                                 .with_file(true)
                                 .with_line_number(true)
+                                .with_ansi(false)
                                 .event_format(JsonEventFormatter),
                         )
                         .with(OpenTelemetryLayer::new(tracer))
@@ -91,6 +86,7 @@ impl OrchestratorInstrumentation {
                                 .with_thread_ids(false)
                                 .with_file(true)
                                 .with_line_number(true)
+                                .with_ansi(false)
                                 .event_format(PrettyFormatter),
                         )
                         .with(OpenTelemetryLayer::new(tracer))

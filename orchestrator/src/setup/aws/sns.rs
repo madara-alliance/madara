@@ -42,7 +42,7 @@ impl Resource for InnerAWSSNS {
 
         // Check if a topic exists using ARN
         if self.check_if_exists(&args.alert_identifier).await? {
-            tracing::warn!(" ⏭️ SNS topic already exists. Topic Name: {}", alert_name);
+            tracing::warn!(" SNS topic already exists. Topic Name: {}", alert_name);
             return Ok(());
         }
 
