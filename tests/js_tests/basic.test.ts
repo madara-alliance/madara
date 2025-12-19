@@ -190,7 +190,7 @@ async function deployAccount({ provider, account }: TestContext) {
     0,
   );
 
-  // Wait for the block to be fully propagated (block time is 3 seconds)
+  // Wait for the block to be fully propagated
   await new Promise((resolve) => setTimeout(resolve, 15000));
 
   // Transfert funds to pay deployement fee
@@ -266,7 +266,7 @@ async function transferFunds({ provider, account }: TestContext) {
   const preTransactReceiverBalance =
     await erc20Instance.balance_of(RECEIVER_ADDRESS);
 
-  // Wait for the block to be fully propagated (block time is 3 seconds)
+  // Wait for the block to be fully propagated
   await new Promise((resolve) => setTimeout(resolve, 15000));
 
   // Execute the transfer
@@ -285,8 +285,8 @@ async function transferFunds({ provider, account }: TestContext) {
   );
   expect(receipt.isSuccess()).toBe(true);
 
-  // Wait for the block to be fully propagated (block time is 3 seconds)
-  await new Promise((resolve) => setTimeout(resolve, 15000));
+  // Wait for the block to be fully propagated
+  await new Promise((resolve) => setTimeout(resolve, 45000));
 
   // Get the final balances of sender and receiver using "latest" block
   const postTransactSenderBalance = await erc20Instance.balance_of(
