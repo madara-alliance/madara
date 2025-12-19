@@ -370,14 +370,14 @@ impl EventWorker {
                                 // Log received message with queue and payload
                                 match &parsed_message {
                                     ParsedMessage::WorkerTrigger(msg) => {
-                                        info!(
+                                        tracing::debug!(
                                             queue = %self.queue_type,
                                             worker_type = ?msg.worker,
                                             "Received message from queue"
                                         );
                                     }
                                     ParsedMessage::JobQueue(msg) => {
-                                        info!(
+                                        tracing::debug!(
                                             queue = %self.queue_type,
                                             job_id = %msg.id,
                                             "Received message from queue"

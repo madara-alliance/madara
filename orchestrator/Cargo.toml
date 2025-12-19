@@ -115,7 +115,6 @@ tracing-subscriber = { workspace = true, features = [
 ] }
 
 anyhow = { workspace = true }
-color-spantrace = "0.2.1"
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 hyper = { version = "0.14", features = ["full"] }
 indexmap = "2.6.0"
