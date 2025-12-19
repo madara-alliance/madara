@@ -160,6 +160,9 @@ pub struct RunCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
 
+    #[arg(env = "MADARA_ORCHESTRATOR_DA_PUBLIC_KEYS", long, required = true)]
+    pub da_public_keys: Vec<String>,
+
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_VERSION", long, required = true)]
     pub madara_version: StarknetVersion,
 

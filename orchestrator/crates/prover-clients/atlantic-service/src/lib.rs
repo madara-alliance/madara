@@ -56,6 +56,7 @@ pub struct AtlanticProverService {
     pub cairo_verifier_program_hash: Option<String>,
     pub chain_id_hex: Option<String>,
     pub fee_token_address: Option<Felt252>,
+    pub da_public_keys: Option<Vec<String>>,
 }
 
 #[async_trait]
@@ -148,6 +149,7 @@ impl ProverClient for AtlanticProverService {
                         self.should_mock_proof(),
                         self.chain_id_hex.clone(),
                         self.fee_token_address,
+                        self.da_public_keys.clone(),
                     )
                     .await?;
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
@@ -316,6 +318,7 @@ impl ProverClient for AtlanticProverService {
 }
 
 impl AtlanticProverService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         atlantic_client: AtlanticClient,
         atlantic_api_key: String,
@@ -324,6 +327,7 @@ impl AtlanticProverService {
         mock_fact_hash: bool,
         cairo_verifier_program_hash: Option<String>,
         fee_token_address: Option<Felt252>,
+        da_public_keys: Option<Vec<String>>,
     ) -> Self {
         Self {
             atlantic_client,
@@ -337,6 +341,7 @@ impl AtlanticProverService {
             cairo_verifier_program_hash,
             chain_id_hex: job_config.chain_id_hex,
             fee_token_address,
+            da_public_keys,
         }
     }
 
@@ -356,6 +361,7 @@ impl AtlanticProverService {
         proof_layout: &LayoutName,
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
+        da_public_keys: Option<Vec<String>>,
     ) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
@@ -376,6 +382,7 @@ impl AtlanticProverService {
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
             atlantic_params.cairo_verifier_program_hash.clone(),
             fee_token_address,
+            da_public_keys,
         )
     }
 
@@ -397,6 +404,7 @@ impl AtlanticProverService {
             },
             fact_checker,
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
+            None,
             None,
             None,
         )
