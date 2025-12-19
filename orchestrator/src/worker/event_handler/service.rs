@@ -22,11 +22,12 @@ use crate::utils::metrics_recorder::MetricsRecorder;
 #[double]
 use crate::worker::event_handler::factory::factory;
 use crate::worker::event_handler::triggers::aggregator::AggregatorJobTrigger;
-use crate::worker::event_handler::triggers::batching::BatchingTrigger;
+use crate::worker::event_handler::triggers::aggregator_batching::AggregatorBatchingTrigger;
 use crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger;
 use crate::worker::event_handler::triggers::proof_registration::ProofRegistrationJobTrigger;
 use crate::worker::event_handler::triggers::proving::ProvingJobTrigger;
 use crate::worker::event_handler::triggers::snos::SnosJobTrigger;
+use crate::worker::event_handler::triggers::snos_batching::SnosBatchingTrigger;
 use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
@@ -292,7 +293,14 @@ impl JobHandlerService {
                 // TODO: I think most of the times the errors will not be fixed automatically
                 // if we just retry. But for some failures like DB issues, it might be possible
                 // that retrying will work. So we can add a retry logic here to improve robustness.
-                error!(job_id = ?id, error = ?e, "Failed to process job");
+                error!(
+                    job_id = ?id,
+                    job_type = ?job.job_type,
+                    internal_id = %job.internal_id,
+                    status = ?job.status,
+                    error = ?e,
+                    "Failed to process job"
+                );
                 return JobService::move_job_to_failed(&job, config.clone(), format!("Processing failed: {}", e)).await;
             }
             Err(panic) => {
@@ -758,16 +766,18 @@ impl JobHandlerService {
         ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
         Ok(())
     }
+
     /// To get Box<dyn Worker> handler from `WorkerTriggerType`.
     pub fn get_worker_handler_from_worker_trigger_type(worker_trigger_type: WorkerTriggerType) -> Box<dyn JobTrigger> {
         match worker_trigger_type {
+            WorkerTriggerType::AggregatorBatching => Box::new(AggregatorBatchingTrigger),
+            WorkerTriggerType::SnosBatching => Box::new(SnosBatchingTrigger),
             WorkerTriggerType::Snos => Box::new(SnosJobTrigger),
             WorkerTriggerType::Proving => Box::new(ProvingJobTrigger),
             WorkerTriggerType::DataSubmission => Box::new(DataSubmissionJobTrigger),
             WorkerTriggerType::ProofRegistration => Box::new(ProofRegistrationJobTrigger),
-            WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
-            WorkerTriggerType::Batching => Box::new(BatchingTrigger),
             WorkerTriggerType::Aggregator => Box::new(AggregatorJobTrigger),
+            WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
         }
     }
 }

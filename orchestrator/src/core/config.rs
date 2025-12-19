@@ -5,6 +5,7 @@ use cairo_vm::Felt252;
 use crate::utils::rest_client::RestClient;
 use anyhow::Context;
 use cairo_vm::types::layout_name::LayoutName;
+use hex;
 use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
@@ -14,8 +15,9 @@ use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_sharp_service::SharpProverService;
 use orchestrator_starknet_da_client::StarknetDaClient;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
+use orchestrator_utils::chain_details::ChainDetails;
 use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Provider};
+use starknet::providers::JsonRpcClient;
 use std::str::FromStr;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -93,13 +95,39 @@ macro_rules! versions {
                 write!(f, "{}", self.to_string())
             }
         }
+
+        impl serde::Serialize for StarknetVersion {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                serializer.serialize_str(self.to_string())
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for StarknetVersion {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let s = String::deserialize(deserializer)?;
+                StarknetVersion::from_str(&s).map_err(serde::de::Error::custom)
+            }
+        }
     }
 }
 
 // Add more versions here whenever necessary. Follow the following rules:
 // 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
 // 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
-versions!((V0_13_2, "0.13.2"), (V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_5, "0.13.5"), (V0_14_0, "0.14.0"),);
+versions!(
+    (V0_13_2, "0.13.2"),
+    (V0_13_3, "0.13.3"),
+    (V0_13_4, "0.13.4"),
+    (V0_13_5, "0.13.5"),
+    (V0_14_0, "0.14.0"),
+    (V0_14_1, "0.14.1")
+);
 
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
@@ -130,6 +158,8 @@ pub struct Config {
     layer: Layer,
     /// The orchestrator config
     pub params: ConfigParam,
+    /// Chain details fetched from the node at startup (chain_id, fee tokens, etc.)
+    chain_details: ChainDetails,
     /// The Madara client to get data from the node
     madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The Madara feeder gateway client for fetching builtins
@@ -158,6 +188,7 @@ impl Config {
     pub(crate) fn new(
         layer: Layer,
         params: ConfigParam,
+        chain_details: ChainDetails,
         madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
         madara_feeder_gateway_client: Arc<RestClient>,
         database: Box<dyn DatabaseClient>,
@@ -172,6 +203,7 @@ impl Config {
         Self {
             layer,
             params,
+            chain_details,
             madara_rpc_client,
             madara_feeder_gateway_client,
             database,
@@ -243,18 +275,21 @@ impl Config {
             Self::start_mock_atlantic_server(&prover_config, run_cmd.mock_atlantic_server).await;
         }
 
+        // Fetch chain details from node with retry logic
+        let chain_details =
+            ChainDetails::fetch(&params.madara_rpc_url, &params.madara_feeder_gateway_url, layer.is_l3())
+                .await
+                .map_err(|e| {
+                    OrchestratorError::ConfigError(format!("Failed to fetch chain details from node: {}", e))
+                })?;
+        info!(chain_id = %chain_details.chain_id, is_l3 = %chain_details.is_l3, "Chain details fetched successfully");
+
         // External Clients Initialization
         let prover_client = Self::build_prover_service(
             &prover_config,
             &params,
-            Some(
-                rpc_client
-                    .chain_id()
-                    .await
-                    .map_err(|e| OrchestratorError::ConfigError(format!("Failed to get Chain ID from RPC: {}", e)))?
-                    .to_fixed_hex_string(),
-            ),
-            Some(Felt252::from_str(params.snos_config.strk_fee_token_address.clone().as_str())?),
+            Some(format!("0x{}", hex::encode(&chain_details.chain_id))),
+            Some(Felt252::from_str(chain_details.strk_fee_token_address.as_str())?),
         );
         let da_client: Box<dyn DaClient + Send + Sync + 'static> = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
@@ -262,6 +297,7 @@ impl Config {
         Ok(Self {
             layer,
             params,
+            chain_details,
             madara_rpc_client: Arc::new(rpc_client),
             madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
             database,
@@ -280,16 +316,25 @@ impl Config {
         &self.layer
     }
 
+    /// Returns the chain details fetched from the node at startup
+    pub fn chain_details(&self) -> &ChainDetails {
+        &self.chain_details
+    }
+
     pub(crate) async fn build_database_client(
         db_args: &DatabaseArgs,
     ) -> OrchestratorCoreResult<Box<dyn DatabaseClient + Send + Sync>> {
-        Ok(Box::new(MongoDbClient::new(db_args).await?))
+        let client = Box::new(MongoDbClient::new(db_args).await?);
+        client.ensure_indexes().await?;
+        Ok(client)
     }
 
     pub(crate) async fn build_lock_client(
         args: &DatabaseArgs,
     ) -> OrchestratorCoreResult<Box<dyn LockClient + Send + Sync>> {
-        Ok(Box::new(MongoLockClient::new(args).await?))
+        let client = Box::new(MongoLockClient::new(args).await?);
+        client.ensure_indexes().await?;
+        Ok(client)
     }
 
     pub(crate) async fn build_storage_client(
@@ -557,14 +602,15 @@ impl Config {
     fn default_bouncer_weights_limit() -> BouncerWeights {
         use starknet_api::execution_resources::GasAmount;
 
+        // TODO(prakhar,16/12/2025): Find and use official specs and also add a link here
         BouncerWeights {
-            l1_gas: 1_000_000,                 // 1M L1 gas
-            message_segment_length: 100_000,   // 100K message segment length
-            n_events: 5_000,                   // 5K events
-            state_diff_size: 100_000,          // 100K state diff size
-            sierra_gas: GasAmount(10_000_000), // 10M sierra gas
-            n_txs: 1_000,                      // 1K transactions
-            proving_gas: GasAmount(5_000_000), // 5M proving gas
+            l1_gas: 10_000_000,                 // 10M L1 gas
+            message_segment_length: 1_000_000,  // 1M message segment length
+            n_events: 50_000,                   // 50K events
+            state_diff_size: 1_000_000,         // 1M state diff size
+            sierra_gas: GasAmount(100_000_000), // 100M sierra gas
+            n_txs: 10_000,                      // 10K transactions
+            proving_gas: GasAmount(50_000_000), // 50M proving gas
         }
     }
 }
