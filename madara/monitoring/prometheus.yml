@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'madara-sequencer'
+    static_configs:
+      - targets: ['host.docker.internal:9464']
+        labels:
+          instance: 'sequencer'
+          mode: 'sequencer'
+
+  - job_name: 'madara-fullnode'
+    static_configs:
+      - targets: ['host.docker.internal:9465']
+        labels:
+          instance: 'fullnode'
+          mode: 'fullnode'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
