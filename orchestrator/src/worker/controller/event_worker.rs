@@ -13,7 +13,7 @@ use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
 use omniqueue::Delivery;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -32,6 +32,8 @@ pub struct EventWorker {
     queue_control: QueueControlConfig,
     cancellation_token: CancellationToken,
 }
+
+const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: u64 = 30;
 
 impl EventWorker {
     /// new - Create a new EventWorker
@@ -116,14 +118,21 @@ impl EventWorker {
     }
 
     /// get_message - Get the next message from the queue with version-based filtering
-    /// This function blocks until a compatible message is available or an error occurs
+    /// This function blocks until a compatible message is available (with a timeout)
+    /// or an error occurs
     /// Messages with incompatible versions are re-enqueued for other orchestrator instances
-    /// It returns a Result<Delivery, EventSystemError> - never returns None
-    pub async fn get_message(&self) -> EventSystemResult<Delivery> {
+    /// It returns a Result<Option<Delivery>, EventSystemError>
+    pub async fn get_message(&self) -> EventSystemResult<Option<Delivery>> {
+        let start = Instant::now();
+        let timeout = Duration::from_secs(QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS);
+
         loop {
             match self.config.clone().queue().consume_message_from_queue(self.queue_type.clone()).await {
-                Ok(delivery) => return Ok(delivery),
+                Ok(delivery) => return Ok(Some(delivery)),
                 Err(crate::core::client::queue::QueueError::ErrorFromQueueError(omniqueue::QueueError::NoData)) => {
+                    if start.elapsed() > timeout {
+                        return Ok(None);
+                    }
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
@@ -442,12 +451,17 @@ impl EventWorker {
                 message_result = self.get_message(), if tasks.len() < max_concurrent_tasks => {
                     match message_result {
                         Ok(message) => {
-                            if let Ok(parsed_message) = self.parse_message(&message) {
-                                let worker = self.clone();
-                                tasks.spawn(async move {
-                                    worker.process_message(message, parsed_message).await
-                                });
-                                debug!("Spawned task, active: {}", tasks.len());
+                            match message {
+                                Some(message) => {
+                                    if let Ok(parsed_message) = self.parse_message(&message) {
+                                        let worker = self.clone();
+                                        tasks.spawn(async move {
+                                            worker.process_message(message, parsed_message).await
+                                        });
+                                        debug!("Spawned task, active: {}", tasks.len());
+                                    }
+                                },
+                                None => sleep(Duration::from_secs(1)).await,
                             }
                         }
                         Err(e) => {
