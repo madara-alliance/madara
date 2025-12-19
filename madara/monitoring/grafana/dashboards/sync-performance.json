@@ -258,7 +258,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "l2_sync_time_sum",
+          "expr": "histogram_quantile(1, l2_sync_time_bucket)",
           "legendFormat": "Total Sync Time",
           "refId": "A"
         }
