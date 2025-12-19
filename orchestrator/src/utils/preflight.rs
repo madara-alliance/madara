@@ -5,7 +5,7 @@ use crate::error::OrchestratorError;
 use crate::OrchestratorResult;
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 /// Default timeout for each health check (in seconds)
 const DEFAULT_HEALTH_CHECK_TIMEOUT_SECS: u64 = 30;
@@ -65,8 +65,8 @@ pub async fn run_preflight_checks(
     queue: &dyn QueueClient,
     alerts: &dyn AlertClient,
 ) -> OrchestratorResult<()> {
-    info!("🚀 Starting pre-flight health checks...");
-    info!("⏱️  Health check timeout: {}s per service", DEFAULT_HEALTH_CHECK_TIMEOUT_SECS);
+    info!("Starting pre-flight health checks...");
+    debug!(" Health check timeout: {}s per service", DEFAULT_HEALTH_CHECK_TIMEOUT_SECS);
 
     // Run all health checks
     let results = HealthCheckResults {
@@ -78,13 +78,13 @@ pub async fn run_preflight_checks(
 
     // Evaluate results
     if results.all_passed() {
-        info!("✅ All pre-flight health checks passed successfully");
+        info!("All pre-flight health checks passed successfully");
         Ok(())
     } else {
         let failed = results.failed_checks();
         error!(
             failed_services = ?failed,
-            "❌ Pre-flight health checks failed"
+            "Pre-flight health checks failed"
         );
 
         Err(OrchestratorError::RunCommandError(format!(
@@ -97,7 +97,7 @@ pub async fn run_preflight_checks(
 
 /// Check MongoDB connectivity and basic operations
 async fn check_mongodb_health(database: &dyn DatabaseClient) -> bool {
-    info!("🔍 Checking MongoDB connectivity...");
+    debug!("Checking MongoDB connectivity...");
 
     let check_result = timeout(Duration::from_secs(DEFAULT_HEALTH_CHECK_TIMEOUT_SECS), async {
         // Try to perform a basic database operation
@@ -108,18 +108,18 @@ async fn check_mongodb_health(database: &dyn DatabaseClient) -> bool {
 
     match check_result {
         Ok(Ok(_)) => {
-            info!("✅ MongoDB health check passed");
+            debug!("MongoDB health check passed");
             true
         }
         Ok(Err(e)) => {
             error!(
                 error = %e,
-                "❌ MongoDB health check failed"
+                "MongoDB health check failed"
             );
             false
         }
         Err(_) => {
-            error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "❌ MongoDB health check timed out");
+            error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "MongoDB health check timed out");
             false
         }
     }
@@ -127,25 +127,25 @@ async fn check_mongodb_health(database: &dyn DatabaseClient) -> bool {
 
 /// Check AWS S3 accessibility and permissions
 async fn check_s3_health(storage: &dyn StorageClient) -> bool {
-    info!("🔍 Checking AWS S3 accessibility...");
+    debug!("Checking AWS S3 accessibility...");
 
     let check_result =
         timeout(Duration::from_secs(DEFAULT_HEALTH_CHECK_TIMEOUT_SECS), async { storage.health_check().await }).await;
 
     match check_result {
         Ok(Ok(_)) => {
-            info!("✅ AWS S3 health check passed");
+            debug!("AWS S3 health check passed");
             true
         }
         Ok(Err(e)) => {
             error!(
                 error = %e,
-                "❌ AWS S3 health check failed"
+                "AWS S3 health check failed"
             );
             false
         }
         Err(_) => {
-            error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "❌ AWS S3 health check timed out");
+            error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "AWS S3 health check timed out");
             false
         }
     }
@@ -153,25 +153,25 @@ async fn check_s3_health(storage: &dyn StorageClient) -> bool {
 
 /// Check AWS SQS accessibility and permissions
 async fn check_sqs_health(queue: &dyn QueueClient) -> bool {
-    info!("🔍 Checking AWS SQS accessibility...");
+    debug!("Checking AWS SQS accessibility...");
 
     let check_result =
         timeout(Duration::from_secs(DEFAULT_HEALTH_CHECK_TIMEOUT_SECS), async { queue.health_check().await }).await;
 
     match check_result {
         Ok(Ok(_)) => {
-            info!("✅ AWS SQS health check passed");
+            debug!("AWS SQS health check passed");
             true
         }
         Ok(Err(e)) => {
             error!(
                 error = %e,
-                "❌ AWS SQS health check failed"
+                "AWS SQS health check failed"
             );
             false
         }
         Err(_) => {
-            error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "❌ AWS SQS health check timed out");
+            error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "AWS SQS health check timed out");
             false
         }
     }
@@ -179,25 +179,25 @@ async fn check_sqs_health(queue: &dyn QueueClient) -> bool {
 
 /// Check AWS SNS accessibility and permissions
 async fn check_sns_health(alerts: &dyn AlertClient) -> bool {
-    info!("🔍 Checking AWS SNS accessibility...");
+    debug!("Checking AWS SNS accessibility...");
 
     let check_result =
         timeout(Duration::from_secs(DEFAULT_HEALTH_CHECK_TIMEOUT_SECS), async { alerts.health_check().await }).await;
 
     match check_result {
         Ok(Ok(_)) => {
-            info!("✅ AWS SNS health check passed");
+            debug!("AWS SNS health check passed");
             true
         }
         Ok(Err(e)) => {
             error!(
                 error = %e,
-                "❌ AWS SNS health check failed"
+                "AWS SNS health check failed"
             );
             false
         }
         Err(_) => {
-            error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "❌ AWS SNS health check timed out");
+            error!(timeout_secs = DEFAULT_HEALTH_CHECK_TIMEOUT_SECS, "AWS SNS health check timed out");
             false
         }
     }

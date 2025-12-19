@@ -60,7 +60,7 @@ impl TryFrom<RunCmd> for CloudProvider {
 
     fn try_from(cmd: RunCmd) -> Result<Self, Self::Error> {
         if cmd.aws_config_args.aws {
-            debug!("Initializing AWS configuration from run command");
+            debug!("Initializing AWS configuration");
             let aws_cred = AWSCredentials::from(cmd.aws_config_args.clone());
             let config = block_on(aws_cred.get_aws_config());
             info!("Successfully created AWS configuration");

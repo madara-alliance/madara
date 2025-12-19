@@ -155,7 +155,7 @@ impl WorkerController {
             let handler = match self.create_event_handler(q).await {
                 Ok(handler) => handler,
                 Err(e) => {
-                    error!("🚨 Critical: Failed to create handler for queue type {:?}: {:?}", q, e);
+                    error!("Critical: Failed to create handler for queue type {:?}: {:?}", q, e);
                     error!("This is a worker initialization error that requires system shutdown");
                     return Err(e);
                 }
@@ -171,7 +171,7 @@ impl WorkerController {
                     Ok(())
                 }
                 Err(e) => {
-                    error!("🚨 Critical: Worker for queue type {:?} failed with infrastructure error: {:?}", q, e);
+                    error!("Critical: Worker for queue type {:?} failed with infrastructure error: {:?}", q, e);
                     error!("This indicates a serious system problem that requires shutdown");
                     Err(e)
                 }
