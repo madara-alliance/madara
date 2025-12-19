@@ -22,7 +22,7 @@ pub enum JobStatus {
     PendingRetry,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum JobType {
     /// Running SNOS for a block
     SnosRun,

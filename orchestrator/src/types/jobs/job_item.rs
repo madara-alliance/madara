@@ -31,6 +31,18 @@ pub struct JobItem {
     /// timestamp when the job was last updated
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
+
+    // NEW FIELDS FOR GREEDY MODE
+    /// Earliest time this job can be picked up for processing/verification.
+    /// Used for delayed execution (replaces SQS delay_seconds).
+    /// If None or in the past, job is immediately available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_at: Option<DateTime<Utc>>,
+
+    /// Unique identifier of the orchestrator instance that claimed this job.
+    /// Used for debugging and orphan detection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claimed_by: Option<String>,
 }
 
 impl JobItem {
@@ -55,6 +67,16 @@ impl JobItem {
             version: 0,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
+            available_at: None,
+            claimed_by: None,
+        }
+    }
+
+    /// Check if this job is available for pickup
+    pub fn is_available(&self) -> bool {
+        match self.available_at {
+            None => true,
+            Some(available_at) => available_at <= Utc::now(),
         }
     }
 }

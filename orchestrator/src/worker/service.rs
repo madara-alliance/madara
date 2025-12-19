@@ -55,6 +55,12 @@ impl JobService {
 
     /// Adds a job to its processing queue
     pub async fn add_job_to_process_queue(id: Uuid, job_type: &JobType, config: Arc<Config>) -> Result<(), JobError> {
+        // In greedy mode, skip SQS - jobs are polled directly from MongoDB
+        if config.service_config().greedy_mode {
+            tracing::debug!(job_id = %id, "Greedy mode enabled, skipping SQS queue for {:?} job", job_type);
+            return Ok(());
+        }
+
         tracing::debug!(job_id = %id, "Adding a {:?} job to processing queue", job_type);
         Self::add_job_to_queue(config, id, job_type.process_queue_name(), None).await
     }
@@ -66,6 +72,38 @@ impl JobService {
         job_type: &JobType,
         delay: Option<Duration>,
     ) -> Result<(), JobError> {
+        // FIX-03: In greedy mode, set available_at instead of using SQS delay
+        if config.service_config().greedy_mode {
+            if let Some(delay) = delay {
+                let available_at = chrono::Utc::now()
+                    + chrono::Duration::from_std(delay)
+                        .map_err(|e| JobError::Other(crate::error::other::OtherError::from(e.to_string())))?;
+
+                // Update job with available_at for delayed verification
+                let job = Self::get_job(id, config.clone()).await?;
+                config
+                    .database()
+                    .update_job(
+                        &job,
+                        crate::types::jobs::job_updates::JobItemUpdates::new()
+                            .update_available_at(Some(available_at))
+                            .build(),
+                    )
+                    .await?;
+
+                tracing::debug!(
+                    job_id = %id,
+                    delay_secs = delay.as_secs(),
+                    available_at = %available_at,
+                    "Greedy mode: set available_at for delayed verification of {:?} job",
+                    job_type
+                );
+            } else {
+                tracing::debug!(job_id = %id, "Greedy mode: job ready for immediate verification of {:?} job", job_type);
+            }
+            return Ok(());
+        }
+
         tracing::debug!(job_id = %id, "Adding a {:?} job to verification queue", job_type);
         Self::add_job_to_queue(config, id, job_type.verify_queue_name(), delay).await
     }

@@ -142,6 +142,81 @@ impl MongoDbClient {
         snos_collection.create_indexes(snos_indexes, None).await?;
         info!("Created indexes for SNOS batch collection");
 
+        // Create indexes for jobs collection (greedy worker mode)
+        let job_collection = self.get_job_collection();
+
+        let greedy_indexes = vec![
+            // FIX-06: Partial index for processing claims
+            // Only indexes jobs that are claimable for processing
+            IndexModel::builder()
+                .keys(doc! {
+                    "job_type": 1,
+                    "created_at": 1
+                })
+                .options(
+                    IndexOptions::builder()
+                        .name("idx_greedy_processing_partial".to_string())
+                        .partial_filter_expression(doc! {
+                            "status": { "$in": ["Created", "VerificationFailed", "PendingRetry"] }
+                        })
+                        .build(),
+                )
+                .build(),
+            // FIX-06: Partial index for verification claims
+            // Only indexes jobs in PendingVerification status
+            IndexModel::builder()
+                .keys(doc! {
+                    "job_type": 1,
+                    "available_at": 1
+                })
+                .options(
+                    IndexOptions::builder()
+                        .name("idx_greedy_verification_partial".to_string())
+                        .partial_filter_expression(doc! {
+                            "status": "PendingVerification"
+                        })
+                        .build(),
+                )
+                .build(),
+            // FIX-01: Index for verification orphan detection
+            IndexModel::builder()
+                .keys(doc! {
+                    "job_type": 1,
+                    "claimed_by": 1,
+                    "metadata.common.verification_started_at": 1
+                })
+                .options(
+                    IndexOptions::builder()
+                        .name("idx_verification_orphan_detection".to_string())
+                        .partial_filter_expression(doc! {
+                            "status": "PendingVerification",
+                            "claimed_by": { "$ne": null }
+                        })
+                        .build(),
+                )
+                .build(),
+            // Index for orphan detection (existing but ensure it exists)
+            IndexModel::builder()
+                .keys(doc! {
+                    "job_type": 1,
+                    "status": 1,
+                    "metadata.common.process_started_at": 1
+                })
+                .options(IndexOptions::builder().name("idx_orphan_detection".to_string()).build())
+                .build(),
+            // Index for counting active jobs per type
+            IndexModel::builder()
+                .keys(doc! {
+                    "job_type": 1,
+                    "status": 1
+                })
+                .options(IndexOptions::builder().name("idx_job_type_status".to_string()).build())
+                .build(),
+        ];
+
+        job_collection.create_indexes(greedy_indexes, None).await?;
+        info!("Created greedy worker indexes for jobs collection");
+
         Ok(())
     }
 
@@ -1369,6 +1444,237 @@ impl DatabaseClient for MongoDbClient {
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_status")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
+    }
+
+    // ================================================================================
+    // Greedy Worker Methods Implementation
+    // ================================================================================
+
+    async fn claim_job_for_processing(
+        &self,
+        job_type: &JobType,
+        orchestrator_id: &str,
+    ) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let now = Utc::now().trunc_subsecs(3);
+
+        // FIX-02: Support both greedy (available_at exists) and legacy (available_at null) jobs
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": {
+                "$in": [
+                    bson::to_bson(&JobStatus::Created)?,
+                    bson::to_bson(&JobStatus::VerificationFailed)?,
+                    bson::to_bson(&JobStatus::PendingRetry)?,
+                ]
+            },
+            "$or": [
+                { "available_at": { "$exists": false } },  // Legacy jobs
+                { "available_at": null },                   // Explicitly null
+                { "available_at": { "$lte": now } }        // Greedy jobs ready now
+            ],
+            "$or": [
+                { "claimed_by": { "$exists": false } },     // Legacy jobs
+                { "claimed_by": null }                      // Not claimed
+            ]
+        };
+
+        let update = doc! {
+            "$set": {
+                "claimed_by": orchestrator_id,
+                "updated_at": now
+            }
+        };
+
+        let options = FindOneAndUpdateOptions::builder()
+            .return_document(ReturnDocument::After)
+            .sort(doc! { "created_at": 1 })  // Oldest first (FIFO)
+            .build();
+
+        let result = self.get_job_collection().find_one_and_update(filter, update, options).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "claim_job_for_processing")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        if let Some(ref job) = result {
+            debug!(
+                job_id = %job.id,
+                job_type = ?job_type,
+                orchestrator_id = orchestrator_id,
+                "Claimed job for processing"
+            );
+        }
+
+        Ok(result)
+    }
+
+    async fn claim_job_for_verification(
+        &self,
+        job_type: &JobType,
+        orchestrator_id: &str,
+    ) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let now = Utc::now().trunc_subsecs(3);
+
+        // FIX-02: Support both greedy (available_at exists) and legacy (available_at null) jobs
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": bson::to_bson(&JobStatus::Completed)?,
+            "$or": [
+                { "available_at": { "$exists": false } },  // Legacy jobs
+                { "available_at": null },                   // Explicitly null
+                { "available_at": { "$lte": now } }        // Greedy jobs ready now
+            ],
+            "$or": [
+                { "claimed_by": { "$exists": false } },     // Legacy jobs
+                { "claimed_by": null }                      // Not claimed
+            ]
+        };
+
+        let update = doc! {
+            "$set": {
+                "claimed_by": orchestrator_id,
+                "updated_at": now
+            }
+        };
+
+        let options = FindOneAndUpdateOptions::builder()
+            .return_document(ReturnDocument::After)
+            .sort(doc! { "created_at": 1 })  // Oldest first (FIFO)
+            .build();
+
+        let result = self.get_job_collection().find_one_and_update(filter, update, options).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "claim_job_for_verification")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        if let Some(ref job) = result {
+            debug!(
+                job_id = %job.id,
+                job_type = ?job_type,
+                orchestrator_id = orchestrator_id,
+                "Claimed job for verification"
+            );
+        }
+
+        Ok(result)
+    }
+
+    async fn release_job_claim(&self, job_id: Uuid, delay_seconds: Option<u64>) -> Result<JobItem, DatabaseError> {
+        let start = Instant::now();
+        let now = Utc::now().trunc_subsecs(3);
+
+        let filter = doc! { "id": job_id.to_string() };
+
+        // FIX-03: Use available_at for delayed execution
+        let mut update_doc = doc! {
+            "$set": {
+                "updated_at": now
+            },
+            "$unset": {
+                "claimed_by": ""
+            }
+        };
+
+        if let Some(delay) = delay_seconds {
+            let available_at = now + chrono::Duration::seconds(delay as i64);
+            update_doc.get_document_mut("$set").unwrap().insert("available_at", available_at);
+        } else {
+            // Clear available_at so job is immediately available
+            update_doc.get_document_mut("$unset").unwrap().insert("available_at", "");
+        }
+
+        let options = FindOneAndUpdateOptions::builder().return_document(ReturnDocument::After).build();
+
+        let result = self
+            .get_job_collection()
+            .find_one_and_update(filter, update_doc, options)
+            .await?
+            .ok_or_else(|| DatabaseError::NoUpdateFound(format!("Job not found: {}", job_id)))?;
+
+        let attributes = [KeyValue::new("db_operation_name", "release_job_claim")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        debug!(
+            job_id = %job_id,
+            delay_seconds = ?delay_seconds,
+            "Released job claim"
+        );
+
+        Ok(result)
+    }
+
+    async fn count_jobs_by_type_and_status(&self, job_type: &JobType, status: JobStatus) -> Result<u64, DatabaseError> {
+        let start = Instant::now();
+
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": bson::to_bson(&status)?
+        };
+
+        let count = self.get_job_collection().count_documents(filter, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "count_jobs_by_type_and_status")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(count)
+    }
+
+    async fn count_claimed_jobs(&self, orchestrator_id: &str) -> Result<u64, DatabaseError> {
+        let start = Instant::now();
+
+        let filter = doc! {
+            "claimed_by": orchestrator_id
+        };
+
+        let count = self.get_job_collection().count_documents(filter, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "count_claimed_jobs")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        debug!(orchestrator_id = orchestrator_id, claimed_count = count, "Counted claimed jobs");
+
+        Ok(count)
+    }
+
+    async fn get_orphaned_verification_jobs(
+        &self,
+        job_type: &JobType,
+        timeout_seconds: u64,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let now = Utc::now().trunc_subsecs(3);
+        let cutoff_time = now - chrono::Duration::seconds(timeout_seconds as i64);
+
+        // FIX-01: Detect jobs stuck in Completed status with claimed_by set
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": bson::to_bson(&JobStatus::Completed)?,
+            "claimed_by": { "$ne": null },
+            "updated_at": { "$lt": cutoff_time }
+        };
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_orphaned_verification_jobs")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        if !jobs.is_empty() {
+            warn!(
+                job_type = ?job_type,
+                timeout_seconds = timeout_seconds,
+                orphan_count = jobs.len(),
+                "Found orphaned verification jobs"
+            );
+        }
 
         Ok(jobs)
     }

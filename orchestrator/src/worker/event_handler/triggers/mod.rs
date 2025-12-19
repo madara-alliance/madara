@@ -73,56 +73,108 @@ pub trait JobTrigger: Send + Sync {
     /// - Logs recovery actions for monitoring and debugging
     async fn heal_orphaned_jobs(&self, config: Arc<Config>, job_type: JobType) -> anyhow::Result<u32> {
         let timeout_seconds = config.service_config().job_processing_timeout_seconds;
-        let orphaned_jobs = config.database().get_orphaned_jobs(&job_type, timeout_seconds).await?;
 
-        if orphaned_jobs.is_empty() {
-            return Ok(0);
-        }
-
-        tracing::warn!(
-            job_type = ?job_type,
-            orphaned_count = orphaned_jobs.len(),
-            timeout_seconds = timeout_seconds,
-            "Found orphaned jobs, initiating self-healing recovery"
-        );
-
+        // FIX-01 & FIX-04: Heal both processing and verification orphans, clear greedy fields
         let mut healed_count = 0;
 
-        for mut job in orphaned_jobs {
-            // Record orphaned job metric
-            MetricsRecorder::record_orphaned_job(&job);
+        // Heal processing orphans (jobs stuck in LockedForProcessing)
+        let processing_orphans = config.database().get_orphaned_jobs(&job_type, timeout_seconds).await?;
 
-            job.metadata.common.process_started_at = None;
+        if !processing_orphans.is_empty() {
+            tracing::warn!(
+                job_type = ?job_type,
+                orphaned_count = processing_orphans.len(),
+                timeout_seconds = timeout_seconds,
+                orphan_type = "processing",
+                "Found orphaned processing jobs, initiating self-healing recovery"
+            );
 
-            let update_result = config
-                .database()
-                .update_job(
-                    &job,
-                    JobItemUpdates::new()
-                        .update_status(JobStatus::Created)
-                        .update_metadata(job.metadata.clone())
-                        .build(),
-                )
-                .await;
+            for mut job in processing_orphans {
+                // Record orphaned job metric
+                MetricsRecorder::record_orphaned_job(&job);
 
-            match update_result {
-                Ok(_) => {
-                    healed_count += 1;
-                    tracing::info!(
-                        job_id = %job.id,
-                        job_type = ?job_type,
-                        internal_id = %job.internal_id,
-                        "Successfully healed orphaned job - reset from LockedForProcessing to Created"
-                    );
+                job.metadata.common.process_started_at = None;
+
+                let update_result = config
+                    .database()
+                    .update_job(
+                        &job,
+                        JobItemUpdates::new()
+                            .update_status(JobStatus::Created)
+                            .update_metadata(job.metadata.clone())
+                            .clear_claim()  // FIX-04: Clear claimed_by field
+                            .build(),
+                    )
+                    .await;
+
+                match update_result {
+                    Ok(_) => {
+                        healed_count += 1;
+                        tracing::info!(
+                            job_id = %job.id,
+                            job_type = ?job_type,
+                            internal_id = %job.internal_id,
+                            "Successfully healed orphaned processing job - reset from LockedForProcessing to Created"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            job_id = %job.id,
+                            job_type = ?job_type,
+                            internal_id = %job.internal_id,
+                            error = %e,
+                            "Failed to heal orphaned processing job"
+                        );
+                    }
                 }
-                Err(e) => {
-                    tracing::error!(
-                        job_id = %job.id,
-                        job_type = ?job_type,
-                        internal_id = %job.internal_id,
-                        error = %e,
-                        "Failed to heal orphaned job"
-                    );
+            }
+        }
+
+        // FIX-01: Heal verification orphans (jobs stuck in Completed status with claimed_by set)
+        let verification_orphans = config.database().get_orphaned_verification_jobs(&job_type, timeout_seconds).await?;
+
+        if !verification_orphans.is_empty() {
+            tracing::warn!(
+                job_type = ?job_type,
+                orphaned_count = verification_orphans.len(),
+                timeout_seconds = timeout_seconds,
+                orphan_type = "verification",
+                "Found orphaned verification jobs, initiating self-healing recovery"
+            );
+
+            for job in verification_orphans {
+                // Record orphaned job metric
+                MetricsRecorder::record_orphaned_job(&job);
+
+                let update_result = config
+                    .database()
+                    .update_job(
+                        &job,
+                        JobItemUpdates::new()
+                            .clear_claim()  // FIX-04: Clear claimed_by to allow re-verification
+                            .build(),
+                    )
+                    .await;
+
+                match update_result {
+                    Ok(_) => {
+                        healed_count += 1;
+                        tracing::info!(
+                            job_id = %job.id,
+                            job_type = ?job_type,
+                            internal_id = %job.internal_id,
+                            "Successfully healed orphaned verification job - cleared claim to allow re-verification"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            job_id = %job.id,
+                            job_type = ?job_type,
+                            internal_id = %job.internal_id,
+                            error = %e,
+                            "Failed to heal orphaned verification job"
+                        );
+                    }
                 }
             }
         }
@@ -131,7 +183,7 @@ pub trait JobTrigger: Send + Sync {
             tracing::warn!(
                 job_type = ?job_type,
                 healed_count = healed_count,
-                "Self-healing completed: recovered orphaned jobs"
+                "Self-healing completed: recovered orphaned jobs (processing + verification)"
             );
         }
 

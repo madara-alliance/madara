@@ -174,6 +174,94 @@ pub trait DatabaseClient: Send + Sync {
     async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError>;
 
     // ================================================================================
+    // Greedy Worker Methods (Queue-less Architecture)
+    // ================================================================================
+
+    /// Atomically claim a job for processing in greedy mode
+    ///
+    /// Uses findOneAndUpdate to atomically find an available job and claim it.
+    /// A job is available if:
+    /// - Status is Created, VerificationFailed, or PendingRetry
+    /// - available_at is None or in the past
+    /// - claimed_by is None
+    ///
+    /// # Arguments
+    /// * `job_type` - Type of job to claim
+    /// * `orchestrator_id` - Unique ID of this orchestrator instance
+    ///
+    /// # Returns
+    /// * `Ok(Some(JobItem))` - Successfully claimed a job
+    /// * `Ok(None)` - No available jobs to claim
+    /// * `Err(DatabaseError)` - Database error occurred
+    async fn claim_job_for_processing(
+        &self,
+        job_type: &JobType,
+        orchestrator_id: &str,
+    ) -> Result<Option<JobItem>, DatabaseError>;
+
+    /// Atomically claim a job for verification in greedy mode
+    ///
+    /// Uses findOneAndUpdate to atomically find an available job and claim it.
+    /// A job is available if:
+    /// - Status is Completed
+    /// - available_at is None or in the past
+    /// - claimed_by is None
+    ///
+    /// # Arguments
+    /// * `job_type` - Type of job to claim
+    /// * `orchestrator_id` - Unique ID of this orchestrator instance
+    ///
+    /// # Returns
+    /// * `Ok(Some(JobItem))` - Successfully claimed a job
+    /// * `Ok(None)` - No available jobs to claim
+    /// * `Err(DatabaseError)` - Database error occurred
+    async fn claim_job_for_verification(
+        &self,
+        job_type: &JobType,
+        orchestrator_id: &str,
+    ) -> Result<Option<JobItem>, DatabaseError>;
+
+    /// Release a job claim, allowing another worker to pick it up
+    ///
+    /// Clears the claimed_by field and optionally sets available_at for delayed retry.
+    ///
+    /// # Arguments
+    /// * `job_id` - UUID of the job to release
+    /// * `delay_seconds` - Optional delay before job becomes available again
+    async fn release_job_claim(&self, job_id: uuid::Uuid, delay_seconds: Option<u64>)
+        -> Result<JobItem, DatabaseError>;
+
+    /// Count jobs of specific type and status for concurrency limiting
+    ///
+    /// Used to enforce max concurrent jobs per type.
+    ///
+    /// # Arguments
+    /// * `job_type` - Type of job to count
+    /// * `status` - Status to filter by
+    async fn count_jobs_by_type_and_status(&self, job_type: &JobType, status: JobStatus) -> Result<u64, DatabaseError>;
+
+    /// Count jobs claimed by this orchestrator instance
+    ///
+    /// Used for graceful shutdown to wait for in-flight jobs.
+    ///
+    /// # Arguments
+    /// * `orchestrator_id` - Unique ID of this orchestrator instance
+    async fn count_claimed_jobs(&self, orchestrator_id: &str) -> Result<u64, DatabaseError>;
+
+    /// Get jobs stuck in Completed status (awaiting verification) beyond timeout
+    ///
+    /// FIX-01: Detects verification orphans that have been claimed but not verified.
+    ///
+    /// # Arguments
+    /// * `job_type` - The type of job to search for
+    /// * `timeout_seconds` - Timeout threshold in seconds
+    async fn get_orphaned_verification_jobs(
+        &self,
+        job_type: &JobType,
+        timeout_seconds: u64,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
+
+    // ================================================================================
     // SNOS Batch Management Methods
     // ================================================================================
 
