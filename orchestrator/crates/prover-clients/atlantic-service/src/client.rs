@@ -435,6 +435,7 @@ impl AtlanticClient {
         mock_proof: bool,
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
+        da_public_keys: Option<Vec<String>>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
         let context = format!("mock_proof: {}, chain_id_hex: {:?}", mock_proof, chain_id_hex);
 
@@ -454,12 +455,13 @@ impl AtlanticClient {
                 let bucket_request = AtlanticCreateBucketRequest {
                     external_id: None,
                     node_width: None,
-                    aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_3,
+                    aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_14_1,
                     aggregator_params: AtlanticAggregatorParams {
                         use_kzg_da: AGGREGATOR_USE_KZG_DA,
                         full_output: AGGREGATOR_FULL_OUTPUT,
                         chain_id_hex: chain_id_clone.clone(),
                         fee_token_address,
+                        da_public_keys: da_public_keys.clone(),
                     },
                     mock_proof,
                 };

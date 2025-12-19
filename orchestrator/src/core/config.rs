@@ -290,6 +290,7 @@ impl Config {
             &params,
             Some(format!("0x{}", hex::encode(&chain_details.chain_id))),
             Some(Felt252::from_str(chain_details.strk_fee_token_address.as_str())?),
+            Some(run_cmd.da_public_keys.clone()),
         );
         let da_client: Box<dyn DaClient + Send + Sync + 'static> = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
@@ -375,6 +376,7 @@ impl Config {
         params: &ConfigParam,
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
+        da_public_keys: Option<Vec<String>>,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => {
@@ -385,6 +387,7 @@ impl Config {
                 &params.prover_layout_name,
                 chain_id_hex,
                 fee_token_address,
+                da_public_keys,
             )),
         }
     }
