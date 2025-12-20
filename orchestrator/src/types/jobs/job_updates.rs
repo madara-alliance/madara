@@ -9,8 +9,11 @@ use serde::Serialize;
 // version and updated_at will always be updated when this object updates the job
 #[derive(Serialize, Debug)]
 pub struct JobItemUpdates {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<JobStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub external_id: Option<ExternalId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<JobMetadata>,
 
     // NEW FIELDS FOR GREEDY MODE

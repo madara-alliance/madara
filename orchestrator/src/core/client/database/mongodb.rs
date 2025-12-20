@@ -518,16 +518,20 @@ impl DatabaseClient for MongoDbClient {
 
         let mut updates = update.to_document()?;
 
-        // remove null values from the updates
+        // Separate null and non-null values
         let mut non_null_updates = Document::new();
+        let mut null_updates = Document::new();
         updates.iter_mut().for_each(|(k, v)| {
             if v != &Bson::Null {
                 non_null_updates.insert(k, v);
+            } else {
+                // For null values, use $unset to remove the field
+                null_updates.insert(k, "");
             }
         });
 
         // throw an error if there's no field to be updated
-        if non_null_updates.is_empty() {
+        if non_null_updates.is_empty() && null_updates.is_empty() {
             return Err(DatabaseError::NoUpdateFound("No field to be updated, likely a false call".to_string()));
         }
 
@@ -535,9 +539,13 @@ impl DatabaseClient for MongoDbClient {
         non_null_updates.insert("version", Bson::Int32(current_job.version + 1));
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
-        let update = doc! {
+        // Build update document with both $set and $unset operations
+        let mut update = doc! {
             "$set": non_null_updates
         };
+        if !null_updates.is_empty() {
+            update.insert("$unset", null_updates);
+        }
 
         let result = self.get_job_collection().find_one_and_update(filter, update, options).await?;
         match result {
