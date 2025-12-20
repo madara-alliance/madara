@@ -1602,7 +1602,7 @@ impl DatabaseClient for MongoDbClient {
         let start = Instant::now();
         let now = Utc::now().trunc_subsecs(3);
 
-        let filter = doc! { "id": job_id.to_string() };
+        let filter = doc! { "id": job_id };
 
         // FIX-03: Use available_at for delayed execution
         let mut update_doc = doc! {
@@ -1616,7 +1616,7 @@ impl DatabaseClient for MongoDbClient {
 
         if let Some(delay) = delay_seconds {
             let available_at = now + chrono::Duration::seconds(delay as i64);
-            update_doc.get_document_mut("$set").unwrap().insert("available_at", available_at);
+            update_doc.get_document_mut("$set").unwrap().insert("available_at", bson::to_bson(&available_at)?);
         } else {
             // Clear available_at so job is immediately available
             update_doc.get_document_mut("$unset").unwrap().insert("available_at", "");

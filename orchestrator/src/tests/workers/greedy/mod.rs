@@ -17,3 +17,6 @@ pub mod orphan_recovery;
 
 #[cfg(test)]
 pub mod job_creation_caps;
+
+#[cfg(test)]
+pub mod error_handling;

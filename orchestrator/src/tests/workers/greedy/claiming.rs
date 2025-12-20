@@ -11,7 +11,6 @@ use orchestrator_da_client_interface::MockDaClient;
 use orchestrator_prover_client_interface::MockProverClient;
 use orchestrator_settlement_client_interface::MockSettlementClient;
 use rstest::rstest;
-use std::collections::HashSet;
 
 /// Helper to set up test config
 async fn setup_test_config() -> crate::tests::config::TestConfigBuilderReturns {

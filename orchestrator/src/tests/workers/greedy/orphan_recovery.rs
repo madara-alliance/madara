@@ -172,9 +172,8 @@ async fn test_multiple_job_types_orphan_detection() {
     let job_types = vec![JobType::SnosRun, JobType::ProofCreation, JobType::Aggregator];
 
     for job_type in job_types {
-        let orphans = db.get_orphaned_jobs(&job_type, 3600).await.expect("Failed");
-        // Just verify the method works for all job types
-        assert!(orphans.len() >= 0);
+        let _orphans = db.get_orphaned_jobs(&job_type, 3600).await.expect("Failed");
+        // Just verify the method works for all job types without panicking
     }
 }
 

@@ -229,6 +229,7 @@ pub async fn cleanup_queues(provider_config: Arc<CloudProvider>, queue_params: &
 
 #[derive(Deserialize, Debug)]
 pub struct MessagePayloadType {
+    #[allow(dead_code)]
     pub(crate) id: Uuid,
 }
 
