@@ -77,7 +77,6 @@ impl OrchestratorInstrumentation {
                                 .with_thread_ids(false)
                                 .with_file(true)
                                 .with_line_number(true)
-                                .with_ansi(false)
                                 .event_format(JsonEventFormatter),
                         )
                         .with(OpenTelemetryLayer::new(tracer))
@@ -92,7 +91,6 @@ impl OrchestratorInstrumentation {
                                 .with_thread_ids(false)
                                 .with_file(true)
                                 .with_line_number(true)
-                                .with_ansi(false)
                                 .event_format(PrettyFormatter),
                         )
                         .with(OpenTelemetryLayer::new(tracer))

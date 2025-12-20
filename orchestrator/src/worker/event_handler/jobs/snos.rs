@@ -21,13 +21,12 @@ use generate_pie::generate_pie;
 use generate_pie::types::chain_config::ChainConfig;
 use generate_pie::types::os_hints::OsHintsConfiguration;
 use generate_pie::types::pie::{PieGenerationInput, PieGenerationResult};
-use orchestrator_utils::chain_details::ChainDetails;
 use orchestrator_utils::layer::Layer;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Provider};
+use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
+use starknet::providers::Provider;
+use starknet::providers::Url;
 use starknet_api::core::{ChainId, ContractAddress};
 use starknet_core::types::Felt;
-use url::Url;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,22 +45,37 @@ pub async fn check_snos_health(snos_url: &Url) -> bool {
 
 pub struct SnosJobHandler;
 
-/// Extension trait to convert ChainDetails to ChainConfig for SNOS usage.
-pub trait ChainDetailsExt {
-    /// Convert ChainDetails to the ChainConfig type required by generate_pie.
-    fn to_chain_config(&self) -> ChainConfig;
+#[async_trait]
+pub trait ChainConfigFromExt {
+    async fn get_chain_config(
+        rpc_url: &str,
+        layer: &Layer,
+        strk_fee_token_address: &str,
+        eth_fee_token_address: &str,
+    ) -> Result<ChainConfig>;
 }
 
-impl ChainDetailsExt for ChainDetails {
-    fn to_chain_config(&self) -> ChainConfig {
-        ChainConfig {
-            chain_id: ChainId::Other(self.chain_id.clone()),
-            strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.strk_fee_token_address))
-                .expect("Invalid STRK fee token address"),
-            eth_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(&self.eth_fee_token_address))
-                .expect("Invalid ETH fee token address"),
-            is_l3: self.is_l3,
-        }
+#[async_trait]
+impl ChainConfigFromExt for ChainConfig {
+    async fn get_chain_config(
+        rpc_url: &str,
+        layer: &Layer,
+        strk_fee_token_address: &str,
+        eth_fee_token_address: &str,
+    ) -> Result<ChainConfig> {
+        let rpc_url = Url::parse(rpc_url)?;
+        let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
+        let chain_id_in_hex = provider.chain_id().await?.to_fixed_hex_string();
+
+        let chain_id_decoded = String::from_utf8(hex::decode(chain_id_in_hex.trim_start_matches("0x"))?)?;
+        let chain_id = ChainId::Other(chain_id_decoded);
+
+        Ok(ChainConfig {
+            chain_id,
+            strk_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(strk_fee_token_address))?,
+            eth_fee_token_address: ContractAddress::try_from(Felt::from_hex_unchecked(eth_fee_token_address))?,
+            is_l3: layer.is_l3(),
+        })
     }
 }
 
@@ -89,7 +103,7 @@ impl JobHandlerTrait for SnosJobHandler {
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = &job.internal_id;
-        info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::SnosRun, internal_id);
+        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::SnosRun, internal_id);
 
         // Get SNOS metadata
         let snos_metadata: SnosMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
@@ -113,8 +127,15 @@ impl JobHandlerTrait for SnosJobHandler {
         let input = PieGenerationInput {
             rpc_url: snos_url.to_string(),
             blocks: (start_block_number..=end_block_number).collect(),
-            // Use chain details fetched at orchestrator startup (no RPC call needed here)
-            chain_config: config.chain_details().to_chain_config(),
+            // chain_config: ChainConfig::default(),
+            chain_config: ChainConfig::get_chain_config(
+                snos_url,
+                config.layer(),
+                &config.params.snos_config.strk_fee_token_address,
+                &config.params.snos_config.eth_fee_token_address,
+            )
+            .await
+            .map_err(|e| JobError::Other(OtherError(eyre!("Failed to get chain config: {}", e))))?,
             os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
@@ -173,7 +194,7 @@ impl JobHandlerTrait for SnosJobHandler {
         // Store the Cairo Pie path
         self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
 
-        info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::SnosRun, internal_id);
+        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::SnosRun, internal_id);
 
         Ok(snos_metadata.snos_batch_index.to_string())
     }
@@ -183,7 +204,7 @@ impl JobHandlerTrait for SnosJobHandler {
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::SnosRun, internal_id);
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
-        info!(log_type = "completed", job_id = %job.id, "{:?} job {} verification completed", JobType::SnosRun, internal_id);
+        info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::SnosRun, internal_id);
         Ok(JobVerificationStatus::Verified)
     }
 
@@ -205,6 +226,12 @@ impl JobHandlerTrait for SnosJobHandler {
         if !check_snos_health(snos_url).await {
             // SNOS is down - signal to requeue with delay
             warn!(snos_url = %snos_url, "SNOS RPC is unavailable, job will be requeued");
+
+            let alert_msg =
+                format!("SNOS RPC {} is unavailable. SnosRun jobs will be requeued until it recovers.", snos_url);
+            if let Err(e) = config.alerts().send_message(alert_msg).await {
+                error!(error = ?e, "Failed to send SNOS unavailability alert");
+            }
 
             return Err(Duration::from_secs(SNOS_UNAVAILABLE_RETRY_DELAY_SECS));
         }

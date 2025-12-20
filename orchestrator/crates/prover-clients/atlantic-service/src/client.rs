@@ -412,7 +412,7 @@ impl AtlanticClient {
                             error = %error_text,
                             "Search failed"
                         );
-                        Err(AtlanticError::from_http_error_response("search_atlantic_queries", status, error_text))
+                        Err(AtlanticError::api_error("search_atlantic_queries", status, error_text))
                     }
                 }
             })

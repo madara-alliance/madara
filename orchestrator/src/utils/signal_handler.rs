@@ -58,7 +58,7 @@ impl SignalHandler {
     pub async fn wait_for_shutdown(&mut self) -> ShutdownSignal {
         let signal = self.wait_for_signal().await;
         self.shutdown_signal = Some(signal);
-        info!("Received shutdown signal: {}", signal);
+        info!("🛑 Received shutdown signal: {}", signal);
 
         // Cancel the token to notify all subsystems
         self.cancellation_token.cancel();
@@ -83,7 +83,7 @@ impl SignalHandler {
         let mut sigint = signal(SignalKind::interrupt()).expect("Failed to create SIGINT handler");
         let mut sigquit = signal(SignalKind::quit()).expect("Failed to create SIGQUIT handler");
 
-        info!("Signal handler initialized, listening for SIGTERM, SIGINT, SIGQUIT, and internal shutdown requests");
+        info!("📡 Signal handler initialized, listening for SIGTERM, SIGINT, SIGQUIT, and internal shutdown requests");
 
         tokio::select! {
             _ = sigterm.recv() => {
@@ -147,7 +147,7 @@ impl SignalHandler {
 
         match shutdown_result {
             Ok(Ok(())) => {
-                info!("Graceful shutdown completed successfully");
+                info!("✅ Graceful shutdown completed successfully");
                 if remaining_time > tokio::time::Duration::from_secs(0) {
                     info!("Waiting remaining {:?} to ensure graceful shutdown", remaining_time);
                     tokio::time::sleep(remaining_time).await;
@@ -155,20 +155,20 @@ impl SignalHandler {
                 Ok(())
             }
             Ok(Err(e)) => {
-                error!("Graceful shutdown failed: {}", e);
+                error!("❌ Graceful shutdown failed: {}", e);
                 Err(e)
             }
             Err(_) => {
-                error!("Graceful shutdown timed out after {} seconds", timeout_secs);
+                error!("⏰ Graceful shutdown timed out after {} seconds", timeout_secs);
 
                 // Different behavior based on signal type
                 match signal {
                     ShutdownSignal::Quit => {
-                        warn!("SIGQUIT received - forcing immediate exit");
+                        warn!("💥 SIGQUIT received - forcing immediate exit");
                         std::process::exit(130); // Unix convention for SIGQUIT
                     }
                     _ => {
-                        warn!("Shutdown timeout reached - this may leave some tasks incomplete");
+                        warn!("🔌 Shutdown timeout reached - this may leave some tasks incomplete");
                         Err(anyhow!("Shutdown timeout exceeded"))
                     }
                 }
@@ -178,7 +178,7 @@ impl SignalHandler {
 
     /// Trigger shutdown programmatically (for internal errors)
     pub fn trigger_shutdown(&self) {
-        warn!("Internal shutdown triggered");
+        warn!("🚨 Internal shutdown triggered");
         self.cancellation_token.cancel();
     }
 }

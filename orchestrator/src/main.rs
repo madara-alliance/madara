@@ -81,6 +81,7 @@ async fn main() {
 async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
     let instrumentation = OrchestratorInstrumentation::new(&config)?;
+    info!("Starting orchestrator service");
 
     let config = Arc::new(Config::from_run_cmd(run_cmd).await?);
     debug!("Configuration initialized");
@@ -91,10 +92,10 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     // Run the server in a separate tokio spawn task
     setup_server(config.clone()).await?;
 
-    info!("Application server live!");
+    debug!("Application router initialized");
 
     // Set up comprehensive signal handling for Docker/Kubernetes
-    debug!("Setting up signal handler for graceful shutdown");
+    info!("Setting up signal handler for graceful shutdown");
     let mut signal_handler = SignalHandler::new();
     let shutdown_token = signal_handler.get_shutdown_token();
 

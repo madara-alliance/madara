@@ -1,4 +1,3 @@
-pub mod chain_details;
 pub mod collections;
 pub mod env_utils;
 pub mod http_client;
