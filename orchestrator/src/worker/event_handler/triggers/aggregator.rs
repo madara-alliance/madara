@@ -12,7 +12,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 pub struct AggregatorJobTrigger;
 
@@ -22,14 +22,55 @@ impl JobTrigger for AggregatorJobTrigger {
     /// 2. Check if all the child jobs for this batch are Completed
     /// 3. Create the Aggregator job for all such Batches and update the Batch status
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Get all the closed batches
+        // Self-healing: recover any orphaned Aggregator jobs before creating new ones
+        // Note: Atlantic client now handles duplicate detection via search_for_queries,
+        // so it's safe to heal orphaned jobs - they won't be re-submitted if already in progress
+        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::Aggregator).await {
+            error!(error = %e, "Failed to heal orphaned Aggregator jobs, continuing with normal processing");
+        }
+
+        // FIX-16: Cap job creation to prevent MongoDB from being overwhelmed
+        // Only create jobs if we're below the configured limit for Created + PendingRetry jobs
+        let cap = config.service_config().max_concurrent_created_aggregator_jobs;
+        let current_count = config
+            .database()
+            .count_jobs_by_type_and_statuses(&JobType::Aggregator, &[JobStatus::Created, JobStatus::PendingRetry])
+            .await?;
+
+        if current_count >= cap {
+            debug!(
+                current_count = current_count,
+                cap = cap,
+                "Aggregator job creation cap reached, skipping job creation"
+            );
+            return Ok(());
+        }
+
+        let slots_available = (cap - current_count) as usize;
+        info!(
+            current_count = current_count,
+            cap = cap,
+            slots_available = slots_available,
+            "Aggregator job creation slots available"
+        );
+
+        // Get closed batches sorted by index (oldest first)
         let closed_batches =
-            config.database().get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(10)).await?;
+            config.database().get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None).await?;
 
         debug!("Found {} closed batches", closed_batches.len());
 
-        // Process each batch
+        // Process each batch, respecting the slot limit
+        let mut jobs_created = 0;
         for batch in closed_batches {
+            if jobs_created >= slots_available {
+                debug!(
+                    jobs_created = jobs_created,
+                    slots_available = slots_available,
+                    "Reached slot limit, stopping job creation"
+                );
+                break;
+            }
             // Check if all the child jobs are Completed
             match self.check_child_jobs_status(&batch, &config).await {
                 Ok(are_completed) => {
@@ -83,6 +124,7 @@ impl JobTrigger for AggregatorJobTrigger {
                             AggregatorBatchStatus::PendingAggregatorRun,
                         )
                         .await?;
+                    jobs_created += 1;
                 }
                 Err(e) => {
                     error!(error = %e, "Failed to create new {:?} job for {}", JobType::Aggregator, batch.index);

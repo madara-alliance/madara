@@ -240,6 +240,19 @@ pub trait DatabaseClient: Send + Sync {
     /// * `status` - Status to filter by
     async fn count_jobs_by_type_and_status(&self, job_type: &JobType, status: JobStatus) -> Result<u64, DatabaseError>;
 
+    /// Count jobs of specific type with multiple statuses for concurrency limiting
+    ///
+    /// Used to enforce max concurrent created jobs (Created + PendingRetry).
+    ///
+    /// # Arguments
+    /// * `job_type` - Type of job to count
+    /// * `statuses` - Slice of statuses to filter by
+    async fn count_jobs_by_type_and_statuses(
+        &self,
+        job_type: &JobType,
+        statuses: &[JobStatus],
+    ) -> Result<u64, DatabaseError>;
+
     /// Count jobs claimed by this orchestrator instance
     ///
     /// Used for graceful shutdown to wait for in-flight jobs.

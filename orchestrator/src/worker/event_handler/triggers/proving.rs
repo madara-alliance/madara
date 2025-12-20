@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct ProvingJobTrigger;
 
@@ -21,10 +21,37 @@ impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: We intentionally do not heal orphaned Proving jobs as
-        // they might create inconsistent state on the atlantic side,
-        // sending request twice, opening the same bucket again, adding the the
-        // same block again etc.
+        // Self-healing: recover any orphaned ProofCreation jobs before creating new ones
+        // Note: Atlantic client now handles duplicate detection via search_for_queries,
+        // so it's safe to heal orphaned jobs - they won't be re-submitted if already in progress
+        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofCreation).await {
+            error!(error = %e, "Failed to heal orphaned ProofCreation jobs, continuing with normal processing");
+        }
+
+        // FIX-15: Cap job creation to prevent MongoDB from being overwhelmed
+        // Only create jobs if we're below the configured limit for Created + PendingRetry jobs
+        let cap = config.service_config().max_concurrent_created_proving_jobs;
+        let current_count = config
+            .database()
+            .count_jobs_by_type_and_statuses(&JobType::ProofCreation, &[JobStatus::Created, JobStatus::PendingRetry])
+            .await?;
+
+        if current_count >= cap {
+            debug!(
+                current_count = current_count,
+                cap = cap,
+                "ProofCreation job creation cap reached, skipping job creation"
+            );
+            return Ok(());
+        }
+
+        let slots_available = (cap - current_count) as usize;
+        info!(
+            current_count = current_count,
+            cap = cap,
+            slots_available = slots_available,
+            "ProofCreation job creation slots available"
+        );
 
         let successful_snos_jobs = config
             .database()
@@ -35,7 +62,17 @@ impl JobTrigger for ProvingJobTrigger {
 
         debug!("Found {} successful SNOS jobs without proving jobs", successful_snos_jobs.len());
 
+        // Only create up to slots_available jobs
+        let mut jobs_created = 0;
         for snos_job in successful_snos_jobs {
+            if jobs_created >= slots_available {
+                debug!(
+                    jobs_created = jobs_created,
+                    slots_available = slots_available,
+                    "Reached slot limit, stopping job creation"
+                );
+                break;
+            }
             // Extract SNOS metadata
             let snos_metadata: SnosMetadata = snos_job.metadata.specific.try_into().map_err(|e| {
                 error!(job_id = %snos_job.internal_id, error = %e, "Invalid metadata type for SNOS job");
@@ -110,7 +147,9 @@ impl JobTrigger for ProvingJobTrigger {
             )
             .await
             {
-                Ok(_) => {}
+                Ok(_) => {
+                    jobs_created += 1;
+                }
                 Err(e) => {
                     error!(error = %e, "Failed to create new {:?} job for {}", JobType::ProofCreation, snos_job.internal_id);
                     let attributes = [

@@ -798,13 +798,25 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
     let max_concurrent_created_snos_jobs: u64 =
         env_value.parse::<u64>().expect("Invalid number format for max concurrent SNOS jobs");
 
+    let env_value: String = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_PROVING_JOBS", "200");
+    let max_concurrent_created_proving_jobs: u64 =
+        env_value.parse::<u64>().expect("Invalid number format for max concurrent proving jobs");
+
+    let env_value: String = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_AGGREGATOR_JOBS", "50");
+    let max_concurrent_created_aggregator_jobs: u64 =
+        env_value.parse::<u64>().expect("Invalid number format for max concurrent aggregator jobs");
+
     let service_config = ServiceParams {
         max_block_to_process: max_block,
         min_block_to_process: min_block,
         max_concurrent_created_snos_jobs,
+        max_concurrent_created_proving_jobs,
+        max_concurrent_created_aggregator_jobs,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
         job_processing_timeout_seconds: 3600,
+        greedy_mode: false,
+        greedy_poll_interval_ms: 100,
     };
 
     let server_config = ServerParams {

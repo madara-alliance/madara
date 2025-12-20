@@ -660,6 +660,12 @@ impl DatabaseClient for MongoDbClient {
                     "successor_jobs": { "$eq": [] }
                 }
             },
+            // Stage 4: Sort by created_at for consistent ordering (oldest first)
+            doc! {
+                "$sort": {
+                    "created_at": 1
+                }
+            },
         ];
 
         debug!("Fetching jobs without successor");
@@ -1497,9 +1503,11 @@ impl DatabaseClient for MongoDbClient {
         };
 
         // FIX-11: Priority sorting - PendingRetry first (retries are in-flight work), then FIFO by created_at
+        // Note: We use descending sort on status because "PendingRetry" > "Created" alphabetically
+        // So status: -1 gives us PendingRetry first, then Created
         let options = FindOneAndUpdateOptions::builder()
             .return_document(ReturnDocument::After)
-            .sort(doc! { "status": 1, "created_at": 1 })  // PendingRetry < Created alphabetically, then oldest first
+            .sort(doc! { "status": -1, "created_at": 1 })  // PendingRetry first (desc), then oldest first
             .build();
 
         let result = self.get_job_collection().find_one_and_update(filter, update, options).await?;
@@ -1637,6 +1645,29 @@ impl DatabaseClient for MongoDbClient {
         let count = self.get_job_collection().count_documents(filter, None).await?;
 
         let attributes = [KeyValue::new("db_operation_name", "count_jobs_by_type_and_status")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(count)
+    }
+
+    async fn count_jobs_by_type_and_statuses(
+        &self,
+        job_type: &JobType,
+        statuses: &[JobStatus],
+    ) -> Result<u64, DatabaseError> {
+        let start = Instant::now();
+
+        let statuses_bson: Vec<bson::Bson> = statuses.iter().map(|s| bson::to_bson(s).unwrap()).collect();
+
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": { "$in": statuses_bson }
+        };
+
+        let count = self.get_job_collection().count_documents(filter, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "count_jobs_by_type_and_statuses")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 

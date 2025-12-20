@@ -251,8 +251,9 @@ impl JobHandlerService {
             ],
         );
 
-        // MULTI-ORCHESTRATOR FIX: Clear claimed_by when transitioning to LockedForProcessing
-        // This ensures the job can be claimed again for verification by any orchestrator
+        // Keep claimed_by during processing - this is essential for orphan detection.
+        // If orchestrator dies while processing, the job will have claimed_by set,
+        // and heal_orphaned_jobs() will detect it after timeout and reset to Created.
         let mut job = config
             .database()
             .update_job(
@@ -260,7 +261,6 @@ impl JobHandlerService {
                 JobItemUpdates::new()
                     .update_status(JobStatus::LockedForProcessing)
                     .update_metadata(job.metadata.clone())
-                    .clear_claim() // Clear the greedy mode claim
                     .build(),
             )
             .await

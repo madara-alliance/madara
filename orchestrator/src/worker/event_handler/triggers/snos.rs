@@ -4,7 +4,7 @@ use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
-use crate::types::jobs::types::JobType;
+use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -15,7 +15,7 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -51,8 +51,32 @@ impl JobTrigger for SnosJobTrigger {
             error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
         }
 
+        // FIX-14: Cap job creation to prevent MongoDB from being overwhelmed
+        // Only create jobs if we're below the configured limit for Created + PendingRetry jobs
+        let cap = config.service_config().max_concurrent_created_snos_jobs;
+        let current_count = config
+            .database()
+            .count_jobs_by_type_and_statuses(&JobType::SnosRun, &[JobStatus::Created, JobStatus::PendingRetry])
+            .await?;
+
+        if current_count >= cap {
+            debug!(current_count = current_count, cap = cap, "SNOS job creation cap reached, skipping job creation");
+            return Ok(());
+        }
+
+        let slots_available = (cap - current_count) as usize;
+        info!(
+            current_count = current_count,
+            cap = cap,
+            slots_available = slots_available,
+            "SNOS job creation slots available"
+        );
+
         // Get all snos batches that are closed but don't have a SnosRun job created yet
-        for snos_batch in config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed).await? {
+        // Only create up to slots_available jobs
+        let batches_without_jobs = config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed).await?;
+
+        for snos_batch in batches_without_jobs.into_iter().take(slots_available) {
             // Create SNOS job metadata
             let snos_metadata = create_job_metadata(
                 snos_batch.index,
@@ -68,7 +92,7 @@ impl JobTrigger for SnosJobTrigger {
                 snos_metadata,
                 config.clone(),
             )
-                .await
+            .await
             {
                 Ok(_) => {
                     // TODO(prakhar,16/12/2025): Update SNOS batch status to SnosJobCreated

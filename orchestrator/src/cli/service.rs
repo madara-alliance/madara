@@ -10,9 +10,17 @@ pub struct ServiceCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS", long, default_value = "0")]
     pub min_block_to_process: u64,
 
-    /// The maximum number of SNOS jobs to create concurrently.
+    /// The maximum number of SNOS jobs in Created+PendingRetry status (caps job creation).
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", long, default_value = "200")]
     pub max_concurrent_created_snos_jobs: u64,
+
+    /// The maximum number of ProofCreation jobs in Created+PendingRetry status (caps job creation).
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_PROVING_JOBS", long, default_value = "200")]
+    pub max_concurrent_created_proving_jobs: u64,
+
+    /// The maximum number of Aggregator jobs in Created+PendingRetry status (caps job creation).
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_AGGREGATOR_JOBS", long, default_value = "50")]
+    pub max_concurrent_created_aggregator_jobs: u64,
 
     /// The maximum number of SNOS jobs to process concurrently.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS", long)]
