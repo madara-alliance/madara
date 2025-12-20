@@ -38,10 +38,6 @@ pub struct ServiceCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_DATA_SUBMISSION_JOBS", long)]
     pub max_concurrent_data_submission_jobs: Option<usize>,
 
-    /// The maximum number of state transition jobs to process concurrently per orchestrator.
-    #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_STATE_TRANSITION_JOBS", long)]
-    pub max_concurrent_state_transition_jobs: Option<usize>,
-
     /// Timeout in seconds for jobs stuck in LockedForProcessing status before self-healing recovery.
     #[arg(env = "MADARA_ORCHESTRATOR_JOB_PROCESSING_TIMEOUT_SECONDS", long, default_value = "1800")]
     pub job_processing_timeout_seconds: u64,

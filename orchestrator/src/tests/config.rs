@@ -804,11 +804,6 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
     let max_concurrent_data_submission_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
-    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_STATE_TRANSITION_JOBS")
-        .expect("Couldn't get max concurrent state transition jobs");
-    let max_concurrent_state_transition_jobs: Option<usize> =
-        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
-
     let env_value: String = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", "200");
     let max_concurrent_created_snos_jobs: u64 =
         env_value.parse::<u64>().expect("Invalid number format for max concurrent SNOS jobs");
@@ -831,7 +826,6 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         max_concurrent_proving_jobs,
         max_concurrent_aggregator_jobs,
         max_concurrent_data_submission_jobs,
-        max_concurrent_state_transition_jobs,
         job_processing_timeout_seconds: 3600,
         poll_interval_ms: 100,
     };

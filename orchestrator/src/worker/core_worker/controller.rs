@@ -134,11 +134,9 @@ pub fn create_default_controller(config: Arc<Config>, shutdown_token: Cancellati
         .with_max_concurrent_jobs(service_config.max_concurrent_data_submission_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT));
     workers_config.add_worker(data_submission_config);
 
-    // State transition jobs
-    let state_transition_config = WorkerConfig::new(JobType::StateTransition, poll_interval_ms)
-        .with_max_concurrent_jobs(
-            service_config.max_concurrent_state_transition_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
-        );
+    // State transition jobs - always sequential (1 at a time)
+    let state_transition_config =
+        WorkerConfig::new(JobType::StateTransition, poll_interval_ms).with_max_concurrent_jobs(1);
     workers_config.add_worker(state_transition_config);
 
     info!(
@@ -147,7 +145,6 @@ pub fn create_default_controller(config: Arc<Config>, shutdown_token: Cancellati
         proving_limit = service_config.max_concurrent_proving_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
         aggregator_limit = service_config.max_concurrent_aggregator_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
         data_submission_limit = service_config.max_concurrent_data_submission_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
-        state_transition_limit = service_config.max_concurrent_state_transition_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
         "Creating worker controller with per-job-type concurrency limits"
     );
 
