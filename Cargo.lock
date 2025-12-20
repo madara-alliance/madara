@@ -5202,7 +5202,7 @@ dependencies = [
 [[package]]
 name = "generate-pie"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?tag=v0.14.1-alpha.0#7c0870ba774934ab2ef8397dddfcad94f83aa1f3"
+source = "git+https://github.com/keep-starknet-strange/snos?tag=v0.14.1-alpha.1#b121a6575adcb7ba21dff420643b8cdc31967124"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9043,7 +9043,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?tag=v0.14.1-alpha.0#7c0870ba774934ab2ef8397dddfcad94f83aa1f3"
+source = "git+https://github.com/keep-starknet-strange/snos?tag=v0.14.1-alpha.1#5a7d9998a9a20b65387f5de4628846bbb263122e"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -10283,7 +10283,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.2.0"
-source = "git+https://github.com/keep-starknet-strange/snos?tag=v0.14.1-alpha.0#7c0870ba774934ab2ef8397dddfcad94f83aa1f3"
+source = "git+https://github.com/keep-starknet-strange/snos?tag=v0.14.1-alpha.1#5a7d9998a9a20b65387f5de4628846bbb263122e"
 dependencies = [
  "cairo-lang-starknet-classes",
  "cairo-vm",
