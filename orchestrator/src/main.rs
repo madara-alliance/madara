@@ -24,7 +24,7 @@ use orchestrator::utils::instrument::OrchestratorInstrumentation;
 use orchestrator::utils::logging::init_logging;
 use orchestrator::utils::preflight::run_preflight_checks;
 use orchestrator::utils::signal_handler::SignalHandler;
-use orchestrator::worker::{initialize_worker, WorkerMode};
+use orchestrator::worker::initialize_worker;
 use orchestrator::OrchestratorResult;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -99,7 +99,7 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let shutdown_token = signal_handler.get_shutdown_token();
 
     // Initialize workers and keep the controller for shutdown
-    let worker_mode = initialize_worker(config.clone(), shutdown_token).await?;
+    let mut worker_controller = initialize_worker(config.clone(), shutdown_token).await?;
 
     let shutdown_signal = signal_handler.wait_for_shutdown().await;
 
@@ -109,19 +109,11 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let shutdown_result = signal_handler
         .handle_graceful_shutdown(
             || async {
-                // Graceful shutdown for workers (handles both SQS and Greedy modes)
-                match worker_mode {
-                    WorkerMode::Sqs(controller) => {
-                        info!("Shutting down SQS workers");
-                        controller.shutdown().await?;
-                    }
-                    WorkerMode::Greedy(mut controller) => {
-                        info!("Shutting down Greedy workers");
-                        if let Err(e) = controller.shutdown().await {
-                            error!("Greedy worker shutdown failed: {}", e);
-                            return Err(anyhow::anyhow!("Greedy worker shutdown failed: {}", e).into());
-                        }
-                    }
+                // Graceful shutdown for greedy workers
+                info!("Shutting down greedy workers");
+                if let Err(e) = worker_controller.shutdown().await {
+                    error!("Greedy worker shutdown failed: {}", e);
+                    return Err(anyhow::anyhow!("Greedy worker shutdown failed: {}", e).into());
                 }
 
                 // Analytics Shutdown

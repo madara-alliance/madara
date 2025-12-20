@@ -34,11 +34,7 @@ pub struct ServiceCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_JOB_PROCESSING_TIMEOUT_SECONDS", long, default_value = "1800")]
     pub job_processing_timeout_seconds: u64,
 
-    /// Enable queue-less greedy worker mode (disables SQS)
-    #[arg(env = "MADARA_ORCHESTRATOR_GREEDY_MODE", long, default_value = "false")]
-    pub greedy_mode: bool,
-
-    /// Polling interval in milliseconds when no jobs are available in greedy mode
-    #[arg(env = "MADARA_ORCHESTRATOR_GREEDY_POLL_INTERVAL_MS", long, default_value = "100")]
-    pub greedy_poll_interval_ms: u64,
+    /// Polling interval in milliseconds when no jobs are available
+    #[arg(env = "MADARA_ORCHESTRATOR_POLL_INTERVAL_MS", long, default_value = "100")]
+    pub poll_interval_ms: u64,
 }

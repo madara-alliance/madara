@@ -105,7 +105,7 @@ pub fn create_default_greedy_controller(
     let orchestrator_id = format!("orchestrator-{}", uuid::Uuid::new_v4());
 
     // Get poll interval from service params
-    let poll_interval_ms = config.service_config().greedy_poll_interval_ms;
+    let poll_interval_ms = config.service_config().poll_interval_ms;
 
     // Create configuration with all job types
     let greedy_config = GreedyWorkersConfig::new(orchestrator_id, poll_interval_ms).with_all_job_types();

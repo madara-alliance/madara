@@ -4,11 +4,10 @@ use crate::types::queue::QueueType;
 use crate::types::Layer;
 use crate::{
     core::cloud::CloudProvider, core::traits::resource::Resource, types::params::QueueArgs,
-    types::queue_control::QUEUES, OrchestratorError, OrchestratorResult,
+    types::queue_control::QUEUES, OrchestratorResult,
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 #[async_trait]
@@ -28,23 +27,16 @@ impl Resource for InnerSQS {
     }
 
     /// setup - Setup SQS queue
-    /// check if queue exists, if not create it. This function will create all the queues defined in the QUEUES vector.
-    /// It will also create the dead letter queues for each queue if they are configured.
-    /// The dead letter queues will have the same name as the queue but with the suffix "_dlq".
-    /// For example, if the queue name is "test_queue", the dead letter queue name will be "test_queue_dlq".
-    /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
-    /// If the dead letter queue is not configured, the dead letter queue will not be created.
+    /// Only creates the WorkerTrigger queue (no DLQ needed for trigger queue)
     async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for (queue_type, queue) in QUEUES.iter() {
             if !queue.supported_layers.contains(layer) {
                 continue;
             }
 
-            // Good first issue to resolve!
-            // It is to note that we skip just after we check if queue exists,
-            // Ideally we would want to check the DL queue & policy inclusion as well.
+            // Check if queue already exists
             if self.check_if_exists(&(args.queue_template_identifier.clone(), queue_type.clone())).await? {
-                tracing::info!(" SQS queue already exists. Queue Type: {}", queue_type);
+                tracing::info!("SQS queue already exists. Queue Type: {}", queue_type);
                 continue;
             }
 
@@ -59,67 +51,10 @@ impl Resource for InnerSQS {
                 AWSResourceIdentifier::Name(name) => {
                     let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
 
-                    // Creating the queue
-                    let queue_url = self.create_queue(queue_name.clone(), queue.visibility_timeout).await?;
+                    // Creating the queue (WorkerTrigger only, no DLQ)
+                    let _queue_url = self.create_queue(queue_name.clone(), queue.visibility_timeout).await?;
 
                     tracing::info!("Queue created for type {}", queue_type);
-
-                    if let Some(dlq_config) = &queue.dlq_config {
-                        let dlq_url = if self
-                            .check_if_exists(&(args.queue_template_identifier.clone(), dlq_config.dlq_name.clone()))
-                            .await?
-                        {
-                            tracing::info!("  DLQ already exists. Queue Type: {}", &dlq_config.dlq_name);
-                            // Fetch DLQ URL
-                            let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
-                            self.get_queue_url_from_client(&dlq_name).await?
-                        } else {
-                            tracing::info!("⏳ Creating DLQ {}", &dlq_config.dlq_name);
-                            // Create the DLQ
-                            let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
-
-                            // Standard DLQ creation (no FIFO attributes)
-                            let dlq_url = self
-                                .create_queue(
-                                    dlq_name,
-                                    QUEUES
-                                        .get(&dlq_config.dlq_name)
-                                        .ok_or_else(|| {
-                                            OrchestratorError::SetupError(format!(
-                                                "Failed to get DLQ {} in QUEUES",
-                                                &dlq_config.dlq_name
-                                            ))
-                                        })?
-                                        .visibility_timeout,
-                                )
-                                .await?
-                                .to_string();
-                            tracing::info!("DLQ listed. Type {}", &dlq_config.dlq_name);
-                            dlq_url
-                        };
-
-                        let dlq_arn = self.get_queue_arn_from_url(&dlq_url).await?;
-
-                        // Attach the dl queue policy to the queue
-                        let policy = format!(
-                            r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,
-                            dlq_arn, &dlq_config.max_receive_count
-                        );
-                        tracing::info!(
-                            "Attaching Redrive Policy: {} for queue {} (DLQ Type = {})",
-                            &policy,
-                            &queue_name,
-                            &dlq_config.dlq_name
-                        );
-                        let mut attributes = HashMap::new();
-                        attributes.insert(QueueAttributeName::RedrivePolicy, policy);
-                        self.client()
-                            .set_queue_attributes()
-                            .queue_url(queue_url)
-                            .set_attributes(Some(attributes))
-                            .send()
-                            .await?;
-                    }
                     tracing::info!("Setup completed for queue: {}", queue_type);
                 }
             }

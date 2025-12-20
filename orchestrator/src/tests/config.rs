@@ -815,8 +815,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
         job_processing_timeout_seconds: 3600,
-        greedy_mode: false,
-        greedy_poll_interval_ms: 100,
+        poll_interval_ms: 100,
     };
 
     let server_config = ServerParams {

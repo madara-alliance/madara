@@ -9,11 +9,9 @@ use crate::error::job::JobError;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::types::queue::{QueueNameForJobType, QueueType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
-use crate::worker::parser::job_queue_message::JobQueueMessage;
 
 pub struct JobService;
 
@@ -30,82 +28,51 @@ impl JobService {
         config.database().get_job_by_id(id).await?.ok_or(JobError::JobNotFound { id })
     }
 
-    /// Add a job into the queue with the given delay
-    ///
-    /// # Arguments
-    /// * `config` - Shared configuration
-    /// * `id` - UUID of the job to process
-    /// * `queue` - Queue type to add the job to
-    /// * `delay` - Optional delay for the job to be added to the queue
-    ///
-    /// # Returns
-    /// * `Result<(), JobError>` - Success or an error
-    pub(crate) async fn add_job_to_queue(
-        config: Arc<Config>,
-        id: Uuid,
-        queue: QueueType,
-        delay: Option<Duration>,
-    ) -> Result<(), JobError> {
-        let message = JobQueueMessage { id };
-        config.queue().send_message(queue.clone(), serde_json::to_string(&message)?, delay).await?;
-
-        tracing::debug!("Added job with id {:?} to {:?} queue", id, queue);
+    /// Adds a job to its processing queue
+    /// NOTE: In greedy mode (now default), jobs are polled directly from MongoDB, so this is a no-op
+    pub async fn add_job_to_process_queue(id: Uuid, job_type: &JobType, _config: Arc<Config>) -> Result<(), JobError> {
+        // Jobs are polled directly from MongoDB - no SQS queueing needed
+        tracing::debug!(job_id = %id, "Greedy mode: skipping SQS queue for {:?} job", job_type);
         Ok(())
     }
 
-    /// Adds a job to its processing queue
-    pub async fn add_job_to_process_queue(id: Uuid, job_type: &JobType, config: Arc<Config>) -> Result<(), JobError> {
-        // In greedy mode, skip SQS - jobs are polled directly from MongoDB
-        if config.service_config().greedy_mode {
-            tracing::debug!(job_id = %id, "Greedy mode enabled, skipping SQS queue for {:?} job", job_type);
-            return Ok(());
-        }
-
-        tracing::debug!(job_id = %id, "Adding a {:?} job to processing queue", job_type);
-        Self::add_job_to_queue(config, id, job_type.process_queue_name(), None).await
-    }
-
     /// Adds a job to its verification queue
+    /// NOTE: In greedy mode (now default), uses available_at timestamp instead of SQS delay
     pub async fn add_job_to_verify_queue(
         config: Arc<Config>,
         id: Uuid,
         job_type: &JobType,
         delay: Option<Duration>,
     ) -> Result<(), JobError> {
-        // FIX-03: In greedy mode, set available_at instead of using SQS delay
-        if config.service_config().greedy_mode {
-            if let Some(delay) = delay {
-                let available_at = chrono::Utc::now()
-                    + chrono::Duration::from_std(delay)
-                        .map_err(|e| JobError::Other(crate::error::other::OtherError::from(e.to_string())))?;
+        // In greedy mode, set available_at instead of using SQS delay
+        if let Some(delay) = delay {
+            let available_at = chrono::Utc::now()
+                + chrono::Duration::from_std(delay)
+                    .map_err(|e| JobError::Other(crate::error::other::OtherError::from(e.to_string())))?;
 
-                // Update job with available_at for delayed verification
-                let job = Self::get_job(id, config.clone()).await?;
-                config
-                    .database()
-                    .update_job(
-                        &job,
-                        crate::types::jobs::job_updates::JobItemUpdates::new()
-                            .update_available_at(Some(available_at))
-                            .build(),
-                    )
-                    .await?;
+            // Update job with available_at for delayed verification
+            let job = Self::get_job(id, config.clone()).await?;
+            config
+                .database()
+                .update_job(
+                    &job,
+                    crate::types::jobs::job_updates::JobItemUpdates::new()
+                        .update_available_at(Some(available_at))
+                        .build(),
+                )
+                .await?;
 
-                tracing::debug!(
-                    job_id = %id,
-                    delay_secs = delay.as_secs(),
-                    available_at = %available_at,
-                    "Greedy mode: set available_at for delayed verification of {:?} job",
-                    job_type
-                );
-            } else {
-                tracing::debug!(job_id = %id, "Greedy mode: job ready for immediate verification of {:?} job", job_type);
-            }
-            return Ok(());
+            tracing::debug!(
+                job_id = %id,
+                delay_secs = delay.as_secs(),
+                available_at = %available_at,
+                "Greedy mode: set available_at for delayed verification of {:?} job",
+                job_type
+            );
+        } else {
+            tracing::debug!(job_id = %id, "Greedy mode: job ready for immediate verification of {:?} job", job_type);
         }
-
-        tracing::debug!(job_id = %id, "Adding a {:?} job to verification queue", job_type);
-        Self::add_job_to_queue(config, id, job_type.verify_queue_name(), delay).await
+        Ok(())
     }
 
     /// Queues a job for processing by adding it to the process queue
