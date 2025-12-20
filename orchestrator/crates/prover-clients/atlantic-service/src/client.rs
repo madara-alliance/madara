@@ -461,7 +461,7 @@ impl AtlanticClient {
                         full_output: AGGREGATOR_FULL_OUTPUT,
                         chain_id_hex: chain_id_clone.clone(),
                         fee_token_address,
-                        da_public_keys: da_public_keys.clone(),
+                        public_keys: da_public_keys.clone(),
                     },
                     mock_proof,
                 };

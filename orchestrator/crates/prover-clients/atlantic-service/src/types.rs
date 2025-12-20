@@ -155,7 +155,7 @@ pub struct AtlanticAggregatorParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) fee_token_address: Option<Felt252>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) da_public_keys: Option<Vec<String>>,
+    pub(crate) public_keys: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
