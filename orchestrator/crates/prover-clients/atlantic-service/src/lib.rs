@@ -23,7 +23,7 @@ use url::Url;
 
 use crate::client::{AtlanticBucketInfo, AtlanticClient, AtlanticJobConfig, AtlanticJobInfo};
 use crate::constants::ATLANTIC_FETCH_ARTIFACTS_BASE_URL;
-use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQuery, AtlanticQueryStep};
+use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver};
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -38,6 +38,7 @@ pub struct AtlanticValidatedArgs {
     pub cairo_verifier_program_hash: Option<String>,
     pub atlantic_cairo_vm: AtlanticCairoVm,
     pub atlantic_result: AtlanticQueryStep,
+    pub atlantic_sharp_prover: AtlanticSharpProver,
 }
 
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
@@ -53,6 +54,7 @@ pub struct AtlanticProverService {
     pub atlantic_network: String,
     pub cairo_vm: AtlanticCairoVm,
     pub result: AtlanticQueryStep,
+    pub sharp_prover: AtlanticSharpProver,
     pub cairo_verifier_program_hash: Option<String>,
     pub chain_id_hex: Option<String>,
     pub fee_token_address: Option<Felt252>,
@@ -131,6 +133,7 @@ impl ProverClient for AtlanticProverService {
                             result: self.result.clone(),
                             network: self.atlantic_network.clone(),
                             chain_id_hex: self.chain_id_hex.clone(),
+                            sharp_prover: self.sharp_prover.clone(),
                         },
                         AtlanticBucketInfo { bucket_id, bucket_job_index },
                         self.atlantic_api_key.clone(),
@@ -270,7 +273,7 @@ impl ProverClient for AtlanticProverService {
             self.cairo_verifier_program_hash.as_ref().ok_or(ProverClientError::MissingCairoVerifierProgramHash)?;
         let atlantic_job_response = self
             .atlantic_client
-            .submit_l2_query(proof, n_steps, &self.atlantic_network, &self.atlantic_api_key, program_hash)
+            .submit_l2_query(proof, n_steps, &self.atlantic_network, &self.atlantic_api_key, program_hash, &self.sharp_prover)
             .await?;
 
         tracing::info!(
@@ -338,6 +341,7 @@ impl AtlanticProverService {
             cairo_vm: job_config.cairo_vm,
             atlantic_network: job_config.network,
             result: job_config.result,
+            sharp_prover: job_config.sharp_prover,
             cairo_verifier_program_hash,
             chain_id_hex: job_config.chain_id_hex,
             fee_token_address,
@@ -377,6 +381,7 @@ impl AtlanticProverService {
                 result: atlantic_params.atlantic_result.clone(),
                 network: atlantic_params.atlantic_network.clone(),
                 chain_id_hex,
+                sharp_prover: atlantic_params.atlantic_sharp_prover.clone(),
             },
             fact_checker,
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
@@ -401,6 +406,7 @@ impl AtlanticProverService {
                 result: AtlanticQueryStep::ProofVerificationOnL1,
                 network: "TESTNET".to_string(),
                 chain_id_hex: None,
+                sharp_prover: AtlanticSharpProver::default(),
             },
             fact_checker,
             atlantic_params.atlantic_mock_fact_hash.eq("true"),
