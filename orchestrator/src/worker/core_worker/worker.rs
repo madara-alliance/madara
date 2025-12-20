@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// Worker state for error handling and circuit breaking
 #[derive(Debug)]
@@ -164,7 +164,7 @@ impl Worker {
             .await?;
 
         if claimed_count >= self.config.max_concurrent_jobs as u64 {
-            debug!(
+            trace!(
                 job_type = ?self.config.job_type,
                 orchestrator_id = %self.orchestrator_id,
                 claimed_count = claimed_count,

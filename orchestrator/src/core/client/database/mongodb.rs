@@ -26,7 +26,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 
 pub trait ToDocument {
@@ -1485,6 +1485,7 @@ impl DatabaseClient for MongoDbClient {
                 "$in": [
                     bson::to_bson(&JobStatus::PendingRetry)?,
                     bson::to_bson(&JobStatus::Created)?,
+                    bson::to_bson(&JobStatus::VerificationFailed)?,
                 ]
             },
             "$and": [
@@ -1509,6 +1510,9 @@ impl DatabaseClient for MongoDbClient {
                 "status": bson::to_bson(&JobStatus::LockedForProcessing)?,
                 "claimed_by": orchestrator_id,
                 "updated_at": now
+            },
+            "$inc": {
+                "version": 1
             }
         };
 
@@ -1573,6 +1577,9 @@ impl DatabaseClient for MongoDbClient {
             "$set": {
                 "claimed_by": orchestrator_id,
                 "updated_at": now
+            },
+            "$inc": {
+                "version": 1
             }
         };
 
@@ -1609,6 +1616,9 @@ impl DatabaseClient for MongoDbClient {
         let mut update_doc = doc! {
             "$set": {
                 "updated_at": now
+            },
+            "$inc": {
+                "version": 1
             },
             "$unset": {
                 "claimed_by": ""
@@ -1720,7 +1730,7 @@ impl DatabaseClient for MongoDbClient {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
-        debug!(
+        trace!(
             orchestrator_id = orchestrator_id,
             job_type = ?job_type,
             claimed_count = count,

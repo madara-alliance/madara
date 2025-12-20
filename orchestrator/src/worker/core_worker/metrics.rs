@@ -6,7 +6,7 @@
 use crate::types::jobs::types::JobType;
 use opentelemetry::KeyValue;
 use std::sync::LazyLock;
-use tracing::info;
+use tracing::{info, trace};
 
 /// Metric names for worker operations
 pub struct WorkerMetrics {
@@ -53,7 +53,7 @@ pub fn record_processing_claim_success(job_type: &JobType) {
 
 /// Record a failed processing job claim attempt (no jobs available)
 pub fn record_processing_claim_failed(job_type: &JobType) {
-    info!(
+    trace!(
         metric = WORKER_METRICS.claims_processing_failed,
         job_type = ?job_type,
         "No processing jobs available to claim"
@@ -71,7 +71,7 @@ pub fn record_verification_claim_success(job_type: &JobType) {
 
 /// Record a failed verification job claim attempt (no jobs available)
 pub fn record_verification_claim_failed(job_type: &JobType) {
-    info!(
+    trace!(
         metric = WORKER_METRICS.claims_verification_failed,
         job_type = ?job_type,
         "No verification jobs available to claim"
@@ -80,7 +80,7 @@ pub fn record_verification_claim_failed(job_type: &JobType) {
 
 /// Record an empty poll cycle (no jobs available in either phase)
 pub fn record_empty_poll(job_type: &JobType) {
-    info!(
+    trace!(
         metric = WORKER_METRICS.empty_polls,
         job_type = ?job_type,
         "Poll cycle completed with no jobs available"
@@ -99,7 +99,7 @@ pub fn record_active_claims(orchestrator_id: &str, count: u64) {
 
 /// Record job claim latency
 pub fn record_claim_latency(job_type: &JobType, phase: &str, duration_ms: f64) {
-    info!(
+    trace!(
         metric = WORKER_METRICS.claim_latency,
         job_type = ?job_type,
         phase = phase,
