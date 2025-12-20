@@ -42,7 +42,7 @@ pub async fn initialize_worker(
                 shutdown_token_clone.cancel();
             }
             Err(e) => {
-                error!(error = %e, "🚨 Critical worker controller error - triggering application shutdown");
+                error!(error = %e, "Critical worker controller error - triggering application shutdown");
                 error!("Worker controller failed: {}. This indicates a serious system problem that requires shutdown to prevent data inconsistency.", e);
                 shutdown_token_clone.cancel();
             }
