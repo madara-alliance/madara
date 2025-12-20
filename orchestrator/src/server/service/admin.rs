@@ -114,15 +114,4 @@ impl AdminService {
         )
         .await
     }
-
-    pub async fn requeue_created_jobs(job_types: Vec<JobType>, config: Arc<Config>) -> Result<BulkJobResult, JobError> {
-        Self::process_jobs_by_status(
-            JobStatus::Created,
-            job_types,
-            config.clone(),
-            "requeue created",
-            |id, job_type, cfg| async move { JobService::add_job_to_process_queue(id, &job_type, cfg).await },
-        )
-        .await
-    }
 }

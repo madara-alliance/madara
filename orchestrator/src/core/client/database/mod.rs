@@ -261,6 +261,17 @@ pub trait DatabaseClient: Send + Sync {
     /// * `orchestrator_id` - Unique ID of this orchestrator instance
     async fn count_claimed_jobs(&self, orchestrator_id: &str) -> Result<u64, DatabaseError>;
 
+    /// Count jobs of a specific type claimed by this orchestrator instance
+    ///
+    /// Used for per-job-type concurrency limiting. Each job type can have its own
+    /// maximum concurrent jobs limit.
+    ///
+    /// # Arguments
+    /// * `orchestrator_id` - Unique ID of this orchestrator instance
+    /// * `job_type` - Type of job to count
+    async fn count_claimed_jobs_by_type(&self, orchestrator_id: &str, job_type: &JobType)
+        -> Result<u64, DatabaseError>;
+
     /// Get jobs stuck in Completed status (awaiting verification) beyond timeout
     ///
     /// FIX-01: Detects verification orphans that have been claimed but not verified.

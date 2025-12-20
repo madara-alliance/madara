@@ -28,14 +28,6 @@ impl JobService {
         config.database().get_job_by_id(id).await?.ok_or(JobError::JobNotFound { id })
     }
 
-    /// Adds a job to its processing queue
-    /// NOTE: In worker mode (now default), jobs are polled directly from MongoDB, so this is a no-op
-    pub async fn add_job_to_process_queue(id: Uuid, job_type: &JobType, _config: Arc<Config>) -> Result<(), JobError> {
-        // Jobs are polled directly from MongoDB - no SQS queueing needed
-        tracing::debug!(job_id = %id, "Worker mode: skipping SQS queue for {:?} job", job_type);
-        Ok(())
-    }
-
     /// Adds a job to its verification queue
     /// NOTE: In worker mode (now default), uses available_at timestamp instead of SQS delay
     pub async fn add_job_to_verify_queue(
@@ -72,26 +64,6 @@ impl JobService {
         } else {
             tracing::debug!(job_id = %id, "Worker mode: job ready for immediate verification of {:?} job", job_type);
         }
-        Ok(())
-    }
-
-    /// Queues a job for processing by adding it to the process queue
-    ///
-    /// # Arguments
-    /// * `id` - UUID of the job to process
-    /// * `config` - Shared configuration
-    ///
-    /// # Returns
-    /// * `Result<(), JobError>` - Success or an error
-    ///
-    /// # State Transitions
-    /// * Any valid state -> PendingProcess
-    pub async fn queue_job_for_processing(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
-        let job = Self::get_job(id, config.clone()).await?;
-
-        // Add to process queue directly
-        Self::add_job_to_process_queue(id, &job.job_type, config).await?;
-
         Ok(())
     }
 

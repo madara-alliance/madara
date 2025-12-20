@@ -44,55 +44,9 @@ async fn setup_trigger() -> (SocketAddr, Arc<Config>) {
     (addr, config)
 }
 
-#[tokio::test]
-#[rstest]
-#[allow(clippy::await_holding_lock)]
-async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Config>)) {
-    // Acquire test lock to serialize this test with others that use mocks
-    let _test_lock = acquire_test_lock();
-
-    let (addr, config) = setup_trigger.await;
-    let job_type = JobType::DataSubmission;
-
-    let job_item = build_job_item(job_type.clone(), JobStatus::Created, 1);
-    config.database().create_job(job_item.clone()).await.unwrap();
-    let job_id = job_item.clone().id;
-
-    let client = hyper::Client::new();
-    let response = client
-        .request(
-            Request::builder().uri(format!("http://{}/jobs/{}/process", addr, job_id)).body(Body::empty()).unwrap(),
-        )
-        .await
-        .unwrap();
-
-    // Verify response status and message
-    assert_eq!(response.status(), 200);
-    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
-    let response: ApiResponse = serde_json::from_slice(&body_bytes).unwrap();
-    assert!(response.success);
-    assert_eq!(response.message, Some(format!("Job with id {} queued for processing", job_id)));
-
-    // Verify job was added to process queue - retry a few times in case of timing issues
-    let queue_message = consume_message_with_retry(
-        config.queue(),
-        job_type.process_queue_name(),
-        QUEUE_CONSUME_MAX_RETRIES,
-        QUEUE_CONSUME_RETRY_DELAY_SECS,
-    )
-    .await
-    .unwrap();
-    let message_payload: JobQueueMessage = queue_message.payload_serde_json().unwrap().unwrap();
-    assert_eq!(message_payload.id, job_id);
-
-    // Verify job status and metadata
-    if let Some(job_fetched) = config.database().get_job_by_id(job_id).await.unwrap() {
-        assert_eq!(job_fetched.id, job_item.id);
-        assert_eq!(job_fetched.status, JobStatus::Created);
-    } else {
-        panic!("Could not get job from database")
-    }
-}
+// Note: test_trigger_process_job was removed because the /jobs/:id/process endpoint was removed.
+// In the queue-less architecture, jobs with status Created are automatically picked up
+// by workers polling MongoDB - no need for explicit process trigger.
 
 #[tokio::test]
 #[rstest]

@@ -164,32 +164,10 @@ async fn handle_requeue_pending_verification(
     .await
 }
 
-/// # Warning
-/// **RECOVERY ENDPOINT** - Blindly re-queues ALL Created jobs, including those
-/// already in queue. May cause duplicate messages. Use only after queue consumer crashes.
-async fn handle_requeue_created_jobs(
-    State(config): State<Arc<Config>>,
-    Query(filter): Query<JobTypeFilter>,
-) -> JobRouteResult {
-    handle_admin_op(
-        config,
-        filter,
-        AdminOp {
-            name: "requeue created jobs",
-            metric_key: "admin_requeue_created",
-            empty_msg: "No created jobs to requeue",
-            success_msg: "Re-queued for processing:",
-        },
-        AdminService::requeue_created_jobs,
-    )
-    .await
-}
-
 pub fn admin_router(config: Arc<Config>) -> Router {
     Router::new()
         .route("/jobs/retry/failed", post(handle_retry_all_failed_jobs))
         .route("/jobs/reverify/verification-timeout", post(handle_reverify_verification_timeout_jobs))
         .route("/jobs/requeue/pending-verification", post(handle_requeue_pending_verification))
-        .route("/jobs/requeue/created", post(handle_requeue_created_jobs))
         .with_state(config)
 }

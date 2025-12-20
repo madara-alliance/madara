@@ -135,28 +135,6 @@ async fn test_admin_requeue_pending_verification() {
     assert_eq!(resp.data.unwrap().success_count, 1);
 }
 
-#[tokio::test]
-#[rstest]
-async fn test_admin_requeue_created_jobs() {
-    setup_env();
-    let mut db = MockDatabaseClient::new();
-    let mut queue = MockQueueClient::new();
-
-    let job = build_job_item(JobType::DataSubmission, JobStatus::Created, 3001);
-    let jobs = vec![job.clone()];
-
-    db.expect_get_jobs_by_types_and_statuses()
-        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::Created])
-        .times(1)
-        .returning(move |_, _, _| Ok(jobs.clone()));
-    queue
-        .expect_send_message()
-        .times(1)
-        .withf(|qt, _, _| *qt == QueueType::DataSubmissionJobProcessing)
-        .returning(|_, _, _| Ok(()));
-
-    let addr = build_test_config(db, queue).await;
-    let resp = call_endpoint(&addr, "/admin/jobs/requeue/created").await;
-    assert!(resp.success);
-    assert_eq!(resp.data.unwrap().success_count, 1);
-}
+// Note: test_admin_requeue_created_jobs was removed because the endpoint was removed.
+// In the queue-less architecture, jobs with status Created are automatically picked up
+// by workers polling MongoDB - no need for explicit requeue.

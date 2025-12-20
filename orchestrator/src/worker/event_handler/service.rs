@@ -105,7 +105,8 @@ impl JobHandlerService {
             &job_item.id.to_string(),
         );
 
-        JobService::add_job_to_process_queue(job_item.id, &job_type, config.clone()).await?;
+        // Note: No need to queue for processing - workers poll MongoDB directly
+        // Jobs with status Created are automatically picked up
 
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job_type)),
@@ -332,8 +333,7 @@ impl JobHandlerService {
                             JobError::from(e)
                         })?;
 
-                    // Add back to processing queue with delay
-                    JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
+                    // Note: No need to queue - workers poll MongoDB directly for PendingRetry jobs
 
                     return Ok(());
                 } else {
@@ -393,8 +393,7 @@ impl JobHandlerService {
                             JobError::from(e)
                         })?;
 
-                    // Add back to processing queue with delay
-                    JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
+                    // Note: No need to queue - workers poll MongoDB directly for PendingRetry jobs
 
                     return Ok(());
                 } else {
@@ -659,7 +658,7 @@ impl JobHandlerService {
                             error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationFailed");
                             e
                         })?;
-                    JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
+                    // Note: No need to queue - workers poll MongoDB directly for VerificationFailed jobs
                 } else {
                     warn!(job_id = ?id, "Max process attempts reached. Job will not be retried");
 
@@ -837,24 +836,14 @@ impl JobHandlerService {
                 e
             })?;
 
-        JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await.map_err(|e| {
-            error!(
-                log_type = "error",
-                category = "general",
-                function_type = "retry_job",
-                block_no = %internal_id,
-                error = %e,
-                "Failed to add job to process queue"
-            );
-            e
-        })?;
+        // Note: No need to queue - workers poll MongoDB directly for PendingRetry jobs
 
         info!(
             log_type = "completed",
             category = "general",
             function_type = "retry_job",
             block_no = %internal_id,
-            "Successfully queued job for retry"
+            "Successfully marked job for retry"
         );
 
         Ok(())

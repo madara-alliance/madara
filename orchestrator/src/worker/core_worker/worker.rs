@@ -156,18 +156,20 @@ impl Worker {
     ///
     /// Returns Ok(true) if a job was processed, Ok(false) if no jobs available
     async fn poll_and_process(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        // MULTI-ORCHESTRATOR FIX: Check current concurrency level for THIS orchestrator only
-        // Count only jobs claimed by this orchestrator instance to avoid global throttling
-        let claimed_by_this_orchestrator =
-            self.orchestrator_config.database().count_claimed_jobs(&self.orchestrator_id).await?;
+        // Per-job-type concurrency limit: count jobs of THIS type claimed by THIS orchestrator
+        let claimed_count = self
+            .orchestrator_config
+            .database()
+            .count_claimed_jobs_by_type(&self.orchestrator_id, &self.config.job_type)
+            .await?;
 
-        if claimed_by_this_orchestrator >= self.config.max_concurrent_jobs as u64 {
+        if claimed_count >= self.config.max_concurrent_jobs as u64 {
             debug!(
                 job_type = ?self.config.job_type,
                 orchestrator_id = %self.orchestrator_id,
-                claimed_count = claimed_by_this_orchestrator,
+                claimed_count = claimed_count,
                 max_concurrent = self.config.max_concurrent_jobs,
-                "Per-orchestrator concurrency limit reached, skipping claim"
+                "Per-job-type concurrency limit reached, skipping claim"
             );
             return Ok(false);
         }
@@ -326,7 +328,7 @@ impl Worker {
         }
     }
 
-    /// Graceful shutdown - wait for in-flight jobs to complete
+    /// Graceful shutdown - wait for in-flight jobs of this type to complete
     pub async fn shutdown_gracefully(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!(
             job_type = ?self.config.job_type,
@@ -338,8 +340,12 @@ impl Worker {
         let timeout = self.config.shutdown_timeout;
 
         loop {
-            // Check how many jobs are still claimed by this orchestrator
-            let claimed_count = self.orchestrator_config.database().count_claimed_jobs(&self.orchestrator_id).await?;
+            // Check how many jobs of THIS type are still claimed by this orchestrator
+            let claimed_count = self
+                .orchestrator_config
+                .database()
+                .count_claimed_jobs_by_type(&self.orchestrator_id, &self.config.job_type)
+                .await?;
 
             if claimed_count == 0 {
                 info!(

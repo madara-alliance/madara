@@ -98,14 +98,58 @@ impl WorkerController {
 
 /// Helper function to create a worker controller with default configuration
 pub fn create_default_controller(config: Arc<Config>, shutdown_token: CancellationToken) -> WorkerController {
+    use super::config::WorkerConfig;
+    use crate::types::jobs::types::JobType;
+
     // Generate unique orchestrator ID
     let orchestrator_id = format!("orchestrator-{}", uuid::Uuid::new_v4());
 
-    // Get poll interval from service params
-    let poll_interval_ms = config.service_config().poll_interval_ms;
+    // Get service config for per-job-type limits
+    let service_config = config.service_config();
+    let poll_interval_ms = service_config.poll_interval_ms;
 
-    // Create configuration with all job types
-    let workers_config = WorkersConfig::new(orchestrator_id, poll_interval_ms).with_all_job_types();
+    // Create configuration with all job types and their specific concurrency limits
+    let mut workers_config = WorkersConfig::new(orchestrator_id, poll_interval_ms);
+
+    // Default concurrency limit if not specified
+    const DEFAULT_MAX_CONCURRENT: usize = 10;
+
+    // SNOS jobs
+    let snos_config = WorkerConfig::new(JobType::SnosRun, poll_interval_ms)
+        .with_max_concurrent_jobs(service_config.max_concurrent_snos_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT));
+    workers_config.add_worker(snos_config);
+
+    // Proving jobs
+    let proving_config = WorkerConfig::new(JobType::ProofCreation, poll_interval_ms)
+        .with_max_concurrent_jobs(service_config.max_concurrent_proving_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT));
+    workers_config.add_worker(proving_config);
+
+    // Aggregator jobs (ProofRegistration)
+    let aggregator_config = WorkerConfig::new(JobType::ProofRegistration, poll_interval_ms)
+        .with_max_concurrent_jobs(service_config.max_concurrent_aggregator_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT));
+    workers_config.add_worker(aggregator_config);
+
+    // Data submission jobs
+    let data_submission_config = WorkerConfig::new(JobType::DataSubmission, poll_interval_ms)
+        .with_max_concurrent_jobs(service_config.max_concurrent_data_submission_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT));
+    workers_config.add_worker(data_submission_config);
+
+    // State transition jobs
+    let state_transition_config = WorkerConfig::new(JobType::StateTransition, poll_interval_ms)
+        .with_max_concurrent_jobs(
+            service_config.max_concurrent_state_transition_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
+        );
+    workers_config.add_worker(state_transition_config);
+
+    info!(
+        orchestrator_id = %workers_config.orchestrator_id,
+        snos_limit = service_config.max_concurrent_snos_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
+        proving_limit = service_config.max_concurrent_proving_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
+        aggregator_limit = service_config.max_concurrent_aggregator_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
+        data_submission_limit = service_config.max_concurrent_data_submission_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
+        state_transition_limit = service_config.max_concurrent_state_transition_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
+        "Creating worker controller with per-job-type concurrency limits"
+    );
 
     WorkerController::new(config, workers_config, shutdown_token)
 }

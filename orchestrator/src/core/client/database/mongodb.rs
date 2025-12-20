@@ -1702,6 +1702,34 @@ impl DatabaseClient for MongoDbClient {
         Ok(count)
     }
 
+    async fn count_claimed_jobs_by_type(
+        &self,
+        orchestrator_id: &str,
+        job_type: &JobType,
+    ) -> Result<u64, DatabaseError> {
+        let start = Instant::now();
+
+        let filter = doc! {
+            "claimed_by": orchestrator_id,
+            "job_type": bson::to_bson(job_type)?
+        };
+
+        let count = self.get_job_collection().count_documents(filter, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "count_claimed_jobs_by_type")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        debug!(
+            orchestrator_id = orchestrator_id,
+            job_type = ?job_type,
+            claimed_count = count,
+            "Counted claimed jobs by type"
+        );
+
+        Ok(count)
+    }
+
     async fn get_orphaned_verification_jobs(
         &self,
         job_type: &JobType,
