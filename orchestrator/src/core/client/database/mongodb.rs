@@ -1460,15 +1460,16 @@ impl DatabaseClient for MongoDbClient {
         let start = Instant::now();
         let now = Utc::now().trunc_subsecs(3);
 
-        // FIX-02: Support both greedy (available_at exists) and legacy (available_at null) jobs
-        // Use $and to combine multiple conditions properly
+        // FIX-11: Correct statuses for processing claims
+        // - PendingRetry: Manual retry via API (highest priority)
+        // - Created: New jobs waiting to be processed
+        // Note: VerificationFailed is NOT included - jobs transition to PendingRetry or Created before re-processing
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,
             "status": {
                 "$in": [
-                    bson::to_bson(&JobStatus::Created)?,
-                    bson::to_bson(&JobStatus::VerificationFailed)?,
                     bson::to_bson(&JobStatus::PendingRetry)?,
+                    bson::to_bson(&JobStatus::Created)?,
                 ]
             },
             "$and": [
@@ -1495,9 +1496,10 @@ impl DatabaseClient for MongoDbClient {
             }
         };
 
+        // FIX-11: Priority sorting - PendingRetry first (retries are in-flight work), then FIFO by created_at
         let options = FindOneAndUpdateOptions::builder()
             .return_document(ReturnDocument::After)
-            .sort(doc! { "created_at": 1 })  // Oldest first (FIFO)
+            .sort(doc! { "status": 1, "created_at": 1 })  // PendingRetry < Created alphabetically, then oldest first
             .build();
 
         let result = self.get_job_collection().find_one_and_update(filter, update, options).await?;
@@ -1526,11 +1528,12 @@ impl DatabaseClient for MongoDbClient {
         let start = Instant::now();
         let now = Utc::now().trunc_subsecs(3);
 
-        // FIX-02: Support both greedy (available_at exists) and legacy (available_at null) jobs
-        // Use $and to combine multiple conditions properly
+        // FIX-12: Correct status for verification claims
+        // Only PendingVerification jobs should be picked up for verification
+        // Completed is the FINAL state after successful verification
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,
-            "status": bson::to_bson(&JobStatus::Completed)?,
+            "status": bson::to_bson(&JobStatus::PendingVerification)?,
             "$and": [
                 {
                     "$or": [
@@ -1667,10 +1670,11 @@ impl DatabaseClient for MongoDbClient {
         let now = Utc::now().trunc_subsecs(3);
         let cutoff_time = now - chrono::Duration::seconds(timeout_seconds as i64);
 
-        // FIX-01: Detect jobs stuck in Completed status with claimed_by set
+        // FIX-01 + FIX-12: Detect jobs stuck in PendingVerification status with claimed_by set
+        // These are jobs that were claimed for verification but the orchestrator crashed
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,
-            "status": bson::to_bson(&JobStatus::Completed)?,
+            "status": bson::to_bson(&JobStatus::PendingVerification)?,
             "claimed_by": { "$ne": null },
             "updated_at": { "$lt": cutoff_time }
         };
