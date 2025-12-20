@@ -1,6 +1,8 @@
 #[cfg(test)]
 pub mod batching;
 #[cfg(test)]
+pub mod greedy;
+#[cfg(test)]
 pub mod proving;
 #[cfg(test)]
 pub mod snos;
