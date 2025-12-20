@@ -174,10 +174,10 @@ pub trait DatabaseClient: Send + Sync {
     async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError>;
 
     // ================================================================================
-    // Greedy Worker Methods (Queue-less Architecture)
+    // Worker Methods (Queue-less Architecture)
     // ================================================================================
 
-    /// Atomically claim a job for processing in greedy mode
+    /// Atomically claim a job for processing in worker mode
     ///
     /// Uses findOneAndUpdate to atomically find an available job and claim it.
     /// A job is available if:
@@ -199,7 +199,7 @@ pub trait DatabaseClient: Send + Sync {
         orchestrator_id: &str,
     ) -> Result<Option<JobItem>, DatabaseError>;
 
-    /// Atomically claim a job for verification in greedy mode
+    /// Atomically claim a job for verification in worker mode
     ///
     /// Uses findOneAndUpdate to atomically find an available job and claim it.
     /// A job is available if:

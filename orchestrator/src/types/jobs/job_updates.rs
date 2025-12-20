@@ -16,7 +16,7 @@ pub struct JobItemUpdates {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<JobMetadata>,
 
-    // NEW FIELDS FOR GREEDY MODE
+    // WORKER CLAIM FIELDS
     #[serde(skip_serializing_if = "Option::is_none")]
     pub available_at: Option<Option<DateTime<Utc>>>, // Option<Option<>> to allow setting to null
     #[serde(skip_serializing_if = "Option::is_none")]

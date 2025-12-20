@@ -229,9 +229,9 @@ impl JobHandlerService {
         let job_handler = factory::get_job_handler(&job.job_type).await;
 
         // Check if dependencies are ready before processing
-        // In greedy mode, if dependencies aren't ready, we just skip and let the next poll pick it up
+        // In worker mode, if dependencies aren't ready, we just skip and let the next poll pick it up
         if let Err(retry_delay) = job_handler.check_ready_to_process(config.clone()).await {
-            debug!(job_id = ?id, job_type = ?job.job_type, delay_secs = ?retry_delay.as_secs(), "Dependencies not ready, skipping (greedy mode will retry)");
+            debug!(job_id = ?id, job_type = ?job.job_type, delay_secs = ?retry_delay.as_secs(), "Dependencies not ready, skipping (worker mode will retry)");
             return Ok(());
         }
 
@@ -293,9 +293,6 @@ impl JobHandlerService {
                 external_id
             }
             Ok(Err(e)) => {
-                // TODO: I think most of the times the errors will not be fixed automatically
-                // if we just retry. But for some failures like DB issues, it might be possible
-                // that retrying will work. So we can add a retry logic here to improve robustness.
                 error!(
                     job_id = ?id,
                     job_type = ?job.job_type,
@@ -304,7 +301,57 @@ impl JobHandlerService {
                     error = ?e,
                     "Failed to process job"
                 );
-                return JobService::move_job_to_failed(&job, config.clone(), format!("Processing failed: {}", e)).await;
+
+                // Check if we should retry based on max_process_attempts
+                job.metadata.common.process_attempt_no += 1;
+
+                if job.metadata.common.process_attempt_no < job_handler.max_process_attempts() {
+                    // Still have retries left - move to PendingRetry
+                    info!(
+                        job_id = ?id,
+                        attempt = job.metadata.common.process_attempt_no,
+                        max_attempts = job_handler.max_process_attempts(),
+                        "Processing failed. Retrying job"
+                    );
+
+                    job.metadata.common.failure_reason = Some(format!("Processing failed: {}", e));
+
+                    config
+                        .database()
+                        .update_job(
+                            &job,
+                            JobItemUpdates::new()
+                                .update_status(JobStatus::PendingRetry)
+                                .update_metadata(job.metadata.clone())
+                                .clear_claim()
+                                .build(),
+                        )
+                        .await
+                        .map_err(|e| {
+                            error!(job_id = ?id, error = ?e, "Failed to update job to PendingRetry");
+                            JobError::from(e)
+                        })?;
+
+                    // Add back to processing queue with delay
+                    JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
+
+                    return Ok(());
+                } else {
+                    // Max retries reached - move to Failed
+                    warn!(
+                        job_id = ?id,
+                        attempts = job.metadata.common.process_attempt_no,
+                        "Max process attempts reached. Job will not be retried"
+                    );
+
+                    MetricsRecorder::record_job_abandoned(&job, job.metadata.common.process_attempt_no as i32);
+                    return JobService::move_job_to_failed(
+                        &job,
+                        config.clone(),
+                        format!("Processing failed after {} attempts: {}", job.metadata.common.process_attempt_no, e),
+                    )
+                    .await;
+                }
             }
             Err(panic) => {
                 let panic_msg = panic
@@ -314,16 +361,66 @@ impl JobHandlerService {
                     .unwrap_or("Unknown panic message");
 
                 error!(job_id = ?id, panic_msg = %panic_msg, "Job handler panicked during processing");
-                return JobService::move_job_to_failed(
-                    &job,
-                    config.clone(),
-                    format!("Job handler panicked with message: {}", panic_msg),
-                )
-                .await;
+
+                // Check if we should retry based on max_process_attempts
+                job.metadata.common.process_attempt_no += 1;
+
+                if job.metadata.common.process_attempt_no < job_handler.max_process_attempts() {
+                    // Still have retries left - move to PendingRetry
+                    warn!(
+                        job_id = ?id,
+                        attempt = job.metadata.common.process_attempt_no,
+                        max_attempts = job_handler.max_process_attempts(),
+                        panic_msg = %panic_msg,
+                        "Job handler panicked. Retrying job"
+                    );
+
+                    job.metadata.common.failure_reason = Some(format!("Panic: {}", panic_msg));
+
+                    config
+                        .database()
+                        .update_job(
+                            &job,
+                            JobItemUpdates::new()
+                                .update_status(JobStatus::PendingRetry)
+                                .update_metadata(job.metadata.clone())
+                                .clear_claim()
+                                .build(),
+                        )
+                        .await
+                        .map_err(|e| {
+                            error!(job_id = ?id, error = ?e, "Failed to update job to PendingRetry");
+                            JobError::from(e)
+                        })?;
+
+                    // Add back to processing queue with delay
+                    JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
+
+                    return Ok(());
+                } else {
+                    // Max retries reached - move to Failed
+                    warn!(
+                        job_id = ?id,
+                        attempts = job.metadata.common.process_attempt_no,
+                        panic_msg = %panic_msg,
+                        "Max process attempts reached after panic. Job will not be retried"
+                    );
+
+                    MetricsRecorder::record_job_abandoned(&job, job.metadata.common.process_attempt_no as i32);
+                    return JobService::move_job_to_failed(
+                        &job,
+                        config.clone(),
+                        format!(
+                            "Job handler panicked after {} attempts: {}",
+                            job.metadata.common.process_attempt_no, panic_msg
+                        ),
+                    )
+                    .await;
+                }
             }
         };
 
-        // Increment process attempt counter
+        // Process attempt counter already incremented in success path (not in error paths)
         job.metadata.common.process_attempt_no += 1;
 
         // MULTI-ORCHESTRATOR FIX: Clear claim when moving to PendingVerification
@@ -336,7 +433,7 @@ impl JobHandlerService {
                     .update_status(JobStatus::PendingVerification)
                     .update_metadata(job.metadata.clone())
                     .update_external_id(external_id.clone().into())
-                    .clear_claim() // Clear greedy mode claim
+                    .clear_claim() // Clear worker mode claim
                     .build(),
             )
             .await
@@ -501,7 +598,7 @@ impl JobHandlerService {
                         JobItemUpdates::new()
                             .update_metadata(job.metadata.clone())
                             .update_status(JobStatus::Completed)
-                            .clear_claim() // Clear greedy mode claim on completion
+                            .clear_claim() // Clear worker mode claim on completion
                             .build(),
                     )
                     .await
@@ -554,7 +651,7 @@ impl JobHandlerService {
                             JobItemUpdates::new()
                                 .update_status(JobStatus::VerificationFailed)
                                 .update_metadata(job.metadata.clone())
-                                .clear_claim() // Clear greedy mode claim for retry
+                                .clear_claim() // Clear worker mode claim for retry
                                 .build(),
                         )
                         .await
@@ -594,7 +691,7 @@ impl JobHandlerService {
                             &job,
                             JobItemUpdates::new()
                                 .update_status(JobStatus::VerificationTimeout)
-                                .clear_claim() // Clear greedy mode claim
+                                .clear_claim() // Clear worker mode claim
                                 .build(),
                         )
                         .await

@@ -1,4 +1,4 @@
-/// Multi-orchestrator concurrency tests for greedy mode
+/// Multi-orchestrator concurrency tests for worker mode
 ///
 /// Tests verify system behavior under high concurrent load with multiple
 /// orchestrators competing for jobs.

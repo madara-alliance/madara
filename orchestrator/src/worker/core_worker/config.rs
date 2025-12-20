@@ -1,4 +1,4 @@
-/// Configuration for greedy worker behavior
+/// Configuration for worker behavior
 ///
 /// FIX-08: Configurable graceful shutdown timeouts per job type
 /// FIX-05: Exponential backoff configuration for database errors
@@ -7,9 +7,9 @@ use crate::types::jobs::types::JobType;
 use std::collections::HashMap;
 use std::time::Duration;
 
-/// Configuration for a single greedy worker
+/// Configuration for a single worker
 #[derive(Debug, Clone)]
-pub struct GreedyWorkerConfig {
+pub struct WorkerConfig {
     /// Job type this worker handles
     pub job_type: JobType,
 
@@ -41,8 +41,8 @@ pub struct GreedyWorkerConfig {
     pub circuit_breaker_reset_timeout_secs: u64,
 }
 
-impl GreedyWorkerConfig {
-    /// Create a new greedy worker configuration with default values
+impl WorkerConfig {
+    /// Create a new worker configuration with default values
     pub fn new(job_type: JobType, poll_interval_ms: u64) -> Self {
         let shutdown_timeout = Self::default_shutdown_timeout(&job_type);
         Self {
@@ -107,11 +107,11 @@ impl GreedyWorkerConfig {
     }
 }
 
-/// Configuration for all greedy workers
+/// Configuration for all workers
 #[derive(Debug, Clone)]
-pub struct GreedyWorkersConfig {
+pub struct WorkersConfig {
     /// Per-job-type worker configurations
-    pub workers: HashMap<JobType, GreedyWorkerConfig>,
+    pub workers: HashMap<JobType, WorkerConfig>,
 
     /// Global orchestrator instance ID for claim tracking
     pub orchestrator_id: String,
@@ -120,19 +120,19 @@ pub struct GreedyWorkersConfig {
     pub default_poll_interval_ms: u64,
 }
 
-impl GreedyWorkersConfig {
-    /// Create a new greedy workers configuration
+impl WorkersConfig {
+    /// Create a new workers configuration
     pub fn new(orchestrator_id: String, default_poll_interval_ms: u64) -> Self {
         Self { workers: HashMap::new(), orchestrator_id, default_poll_interval_ms }
     }
 
     /// Add a worker configuration for a job type
-    pub fn add_worker(&mut self, config: GreedyWorkerConfig) {
+    pub fn add_worker(&mut self, config: WorkerConfig) {
         self.workers.insert(config.job_type.clone(), config);
     }
 
     /// Get configuration for a specific job type
-    pub fn get_worker_config(&self, job_type: &JobType) -> Option<&GreedyWorkerConfig> {
+    pub fn get_worker_config(&self, job_type: &JobType) -> Option<&WorkerConfig> {
         self.workers.get(job_type)
     }
 
@@ -147,7 +147,7 @@ impl GreedyWorkersConfig {
         ];
 
         for job_type in job_types {
-            self.add_worker(GreedyWorkerConfig::new(job_type, self.default_poll_interval_ms));
+            self.add_worker(WorkerConfig::new(job_type, self.default_poll_interval_ms));
         }
 
         self
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_backoff_calculation() {
-        let config = GreedyWorkerConfig::new(JobType::DataSubmission, 100);
+        let config = WorkerConfig::new(JobType::DataSubmission, 100);
 
         assert_eq!(config.calculate_backoff(0), Duration::from_millis(100));
         assert_eq!(config.calculate_backoff(1), Duration::from_millis(200));
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_backoff_max_limit() {
-        let config = GreedyWorkerConfig::new(JobType::DataSubmission, 100).with_backoff(1000, 5000, 2.0);
+        let config = WorkerConfig::new(JobType::DataSubmission, 100).with_backoff(1000, 5000, 2.0);
 
         assert_eq!(config.calculate_backoff(0), Duration::from_millis(1000));
         assert_eq!(config.calculate_backoff(1), Duration::from_millis(2000));
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_default_shutdown_timeouts() {
-        assert_eq!(GreedyWorkerConfig::new(JobType::ProofCreation, 100).shutdown_timeout, Duration::from_secs(300));
-        assert_eq!(GreedyWorkerConfig::new(JobType::DataSubmission, 100).shutdown_timeout, Duration::from_secs(120));
+        assert_eq!(WorkerConfig::new(JobType::ProofCreation, 100).shutdown_timeout, Duration::from_secs(300));
+        assert_eq!(WorkerConfig::new(JobType::DataSubmission, 100).shutdown_timeout, Duration::from_secs(120));
     }
 }

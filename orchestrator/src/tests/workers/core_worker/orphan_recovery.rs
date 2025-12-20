@@ -1,4 +1,4 @@
-/// Orphan job detection and recovery tests for greedy mode
+/// Orphan job detection and recovery tests for worker mode
 ///
 /// Simplified tests that verify orphan detection methods exist and can be called
 use crate::tests::config::TestConfigBuilder;

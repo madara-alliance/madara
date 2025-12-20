@@ -1,4 +1,4 @@
-/// Basic greedy mode tests to verify compilation and setup
+/// Basic worker mode tests to verify compilation and setup
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::create_metadata_for_job_type;
 use crate::types::jobs::job_item::JobItem;

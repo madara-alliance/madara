@@ -1,12 +1,12 @@
 pub mod controller;
+pub mod core_worker;
 pub mod event_handler;
-pub mod greedy;
 pub mod parser;
 pub mod service;
 pub mod traits;
 pub mod utils;
 
-use greedy::controller::{create_default_greedy_controller, GreedyWorkerController};
+use core_worker::controller::{create_default_controller, WorkerController};
 
 use crate::{core::config::Config, OrchestratorResult};
 use std::sync::Arc;
@@ -15,8 +15,8 @@ use tracing::info;
 
 /// Initializes the worker with the provided configuration
 ///
-/// This function initializes greedy workers that poll MongoDB directly.
-/// Greedy mode is now the default (and only) worker mode.
+/// This function initializes workers that poll MongoDB directly for available jobs.
+/// Workers use atomic MongoDB operations for job claiming and processing.
 ///
 /// It starts all workers in the background and returns the controller for shutdown management.
 /// The function should be called before the worker is started.
@@ -26,17 +26,17 @@ use tracing::info;
 /// * `shutdown_token` - A cancellation token to signal application shutdown on critical errors
 ///
 /// # Returns
-/// * `OrchestratorResult<GreedyWorkerController>` - The greedy worker controller
+/// * `OrchestratorResult<WorkerController>` - The worker controller
 pub async fn initialize_worker(
     config: Arc<Config>,
     shutdown_token: CancellationToken,
-) -> OrchestratorResult<GreedyWorkerController> {
-    info!("Initializing workers in GREEDY MODE (queue-less architecture)");
+) -> OrchestratorResult<WorkerController> {
+    info!("Initializing workers with queue-less architecture");
 
-    // Create and start greedy worker controller
-    let mut greedy_controller = create_default_greedy_controller(config, shutdown_token.clone());
-    greedy_controller.start().await.map_err(|e| anyhow::anyhow!("Failed to start greedy workers: {}", e))?;
+    // Create and start worker controller
+    let mut controller = create_default_controller(config, shutdown_token.clone());
+    controller.start().await.map_err(|e| anyhow::anyhow!("Failed to start workers: {}", e))?;
 
-    info!("Greedy workers initialized and started successfully");
-    Ok(greedy_controller)
+    info!("Workers initialized and started successfully");
+    Ok(controller)
 }

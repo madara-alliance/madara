@@ -1,4 +1,4 @@
-// Temporarily commented out old tests while we transition to greedy mode
+// Temporarily commented out old tests while we transition to worker mode
 // pub mod alerts;
 pub mod common;
 // pub mod compression;

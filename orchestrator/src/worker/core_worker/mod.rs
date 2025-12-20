@@ -1,6 +1,6 @@
-/// Greedy worker implementation for queue-less job processing
+/// Worker implementation for queue-less job processing
 ///
-/// This module implements the greedy worker pattern where workers actively poll
+/// This module implements the worker pattern where workers actively poll
 /// MongoDB for available jobs instead of consuming from SQS. Jobs are claimed
 /// atomically using MongoDB's findOneAndUpdate operation.
 ///
@@ -16,6 +16,6 @@ pub mod controller;
 pub mod metrics;
 pub mod worker;
 
-pub use config::GreedyWorkerConfig;
-pub use controller::GreedyWorkerController;
-pub use worker::GreedyWorker;
+pub use config::WorkerConfig;
+pub use controller::WorkerController;
+pub use worker::Worker;

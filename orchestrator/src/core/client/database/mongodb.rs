@@ -142,12 +142,13 @@ impl MongoDbClient {
         snos_collection.create_indexes(snos_indexes, None).await?;
         info!("Created indexes for SNOS batch collection");
 
-        // Create indexes for jobs collection (greedy worker mode)
+        // Create indexes for jobs collection (worker mode)
         let job_collection = self.get_job_collection();
 
-        let greedy_indexes = vec![
+        let worker_indexes = vec![
             // FIX-06: Partial index for processing claims
             // Only indexes jobs that are claimable for processing
+            // Note: VerificationFailed jobs must transition to PendingRetry before re-processing
             IndexModel::builder()
                 .keys(doc! {
                     "job_type": 1,
@@ -155,9 +156,9 @@ impl MongoDbClient {
                 })
                 .options(
                     IndexOptions::builder()
-                        .name("idx_greedy_processing_partial".to_string())
+                        .name("idx_processing_claim_partial".to_string())
                         .partial_filter_expression(doc! {
-                            "status": { "$in": ["Created", "VerificationFailed", "PendingRetry"] }
+                            "status": { "$in": ["Created", "PendingRetry"] }
                         })
                         .build(),
                 )
@@ -171,7 +172,7 @@ impl MongoDbClient {
                 })
                 .options(
                     IndexOptions::builder()
-                        .name("idx_greedy_verification_partial".to_string())
+                        .name("idx_verification_claim_partial".to_string())
                         .partial_filter_expression(doc! {
                             "status": "PendingVerification"
                         })
@@ -214,8 +215,8 @@ impl MongoDbClient {
                 .build(),
         ];
 
-        job_collection.create_indexes(greedy_indexes, None).await?;
-        info!("Created greedy worker indexes for jobs collection");
+        job_collection.create_indexes(worker_indexes, None).await?;
+        info!("Created worker indexes for jobs collection");
 
         Ok(())
     }
@@ -1463,7 +1464,7 @@ impl DatabaseClient for MongoDbClient {
     }
 
     // ================================================================================
-    // Greedy Worker Methods Implementation
+    // Worker Methods Implementation
     // ================================================================================
 
     async fn claim_job_for_processing(
@@ -1491,7 +1492,7 @@ impl DatabaseClient for MongoDbClient {
                     "$or": [
                         { "available_at": { "$exists": false } },  // Legacy jobs
                         { "available_at": null },                   // Explicitly null
-                        { "available_at": { "$lte": now } }        // Greedy jobs ready now
+                        { "available_at": { "$lte": now } }        // Jobs with available_at in the past
                     ]
                 },
                 {
@@ -1556,7 +1557,7 @@ impl DatabaseClient for MongoDbClient {
                     "$or": [
                         { "available_at": { "$exists": false } },  // Legacy jobs
                         { "available_at": null },                   // Explicitly null
-                        { "available_at": { "$lte": now } }        // Greedy jobs ready now
+                        { "available_at": { "$lte": now } }        // Jobs with available_at in the past
                     ]
                 },
                 {

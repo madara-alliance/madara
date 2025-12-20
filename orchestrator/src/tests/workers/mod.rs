@@ -1,8 +1,8 @@
-// Temporarily commented out old worker tests while we transition to greedy mode
+// Temporarily commented out old worker tests while we transition to worker mode
 // #[cfg(test)]
 // pub mod batching;
 #[cfg(test)]
-pub mod greedy;
+pub mod core_worker;
 // #[cfg(test)]
 // pub mod proving;
 // #[cfg(test)]

@@ -1,8 +1,8 @@
-/// Greedy worker implementation for queue-less job processing
+/// Worker implementation for queue-less job processing
 ///
 /// This worker actively polls MongoDB for available jobs and processes them
 /// using atomic claim operations to prevent race conditions.
-use super::config::GreedyWorkerConfig;
+use super::config::WorkerConfig;
 use super::metrics;
 use crate::core::config::Config;
 use crate::types::jobs::job_item::JobItem;
@@ -13,7 +13,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-/// Greedy worker state for error handling and circuit breaking
+/// Worker state for error handling and circuit breaking
 #[derive(Debug)]
 struct WorkerState {
     /// Consecutive error count for exponential backoff
@@ -35,7 +35,7 @@ impl WorkerState {
         self.circuit_open_at = None;
     }
 
-    fn increment_error(&mut self, config: &GreedyWorkerConfig) {
+    fn increment_error(&mut self, config: &WorkerConfig) {
         self.consecutive_errors += 1;
 
         // FIX-07: Circuit breaker logic
@@ -51,7 +51,7 @@ impl WorkerState {
         }
     }
 
-    fn should_attempt_close(&self, config: &GreedyWorkerConfig) -> bool {
+    fn should_attempt_close(&self, config: &WorkerConfig) -> bool {
         if let Some(open_at) = self.circuit_open_at {
             let elapsed = open_at.elapsed();
             let reset_timeout = Duration::from_secs(config.circuit_breaker_reset_timeout_secs);
@@ -62,19 +62,19 @@ impl WorkerState {
     }
 }
 
-/// Greedy worker for a single job type
-pub struct GreedyWorker {
-    config: GreedyWorkerConfig,
+/// Worker for a single job type
+pub struct Worker {
+    config: WorkerConfig,
     orchestrator_config: Arc<Config>,
     orchestrator_id: String,
     shutdown_token: CancellationToken,
     state: WorkerState,
 }
 
-impl GreedyWorker {
-    /// Create a new greedy worker
+impl Worker {
+    /// Create a new worker
     pub fn new(
-        config: GreedyWorkerConfig,
+        config: WorkerConfig,
         orchestrator_config: Arc<Config>,
         orchestrator_id: String,
         shutdown_token: CancellationToken,
@@ -82,19 +82,19 @@ impl GreedyWorker {
         Self { config, orchestrator_config, orchestrator_id, shutdown_token, state: WorkerState::new() }
     }
 
-    /// Run the greedy worker loop
+    /// Run the worker loop
     pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!(
             job_type = ?self.config.job_type,
             poll_interval_ms = self.config.poll_interval_ms,
             max_concurrent = self.config.max_concurrent_jobs,
-            "Starting greedy worker"
+            "Starting worker"
         );
 
         loop {
             // Check for shutdown signal
             if self.shutdown_token.is_cancelled() {
-                info!(job_type = ?self.config.job_type, "Greedy worker received shutdown signal");
+                info!(job_type = ?self.config.job_type, "Worker received shutdown signal");
                 break;
             }
 
@@ -148,7 +148,7 @@ impl GreedyWorker {
             }
         }
 
-        info!(job_type = ?self.config.job_type, "Greedy worker stopped");
+        info!(job_type = ?self.config.job_type, "Worker stopped");
         Ok(())
     }
 
@@ -272,15 +272,12 @@ impl GreedyWorker {
                     "Failed to process job"
                 );
 
-                // Release the claim so another worker can retry
-                // Note: JobHandlerService already handles status updates,
-                // but we release the claim to allow greedy re-processing
+                // JobHandlerService already handles everything:
+                // - Sets status to Failed (terminal state)
+                // - Clears claimed_by atomically
+                // - Records failure metadata
+                // No need to release claim here - already handled atomically
                 metrics::record_claim_release(&self.config.job_type, "processing_failed");
-                self.orchestrator_config
-                    .database()
-                    .release_job_claim(job_id, Some(60)) // 60 second delay before retry
-                    .await
-                    .ok(); // Ignore release errors
 
                 Err(Box::new(e))
             }
@@ -317,13 +314,12 @@ impl GreedyWorker {
                     "Failed to verify job"
                 );
 
-                // Release the claim so another worker can retry
+                // JobHandlerService already handles everything:
+                // - Sets status to VerificationFailed or Failed (if max retries)
+                // - Clears claimed_by atomically
+                // - Records failure metadata
+                // No need to release claim here - already handled atomically
                 metrics::record_claim_release(&self.config.job_type, "verification_failed");
-                self.orchestrator_config
-                    .database()
-                    .release_job_claim(job_id, Some(30)) // 30 second delay before retry
-                    .await
-                    .ok(); // Ignore release errors
 
                 Err(Box::new(e))
             }

@@ -74,7 +74,7 @@ pub trait JobTrigger: Send + Sync {
     async fn heal_orphaned_jobs(&self, config: Arc<Config>, job_type: JobType) -> anyhow::Result<u32> {
         let timeout_seconds = config.service_config().job_processing_timeout_seconds;
 
-        // FIX-01 & FIX-04: Heal both processing and verification orphans, clear greedy fields
+        // FIX-01 & FIX-04: Heal both processing and verification orphans, clear worker claim fields
         let mut healed_count = 0;
 
         // Heal processing orphans (jobs stuck in LockedForProcessing)

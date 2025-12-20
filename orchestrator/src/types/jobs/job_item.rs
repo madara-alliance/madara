@@ -32,7 +32,7 @@ pub struct JobItem {
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
 
-    // NEW FIELDS FOR GREEDY MODE
+    // WORKER CLAIM FIELDS
     /// Earliest time this job can be picked up for processing/verification.
     /// Used for delayed execution (replaces SQS delay_seconds).
     /// If None or in the past, job is immediately available.

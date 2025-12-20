@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, info_span, warn, Instrument};
 
 /// WorkerController manages WorkerTrigger queue consumption
-/// NOTE: Job processing is handled by greedy workers, not SQS
+/// NOTE: Job processing is handled by workers, not SQS
 #[derive(Clone)]
 pub struct WorkerController {
     config: Arc<Config>,
@@ -33,10 +33,10 @@ impl WorkerController {
 
     /// run - Run the WorkerController (only WorkerTrigger queue)
     pub async fn run(&self) -> EventSystemResult<()> {
-        // Only spawn WorkerTrigger worker - job processing uses greedy mode
+        // Only spawn WorkerTrigger worker - job processing uses worker mode
         let queue_type = QueueType::WorkerTrigger;
 
-        info!("Starting WorkerController with WorkerTrigger queue only (job processing uses greedy mode)");
+        info!("Starting WorkerController with WorkerTrigger queue only (job processing uses worker mode)");
 
         self.create_span(&queue_type).await
     }

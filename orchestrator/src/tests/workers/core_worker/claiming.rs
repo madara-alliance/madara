@@ -1,4 +1,4 @@
-/// Atomic job claiming tests for greedy mode
+/// Atomic job claiming tests for worker mode
 ///
 /// Tests verify that MongoDB's findOneAndUpdate provides proper atomic claiming
 /// across multiple orchestrators competing for the same jobs.

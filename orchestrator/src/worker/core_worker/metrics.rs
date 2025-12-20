@@ -1,6 +1,6 @@
-/// FIX-09: Greedy-specific metrics for monitoring queue-less architecture
+/// Worker metrics for monitoring queue-less architecture
 ///
-/// These metrics provide visibility into greedy worker behavior and performance,
+/// These metrics provide visibility into worker behavior and performance,
 /// helping to identify issues like polling inefficiency, claim contention, and
 /// database bottlenecks.
 use crate::types::jobs::types::JobType;
@@ -8,8 +8,8 @@ use opentelemetry::KeyValue;
 use std::sync::LazyLock;
 use tracing::info;
 
-/// Metric names for greedy worker operations
-pub struct GreedyMetrics {
+/// Metric names for worker operations
+pub struct WorkerMetrics {
     /// Counter for successful job claims (processing)
     pub claims_processing_success: &'static str,
     /// Counter for failed job claims (processing)
@@ -30,22 +30,22 @@ pub struct GreedyMetrics {
     pub db_errors: &'static str,
 }
 
-pub static GREEDY_METRICS: LazyLock<GreedyMetrics> = LazyLock::new(|| GreedyMetrics {
-    claims_processing_success: "greedy.claims.processing.success",
-    claims_processing_failed: "greedy.claims.processing.failed",
-    claims_verification_success: "greedy.claims.verification.success",
-    claims_verification_failed: "greedy.claims.verification.failed",
-    empty_polls: "greedy.polls.empty",
-    active_claims: "greedy.claims.active",
-    claim_latency: "greedy.claim.latency",
-    claim_releases: "greedy.claim.releases",
-    db_errors: "greedy.db.errors",
+pub static WORKER_METRICS: LazyLock<WorkerMetrics> = LazyLock::new(|| WorkerMetrics {
+    claims_processing_success: "worker.claims.processing.success",
+    claims_processing_failed: "worker.claims.processing.failed",
+    claims_verification_success: "worker.claims.verification.success",
+    claims_verification_failed: "worker.claims.verification.failed",
+    empty_polls: "worker.polls.empty",
+    active_claims: "worker.claims.active",
+    claim_latency: "worker.claim.latency",
+    claim_releases: "worker.claim.releases",
+    db_errors: "worker.db.errors",
 });
 
 /// Record a successful processing job claim
 pub fn record_processing_claim_success(job_type: &JobType) {
     info!(
-        metric = GREEDY_METRICS.claims_processing_success,
+        metric = WORKER_METRICS.claims_processing_success,
         job_type = ?job_type,
         "Processing job claimed successfully"
     );
@@ -54,7 +54,7 @@ pub fn record_processing_claim_success(job_type: &JobType) {
 /// Record a failed processing job claim attempt (no jobs available)
 pub fn record_processing_claim_failed(job_type: &JobType) {
     info!(
-        metric = GREEDY_METRICS.claims_processing_failed,
+        metric = WORKER_METRICS.claims_processing_failed,
         job_type = ?job_type,
         "No processing jobs available to claim"
     );
@@ -63,7 +63,7 @@ pub fn record_processing_claim_failed(job_type: &JobType) {
 /// Record a successful verification job claim
 pub fn record_verification_claim_success(job_type: &JobType) {
     info!(
-        metric = GREEDY_METRICS.claims_verification_success,
+        metric = WORKER_METRICS.claims_verification_success,
         job_type = ?job_type,
         "Verification job claimed successfully"
     );
@@ -72,7 +72,7 @@ pub fn record_verification_claim_success(job_type: &JobType) {
 /// Record a failed verification job claim attempt (no jobs available)
 pub fn record_verification_claim_failed(job_type: &JobType) {
     info!(
-        metric = GREEDY_METRICS.claims_verification_failed,
+        metric = WORKER_METRICS.claims_verification_failed,
         job_type = ?job_type,
         "No verification jobs available to claim"
     );
@@ -81,7 +81,7 @@ pub fn record_verification_claim_failed(job_type: &JobType) {
 /// Record an empty poll cycle (no jobs available in either phase)
 pub fn record_empty_poll(job_type: &JobType) {
     info!(
-        metric = GREEDY_METRICS.empty_polls,
+        metric = WORKER_METRICS.empty_polls,
         job_type = ?job_type,
         "Poll cycle completed with no jobs available"
     );
@@ -90,7 +90,7 @@ pub fn record_empty_poll(job_type: &JobType) {
 /// Record current active claims count
 pub fn record_active_claims(orchestrator_id: &str, count: u64) {
     info!(
-        metric = GREEDY_METRICS.active_claims,
+        metric = WORKER_METRICS.active_claims,
         orchestrator_id = orchestrator_id,
         count = count,
         "Active claims gauge updated"
@@ -100,7 +100,7 @@ pub fn record_active_claims(orchestrator_id: &str, count: u64) {
 /// Record job claim latency
 pub fn record_claim_latency(job_type: &JobType, phase: &str, duration_ms: f64) {
     info!(
-        metric = GREEDY_METRICS.claim_latency,
+        metric = WORKER_METRICS.claim_latency,
         job_type = ?job_type,
         phase = phase,
         duration_ms = duration_ms,
@@ -111,20 +111,20 @@ pub fn record_claim_latency(job_type: &JobType, phase: &str, duration_ms: f64) {
 /// Record a claim release (job completion or failure)
 pub fn record_claim_release(job_type: &JobType, reason: &str) {
     info!(
-        metric = GREEDY_METRICS.claim_releases,
+        metric = WORKER_METRICS.claim_releases,
         job_type = ?job_type,
         reason = reason,
         "Job claim released"
     );
 }
 
-/// Record a database error during greedy operations
+/// Record a database error during worker operations
 pub fn record_db_error(operation: &str, error: &str) {
     info!(
-        metric = GREEDY_METRICS.db_errors,
+        metric = WORKER_METRICS.db_errors,
         operation = operation,
         error = error,
-        "Database error during greedy operation"
+        "Database error during worker operation"
     );
 }
 

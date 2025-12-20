@@ -29,22 +29,22 @@ impl JobService {
     }
 
     /// Adds a job to its processing queue
-    /// NOTE: In greedy mode (now default), jobs are polled directly from MongoDB, so this is a no-op
+    /// NOTE: In worker mode (now default), jobs are polled directly from MongoDB, so this is a no-op
     pub async fn add_job_to_process_queue(id: Uuid, job_type: &JobType, _config: Arc<Config>) -> Result<(), JobError> {
         // Jobs are polled directly from MongoDB - no SQS queueing needed
-        tracing::debug!(job_id = %id, "Greedy mode: skipping SQS queue for {:?} job", job_type);
+        tracing::debug!(job_id = %id, "Worker mode: skipping SQS queue for {:?} job", job_type);
         Ok(())
     }
 
     /// Adds a job to its verification queue
-    /// NOTE: In greedy mode (now default), uses available_at timestamp instead of SQS delay
+    /// NOTE: In worker mode (now default), uses available_at timestamp instead of SQS delay
     pub async fn add_job_to_verify_queue(
         config: Arc<Config>,
         id: Uuid,
         job_type: &JobType,
         delay: Option<Duration>,
     ) -> Result<(), JobError> {
-        // In greedy mode, set available_at instead of using SQS delay
+        // In worker mode, set available_at instead of using SQS delay
         if let Some(delay) = delay {
             let available_at = chrono::Utc::now()
                 + chrono::Duration::from_std(delay)
@@ -66,11 +66,11 @@ impl JobService {
                 job_id = %id,
                 delay_secs = delay.as_secs(),
                 available_at = %available_at,
-                "Greedy mode: set available_at for delayed verification of {:?} job",
+                "Worker mode: set available_at for delayed verification of {:?} job",
                 job_type
             );
         } else {
-            tracing::debug!(job_id = %id, "Greedy mode: job ready for immediate verification of {:?} job", job_type);
+            tracing::debug!(job_id = %id, "Worker mode: job ready for immediate verification of {:?} job", job_type);
         }
         Ok(())
     }
@@ -186,7 +186,7 @@ impl JobService {
                 JobItemUpdates::new()
                     .update_status(JobStatus::Failed)
                     .update_metadata(job_metadata)
-                    .clear_claim() // Clear greedy mode claim on failure
+                    .clear_claim() // Clear worker mode claim on failure
                     .build(),
             )
             .await

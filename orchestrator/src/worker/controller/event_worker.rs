@@ -17,7 +17,7 @@ use tracing::{error, info, warn, Instrument, Span};
 use uuid::Uuid;
 
 /// EventWorker handles WorkerTrigger queue consumption
-/// NOTE: Job processing is now handled by greedy workers, not SQS
+/// NOTE: Job processing is now handled by workers, not SQS
 #[derive(Clone)]
 pub struct EventWorker {
     config: Arc<Config>,
@@ -37,7 +37,7 @@ impl EventWorker {
         if queue_type != QueueType::WorkerTrigger {
             return Err(ConsumptionError::Other(
                 OtherError::from(eyre!(
-                    "EventWorker only supports WorkerTrigger queue. Job processing uses greedy mode."
+                    "EventWorker only supports WorkerTrigger queue. Job processing uses worker mode."
                 ))
                 .into(),
             ))?;

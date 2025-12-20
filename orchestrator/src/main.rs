@@ -109,11 +109,11 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let shutdown_result = signal_handler
         .handle_graceful_shutdown(
             || async {
-                // Graceful shutdown for greedy workers
-                info!("Shutting down greedy workers");
+                // Graceful shutdown for workers
+                info!("Shutting down workers");
                 if let Err(e) = worker_controller.shutdown().await {
-                    error!("Greedy worker shutdown failed: {}", e);
-                    return Err(anyhow::anyhow!("Greedy worker shutdown failed: {}", e).into());
+                    error!("Worker shutdown failed: {}", e);
+                    return Err(anyhow::anyhow!("Worker shutdown failed: {}", e).into());
                 }
 
                 // Analytics Shutdown

@@ -1,4 +1,4 @@
-/// Job creation cap tests for greedy mode
+/// Job creation cap tests for worker mode
 ///
 /// Tests verify that job creation respects configured caps to prevent MongoDB overflow
 use crate::tests::config::TestConfigBuilder;

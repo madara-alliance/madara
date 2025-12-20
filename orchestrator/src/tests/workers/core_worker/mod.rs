@@ -1,6 +1,6 @@
-/// Greedy mode worker tests
+/// Worker mode worker tests
 ///
-/// Tests for the queue-less (greedy) worker architecture where orchestrators
+/// Tests for the worker architecture where orchestrators
 /// poll MongoDB directly using atomic operations instead of consuming from SQS.
 
 #[cfg(test)]
@@ -20,3 +20,6 @@ pub mod job_creation_caps;
 
 #[cfg(test)]
 pub mod error_handling;
+
+// #[cfg(test)]
+// pub mod retry_limits;  // TODO: Requires mock setup for job handlers

@@ -188,7 +188,7 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     fn max_process_attempts(&self) -> u64 {
-        1
+        2
     }
 
     fn max_verification_attempts(&self) -> u64 {
