@@ -7,7 +7,6 @@ use starknet_api::execution_resources::GasAmount;
 use uuid::Uuid;
 
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder, TestConfigBuilderReturns};
-use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -23,6 +22,8 @@ use starknet_core::types::{Felt, StateUpdate};
 use std::fs::File;
 use std::io::Read;
 use url::Url;
+
+const SNOS_PATHFINDER_RPC_URL_ENV: &str = "MADARA_ORCHESTRATOR_RPC_FOR_SNOS";
 
 pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64) -> JobItem {
     let metadata = match job_type {
@@ -82,6 +83,8 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
+        available_at: None,
+        claimed_by: None,
     }
 }
 

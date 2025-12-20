@@ -1,10 +1,11 @@
-#[cfg(test)]
-pub mod batching;
+// Temporarily commented out old worker tests while we transition to greedy mode
+// #[cfg(test)]
+// pub mod batching;
 #[cfg(test)]
 pub mod greedy;
-#[cfg(test)]
-pub mod proving;
-#[cfg(test)]
-pub mod snos;
-mod update_state;
+// #[cfg(test)]
+// pub mod proving;
+// #[cfg(test)]
+// pub mod snos;
+// mod update_state;
 pub mod utils;

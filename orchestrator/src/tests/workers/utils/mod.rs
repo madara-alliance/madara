@@ -47,6 +47,8 @@ pub fn get_job_item_mock_by_id(id: String, uuid: Uuid) -> JobItem {
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
+        available_at: None,
+        claimed_by: None,
     }
 }
 
@@ -73,7 +75,7 @@ pub fn get_job_by_mock_id_vector(
         let uuid = Uuid::new_v4();
 
         // Create appropriate metadata based on job type
-        let metadata = create_metadata_for_job_type(job_type.clone(), i);
+        let metadata = create_metadata_for_job_type(&job_type, i);
 
         jobs_vec.push(JobItem {
             id: uuid,
@@ -85,6 +87,8 @@ pub fn get_job_by_mock_id_vector(
             version: 0,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
+            available_at: None,
+            claimed_by: None,
         })
     }
 
@@ -92,7 +96,7 @@ pub fn get_job_by_mock_id_vector(
 }
 
 /// Helper function to create appropriate metadata based on job type
-fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMetadata {
+pub fn create_metadata_for_job_type(job_type: &JobType, block_number: u64) -> JobMetadata {
     match job_type {
         JobType::SnosRun => JobMetadata {
             common: CommonMetadata::default(),
@@ -184,10 +188,12 @@ pub async fn create_and_store_prerequisite_jobs(
         job_type: JobType::SnosRun,
         status: job_status.clone(),
         external_id: ExternalId::Number(0),
-        metadata: create_metadata_for_job_type(JobType::SnosRun, block_number),
+        metadata: create_metadata_for_job_type(&JobType::SnosRun, block_number),
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
+        available_at: None,
+        claimed_by: None,
     };
 
     // Create Aggregator job
@@ -198,10 +204,12 @@ pub async fn create_and_store_prerequisite_jobs(
         job_type: JobType::Aggregator,
         status: job_status,
         external_id: ExternalId::Number(0),
-        metadata: create_metadata_for_job_type(JobType::Aggregator, block_number),
+        metadata: create_metadata_for_job_type(&JobType::Aggregator, block_number),
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
+        available_at: None,
+        claimed_by: None,
     };
 
     // Store jobs in database
@@ -237,6 +245,8 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabaseClient, mock_job: 
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
+        available_at: None,
+        claimed_by: None,
     };
 
     let job_item_cloned = job_item.clone();

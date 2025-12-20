@@ -190,7 +190,7 @@ impl MongoDbClient {
                         .name("idx_verification_orphan_detection".to_string())
                         .partial_filter_expression(doc! {
                             "status": "PendingVerification",
-                            "claimed_by": { "$ne": null }
+                            "claimed_by": { "$exists": true }
                         })
                         .build(),
                 )
@@ -1497,6 +1497,7 @@ impl DatabaseClient for MongoDbClient {
 
         let update = doc! {
             "$set": {
+                "status": bson::to_bson(&JobStatus::LockedForProcessing)?,
                 "claimed_by": orchestrator_id,
                 "updated_at": now
             }
