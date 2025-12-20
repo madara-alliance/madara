@@ -68,6 +68,7 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
 
+# TODO(prakhar,20/12/2025): Find a proper fix for this!
 # Fetch cargo dependencies and extract sequencer requirements.txt
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo fetch && \
