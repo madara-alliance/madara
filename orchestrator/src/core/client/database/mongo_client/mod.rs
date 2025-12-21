@@ -178,7 +178,7 @@ impl MongoClient {
             let cursor = self.collection::<T>(collection).aggregate(pipeline, None).await?;
 
             let results: Vec<R> = cursor
-                .map_err(|e| DatabaseError::MongoError(e))
+                .map_err(DatabaseError::MongoError)
                 .and_then(|doc| async move {
                     bson::from_document(doc).map_err(|e| DatabaseError::FailedToSerializeDocument(e.to_string()))
                 })

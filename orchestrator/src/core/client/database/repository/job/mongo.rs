@@ -147,12 +147,12 @@ impl JobRepository for MongoJobRepository {
         let mut filter = doc! {};
 
         if !job_types.is_empty() {
-            let types: Vec<Bson> = job_types.iter().map(|t| bson::to_bson(t)).collect::<Result<_, _>>()?;
+            let types: Vec<Bson> = job_types.iter().map(bson::to_bson).collect::<Result<_, _>>()?;
             filter.insert("job_type", doc! { "$in": types });
         }
 
         if !statuses.is_empty() {
-            let statuses: Vec<Bson> = statuses.iter().map(|s| bson::to_bson(s)).collect::<Result<_, _>>()?;
+            let statuses: Vec<Bson> = statuses.iter().map(bson::to_bson).collect::<Result<_, _>>()?;
             filter.insert("status", doc! { "$in": statuses });
         }
 
@@ -165,7 +165,7 @@ impl JobRepository for MongoJobRepository {
         job_type: &JobType,
         statuses: Vec<JobStatus>,
     ) -> Result<Vec<JobItem>, DatabaseError> {
-        let statuses: Vec<Bson> = statuses.iter().map(|s| bson::to_bson(s)).collect::<Result<_, _>>()?;
+        let statuses: Vec<Bson> = statuses.iter().map(bson::to_bson).collect::<Result<_, _>>()?;
 
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,

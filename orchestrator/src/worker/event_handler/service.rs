@@ -298,7 +298,7 @@ impl JobHandlerService {
             JobVerificationStatus::Rejected(ref reason) => {
                 error!("Job {} verification rejected: {}", job.internal_id, reason);
                 job.metadata.common.failure_reason = Some(reason.clone());
-                MetricsRecorder::record_job_failed(&job, &reason);
+                MetricsRecorder::record_job_failed(&job, reason);
 
                 config
                     .database()

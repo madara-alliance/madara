@@ -38,8 +38,7 @@ impl EventWorker {
             return Err(ConsumptionError::Other(
                 OtherError::from(eyre!(
                     "EventWorker only supports WorkerTrigger queue. Job processing uses worker mode."
-                ))
-                .into(),
+                )),
             ))?;
         }
 
