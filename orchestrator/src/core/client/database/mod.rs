@@ -506,6 +506,15 @@ pub trait DatabaseClient: Send + Sync {
         aggregator_index: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
+    /// Count all SNOS batches belonging to a specific aggregator batch
+    ///
+    /// # Arguments
+    /// * `aggregator_index` - The index of the aggregator batch
+    ///
+    /// # Returns
+    /// Total count of SNOS batches (any status) that belong to the specified aggregator batch
+    async fn count_snos_batches_by_aggregator_batch_index(&self, aggregator_index: u64) -> Result<u64, DatabaseError>;
+
     /// Get the next available SNOS batch ID
     ///
     /// This method finds the highest existing `snos_batch_id` and returns the next sequential number.

@@ -61,8 +61,10 @@ impl JobItemUpdates {
     }
 
     /// Clear the claim (release job)
+    /// Also clears available_at since it's only relevant for unclaimed jobs waiting to be picked up
     pub fn clear_claim(mut self) -> Self {
         self.claimed_by = Some(None);
+        self.available_at = Some(None);
         self
     }
 

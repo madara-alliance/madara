@@ -1957,6 +1957,28 @@ impl DatabaseClient for MongoDbClient {
         Ok(batches)
     }
 
+    /// Count all SNOS batches belonging to a specific aggregator batch
+    async fn count_snos_batches_by_aggregator_batch_index(&self, aggregator_index: u64) -> Result<u64, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "aggregator_batch_index": aggregator_index as i64,
+        };
+
+        let count = self.get_snos_batch_collection().count_documents(filter, None).await?;
+
+        tracing::debug!(
+            aggregator_index = aggregator_index,
+            snos_batch_count = count,
+            category = "db_call",
+            "Counted SNOS batches by aggregator index"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "count_snos_batches_by_aggregator_batch_index")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(count)
+    }
+
     /// Get the next available SNOS batch ID
     async fn get_next_snos_batch_id(&self) -> Result<u64, DatabaseError> {
         let start = Instant::now();
