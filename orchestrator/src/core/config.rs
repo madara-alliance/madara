@@ -150,6 +150,7 @@ pub struct ConfigParam {
     pub store_audit_artifacts: bool,
     pub bouncer_weights_limit: BouncerWeights,
     pub aggregator_batch_weights_limit: AggregatorBatchWeights,
+    pub da_public_keys: Vec<String>,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -260,6 +261,7 @@ impl Config {
             store_audit_artifacts: run_cmd.store_audit_artifacts,
             aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
             bouncer_weights_limit,
+            da_public_keys: run_cmd.da_public_keys.clone(),
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
@@ -556,6 +558,11 @@ impl Config {
     /// Returns the snos proof layout
     pub fn prover_layout_name(&self) -> &LayoutName {
         &self.params.prover_layout_name
+    }
+
+    /// Returns the DA public keys
+    pub fn da_public_keys(&self) -> &Vec<String> {
+        &self.params.da_public_keys
     }
 
     /// Returns the bouncer weights limit
