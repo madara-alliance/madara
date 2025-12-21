@@ -141,23 +141,25 @@ impl VerificationWorker {
         }
     }
 
-    /// Try to atomically claim a job for verification
+    /// Query for a job ready for verification (without claiming)
     ///
     /// Queries for jobs with status Processed or PendingRetryVerification
+    /// The actual claiming happens in JobHandlerService::verify_job()
     async fn try_get_verifiable_job(&self) -> Result<Option<JobItem>, Box<dyn std::error::Error + Send + Sync>> {
-        // Use the database's claim_job_for_verification method which handles:
+        // Use the database's get_verifiable_job method which queries (but doesn't claim):
         // - Finding jobs with status Processed or PendingRetryVerification
-        // - Setting claimed_by = null check
-        // - Atomically updating status to LockedForVerification
-        // - Setting claimed_by to orchestrator_id
-        let job = self.config.database().claim_job_for_verification(&self.job_type, &self.orchestrator_id).await?;
+        // - claimed_by = null
+        // - available_at = null or <= now
+        // The actual atomic claim happens in verify_job()
+        let job = self.config.database().get_verifiable_job(&self.job_type).await?;
 
         if let Some(ref job) = job {
             debug!(
                 job_id = %job.id,
                 job_type = ?self.job_type,
                 worker_type = "verification",
-                "Successfully claimed job for verification"
+                status = ?job.status,
+                "Found job ready for verification"
             );
             metrics::record_verification_claim_success(&self.job_type);
         } else {

@@ -141,23 +141,25 @@ impl ProcessingWorker {
         }
     }
 
-    /// Try to atomically claim a job for processing
+    /// Query for a job ready for processing (without claiming)
     ///
     /// Queries for jobs with status Created or PendingRetryProcessing
+    /// The actual claiming happens in JobHandlerService::process_job()
     async fn try_get_processable_job(&self) -> Result<Option<JobItem>, Box<dyn std::error::Error + Send + Sync>> {
-        // Use the database's claim_job_for_processing method which handles:
+        // Use the database's get_processable_job method which queries (but doesn't claim):
         // - Finding jobs with status Created or PendingRetryProcessing
-        // - Setting claimed_by = null check
-        // - Atomically updating status to LockedForProcessing
-        // - Setting claimed_by to orchestrator_id
-        let job = self.config.database().claim_job_for_processing(&self.job_type, &self.orchestrator_id).await?;
+        // - claimed_by = null
+        // - available_at = null or <= now
+        // The actual atomic claim happens in process_job()
+        let job = self.config.database().get_processable_job(&self.job_type).await?;
 
         if let Some(ref job) = job {
             debug!(
                 job_id = %job.id,
                 job_type = ?self.job_type,
                 worker_type = "processing",
-                "Successfully claimed job for processing"
+                status = ?job.status,
+                "Found job ready for processing"
             );
             metrics::record_processing_claim_success(&self.job_type);
         } else {

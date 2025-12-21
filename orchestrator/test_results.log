@@ -1,0 +1,385 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/heemankverma/Work/Karnot/madara/orchestrator/Cargo.toml
+workspace: /Users/heemankverma/Work/Karnot/madara/Cargo.toml
+warning: Patch `librocksdb-sys v0.17.0+9.0.0 (https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78)` was not used in the crate graph.
+Patch `rocksdb v0.22.0 (https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78)` was not used in the crate graph.
+Check that the patched package version and available features are compatible
+with the dependency requirements. If the patch has a different version from
+what is locked in the Cargo.lock file, run `cargo update` to use the new
+version. This may also occur with an optional dependency that is not enabled.
+warning: orchestrator-starknet-settlement-client@0.8.0: fetching artifacts from image: ghcr.io/madara-alliance/artifacts:8
+warning: orchestrator@0.1.0: fetching artifacts from image: ghcr.io/madara-alliance/artifacts:8
+warning: associated function `handle_verification_failure` is never used
+   --> orchestrator/src/worker/event_handler/service.rs:910:14
+    |
+41  | impl JobHandlerService {
+    | ---------------------- associated function in this implementation
+...
+910 |     async fn handle_verification_failure(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: `orchestrator` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.79s
+warning: the following packages contain code that will be rejected by a future version of Rust: omniqueue v0.2.0 (https://github.com/itsparser/omniqueue-rs?branch=branch-from-0.2.0#6ff45941), redis v0.24.0, size-of v0.1.5
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 4`
+     Running unittests src/lib.rs (/Volumes/External/rust-builds/target/debug/deps/orchestrator-8df632c50ba97e67)
+
+running 146 tests
+test tests::workers::core_worker::concurrency::test_claim_atomicity_with_delays ... FAILED
+test tests::workers::core_worker::claiming::test_claim_oldest_first_within_priority ... FAILED
+test tests::workers::core_worker::claiming::test_claim_respects_available_at ... FAILED
+test tests::workers::core_worker::concurrency::test_concurrent_priority_maintained ... FAILED
+test tests::workers::core_worker::claiming::test_no_claim_when_all_ineligible ... FAILED
+test tests::workers::core_worker::claiming::test_atomic_claim_multiple_orchestrators ... FAILED
+test tests::workers::core_worker::basic::test_atomic_claim_single_orchestrator ... FAILED
+test tests::workers::core_worker::concurrency::test_concurrent_claim_process_complete_cycle ... FAILED
+test tests::workers::core_worker::claiming::test_claim_retained_during_processing ... FAILED
+test tests::workers::core_worker::claiming::test_claim_priority_pending_retry_first ... FAILED
+test core::client::database::mongodb::tests::test_find_one_insert_and_delete has been running for over 60 seconds
+test core::client::database::mongodb::tests::test_find_one_insert_and_delete ... FAILED
+test tests::workers::core_worker::concurrency::test_high_concurrency_claim_race ... FAILED
+test tests::workers::core_worker::concurrency::test_multiple_orchestrators_claim_multiple_jobs ... FAILED
+test tests::workers::core_worker::concurrency::test_single_orchestrator_cannot_double_claim ... FAILED
+test tests::workers::core_worker::error_handling::test_claim_release_nonexistent_job_returns_error ... FAILED
+test tests::workers::core_worker::error_handling::test_claim_release_preserves_job_state ... FAILED
+test tests::workers::core_worker::error_handling::test_release_claim_with_processing_delay ... FAILED
+test tests::workers::core_worker::error_handling::test_release_claim_with_verification_delay ... FAILED
+test tests::workers::core_worker::error_handling::test_released_job_without_delay_immediately_available ... FAILED
+test tests::workers::core_worker::job_creation_caps::test_aggregator_job_cap_respected ... FAILED
+test tests::workers::core_worker::job_creation_caps::test_cap_counts_created_and_pending_retry ... FAILED
+test tests::workers::core_worker::job_creation_caps::test_completing_jobs_frees_cap_space ... FAILED
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_add_max_values ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_add_overflow_l1_gas ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_add_overflow_message_segment_length ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_add_success ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_sub_equal_values ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_sub_from_max ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_sub_success ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_sub_underflow_l1_gas ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_sub_underflow_message_segment_length ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_checked_sub_with_zero ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_from_bouncer_weights ... ok
+test types::batch::tests::aggregator_batch_weights_tests::test_new ... ok
+test types::params::tests::test_arn_display_roundtrip::case_1 ... ok
+test types::params::tests::test_arn_display_roundtrip::case_2 ... ok
+test types::params::tests::test_arn_display_roundtrip::case_3 ... ok
+test types::params::tests::test_arn_display_roundtrip::case_4 ... ok
+test types::params::tests::test_arn_edge_cases::case_1 ... ok
+test types::params::tests::test_arn_edge_cases::case_2 ... ok
+test types::params::tests::test_arn_invalid_fails::case_01 ... ok
+test types::params::tests::test_arn_invalid_fails::case_02 ... ok
+test types::params::tests::test_arn_invalid_fails::case_03 ... ok
+test types::params::tests::test_arn_invalid_fails::case_04 ... ok
+test types::params::tests::test_arn_invalid_fails::case_05 ... ok
+test types::params::tests::test_arn_invalid_fails::case_06 ... ok
+test types::params::tests::test_arn_invalid_fails::case_07 ... ok
+test types::params::tests::test_arn_invalid_fails::case_08 ... ok
+test types::params::tests::test_arn_invalid_fails::case_09 ... ok
+test types::params::tests::test_arn_invalid_fails::case_10 ... ok
+test types::params::tests::test_arn_invalid_fails::case_11 ... ok
+test types::params::tests::test_arn_invalid_fails::case_12 ... ok
+test types::params::tests::test_arn_invalid_fails::case_13 ... ok
+test types::params::tests::test_arn_invalid_fails::case_14 ... ok
+test types::params::tests::test_arn_invalid_fails::case_15 ... ok
+test types::params::tests::test_arn_valid_works::case_01 ... ok
+test types::params::tests::test_arn_valid_works::case_02 ... ok
+test types::params::tests::test_arn_valid_works::case_03 ... ok
+test types::params::tests::test_arn_valid_works::case_04 ... ok
+test types::params::tests::test_arn_valid_works::case_05 ... ok
+test types::params::tests::test_arn_valid_works::case_06 ... ok
+test types::params::tests::test_arn_valid_works::case_07 ... ok
+test types::params::tests::test_arn_valid_works::case_08 ... ok
+test types::params::tests::test_arn_valid_works::case_09 ... ok
+test types::params::tests::test_arn_valid_works::case_10 ... ok
+test utils::preflight::tests::test_health_check_results_all_passed ... ok
+test utils::preflight::tests::test_health_check_results_failed_checks ... ok
+test worker::core_worker::config::tests::test_backoff_calculation ... ok
+test worker::core_worker::config::tests::test_backoff_max_limit ... ok
+test worker::core_worker::config::tests::test_default_shutdown_timeouts ... ok
+test worker::event_handler::jobs::da::test::test_bincode ... ok
+test tests::workers::core_worker::job_creation_caps::test_locked_jobs_not_counted_in_cap ... FAILED
+test tests::workers::core_worker::job_creation_caps::test_proving_job_cap_respected ... FAILED
+test tests::workers::core_worker::job_creation_caps::test_snos_job_cap_respected ... FAILED
+test tests::workers::core_worker::orphan_recovery::test_clear_claim_helper ... FAILED
+test tests::workers::core_worker::orphan_recovery::test_get_orphaned_jobs_method_exists ... FAILED
+test tests::workers::core_worker::orphan_recovery::test_multiple_job_types_orphan_detection ... FAILED
+test tests::workers::core_worker::orphan_recovery::test_no_orphan_recovery_within_timeout ... FAILED
+test worker::event_handler::jobs::da::test::test_refactor_state_update::case_1_empty_case ... ok
+test worker::event_handler::jobs::da::test::test_refactor_state_update::case_2_only_nonces ... ok
+test worker::event_handler::jobs::da::test::test_refactor_state_update::case_3_only_deployed ... ok
+test worker::event_handler::jobs::da::test::test_refactor_state_update::case_4_overlapping_addresses ... ok
+test worker::event_handler::jobs::da::test::test_refactor_state_update::case_5_duplicate_addresses ... ok
+test tests::workers::core_worker::orphan_recovery::test_only_locked_jobs_can_be_orphans ... FAILED
+test tests::workers::core_worker::orphan_recovery::test_orphan_healing_workflow ... FAILED
+test tests::workers::core_worker::orphan_recovery::test_orphan_retry_counter_increment ... FAILED
+test worker::event_handler::jobs::da::test::test_state_update_to_blob_data::case_2 ... ok
+test worker::event_handler::jobs::da::test::test_state_update_to_blob_data::case_4 ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_all_conditions_pass_returns_can_add ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_batch_closed_returns_batch_closed ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_exactly_at_max_blocks_minus_one_can_add ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_exactly_at_weight_limit_can_add ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_just_over_weight_limit_returns_weight_limit_exceeded ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_max_blocks_reached_returns_max_blocks_reached ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_multiple_version_transitions ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_pending_aggregator_run_status_treated_as_closed ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_time_limit_exceeded_returns_time_limit_exceeded ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_version_mismatch_returns_version_mismatch ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_weight_limit_exceeded_returns_weight_limit_exceeded ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::check_block_sync_tests::test_weight_overflow_returns_weight_overflow ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::close_tests::test_close_changes_status_to_closed ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::close_tests::test_close_preserves_other_fields ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::empty_state_tests::test_empty_state_new ... ok
+test worker::event_handler::triggers::batching::aggregator::tests::limits_tests::test_limits_new_for_test ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_aggregator_batch_mismatch_returns_mismatch ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_all_conditions_pass_returns_can_add ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_batch_closed_returns_batch_closed ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_exactly_at_max_blocks_minus_one_can_add ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_exactly_at_weight_limit_can_add ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_fixed_batch_size_can_add ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_fixed_batch_size_reached ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_l2_mode_matching_aggregator_batch ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_l3_mode_no_aggregator_constraint ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_max_blocks_reached_returns_max_blocks_reached ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_missing_aggregator_batch_when_expected ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_multiple_version_transitions ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_snos_job_created_status_treated_as_closed ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_time_limit_exceeded_returns_time_limit_exceeded ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_version_mismatch_returns_version_mismatch ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_weight_limit_exceeded_returns_weight_limit_exceeded ... ok
+test worker::event_handler::triggers::batching::snos::tests::check_block_sync_tests::test_weight_overflow_returns_weight_overflow ... ok
+test worker::event_handler::triggers::batching::snos::tests::close_tests::test_close_changes_status_to_closed ... ok
+test worker::event_handler::triggers::batching::snos::tests::close_tests::test_close_preserves_other_fields ... ok
+test worker::event_handler::triggers::batching::snos::tests::empty_state_tests::test_empty_state_new ... ok
+test worker::event_handler::triggers::batching::snos::tests::limits_tests::test_limits_new_for_test ... ok
+test worker::event_handler::triggers::batching::snos::tests::limits_tests::test_limits_without_fixed_batch_size ... ok
+test worker::event_handler::triggers::update_state::test_update_state_worker_utils::test_find_successive_items::case_1 ... ok
+test worker::event_handler::triggers::update_state::test_update_state_worker_utils::test_find_successive_items::case_2 ... ok
+test worker::event_handler::triggers::update_state::test_update_state_worker_utils::test_find_successive_items::case_3 ... ok
+test worker::event_handler::triggers::update_state::test_update_state_worker_utils::test_find_successive_items::case_4 ... ok
+test worker::event_handler::triggers::update_state::test_update_state_worker_utils::test_find_successive_items::case_5 ... ok
+test worker::event_handler::triggers::update_state::test_update_state_worker_utils::test_find_successive_items::case_6 ... ok
+test worker::utils::fact_info::tests::test_fact_info::case_1 ... ok
+test worker::event_handler::jobs::da::test::test_state_update_to_blob_data::case_1 ... ok
+test worker::utils::fact_info::tests::test_program_output::case_1 ... ignored
+test worker::utils::fact_node::test::test_generate_merkle_root ... ok
+test worker::event_handler::jobs::da::test::test_state_update_to_blob_data::case_3 ... ok
+test worker::utils::fact_info::tests::test_fact_info::case_2 ... ok
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_1 has been running for over 60 seconds
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_2 has been running for over 60 seconds
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_3 has been running for over 60 seconds
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_4 has been running for over 60 seconds
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_5 has been running for over 60 seconds
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_6 has been running for over 60 seconds
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_7 has been running for over 60 seconds
+test worker::event_handler::jobs::da::test::test_state_update_to_blob_data::case_5 ... ok
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_7 ... ok
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_4 ... ok
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_6 ... ok
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_5 ... ok
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_1 ... ok
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_2 ... ok
+test worker::event_handler::jobs::da::test::test_fft_transformation::case_3 ... ok
+
+failures:
+
+---- tests::workers::core_worker::concurrency::test_claim_atomicity_with_delays stdout ----
+
+thread 'tests::workers::core_worker::concurrency::test_claim_atomicity_with_delays' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tests::workers::core_worker::claiming::test_claim_oldest_first_within_priority stdout ----
+
+thread 'tests::workers::core_worker::claiming::test_claim_oldest_first_within_priority' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::claiming::test_claim_respects_available_at stdout ----
+
+thread 'tests::workers::core_worker::claiming::test_claim_respects_available_at' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::concurrency::test_concurrent_priority_maintained stdout ----
+
+thread 'tests::workers::core_worker::concurrency::test_concurrent_priority_maintained' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::claiming::test_no_claim_when_all_ineligible stdout ----
+
+thread 'tests::workers::core_worker::claiming::test_no_claim_when_all_ineligible' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::claiming::test_atomic_claim_multiple_orchestrators stdout ----
+
+thread 'tests::workers::core_worker::claiming::test_atomic_claim_multiple_orchestrators' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::basic::test_atomic_claim_single_orchestrator stdout ----
+
+thread 'tests::workers::core_worker::basic::test_atomic_claim_single_orchestrator' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::concurrency::test_concurrent_claim_process_complete_cycle stdout ----
+
+thread 'tests::workers::core_worker::concurrency::test_concurrent_claim_process_complete_cycle' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::claiming::test_claim_retained_during_processing stdout ----
+
+thread 'tests::workers::core_worker::claiming::test_claim_retained_during_processing' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::claiming::test_claim_priority_pending_retry_first stdout ----
+
+thread 'tests::workers::core_worker::claiming::test_claim_priority_pending_retry_first' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- core::client::database::mongodb::tests::test_find_one_insert_and_delete stdout ----
+
+thread 'core::client::database::mongodb::tests::test_find_one_insert_and_delete' panicked at orchestrator/src/core/client/database/mongodb.rs:2070:54:
+called `Result::unwrap()` on an `Err` value: Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }
+
+---- tests::workers::core_worker::concurrency::test_high_concurrency_claim_race stdout ----
+
+thread 'tests::workers::core_worker::concurrency::test_high_concurrency_claim_race' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::concurrency::test_multiple_orchestrators_claim_multiple_jobs stdout ----
+
+thread 'tests::workers::core_worker::concurrency::test_multiple_orchestrators_claim_multiple_jobs' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::concurrency::test_single_orchestrator_cannot_double_claim stdout ----
+
+thread 'tests::workers::core_worker::concurrency::test_single_orchestrator_cannot_double_claim' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::error_handling::test_claim_release_nonexistent_job_returns_error stdout ----
+
+thread 'tests::workers::core_worker::error_handling::test_claim_release_nonexistent_job_returns_error' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::error_handling::test_claim_release_preserves_job_state stdout ----
+
+thread 'tests::workers::core_worker::error_handling::test_claim_release_preserves_job_state' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::error_handling::test_release_claim_with_processing_delay stdout ----
+
+thread 'tests::workers::core_worker::error_handling::test_release_claim_with_processing_delay' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::error_handling::test_release_claim_with_verification_delay stdout ----
+
+thread 'tests::workers::core_worker::error_handling::test_release_claim_with_verification_delay' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::error_handling::test_released_job_without_delay_immediately_available stdout ----
+
+thread 'tests::workers::core_worker::error_handling::test_released_job_without_delay_immediately_available' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::job_creation_caps::test_aggregator_job_cap_respected stdout ----
+
+thread 'tests::workers::core_worker::job_creation_caps::test_aggregator_job_cap_respected' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::job_creation_caps::test_cap_counts_created_and_pending_retry stdout ----
+
+thread 'tests::workers::core_worker::job_creation_caps::test_cap_counts_created_and_pending_retry' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::job_creation_caps::test_completing_jobs_frees_cap_space stdout ----
+
+thread 'tests::workers::core_worker::job_creation_caps::test_completing_jobs_frees_cap_space' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::job_creation_caps::test_locked_jobs_not_counted_in_cap stdout ----
+
+thread 'tests::workers::core_worker::job_creation_caps::test_locked_jobs_not_counted_in_cap' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::job_creation_caps::test_proving_job_cap_respected stdout ----
+
+thread 'tests::workers::core_worker::job_creation_caps::test_proving_job_cap_respected' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::job_creation_caps::test_snos_job_cap_respected stdout ----
+
+thread 'tests::workers::core_worker::job_creation_caps::test_snos_job_cap_respected' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::orphan_recovery::test_clear_claim_helper stdout ----
+
+thread 'tests::workers::core_worker::orphan_recovery::test_clear_claim_helper' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::orphan_recovery::test_get_orphaned_jobs_method_exists stdout ----
+
+thread 'tests::workers::core_worker::orphan_recovery::test_get_orphaned_jobs_method_exists' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::orphan_recovery::test_multiple_job_types_orphan_detection stdout ----
+
+thread 'tests::workers::core_worker::orphan_recovery::test_multiple_job_types_orphan_detection' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::orphan_recovery::test_no_orphan_recovery_within_timeout stdout ----
+
+thread 'tests::workers::core_worker::orphan_recovery::test_no_orphan_recovery_within_timeout' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::orphan_recovery::test_only_locked_jobs_can_be_orphans stdout ----
+
+thread 'tests::workers::core_worker::orphan_recovery::test_only_locked_jobs_can_be_orphans' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::orphan_recovery::test_orphan_healing_workflow stdout ----
+
+thread 'tests::workers::core_worker::orphan_recovery::test_orphan_healing_workflow' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+---- tests::workers::core_worker::orphan_recovery::test_orphan_retry_counter_increment stdout ----
+
+thread 'tests::workers::core_worker::orphan_recovery::test_orphan_retry_counter_increment' panicked at orchestrator/src/tests/config.rs:581:70:
+error creating database client: DatabaseError(MongoError(Error { kind: ServerSelection { message: "Server selection timeout: No available servers. Topology: { Type: Unknown, Servers: [ { Address: localhost:27017, Type: Unknown, Error: Kind: I/O error: Connection refused (os error 61), labels: {} } ] }" }, labels: {}, wire_version: None, source: None }))
+
+
+failures:
+    core::client::database::mongodb::tests::test_find_one_insert_and_delete
+    tests::workers::core_worker::basic::test_atomic_claim_single_orchestrator
+    tests::workers::core_worker::claiming::test_atomic_claim_multiple_orchestrators
+    tests::workers::core_worker::claiming::test_claim_oldest_first_within_priority
+    tests::workers::core_worker::claiming::test_claim_priority_pending_retry_first
+    tests::workers::core_worker::claiming::test_claim_respects_available_at
+    tests::workers::core_worker::claiming::test_claim_retained_during_processing
+    tests::workers::core_worker::claiming::test_no_claim_when_all_ineligible
+    tests::workers::core_worker::concurrency::test_claim_atomicity_with_delays
+    tests::workers::core_worker::concurrency::test_concurrent_claim_process_complete_cycle
+    tests::workers::core_worker::concurrency::test_concurrent_priority_maintained
+    tests::workers::core_worker::concurrency::test_high_concurrency_claim_race
+    tests::workers::core_worker::concurrency::test_multiple_orchestrators_claim_multiple_jobs
+    tests::workers::core_worker::concurrency::test_single_orchestrator_cannot_double_claim
+    tests::workers::core_worker::error_handling::test_claim_release_nonexistent_job_returns_error
+    tests::workers::core_worker::error_handling::test_claim_release_preserves_job_state
+    tests::workers::core_worker::error_handling::test_release_claim_with_processing_delay
+    tests::workers::core_worker::error_handling::test_release_claim_with_verification_delay
+    tests::workers::core_worker::error_handling::test_released_job_without_delay_immediately_available
+    tests::workers::core_worker::job_creation_caps::test_aggregator_job_cap_respected
+    tests::workers::core_worker::job_creation_caps::test_cap_counts_created_and_pending_retry
+    tests::workers::core_worker::job_creation_caps::test_completing_jobs_frees_cap_space
+    tests::workers::core_worker::job_creation_caps::test_locked_jobs_not_counted_in_cap
+    tests::workers::core_worker::job_creation_caps::test_proving_job_cap_respected
+    tests::workers::core_worker::job_creation_caps::test_snos_job_cap_respected
+    tests::workers::core_worker::orphan_recovery::test_clear_claim_helper
+    tests::workers::core_worker::orphan_recovery::test_get_orphaned_jobs_method_exists
+    tests::workers::core_worker::orphan_recovery::test_multiple_job_types_orphan_detection
+    tests::workers::core_worker::orphan_recovery::test_no_orphan_recovery_within_timeout
+    tests::workers::core_worker::orphan_recovery::test_only_locked_jobs_can_be_orphans
+    tests::workers::core_worker::orphan_recovery::test_orphan_healing_workflow
+    tests::workers::core_worker::orphan_recovery::test_orphan_retry_counter_increment
+
+test result: FAILED. 113 passed; 32 failed; 1 ignored; 0 measured; 0 filtered out; finished in 180.26s
+
+error: test failed, to rerun pass `-p orchestrator --lib`
