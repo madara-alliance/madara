@@ -1,12 +1,11 @@
 pub mod helpers;
 
+use self::helpers::{record_metrics, ToDocument};
 use crate::core::client::database::error::DatabaseError;
-use crate::core::client::database::mongodb::helpers::{record_metrics, ToDocument};
-use async_trait::async_trait;
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Document};
-use mongodb::options::{FindOneAndUpdateOptions, FindOptions, IndexModel, UpdateOptions};
-use mongodb::{bson, Client, Collection, Database};
+use mongodb::options::{FindOneAndUpdateOptions, FindOptions, UpdateOptions};
+use mongodb::{bson, Client, Collection, Database, IndexModel};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::sync::Arc;
@@ -179,7 +178,7 @@ impl MongoClient {
             let cursor = self.collection::<T>(collection).aggregate(pipeline, None).await?;
 
             let results: Vec<R> = cursor
-                .map_err(|e| DatabaseError::QueryExecutionError(e.to_string()))
+                .map_err(|e| DatabaseError::MongoError(e))
                 .and_then(|doc| async move {
                     bson::from_document(doc).map_err(|e| DatabaseError::FailedToSerializeDocument(e.to_string()))
                 })

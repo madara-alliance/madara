@@ -1,6 +1,8 @@
 pub mod constant;
 pub mod error;
+pub mod mongo_client;
 pub mod mongodb;
+pub mod repository;
 
 use crate::types::batch::{
     AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
@@ -555,3 +557,11 @@ pub trait DatabaseClient: Send + Sync {
     /// * `Err(DatabaseError)` - If the health check fails
     async fn health_check(&self) -> Result<(), DatabaseError>;
 }
+
+// Re-export repository traits and implementations for easier access
+pub use repository::{
+    BatchRepository, JobRepository, MongoBatchRepository, MongoJobRepository, MongoWorkerRepository, WorkerRepository,
+};
+
+#[cfg(test)]
+pub use repository::{MockBatchRepository, MockJobRepository, MockWorkerRepository};

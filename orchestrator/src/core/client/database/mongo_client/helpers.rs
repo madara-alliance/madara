@@ -1,4 +1,4 @@
-use mongodb::bson::{Bson, Document};
+use mongodb::bson::{self, Bson, Document};
 use serde::Serialize;
 use std::future::Future;
 use std::time::Instant;

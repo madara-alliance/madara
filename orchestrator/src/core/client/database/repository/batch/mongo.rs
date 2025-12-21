@@ -10,8 +10,8 @@ use crate::core::client::database::constant::{
     AGGREGATOR_BATCHES_COLLECTION, JOBS_COLLECTION, SNOS_BATCHES_COLLECTION,
 };
 use crate::core::client::database::error::DatabaseError;
-use crate::core::client::database::mongodb::helpers::ToDocument;
-use crate::core::client::database::mongodb::MongoClient;
+use crate::core::client::database::mongo_client::helpers::ToDocument;
+use crate::core::client::database::mongo_client::MongoClient;
 use crate::types::batch::{
     AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatch, SnosBatchStatus, SnosBatchUpdates,
 };
@@ -126,7 +126,7 @@ impl BatchRepository for MongoBatchRepository {
             doc! { "$sort": { "index": 1 } },
         ];
 
-        self.client.aggregate(SNOS_BATCHES_COLLECTION, pipeline).await
+        self.client.aggregate::<SnosBatch, SnosBatch>(SNOS_BATCHES_COLLECTION, pipeline).await
     }
 
     async fn update_snos_batch_status(&self, index: u64, status: SnosBatchStatus) -> Result<SnosBatch, DatabaseError> {
@@ -191,7 +191,8 @@ impl BatchRepository for MongoBatchRepository {
             doc! { "$limit": 1 },
         ];
 
-        let mut results: Vec<SnosBatch> = self.client.aggregate(SNOS_BATCHES_COLLECTION, pipeline).await?;
+        let mut results: Vec<SnosBatch> =
+            self.client.aggregate::<SnosBatch, SnosBatch>(SNOS_BATCHES_COLLECTION, pipeline).await?;
 
         Ok(results.pop())
     }

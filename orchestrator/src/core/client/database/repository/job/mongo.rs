@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
-use mongodb::bson::{doc, Bson, Document};
+use mongodb::bson::{self, doc, Bson, Document};
 use mongodb::options::{FindOneAndUpdateOptions, FindOptions, ReturnDocument};
 use std::sync::Arc;
 use tracing::{debug, warn};
@@ -9,8 +9,8 @@ use uuid::Uuid;
 use super::r#trait::JobRepository;
 use crate::core::client::database::constant::JOBS_COLLECTION;
 use crate::core::client::database::error::DatabaseError;
-use crate::core::client::database::mongodb::helpers::ToDocument;
-use crate::core::client::database::mongodb::MongoClient;
+use crate::core::client::database::mongo_client::helpers::ToDocument;
+use crate::core::client::database::mongo_client::MongoClient;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -65,7 +65,7 @@ impl JobRepository for MongoJobRepository {
             "version": current_job.version,
         };
 
-        let mut updates = update.to_document()?;
+        let updates = update.to_document()?;
 
         // Separate $set and $unset operations
         let mut set_doc = Document::new();
@@ -107,7 +107,7 @@ impl JobRepository for MongoJobRepository {
             doc! { "$project": { "numeric_id": 0 } },
         ];
 
-        let results: Vec<JobItem> = self.client.aggregate(JOBS_COLLECTION, pipeline).await?;
+        let results: Vec<JobItem> = self.client.aggregate::<JobItem, JobItem>(JOBS_COLLECTION, pipeline).await?;
 
         Ok(results.into_iter().next())
     }
@@ -128,7 +128,7 @@ impl JobRepository for MongoJobRepository {
             doc! { "$limit": 1 },
         ];
 
-        let results: Vec<JobItem> = self.client.aggregate(JOBS_COLLECTION, pipeline).await?;
+        let results: Vec<JobItem> = self.client.aggregate::<JobItem, JobItem>(JOBS_COLLECTION, pipeline).await?;
 
         Ok(results.into_iter().next())
     }
@@ -296,6 +296,6 @@ impl JobRepository for MongoJobRepository {
             doc! { "$sort": { "created_at": 1 } },
         ];
 
-        self.client.aggregate(JOBS_COLLECTION, pipeline).await
+        self.client.aggregate::<JobItem, JobItem>(JOBS_COLLECTION, pipeline).await
     }
 }

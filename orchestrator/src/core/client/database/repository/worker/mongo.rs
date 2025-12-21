@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
-use mongodb::bson::{doc, Bson};
+use mongodb::bson::{self, doc, Bson};
 use mongodb::options::{FindOneAndUpdateOptions, FindOptions, ReturnDocument};
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
@@ -9,7 +9,7 @@ use uuid::Uuid;
 use super::r#trait::WorkerRepository;
 use crate::core::client::database::constant::JOBS_COLLECTION;
 use crate::core::client::database::error::DatabaseError;
-use crate::core::client::database::mongodb::MongoClient;
+use crate::core::client::database::mongo_client::MongoClient;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::types::{JobStatus, JobType};
 
