@@ -13,7 +13,7 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::params::database::DatabaseArgs;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use async_trait::async_trait;
-use chrono::{SubsecRound, Utc};
+use chrono::{DateTime, SubsecRound, Utc};
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{
@@ -518,6 +518,15 @@ impl DatabaseClient for MongoDbClient {
         let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
 
         let mut updates = update.to_document()?;
+
+        // Fix: Convert DateTime string to BSON DateTime for proper MongoDB comparison
+        // When chrono::DateTime is serialized via bson::to_bson(), it becomes a String
+        // but MongoDB's $lte operator needs a proper BSON DateTime for comparison
+        if let Some(Bson::String(datetime_str)) = updates.get("available_at") {
+            if let Ok(dt) = datetime_str.parse::<DateTime<Utc>>() {
+                updates.insert("available_at", Bson::DateTime(dt.into()));
+            }
+        }
 
         // Separate null and non-null values
         let mut non_null_updates = Document::new();
