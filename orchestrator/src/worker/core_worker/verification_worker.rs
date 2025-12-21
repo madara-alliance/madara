@@ -93,8 +93,6 @@ impl VerificationWorker {
     ///
     /// Returns Ok(true) if a job was verified, Ok(false) if no jobs available
     async fn poll_and_verify(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        info!("poll_and_verify is being called");
-
         // Count current LockedForVerification jobs for this type claimed by this orchestrator
         let current_count =
             self.config.database().count_claimed_jobs_by_type(&self.orchestrator_id, &self.job_type).await?;
