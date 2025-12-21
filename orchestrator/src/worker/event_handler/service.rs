@@ -11,6 +11,7 @@ use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
+use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
@@ -21,6 +22,7 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::utils::metrics_recorder::MetricsRecorder;
 #[double]
 use crate::worker::event_handler::factory::factory;
+use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::event_handler::triggers::aggregator::AggregatorJobTrigger;
 use crate::worker::event_handler::triggers::aggregator_batching::AggregatorBatchingTrigger;
 use crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger;
@@ -174,8 +176,9 @@ impl JobHandlerService {
     ///
     /// # State Transitions
     /// * `Created` -> `LockedForProcessing` -> `Processed`
-    /// * `VerificationFailed` -> `LockedForProcessing` -> `Processed`
     /// * `PendingRetryProcessing` -> `LockedForProcessing` -> `Processed`
+    /// * On failure with retries left: -> `PendingRetryProcessing`
+    /// * On failure without retries: -> `ProcessingFailed`
     ///
     /// # Metrics
     /// * Updates block gauge
@@ -183,7 +186,7 @@ impl JobHandlerService {
     /// * Tracks job response time
     ///
     /// # Notes
-    /// * Only processes jobs in Created, VerificationFailed, or PendingRetryProcessing status
+    /// * Only processes jobs in Created or PendingRetryProcessing status
     /// * Updates the job version to prevent concurrent processing
     /// * Adds processing completion timestamp to metadata
     /// * Automatically adds the job to verification queue upon successful processing
@@ -207,13 +210,19 @@ impl JobHandlerService {
         MetricsRecorder::record_job_processing_started(&job, queue_wait_time);
 
         debug!(job_id = ?id, status = ?job.status, "Current job status");
+
+        // Status validation: only accept Created or PendingRetryProcessing
         match job.status {
-            // Only Created and PendingRetryProcessing jobs can be processed
-            JobStatus::Created | JobStatus::PendingRetryProcessing => {
-                // Record retry if this is a manual retry
-                if job.status == JobStatus::PendingRetryProcessing {
-                    MetricsRecorder::record_job_retry(&job, &job.status.to_string());
-                }
+            JobStatus::Created => {
+                debug!(job_id = ?id, "Processing new job");
+            }
+            JobStatus::PendingRetryProcessing => {
+                info!(
+                    job_id = ?id,
+                    attempt = job.metadata.common.process_attempt_no + 1,
+                    "Processing retry for job"
+                );
+                MetricsRecorder::record_job_retry(&job, &job.status.to_string());
             }
             _ => {
                 warn!(
@@ -236,10 +245,9 @@ impl JobHandlerService {
             return Ok(());
         }
 
-        // This updates the version of the job.
-        // This ensures that if another thread was about to process the same job,
-        // it would fail to update the job in the database because the version would be outdated
+        // Prepare metadata updates for atomic claim
         job.metadata.common.process_started_at = Some(Utc::now());
+        job.metadata.common.process_attempt_no += 1;
 
         // Record state transition
         ORCHESTRATOR_METRICS.job_state_transitions.add(
@@ -307,55 +315,13 @@ impl JobHandlerService {
                     "Failed to process job"
                 );
 
-                // Check if we should retry based on max_process_attempts
-                job.metadata.common.process_attempt_no += 1;
-
-                if job.metadata.common.process_attempt_no < job_handler.max_process_attempts() {
-                    // Still have retries left - move to PendingRetryProcessing
-                    info!(
-                        job_id = ?id,
-                        attempt = job.metadata.common.process_attempt_no,
-                        max_attempts = job_handler.max_process_attempts(),
-                        "Processing failed. Retrying job"
-                    );
-
-                    job.metadata.common.failure_reason = Some(format!("Processing failed: {}", e));
-
-                    config
-                        .database()
-                        .update_job(
-                            &job,
-                            JobItemUpdates::new()
-                                .update_status(JobStatus::PendingRetryProcessing)
-                                .update_metadata(job.metadata.clone())
-                                .clear_claim()
-                                .build(),
-                        )
-                        .await
-                        .map_err(|e| {
-                            error!(job_id = ?id, error = ?e, "Failed to update job to PendingRetryProcessing");
-                            JobError::from(e)
-                        })?;
-
-                    // Note: No need to queue - workers poll MongoDB directly for PendingRetryProcessing jobs
-
-                    return Ok(());
-                } else {
-                    // Max retries reached - move to Failed
-                    warn!(
-                        job_id = ?id,
-                        attempts = job.metadata.common.process_attempt_no,
-                        "Max process attempts reached. Job will not be retried"
-                    );
-
-                    MetricsRecorder::record_job_abandoned(&job, job.metadata.common.process_attempt_no as i32);
-                    return JobService::move_job_to_failed(
-                        &job,
-                        config.clone(),
-                        format!("Processing failed after {} attempts: {}", job.metadata.common.process_attempt_no, e),
-                    )
-                    .await;
-                }
+                return Self::handle_processing_failure(
+                    &job,
+                    &job_handler,
+                    config.clone(),
+                    format!("Processing failed: {}", e),
+                )
+                .await;
             }
             Err(panic) => {
                 let panic_msg = panic
@@ -366,65 +332,15 @@ impl JobHandlerService {
 
                 error!(job_id = ?id, panic_msg = %panic_msg, "Job handler panicked during processing");
 
-                // Check if we should retry based on max_process_attempts
-                job.metadata.common.process_attempt_no += 1;
-
-                if job.metadata.common.process_attempt_no < job_handler.max_process_attempts() {
-                    // Still have retries left - move to PendingRetryProcessing
-                    warn!(
-                        job_id = ?id,
-                        attempt = job.metadata.common.process_attempt_no,
-                        max_attempts = job_handler.max_process_attempts(),
-                        panic_msg = %panic_msg,
-                        "Job handler panicked. Retrying job"
-                    );
-
-                    job.metadata.common.failure_reason = Some(format!("Panic: {}", panic_msg));
-
-                    config
-                        .database()
-                        .update_job(
-                            &job,
-                            JobItemUpdates::new()
-                                .update_status(JobStatus::PendingRetryProcessing)
-                                .update_metadata(job.metadata.clone())
-                                .clear_claim()
-                                .build(),
-                        )
-                        .await
-                        .map_err(|e| {
-                            error!(job_id = ?id, error = ?e, "Failed to update job to PendingRetryProcessing");
-                            JobError::from(e)
-                        })?;
-
-                    // Note: No need to queue - workers poll MongoDB directly for PendingRetryProcessing jobs
-
-                    return Ok(());
-                } else {
-                    // Max retries reached - move to Failed
-                    warn!(
-                        job_id = ?id,
-                        attempts = job.metadata.common.process_attempt_no,
-                        panic_msg = %panic_msg,
-                        "Max process attempts reached after panic. Job will not be retried"
-                    );
-
-                    MetricsRecorder::record_job_abandoned(&job, job.metadata.common.process_attempt_no as i32);
-                    return JobService::move_job_to_failed(
-                        &job,
-                        config.clone(),
-                        format!(
-                            "Job handler panicked after {} attempts: {}",
-                            job.metadata.common.process_attempt_no, panic_msg
-                        ),
-                    )
-                    .await;
-                }
+                return Self::handle_processing_failure(
+                    &job,
+                    &job_handler,
+                    config.clone(),
+                    format!("Panic: {}", panic_msg),
+                )
+                .await;
             }
         };
-
-        // Process attempt counter already incremented in success path (not in error paths)
-        job.metadata.common.process_attempt_no += 1;
 
         // MULTI-ORCHESTRATOR FIX: Clear claim when moving to Processed
         // This allows any orchestrator to claim it for verification
@@ -511,9 +427,11 @@ impl JobHandlerService {
     /// * `Result<(), JobError>` - Success or an error
     ///
     /// # State Transitions
-    /// * `Processed` -> `Completed` (on successful verification)
-    /// * `Processed` -> `VerificationFailed` (on verification rejection)
-    /// * `Processed` -> `PendingRetryVerification` (max attempts reached)
+    /// * `Processed` -> `LockedForVerification` -> `Completed` (on successful verification)
+    /// * `PendingRetryVerification` -> `LockedForVerification` -> `Completed` (on retry success)
+    /// * On VerificationStatus::Rejected: -> `VerificationFailed` (terminal)
+    /// * On VerificationStatus::Pending with retries left: -> `Processed` (requeue)
+    /// * On VerificationStatus::Pending max retries: -> `PendingRetryVerification`
     ///
     /// # Metrics
     /// * Records verification time if the processing completion timestamp exists
@@ -522,8 +440,8 @@ impl JobHandlerService {
     ///
     /// # Notes
     /// * Only jobs in `Processed` or `PendingRetryVerification` status can be verified
-    /// * Automatically retries processing if verification fails and the max attempts are not reached
-    /// * Removes processing_finished_at from metadata upon successful verification
+    /// * Atomically claims job by setting `LockedForVerification` status
+    /// * Clears claimed_by on completion, rejection, or when moving back to Processed
     pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
@@ -533,10 +451,20 @@ impl JobHandlerService {
         }
         debug!(log_type = "starting", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job started for block");
 
+        // Generate a unique orchestrator ID for this verification attempt
+        let orchestrator_id = format!("orchestrator-{}", uuid::Uuid::new_v4());
+
+        // Status validation: only accept Processed or PendingRetryVerification
         match job.status {
-            // Jobs with `PendingRetryVerification` will be retired manually after resetting verification attempt number to 0.
-            JobStatus::Processed | JobStatus::PendingRetryVerification => {
-                debug!(job_id = ?id, status = ?job.status, "Proceeding with verification");
+            JobStatus::Processed => {
+                debug!(job_id = ?id, "Verifying processed job");
+            }
+            JobStatus::PendingRetryVerification => {
+                info!(
+                    job_id = ?id,
+                    attempt = job.metadata.common.verification_attempt_no + 1,
+                    "Verifying retry for job"
+                );
             }
             _ => {
                 error!(job_id = ?id, status = ?job.status, "Invalid job status for verification");
@@ -546,19 +474,46 @@ impl JobHandlerService {
 
         let job_handler = factory::get_job_handler(&job.job_type).await;
 
+        // Prepare metadata updates for atomic claim
         job.metadata.common.verification_started_at = Some(Utc::now());
+        job.metadata.common.verification_attempt_no += 1;
 
         // Record verification started
         MetricsRecorder::record_verification_started(&job);
 
+        // Record state transition
+        ORCHESTRATOR_METRICS.job_state_transitions.add(
+            1.0,
+            &[
+                KeyValue::new("from_state", job.status.to_string()),
+                KeyValue::new("to_state", JobStatus::LockedForVerification.to_string()),
+                KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
+            ],
+        );
+
+        // Atomically claim the job for verification
         let mut job = config
             .database()
-            .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
+            .update_job(
+                &job,
+                JobItemUpdates::new()
+                    .update_status(JobStatus::LockedForVerification)
+                    .update_claimed_by(Some(orchestrator_id.clone()))
+                    .update_metadata(job.metadata.clone())
+                    .build(),
+            )
             .await
-            .map_err(|e| {
-                error!(job_id = ?id, error = ?e, "Failed to update job status");
-                e
+            .inspect_err(|e| {
+                error!(job_id = ?id, error = ?e, "Failed to claim job for verification (likely another worker claimed it)");
             })?;
+
+        info!(
+            job_id = ?id,
+            job_type = ?job.job_type,
+            orchestrator_id = %orchestrator_id,
+            from_status = "Processed/PendingRetryVerification",
+            "Atomically claimed job for verification"
+        );
 
         let verification_status = job_handler.verify_job(config.clone(), &mut job).await?;
         Span::current().record("verification_status", format!("{:?}", &verification_status));
@@ -572,7 +527,7 @@ impl JobHandlerService {
 
         match verification_status {
             JobVerificationStatus::Verified => {
-                // Calculate verification time if processing completion timestamp exists
+                // Calculate verification time if verification started timestamp exists
                 if let Some(verification_time) = job.metadata.common.verification_started_at {
                     let time_taken = (Utc::now() - verification_time).num_milliseconds();
                     ORCHESTRATOR_METRICS.verification_time.record(
@@ -580,10 +535,10 @@ impl JobHandlerService {
                         &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))],
                     );
                 } else {
-                    warn!("Failed to calculate verification time: Missing processing completion timestamp");
+                    warn!("Failed to calculate verification time: Missing verification started timestamp");
                 }
 
-                // Update verification completed timestamp and update status
+                // Update verification completed timestamp
                 job.metadata.common.verification_completed_at = Some(Utc::now());
 
                 // Record E2E latency and completion
@@ -593,15 +548,15 @@ impl JobHandlerService {
                 // Check SLA compliance (example: 5 minute SLA)
                 MetricsRecorder::check_and_record_sla_breach(&job, 300, "e2e_time");
 
-                // MULTI-ORCHESTRATOR FIX: Clear claim when job completes
+                // Update to Completed and clear claim
                 config
                     .database()
                     .update_job(
                         &job,
                         JobItemUpdates::new()
-                            .update_metadata(job.metadata.clone())
                             .update_status(JobStatus::Completed)
-                            .clear_claim() // Clear worker mode claim on completion
+                            .update_metadata(job.metadata.clone())
+                            .clear_claim()
                             .build(),
                     )
                     .await
@@ -614,7 +569,7 @@ impl JobHandlerService {
                     job_id = ?id,
                     job_type = ?job.job_type,
                     external_id = ?job.external_id,
-                    from_status = ?JobStatus::Processed,
+                    from_status = ?JobStatus::LockedForVerification,
                     "Updating status of {:?} job {} to {}", job.job_type, job.internal_id, JobStatus::Completed
                 );
 
@@ -630,7 +585,7 @@ impl JobHandlerService {
                 operation_job_status = Some(JobStatus::Completed);
             }
             JobVerificationStatus::Rejected(e) => {
-                error!(job_id = ?id, error = ?e, "Job verification rejected");
+                error!(job_id = ?id, error = ?e, "Job verification rejected - moving to terminal VerificationFailed state");
 
                 // Update metadata with error information
                 job.metadata.common.failure_reason = Some(e.clone());
@@ -639,62 +594,45 @@ impl JobHandlerService {
                 // Record job failure
                 MetricsRecorder::record_job_failed(&job, &e);
 
-                if job.metadata.common.process_attempt_no < job_handler.max_process_attempts() {
-                    info!(
-                        job_id = ?id,
-                        attempt = job.metadata.common.process_attempt_no + 1,
-                        "Verification failed. Retrying job processing"
-                    );
-
-                    // MULTI-ORCHESTRATOR FIX: Clear claim when moving to VerificationFailed
-                    config
-                        .database()
-                        .update_job(
-                            &job,
-                            JobItemUpdates::new()
-                                .update_status(JobStatus::VerificationFailed)
-                                .update_metadata(job.metadata.clone())
-                                .clear_claim() // Clear worker mode claim for retry
-                                .build(),
-                        )
-                        .await
-                        .map_err(|e| {
-                            error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationFailed");
-                            e
-                        })?;
-                    // Note: No need to queue - workers poll MongoDB directly for VerificationFailed jobs
-                } else {
-                    warn!(job_id = ?id, "Max process attempts reached. Job will not be retried");
-
-                    // Record job abandoned after max retries
-                    let retry_count = job.metadata.common.process_attempt_no;
-                    MetricsRecorder::record_job_abandoned(&job, retry_count as i32);
-                    return JobService::move_job_to_failed(
+                // Verification rejection is terminal - move to VerificationFailed
+                config
+                    .database()
+                    .update_job(
                         &job,
-                        config.clone(),
-                        format!(
-                            "Verification rejected. Max process attempts reached: {}",
-                            job.metadata.common.process_attempt_no
-                        ),
+                        JobItemUpdates::new()
+                            .update_status(JobStatus::VerificationFailed)
+                            .update_metadata(job.metadata.clone())
+                            .clear_claim()
+                            .build(),
                     )
-                    .await;
-                }
+                    .await
+                    .map_err(|e| {
+                        error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationFailed");
+                        e
+                    })?;
+
+                info!(
+                    job_id = ?id,
+                    job_type = ?job.job_type,
+                    "Job moved to VerificationFailed (terminal state) after verification rejection"
+                );
             }
             JobVerificationStatus::Pending => {
                 if job.metadata.common.verification_attempt_no >= job_handler.max_verification_attempts() {
-                    warn!(job_id = ?id, "Max verification attempts reached. Marking job as timed out");
+                    warn!(job_id = ?id, "Max verification attempts reached. Moving to PendingRetryVerification");
 
                     // Record timeout metric
                     MetricsRecorder::record_job_timeout(&job);
 
-                    // MULTI-ORCHESTRATOR FIX: Clear claim when timeout occurs
+                    // Move to PendingRetryVerification and clear claim
                     config
                         .database()
                         .update_job(
                             &job,
                             JobItemUpdates::new()
                                 .update_status(JobStatus::PendingRetryVerification)
-                                .clear_claim() // Clear worker mode claim
+                                .update_metadata(job.metadata.clone())
+                                .clear_claim()
                                 .build(),
                         )
                         .await
@@ -704,19 +642,33 @@ impl JobHandlerService {
                         })?;
                     operation_job_status = Some(JobStatus::PendingRetryVerification);
                 } else {
-                    // Increment verification attempts
-                    job.metadata.common.verification_attempt_no += 1;
+                    // Still pending - move back to Processed and clear claim for retry
+                    debug!(
+                        job_id = ?id,
+                        attempt = job.metadata.common.verification_attempt_no,
+                        "Verification still pending, moving back to Processed for retry"
+                    );
+
+                    // Calculate available_at time (60 seconds from now)
+                    let available_at = Utc::now() + chrono::Duration::seconds(60);
 
                     config
                         .database()
-                        .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
+                        .update_job(
+                            &job,
+                            JobItemUpdates::new()
+                                .update_status(JobStatus::Processed)
+                                .update_metadata(job.metadata.clone())
+                                .clear_claim()
+                                .build(),
+                        )
                         .await
                         .map_err(|e| {
-                            error!(job_id = ?id, error = ?e, "Failed to update job metadata");
+                            error!(job_id = ?id, error = ?e, "Failed to update job back to Processed");
                             JobError::from(e)
                         })?;
 
-                    debug!(job_id = ?id, "Adding job back to verification queue");
+                    debug!(job_id = ?id, available_at = %available_at, "Adding job back to verification queue");
                     JobService::add_job_to_verify_queue(
                         config.clone(),
                         job.id,
@@ -849,6 +801,180 @@ impl JobHandlerService {
             block_no = %internal_id,
             "Successfully marked job for retry"
         );
+
+        Ok(())
+    }
+
+    /// Helper function to handle processing failures.
+    /// Determines whether to retry or mark as permanently failed based on attempt count.
+    ///
+    /// # Arguments
+    /// * `job` - The job that failed
+    /// * `job_handler` - Handler for this job type (provides max_process_attempts)
+    /// * `config` - Shared configuration
+    /// * `failure_reason` - Description of why processing failed
+    ///
+    /// # Returns
+    /// * `Result<(), JobError>` - Always returns Ok after handling the failure
+    ///
+    /// # State Transitions
+    /// * If retries left: -> `PendingRetryProcessing`
+    /// * If max retries exhausted: -> `ProcessingFailed` (terminal)
+    async fn handle_processing_failure(
+        job: &JobItem,
+        job_handler: &Box<dyn JobHandlerTrait>,
+        config: Arc<Config>,
+        failure_reason: String,
+    ) -> Result<(), JobError> {
+        let mut job = job.clone();
+        job.metadata.common.failure_reason = Some(failure_reason.clone());
+
+        if job.metadata.common.process_attempt_no < job_handler.max_process_attempts() {
+            // Still have retries left - move to PendingRetryProcessing
+            info!(
+                job_id = ?job.id,
+                attempt = job.metadata.common.process_attempt_no,
+                max_attempts = job_handler.max_process_attempts(),
+                "Processing failed. Retrying job"
+            );
+
+            config
+                .database()
+                .update_job(
+                    &job,
+                    JobItemUpdates::new()
+                        .update_status(JobStatus::PendingRetryProcessing)
+                        .update_metadata(job.metadata.clone())
+                        .clear_claim()
+                        .build(),
+                )
+                .await
+                .map_err(|e| {
+                    error!(job_id = ?job.id, error = ?e, "Failed to update job to PendingRetryProcessing");
+                    JobError::from(e)
+                })?;
+
+            // Note: No need to queue - workers poll MongoDB directly for PendingRetryProcessing jobs
+        } else {
+            // Max retries reached - move to ProcessingFailed (terminal state)
+            warn!(
+                job_id = ?job.id,
+                attempts = job.metadata.common.process_attempt_no,
+                "Max process attempts reached. Moving to ProcessingFailed (terminal state)"
+            );
+
+            MetricsRecorder::record_job_abandoned(&job, job.metadata.common.process_attempt_no as i32);
+
+            config
+                .database()
+                .update_job(
+                    &job,
+                    JobItemUpdates::new()
+                        .update_status(JobStatus::ProcessingFailed)
+                        .update_metadata(job.metadata.clone())
+                        .clear_claim()
+                        .build(),
+                )
+                .await
+                .map_err(|e| {
+                    error!(job_id = ?job.id, error = ?e, "Failed to update job to ProcessingFailed");
+                    JobError::from(e)
+                })?;
+
+            info!(
+                job_id = ?job.id,
+                job_type = ?job.job_type,
+                "Job moved to ProcessingFailed after {} attempts",
+                job.metadata.common.process_attempt_no
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Helper function to handle verification failures.
+    /// Determines whether to retry or mark as permanently failed based on attempt count.
+    ///
+    /// # Arguments
+    /// * `job` - The job that failed verification
+    /// * `job_handler` - Handler for this job type (provides max_verification_attempts)
+    /// * `config` - Shared configuration
+    /// * `failure_reason` - Description of why verification failed
+    ///
+    /// # Returns
+    /// * `Result<(), JobError>` - Always returns Ok after handling the failure
+    ///
+    /// # State Transitions
+    /// * If retries left: -> `PendingRetryVerification`
+    /// * If max retries exhausted: -> `VerificationFailed` (terminal)
+    async fn handle_verification_failure(
+        job: &JobItem,
+        job_handler: &Box<dyn JobHandlerTrait>,
+        config: Arc<Config>,
+        failure_reason: String,
+    ) -> Result<(), JobError> {
+        let mut job = job.clone();
+        job.metadata.common.failure_reason = Some(failure_reason.clone());
+
+        if job.metadata.common.verification_attempt_no < job_handler.max_verification_attempts() {
+            // Still have retries left - move to PendingRetryVerification
+            info!(
+                job_id = ?job.id,
+                attempt = job.metadata.common.verification_attempt_no,
+                max_attempts = job_handler.max_verification_attempts(),
+                "Verification failed. Retrying job"
+            );
+
+            config
+                .database()
+                .update_job(
+                    &job,
+                    JobItemUpdates::new()
+                        .update_status(JobStatus::PendingRetryVerification)
+                        .update_metadata(job.metadata.clone())
+                        .clear_claim()
+                        .build(),
+                )
+                .await
+                .map_err(|e| {
+                    error!(job_id = ?job.id, error = ?e, "Failed to update job to PendingRetryVerification");
+                    JobError::from(e)
+                })?;
+
+            // Note: No need to queue - workers poll MongoDB directly for PendingRetryVerification jobs
+        } else {
+            // Max retries reached - move to VerificationFailed (terminal state)
+            warn!(
+                job_id = ?job.id,
+                attempts = job.metadata.common.verification_attempt_no,
+                "Max verification attempts reached. Moving to VerificationFailed (terminal state)"
+            );
+
+            MetricsRecorder::record_job_abandoned(&job, job.metadata.common.verification_attempt_no as i32);
+
+            config
+                .database()
+                .update_job(
+                    &job,
+                    JobItemUpdates::new()
+                        .update_status(JobStatus::VerificationFailed)
+                        .update_metadata(job.metadata.clone())
+                        .clear_claim()
+                        .build(),
+                )
+                .await
+                .map_err(|e| {
+                    error!(job_id = ?job.id, error = ?e, "Failed to update job to VerificationFailed");
+                    JobError::from(e)
+                })?;
+
+            info!(
+                job_id = ?job.id,
+                job_type = ?job.job_type,
+                "Job moved to VerificationFailed after {} attempts",
+                job.metadata.common.verification_attempt_no
+            );
+        }
 
         Ok(())
     }
