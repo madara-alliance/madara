@@ -2,7 +2,8 @@
 ///
 /// Spawns and manages a worker for each configured job type.
 use super::config::WorkersConfig;
-use super::worker::Worker;
+use super::processing_worker::ProcessingWorker;
+use super::verification_worker::VerificationWorker;
 use crate::core::config::Config;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -28,41 +29,98 @@ impl WorkerController {
         info!(
             worker_count = self.workers_config.workers.len(),
             orchestrator_id = %self.workers_config.orchestrator_id,
-            "Starting worker controller"
+            "Starting worker controller with split processing/verification workers"
         );
 
         for (job_type, worker_config) in self.workers_config.workers.iter() {
-            let mut worker = Worker::new(
-                worker_config.clone(),
+            let job_type_name = format!("{:?}", job_type);
+            let job_type_clone = job_type.clone();
+
+            // Spawn ProcessingWorker for this job type
+            let mut processing_worker = ProcessingWorker::new(
+                job_type_clone.clone(),
                 self.config.clone(),
                 self.workers_config.orchestrator_id.clone(),
+                worker_config.max_concurrent_processing,
+                worker_config.poll_interval_ms,
                 self.shutdown_token.clone(),
             );
 
-            let job_type_name = format!("{:?}", job_type);
+            let processing_handle = tokio::spawn(async move {
+                info!(
+                    job_type = %job_type_name,
+                    worker_type = "processing",
+                    max_concurrent = processing_worker.max_concurrent,
+                    "Processing worker starting"
+                );
 
-            // Spawn worker as a background task
-            let handle = tokio::spawn(async move {
-                info!(job_type = %job_type_name, "Worker starting");
-
-                match worker.run().await {
+                match processing_worker.run().await {
                     Ok(()) => {
-                        info!(job_type = %job_type_name, "Worker stopped normally");
+                        info!(
+                            job_type = %job_type_name,
+                            worker_type = "processing",
+                            "Processing worker stopped normally"
+                        );
                     }
                     Err(e) => {
                         error!(
                             job_type = %job_type_name,
+                            worker_type = "processing",
                             error = %e,
-                            "Worker stopped with error"
+                            "Processing worker stopped with error"
                         );
                     }
                 }
             });
 
-            self.worker_handles.push(handle);
+            self.worker_handles.push(processing_handle);
+
+            // Spawn VerificationWorker for this job type
+            let job_type_name = format!("{:?}", job_type);
+            let mut verification_worker = VerificationWorker::new(
+                job_type_clone,
+                self.config.clone(),
+                self.workers_config.orchestrator_id.clone(),
+                worker_config.max_concurrent_verification,
+                worker_config.poll_interval_ms,
+                self.shutdown_token.clone(),
+            );
+
+            let verification_handle = tokio::spawn(async move {
+                info!(
+                    job_type = %job_type_name,
+                    worker_type = "verification",
+                    max_concurrent = verification_worker.max_concurrent,
+                    "Verification worker starting"
+                );
+
+                match verification_worker.run().await {
+                    Ok(()) => {
+                        info!(
+                            job_type = %job_type_name,
+                            worker_type = "verification",
+                            "Verification worker stopped normally"
+                        );
+                    }
+                    Err(e) => {
+                        error!(
+                            job_type = %job_type_name,
+                            worker_type = "verification",
+                            error = %e,
+                            "Verification worker stopped with error"
+                        );
+                    }
+                }
+            });
+
+            self.worker_handles.push(verification_handle);
         }
 
-        info!(worker_count = self.worker_handles.len(), "All workers started successfully");
+        info!(
+            total_workers = self.worker_handles.len(),
+            job_types = self.workers_config.workers.len(),
+            "All workers started successfully (2 workers per job type: processing + verification)"
+        );
 
         Ok(())
     }
