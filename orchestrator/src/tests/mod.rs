@@ -4,7 +4,7 @@ pub mod common;
 // pub mod compression;
 pub mod config;
 // pub mod data_storage;
-// pub mod database;
+pub mod database;
 // pub mod jobs;
 // pub mod queue;
 // pub mod server;
