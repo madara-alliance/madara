@@ -65,7 +65,12 @@ pub trait JobHandlerTrait: Send + Sync {
     fn max_process_attempts(&self) -> u64;
 
     /// Should return the maximum number of attempts to verify the job.
+    /// Each attempt will poll the external service with verification_polling_delay_seconds between attempts.
     fn max_verification_attempts(&self) -> u64;
+
+    /// Should return the number of seconds to wait between verification polling attempts.
+    /// Used when job is in LockedForVerification state to repeatedly check external service status.
+    fn verification_polling_delay_seconds(&self) -> u64;
 
     /// Check if external dependencies are ready before processing.
     ///

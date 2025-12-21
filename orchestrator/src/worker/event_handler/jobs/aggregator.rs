@@ -195,6 +195,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
     fn max_verification_attempts(&self) -> u64 {
         300
     }
+
+    fn verification_polling_delay_seconds(&self) -> u64 {
+        30
+    }
 }
 
 impl AggregatorJobHandler {

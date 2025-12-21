@@ -195,6 +195,10 @@ impl JobHandlerTrait for SnosJobHandler {
         1
     }
 
+    fn verification_polling_delay_seconds(&self) -> u64 {
+        1
+    }
+
     async fn check_ready_to_process(&self, config: Arc<Config>) -> Result<(), Duration> {
         let snos_url = &config.snos_config().rpc_for_snos;
 

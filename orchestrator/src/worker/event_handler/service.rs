@@ -233,7 +233,40 @@ impl JobHandlerService {
 
         info!("Verifying job {} ({:?})", job.internal_id, job.job_type);
 
-        let verification_status = job_handler.verify_job(config.clone(), &mut job).await?;
+        // Poll verification status with delays between attempts
+        let verification_status = loop {
+            let status = job_handler.verify_job(config.clone(), &mut job).await?;
+
+            match status {
+                JobVerificationStatus::Verified | JobVerificationStatus::Rejected(_) => {
+                    // Terminal states - exit loop
+                    break status;
+                }
+                JobVerificationStatus::Pending => {
+                    // Check if we've exhausted attempts
+                    if job.metadata.common.verification_attempt_no >= job_handler.max_verification_attempts() {
+                        warn!("Job {} max verification attempts reached", job.internal_id);
+                        break status;
+                    }
+
+                    // Wait before next poll
+                    let delay_secs = job_handler.verification_polling_delay_seconds();
+                    debug!(
+                        "Job {} verification pending, attempt {}/{}, waiting {}s before retry",
+                        job.internal_id,
+                        job.metadata.common.verification_attempt_no,
+                        job_handler.max_verification_attempts(),
+                        delay_secs
+                    );
+
+                    tokio::time::sleep(tokio::time::Duration::from_secs(delay_secs)).await;
+
+                    // Increment attempt counter for next iteration
+                    job.metadata.common.verification_attempt_no += 1;
+                }
+            }
+        };
+
         Span::current().record("verification_status", format!("{:?}", &verification_status));
 
         let final_status = match verification_status {
@@ -283,44 +316,26 @@ impl JobHandlerService {
             }
 
             JobVerificationStatus::Pending => {
-                if job.metadata.common.verification_attempt_no >= job_handler.max_verification_attempts() {
-                    warn!("Job {} max verification attempts reached", job.internal_id);
-                    MetricsRecorder::record_job_timeout(&job);
+                // Max attempts reached - mark for manual retry
+                warn!(
+                    "Job {} verification timed out after {} attempts",
+                    job.internal_id, job.metadata.common.verification_attempt_no
+                );
+                MetricsRecorder::record_job_timeout(&job);
 
-                    config
-                        .database()
-                        .update_job(
-                            &job,
-                            JobItemUpdates::new()
-                                .update_status(JobStatus::PendingRetryVerification)
-                                .update_metadata(job.metadata.clone())
-                                .clear_claim()
-                                .build(),
-                        )
-                        .await?;
+                config
+                    .database()
+                    .update_job(
+                        &job,
+                        JobItemUpdates::new()
+                            .update_status(JobStatus::PendingRetryVerification)
+                            .update_metadata(job.metadata.clone())
+                            .clear_claim()
+                            .build(),
+                    )
+                    .await?;
 
-                    Some(JobStatus::PendingRetryVerification)
-                } else {
-                    // Still pending - move back to Processed for retry
-                    debug!(
-                        "Job {} verification pending, attempt {}",
-                        job.internal_id, job.metadata.common.verification_attempt_no
-                    );
-
-                    config
-                        .database()
-                        .update_job(
-                            &job,
-                            JobItemUpdates::new()
-                                .update_status(JobStatus::Processed)
-                                .update_metadata(job.metadata.clone())
-                                .clear_claim()
-                                .build(),
-                        )
-                        .await?;
-
-                    None
-                }
+                Some(JobStatus::PendingRetryVerification)
             }
         };
 
