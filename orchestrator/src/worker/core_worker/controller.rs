@@ -155,9 +155,11 @@ impl WorkerController {
 }
 
 /// Helper function to create a worker controller with default configuration
+/// Workers are created based on the layer (L2 or L3) to avoid unnecessary database polling
 pub fn create_default_controller(config: Arc<Config>, shutdown_token: CancellationToken) -> WorkerController {
     use super::config::WorkerConfig;
     use crate::types::jobs::types::JobType;
+    use orchestrator_utils::layer::Layer;
 
     // Generate unique orchestrator ID
     let orchestrator_id = format!("orchestrator-{}", uuid::Uuid::new_v4());
@@ -165,15 +167,16 @@ pub fn create_default_controller(config: Arc<Config>, shutdown_token: Cancellati
     // Get service config for per-job-type limits
     let service_config = config.service_config();
     let poll_interval_ms = service_config.poll_interval_ms;
+    let layer = config.layer();
 
-    // Create configuration with all job types and their specific concurrency limits
+    // Create configuration with job types based on layer
     let mut workers_config = WorkersConfig::new(orchestrator_id, poll_interval_ms);
 
     // Default concurrency limits if not specified
     const DEFAULT_PROCESSING_LIMIT: usize = 10;
     const DEFAULT_VERIFICATION_LIMIT: usize = 5;
 
-    // SNOS jobs
+    // SNOS jobs - both L2 and L3
     let snos_config = WorkerConfig::new(JobType::SnosRun, poll_interval_ms)
         .with_max_concurrent_processing(
             service_config.max_concurrent_snos_jobs_processing.unwrap_or(DEFAULT_PROCESSING_LIMIT),
@@ -183,31 +186,39 @@ pub fn create_default_controller(config: Arc<Config>, shutdown_token: Cancellati
         );
     workers_config.add_worker(snos_config);
 
-    // Proving jobs
+    // Proving jobs - both L2 and L3
     let proving_config = WorkerConfig::new(JobType::ProofCreation, poll_interval_ms)
         .with_max_concurrent_processing(service_config.max_concurrent_proving_jobs_processing.unwrap_or(5))
         .with_max_concurrent_verification(service_config.max_concurrent_proving_jobs_verification.unwrap_or(3));
     workers_config.add_worker(proving_config);
 
-    // ProofRegistration jobs
-    let proof_registration_config = WorkerConfig::new(JobType::ProofRegistration, poll_interval_ms)
-        .with_max_concurrent_processing(service_config.max_concurrent_aggregator_jobs_processing.unwrap_or(3))
-        .with_max_concurrent_verification(service_config.max_concurrent_aggregator_jobs_verification.unwrap_or(2));
-    workers_config.add_worker(proof_registration_config);
+    // ProofRegistration jobs - L3 only
+    if *layer == Layer::L3 {
+        let proof_registration_config = WorkerConfig::new(JobType::ProofRegistration, poll_interval_ms)
+            .with_max_concurrent_processing(service_config.max_concurrent_aggregator_jobs_processing.unwrap_or(3))
+            .with_max_concurrent_verification(service_config.max_concurrent_aggregator_jobs_verification.unwrap_or(2));
+        workers_config.add_worker(proof_registration_config);
+    }
 
-    // Aggregator jobs
-    let aggregator_config = WorkerConfig::new(JobType::Aggregator, poll_interval_ms)
-        .with_max_concurrent_processing(service_config.max_concurrent_aggregator_jobs_processing.unwrap_or(3))
-        .with_max_concurrent_verification(service_config.max_concurrent_aggregator_jobs_verification.unwrap_or(2));
-    workers_config.add_worker(aggregator_config);
+    // Aggregator jobs - L2 only
+    if *layer == Layer::L2 {
+        let aggregator_config = WorkerConfig::new(JobType::Aggregator, poll_interval_ms)
+            .with_max_concurrent_processing(service_config.max_concurrent_aggregator_jobs_processing.unwrap_or(3))
+            .with_max_concurrent_verification(service_config.max_concurrent_aggregator_jobs_verification.unwrap_or(2));
+        workers_config.add_worker(aggregator_config);
+    }
 
-    // Data submission jobs
-    let data_submission_config = WorkerConfig::new(JobType::DataSubmission, poll_interval_ms)
-        .with_max_concurrent_processing(service_config.max_concurrent_data_submission_jobs_processing.unwrap_or(5))
-        .with_max_concurrent_verification(service_config.max_concurrent_data_submission_jobs_verification.unwrap_or(3));
-    workers_config.add_worker(data_submission_config);
+    // Data submission jobs - L3 only
+    if *layer == Layer::L3 {
+        let data_submission_config = WorkerConfig::new(JobType::DataSubmission, poll_interval_ms)
+            .with_max_concurrent_processing(service_config.max_concurrent_data_submission_jobs_processing.unwrap_or(5))
+            .with_max_concurrent_verification(
+                service_config.max_concurrent_data_submission_jobs_verification.unwrap_or(3),
+            );
+        workers_config.add_worker(data_submission_config);
+    }
 
-    // State transition jobs - always sequential (1 at a time for both processing and verification)
+    // State transition jobs - both L2 and L3, always sequential (1 at a time)
     let state_transition_config = WorkerConfig::new(JobType::StateTransition, poll_interval_ms)
         .with_max_concurrent_processing(1)
         .with_max_concurrent_verification(1);
@@ -215,6 +226,7 @@ pub fn create_default_controller(config: Arc<Config>, shutdown_token: Cancellati
 
     info!(
         orchestrator_id = %workers_config.orchestrator_id,
+        layer = ?layer,
         snos_processing = service_config.max_concurrent_snos_jobs_processing.unwrap_or(DEFAULT_PROCESSING_LIMIT),
         snos_verification = service_config.max_concurrent_snos_jobs_verification.unwrap_or(DEFAULT_VERIFICATION_LIMIT),
         proving_processing = service_config.max_concurrent_proving_jobs_processing.unwrap_or(5),
