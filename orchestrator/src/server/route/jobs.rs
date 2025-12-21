@@ -44,7 +44,7 @@ async fn handle_verify_job_request(
     // Record job_id in the current request span for consistent logging
     Span::current().record("job_id", tracing::field::display(job_id));
 
-    match JobService::queue_job_for_verification(job_id, config.clone()).await {
+    match JobService::requeue_for_verification(job_id, config.clone()).await {
         Ok(_) => {
             info!("Job queued for verification successfully");
             ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &[KeyValue::new("operation_type", "queue_verify")]);

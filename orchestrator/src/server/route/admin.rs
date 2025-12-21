@@ -16,14 +16,12 @@ use crate::core::config::Config;
 use crate::types::jobs::types::JobType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 
-/// Query parameters for filtering jobs by types
 #[derive(Debug, Deserialize)]
 pub struct JobTypeFilter {
     #[serde(default)]
     pub job_type: Vec<JobType>,
 }
 
-/// Response for bulk job operations
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BulkJobResponse {
     pub success_count: u64,
@@ -43,7 +41,6 @@ impl From<BulkJobResult> for BulkJobResponse {
     }
 }
 
-/// Admin operation descriptor for generic handler
 struct AdminOp {
     name: &'static str,
     metric_key: &'static str,
@@ -51,7 +48,6 @@ struct AdminOp {
     success_msg: &'static str,
 }
 
-/// Generic admin handler that reduces code duplication
 async fn handle_admin_op<F, Fut>(
     config: Arc<Config>,
     filter: JobTypeFilter,
@@ -63,28 +59,25 @@ where
     Fut: std::future::Future<Output = Result<BulkJobResult, crate::error::job::JobError>>,
 {
     if !config.server_config().admin_enabled {
-        error!("Admin endpoints are disabled");
         return Err(JobRouteError::ProcessingError(
-            "Admin endpoints are disabled. Enable with --admin-enabled flag.".to_string(),
+            "Admin endpoints disabled. Enable with --admin-enabled flag.".to_string(),
         ));
     }
 
-    info!(job_types = ?filter.job_type, "Admin: {} request received", op.name);
+    info!(job_types = ?filter.job_type, "Admin: {}", op.name);
 
     match service_fn(filter.job_type.clone(), config).await {
         Ok(result) => {
-            info!(success = result.success_count, failed = result.failed_count, job_types = ?filter.job_type, "Admin: Completed {}", op.name);
+            info!(success = result.success_count, failed = result.failed_count, "Admin: {} completed", op.name);
 
-            ORCHESTRATOR_METRICS.successful_job_operations.add(
-                result.success_count as f64,
-                &[KeyValue::new("operation_type", op.metric_key), KeyValue::new("admin", "true")],
-            );
+            ORCHESTRATOR_METRICS
+                .successful_job_operations
+                .add(result.success_count as f64, &[KeyValue::new("operation_type", op.metric_key)]);
 
             if result.failed_count > 0 {
-                ORCHESTRATOR_METRICS.failed_job_operations.add(
-                    result.failed_count as f64,
-                    &[KeyValue::new("operation_type", op.metric_key), KeyValue::new("admin", "true")],
-                );
+                ORCHESTRATOR_METRICS
+                    .failed_job_operations
+                    .add(result.failed_count as f64, &[KeyValue::new("operation_type", op.metric_key)]);
             }
 
             let message = if result.success_count == 0 && result.failed_count == 0 {
@@ -98,16 +91,14 @@ where
             Ok(Json(ApiResponse::success_with_data(BulkJobResponse::from(result), Some(message))).into_response())
         }
         Err(e) => {
-            error!(error = %e, job_types = ?filter.job_type, "Admin: Failed {}", op.name);
-            ORCHESTRATOR_METRICS
-                .failed_job_operations
-                .add(1.0, &[KeyValue::new("operation_type", op.metric_key), KeyValue::new("admin", "true")]);
+            error!(error = %e, "Admin: {} failed", op.name);
+            ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &[KeyValue::new("operation_type", op.metric_key)]);
             Err(JobRouteError::ProcessingError(e.to_string()))
         }
     }
 }
 
-async fn handle_retry_all_failed_jobs(
+async fn handle_retry_processing_failed(
     State(config): State<Arc<Config>>,
     Query(filter): Query<JobTypeFilter>,
 ) -> JobRouteResult {
@@ -115,17 +106,17 @@ async fn handle_retry_all_failed_jobs(
         config,
         filter,
         AdminOp {
-            name: "retry failed jobs",
-            metric_key: "admin_retry_failed",
-            empty_msg: "No failed jobs to retry",
-            success_msg: "Queued for retry:",
+            name: "retry processing failed",
+            metric_key: "admin_retry_processing_failed",
+            empty_msg: "No processing failed jobs to retry",
+            success_msg: "Retrying:",
         },
-        AdminService::retry_all_failed_jobs,
+        AdminService::retry_all_processing_failed_jobs,
     )
     .await
 }
 
-async fn handle_reverify_verification_timeout_jobs(
+async fn handle_retry_verification_failed(
     State(config): State<Arc<Config>>,
     Query(filter): Query<JobTypeFilter>,
 ) -> JobRouteResult {
@@ -133,41 +124,19 @@ async fn handle_reverify_verification_timeout_jobs(
         config,
         filter,
         AdminOp {
-            name: "reverify verification-timeout jobs",
-            metric_key: "admin_reverify_verification_timeout",
-            empty_msg: "No verification-timeout jobs to reverify",
-            success_msg: "Queued for verification:",
+            name: "retry verification failed",
+            metric_key: "admin_retry_verification_failed",
+            empty_msg: "No verification failed jobs to retry",
+            success_msg: "Retrying:",
         },
-        AdminService::reverify_all_verification_timeout_jobs,
-    )
-    .await
-}
-
-/// # Warning
-/// **RECOVERY ENDPOINT** - Blindly re-queues ALL PendingVerification jobs, including those
-/// already in queue. May cause duplicate messages. Use only after queue consumer crashes.
-async fn handle_requeue_pending_verification(
-    State(config): State<Arc<Config>>,
-    Query(filter): Query<JobTypeFilter>,
-) -> JobRouteResult {
-    handle_admin_op(
-        config,
-        filter,
-        AdminOp {
-            name: "requeue pending verification jobs",
-            metric_key: "admin_requeue_verification",
-            empty_msg: "No pending verification jobs to requeue",
-            success_msg: "Re-queued for verification:",
-        },
-        AdminService::requeue_pending_verification,
+        AdminService::retry_all_verification_failed_jobs,
     )
     .await
 }
 
 pub fn admin_router(config: Arc<Config>) -> Router {
     Router::new()
-        .route("/jobs/retry/failed", post(handle_retry_all_failed_jobs))
-        .route("/jobs/reverify/verification-timeout", post(handle_reverify_verification_timeout_jobs))
-        .route("/jobs/requeue/pending-verification", post(handle_requeue_pending_verification))
+        .route("/jobs/retry/processing-failed", post(handle_retry_processing_failed))
+        .route("/jobs/retry/verification-failed", post(handle_retry_verification_failed))
         .with_state(config)
 }
