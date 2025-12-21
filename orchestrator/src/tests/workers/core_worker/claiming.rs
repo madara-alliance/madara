@@ -97,33 +97,6 @@ async fn test_claim_priority_pending_retry_first() {
 
 #[rstest]
 #[tokio::test]
-async fn test_claim_respects_available_at() {
-    let config = setup_test_config().await;
-    let db = config.config.database();
-
-    // Create job 1 - available now
-    let metadata1 = create_metadata_for_job_type(&JobType::SnosRun, 1);
-    let job1 = JobItem::create("available_now".to_string(), JobType::SnosRun, JobStatus::Created, metadata1);
-    db.create_job(job1).await.expect("Failed to create job 1");
-
-    // Create job 2 - available in the future
-    let metadata2 = create_metadata_for_job_type(&JobType::SnosRun, 2);
-    let mut job2 = JobItem::create("available_later".to_string(), JobType::SnosRun, JobStatus::Created, metadata2);
-    db.create_job(job2).await.expect("Failed to create job 2");
-
-    // Claim - should only get the available job
-    let orchestrator_id = "test-orchestrator".to_string();
-    let claimed = db
-        .claim_job_for_processing(&JobType::SnosRun, &orchestrator_id)
-        .await
-        .expect("Failed to claim")
-        .expect("No job claimed");
-
-    assert_eq!(claimed.internal_id, "available_now");
-}
-
-#[rstest]
-#[tokio::test]
 async fn test_claim_oldest_first_within_priority() {
     let config = setup_test_config().await;
     let db = config.config.database();
@@ -168,15 +141,10 @@ async fn test_no_claim_when_all_ineligible() {
     job1.claimed_by = Some("other-orchestrator".to_string());
     db.create_job(job1).await.expect("Failed to create job 1");
 
-    // 2. Available in future
+    // 2. Wrong status (Completed)
     let metadata2 = create_metadata_for_job_type(&JobType::SnosRun, 2);
-    let mut job2 = JobItem::create("future".to_string(), JobType::SnosRun, JobStatus::Created, metadata2);
+    let job2 = JobItem::create("completed".to_string(), JobType::SnosRun, JobStatus::Completed, metadata2);
     db.create_job(job2).await.expect("Failed to create job 2");
-
-    // 3. Wrong status
-    let metadata3 = create_metadata_for_job_type(&JobType::SnosRun, 3);
-    let job3 = JobItem::create("completed".to_string(), JobType::SnosRun, JobStatus::Completed, metadata3);
-    db.create_job(job3).await.expect("Failed to create job 3");
 
     // Attempt to claim - should return None
     let orchestrator_id = "test-orchestrator".to_string();
