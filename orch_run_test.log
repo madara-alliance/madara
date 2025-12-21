@@ -1,0 +1,1095 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /Users/heemankverma/Work/Karnot/madara/orchestrator/Cargo.toml
+workspace: /Users/heemankverma/Work/Karnot/madara/Cargo.toml
+warning: Patch `librocksdb-sys v0.17.0+9.0.0 (https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78)` was not used in the crate graph.
+Patch `rocksdb v0.22.0 (https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78)` was not used in the crate graph.
+Check that the patched package version and available features are compatible
+with the dependency requirements. If the patch has a different version from
+what is locked in the Cargo.lock file, run `cargo update` to use the new
+version. This may also occur with an optional dependency that is not enabled.
+warning: orchestrator-starknet-settlement-client@0.8.0: fetching artifacts from image: ghcr.io/madara-alliance/artifacts:8
+warning: orchestrator@0.1.0: fetching artifacts from image: ghcr.io/madara-alliance/artifacts:8
+   Compiling orchestrator v0.1.0 (/Users/heemankverma/Work/Karnot/madara/orchestrator)
+warning: associated function `handle_verification_failure` is never used
+   --> orchestrator/src/worker/event_handler/service.rs:910:14
+    |
+41  | impl JobHandlerService {
+    | ---------------------- associated function in this implementation
+...
+910 |     async fn handle_verification_failure(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: `orchestrator` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 42.55s
+warning: the following packages contain code that will be rejected by a future version of Rust: omniqueue v0.2.0 (https://github.com/itsparser/omniqueue-rs?branch=branch-from-0.2.0#6ff45941), redis v0.24.0, size-of v0.1.5
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 2`
+     Running `/Volumes/External/rust-builds/target/release/orchestrator run --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum --madara-version 0.14.0`
+25-12-21 06:11:55 | INFO  | -                    | -              | Starting orchestrator
+25-12-21 06:11:55 | WARN  | -                    | -              | OTEL endpoint not configured. Telemetry disabled. | Use MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT (service_name=orchestrator)
+25-12-21 06:11:55 | DEBUG | -                    | -              | Initializing AWS configuration
+25-12-21 06:11:55 | INFO  | -                    | -              | Successfully created AWS configuration
+25-12-21 06:11:55 | WARN  | -                    | -              | No bouncer weights limit file provided, using default values
+25-12-21 06:11:55 | INFO  | -                    | -              | Created indexes for aggregator batch collection
+25-12-21 06:11:55 | INFO  | -                    | -              | Created indexes for SNOS batch collection
+25-12-21 06:11:55 | INFO  | -                    | -              | Created worker indexes for jobs collection
+25-12-21 06:11:55 | INFO  | -                    | -              | Successfully initialized cache collection with indexes (elapsed_ms=4)
+25-12-21 06:11:55 | INFO  | -                    | -              | UTILS: Fetching chain details from node
+25-12-21 06:11:56 | DEBUG | -                    | -              | UTILS: Chain details fetched (chain_id=PRIVATE_SN_POTC_SEPOLIA, strk_fee_token=0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7, eth_fee_token=0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7)
+25-12-21 06:11:56 | INFO  | -                    | -              | Chain details fetched successfully (chain_id=PRIVATE_SN_POTC_SEPOLIA, is_l3=false)
+25-12-21 06:11:56 | DEBUG | -                    | -              | Configuration initialized
+25-12-21 06:11:56 | INFO  | -                    | -              | Starting pre-flight health checks...
+25-12-21 06:11:56 | DEBUG | -                    | -              |  Health check timeout: 30s per service
+25-12-21 06:11:56 | DEBUG | -                    | -              | Checking MongoDB connectivity...
+25-12-21 06:11:56 | DEBUG | -                    | -              | MongoDB health check passed
+25-12-21 06:11:56 | DEBUG | -                    | -              | Checking AWS S3 accessibility...
+25-12-21 06:11:56 | DEBUG | -                    | -              | AWS S3 health check passed
+25-12-21 06:11:56 | DEBUG | -                    | -              | Checking AWS SQS accessibility...
+25-12-21 06:11:56 | DEBUG | -                    | -              | AWS SQS health check passed
+25-12-21 06:11:56 | DEBUG | -                    | -              | Checking AWS SNS accessibility...
+25-12-21 06:11:57 | DEBUG | -                    | -              | AWS SNS health check passed
+25-12-21 06:11:57 | INFO  | -                    | -              | All pre-flight health checks passed successfully
+25-12-21 06:11:57 | INFO  | -                    | -              | Application server live!
+25-12-21 06:11:57 | DEBUG | -                    | -              | Setting up signal handler for graceful shutdown
+25-12-21 06:11:57 | INFO  | -                    | -              | Initializing workers with queue-less architecture + WorkerTrigger for batching
+25-12-21 06:11:57 | INFO  | -                    | -              | Creating worker controller with split processing/verification concurrency limits (orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc, snos_processing=1, snos_verification=5, proving_processing=5, proving_verification=3)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting worker controller with split processing/verification workers (worker_count=5, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | Processing worker starting (job_type=DataSubmission, worker_type=processing, max_concurrent=5)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting processing worker (job_type=DataSubmission, worker_type=processing, max_concurrent=5, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | All workers started successfully (2 workers per job type: processing + verification) (total_workers=10, job_types=5)
+25-12-21 06:11:57 | INFO  | -                    | -              | Verification worker starting (job_type=DataSubmission, worker_type=verification, max_concurrent=3)
+25-12-21 06:11:57 | INFO  | -                    | -              | WorkerTrigger controller started for batching triggers
+25-12-21 06:11:57 | INFO  | -                    | -              | All workers initialized and started successfully
+25-12-21 06:11:57 | INFO  | -                    | -              | Processing worker starting (job_type=StateTransition, worker_type=processing, max_concurrent=1)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting processing worker (job_type=StateTransition, worker_type=processing, max_concurrent=1, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | Signal handler initialized, listening for SIGTERM, SIGINT, SIGQUIT, and internal shutdown requests
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting verification worker (job_type=DataSubmission, worker_type=verification, max_concurrent=3, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | Verification worker starting (job_type=ProofCreation, worker_type=verification, max_concurrent=3)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting verification worker (job_type=ProofCreation, worker_type=verification, max_concurrent=3, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | Verification worker starting (job_type=StateTransition, worker_type=verification, max_concurrent=1)
+25-12-21 06:11:57 | INFO  | -                    | -              | Verification worker starting (job_type=SnosRun, worker_type=verification, max_concurrent=5)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting verification worker (job_type=StateTransition, worker_type=verification, max_concurrent=1, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting verification worker (job_type=SnosRun, worker_type=verification, max_concurrent=5, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | Verification worker starting (job_type=ProofRegistration, worker_type=verification, max_concurrent=2)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting WorkerController with WorkerTrigger queue only (job processing uses worker mode)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting verification worker (job_type=ProofRegistration, worker_type=verification, max_concurrent=2, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | Processing worker starting (job_type=ProofRegistration, worker_type=processing, max_concurrent=3)
+25-12-21 06:11:57 | INFO  | -                    | -              | Processing worker starting (job_type=SnosRun, worker_type=processing, max_concurrent=1)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting processing worker (job_type=ProofRegistration, worker_type=processing, max_concurrent=3, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting processing worker (job_type=SnosRun, worker_type=processing, max_concurrent=1, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting WorkerTrigger worker (pool_size=50)
+25-12-21 06:11:57 | INFO  | -                    | -              | Processing worker starting (job_type=ProofCreation, worker_type=processing, max_concurrent=5)
+25-12-21 06:11:57 | INFO  | -                    | -              | Starting processing worker (job_type=ProofCreation, worker_type=processing, max_concurrent=5, poll_interval_ms=1000, orchestrator_id=orchestrator-d3155212-f8e0-43e6-9b98-9ae7d8ee13cc)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Found processable job (job_id=da0b7e86-1536-460d-a89b-f242881ba83e, job_type=SnosRun)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Found job ready for processing (job_id=da0b7e86-1536-460d-a89b-f242881ba83e, job_type=SnosRun, worker_type=processing, status=Created)
+25-12-21 06:11:57 | INFO  | -                    | -              | Processing job claimed successfully (metric=worker.claims.processing.success, job_type=SnosRun)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Fetched job by ID
+25-12-21 06:11:57 | DEBUG | -                    | -              | General process job started for block (log_type=starting, category=general, function_type=process_job, block_no=2)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Current job status (job_id=da0b7e86-1536-460d-a89b-f242881ba83e, status=Created)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Processing new job (job_id=da0b7e86-1536-460d-a89b-f242881ba83e)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:57 | INFO  | -                    | -              | SNOS job creation slots available (current_count=24, cap=200, slots_available=176)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:11:57 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:11:57 | INFO  | -                    | -              | Atomically claimed job for processing (job_id=da0b7e86-1536-460d-a89b-f242881ba83e, job_type=SnosRun, orchestrator_id=orchestrator-aad5381a-c4b4-433c-919f-fe097dbd0922, from_status=Created/PendingRetry)
+25-12-21 06:11:57 | INFO  | -                    | -              |  SnosRun job 2 processing started (log_type=starting, job_id=da0b7e86-1536-460d-a89b-f242881ba83e)
+25-12-21 06:11:57 | DEBUG | -                    | -              | SNOS metadata retrieved SnosMetadata { snos_batch_index: 2, start_block: 424679, end_block: 424679, num_blocks: 1, full_output: true, cairo_pie_path: Some("2/cairo_pie.zip"), on_chain_data_path: Some("2/onchain_data.json"), snos_output_path: Some("2/snos_output.json"), program_output_path: Some("2/program_output.txt"), snos_fact: None, snos_n_steps: None }
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved batch information from metadata (start_block=424679, end_block=424679, num_blocks=1)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Calling generate_pie function
+25-12-21 06:11:57 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:57 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:11:57 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:57 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:11:57 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:57 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:11:57 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:11:57 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:11:58 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:11:58 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:11:58 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:11:58 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:11:58 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:11:58 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:11:58 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:11:58 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:58 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:11:58 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:11:58 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:58 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:11:58 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:11:58 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:11:58 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:11:58 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:11:58 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:11:58 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:11:58 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:11:58 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:11:58 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:11:59 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:11:59 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:59 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:11:59 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:11:59 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:59 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:11:59 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:11:59 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:11:59 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:11:59 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:11:59 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:11:59 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:00 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:00 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:12:00 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:00 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:00 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:12:00 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:00 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:00 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:00 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:12:00 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:00 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:12:00 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:12:00 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:12:01 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:12:01 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:01 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:01 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:12:01 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:01 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:01 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:01 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:12:01 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:01 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:01 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:01 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:12:01 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:01 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:12:01 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:12:01 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:12:01 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:01 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:01 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:12:01 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:01 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:01 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:01 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:01 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:12:02 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:02 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:02 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:02 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:12:02 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:12:02 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:02 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:12:02 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:12:02 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:02 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:02 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:02 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:02 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:12:03 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:03 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:03 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:03 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:03 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:03 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:12:03 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:03 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:03 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:03 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:03 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:12:04 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:04 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:04 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:04 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:04 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:04 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:04 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:04 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:12:04 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:04 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:12:04 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:04 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:12:04 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:05 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:12:05 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:12:05 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:12:05 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:05 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:05 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:12:05 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:05 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:05 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:05 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:12:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:05 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:12:05 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:12:05 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:05 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:05 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:05 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:06 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:06 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:06 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:06 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:06 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:12:06 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:12:06 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:06 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:06 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:06 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:06 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:12:07 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:07 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:12:07 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:12:07 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:07 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:12:07 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:12:07 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:07 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:12:07 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:12:07 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:07 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:12:07 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:12:07 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:12:08 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:12:08 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:08 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:12:08 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:08 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:08 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:08 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:08 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:12:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:12:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:11 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:12:11 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:12:11 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:11 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:11 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:12:12 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:12:12 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:12 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:12:12 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:12 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:12:12 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:12:12 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:16 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:12:16 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:16 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:12:16 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:12:16 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:12:16 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:12:16 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:12:35 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:12:35 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:35 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:12:35 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:35 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:35 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:35 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:35 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:12:51 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:12:51 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:12:51 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:12:51 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:51 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:51 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:12:51 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:12:51 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:12:51 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:12:51 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:12:51 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:13:10 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:13:10 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:13:10 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:13:10 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:13:10 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:13:10 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:13:10 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:13:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:13:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:13:11 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:13:11 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:13:11 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:13:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:13:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:13:11 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:13:11 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:13:11 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:13:11 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:13:11 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:13:14 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:13:14 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:13:14 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:13:14 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:13:14 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:13:14 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:13:14 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:13:36 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:13:36 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:13:36 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:13:36 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:13:36 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:13:36 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:13:36 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:13:36 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:13:52 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:13:52 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:13:52 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:13:52 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:13:52 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:13:52 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:13:52 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:13:52 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:13:52 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:13:52 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:13:52 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:14:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:14:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:14:05 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:14:05 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:14:05 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:14:10 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:14:10 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:14:10 | INFO  | -                    | -              | SNOS job creation slots available (current_count=23, cap=200, slots_available=177)
+25-12-21 06:14:10 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:14:10 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:14:10 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:14:10 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:14:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:14:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:14:11 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:14:11 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:14:11 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:14:11 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:14:11 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:14:12 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:14:12 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:14:12 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:14:12 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:14:12 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:14:12 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:14:12 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:14:36 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:14:36 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:14:36 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:14:36 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:14:36 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:14:36 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:14:36 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:14:36 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:14:51 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:14:51 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:14:51 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:14:51 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:14:51 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:14:51 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:14:51 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:14:51 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:14:51 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:14:51 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:14:51 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:15:01 | DEBUG | -                    | -              | generate_pie function completed successfully
+25-12-21 06:15:01 | DEBUG | -                    | -              | Using calldata for settlement layer
+25-12-21 06:15:01 | DEBUG | -                    | -              | Fact info calculated successfully
+25-12-21 06:15:01 | DEBUG | -                    | -              | Storing SNOS outputs
+25-12-21 06:15:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:15:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:15:05 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:15:05 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:15:05 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:15:05 | INFO  | -                    | -              | SnosRun job 2 processed successfully (log_type=completed, job_id=da0b7e86-1536-460d-a89b-f242881ba83e)
+25-12-21 06:15:05 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:15:05 | INFO  | -                    | -              | Updating status of SnosRun job 2 to Processed (job_id=da0b7e86-1536-460d-a89b-f242881ba83e, job_type=SnosRun, external_id=2, from_status=LockedForProcessing)
+25-12-21 06:15:05 | DEBUG | -                    | -              | Fetched job by ID
+25-12-21 06:15:05 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:15:05 | DEBUG | -                    | -              | Worker mode: set available_at for delayed verification of SnosRun job (job_id=da0b7e86-1536-460d-a89b-f242881ba83e, delay_secs=1, available_at=2025-12-21 06:15:06.952516 UTC)
+25-12-21 06:15:05 | DEBUG | -                    | -              | General process job completed for block (log_type=completed, category=general, function_type=process_job, block_no=2)
+25-12-21 06:15:05 | INFO  | -                    | -              | Job processed successfully (job_id=da0b7e86-1536-460d-a89b-f242881ba83e, job_type=SnosRun, worker_type=processing, internal_id=2)
+25-12-21 06:15:05 | DEBUG | -                    | -              | Found processable job (job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d, job_type=SnosRun)
+25-12-21 06:15:05 | DEBUG | -                    | -              | Found job ready for processing (job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d, job_type=SnosRun, worker_type=processing, status=Created)
+25-12-21 06:15:05 | INFO  | -                    | -              | Processing job claimed successfully (metric=worker.claims.processing.success, job_type=SnosRun)
+25-12-21 06:15:05 | DEBUG | -                    | -              | Fetched job by ID
+25-12-21 06:15:05 | DEBUG | -                    | -              | General process job started for block (log_type=starting, category=general, function_type=process_job, block_no=3)
+25-12-21 06:15:05 | DEBUG | -                    | -              | Current job status (job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d, status=Created)
+25-12-21 06:15:05 | DEBUG | -                    | -              | Processing new job (job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d)
+25-12-21 06:15:06 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:15:06 | INFO  | -                    | -              | Atomically claimed job for processing (job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d, job_type=SnosRun, orchestrator_id=orchestrator-bd31835a-1817-4053-9c2f-3886a14ed3ec, from_status=Created/PendingRetry)
+25-12-21 06:15:06 | INFO  | -                    | -              |  SnosRun job 3 processing started (log_type=starting, job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d)
+25-12-21 06:15:06 | DEBUG | -                    | -              | SNOS metadata retrieved SnosMetadata { snos_batch_index: 3, start_block: 424680, end_block: 424680, num_blocks: 1, full_output: true, cairo_pie_path: Some("3/cairo_pie.zip"), on_chain_data_path: Some("3/onchain_data.json"), snos_output_path: Some("3/snos_output.json"), program_output_path: Some("3/program_output.txt"), snos_fact: None, snos_n_steps: None }
+25-12-21 06:15:06 | DEBUG | -                    | -              | Retrieved batch information from metadata (start_block=424680, end_block=424680, num_blocks=1)
+25-12-21 06:15:06 | DEBUG | -                    | -              | Calling generate_pie function
+25-12-21 06:15:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:15:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:15:11 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:15:11 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:15:11 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:15:11 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:15:11 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:15:12 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:15:12 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:15:12 | INFO  | -                    | -              | SNOS job creation slots available (current_count=22, cap=200, slots_available=178)
+25-12-21 06:15:12 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:15:12 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:15:12 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:15:12 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:15:14 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:15:14 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:15:14 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:15:14 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:15:14 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:15:14 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:15:14 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:15:35 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:15:35 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:15:35 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:15:35 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:15:35 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:15:35 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:15:35 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:15:35 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:15:51 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:15:51 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:15:51 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:15:51 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:15:51 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:15:51 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:15:51 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:15:51 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:15:51 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:15:51 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:15:51 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:16:07 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:16:07 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:16:07 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:16:07 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:16:07 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:16:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:16:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:16:11 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:16:11 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:16:11 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:16:11 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:16:11 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:16:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:16:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:16:11 | INFO  | -                    | -              | SNOS job creation slots available (current_count=22, cap=200, slots_available=178)
+25-12-21 06:16:11 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:16:11 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:16:11 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:16:11 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:16:12 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:16:12 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:16:12 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:16:12 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:16:12 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:16:12 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:16:12 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:16:38 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:16:38 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:16:38 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:16:38 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:16:38 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:16:38 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:16:38 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:16:38 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:16:50 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:16:50 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:16:50 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:16:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:16:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:16:50 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:16:50 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:16:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:16:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:16:50 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:16:50 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:16:58 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:16:58 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:16:58 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:16:58 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:16:58 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:16:58 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:16:58 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:16:58 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:16:58 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:16:58 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:16:58 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:17:00 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:17:00 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:00 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:17:00 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:00 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:00 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:17:00 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:17:00 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:00 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:00 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:17:00 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:17:00 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:17:00 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:00 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:17:00 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:17:00 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:17:00 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:17:00 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:17:00 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:17:00 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:00 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:17:00 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:17:00 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:17:01 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:17:01 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:01 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:17:01 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:17:01 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:17:01 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:17:01 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:01 | INFO  | -                    | -              | SNOS job creation slots available (current_count=22, cap=200, slots_available=178)
+25-12-21 06:17:01 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:17:01 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:01 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:01 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:17:02 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:17:02 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:02 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:17:02 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:17:02 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:17:02 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:17:02 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:17:02 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:17:02 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:02 | INFO  | -                    | -              | SNOS job creation slots available (current_count=22, cap=200, slots_available=178)
+25-12-21 06:17:02 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:17:02 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:02 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:02 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:17:03 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:17:03 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:03 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:17:03 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:17:03 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:17:03 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:17:03 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:17:04 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:17:04 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:04 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:17:04 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:17:04 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:17:04 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:17:04 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:17:04 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:17:04 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:04 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:17:04 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:17:04 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:04 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:04 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:17:04 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:17:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:17:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:05 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:17:05 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:05 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:05 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:17:05 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:17:05 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:05 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:05 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:17:05 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:17:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:17:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:05 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:17:05 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:17:05 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:17:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:17:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:05 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:17:05 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:05 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:05 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:17:05 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:17:05 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:05 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:05 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:17:05 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:17:06 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:17:06 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:06 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:17:06 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:17:06 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:17:06 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:17:06 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:06 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:17:06 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:17:06 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:06 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:06 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:17:06 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:17:06 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:17:06 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:06 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:17:06 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:17:06 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:17:06 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:17:06 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:17:07 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:17:07 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:07 | INFO  | -                    | -              | SNOS job creation slots available (current_count=22, cap=200, slots_available=178)
+25-12-21 06:17:07 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:17:07 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:07 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:07 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:17:08 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:17:08 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:08 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:17:08 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:17:08 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:17:10 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:17:10 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:10 | INFO  | -                    | -              | SNOS job creation slots available (current_count=22, cap=200, slots_available=178)
+25-12-21 06:17:10 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:17:10 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:10 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:10 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:17:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:17:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:11 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:17:11 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:17:11 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:17:11 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:17:11 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:17:14 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:17:14 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:14 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:17:14 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:17:15 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:17:15 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:17:15 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:17:36 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:17:36 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:36 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:17:36 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:17:36 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:36 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:36 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:17:36 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:17:51 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:17:51 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:17:51 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:17:51 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:51 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:51 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:17:51 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:17:51 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:17:51 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:17:51 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:17:51 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:18:06 | DEBUG | -                    | -              | generate_pie function completed successfully
+25-12-21 06:18:06 | DEBUG | -                    | -              | Using calldata for settlement layer
+25-12-21 06:18:06 | DEBUG | -                    | -              | Fact info calculated successfully
+25-12-21 06:18:06 | DEBUG | -                    | -              | Storing SNOS outputs
+25-12-21 06:18:08 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:18:08 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:18:08 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:18:08 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:18:08 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:18:09 | INFO  | -                    | -              | SnosRun job 3 processed successfully (log_type=completed, job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d)
+25-12-21 06:18:09 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:18:09 | INFO  | -                    | -              | Updating status of SnosRun job 3 to Processed (job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d, job_type=SnosRun, external_id=3, from_status=LockedForProcessing)
+25-12-21 06:18:09 | DEBUG | -                    | -              | Fetched job by ID
+25-12-21 06:18:09 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:18:09 | DEBUG | -                    | -              | Worker mode: set available_at for delayed verification of SnosRun job (job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d, delay_secs=1, available_at=2025-12-21 06:18:10.970576 UTC)
+25-12-21 06:18:09 | DEBUG | -                    | -              | General process job completed for block (log_type=completed, category=general, function_type=process_job, block_no=3)
+25-12-21 06:18:09 | INFO  | -                    | -              | Job processed successfully (job_id=0ecb5aa4-e2b2-470e-9d0f-40305c94062d, job_type=SnosRun, worker_type=processing, internal_id=3)
+25-12-21 06:18:09 | DEBUG | -                    | -              | Found processable job (job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3, job_type=SnosRun)
+25-12-21 06:18:09 | DEBUG | -                    | -              | Found job ready for processing (job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3, job_type=SnosRun, worker_type=processing, status=Created)
+25-12-21 06:18:09 | INFO  | -                    | -              | Processing job claimed successfully (metric=worker.claims.processing.success, job_type=SnosRun)
+25-12-21 06:18:09 | DEBUG | -                    | -              | Fetched job by ID
+25-12-21 06:18:09 | DEBUG | -                    | -              | General process job started for block (log_type=starting, category=general, function_type=process_job, block_no=4)
+25-12-21 06:18:09 | DEBUG | -                    | -              | Current job status (job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3, status=Created)
+25-12-21 06:18:09 | DEBUG | -                    | -              | Processing new job (job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3)
+25-12-21 06:18:10 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:18:10 | INFO  | -                    | -              | Atomically claimed job for processing (job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3, job_type=SnosRun, orchestrator_id=orchestrator-37bc7c06-89b2-4ff1-aa27-5fc632566722, from_status=Created/PendingRetry)
+25-12-21 06:18:10 | INFO  | -                    | -              |  SnosRun job 4 processing started (log_type=starting, job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3)
+25-12-21 06:18:10 | DEBUG | -                    | -              | SNOS metadata retrieved SnosMetadata { snos_batch_index: 4, start_block: 424681, end_block: 424681, num_blocks: 1, full_output: true, cairo_pie_path: Some("4/cairo_pie.zip"), on_chain_data_path: Some("4/onchain_data.json"), snos_output_path: Some("4/snos_output.json"), program_output_path: Some("4/program_output.txt"), snos_fact: None, snos_n_steps: None }
+25-12-21 06:18:10 | DEBUG | -                    | -              | Retrieved batch information from metadata (start_block=424681, end_block=424681, num_blocks=1)
+25-12-21 06:18:10 | DEBUG | -                    | -              | Calling generate_pie function
+25-12-21 06:18:10 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:18:10 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:18:10 | INFO  | -                    | -              | SNOS job creation slots available (current_count=21, cap=200, slots_available=179)
+25-12-21 06:18:10 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:18:10 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:18:10 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:18:10 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:18:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:18:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:18:11 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:18:11 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:18:11 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:18:11 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:18:11 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:18:14 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:18:14 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:18:14 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:18:14 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:18:14 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:18:14 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:18:14 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:18:35 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:18:35 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:18:35 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:18:35 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:18:35 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:18:35 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:18:35 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:18:35 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:18:50 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:18:50 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:18:50 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:18:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:18:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:18:50 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:18:50 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:18:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:18:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:18:50 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:18:50 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:19:07 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:19:07 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:19:07 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:19:07 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:19:07 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:19:10 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:19:10 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:19:10 | INFO  | -                    | -              | SNOS job creation slots available (current_count=21, cap=200, slots_available=179)
+25-12-21 06:19:10 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:19:10 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:19:10 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:19:10 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:19:12 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:19:12 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:19:12 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:19:12 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:19:12 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:19:12 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:19:12 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:19:18 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:19:18 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:19:18 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:19:18 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:19:18 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:19:18 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:19:18 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:19:37 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:19:37 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:19:37 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:19:37 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:19:37 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:19:37 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:19:37 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:19:37 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:19:50 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:19:50 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:19:50 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:19:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:19:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:19:50 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:19:50 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:19:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:19:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:19:50 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:19:50 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:20:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:20:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:20:05 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:20:05 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:20:05 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:20:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:20:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:20:11 | INFO  | -                    | -              | SNOS job creation slots available (current_count=21, cap=200, slots_available=179)
+25-12-21 06:20:11 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:20:11 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:20:11 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:20:11 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:20:13 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:20:13 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:20:13 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:20:13 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:20:13 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:20:13 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:20:13 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:20:37 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:20:37 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:20:37 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:20:37 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:20:37 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:20:37 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:20:37 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:20:37 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:20:50 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:20:50 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:20:50 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:20:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:20:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:20:50 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:20:50 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:20:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:20:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:20:50 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:20:50 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:21:00 | DEBUG | -                    | -              | generate_pie function completed successfully
+25-12-21 06:21:00 | DEBUG | -                    | -              | Using calldata for settlement layer
+25-12-21 06:21:00 | DEBUG | -                    | -              | Fact info calculated successfully
+25-12-21 06:21:00 | DEBUG | -                    | -              | Storing SNOS outputs
+25-12-21 06:21:03 | INFO  | -                    | -              | SnosRun job 4 processed successfully (log_type=completed, job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3)
+25-12-21 06:21:03 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:21:03 | INFO  | -                    | -              | Updating status of SnosRun job 4 to Processed (job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3, job_type=SnosRun, external_id=4, from_status=LockedForProcessing)
+25-12-21 06:21:03 | DEBUG | -                    | -              | Fetched job by ID
+25-12-21 06:21:03 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:21:03 | DEBUG | -                    | -              | Worker mode: set available_at for delayed verification of SnosRun job (job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3, delay_secs=1, available_at=2025-12-21 06:21:04.922910 UTC)
+25-12-21 06:21:03 | DEBUG | -                    | -              | General process job completed for block (log_type=completed, category=general, function_type=process_job, block_no=4)
+25-12-21 06:21:03 | INFO  | -                    | -              | Job processed successfully (job_id=bbb7e579-983e-4bde-bd4f-9a2badfaa9e3, job_type=SnosRun, worker_type=processing, internal_id=4)
+25-12-21 06:21:03 | DEBUG | -                    | -              | Found processable job (job_id=6e556d42-66b7-4a82-abcc-698ccffbf716, job_type=SnosRun)
+25-12-21 06:21:03 | DEBUG | -                    | -              | Found job ready for processing (job_id=6e556d42-66b7-4a82-abcc-698ccffbf716, job_type=SnosRun, worker_type=processing, status=Created)
+25-12-21 06:21:03 | INFO  | -                    | -              | Processing job claimed successfully (metric=worker.claims.processing.success, job_type=SnosRun)
+25-12-21 06:21:03 | DEBUG | -                    | -              | Fetched job by ID
+25-12-21 06:21:03 | DEBUG | -                    | -              | General process job started for block (log_type=starting, category=general, function_type=process_job, block_no=5)
+25-12-21 06:21:03 | DEBUG | -                    | -              | Current job status (job_id=6e556d42-66b7-4a82-abcc-698ccffbf716, status=Created)
+25-12-21 06:21:03 | DEBUG | -                    | -              | Processing new job (job_id=6e556d42-66b7-4a82-abcc-698ccffbf716)
+25-12-21 06:21:04 | DEBUG | -                    | -              | Job updated successfully
+25-12-21 06:21:04 | INFO  | -                    | -              | Atomically claimed job for processing (job_id=6e556d42-66b7-4a82-abcc-698ccffbf716, job_type=SnosRun, orchestrator_id=orchestrator-ed64ceb2-2fcc-43e5-bc96-265eb562feb6, from_status=Created/PendingRetry)
+25-12-21 06:21:04 | INFO  | -                    | -              |  SnosRun job 5 processing started (log_type=starting, job_id=6e556d42-66b7-4a82-abcc-698ccffbf716)
+25-12-21 06:21:04 | DEBUG | -                    | -              | SNOS metadata retrieved SnosMetadata { snos_batch_index: 5, start_block: 424682, end_block: 424682, num_blocks: 1, full_output: true, cairo_pie_path: Some("5/cairo_pie.zip"), on_chain_data_path: Some("5/onchain_data.json"), snos_output_path: Some("5/snos_output.json"), program_output_path: Some("5/program_output.txt"), snos_fact: None, snos_n_steps: None }
+25-12-21 06:21:04 | DEBUG | -                    | -              | Retrieved batch information from metadata (start_block=424682, end_block=424682, num_blocks=1)
+25-12-21 06:21:04 | DEBUG | -                    | -              | Calling generate_pie function
+25-12-21 06:21:08 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:21:08 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:21:08 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:21:08 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:21:08 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:21:11 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:21:11 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:21:11 | INFO  | -                    | -              | SNOS job creation slots available (current_count=20, cap=200, slots_available=180)
+25-12-21 06:21:11 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:21:11 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:21:11 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:21:11 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:21:13 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:21:13 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:21:13 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:21:13 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:21:13 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:21:13 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:21:13 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:21:15 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:21:15 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:21:15 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:21:15 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:21:15 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:21:15 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:21:15 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:21:35 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Proving)
+25-12-21 06:21:35 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:21:35 | INFO  | -                    | -              | ProofCreation job creation slots available (current_count=0, cap=200, slots_available=200)
+25-12-21 06:21:35 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:21:35 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:21:35 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:21:35 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:21:35 | DEBUG | -                    | -              | Found 0 successful SNOS jobs without proving jobs
+25-12-21 06:21:50 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=UpdateState)
+25-12-21 06:21:50 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:21:50 | DEBUG | -                    | -              | Fetching latest job by type
+25-12-21 06:21:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:21:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:21:50 | WARN  | -                    | -              | No previous state transition job found, fetching latest parent job
+25-12-21 06:21:50 | DEBUG | -                    | -              | Fetching jobs without successor
+25-12-21 06:21:50 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:21:50 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:21:50 | DEBUG | -                    | -              | Retrieved jobs without successor (job_count=0)
+25-12-21 06:21:50 | INFO  | -                    | -              | No parent job of StateTransition completed after the last settled batch (None). Returning safely.
+25-12-21 06:22:05 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Aggregator)
+25-12-21 06:22:05 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:22:05 | INFO  | -                    | -              | Aggregator job creation slots available (current_count=0, cap=50, slots_available=50)
+25-12-21 06:22:05 | DEBUG | -                    | -              | Retrieved aggregator batches by status
+25-12-21 06:22:05 | DEBUG | -                    | -              | Found 0 closed batches
+25-12-21 06:22:13 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=SnosBatching)
+25-12-21 06:22:13 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:22:13 | DEBUG | -                    | -              | SnosBatchingWorker acquired lock
+25-12-21 06:22:13 | DEBUG | -                    | -              | Retrieved latest SNOS batch (has_batch=true, category=db_call)
+25-12-21 06:22:13 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:22:13 | DEBUG | -                    | -              | Calculated SNOS batch range for L2 (first_block=424703, last_block=424702)
+25-12-21 06:22:13 | DEBUG | -                    | -              | No SNOS blocks to process: start_block (424703) > end_block (424702)
+25-12-21 06:22:13 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=Snos)
+25-12-21 06:22:13 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:22:13 | INFO  | -                    | -              | SNOS job creation slots available (current_count=20, cap=200, slots_available=180)
+25-12-21 06:22:13 | DEBUG | -                    | -              | Fetching SNOS batches without corresponding jobs (snos_batch_status=Closed, category=db_call)
+25-12-21 06:22:13 | DEBUG | -                    | -              | Executing aggregation pipeline
+25-12-21 06:22:13 | DEBUG | -                    | -              | Pipeline execution completed (result_count=0)
+25-12-21 06:22:13 | DEBUG | -                    | -              | Retrieved SNOS batches without corresponding jobs (batch_count=0, category=db_call)
+25-12-21 06:22:15 | DEBUG | -                    | -              | Received message from queue (queue=worker_trigger, worker_type=AggregatorBatching)
+25-12-21 06:22:15 | DEBUG | -                    | -              | Retrieved jobs by type and statuses (job_count=0)
+25-12-21 06:22:15 | DEBUG | -                    | -              | AggregatorBatchingWorker acquired lock
+25-12-21 06:22:15 | DEBUG | -                    | -              | Retrieved latest aggregator batch (has_batch=true, category=db_call)
+25-12-21 06:22:15 | DEBUG | -                    | -              | Calculated last block number to batch. (last_block=424702)
+25-12-21 06:22:15 | DEBUG | -                    | -              | Calculated first block number to batch. (first_block=424703)
+25-12-21 06:22:15 | DEBUG | -                    | -              | No Aggregator blocks to process: start_block (424703) > end_block (424702)

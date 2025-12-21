@@ -17,10 +17,8 @@ pub mod controller;
 pub mod metrics;
 pub mod processing_worker;
 pub mod verification_worker;
-pub mod worker;
 
 pub use config::WorkerConfig;
 pub use controller::WorkerController;
 pub use processing_worker::ProcessingWorker;
 pub use verification_worker::VerificationWorker;
-pub use worker::Worker;
