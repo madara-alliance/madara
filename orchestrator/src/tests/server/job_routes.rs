@@ -59,7 +59,7 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     let job_type = JobType::DataSubmission;
 
     // Create a job with initial metadata
-    let mut job_item = build_job_item(job_type.clone(), JobStatus::PendingVerification, 1);
+    let mut job_item = build_job_item(job_type.clone(), JobStatus::Processed, 1);
 
     // Set verification counters in common metadata
     job_item.metadata.common.verification_retry_attempt_no = 0;
@@ -103,7 +103,7 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     // Verify job status and metadata
     let job_fetched = config.database().get_job_by_id(job_id).await.unwrap().expect("Could not get job from database");
     assert_eq!(job_fetched.id, job_item.id);
-    assert_eq!(job_fetched.status, JobStatus::PendingVerification);
+    assert_eq!(job_fetched.status, JobStatus::Processed);
 
     // Verify verification attempt was reset
     assert_eq!(job_fetched.metadata.common.verification_attempt_no, 0);
@@ -118,7 +118,7 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     let (addr, config) = setup_trigger.await;
     let job_type = JobType::DataSubmission;
 
-    let job_item = build_job_item(job_type.clone(), JobStatus::Failed, 1);
+    let job_item = build_job_item(job_type.clone(), JobStatus::ProcessingFailed, 1);
     config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
@@ -150,11 +150,11 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     let job_fetched = config.database().get_job_by_id(job_id).await.unwrap().expect("Could not get job from database");
     assert_eq!(job_fetched.id, job_item.id);
     assert_eq!(job_fetched.metadata.common.process_retry_attempt_no, 1);
-    assert_eq!(job_fetched.status, JobStatus::PendingRetry);
+    assert_eq!(job_fetched.status, JobStatus::PendingRetryProcessing);
 }
 
 #[rstest]
-#[case::pending_verification_job(JobStatus::PendingVerification)]
+#[case::pending_verification_job(JobStatus::Processed)]
 #[case::completed_job(JobStatus::Completed)]
 #[case::created_job(JobStatus::Created)]
 #[tokio::test]
@@ -200,7 +200,7 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
         x.end_block = block_number + 1;
     }
 
-    let proving_job = build_job_item(JobType::ProofCreation, JobStatus::PendingVerification, block_number);
+    let proving_job = build_job_item(JobType::ProofCreation, JobStatus::Processed, block_number);
     let data_submission_job = build_job_item(JobType::DataSubmission, JobStatus::Created, block_number);
 
     let state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 1); // internal_id is not block_number for ST
@@ -250,7 +250,7 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
 
     // Check that the correct jobs are returned
     assert!(jobs_response.iter().any(|j| j.id == snos_job.id && j.status == JobStatus::Completed));
-    assert!(jobs_response.iter().any(|j| j.id == proving_job.id && j.status == JobStatus::PendingVerification));
+    assert!(jobs_response.iter().any(|j| j.id == proving_job.id && j.status == JobStatus::Processed));
     assert!(jobs_response.iter().any(|j| j.id == data_submission_job.id && j.status == JobStatus::Created));
     assert!(jobs_response.iter().any(|j| j.id == state_transition_job_updated.id && j.status == JobStatus::Completed));
 }

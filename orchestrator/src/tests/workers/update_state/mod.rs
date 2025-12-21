@@ -27,7 +27,7 @@ async fn update_state_worker_with_pending_jobs() {
 
     let unique_id = Uuid::new_v4();
     let mut job_item = get_job_item_mock_by_id("1".to_string(), unique_id);
-    job_item.status = JobStatus::PendingVerification;
+    job_item.status = JobStatus::Processed;
     job_item.job_type = JobType::StateTransition;
     services.config.database().create_job(job_item).await.unwrap();
 
@@ -35,7 +35,7 @@ async fn update_state_worker_with_pending_jobs() {
 
     let latest_job =
         services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
-    assert_eq!(latest_job.status, JobStatus::PendingVerification);
+    assert_eq!(latest_job.status, JobStatus::Processed);
     assert_eq!(latest_job.job_type, JobType::StateTransition);
     assert_eq!(latest_job.id, unique_id);
 }

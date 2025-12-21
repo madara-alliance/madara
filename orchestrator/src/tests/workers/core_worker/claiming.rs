@@ -70,7 +70,7 @@ async fn test_claim_priority_pending_retry_first() {
 
     // Create jobs: 1 PendingRetry (created earlier) and 1 Created (created later)
     let metadata1 = create_metadata_for_job_type(&JobType::SnosRun, 1);
-    let mut job1 = JobItem::create("retry_job".to_string(), JobType::SnosRun, JobStatus::PendingRetry, metadata1);
+    let mut job1 = JobItem::create("retry_job".to_string(), JobType::SnosRun, JobStatus::PendingRetryProcessing, metadata1);
     // Backdate the PendingRetry job
     job1.created_at = Utc::now() - Duration::hours(2);
     job1.updated_at = job1.created_at;

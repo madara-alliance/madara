@@ -29,11 +29,14 @@ impl JobTrigger for ProvingJobTrigger {
         }
 
         // FIX-15: Cap job creation to prevent MongoDB from being overwhelmed
-        // Only create jobs if we're below the configured limit for Created + PendingRetry jobs
+        // Only create jobs if we're below the configured limit for Created + PendingRetryProcessing jobs
         let cap = config.service_config().max_concurrent_created_proving_jobs;
         let current_count = config
             .database()
-            .count_jobs_by_type_and_statuses(&JobType::ProofCreation, &[JobStatus::Created, JobStatus::PendingRetry])
+            .count_jobs_by_type_and_statuses(
+                &JobType::ProofCreation,
+                &[JobStatus::Created, JobStatus::PendingRetryProcessing],
+            )
             .await?;
 
         if current_count >= cap {

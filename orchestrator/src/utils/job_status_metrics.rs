@@ -83,12 +83,13 @@ pub fn get_status_color(status: &JobStatus) -> &'static str {
     match status {
         JobStatus::Created => "blue",
         JobStatus::LockedForProcessing => "purple",
-        JobStatus::PendingVerification => "yellow",
+        JobStatus::Processed => "yellow",
         JobStatus::Completed => "green",
         JobStatus::VerificationFailed => "orange",
-        JobStatus::Failed => "red",
-        JobStatus::VerificationTimeout => "dark_red",
-        JobStatus::PendingRetry => "orange",
+        JobStatus::ProcessingFailed => "red",
+        JobStatus::PendingRetryVerification => "dark_red",
+        JobStatus::PendingRetryProcessing => "orange",
+        JobStatus::LockedForVerification => "light_purple",
     }
 }
 
@@ -97,11 +98,12 @@ pub fn get_status_icon(status: &JobStatus) -> &'static str {
     match status {
         JobStatus::Created => "[NEW]",
         JobStatus::LockedForProcessing => "[LOCKED]",
-        JobStatus::PendingVerification => "[VERIFYING]",
+        JobStatus::Processed => "[VERIFYING]",
         JobStatus::Completed => "[OK]",
         JobStatus::VerificationFailed => "[VERIFY_FAIL]",
-        JobStatus::Failed => "[FAIL]",
-        JobStatus::VerificationTimeout => "[TIMEOUT]",
-        JobStatus::PendingRetry => "[RETRY]",
+        JobStatus::ProcessingFailed => "[FAIL]",
+        JobStatus::PendingRetryVerification => "[TIMEOUT]",
+        JobStatus::PendingRetryProcessing => "[RETRY]",
+        JobStatus::LockedForVerification => "[VERIFYING]",
     }
 }

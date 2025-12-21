@@ -80,7 +80,7 @@ async fn test_orphan_healing_workflow() {
     // Simulate healing: reset to PendingRetry and clear claimed_by
     db.update_job(
         &claimed,
-        JobItemUpdates::new().update_status(JobStatus::PendingRetry).update_claimed_by(None).build(),
+        JobItemUpdates::new().update_status(JobStatus::PendingRetryProcessing).update_claimed_by(None).build(),
     )
     .await
     .expect("Failed to heal");
@@ -100,7 +100,7 @@ async fn test_only_locked_jobs_can_be_orphans() {
     let db = config.config.database();
 
     // Create jobs in various states
-    let statuses = vec![JobStatus::Created, JobStatus::PendingVerification, JobStatus::Completed];
+    let statuses = vec![JobStatus::Created, JobStatus::Processed, JobStatus::Completed];
 
     for (i, status) in statuses.iter().enumerate() {
         let metadata = create_metadata_for_job_type(&JobType::SnosRun, i as u64);
@@ -147,7 +147,7 @@ async fn test_orphan_retry_counter_increment() {
     db.update_job(
         &claimed,
         JobItemUpdates::new()
-            .update_status(JobStatus::PendingRetry)
+            .update_status(JobStatus::PendingRetryProcessing)
             .update_claimed_by(None)
             .update_metadata(updated_metadata)
             .build(),
@@ -194,7 +194,7 @@ async fn test_clear_claim_helper() {
     assert!(claimed.claimed_by.is_some());
 
     // Use clear_claim helper
-    db.update_job(&claimed, JobItemUpdates::new().update_status(JobStatus::PendingRetry).clear_claim().build())
+    db.update_job(&claimed, JobItemUpdates::new().update_status(JobStatus::PendingRetryProcessing).clear_claim().build())
         .await
         .expect("Failed to clear claim");
 

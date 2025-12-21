@@ -58,7 +58,7 @@ async fn test_snos_job_cap_respected() {
     }
 
     // Count Created + PendingRetry jobs
-    let count = count_jobs_by_statuses(db, &JobType::SnosRun, &[JobStatus::Created, JobStatus::PendingRetry]).await;
+    let count = count_jobs_by_statuses(db, &JobType::SnosRun, &[JobStatus::Created, JobStatus::PendingRetryProcessing]).await;
     assert_eq!(count, cap as usize);
 
     // In real implementation, attempting to create more would be blocked by the trigger
@@ -80,7 +80,7 @@ async fn test_proving_job_cap_respected() {
     }
 
     let count =
-        count_jobs_by_statuses(db, &JobType::ProofCreation, &[JobStatus::Created, JobStatus::PendingRetry]).await;
+        count_jobs_by_statuses(db, &JobType::ProofCreation, &[JobStatus::Created, JobStatus::PendingRetryProcessing]).await;
     assert_eq!(count, cap as usize);
 }
 
@@ -98,7 +98,7 @@ async fn test_aggregator_job_cap_respected() {
         db.create_job(job).await.expect("Failed to create");
     }
 
-    let count = count_jobs_by_statuses(db, &JobType::Aggregator, &[JobStatus::Created, JobStatus::PendingRetry]).await;
+    let count = count_jobs_by_statuses(db, &JobType::Aggregator, &[JobStatus::Created, JobStatus::PendingRetryProcessing]).await;
     assert_eq!(count, cap as usize);
 }
 
@@ -117,12 +117,12 @@ async fn test_cap_counts_created_and_pending_retry() {
 
     for i in 1..=2 {
         let metadata = create_metadata_for_job_type(&JobType::SnosRun, i + 10);
-        let job = JobItem::create(format!("retry_{}", i), JobType::SnosRun, JobStatus::PendingRetry, metadata);
+        let job = JobItem::create(format!("retry_{}", i), JobType::SnosRun, JobStatus::PendingRetryProcessing, metadata);
         db.create_job(job).await.expect("Failed to create");
     }
 
     // Count should be 4 (both Created and PendingRetry count toward cap)
-    let count = count_jobs_by_statuses(db, &JobType::SnosRun, &[JobStatus::Created, JobStatus::PendingRetry]).await;
+    let count = count_jobs_by_statuses(db, &JobType::SnosRun, &[JobStatus::Created, JobStatus::PendingRetryProcessing]).await;
     assert_eq!(count, 4);
 }
 
@@ -141,7 +141,7 @@ async fn test_completing_jobs_frees_cap_space() {
 
     // Initial count
     let initial_count =
-        count_jobs_by_statuses(db, &JobType::ProofCreation, &[JobStatus::Created, JobStatus::PendingRetry]).await;
+        count_jobs_by_statuses(db, &JobType::ProofCreation, &[JobStatus::Created, JobStatus::PendingRetryProcessing]).await;
     assert_eq!(initial_count, 3);
 
     // Claim and complete one job
@@ -153,7 +153,7 @@ async fn test_completing_jobs_frees_cap_space() {
 
     // Count should now be 2 (Completed jobs don't count toward cap)
     let after_count =
-        count_jobs_by_statuses(db, &JobType::ProofCreation, &[JobStatus::Created, JobStatus::PendingRetry]).await;
+        count_jobs_by_statuses(db, &JobType::ProofCreation, &[JobStatus::Created, JobStatus::PendingRetryProcessing]).await;
     assert_eq!(after_count, 2);
 }
 
@@ -176,7 +176,7 @@ async fn test_locked_jobs_not_counted_in_cap() {
     }
 
     // Count Created + PendingRetry should be 1 (the 2 claimed jobs are now LockedForProcessing)
-    let count = count_jobs_by_statuses(db, &JobType::SnosRun, &[JobStatus::Created, JobStatus::PendingRetry]).await;
+    let count = count_jobs_by_statuses(db, &JobType::SnosRun, &[JobStatus::Created, JobStatus::PendingRetryProcessing]).await;
     assert_eq!(count, 1);
 
     // Verify 2 jobs are in LockedForProcessing

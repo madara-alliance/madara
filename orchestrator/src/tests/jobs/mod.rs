@@ -292,7 +292,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     // Getting the updated job.
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
     // checking if job_status is updated in db
-    assert_eq!(updated_job.status, JobStatus::PendingVerification);
+    assert_eq!(updated_job.status, JobStatus::Processed);
     assert_eq!(updated_job.external_id, ExternalId::String(Box::from("0xbeef")));
 
     // Check that process attempt is recorded in common metadata
@@ -361,7 +361,7 @@ async fn process_job_handles_panic() {
 
     // DB checks - verify the job was moved to failed state
     let job_in_db = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(job_in_db.status, JobStatus::Failed);
+    assert_eq!(job_in_db.status, JobStatus::ProcessingFailed);
 
     // Check that failure reason is recorded in common metadata
     assert!(job_in_db
@@ -558,7 +558,7 @@ async fn process_job_two_workers_process_same_job_works() {
     sleep(Duration::from_secs(5)).await;
 
     let final_job_in_db = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(final_job_in_db.status, JobStatus::PendingVerification);
+    assert_eq!(final_job_in_db.status, JobStatus::Processed);
 }
 
 /// Tests `process_job` function when the job handler returns an error.
@@ -606,7 +606,7 @@ async fn process_job_job_handler_returns_error_works() {
     assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_ok());
 
     let final_job_in_db = db_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(final_job_in_db.status, JobStatus::Failed);
+    assert_eq!(final_job_in_db.status, JobStatus::ProcessingFailed);
     assert!(final_job_in_db.metadata.common.failure_reason.as_ref().unwrap().contains(failure_reason));
 }
 
@@ -619,7 +619,7 @@ async fn verify_job_with_verified_status_works() {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = acquire_test_lock();
 
-    let job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
+    let job_item = build_job_item(JobType::DataSubmission, JobStatus::Processed, 1);
 
     // building config
     let services = TestConfigBuilder::new()
@@ -678,7 +678,7 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = acquire_test_lock();
 
-    let job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
+    let job_item = build_job_item(JobType::DataSubmission, JobStatus::Processed, 1);
 
     // building config
     let services = TestConfigBuilder::new()
@@ -743,7 +743,7 @@ async fn verify_job_with_rejected_status_works() {
     let database_client = services.config.database();
 
     // Create a job with proper metadata structure
-    let mut job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
+    let mut job_item = build_job_item(JobType::DataSubmission, JobStatus::Processed, 1);
 
     // Set process_attempt_no to 1 to simulate max attempts reached
     job_item.metadata.common.process_attempt_no = 1;
@@ -765,7 +765,7 @@ async fn verify_job_with_rejected_status_works() {
 
     // DB checks - verify the job was moved to a failed state
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(updated_job.status, JobStatus::Failed);
+    assert_eq!(updated_job.status, JobStatus::ProcessingFailed);
 
     // Check that process attempt is recorded in common metadata
     assert_eq!(updated_job.metadata.common.process_attempt_no, 1);
@@ -801,7 +801,7 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     let database_client = services.config.database();
 
     // Create a job with a proper metadata structure
-    let job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
+    let job_item = build_job_item(JobType::DataSubmission, JobStatus::Processed, 1);
 
     // Creating a job in a database
     database_client.create_job(job_item.clone()).await.unwrap();
@@ -822,7 +822,7 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     // DB checks - verify the job status remains PendingVerification and verification attempt is
     // incremented
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(updated_job.status, JobStatus::PendingVerification);
+    assert_eq!(updated_job.status, JobStatus::Processed);
 
     // Check that verification attempt is recorded in common metadata
     assert_eq!(updated_job.metadata.common.verification_attempt_no, 1);
@@ -861,7 +861,7 @@ async fn verify_job_with_pending_status_works() {
     let database_client = services.config.database();
 
     // Create a job with proper metadata structure
-    let mut job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
+    let mut job_item = build_job_item(JobType::DataSubmission, JobStatus::Processed, 1);
 
     // Set verification_attempt_no to 1 to simulate max attempts reached
     job_item.metadata.common.verification_attempt_no = 1;
@@ -884,7 +884,7 @@ async fn verify_job_with_pending_status_works() {
 
     // DB checks - verify the job status is changed to VerificationTimeout
     let updated_job = database_client.get_job_by_id(job_item.id).await.unwrap().unwrap();
-    assert_eq!(updated_job.status, JobStatus::VerificationTimeout);
+    assert_eq!(updated_job.status, JobStatus::PendingRetryVerification);
 
     // Check that verification attempt is still recorded in common metadata
     assert_eq!(updated_job.metadata.common.verification_attempt_no, 1);
@@ -903,12 +903,12 @@ async fn verify_job_with_pending_status_works() {
 
 #[rstest]
 #[case(JobType::DataSubmission, JobStatus::Completed)] // code should panic here, how can completed move to dl queue ?
-#[case(JobType::SnosRun, JobStatus::PendingVerification)]
+#[case(JobType::SnosRun, JobStatus::Processed)]
 #[case(JobType::ProofCreation, JobStatus::LockedForProcessing)]
 // #[case(JobType::ProofRegistration, JobStatus::Created)] TODO: add this case when we have the metadata for proof
 // registration
 #[case(JobType::StateTransition, JobStatus::Completed)]
-#[case(JobType::ProofCreation, JobStatus::VerificationTimeout)]
+#[case(JobType::ProofCreation, JobStatus::PendingRetryVerification)]
 #[case(JobType::DataSubmission, JobStatus::VerificationFailed)]
 #[tokio::test]
 async fn handle_job_failure_with_failed_job_status_works(#[case] job_type: JobType, #[case] job_status: JobStatus) {
@@ -922,7 +922,7 @@ async fn handle_job_failure_with_failed_job_status_works(#[case] job_type: JobTy
     let internal_id = 1;
 
     // Create a job with Failed status
-    let mut job_expected = build_job_item(job_type.clone(), JobStatus::Failed, internal_id);
+    let mut job_expected = build_job_item(job_type.clone(), JobStatus::ProcessingFailed, internal_id);
 
     // Store the previous job status in the common metadata
     job_expected.metadata.common.failure_reason = Some(format!("last_job_status: {}", job_status));
@@ -945,8 +945,8 @@ async fn handle_job_failure_with_failed_job_status_works(#[case] job_type: JobTy
 }
 
 #[rstest]
-#[case::pending_verification(JobType::SnosRun, JobStatus::PendingVerification)]
-#[case::verification_timeout(JobType::SnosRun, JobStatus::VerificationTimeout)]
+#[case::pending_verification(JobType::SnosRun, JobStatus::Processed)]
+#[case::verification_timeout(JobType::SnosRun, JobStatus::PendingRetryVerification)]
 #[tokio::test]
 async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobType, #[case] job_status: JobStatus) {
     let mut mock_alert_client = MockAlertClient::new();
@@ -979,7 +979,7 @@ async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobT
 
     // Creating expected output
     let mut job_expected = job.clone();
-    job_expected.status = JobStatus::Failed;
+    job_expected.status = JobStatus::ProcessingFailed;
     job_expected.version = 1;
 
     // Set the failure reason in common metadata
@@ -1041,7 +1041,7 @@ async fn test_retry_job_adds_to_process_queue() {
         .await;
 
     // Create a failed job
-    let job_item = build_job_item(JobType::DataSubmission, JobStatus::Failed, 1);
+    let job_item = build_job_item(JobType::DataSubmission, JobStatus::ProcessingFailed, 1);
     services.config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.id;
 
@@ -1049,7 +1049,7 @@ async fn test_retry_job_adds_to_process_queue() {
 
     // Verify job status was updated to PendingRetry
     let updated_job = services.config.database().get_job_by_id(job_id).await.unwrap().unwrap();
-    assert_eq!(updated_job.status, JobStatus::PendingRetry);
+    assert_eq!(updated_job.status, JobStatus::PendingRetryProcessing);
 
     // Verify message was added to process queue
     // Retry a few times in case of timing issues
@@ -1066,7 +1066,7 @@ async fn test_retry_job_adds_to_process_queue() {
 }
 
 #[rstest]
-#[case::pending_verification(JobStatus::PendingVerification)]
+#[case::pending_verification(JobStatus::Processed)]
 #[case::completed(JobStatus::Completed)]
 #[case::created(JobStatus::Created)]
 #[tokio::test]
@@ -1126,7 +1126,7 @@ async fn move_job_to_failed_sends_sns_alert() {
     let failure_reason = "Processing failed: Test error";
 
     // Create a job with PendingVerification status
-    let job = build_job_item(job_type.clone(), JobStatus::PendingVerification, internal_id);
+    let job = build_job_item(job_type.clone(), JobStatus::Processed, internal_id);
     let job_id = job.id;
 
     // Create the job in the database
@@ -1138,7 +1138,7 @@ async fn move_job_to_failed_sends_sns_alert() {
 
     // Verify the job status was updated to Failed
     let updated_job = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
-    assert_eq!(updated_job.status, JobStatus::Failed);
+    assert_eq!(updated_job.status, JobStatus::ProcessingFailed);
     assert_eq!(updated_job.metadata.common.failure_reason, Some(failure_reason.to_string()));
 
     // The SNS alert was automatically sent by move_job_to_failed function

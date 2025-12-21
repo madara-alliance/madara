@@ -148,7 +148,7 @@ impl MongoDbClient {
         let worker_indexes = vec![
             // FIX-06: Partial index for processing claims
             // Only indexes jobs that are claimable for processing
-            // Note: VerificationFailed jobs must transition to PendingRetry before re-processing
+            // Note: VerificationFailed jobs must transition to PendingRetryProcessing before re-processing
             IndexModel::builder()
                 .keys(doc! {
                     "job_type": 1,
@@ -158,13 +158,13 @@ impl MongoDbClient {
                     IndexOptions::builder()
                         .name("idx_processing_claim_partial".to_string())
                         .partial_filter_expression(doc! {
-                            "status": { "$in": ["Created", "PendingRetry"] }
+                            "status": { "$in": ["Created", "PendingRetryProcessing"] }
                         })
                         .build(),
                 )
                 .build(),
             // FIX-06: Partial index for verification claims
-            // Only indexes jobs in PendingVerification status
+            // Only indexes jobs in Processed status
             IndexModel::builder()
                 .keys(doc! {
                     "job_type": 1,
@@ -174,7 +174,7 @@ impl MongoDbClient {
                     IndexOptions::builder()
                         .name("idx_verification_claim_partial".to_string())
                         .partial_filter_expression(doc! {
-                            "status": "PendingVerification"
+                            "status": "Processed"
                         })
                         .build(),
                 )
@@ -190,7 +190,7 @@ impl MongoDbClient {
                     IndexOptions::builder()
                         .name("idx_verification_orphan_detection".to_string())
                         .partial_filter_expression(doc! {
-                            "status": "PendingVerification",
+                            "status": "Processed",
                             "claimed_by": { "$exists": true }
                         })
                         .build(),
@@ -1476,16 +1476,14 @@ impl DatabaseClient for MongoDbClient {
         let now = Utc::now().trunc_subsecs(3);
 
         // FIX-11: Correct statuses for processing claims
-        // - PendingRetry: Manual retry via API (highest priority)
+        // - PendingRetryProcessing: Manual retry via API (highest priority)
         // - Created: New jobs waiting to be processed
-        // Note: VerificationFailed is NOT included - jobs transition to PendingRetry or Created before re-processing
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,
             "status": {
                 "$in": [
-                    bson::to_bson(&JobStatus::PendingRetry)?,
+                    bson::to_bson(&JobStatus::PendingRetryProcessing)?,
                     bson::to_bson(&JobStatus::Created)?,
-                    bson::to_bson(&JobStatus::VerificationFailed)?,
                 ]
             },
             "$and": [
@@ -1516,12 +1514,12 @@ impl DatabaseClient for MongoDbClient {
             }
         };
 
-        // FIX-11: Priority sorting - PendingRetry first (retries are in-flight work), then FIFO by created_at
-        // Note: We use descending sort on status because "PendingRetry" > "Created" alphabetically
-        // So status: -1 gives us PendingRetry first, then Created
+        // FIX-11: Priority sorting - PendingRetryProcessing first (retries are in-flight work), then FIFO by created_at
+        // Note: We use descending sort on status because "PendingRetryProcessing" > "Created" alphabetically
+        // So status: -1 gives us PendingRetryProcessing first, then Created
         let options = FindOneAndUpdateOptions::builder()
             .return_document(ReturnDocument::After)
-            .sort(doc! { "status": -1, "created_at": 1 })  // PendingRetry first (desc), then oldest first
+            .sort(doc! { "status": -1, "created_at": 1 })  // PendingRetryProcessing first (desc), then oldest first
             .build();
 
         let result = self.get_job_collection().find_one_and_update(filter, update, options).await?;
@@ -1551,11 +1549,11 @@ impl DatabaseClient for MongoDbClient {
         let now = Utc::now().trunc_subsecs(3);
 
         // FIX-12: Correct status for verification claims
-        // Only PendingVerification jobs should be picked up for verification
+        // Only Processed jobs should be picked up for verification
         // Completed is the FINAL state after successful verification
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,
-            "status": bson::to_bson(&JobStatus::PendingVerification)?,
+            "status": bson::to_bson(&JobStatus::Processed)?,
             "$and": [
                 {
                     "$or": [
@@ -1749,11 +1747,11 @@ impl DatabaseClient for MongoDbClient {
         let now = Utc::now().trunc_subsecs(3);
         let cutoff_time = now - chrono::Duration::seconds(timeout_seconds as i64);
 
-        // FIX-01 + FIX-12: Detect jobs stuck in PendingVerification status with claimed_by set
+        // FIX-01 + FIX-12: Detect jobs stuck in Processed status with claimed_by set
         // These are jobs that were claimed for verification but the orchestrator crashed
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,
-            "status": bson::to_bson(&JobStatus::PendingVerification)?,
+            "status": bson::to_bson(&JobStatus::Processed)?,
             "claimed_by": { "$ne": null },
             "updated_at": { "$lt": cutoff_time }
         };

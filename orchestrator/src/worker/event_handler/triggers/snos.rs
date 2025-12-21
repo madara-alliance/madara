@@ -52,11 +52,14 @@ impl JobTrigger for SnosJobTrigger {
         }
 
         // FIX-14: Cap job creation to prevent MongoDB from being overwhelmed
-        // Only create jobs if we're below the configured limit for Created + PendingRetry jobs
+        // Only create jobs if we're below the configured limit for Created + PendingRetryProcessing jobs
         let cap = config.service_config().max_concurrent_created_snos_jobs;
         let current_count = config
             .database()
-            .count_jobs_by_type_and_statuses(&JobType::SnosRun, &[JobStatus::Created, JobStatus::PendingRetry])
+            .count_jobs_by_type_and_statuses(
+                &JobType::SnosRun,
+                &[JobStatus::Created, JobStatus::PendingRetryProcessing],
+            )
             .await?;
 
         if current_count >= cap {

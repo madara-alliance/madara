@@ -98,10 +98,7 @@ impl JobService {
             .database()
             .update_job(
                 &job,
-                JobItemUpdates::new()
-                    .update_status(JobStatus::PendingVerification)
-                    .update_metadata(job.metadata.clone())
-                    .build(),
+                JobItemUpdates::new().update_status(JobStatus::Processed).update_metadata(job.metadata.clone()).build(),
             )
             .await?;
 
@@ -117,7 +114,7 @@ impl JobService {
         Ok(())
     }
 
-    /// Moves a job to the Failed state with the provided reason
+    /// Moves a job to the ProcessingFailed state with the provided reason
     ///
     /// # Arguments
     /// * `job` - Reference to the job to mark as failed
@@ -128,7 +125,7 @@ impl JobService {
     /// * `Result<(), JobError>` - Success or an error
     ///
     /// # Notes
-    /// * Skips processing if job is already in Failed status
+    /// * Skips processing if job is already in ProcessingFailed status
     /// * Records failure reason in job metadata
     /// * Updates metrics for failed jobs
     pub async fn move_job_to_failed(job: &JobItem, config: Arc<Config>, reason: String) -> Result<(), JobError> {
@@ -138,7 +135,7 @@ impl JobService {
         }
         // We assume that a Failure status will only show up if the message is sent twice from a queue
         // Can return silently because it's already been processed.
-        else if job.status == JobStatus::Failed {
+        else if job.status == JobStatus::ProcessingFailed {
             tracing::warn!(job_id = ?job.id, "Job already marked as failed, skipping processing");
             return Ok(());
         }
@@ -146,7 +143,7 @@ impl JobService {
         let mut job_metadata = job.metadata.clone();
         let internal_id = &job.internal_id;
 
-        tracing::debug!(job_id = ?job.id, "Updating job status to Failed in database");
+        tracing::debug!(job_id = ?job.id, "Updating job status to ProcessingFailed in database");
         // Update failure information in common metadata
         job_metadata.common.failure_reason = Some(reason.clone());
 
@@ -156,7 +153,7 @@ impl JobService {
             .update_job(
                 job,
                 JobItemUpdates::new()
-                    .update_status(JobStatus::Failed)
+                    .update_status(JobStatus::ProcessingFailed)
                     .update_metadata(job_metadata)
                     .clear_claim() // Clear worker mode claim on failure
                     .build(),
@@ -177,7 +174,7 @@ impl JobService {
 
                 // Send SNS alert for job failure
                 let alert_message = format!(
-                    "Job Failed Alert: Job ID: {}, Type: {:?}, Block: {}, Reason: {}",
+                    "Job ProcessingFailed Alert: Job ID: {}, Type: {:?}, Block: {}, Reason: {}",
                     job.id, job.job_type, internal_id, reason
                 );
 

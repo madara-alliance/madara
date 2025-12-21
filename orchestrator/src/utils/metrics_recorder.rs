@@ -61,7 +61,7 @@ impl MetricsRecorder {
         // Record state transition
         let transition_attrs = [
             KeyValue::new("from_state", JobStatus::LockedForProcessing.to_string()),
-            KeyValue::new("to_state", JobStatus::PendingVerification.to_string()),
+            KeyValue::new("to_state", JobStatus::Processed.to_string()),
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
         ];
         ORCHESTRATOR_METRICS.job_state_transitions.add(1.0, &transition_attrs);
@@ -83,7 +83,7 @@ impl MetricsRecorder {
 
         // Record state transition
         let transition_attrs = [
-            KeyValue::new("from_state", JobStatus::PendingVerification.to_string()),
+            KeyValue::new("from_state", JobStatus::Processed.to_string()),
             KeyValue::new("to_state", JobStatus::Completed.to_string()),
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
         ];

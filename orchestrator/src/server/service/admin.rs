@@ -78,7 +78,7 @@ impl AdminService {
         config: Arc<Config>,
     ) -> Result<BulkJobResult, JobError> {
         Self::process_jobs_by_status(
-            JobStatus::Failed,
+            JobStatus::ProcessingFailed,
             job_types,
             config.clone(),
             "retry failed",
@@ -92,7 +92,7 @@ impl AdminService {
         config: Arc<Config>,
     ) -> Result<BulkJobResult, JobError> {
         Self::process_jobs_by_status(
-            JobStatus::VerificationTimeout,
+            JobStatus::VerificationFailed,
             job_types,
             config.clone(),
             "reverify verification-timeout",
@@ -106,7 +106,7 @@ impl AdminService {
         config: Arc<Config>,
     ) -> Result<BulkJobResult, JobError> {
         Self::process_jobs_by_status(
-            JobStatus::PendingVerification,
+            JobStatus::Processed,
             job_types,
             config.clone(),
             "requeue pending-verification",

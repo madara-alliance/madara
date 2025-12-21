@@ -68,7 +68,7 @@ async fn test_release_claim_with_verification_delay() {
     let job = JobItem::create(
         "verif_delay_test".to_string(),
         JobType::DataSubmission,
-        JobStatus::PendingVerification,
+        JobStatus::Processed,
         metadata,
     );
     db.create_job(job).await.expect("Failed to create job");
@@ -80,7 +80,7 @@ async fn test_release_claim_with_verification_delay() {
         .expect("No job to claim");
 
     assert!(claimed.claimed_by.is_some());
-    assert_eq!(claimed.status, JobStatus::PendingVerification);
+    assert_eq!(claimed.status, JobStatus::Processed);
 
     // Simulate verification failure by releasing the claim with 30-second delay
     let released = db.release_job_claim(claimed.id, Some(30)).await.expect("Failed to release claim");
@@ -121,7 +121,7 @@ async fn test_released_job_without_delay_immediately_available() {
 
     // Simulate JobHandlerService setting status to PendingRetry (what happens in real scenario)
     use crate::types::jobs::job_updates::JobItemUpdates;
-    db.update_job(&claimed, JobItemUpdates::new().update_status(JobStatus::PendingRetry).build())
+    db.update_job(&claimed, JobItemUpdates::new().update_status(JobStatus::PendingRetryProcessing).build())
         .await
         .expect("Failed to update status");
 
@@ -151,7 +151,7 @@ async fn test_claim_release_preserves_job_state() {
     let mut job = JobItem::create(
         "state_test".to_string(),
         JobType::ProofCreation,
-        JobStatus::PendingVerification,
+        JobStatus::Processed,
         metadata.clone(),
     );
     job.external_id = crate::types::jobs::external_id::ExternalId::String("ext-123".into());
@@ -172,7 +172,7 @@ async fn test_claim_release_preserves_job_state() {
     assert_eq!(released.id, job.id, "Job ID should be preserved");
     assert_eq!(released.internal_id, job.internal_id, "Internal ID should be preserved");
     assert_eq!(released.job_type, job.job_type, "Job type should be preserved");
-    assert_eq!(released.status, JobStatus::PendingVerification, "Status should be preserved");
+    assert_eq!(released.status, JobStatus::Processed, "Status should be preserved");
     assert_eq!(released.external_id, job.external_id, "External ID should be preserved");
     assert_eq!(released.version, claimed.version, "Version should not be incremented on release");
 

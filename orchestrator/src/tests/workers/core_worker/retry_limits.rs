@@ -46,7 +46,7 @@ async fn test_processing_retries_until_max_attempts() {
     assert!(result.is_err(), "Expected processing to fail without real services");
     
     let job_after_attempt1 = db.get_job_by_id(job.id).await.expect("DB error").expect("Job not found");
-    assert_eq!(job_after_attempt1.status, JobStatus::PendingRetry, "Should be PendingRetry after first failure");
+    assert_eq!(job_after_attempt1.status, JobStatus::PendingRetryProcessing, "Should be PendingRetry after first failure");
     assert_eq!(job_after_attempt1.metadata.common.process_attempt_no, 1, "Should have 1 attempt");
     assert!(job_after_attempt1.claimed_by.is_none(), "Claim should be cleared");
 
@@ -57,7 +57,7 @@ async fn test_processing_retries_until_max_attempts() {
     let job_after_attempt2 = db.get_job_by_id(job.id).await.expect("DB error").expect("Job not found");
     
     // Max attempts (2) reached - should now be Failed
-    assert_eq!(job_after_attempt2.status, JobStatus::Failed, "Should be Failed after max attempts");
+    assert_eq!(job_after_attempt2.status, JobStatus::ProcessingFailed, "Should be Failed after max attempts");
     assert_eq!(job_after_attempt2.metadata.common.process_attempt_no, 2, "Should have 2 attempts");
     assert!(job_after_attempt2.claimed_by.is_none(), "Claim should be cleared");
     assert!(job_after_attempt2.metadata.common.failure_reason.is_some(), "Should have failure reason");
@@ -90,7 +90,7 @@ async fn test_snos_fails_immediately_no_retry() {
     let job_after = db.get_job_by_id(job.id).await.expect("DB error").expect("Job not found");
     
     // With max_process_attempts = 1, should go directly to Failed (no retry)
-    assert_eq!(job_after.status, JobStatus::Failed, "Should be Failed immediately (max_attempts=1)");
+    assert_eq!(job_after.status, JobStatus::ProcessingFailed, "Should be Failed immediately (max_attempts=1)");
     assert_eq!(job_after.metadata.common.process_attempt_no, 1, "Should have 1 attempt");
     assert!(job_after.claimed_by.is_none(), "Claim should be cleared");
 }
@@ -113,13 +113,13 @@ async fn test_process_attempt_counter_increments() {
     let _ = JobHandlerService::process_job(job.id, config.config.clone()).await;
     let job = db.get_job_by_id(job.id).await.expect("DB error").expect("Job not found");
     assert_eq!(job.metadata.common.process_attempt_no, 1, "Should be 1 after first attempt");
-    assert_eq!(job.status, JobStatus::PendingRetry, "Should be PendingRetry after first failure");
+    assert_eq!(job.status, JobStatus::PendingRetryProcessing, "Should be PendingRetry after first failure");
 
     // Second attempt
     let _ = JobHandlerService::process_job(job.id, config.config.clone()).await;
     let job = db.get_job_by_id(job.id).await.expect("DB error").expect("Job not found");
     assert_eq!(job.metadata.common.process_attempt_no, 2, "Should be 2 after second attempt");
-    assert_eq!(job.status, JobStatus::Failed, "Should be Failed after max attempts");
+    assert_eq!(job.status, JobStatus::ProcessingFailed, "Should be Failed after max attempts");
 }
 
 /// Test that claim is properly cleared on retry
@@ -150,7 +150,7 @@ async fn test_claim_cleared_on_retry() {
     
     // Claim should be cleared
     assert!(job_after.claimed_by.is_none(), "Claim should be cleared after failure");
-    assert_eq!(job_after.status, JobStatus::PendingRetry, "Should be PendingRetry");
+    assert_eq!(job_after.status, JobStatus::PendingRetryProcessing, "Should be PendingRetry");
     
     // Should be claimable by another orchestrator
     let reclaimed = db.claim_job_for_processing(&job_type, "orch-2")

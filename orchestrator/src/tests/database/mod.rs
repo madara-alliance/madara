@@ -395,7 +395,7 @@ async fn test_get_jobs_by_types_and_statuses() {
         build_job_item(JobType::SnosRun, JobStatus::Completed, 1),
         build_job_item(JobType::ProofCreation, JobStatus::Completed, 2),
         build_job_item(JobType::SnosRun, JobStatus::Created, 3),
-        build_job_item(JobType::ProofCreation, JobStatus::Failed, 4),
+        build_job_item(JobType::ProofCreation, JobStatus::ProcessingFailed, 4),
         build_job_item(JobType::DataSubmission, JobStatus::Completed, 5),
     ];
 
@@ -472,7 +472,7 @@ async fn test_get_jobs_by_type_and_statuses() {
     let jobs = [
         build_job_item(JobType::SnosRun, JobStatus::Completed, 1),
         build_job_item(JobType::SnosRun, JobStatus::Created, 2),
-        build_job_item(JobType::SnosRun, JobStatus::Failed, 3),
+        build_job_item(JobType::SnosRun, JobStatus::ProcessingFailed, 3),
         build_job_item(JobType::ProofCreation, JobStatus::Completed, 4),
     ];
 
@@ -481,7 +481,7 @@ async fn test_get_jobs_by_type_and_statuses() {
     }
 
     let retrieved_jobs = database_client
-        .get_jobs_by_type_and_statuses(&JobType::SnosRun, vec![JobStatus::Completed, JobStatus::Failed])
+        .get_jobs_by_type_and_statuses(&JobType::SnosRun, vec![JobStatus::Completed, JobStatus::ProcessingFailed])
         .await
         .unwrap();
 

@@ -216,7 +216,7 @@ async fn test_concurrent_claim_process_complete_cycle() {
 
                     // Complete the job
                     let _ = config_clone.database()
-                        .update_job(&job, JobItemUpdates::new().update_status(JobStatus::PendingVerification).build())
+                        .update_job(&job, JobItemUpdates::new().update_status(JobStatus::Processed).build())
                         .await;
                     completed.push(job.id);
                 }
@@ -249,7 +249,7 @@ async fn test_concurrent_priority_maintained() {
     // Create 5 PendingRetry jobs and 5 Created jobs
     for i in 1..=5 {
         let metadata = create_metadata_for_job_type(&JobType::SnosRun, i);
-        let job = JobItem::create(format!("retry_{}", i), JobType::SnosRun, JobStatus::PendingRetry, metadata);
+        let job = JobItem::create(format!("retry_{}", i), JobType::SnosRun, JobStatus::PendingRetryProcessing, metadata);
         db.create_job(job).await.expect("Failed to create retry job");
     }
 

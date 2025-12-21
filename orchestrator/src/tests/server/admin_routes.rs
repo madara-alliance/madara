@@ -61,13 +61,13 @@ async fn test_admin_retry_all_failed_jobs() {
     let mut db = MockDatabaseClient::new();
     let mut queue = MockQueueClient::new();
 
-    let job1 = build_job_item(JobType::DataSubmission, JobStatus::Failed, 1001);
-    let job2 = build_job_item(JobType::DataSubmission, JobStatus::Failed, 1002);
+    let job1 = build_job_item(JobType::DataSubmission, JobStatus::ProcessingFailed, 1001);
+    let job2 = build_job_item(JobType::DataSubmission, JobStatus::ProcessingFailed, 1002);
     let (id1, id2) = (job1.id, job2.id);
     let jobs = vec![job1.clone(), job2.clone()];
 
     db.expect_get_jobs_by_types_and_statuses()
-        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::Failed])
+        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::ProcessingFailed])
         .times(1)
         .returning(move |_, _, _| Ok(jobs.clone()));
     let j1 = job1.clone();
@@ -90,11 +90,11 @@ async fn test_admin_reverify_verification_timeout_jobs() {
     let mut db = MockDatabaseClient::new();
     let mut queue = MockQueueClient::new();
 
-    let job = build_job_item(JobType::DataSubmission, JobStatus::VerificationTimeout, 4001);
+    let job = build_job_item(JobType::DataSubmission, JobStatus::PendingRetryVerification, 4001);
     let jobs = vec![job.clone()];
 
     db.expect_get_jobs_by_types_and_statuses()
-        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::VerificationTimeout])
+        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::PendingRetryVerification])
         .times(1)
         .returning(move |_, _, _| Ok(jobs.clone()));
     queue
@@ -116,11 +116,11 @@ async fn test_admin_requeue_pending_verification() {
     let mut db = MockDatabaseClient::new();
     let mut queue = MockQueueClient::new();
 
-    let job = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 2001);
+    let job = build_job_item(JobType::DataSubmission, JobStatus::Processed, 2001);
     let jobs = vec![job.clone()];
 
     db.expect_get_jobs_by_types_and_statuses()
-        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::PendingVerification])
+        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::Processed])
         .times(1)
         .returning(move |_, _, _| Ok(jobs.clone()));
     queue
