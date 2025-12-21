@@ -111,41 +111,51 @@ pub fn create_default_controller(config: Arc<Config>, shutdown_token: Cancellati
     // Create configuration with all job types and their specific concurrency limits
     let mut workers_config = WorkersConfig::new(orchestrator_id, poll_interval_ms);
 
-    // Default concurrency limit if not specified
-    const DEFAULT_MAX_CONCURRENT: usize = 10;
+    // Default concurrency limits if not specified
+    const DEFAULT_PROCESSING_LIMIT: usize = 10;
+    const DEFAULT_VERIFICATION_LIMIT: usize = 5;
 
     // SNOS jobs
     let snos_config = WorkerConfig::new(JobType::SnosRun, poll_interval_ms)
-        .with_max_concurrent_jobs(service_config.max_concurrent_snos_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT));
+        .with_max_concurrent_processing(
+            service_config.max_concurrent_snos_jobs_processing.unwrap_or(DEFAULT_PROCESSING_LIMIT),
+        )
+        .with_max_concurrent_verification(
+            service_config.max_concurrent_snos_jobs_verification.unwrap_or(DEFAULT_VERIFICATION_LIMIT),
+        );
     workers_config.add_worker(snos_config);
 
     // Proving jobs
     let proving_config = WorkerConfig::new(JobType::ProofCreation, poll_interval_ms)
-        .with_max_concurrent_jobs(service_config.max_concurrent_proving_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT));
+        .with_max_concurrent_processing(service_config.max_concurrent_proving_jobs_processing.unwrap_or(5))
+        .with_max_concurrent_verification(service_config.max_concurrent_proving_jobs_verification.unwrap_or(3));
     workers_config.add_worker(proving_config);
 
     // Aggregator jobs (ProofRegistration)
     let aggregator_config = WorkerConfig::new(JobType::ProofRegistration, poll_interval_ms)
-        .with_max_concurrent_jobs(service_config.max_concurrent_aggregator_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT));
+        .with_max_concurrent_processing(service_config.max_concurrent_aggregator_jobs_processing.unwrap_or(3))
+        .with_max_concurrent_verification(service_config.max_concurrent_aggregator_jobs_verification.unwrap_or(2));
     workers_config.add_worker(aggregator_config);
 
     // Data submission jobs
     let data_submission_config = WorkerConfig::new(JobType::DataSubmission, poll_interval_ms)
-        .with_max_concurrent_jobs(service_config.max_concurrent_data_submission_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT));
+        .with_max_concurrent_processing(service_config.max_concurrent_data_submission_jobs_processing.unwrap_or(5))
+        .with_max_concurrent_verification(service_config.max_concurrent_data_submission_jobs_verification.unwrap_or(3));
     workers_config.add_worker(data_submission_config);
 
-    // State transition jobs - always sequential (1 at a time)
-    let state_transition_config =
-        WorkerConfig::new(JobType::StateTransition, poll_interval_ms).with_max_concurrent_jobs(1);
+    // State transition jobs - always sequential (1 at a time for both processing and verification)
+    let state_transition_config = WorkerConfig::new(JobType::StateTransition, poll_interval_ms)
+        .with_max_concurrent_processing(1)
+        .with_max_concurrent_verification(1);
     workers_config.add_worker(state_transition_config);
 
     info!(
         orchestrator_id = %workers_config.orchestrator_id,
-        snos_limit = service_config.max_concurrent_snos_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
-        proving_limit = service_config.max_concurrent_proving_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
-        aggregator_limit = service_config.max_concurrent_aggregator_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
-        data_submission_limit = service_config.max_concurrent_data_submission_jobs.unwrap_or(DEFAULT_MAX_CONCURRENT),
-        "Creating worker controller with per-job-type concurrency limits"
+        snos_processing = service_config.max_concurrent_snos_jobs_processing.unwrap_or(DEFAULT_PROCESSING_LIMIT),
+        snos_verification = service_config.max_concurrent_snos_jobs_verification.unwrap_or(DEFAULT_VERIFICATION_LIMIT),
+        proving_processing = service_config.max_concurrent_proving_jobs_processing.unwrap_or(5),
+        proving_verification = service_config.max_concurrent_proving_jobs_verification.unwrap_or(3),
+        "Creating worker controller with split processing/verification concurrency limits"
     );
 
     WorkerController::new(config, workers_config, shutdown_token)

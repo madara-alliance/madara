@@ -16,8 +16,11 @@ pub struct WorkerConfig {
     /// Polling interval when no jobs are available (milliseconds)
     pub poll_interval_ms: u64,
 
-    /// Maximum concurrent jobs of this type (processing + verification)
-    pub max_concurrent_jobs: usize,
+    /// Maximum concurrent jobs in processing phase
+    pub max_concurrent_processing: usize,
+
+    /// Maximum concurrent jobs in verification phase
+    pub max_concurrent_verification: usize,
 
     /// FIX-08: Graceful shutdown timeout for this job type
     /// Time to wait for in-flight jobs to complete before forceful shutdown
@@ -48,7 +51,8 @@ impl WorkerConfig {
         Self {
             job_type,
             poll_interval_ms,
-            max_concurrent_jobs: 10, // Default concurrency limit
+            max_concurrent_processing: 10,  // Default processing concurrency limit
+            max_concurrent_verification: 5, // Default verification concurrency limit
             shutdown_timeout,
             backoff_initial_ms: 100,
             backoff_max_ms: 30_000, // 30 seconds max
@@ -72,9 +76,23 @@ impl WorkerConfig {
         }
     }
 
-    /// Set maximum concurrent jobs
+    /// Set maximum concurrent jobs for processing phase
+    pub fn with_max_concurrent_processing(mut self, max: usize) -> Self {
+        self.max_concurrent_processing = max;
+        self
+    }
+
+    /// Set maximum concurrent jobs for verification phase
+    pub fn with_max_concurrent_verification(mut self, max: usize) -> Self {
+        self.max_concurrent_verification = max;
+        self
+    }
+
+    /// Set maximum concurrent jobs (deprecated - use split methods)
+    #[deprecated(note = "Use with_max_concurrent_processing and with_max_concurrent_verification instead")]
     pub fn with_max_concurrent_jobs(mut self, max: usize) -> Self {
-        self.max_concurrent_jobs = max;
+        self.max_concurrent_processing = max;
+        self.max_concurrent_verification = max / 2; // Split evenly
         self
     }
 

@@ -87,7 +87,8 @@ impl Worker {
         info!(
             job_type = ?self.config.job_type,
             poll_interval_ms = self.config.poll_interval_ms,
-            max_concurrent = self.config.max_concurrent_jobs,
+            max_concurrent_processing = self.config.max_concurrent_processing,
+            max_concurrent_verification = self.config.max_concurrent_verification,
             "Starting worker"
         );
 
@@ -163,12 +164,15 @@ impl Worker {
             .count_claimed_jobs_by_type(&self.orchestrator_id, &self.config.job_type)
             .await?;
 
-        if claimed_count >= self.config.max_concurrent_jobs as u64 {
+        // Temporary: Use combined limit until Phase 3 splits workers
+        let max_concurrent_total =
+            (self.config.max_concurrent_processing + self.config.max_concurrent_verification) as u64;
+        if claimed_count >= max_concurrent_total {
             trace!(
                 job_type = ?self.config.job_type,
                 orchestrator_id = %self.orchestrator_id,
                 claimed_count = claimed_count,
-                max_concurrent = self.config.max_concurrent_jobs,
+                max_concurrent_total = max_concurrent_total,
                 "Per-job-type concurrency limit reached, skipping claim"
             );
             return Ok(false);
