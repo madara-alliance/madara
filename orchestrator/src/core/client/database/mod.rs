@@ -1,7 +1,6 @@
 pub mod constant;
 pub mod error;
 pub mod mongo_client;
-pub mod mongodb;
 pub mod repository;
 pub mod repository_client;
 

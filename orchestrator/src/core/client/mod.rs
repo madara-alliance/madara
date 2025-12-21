@@ -9,6 +9,6 @@ pub mod storage;
 
 // Re-export commonly used types
 pub use alert::{sns::SNS, AlertClient};
-pub use database::{mongodb::MongoDbClient, DatabaseClient};
+pub use database::DatabaseClient;
 pub use queue::{sqs::SQS, QueueClient};
 pub use storage::{s3::AWSS3, StorageClient};

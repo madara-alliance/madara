@@ -32,8 +32,7 @@ use crate::types::Layer;
 use crate::{
     cli::RunCmd,
     core::client::{
-        queue::QueueClient, storage::s3::AWSS3, storage::StorageClient, AlertClient, DatabaseClient, MongoDbClient,
-        SNS, SQS,
+        queue::QueueClient, storage::s3::AWSS3, storage::StorageClient, AlertClient, DatabaseClient, SNS, SQS,
     },
     core::cloud::CloudProvider,
     types::params::da::DAConfig,
@@ -342,9 +341,8 @@ impl Config {
         // Create the RepositoryDatabaseClient that implements DatabaseClient
         let client = Box::new(RepositoryDatabaseClient::new(job_repo, batch_repo, worker_repo));
 
-        // Ensure indexes using the old client temporarily
-        let old_client = MongoDbClient::new(db_args).await?;
-        old_client.ensure_indexes().await?;
+        // TODO: Implement ensure_indexes using MongoClient.create_indexes()
+        // For now, indexes should be created manually or via migration scripts
 
         Ok(client)
     }
