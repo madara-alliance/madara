@@ -839,6 +839,10 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
             .unwrap_or(false),
         bouncer_weights_limit: Default::default(), // Use default bouncer weights for tests
         aggregator_batch_weights_limit: AggregatorBatchWeights::from(&BouncerWeights::default()),
+        da_public_keys: get_env_var_optional("MADARA_ORCHESTRATOR_DA_PUBLIC_KEYS")
+            .expect("Couldn't get DA public keys")
+            .map(|s| s.split(',').map(|s| s.to_string()).collect())
+            .unwrap_or_default(),
     };
 
     let instrumentation_params = OTELConfig {
