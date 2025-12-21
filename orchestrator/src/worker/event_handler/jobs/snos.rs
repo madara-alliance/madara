@@ -115,7 +115,8 @@ impl JobHandlerTrait for SnosJobHandler {
             None
         } else {
             Some(
-                config.da_public_keys()
+                config
+                    .da_public_keys()
                     .iter()
                     .map(|key| Felt::from_hex(key))
                     .collect::<Result<Vec<_>, _>>()

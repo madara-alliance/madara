@@ -123,7 +123,7 @@ pub async fn fetch_block_starknet_version(
 
     let starknet_version = match block {
         starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,
-        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(block) => block.starknet_version
+        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(block) => block.starknet_version,
     };
 
     StarknetVersion::from_str(&starknet_version).map_err(|e| eyre!(e))

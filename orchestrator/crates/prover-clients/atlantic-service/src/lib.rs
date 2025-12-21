@@ -273,7 +273,14 @@ impl ProverClient for AtlanticProverService {
             self.cairo_verifier_program_hash.as_ref().ok_or(ProverClientError::MissingCairoVerifierProgramHash)?;
         let atlantic_job_response = self
             .atlantic_client
-            .submit_l2_query(proof, n_steps, &self.atlantic_network, &self.atlantic_api_key, program_hash, &self.sharp_prover)
+            .submit_l2_query(
+                proof,
+                n_steps,
+                &self.atlantic_network,
+                &self.atlantic_api_key,
+                program_hash,
+                &self.sharp_prover,
+            )
             .await?;
 
         tracing::info!(
