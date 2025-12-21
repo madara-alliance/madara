@@ -1416,27 +1416,34 @@ impl DatabaseClient for MongoDbClient {
 
     async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
+        let now = Utc::now().trunc_subsecs(3);
+        let cutoff_time = now - chrono::Duration::seconds(timeout_seconds as i64);
 
-        // Calculate the cutoff time (current time - timeout)
-        let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
-
-        // Query for jobs of the specific type in LockedForProcessing status with
-        // process_started_at older than cutoff
+        // Query for jobs of the specific type stuck in either LockedForProcessing or LockedForVerification
+        // with updated_at older than cutoff
         let filter = doc! {
             "job_type": bson::to_bson(job_type)?,
-            "status": bson::to_bson(&JobStatus::LockedForProcessing)?,
-            "metadata.common.process_started_at": {
-                "$lt": cutoff_time.timestamp()
+            "status": {
+                "$in": [
+                    bson::to_bson(&JobStatus::LockedForProcessing)?,
+                    bson::to_bson(&JobStatus::LockedForVerification)?,
+                ]
+            },
+            "updated_at": {
+                "$lt": cutoff_time
             }
         };
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
 
-        debug!(
-            cutoff_time = %cutoff_time,
-            orphaned_count = jobs.len(),
-            "Found orphaned jobs in LockedForProcessing status"
-        );
+        if !jobs.is_empty() {
+            warn!(
+                job_type = ?job_type,
+                timeout_seconds = timeout_seconds,
+                orphaned_count = jobs.len(),
+                "Found orphaned jobs in LockedForProcessing or LockedForVerification status"
+            );
+        }
 
         let attributes = [KeyValue::new("db_operation_name", "get_orphaned_jobs")];
         let duration = start.elapsed();
@@ -1461,6 +1468,114 @@ impl DatabaseClient for MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
         Ok(jobs)
+    }
+
+    async fn get_processable_job(&self, job_type: &JobType) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let now = Utc::now().trunc_subsecs(3);
+
+        // Filter for jobs ready to be processed
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": {
+                "$in": [
+                    bson::to_bson(&JobStatus::Created)?,
+                    bson::to_bson(&JobStatus::PendingRetryProcessing)?,
+                ]
+            },
+            "$and": [
+                {
+                    "$or": [
+                        { "available_at": { "$exists": false } },  // Legacy jobs
+                        { "available_at": null },                   // Explicitly null
+                        { "available_at": { "$lte": now } }        // Jobs with available_at in the past
+                    ]
+                },
+                {
+                    "$or": [
+                        { "claimed_by": { "$exists": false } },     // Legacy jobs
+                        { "claimed_by": null }                      // Not claimed
+                    ]
+                }
+            ]
+        };
+
+        // Sort by status (PendingRetryProcessing first), then by created_at (oldest first)
+        let options = FindOptions::builder()
+            .sort(doc! { "status": -1, "created_at": 1 })  // PendingRetryProcessing > Created alphabetically
+            .limit(1)
+            .build();
+
+        let mut cursor = self.get_job_collection().find(filter, options).await?;
+        let job = cursor.try_next().await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_processable_job")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        if let Some(ref job) = job {
+            debug!(
+                job_id = %job.id,
+                job_type = ?job_type,
+                "Found processable job"
+            );
+        }
+
+        Ok(job)
+    }
+
+    async fn get_verifiable_job(&self, job_type: &JobType) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let now = Utc::now().trunc_subsecs(3);
+
+        // Filter for jobs ready to be verified
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": {
+                "$in": [
+                    bson::to_bson(&JobStatus::Processed)?,
+                    bson::to_bson(&JobStatus::PendingRetryVerification)?,
+                ]
+            },
+            "$and": [
+                {
+                    "$or": [
+                        { "available_at": { "$exists": false } },  // Legacy jobs
+                        { "available_at": null },                   // Explicitly null
+                        { "available_at": { "$lte": now } }        // Jobs with available_at in the past
+                    ]
+                },
+                {
+                    "$or": [
+                        { "claimed_by": { "$exists": false } },     // Legacy jobs
+                        { "claimed_by": null }                      // Not claimed
+                    ]
+                }
+            ]
+        };
+
+        // Sort by status (PendingRetryVerification first), then by created_at (oldest first)
+        let options = FindOptions::builder()
+            .sort(doc! { "status": -1, "created_at": 1 })  // PendingRetryVerification > Processed alphabetically
+            .limit(1)
+            .build();
+
+        let mut cursor = self.get_job_collection().find(filter, options).await?;
+        let job = cursor.try_next().await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_verifiable_job")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        if let Some(ref job) = job {
+            debug!(
+                job_id = %job.id,
+                job_type = ?job_type,
+                "Found verifiable job"
+            );
+        }
+
+        Ok(job)
     }
 
     // ================================================================================

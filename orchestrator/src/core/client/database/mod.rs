@@ -173,6 +173,28 @@ pub trait DatabaseClient: Send + Sync {
     /// Get all jobs by status
     async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError>;
 
+    /// Get a single job that can be processed (Created or PendingRetryProcessing)
+    ///
+    /// Returns None if no job available. Only returns jobs where:
+    /// - Status is Created or PendingRetryProcessing
+    /// - claimed_by is null or does not exist
+    /// - available_at is null/does not exist or <= now
+    ///
+    /// # Arguments
+    /// * `job_type` - The type of job to search for
+    async fn get_processable_job(&self, job_type: &JobType) -> Result<Option<JobItem>, DatabaseError>;
+
+    /// Get a single job that can be verified (Processed or PendingRetryVerification)
+    ///
+    /// Returns None if no job available. Only returns jobs where:
+    /// - Status is Processed or PendingRetryVerification
+    /// - claimed_by is null or does not exist
+    /// - available_at is null/does not exist or <= now
+    ///
+    /// # Arguments
+    /// * `job_type` - The type of job to search for
+    async fn get_verifiable_job(&self, job_type: &JobType) -> Result<Option<JobItem>, DatabaseError>;
+
     // ================================================================================
     // Worker Methods (Queue-less Architecture)
     // ================================================================================
