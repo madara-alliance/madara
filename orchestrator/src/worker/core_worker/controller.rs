@@ -189,8 +189,14 @@ pub fn create_default_controller(config: Arc<Config>, shutdown_token: Cancellati
         .with_max_concurrent_verification(service_config.max_concurrent_proving_jobs_verification.unwrap_or(3));
     workers_config.add_worker(proving_config);
 
-    // Aggregator jobs (ProofRegistration)
-    let aggregator_config = WorkerConfig::new(JobType::ProofRegistration, poll_interval_ms)
+    // ProofRegistration jobs
+    let proof_registration_config = WorkerConfig::new(JobType::ProofRegistration, poll_interval_ms)
+        .with_max_concurrent_processing(service_config.max_concurrent_aggregator_jobs_processing.unwrap_or(3))
+        .with_max_concurrent_verification(service_config.max_concurrent_aggregator_jobs_verification.unwrap_or(2));
+    workers_config.add_worker(proof_registration_config);
+
+    // Aggregator jobs
+    let aggregator_config = WorkerConfig::new(JobType::Aggregator, poll_interval_ms)
         .with_max_concurrent_processing(service_config.max_concurrent_aggregator_jobs_processing.unwrap_or(3))
         .with_max_concurrent_verification(service_config.max_concurrent_aggregator_jobs_verification.unwrap_or(2));
     workers_config.add_worker(aggregator_config);
