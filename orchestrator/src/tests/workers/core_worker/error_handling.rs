@@ -65,12 +65,7 @@ async fn test_release_claim_with_verification_delay() {
 
     // Create a job in PendingVerification status
     let metadata = create_metadata_for_job_type(&JobType::DataSubmission, 2);
-    let job = JobItem::create(
-        "verif_delay_test".to_string(),
-        JobType::DataSubmission,
-        JobStatus::Processed,
-        metadata,
-    );
+    let job = JobItem::create("verif_delay_test".to_string(), JobType::DataSubmission, JobStatus::Processed, metadata);
     db.create_job(job).await.expect("Failed to create job");
 
     let claimed = db
@@ -148,12 +143,8 @@ async fn test_claim_release_preserves_job_state() {
 
     // Create a job with specific external_id
     let metadata = create_metadata_for_job_type(&JobType::ProofCreation, 5);
-    let mut job = JobItem::create(
-        "state_test".to_string(),
-        JobType::ProofCreation,
-        JobStatus::Processed,
-        metadata.clone(),
-    );
+    let mut job =
+        JobItem::create("state_test".to_string(), JobType::ProofCreation, JobStatus::Processed, metadata.clone());
     job.external_id = crate::types::jobs::external_id::ExternalId::String("ext-123".into());
 
     db.create_job(job.clone()).await.expect("Failed to create job");
@@ -168,13 +159,13 @@ async fn test_claim_release_preserves_job_state() {
     // Release the claim with delay
     let released = db.release_job_claim(claimed.id, Some(10)).await.expect("Failed to release claim");
 
-    // Verify all fields are preserved except claimed_by and available_at
+    // Verify all fields are preserved except claimed_by, available_at, and version
     assert_eq!(released.id, job.id, "Job ID should be preserved");
     assert_eq!(released.internal_id, job.internal_id, "Internal ID should be preserved");
     assert_eq!(released.job_type, job.job_type, "Job type should be preserved");
     assert_eq!(released.status, JobStatus::Processed, "Status should be preserved");
     assert_eq!(released.external_id, job.external_id, "External ID should be preserved");
-    assert_eq!(released.version, claimed.version, "Version should not be incremented on release");
+    assert_eq!(released.version, claimed.version + 1, "Version should be incremented on release");
 
     // Verify claim was cleared
     assert!(released.claimed_by.is_none(), "claimed_by should be cleared");
