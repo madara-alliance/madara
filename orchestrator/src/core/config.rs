@@ -170,12 +170,8 @@ pub struct Config {
     prover_client: Box<dyn ProverClient>,
     /// Settlement client
     settlement_client: Box<dyn SettlementClient>,
-    /// The database client (deprecated - use repositories instead)
+    /// The database client (now using repository pattern internally)
     database: Box<dyn DatabaseClient>,
-    /// New repository-based database access
-    job_repo: Arc<dyn crate::core::client::database::JobRepository>,
-    batch_repo: Arc<dyn crate::core::client::database::BatchRepository>,
-    worker_repo: Arc<dyn crate::core::client::database::WorkerRepository>,
     /// Lock client
     lock: Box<dyn LockClient>,
     /// Queue client
@@ -196,9 +192,6 @@ impl Config {
         madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
         madara_feeder_gateway_client: Arc<RestClient>,
         database: Box<dyn DatabaseClient>,
-        job_repo: Arc<dyn crate::core::client::database::JobRepository>,
-        batch_repo: Arc<dyn crate::core::client::database::BatchRepository>,
-        worker_repo: Arc<dyn crate::core::client::database::WorkerRepository>,
         storage: Box<dyn StorageClient>,
         lock: Box<dyn LockClient>,
         alerts: Box<dyn AlertClient>,
@@ -214,9 +207,6 @@ impl Config {
             madara_rpc_client,
             madara_feeder_gateway_client,
             database,
-            job_repo,
-            batch_repo,
-            worker_repo,
             lock,
             storage,
             alerts,
@@ -275,7 +265,6 @@ impl Config {
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
 
         let database = Self::build_database_client(&db).await?;
-        let (job_repo, batch_repo, worker_repo) = Self::build_repositories(&db).await?;
         let lock = Self::build_lock_client(&db).await?;
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
@@ -312,9 +301,6 @@ impl Config {
             madara_rpc_client: Arc::new(rpc_client),
             madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
             database,
-            job_repo,
-            batch_repo,
-            worker_repo,
             lock,
             storage,
             alerts,
@@ -338,19 +324,8 @@ impl Config {
     pub(crate) async fn build_database_client(
         db_args: &DatabaseArgs,
     ) -> OrchestratorCoreResult<Box<dyn DatabaseClient + Send + Sync>> {
-        let client = Box::new(MongoDbClient::new(db_args).await?);
-        client.ensure_indexes().await?;
-        Ok(client)
-    }
-
-    pub(crate) async fn build_repositories(
-        db_args: &DatabaseArgs,
-    ) -> OrchestratorCoreResult<(
-        Arc<dyn crate::core::client::database::JobRepository>,
-        Arc<dyn crate::core::client::database::BatchRepository>,
-        Arc<dyn crate::core::client::database::WorkerRepository>,
-    )> {
         use crate::core::client::database::mongo_client::MongoClient;
+        use crate::core::client::database::repository_client::RepositoryDatabaseClient;
         use crate::core::client::database::{MongoBatchRepository, MongoJobRepository, MongoWorkerRepository};
 
         // Create shared MongoClient
@@ -364,11 +339,14 @@ impl Config {
         let worker_repo: Arc<dyn crate::core::client::database::WorkerRepository> =
             Arc::new(MongoWorkerRepository::new(mongo_client.clone()));
 
-        // Ensure indexes (using the old client for now)
+        // Create the RepositoryDatabaseClient that implements DatabaseClient
+        let client = Box::new(RepositoryDatabaseClient::new(job_repo, batch_repo, worker_repo));
+
+        // Ensure indexes using the old client temporarily
         let old_client = MongoDbClient::new(db_args).await?;
         old_client.ensure_indexes().await?;
 
-        Ok((job_repo, batch_repo, worker_repo))
+        Ok(client)
     }
 
     pub(crate) async fn build_lock_client(
@@ -562,25 +540,9 @@ impl Config {
         self.settlement_client.as_ref()
     }
 
-    /// Returns the database client (deprecated - use job_repo(), batch_repo(), or worker_repo() instead)
-    #[deprecated(note = "Use job_repo(), batch_repo(), or worker_repo() instead")]
+    /// Returns the database client (now using repository pattern internally)
     pub fn database(&self) -> &dyn DatabaseClient {
         self.database.as_ref()
-    }
-
-    /// Returns the job repository
-    pub fn job_repo(&self) -> &dyn crate::core::client::database::JobRepository {
-        self.job_repo.as_ref()
-    }
-
-    /// Returns the batch repository
-    pub fn batch_repo(&self) -> &dyn crate::core::client::database::BatchRepository {
-        self.batch_repo.as_ref()
-    }
-
-    /// Returns the worker repository
-    pub fn worker_repo(&self) -> &dyn crate::core::client::database::WorkerRepository {
-        self.worker_repo.as_ref()
     }
 
     /// Returns the Lock Client
