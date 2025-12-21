@@ -4,7 +4,6 @@ pub mod test_utils;
 
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::client::queue::{QueueClient, QueueError};
-use crate::core::client::MongoDbClient;
 use omniqueue::Delivery;
 use std::sync::Arc;
 use std::time::Duration;
@@ -96,7 +95,7 @@ pub async fn get_sns_client(aws_config: &SdkConfig) -> aws_sdk_sns::client::Clie
 }
 
 pub async fn drop_database(mongodb_params: &DatabaseArgs) -> color_eyre::Result<()> {
-    let db_client: Client = MongoDbClient::new(mongodb_params).await?.client();
+    let db_client = Client::with_uri_str(&mongodb_params.connection_uri).await?;
     db_client.database(&mongodb_params.database_name).drop(None).await?;
     Ok(())
 }
