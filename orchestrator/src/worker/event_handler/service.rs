@@ -316,26 +316,26 @@ impl JobHandlerService {
             }
 
             JobVerificationStatus::Pending => {
-                // Max attempts reached - mark for manual retry
-                warn!(
-                    "Job {} verification timed out after {} attempts",
-                    job.internal_id, job.metadata.common.verification_attempt_no
-                );
-                MetricsRecorder::record_job_timeout(&job);
+                // Max attempts reached - mark as verification failed
+                let reason =
+                    format!("Verification timed out after {} attempts", job.metadata.common.verification_attempt_no);
+                error!("Job {} {}", job.internal_id, reason);
+                job.metadata.common.failure_reason = Some(reason.clone());
+                MetricsRecorder::record_job_failed(&job, &reason);
 
                 config
                     .database()
                     .update_job(
                         &job,
                         JobItemUpdates::new()
-                            .update_status(JobStatus::PendingRetryVerification)
+                            .update_status(JobStatus::VerificationFailed)
                             .update_metadata(job.metadata.clone())
                             .clear_claim()
                             .build(),
                     )
                     .await?;
 
-                Some(JobStatus::PendingRetryVerification)
+                Some(JobStatus::VerificationFailed)
             }
         };
 

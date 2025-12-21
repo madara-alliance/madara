@@ -83,7 +83,6 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
-        available_at: None,
         claimed_by: None,
     }
 }

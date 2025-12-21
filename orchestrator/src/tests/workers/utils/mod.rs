@@ -47,7 +47,6 @@ pub fn get_job_item_mock_by_id(id: String, uuid: Uuid) -> JobItem {
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
-        available_at: None,
         claimed_by: None,
     }
 }
@@ -87,7 +86,6 @@ pub fn get_job_by_mock_id_vector(
             version: 0,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
-            available_at: None,
             claimed_by: None,
         })
     }
@@ -192,7 +190,6 @@ pub async fn create_and_store_prerequisite_jobs(
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
-        available_at: None,
         claimed_by: None,
     };
 
@@ -208,7 +205,6 @@ pub async fn create_and_store_prerequisite_jobs(
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
-        available_at: None,
         claimed_by: None,
     };
 
@@ -245,7 +241,6 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabaseClient, mock_job: 
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
-        available_at: None,
         claimed_by: None,
     };
 

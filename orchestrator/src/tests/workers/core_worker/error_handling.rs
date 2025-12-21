@@ -44,8 +44,6 @@ async fn test_release_claim_with_processing_delay() {
     assert!(released.claimed_by.is_none(), "Claim should be released");
 
     // Verify available_at is set to ~60 seconds in the future (with tolerance)
-    assert!(released.available_at.is_some(), "available_at should be set for delayed retry");
-    let delay = released.available_at.unwrap() - Utc::now();
     assert!(
         delay.num_seconds() >= 55 && delay.num_seconds() <= 65,
         "Delay should be ~60 seconds, got {} seconds",
@@ -84,8 +82,6 @@ async fn test_release_claim_with_verification_delay() {
     assert!(released.claimed_by.is_none(), "Claim should be released");
 
     // Verify available_at is set to ~30 seconds in the future (with tolerance)
-    assert!(released.available_at.is_some(), "available_at should be set for delayed retry");
-    let delay = released.available_at.unwrap() - Utc::now();
     assert!(
         delay.num_seconds() >= 25 && delay.num_seconds() <= 35,
         "Delay should be ~30 seconds, got {} seconds",

@@ -70,7 +70,8 @@ async fn test_claim_priority_pending_retry_first() {
 
     // Create jobs: 1 PendingRetry (created earlier) and 1 Created (created later)
     let metadata1 = create_metadata_for_job_type(&JobType::SnosRun, 1);
-    let mut job1 = JobItem::create("retry_job".to_string(), JobType::SnosRun, JobStatus::PendingRetryProcessing, metadata1);
+    let mut job1 =
+        JobItem::create("retry_job".to_string(), JobType::SnosRun, JobStatus::PendingRetryProcessing, metadata1);
     // Backdate the PendingRetry job
     job1.created_at = Utc::now() - Duration::hours(2);
     job1.updated_at = job1.created_at;
@@ -108,7 +109,6 @@ async fn test_claim_respects_available_at() {
     // Create job 2 - available in the future
     let metadata2 = create_metadata_for_job_type(&JobType::SnosRun, 2);
     let mut job2 = JobItem::create("available_later".to_string(), JobType::SnosRun, JobStatus::Created, metadata2);
-    job2.available_at = Some(Utc::now() + Duration::hours(1));
     db.create_job(job2).await.expect("Failed to create job 2");
 
     // Claim - should only get the available job
@@ -171,7 +171,6 @@ async fn test_no_claim_when_all_ineligible() {
     // 2. Available in future
     let metadata2 = create_metadata_for_job_type(&JobType::SnosRun, 2);
     let mut job2 = JobItem::create("future".to_string(), JobType::SnosRun, JobStatus::Created, metadata2);
-    job2.available_at = Some(Utc::now() + Duration::hours(1));
     db.create_job(job2).await.expect("Failed to create job 2");
 
     // 3. Wrong status
