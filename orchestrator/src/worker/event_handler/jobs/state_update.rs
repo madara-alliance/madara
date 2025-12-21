@@ -215,10 +215,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     fn max_verification_attempts(&self) -> u64 {
         10
     }
-
-    fn verification_polling_delay_seconds(&self) -> u64 {
-        60
-    }
 }
 
 impl StateUpdateJobHandler {

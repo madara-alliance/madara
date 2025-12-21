@@ -1,7 +1,5 @@
-use mockall_double::double;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use std::time::Duration;
 use uuid::Uuid;
 
 use crate::core::config::Config;
@@ -10,8 +8,6 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::JobStatus;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-#[double]
-use crate::worker::event_handler::factory::factory;
 
 pub struct JobService;
 
@@ -21,26 +17,9 @@ impl JobService {
         config.database().get_job_by_id(id).await?.ok_or(JobError::JobNotFound { id })
     }
 
-    /// Sets available_at on a job for delayed verification pickup by workers
-    pub async fn set_verification_delay(config: Arc<Config>, id: Uuid, delay: Duration) -> Result<(), JobError> {
-        let available_at = chrono::Utc::now()
-            + chrono::Duration::from_std(delay)
-                .map_err(|e| JobError::Other(crate::error::other::OtherError::from(e.to_string())))?;
-
-        let job = Self::get_job(id, config.clone()).await?;
-        config
-            .database()
-            .update_job(&job, JobItemUpdates::new().update_available_at(Some(available_at)).build())
-            .await?;
-
-        tracing::debug!(job_id = %id, delay_secs = delay.as_secs(), "Set verification delay");
-        Ok(())
-    }
-
     /// Requeues a job for verification (used by API endpoint for manual re-verification)
     pub async fn requeue_for_verification(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let mut job = Self::get_job(id, config.clone()).await?;
-        let job_handler = factory::get_job_handler(&job.job_type).await;
 
         // Reset verification attempts and increment retry counter
         job.metadata.common.verification_attempt_no = 0;
@@ -52,9 +31,6 @@ impl JobService {
                 &job,
                 JobItemUpdates::new().update_status(JobStatus::Processed).update_metadata(job.metadata.clone()).build(),
             )
-            .await?;
-
-        Self::set_verification_delay(config, id, Duration::from_secs(job_handler.verification_polling_delay_seconds()))
             .await?;
 
         tracing::info!(job_id = %id, "Requeued job for verification");

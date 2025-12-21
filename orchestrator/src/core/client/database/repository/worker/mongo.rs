@@ -22,23 +22,12 @@ impl MongoWorkerRepository {
         Self { client }
     }
 
-    /// Build common filter for available jobs (not claimed, available_at passed)
+    /// Build common filter for available jobs (not claimed)
     fn available_job_filter() -> mongodb::bson::Document {
         doc! {
-            "$and": [
-                {
-                    "$or": [
-                        { "available_at": { "$exists": false } },
-                        { "available_at": null },
-                        { "available_at": { "$lte": Utc::now().trunc_subsecs(3) } }
-                    ]
-                },
-                {
-                    "$or": [
-                        { "claimed_by": { "$exists": false } },
-                        { "claimed_by": null }
-                    ]
-                }
+            "$or": [
+                { "claimed_by": { "$exists": false } },
+                { "claimed_by": null }
             ]
         }
     }
@@ -182,19 +171,12 @@ impl WorkerRepository for MongoWorkerRepository {
         Ok(result)
     }
 
-    async fn release_claim(&self, job_id: Uuid, delay_seconds: Option<u64>) -> Result<JobItem, DatabaseError> {
+    async fn release_claim(&self, job_id: Uuid, _delay_seconds: Option<u64>) -> Result<JobItem, DatabaseError> {
         let now = Utc::now().trunc_subsecs(3);
         let filter = doc! { "id": job_id };
 
-        let mut set_doc = doc! { "updated_at": now };
-        let mut unset_doc = doc! { "claimed_by": "" };
-
-        if let Some(delay) = delay_seconds {
-            let available_at = now + chrono::Duration::seconds(delay as i64);
-            set_doc.insert("available_at", Bson::DateTime(available_at.into()));
-        } else {
-            unset_doc.insert("available_at", "");
-        }
+        let set_doc = doc! { "updated_at": now };
+        let unset_doc = doc! { "claimed_by": "" };
 
         let update = doc! {
             "$set": set_doc,

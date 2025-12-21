@@ -64,12 +64,8 @@ pub trait JobHandlerTrait: Send + Sync {
     /// every time the verification returns `JobVerificationStatus::Rejected`
     fn max_process_attempts(&self) -> u64;
 
-    /// Should return the maximum number of attempts to verify the job. A new attempt is made
-    /// every few seconds depending on the result `verification_polling_delay_seconds`
+    /// Should return the maximum number of attempts to verify the job.
     fn max_verification_attempts(&self) -> u64;
-
-    /// Should return the number of seconds to wait before polling for verification
-    fn verification_polling_delay_seconds(&self) -> u64;
 
     /// Check if external dependencies are ready before processing.
     ///

@@ -1,7 +1,6 @@
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::types::JobStatus;
-use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 /// Defining a structure that contains the changes to be made in the job object,
@@ -18,8 +17,6 @@ pub struct JobItemUpdates {
 
     // WORKER CLAIM FIELDS
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub available_at: Option<Option<DateTime<Utc>>>, // Option<Option<>> to allow setting to null
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub claimed_by: Option<Option<String>>,
 }
 
@@ -32,7 +29,7 @@ impl Default for JobItemUpdates {
 
 impl JobItemUpdates {
     pub fn new() -> Self {
-        JobItemUpdates { status: None, external_id: None, metadata: None, available_at: None, claimed_by: None }
+        JobItemUpdates { status: None, external_id: None, metadata: None, claimed_by: None }
     }
 
     pub fn update_status(mut self, status: JobStatus) -> JobItemUpdates {
@@ -48,12 +45,6 @@ impl JobItemUpdates {
         self
     }
 
-    /// Set when job becomes available for pickup
-    pub fn update_available_at(mut self, available_at: Option<DateTime<Utc>>) -> Self {
-        self.available_at = Some(available_at);
-        self
-    }
-
     /// Set which orchestrator claimed this job
     pub fn update_claimed_by(mut self, claimed_by: Option<String>) -> Self {
         self.claimed_by = Some(claimed_by);
@@ -61,10 +52,8 @@ impl JobItemUpdates {
     }
 
     /// Clear the claim (release job)
-    /// Also clears available_at since it's only relevant for unclaimed jobs waiting to be picked up
     pub fn clear_claim(mut self) -> Self {
         self.claimed_by = Some(None);
-        self.available_at = Some(None);
         self
     }
 

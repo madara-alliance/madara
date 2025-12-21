@@ -330,9 +330,6 @@ impl JobHandlerTrait for DAJobHandler {
     fn max_verification_attempts(&self) -> u64 {
         3
     }
-    fn verification_polling_delay_seconds(&self) -> u64 {
-        60
-    }
 }
 
 #[cfg(test)]

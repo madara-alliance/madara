@@ -180,14 +180,6 @@ impl JobHandlerService {
 
         Self::update_job_status_tracker(&job, JobStatus::Processed);
 
-        // Set delay for verification pickup
-        JobService::set_verification_delay(
-            config.clone(),
-            job.id,
-            Duration::from_secs(job_handler.verification_polling_delay_seconds()),
-        )
-        .await?;
-
         Self::record_success_metrics(&job, "process_job", external_id.into(), start.elapsed());
         Ok(())
     }
@@ -326,13 +318,6 @@ impl JobHandlerService {
                                 .build(),
                         )
                         .await?;
-
-                    JobService::set_verification_delay(
-                        config.clone(),
-                        job.id,
-                        Duration::from_secs(job_handler.verification_polling_delay_seconds()),
-                    )
-                    .await?;
 
                     None
                 }

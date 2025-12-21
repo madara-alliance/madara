@@ -7,45 +7,6 @@ use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_b
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[cfg(feature = "with_mongodb")]
-mod optional_chrono_datetime_as_bson_datetime {
-    use chrono::{DateTime, Utc};
-    use mongodb::bson::Bson;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(val: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match val {
-            Some(dt) => {
-                let bson_dt: mongodb::bson::DateTime = (*dt).into();
-                bson_dt.serialize(serializer)
-            }
-            None => serializer.serialize_none(),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let opt: Option<Bson> = Option::deserialize(deserializer)?;
-        match opt {
-            Some(Bson::DateTime(bson_dt)) => {
-                let dt: DateTime<Utc> = bson_dt.into();
-                Ok(Some(dt))
-            }
-            Some(Bson::String(s)) => {
-                // Support legacy string format
-                s.parse::<DateTime<Utc>>().map(Some).map_err(serde::de::Error::custom)
-            }
-            None => Ok(None),
-            _ => Err(serde::de::Error::custom("expected DateTime or String")),
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct JobItem {
     /// an uuid to identify a job
@@ -72,13 +33,6 @@ pub struct JobItem {
     pub updated_at: DateTime<Utc>,
 
     // WORKER CLAIM FIELDS
-    /// Earliest time this job can be picked up for processing/verification.
-    /// Used for delayed execution (replaces SQS delay_seconds).
-    /// If None or in the past, job is immediately available.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "with_mongodb", serde(with = "optional_chrono_datetime_as_bson_datetime"))]
-    pub available_at: Option<DateTime<Utc>>,
-
     /// Unique identifier of the orchestrator instance that claimed this job.
     /// Used for debugging and orphan detection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,16 +61,7 @@ impl JobItem {
             version: 0,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
-            available_at: None,
             claimed_by: None,
-        }
-    }
-
-    /// Check if this job is available for pickup
-    pub fn is_available(&self) -> bool {
-        match self.available_at {
-            None => true,
-            Some(available_at) => available_at <= Utc::now(),
         }
     }
 }
