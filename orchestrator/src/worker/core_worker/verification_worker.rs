@@ -163,6 +163,11 @@ impl VerificationWorker {
             );
             metrics::record_verification_claim_success(&self.job_type);
         } else {
+            trace!(
+                job_type = ?self.job_type,
+                worker_type = "verification",
+                "No verifiable jobs found"
+            );
             metrics::record_verification_claim_failed(&self.job_type);
         }
 

@@ -163,6 +163,11 @@ impl ProcessingWorker {
             );
             metrics::record_processing_claim_success(&self.job_type);
         } else {
+            trace!(
+                job_type = ?self.job_type,
+                worker_type = "processing",
+                "No processable jobs found"
+            );
             metrics::record_processing_claim_failed(&self.job_type);
         }
 
