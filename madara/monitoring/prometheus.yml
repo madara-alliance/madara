@@ -3,19 +3,36 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: 'madara-sequencer'
+  # Scrape metrics from OpenTelemetry Collector
+  # The collector aggregates metrics from all Madara nodes
+  - job_name: 'otel-collector'
     static_configs:
-      - targets: ['host.docker.internal:9464']
+      - targets: ['otel-collector:8889']
         labels:
-          instance: 'sequencer'
-          mode: 'sequencer'
+          collector: 'otel'
 
-  - job_name: 'madara-fullnode'
+  # OpenTelemetry Collector internal metrics
+  - job_name: 'otel-collector-internal'
     static_configs:
-      - targets: ['host.docker.internal:9465']
+      - targets: ['otel-collector:8888']
         labels:
-          instance: 'fullnode'
-          mode: 'fullnode'
+          component: 'collector-internal'
+
+  # Direct scrape configs (fallback if not using OTel collector)
+  # Uncomment these if you want Prometheus to scrape Madara directly
+  # - job_name: 'madara-sequencer'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:9464']
+  #       labels:
+  #         instance: 'sequencer'
+  #         mode: 'sequencer'
+
+  # - job_name: 'madara-fullnode'
+  #   static_configs:
+  #     - targets: ['host.docker.internal:9465']
+  #       labels:
+  #         instance: 'fullnode'
+  #         mode: 'fullnode'
 
   # Prometheus self-monitoring
   - job_name: 'prometheus'

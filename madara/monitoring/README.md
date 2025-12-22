@@ -1,6 +1,46 @@
 # Madara Monitoring Stack
 
-This directory contains configuration files for monitoring a Madara node using Prometheus and Grafana.
+This directory contains configuration files for monitoring a Madara node using OpenTelemetry Collector, Prometheus, and Grafana.
+
+## Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│ Madara Sequencer│     │ Madara Fullnode │
+│   (port 9464)   │     │   (port 9465)   │
+└────────┬────────┘     └────────┬────────┘
+         │                       │
+         │  Prometheus metrics   │
+         │                       │
+         └───────────┬───────────┘
+                     │
+                     ▼
+         ┌───────────────────────┐
+         │  OpenTelemetry        │
+         │  Collector            │
+         │  - Receives metrics   │
+         │  - Processes/batches  │
+         │  - Exports to backends│
+         │  (ports 4317/4318/    │
+         │   8888/8889)          │
+         └───────────┬───────────┘
+                     │
+                     ▼
+         ┌───────────────────────┐
+         │  Prometheus           │
+         │  (port 9090)          │
+         │  - Time series DB     │
+         │  - Scrapes collector  │
+         └───────────┬───────────┘
+                     │
+                     ▼
+         ┌───────────────────────┐
+         │  Grafana              │
+         │  (port 3000)          │
+         │  - Dashboards         │
+         │  - Visualization      │
+         └───────────────────────┘
+```
 
 ## Prerequisites
 
@@ -10,37 +50,81 @@ This directory contains configuration files for monitoring a Madara node using P
    ```
    This exposes metrics at `http://localhost:9464/metrics`
 
-2. **Docker & Docker Compose** (for local development)
+2. **Docker & Docker Compose**
 
-3. **kubectl** (for Kubernetes deployment)
-
-## Quick Start (Docker Compose)
+## Quick Start
 
 ```bash
 # Start the monitoring stack
 cd monitoring
 docker-compose up -d
 
-# Access the dashboards
+# Access the services
 # Grafana: http://localhost:3000 (admin/admin)
 # Prometheus: http://localhost:9090
+# OTel Collector metrics: http://localhost:8888/metrics
+# OTel Collector health: http://localhost:13133/health
 ```
 
-## Quick Start (Kubernetes)
+## OpenTelemetry Collector
+
+The OpenTelemetry Collector acts as a central hub for collecting, processing, and exporting telemetry data.
+
+### Features
+
+- **Receivers**: Accepts metrics via OTLP (gRPC/HTTP) and Prometheus scraping
+- **Processors**: Batching, memory limiting, resource attribution
+- **Exporters**: Prometheus format for Grafana dashboards
+- **Extensions**: Health check, pprof profiling, zpages debugging
+
+### Ports
+
+| Port  | Protocol | Description |
+|-------|----------|-------------|
+| 4317  | gRPC     | OTLP receiver |
+| 4318  | HTTP     | OTLP receiver |
+| 8888  | HTTP     | Collector internal metrics |
+| 8889  | HTTP     | Prometheus exporter |
+| 13133 | HTTP     | Health check endpoint |
+| 55679 | HTTP     | zpages debugging |
+
+### Configuration
+
+The collector configuration (`otel-collector-config.yaml`) includes:
+
+```yaml
+receivers:
+  otlp:           # OTLP protocol support
+  prometheus:     # Scrape Madara metrics
+
+processors:
+  batch:          # Batches for efficiency
+  memory_limiter: # Prevents OOM
+  resource:       # Adds common attributes
+  attributes:     # Metric transformations
+
+exporters:
+  prometheus:     # Expose for Prometheus scraping
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_ENVIRONMENT` | `development` | Deployment environment label |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | OTLP backend endpoint |
+| `OTEL_EXPORTER_OTLP_INSECURE` | `true` | Disable TLS for OTLP |
+
+### Sending OTLP Metrics
+
+To send metrics directly to the collector using OTLP:
 
 ```bash
-cd monitoring/kubernetes
+# gRPC endpoint
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 
-# Create namespace and deploy
-kubectl apply -f namespace.yaml
-kubectl apply -f prometheus-config.yaml
-kubectl apply -f prometheus-deployment.yaml
-kubectl apply -f grafana-config.yaml
-kubectl apply -f grafana-deployment.yaml
-
-# Port forward to access locally
-kubectl port-forward -n madara-monitoring svc/grafana 3000:3000
-kubectl port-forward -n madara-monitoring svc/prometheus 9090:9090
+# HTTP endpoint
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
 
 ## Available Dashboards
@@ -137,21 +221,24 @@ MADARA_ANALYTICS_PROMETHEUS_ENDPOINT_PORT=9464
 
 ### Multi-Node Monitoring
 
-To monitor multiple Madara nodes, update `prometheus.yml`:
+To monitor multiple Madara nodes, update `otel-collector-config.yaml`:
 
 ```yaml
-scrape_configs:
-  - job_name: 'madara-sequencer'
-    static_configs:
-      - targets: ['host.docker.internal:9464']
-        labels:
-          instance: 'sequencer'
+receivers:
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'madara-sequencer'
+          static_configs:
+            - targets: ['host.docker.internal:9464']
+              labels:
+                instance: 'sequencer'
 
-  - job_name: 'madara-fullnode'
-    static_configs:
-      - targets: ['host.docker.internal:9465']
-        labels:
-          instance: 'fullnode'
+        - job_name: 'madara-fullnode'
+          static_configs:
+            - targets: ['host.docker.internal:9465']
+              labels:
+                instance: 'fullnode'
 ```
 
 **Running two Madara instances:**
@@ -175,28 +262,23 @@ cargo run --release -- \
 
 ```
 monitoring/
-├── docker-compose.yml              # Local development stack
+├── docker-compose.yml              # Docker Compose stack
+├── otel-collector-config.yaml      # OpenTelemetry Collector configuration
 ├── prometheus.yml                  # Prometheus scrape configuration
 ├── README.md                       # This file
-├── grafana/
-│   ├── provisioning/
-│   │   ├── datasources/
-│   │   │   └── prometheus.yml      # Prometheus datasource config
-│   │   └── dashboards/
-│   │       └── dashboards.yml      # Dashboard provider config
-│   └── dashboards/
-│       ├── madara-overview.json    # Overview dashboard
-│       ├── sync-performance.json   # Sync metrics dashboard
-│       ├── block-production.json   # Sequencer dashboard
-│       ├── rpc-performance.json    # RPC metrics dashboard
-│       ├── storage-resources.json  # Storage dashboard
-│       └── cairo-native.json       # Cairo Native dashboard
-└── kubernetes/
-    ├── namespace.yaml              # madara-monitoring namespace
-    ├── prometheus-config.yaml      # Prometheus ConfigMap
-    ├── prometheus-deployment.yaml  # Prometheus Deployment + Service + PVC
-    ├── grafana-config.yaml         # Grafana ConfigMaps
-    └── grafana-deployment.yaml     # Grafana Deployment + Service + PVC
+└── grafana/
+    ├── provisioning/
+    │   ├── datasources/
+    │   │   └── prometheus.yml      # Prometheus datasource config
+    │   └── dashboards/
+    │       └── dashboards.yml      # Dashboard provider config
+    └── dashboards/
+        ├── madara-overview.json    # Overview dashboard
+        ├── sync-performance.json   # Sync metrics dashboard
+        ├── block-production.json   # Sequencer dashboard
+        ├── rpc-performance.json    # RPC metrics dashboard
+        ├── storage-resources.json  # Storage dashboard
+        └── cairo-native.json       # Cairo Native dashboard
 ```
 
 ## Metrics Reference
@@ -269,20 +351,44 @@ monitoring/
 | `cairo_native_current_compilations` | Gauge | Active compilations |
 | `cairo_native_vm_fallbacks` | Counter | VM fallback count |
 
+### OpenTelemetry Collector
+| Metric | Type | Description |
+|--------|------|-------------|
+| `otelcol_receiver_accepted_metric_points` | Counter | Metric points accepted |
+| `otelcol_receiver_refused_metric_points` | Counter | Metric points refused |
+| `otelcol_exporter_sent_metric_points` | Counter | Metric points exported |
+| `otelcol_processor_batch_batch_send_size` | Histogram | Batch sizes |
+| `otelcol_process_memory_rss` | Gauge | Collector memory usage |
+
 ## Troubleshooting
 
-### Prometheus can't reach Madara
+### OTel Collector Issues
+
+1. **Health check endpoint**: `curl http://localhost:13133/health`
+2. **View internal metrics**: `curl http://localhost:8888/metrics`
+3. **zpages debugging**: Open `http://localhost:55679/debug/tracez`
+4. **Check logs**: `docker-compose logs otel-collector`
+
+### Prometheus can't reach OTel Collector
+
+1. Verify collector is running: `docker-compose ps otel-collector`
+2. Check collector health: `curl http://localhost:13133/health`
+3. Verify Prometheus targets: http://localhost:9090/targets
+4. Check network connectivity between containers
+
+### OTel Collector can't reach Madara
 
 1. Verify Madara is running with `--analytics-prometheus-endpoint`
 2. Check if metrics are accessible: `curl http://localhost:9464/metrics`
-3. For Docker on macOS/Windows, use `host.docker.internal:9464` in prometheus.yml
+3. For Docker on macOS/Windows, use `host.docker.internal:9464`
 4. For Docker on Linux, use `--network=host` or the host's IP address
 
 ### No data in Grafana dashboards
 
-1. Check Prometheus targets: http://localhost:9090/targets
-2. Verify the Prometheus datasource is configured correctly in Grafana
-3. Check the time range in Grafana (metrics may not exist yet)
+1. Check OTel Collector targets in collector logs
+2. Check Prometheus targets: http://localhost:9090/targets
+3. Verify the Prometheus datasource is configured correctly in Grafana
+4. Check the time range in Grafana (metrics may not exist yet)
 
 ### Dashboard not loading
 
@@ -293,8 +399,10 @@ monitoring/
 ## Production Recommendations
 
 1. **Change default credentials** - Update Grafana admin password
-2. **Use persistent storage** - Configure proper PVCs in Kubernetes
-3. **Set resource limits** - Adjust CPU/memory based on your cluster
+2. **Use persistent storage** - Docker volumes are configured by default
+3. **Set resource limits** - Add resource constraints in docker-compose.yml
 4. **Enable TLS** - Configure HTTPS for external access
 5. **Set up alerts** - Add Prometheus alerting rules for critical conditions
 6. **Retention policy** - Configure appropriate data retention (default: 30 days)
+7. **Scale OTel Collector** - Use multiple replicas with a load balancer for high availability
+8. **Enable OTLP export** - Configure additional backends (Jaeger, Tempo, etc.) for traces

@@ -1,4 +1,30 @@
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.0
+    container_name: madara-otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Collector metrics
+      - "8889:8889"   # Prometheus exporter
+      - "13133:13133" # Health check
+      - "55679:55679" # zpages
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    environment:
+      - OTEL_ENVIRONMENT=development
+      - OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   prometheus:
     image: prom/prometheus:v3.1.0
     container_name: madara-prometheus
@@ -12,6 +38,9 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=30d'
       - '--web.enable-lifecycle'
+    depends_on:
+      otel-collector:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
