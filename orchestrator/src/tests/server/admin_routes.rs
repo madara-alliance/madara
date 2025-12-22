@@ -70,10 +70,13 @@ async fn test_admin_retry_all_failed_jobs() {
         .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::Failed])
         .times(1)
         .returning(move |_, _, _| Ok(jobs.clone()));
+    // get_job_by_id is called twice per job:
+    // 1. In retry_job to fetch the job and validate status
+    // 2. In queue_job_for_processing to get the job type for the queue
     let j1 = job1.clone();
-    db.expect_get_job_by_id().with(eq(id1)).times(1).returning(move |_| Ok(Some(j1.clone())));
+    db.expect_get_job_by_id().with(eq(id1)).times(2).returning(move |_| Ok(Some(j1.clone())));
     let j2 = job2.clone();
-    db.expect_get_job_by_id().with(eq(id2)).times(1).returning(move |_| Ok(Some(j2.clone())));
+    db.expect_get_job_by_id().with(eq(id2)).times(2).returning(move |_| Ok(Some(j2.clone())));
     db.expect_update_job().times(2).returning(|job, _| Ok(job.clone()));
     queue.expect_send_message().times(2).returning(|_, _, _| Ok(()));
 
