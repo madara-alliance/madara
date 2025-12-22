@@ -10,7 +10,7 @@ use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{SdkTracerProvider, Tracer};
 use opentelemetry_sdk::Resource;
 use std::time::Duration;
-use tracing::warn;
+use tracing::{debug, warn};
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::EnvFilter;
@@ -33,13 +33,31 @@ impl OrchestratorInstrumentation {
     pub fn new(config: &OTELConfig) -> OrchestratorResult<Self> {
         match config.endpoint {
             None => {
-                warn!("OTEL endpoint is not set. Skipping instrumentation.");
+                warn!(
+                    service_name = %config.service_name,
+                    "OTEL endpoint not configured. Telemetry disabled. | Use MADARA_ORCHESTRATOR_OTEL_COLLECTOR_ENDPOINT"
+                );
                 Ok(Self { otel_config: config.clone(), meter_provider: None })
             }
             Some(ref endpoint) => {
                 let meter_provider = Self::instrument_metric_provider(config, endpoint)?;
+                debug!(
+                    service_name = format!("{}_meter_service", config.service_name),
+                    export_interval_secs = 5,
+                    "OTEL metrics exporter initialized"
+                );
+
                 let tracer = Self::instrument_tracer_provider(config, endpoint)?;
+                debug!(
+                    service_name = format!("{}_trace_service", config.service_name),
+                    "OTEL tracer exporter initialized"
+                );
+
                 let logger = Self::instrument_logger_provider(config, endpoint)?;
+                debug!(
+                    service_name = format!("{}_logs_service", config.service_name),
+                    "OTEL logs exporter initialized"
+                );
 
                 // Respect LOG_FORMAT when composing the subscriber with OTEL layers
                 let log_format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string());
@@ -53,6 +71,7 @@ impl OrchestratorInstrumentation {
                                 .with_thread_ids(false)
                                 .with_file(true)
                                 .with_line_number(true)
+                                .with_ansi(false)
                                 .event_format(JsonEventFormatter),
                         )
                         .with(OpenTelemetryLayer::new(tracer))
@@ -67,13 +86,20 @@ impl OrchestratorInstrumentation {
                                 .with_thread_ids(false)
                                 .with_file(true)
                                 .with_line_number(true)
+                                .with_ansi(false)
                                 .event_format(PrettyFormatter),
                         )
                         .with(OpenTelemetryLayer::new(tracer))
                         .with(OpenTelemetryTracingBridge::new(&logger));
                     let _ = tracing::subscriber::set_global_default(subscriber);
                 }
-                warn!("OpenTelemetry tracing subscriber initialized (existing subscriber overwritten if present)");
+
+                debug!(
+                    service_name = %config.service_name,
+                    log_format = %log_format,
+                    "OpenTelemetry ready - all services active (metrics, traces, logs)"
+                );
+
                 Ok(Self { otel_config: config.clone(), meter_provider: Some(meter_provider) })
             }
         }

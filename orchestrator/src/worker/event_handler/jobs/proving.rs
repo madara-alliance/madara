@@ -30,7 +30,7 @@ impl JobHandlerTrait for ProvingJobHandler {
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = &job.internal_id;
-        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::ProofCreation, internal_id);
+        info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::ProofCreation, internal_id);
 
         // Get proving metadata
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
@@ -71,17 +71,25 @@ impl JobHandlerTrait for ProvingJobHandler {
                 bucket_id: proving_metadata.bucket_id,
                 bucket_job_index: proving_metadata.bucket_job_index,
                 num_steps: proving_metadata.n_steps,
+                external_id: job.id.to_string(),
             }))
             .await
             .inspect_err(|e| {
-                error!(error = %e, "Failed to submit task to prover client");
+                error!(
+                    job_id = %job.id,
+                    job_type = ?JobType::ProofCreation,
+                    internal_id = %internal_id,
+                    status = %job.status,
+                    error = %e,
+                    "Failed to submit task to prover client"
+                );
             })?;
 
         // Record proof submission time (this is just the submission, actual proof generation is async)
         let proof_duration = proof_start.elapsed().as_secs_f64();
         MetricsRecorder::record_proof_generation_time("proof_submission", proof_duration);
 
-        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::ProofCreation, internal_id);
+        info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::ProofCreation, internal_id);
 
         Ok(external_id)
     }
@@ -148,11 +156,11 @@ impl JobHandlerTrait for ProvingJobHandler {
                     debug!("Downloading and storing proof to path: {}", download_path);
                     config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
                 }
-                info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::ProofCreation, internal_id);
+                info!(log_type = "completed", job_id = %job.id, "{:?} job {} verification completed", JobType::ProofCreation, internal_id);
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
-                warn!(log_type = "rejected", job_id = %job.id, "❌ {:?} job {} verification failed", JobType::ProofCreation, internal_id);
+                warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed", JobType::ProofCreation, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Prover job #{} failed with error: {}",
                     job.internal_id, err

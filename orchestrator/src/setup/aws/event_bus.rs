@@ -23,14 +23,15 @@ use crate::{OrchestratorError, OrchestratorResult};
 
 lazy_static! {
     pub static ref WORKER_TRIGGERS_L2: Vec<WorkerTriggerType> = vec![
+        WorkerTriggerType::AggregatorBatching,
+        WorkerTriggerType::SnosBatching,
         WorkerTriggerType::Snos,
         WorkerTriggerType::Proving,
         WorkerTriggerType::UpdateState,
-        WorkerTriggerType::Batching,
         WorkerTriggerType::Aggregator,
     ];
     pub static ref WORKER_TRIGGERS_L3: Vec<WorkerTriggerType> = vec![
-        WorkerTriggerType::Batching,
+        WorkerTriggerType::SnosBatching,
         WorkerTriggerType::Snos,
         WorkerTriggerType::Proving,
         WorkerTriggerType::ProofRegistration,
@@ -85,7 +86,7 @@ impl Resource for InnerAWSEventBridge {
                 ))
                 .await?
             {
-                tracing::info!(" ⏭️ Event Bridge {trigger} already exists, skipping");
+                tracing::info!(" Event Bridge {trigger} already exists, skipping");
             } else {
                 self.add_cron_target_queue(
                     trigger,

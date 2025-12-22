@@ -38,6 +38,7 @@ pub struct CreateJobInfo {
     pub bucket_id: Option<String>,
     pub bucket_job_index: Option<u64>,
     pub num_steps: Option<usize>,
+    pub external_id: String,
 }
 
 pub enum Task {

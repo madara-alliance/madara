@@ -333,14 +333,26 @@ impl GatewayLatestProbe {
 
     async fn probe(
         self: Arc<Self>,
-        _highest_known_block: Option<ProviderBlockHeader>,
+        highest_known_block: Option<ProviderBlockHeader>,
     ) -> anyhow::Result<Option<ProviderBlockHeader>> {
-        let header = self
-            .client
-            .get_header(BlockId::Tag(BlockTag::Latest))
-            .await
-            .context("Getting the latest block_n from the gateway")?;
-        tracing::debug!("Probe got header {header:?}");
-        Ok(Some(header))
+        match self.client.get_header(BlockId::Tag(BlockTag::Latest)).await {
+            Ok(header) => {
+                tracing::debug!("Probe got header {header:?}");
+                Ok(Some(header))
+            }
+            Err(e) => {
+                // Log the error but don't crash - gateway being temporarily unavailable
+                // should not stop the sync service. We'll return the last known block
+                // and retry on the next probe cycle.
+                tracing::warn!(
+                    "Failed to get latest block from gateway: {e:#}. \
+                     Sync will continue with last known block height. \
+                     Will retry on next probe cycle."
+                );
+                // Return the last known block if we have one, otherwise None
+                // This allows the sync to continue operating with cached data
+                Ok(highest_known_block)
+            }
+        }
     }
 }

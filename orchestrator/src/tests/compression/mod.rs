@@ -64,7 +64,8 @@ async fn test_squash_state_updates(
     let expected_squashed_state_update = read_state_update_from_file(squashed_state_update_path)?;
 
     let squashed_state_update =
-        squash(state_updates_vector.iter().collect::<Vec<_>>(), Some(789877), services.config.madara_rpc_client()).await?;
+        squash(state_updates_vector.iter().collect::<Vec<_>>(), Some(789877), services.config.madara_rpc_client())
+            .await?;
 
     assert_eq!(squashed_state_update, expected_squashed_state_update);
 

@@ -1,5 +1,4 @@
 use crate::cli::database::mongodb::MongoDBCliArgs;
-use crate::cli::{RunCmd, SetupCmd};
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
 use crate::core::client::lock::error::LockError;
 use crate::core::client::lock::{LockClient, LockInfo, LockResult, LockValue};
@@ -39,23 +38,6 @@ impl MongoLockClient {
             collection_name: String::from(LOCKS_COLLECTION),
         })
     }
-    /// Create MongoLockClient from the setup command
-    ///
-    /// # Arguments
-    /// * `cmd` - The setup command
-    ///
-    /// # Returns
-    ///  the lock client
-    ///
-    /// # Errors
-    /// Returns an error if database args are invalid
-    pub async fn from_setup_cmd(setup_cmd: SetupCmd) -> Result<Self, OrchestratorError> {
-        Self::from_mongodb_args(setup_cmd.mongodb_args).await
-    }
-
-    pub async fn from_run_cmd(run_cmd: RunCmd) -> Result<Self, OrchestratorError> {
-        Self::from_mongodb_args(run_cmd.mongodb_args).await
-    }
 
     /// Creates a new MongolockClient instance
     pub async fn new(args: &DatabaseArgs) -> Result<Self, LockError> {
@@ -71,7 +53,7 @@ impl MongoLockClient {
     }
 
     /// Initialize the cache collection with proper indexes
-    pub async fn initialize(&self) -> Result<(), LockError> {
+    pub async fn ensure_indexes(&self) -> Result<(), LockError> {
         let start = Instant::now();
         let collection = self.get_cache_collection();
 
@@ -87,11 +69,8 @@ impl MongoLockClient {
                         .build(),
                 )
                 .build(),
-            // Unique index on the key for atomic operations
-            IndexModel::builder()
-                .keys(doc! { "key": 1 })
-                .options(IndexOptions::builder().unique(true).name("key_unique_index".to_string()).build())
-                .build(),
+            // key is stored as _id which already has unique index
+
             // Index on created_at for analytics
             IndexModel::builder()
                 .keys(doc! { "created_at": 1 })

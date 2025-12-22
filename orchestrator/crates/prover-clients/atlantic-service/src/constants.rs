@@ -13,6 +13,9 @@ pub(crate) const ATLANTIC_PROOF_URL: &str = "https://storage.googleapis.com/hero
 pub(crate) const AGGREGATOR_USE_KZG_DA: bool = true;
 pub(crate) const AGGREGATOR_FULL_OUTPUT: bool = false;
 
-// Retry configuration for GET requests
-pub(crate) const RETRY_MAX_ATTEMPTS: u32 = 3;
-pub(crate) const RETRY_DELAY_MS: u64 = 5000;
+// Retry configuration for all Atlantic API calls (GET and POST)
+// Uses exponential backoff with a total timeout instead of max attempts.
+// Network errors (timeouts, incomplete messages, connection issues) will be retried.
+// API errors (4xx, 5xx with proper responses) will NOT be retried (fast fail).
+pub(crate) const RETRY_BASE_DELAY_SECONDS: u64 = 2; // Initial delay between retries (doubles each attempt)
+pub(crate) const RETRY_TIMEOUT_SECONDS: u64 = 120; // Total time allowed for all retries (2 minutes)

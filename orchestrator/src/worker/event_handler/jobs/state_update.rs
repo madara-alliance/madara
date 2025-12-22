@@ -71,7 +71,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// TODO: Update the code in the future releases to fix this.
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = &job.internal_id;
-        info!(log_type = "starting", job_id = %job.id, "⚙️  {:?} job {} processing started", JobType::StateTransition, internal_id);
+        info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::StateTransition, internal_id);
 
         // Get the state transition metadata
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
@@ -180,7 +180,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         let val = blocks_or_batches_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;
 
-        info!(log_type = "completed", job_id = %job.id, "✅ {:?} job {} processed successfully", JobType::StateTransition, internal_id);
+        info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::StateTransition, internal_id);
 
         Ok(val.to_string())
     }
@@ -204,7 +204,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         // Get the status from the settlement contract
         let result = Self::verify_through_contract(&config, &nums_settled, &job.id, internal_id).await?;
-        info!(log_type = "completed", job_id = %job.id, "🎯 {:?} job {} verification completed", JobType::StateTransition, internal_id);
+        info!(log_type = "completed", job_id = %job.id, "{:?} job {} verification completed", JobType::StateTransition, internal_id);
         Ok(result)
     }
 
@@ -246,7 +246,7 @@ impl StateUpdateJobHandler {
                 let batches = config.database().get_snos_batches_by_indices(vec![*last_settled]).await?;
                 if let Some(batch) = batches.first() {
                     // Return the end block of the last batch
-                    Ok((batch.end_block, batch.snos_batch_id))
+                    Ok((batch.end_block, batch.index))
                 } else {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
                 }
