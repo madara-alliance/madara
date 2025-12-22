@@ -191,7 +191,7 @@ async fn handle_retry_job_request(
                     KeyValue::new("priority", if query.priority { "true" } else { "false" }),
                 ],
             );
-            Err(JobRouteError::ProcessingError(e.to_string()))
+            Err(e.into())
         }
     }
 }

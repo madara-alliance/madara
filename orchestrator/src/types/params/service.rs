@@ -11,9 +11,6 @@ pub struct ServiceParams {
     pub job_processing_timeout_seconds: u64,
     pub snos_job_buffer_size: u64,
     pub max_priority_queue_size: usize,
-    pub priority_slot_wait_timeout_secs: u64,
-    pub priority_slot_staleness_timeout_secs: u64,
-    pub priority_slot_check_interval_ms: u64,
 }
 
 impl From<ServiceCliArgs> for ServiceParams {
@@ -27,9 +24,6 @@ impl From<ServiceCliArgs> for ServiceParams {
             job_processing_timeout_seconds: args.job_processing_timeout_seconds,
             snos_job_buffer_size: args.snos_job_buffer_size,
             max_priority_queue_size: args.max_priority_queue_size,
-            priority_slot_wait_timeout_secs: args.priority_slot_wait_timeout_secs,
-            priority_slot_staleness_timeout_secs: args.priority_slot_staleness_timeout_secs,
-            priority_slot_check_interval_ms: args.priority_slot_check_interval_ms,
         }
     }
 }

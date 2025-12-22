@@ -2,8 +2,17 @@
 //!
 //! This module provides dedicated workers for processing priority job queues.
 //! There are two workers: one for processing and one for verification.
-//! Each worker reads messages from its priority queue, validates job status, and
+//! Each worker reads messages from its priority queue, and
 //! places valid messages into a global slot for job workers to consume.
+//!
+//! The flow is as follows:
+//! 1. Messages can be put in priority queue (processing or verification) using the server by using `priority=true` query argument
+//! 2. Priority queues have a max size (so that it doesn't overwhelm the normal queues)
+//! 3. Priority queues have their own worker (defined in this file)
+//! 4. The worker will put the messages from queue into a Mutex slot
+//! 5. The worker will work as follows: It'll wait for the slot to be free
+//! 6. Once it's free, it'll get a message from the queue and put it in the slot
+//! 7. To prevent one message from capturing the slot forever, in rare cases, we have a stale timeout [PRIORITY_SLOT_STALENESS_TIMEOUT_SECS]
 
 use crate::core::client::queue::QueueError;
 use crate::core::config::Config;
@@ -14,6 +23,9 @@ use crate::types::priority_slot::{
     is_verification_slot_empty, place_in_processing_slot, place_in_verification_slot, PriorityJobSlot,
 };
 use crate::types::queue::QueueType;
+use crate::types::queue_control::{
+    PRIORITY_SLOT_CHECK_INTERVAL, PRIORITY_SLOT_STALENESS_TIMEOUT_SECS, PRIORITY_SLOT_WAIT_TIMEOUT,
+};
 use crate::worker::parser::job_queue_message::JobQueueMessage;
 use crate::worker::traits::message::MessageParser;
 use omniqueue::Delivery;
@@ -22,6 +34,9 @@ use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
+
+const PQ_WORKER_ERROR_SLEEP: Duration = Duration::from_millis(500);
+const PQ_WORKER_NO_MESSAGE_SLEEP: Duration = Duration::from_millis(100);
 
 /// The action type this priority queue worker handles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,16 +128,16 @@ impl PriorityQueueWorker {
                 Ok(Some(delivery)) => {
                     if let Err(e) = self.process_message(delivery).await {
                         error!("PQ Worker ({}): Error processing message: {:?}", self.action, e);
-                        sleep(Duration::from_millis(100)).await;
+                        sleep(PQ_WORKER_ERROR_SLEEP).await;
                     }
                 }
                 Ok(None) => {
                     // No messages available, wait a bit before checking again
-                    sleep(Duration::from_millis(100)).await;
+                    sleep(PQ_WORKER_NO_MESSAGE_SLEEP).await;
                 }
                 Err(e) => {
                     error!("PQ Worker ({}): Error consuming from queue: {:?}", self.action, e);
-                    sleep(Duration::from_millis(500)).await;
+                    sleep(PQ_WORKER_ERROR_SLEEP).await;
                 }
             }
         }
@@ -138,10 +153,6 @@ impl PriorityQueueWorker {
     /// - Returns true when the slot is empty
     /// - Returns false on timeout or shutdown
     async fn wait_for_slot_empty(&self) -> bool {
-        let service_config = self.config.service_config();
-        let timeout = Duration::from_secs(service_config.priority_slot_wait_timeout_secs);
-        let staleness_secs = service_config.priority_slot_staleness_timeout_secs;
-        let check_interval = Duration::from_millis(service_config.priority_slot_check_interval_ms);
         let start = Instant::now();
 
         loop {
@@ -149,13 +160,17 @@ impl PriorityQueueWorker {
                 return false;
             }
 
-            if start.elapsed() > timeout {
-                warn!("PQ Worker ({}): Timeout waiting for slot to empty after {}s", self.action, timeout.as_secs());
+            if start.elapsed() > PRIORITY_SLOT_WAIT_TIMEOUT {
+                warn!(
+                    "PQ Worker ({}): Timeout waiting for slot to empty after {}s",
+                    self.action,
+                    PRIORITY_SLOT_WAIT_TIMEOUT.as_secs()
+                );
                 return false;
             }
 
             // Check and clear stale messages
-            if let Some(stale_delivery) = self.clear_stale_if_needed(staleness_secs).await {
+            if let Some(stale_delivery) = self.clear_stale_if_needed(PRIORITY_SLOT_STALENESS_TIMEOUT_SECS).await {
                 warn!("PQ Worker ({}): Cleared stale message from slot, NACKing", self.action);
                 if let Err(e) = stale_delivery.nack().await {
                     error!("PQ Worker ({}): Failed to NACK stale delivery: {:?}", self.action, e);
@@ -167,7 +182,7 @@ impl PriorityQueueWorker {
                 return true;
             }
 
-            sleep(check_interval).await;
+            sleep(PRIORITY_SLOT_CHECK_INTERVAL).await;
         }
     }
 

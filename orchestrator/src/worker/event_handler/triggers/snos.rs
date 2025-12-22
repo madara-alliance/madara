@@ -25,6 +25,38 @@ use tracing::{debug, error, info};
 /// - Ensuring proper ordering and dependencies between jobs
 pub struct SnosJobTrigger;
 
+/// Calculates the maximum number of SNOS jobs to create based on the current buffer state.
+///
+/// The buffer size represents the target number of jobs to maintain in the processing pipeline.
+/// This function calculates how many new jobs can be created to reach that target.
+///
+/// # Arguments
+/// * `latest_job_internal_id` - The internal ID of the most recently created SNOS job, if any
+/// * `oldest_incomplete_internal_id` - The internal ID of the oldest non-completed SNOS job, if any
+/// * `buffer_size` - The target buffer size from configuration
+///
+/// # Returns
+/// The number of new jobs that can be created without exceeding the buffer size
+///
+/// # Logic
+/// - If no jobs exist at all: can create up to `buffer_size` jobs
+/// - If jobs exist but all are completed: can create up to `buffer_size` jobs
+/// - Otherwise: create enough jobs to fill the buffer (buffer_size - current_buffer_count)
+fn calculate_max_snos_jobs_to_create(
+    latest_job_internal_id: Option<u64>,
+    oldest_incomplete_internal_id: Option<u64>,
+    buffer_size: u64,
+) -> u64 {
+    match (latest_job_internal_id, oldest_incomplete_internal_id) {
+        (Some(latest), Some(oldest_incomplete)) => {
+            let num_jobs_in_buffer = latest - oldest_incomplete + 1;
+            buffer_size.saturating_sub(num_jobs_in_buffer)
+        }
+        // No jobs exist, or all jobs are completed - can create full buffer
+        _ => buffer_size,
+    }
+}
+
 #[async_trait]
 impl JobTrigger for SnosJobTrigger {
     /// Main entry point for SNOS job creation workflow.
@@ -54,43 +86,45 @@ impl JobTrigger for SnosJobTrigger {
         // Get the target buffer size from config (configurable via env, defaults to 50)
         let snos_job_buffer_size = config.service_config().snos_job_buffer_size;
 
-        // Calculate the maximum number of snos jobs to create
-        let max_jobs_to_create =
-            if let Some(latest_snos_job) = config.database().get_latest_job_by_type(JobType::SnosRun).await? {
-                // Get the internal ID of the latest snos job in DB
-                let latest_internal_id: u64 = latest_snos_job.internal_id.parse().map_err(|e| {
+        // Get latest SNOS job internal ID (if any)
+        let latest_job_internal_id =
+            if let Some(latest_job) = config.database().get_latest_job_by_type(JobType::SnosRun).await? {
+                Some(latest_job.internal_id.parse::<u64>().map_err(|e| {
                     eyre!(
                         "Failed to parse internal id {} for SNOS with id {}: {}",
-                        latest_snos_job.internal_id,
-                        latest_snos_job.id,
+                        latest_job.internal_id,
+                        latest_job.id,
                         e
                     )
-                })?;
-
-                if let Some(oldest_incomplete_snos_job) = config
-                    .database()
-                    .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed])
-                    .await?
-                {
-                    // Get the internal ID of the oldest incomplete snos job in DB
-                    let oldest_incomplete_internal_id: u64 =
-                        oldest_incomplete_snos_job.internal_id.parse().map_err(|e| {
-                            eyre!(
-                                "Failed to parse internal id {} for SNOS with id {}: {}",
-                                oldest_incomplete_snos_job.internal_id,
-                                oldest_incomplete_snos_job.id,
-                                e
-                            )
-                        })?;
-
-                    let num_jobs_in_buffer = latest_internal_id - oldest_incomplete_internal_id + 1;
-                    snos_job_buffer_size.saturating_sub(num_jobs_in_buffer)
-                } else {
-                    snos_job_buffer_size
-                }
+                })?)
             } else {
-                snos_job_buffer_size
+                None
             };
+
+        // Get oldest incomplete SNOS job internal ID (if any)
+        let oldest_incomplete_internal_id = if let Some(oldest_incomplete_job) = config
+            .database()
+            .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed])
+            .await?
+        {
+            Some(oldest_incomplete_job.internal_id.parse::<u64>().map_err(|e| {
+                eyre!(
+                    "Failed to parse internal id {} for SNOS with id {}: {}",
+                    oldest_incomplete_job.internal_id,
+                    oldest_incomplete_job.id,
+                    e
+                )
+            })?)
+        } else {
+            None
+        };
+
+        // Calculate the maximum number of SNOS jobs to create
+        let max_jobs_to_create = calculate_max_snos_jobs_to_create(
+            latest_job_internal_id,
+            oldest_incomplete_internal_id,
+            snos_job_buffer_size,
+        );
 
         info!("Creating max {} {:?} jobs", max_jobs_to_create, JobType::SnosRun);
 
@@ -193,5 +227,56 @@ fn create_job_metadata(snos_batch_id: u64, start_block: u64, end_block: u64, ful
             program_output_path: Some(format!("{}/{}", snos_batch_id, PROGRAM_OUTPUT_FILE_NAME)),
             ..Default::default()
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_max_snos_jobs_no_jobs_exist() {
+        // No jobs exist at all - can create full buffer
+        let result = calculate_max_snos_jobs_to_create(None, None, 50);
+        assert_eq!(result, 50);
+    }
+
+    #[test]
+    fn test_calculate_max_snos_jobs_all_completed() {
+        // Latest job exists but no incomplete jobs (all completed)
+        let result = calculate_max_snos_jobs_to_create(Some(100), None, 50);
+        assert_eq!(result, 50);
+    }
+
+    #[test]
+    fn test_calculate_max_snos_jobs_buffer_partially_full() {
+        // Buffer has 10 jobs (latest=110, oldest_incomplete=101)
+        // Buffer size is 50, so can create 40 more
+        let result = calculate_max_snos_jobs_to_create(Some(110), Some(101), 50);
+        assert_eq!(result, 40);
+    }
+
+    #[test]
+    fn test_calculate_max_snos_jobs_buffer_full() {
+        // Buffer has 50 jobs (latest=150, oldest_incomplete=101)
+        // Buffer size is 50, so can create 0 more
+        let result = calculate_max_snos_jobs_to_create(Some(150), Some(101), 50);
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_calculate_max_snos_jobs_buffer_overfull() {
+        // Buffer has 60 jobs (latest=160, oldest_incomplete=101)
+        // Buffer size is 50, saturating_sub should return 0
+        let result = calculate_max_snos_jobs_to_create(Some(160), Some(101), 50);
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_calculate_max_snos_jobs_single_incomplete_job() {
+        // Only one incomplete job exists (latest=oldest=100)
+        // Buffer size is 50, so can create 49 more
+        let result = calculate_max_snos_jobs_to_create(Some(100), Some(100), 50);
+        assert_eq!(result, 49);
     }
 }

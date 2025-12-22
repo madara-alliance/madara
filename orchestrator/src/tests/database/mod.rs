@@ -151,6 +151,57 @@ async fn database_get_last_successful_job_by_type_works() {
     assert_eq!(last_successful_job, job_vec[2], "Expected job assertion failed");
 }
 
+/// Test for `get_oldest_job_by_type_excluding_statuses` operation in database trait.
+/// Creates jobs with different statuses and verifies the method returns the oldest job
+/// whose status is not in the excluded list.
+#[rstest]
+#[tokio::test]
+async fn database_get_oldest_job_by_type_excluding_statuses_works() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    // Create jobs with different statuses (internal_id determines order)
+    // internal_id=1: Completed (should be excluded)
+    // internal_id=2: Completed (should be excluded)
+    // internal_id=3: Created (oldest non-completed, should be returned)
+    // internal_id=4: LockedForProcessing
+    // internal_id=5: PendingVerification
+    let job_vec = [
+        build_job_item(JobType::SnosRun, JobStatus::Completed, 1),
+        build_job_item(JobType::SnosRun, JobStatus::Completed, 2),
+        build_job_item(JobType::SnosRun, JobStatus::Created, 3),
+        build_job_item(JobType::SnosRun, JobStatus::LockedForProcessing, 4),
+        build_job_item(JobType::SnosRun, JobStatus::PendingVerification, 5),
+    ];
+
+    for job in &job_vec {
+        database_client.create_job(job.clone()).await.unwrap();
+    }
+
+    // Exclude Completed status - should return job with internal_id=3 (oldest non-completed)
+    let oldest_incomplete = database_client
+        .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed])
+        .await
+        .unwrap();
+
+    assert!(oldest_incomplete.is_some(), "Expected to find an incomplete job");
+    let oldest_job = oldest_incomplete.unwrap();
+    assert_eq!(oldest_job.internal_id, "3", "Expected oldest non-completed job to have internal_id=3");
+    assert_eq!(oldest_job.status, JobStatus::Created);
+
+    // Exclude both Completed and Created - should return job with internal_id=4
+    let oldest_excluding_multiple = database_client
+        .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed, JobStatus::Created])
+        .await
+        .unwrap();
+
+    assert!(oldest_excluding_multiple.is_some());
+    let job = oldest_excluding_multiple.unwrap();
+    assert_eq!(job.internal_id, "4", "Expected oldest job excluding Completed and Created to have internal_id=4");
+    assert_eq!(job.status, JobStatus::LockedForProcessing);
+}
+
 /// Test for `get_jobs_after_internal_id_by_job_type` operation in database trait.
 /// Creates the jobs in following sequence :
 ///

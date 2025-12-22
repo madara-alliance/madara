@@ -3,6 +3,17 @@ use crate::types::Layer;
 use orchestrator_utils::env_utils::get_env_var_or_default;
 use std::collections::HashMap;
 use std::sync::LazyLock;
+use std::time::Duration;
+
+/// Maximum time to wait for the priority slot to become empty.
+pub const PRIORITY_SLOT_WAIT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Maximum time a message can sit in the priority slot before being
+/// considered stale. Stale messages are NACKed to enable DLQ flow.
+pub const PRIORITY_SLOT_STALENESS_TIMEOUT_SECS: u64 = 300;
+
+/// Interval between priority slot availability checks.
+pub const PRIORITY_SLOT_CHECK_INTERVAL: Duration = Duration::from_millis(1000);
 
 #[derive(Clone)]
 pub struct DlqConfig {

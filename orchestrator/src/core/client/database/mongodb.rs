@@ -1283,10 +1283,12 @@ impl DatabaseClient for MongoDbClient {
                 }
             },
             doc! {
-                  "status": {
-                "$nin": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+                "$match": {
+                    "status": {
+                        "$nin": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+                    }
+                }
             },
-                },
             doc! {
                 "$addFields": {
                     "numeric_internal_id": { "$toLong": "$internal_id" }

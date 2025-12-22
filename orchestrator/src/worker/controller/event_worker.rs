@@ -33,7 +33,8 @@ pub struct EventWorker {
     cancellation_token: CancellationToken,
 }
 
-const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: u64 = 30;
+const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: Duration = Duration::from_secs(30);
+const NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_secs(1);
 
 impl EventWorker {
     /// new - Create a new EventWorker
@@ -122,7 +123,7 @@ impl EventWorker {
     /// It returns a Result<Option<Delivery>, EventSystemError>
     pub async fn get_message(&self) -> EventSystemResult<Option<Delivery>> {
         let start = Instant::now();
-        let timeout = Duration::from_secs(QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS);
+        let timeout = QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS;
 
         loop {
             match self.config.clone().queue().consume_message_from_queue(self.queue_type.clone()).await {
@@ -435,7 +436,7 @@ impl EventWorker {
                                         });
                                     }
                                 },
-                                None => sleep(Duration::from_secs(1)).await,
+                                None => sleep(NO_MESSAGE_SLEEP_DURATION).await,
                             }
                         }
                         Err(e) => {
@@ -467,13 +468,7 @@ impl EventWorker {
     /// * `None` if no matching job or this worker shouldn't check the slot
     async fn check_priority_slot(&self) -> Option<PriorityJobSlot> {
         // Only job processing/verification workers check the slot
-        if matches!(
-            self.queue_type,
-            QueueType::WorkerTrigger
-                | QueueType::JobHandleFailure
-                | QueueType::PriorityProcessingQueue
-                | QueueType::PriorityVerificationQueue
-        ) {
+        if !should_check_priority_slot(&self.queue_type) {
             return None;
         }
 
@@ -502,5 +497,42 @@ impl EventWorker {
                 error!("Task panicked or was cancelled: {:?}", e);
             }
         }
+    }
+}
+
+/// Determines if a queue type should check the priority slot.
+/// System queues (WorkerTrigger, JobHandleFailure, Priority queues) should not check.
+fn should_check_priority_slot(queue_type: &QueueType) -> bool {
+    !matches!(
+        queue_type,
+        QueueType::WorkerTrigger
+            | QueueType::JobHandleFailure
+            | QueueType::PriorityProcessingQueue
+            | QueueType::PriorityVerificationQueue
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_system_queues_should_not_check_priority_slot() {
+        // System queues should not check priority slot
+        assert!(!should_check_priority_slot(&QueueType::WorkerTrigger));
+        assert!(!should_check_priority_slot(&QueueType::JobHandleFailure));
+        assert!(!should_check_priority_slot(&QueueType::PriorityProcessingQueue));
+        assert!(!should_check_priority_slot(&QueueType::PriorityVerificationQueue));
+    }
+
+    #[test]
+    fn test_job_queues_should_check_priority_slot() {
+        // Job processing queues should check priority slot
+        assert!(should_check_priority_slot(&QueueType::SnosJobProcessing));
+        assert!(should_check_priority_slot(&QueueType::ProvingJobProcessing));
+
+        // Job verification queues should check priority slot
+        assert!(should_check_priority_slot(&QueueType::SnosJobVerification));
+        assert!(should_check_priority_slot(&QueueType::ProvingJobVerification));
     }
 }
