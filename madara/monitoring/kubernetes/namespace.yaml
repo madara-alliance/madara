@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: madara-monitoring
-  labels:
-    app.kubernetes.io/name: madara-monitoring
-    app.kubernetes.io/part-of: madara
