@@ -123,7 +123,9 @@ pub async fn fetch_block_starknet_version(
 
     let starknet_version = match block {
         starknet::core::types::MaybePreConfirmedBlockWithTxHashes::Block(block) => block.starknet_version,
-        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(block) => block.starknet_version,
+        starknet::core::types::MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => {
+            return Err(eyre!("Block {} is still pending, cannot determine final Starknet version", block_number));
+        }
     };
 
     StarknetVersion::from_str(&starknet_version).map_err(|e| eyre!(e))
