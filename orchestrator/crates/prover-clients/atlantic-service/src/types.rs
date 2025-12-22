@@ -154,6 +154,8 @@ pub struct AtlanticAggregatorParams {
     pub(crate) chain_id_hex: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) fee_token_address: Option<Felt252>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) public_keys: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,11 +190,18 @@ pub enum AtlanticHints {
     HerodotusSnGrower,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, clap::ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AtlanticSharpProver {
+    #[default]
     Stone,
     Stwo,
+}
+
+impl AtlanticSharpProver {
+    pub fn as_str(&self) -> String {
+        serde_json::to_string(self).unwrap().trim_matches('"').to_string()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

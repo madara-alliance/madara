@@ -1,6 +1,6 @@
 use crate::block::{FromGatewayError, ProviderBlock};
 use mp_block::FullBlock;
-use mp_state_update::{DeclaredClassItem, DeployedContractItem, StorageEntry};
+use mp_state_update::{DeclaredClassItem, DeployedContractItem, MigratedClassItem, StorageEntry};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
@@ -49,9 +49,10 @@ pub struct StateDiff {
     pub declared_classes: Vec<DeclaredClassItem>,
     pub nonces: HashMap<Felt, Felt>,
     pub replaced_classes: Vec<DeployedContractItem>,
-    /// New in Starknet 0.14.1 - parsed but not stored in DB
+    /// Classes migrated from Poseidon to BLAKE hash (SNIP-34).
+    /// Not present in pre-v0.14.1 blocks, defaults to empty.
     #[serde(default)]
-    pub migrated_compiled_classes: Vec<Felt>,
+    pub migrated_compiled_classes: Vec<MigratedClassItem>,
 }
 
 impl From<mp_state_update::StateDiff> for StateDiff {
@@ -78,7 +79,7 @@ impl From<mp_state_update::StateDiff> for StateDiff {
                     class_hash,
                 })
                 .collect(),
-            migrated_compiled_classes: Vec::new(),
+            migrated_compiled_classes: state_diff.migrated_compiled_classes,
         }
     }
 }
@@ -106,7 +107,7 @@ impl From<StateDiff> for mp_state_update::StateDiff {
                 .into_iter()
                 .map(|(contract_address, nonce)| mp_state_update::NonceUpdate { contract_address, nonce })
                 .collect(),
-            migrated_compiled_classes: vec![], // TODO(prakhar,22/11/2025): Add migrated compiled classes here
+            migrated_compiled_classes: state_diff.migrated_compiled_classes,
         }
     }
 }

@@ -110,6 +110,20 @@ impl JobHandlerTrait for SnosJobHandler {
         // Use pre-loaded versioned constants from config (loaded at startup)
         let versioned_constants = config.snos_config().versioned_constants.clone();
 
+        // Convert DA public keys from hex strings to Felt values
+        let public_keys: Option<Vec<Felt>> = if config.da_public_keys().is_empty() {
+            None
+        } else {
+            Some(
+                config
+                    .da_public_keys()
+                    .iter()
+                    .map(|key| Felt::from_hex(key))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| SnosError::Other(OtherError(eyre!("Failed to parse public key: {}", e))))?,
+            )
+        };
+
         let input = PieGenerationInput {
             rpc_url: snos_url.to_string(),
             blocks: (start_block_number..=end_block_number).collect(),
@@ -119,6 +133,7 @@ impl JobHandlerTrait for SnosJobHandler {
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
             versioned_constants,
+            public_keys,
         };
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {

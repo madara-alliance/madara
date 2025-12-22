@@ -801,8 +801,10 @@ async fn declare_sierra_then_deploy(
         let sierra_class: starknet_core::types::contract::SierraClass =
             serde_json::from_slice(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
         let flattened_class = sierra_class.clone().flatten().unwrap();
-        let (compiled_class_hash, _compiled_class) =
-            mp_class::FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm().unwrap();
+        // Use BLAKE hash (v2) for Starknet 0.14.1+ (SNIP-34 migration)
+        let compiled_hashes =
+            mp_class::FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm_with_hashes().unwrap();
+        let compiled_class_hash = compiled_hashes.blake_hash;
 
         // 0. Declare a class.
 

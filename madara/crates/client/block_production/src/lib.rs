@@ -249,7 +249,12 @@ impl CurrentBlockState {
                                     *class.class_hash(),
                                     class
                                         .as_sierra()
-                                        .map(|class| DeclaredClassCompiledClass::Sierra(class.info.compiled_class_hash))
+                                        .and_then(|class| {
+                                            // Use canonical hash (v2 if present, else v1)
+                                            let hash =
+                                                class.info.compiled_class_hash_v2.or(class.info.compiled_class_hash)?;
+                                            Some(DeclaredClassCompiledClass::Sierra(hash))
+                                        })
                                         .unwrap_or(DeclaredClassCompiledClass::Legacy),
                                 )
                             })
@@ -687,8 +692,17 @@ impl BlockProductionTask {
             .filter_map(|tx| tx.transaction.transaction.as_l1_handler().map(|l1_tx| l1_tx.nonce))
             .collect();
 
-        // Convert state_diff and close block using helper function
-        let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+        // Build set of v2 hashes for SNIP-34 migrated classes
+        let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
+            .compiled_class_hashes_for_migration
+            .iter()
+            .map(|(v2_hash, _v1_hash)| v2_hash.0)
+            .collect();
+
+        // Convert state_diff, separating declared classes from migrated classes
+        let state_diff =
+            mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
+
         Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
             block_number,
@@ -791,8 +805,19 @@ impl BlockProductionTask {
             .context("No current pre-confirmed block")?
             .num_executed_transactions();
 
-        // Convert state_diff and close block using helper function
-        let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+        // Build set of v2 hashes for SNIP-34 migrated classes.
+        // These are classes that were USED (not declared) in this block and need their
+        // compiled_class_hash updated from Poseidon (v1) to BLAKE (v2).
+        let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
+            .compiled_class_hashes_for_migration
+            .iter()
+            .map(|(v2_hash, _v1_hash)| v2_hash.0)
+            .collect();
+
+        // Convert state_diff, separating declared classes from migrated classes
+        let state_diff =
+            mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
+
         Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
             state.block_number,
@@ -1121,7 +1146,8 @@ pub(crate) mod tests {
                     },
                     abi: "".to_string(),
                 }),
-                compiled_class_hash,
+                compiled_class_hash: Some(compiled_class_hash),
+                compiled_class_hash_v2: None,
             },
             compiled: Arc::new(mp_class::CompiledSierra("".to_string())),
         })
@@ -1136,7 +1162,9 @@ pub(crate) mod tests {
             serde_json::from_slice(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
         let flattened_class: mp_class::FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
 
-        let (compiled_contract_class_hash, _compiled_class) = flattened_class.compile_to_casm().unwrap();
+        // Use BLAKE hash (v2) for v0.14.1+ compatibility
+        let hashes = flattened_class.compile_to_casm_with_hashes().unwrap();
+        let compiled_contract_class_hash = hashes.blake_hash;
 
         let mut declare_txn: BroadcastedDeclareTxn = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
             sender_address: contract.address,

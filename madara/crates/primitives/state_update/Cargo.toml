@@ -30,3 +30,5 @@ serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 bincode = { workspace = true }
+starknet_api = { workspace = true }
+indexmap = "2.2.6"
