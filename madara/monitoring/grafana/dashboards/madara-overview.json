@@ -32,7 +32,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 0, "y": 1 },
       "id": 1,
       "options": {
         "colorMode": "value",
@@ -68,22 +68,59 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 3, "y": 1 },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
         "justifyMode": "center",
         "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false },
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "block_produced_count_total",
-          "legendFormat": "Blocks Produced",
+          "expr": "avg(block_production_time)",
+          "legendFormat": "Avg Block Time",
+          "refId": "A"
+        }
+      ],
+      "title": "",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "#73BF69", "value": null }]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 3, "x": 6, "y": 1 },
+      "id": 60,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "avg(tx_execution_time_ms)",
+          "legendFormat": "Avg Tx Time",
           "refId": "A"
         }
       ],
@@ -104,7 +141,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 9, "y": 1 },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -141,7 +178,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 12, "y": 1 },
       "id": 4,
       "options": {
         "colorMode": "value",
@@ -178,7 +215,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 15, "y": 1 },
       "id": 5,
       "options": {
         "colorMode": "value",
@@ -214,7 +251,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 18, "y": 1 },
       "id": 6,
       "options": {
         "colorMode": "value",
@@ -230,6 +267,42 @@
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
           "expr": "accepted_transaction_count_total",
           "legendFormat": "Mempool",
+          "refId": "A"
+        }
+      ],
+      "title": "",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "#8F3BB8", "value": null }]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 3, "x": 21, "y": 1 },
+      "id": 61,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "block_produced_count_total",
+          "legendFormat": "Blocks Produced",
           "refId": "A"
         }
       ],
