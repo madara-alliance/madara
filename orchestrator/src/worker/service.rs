@@ -10,7 +10,6 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::{JobAction, QueueNameForJobType, QueueType};
-use crate::types::queue_control::MAX_PRIORITY_QUEUE_SIZE;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
@@ -81,7 +80,7 @@ impl JobService {
 
         // Check priority queue depth before adding
         let queue_depth = config.queue().get_queue_depth(queue_type.clone()).await?;
-        let max_size = *MAX_PRIORITY_QUEUE_SIZE;
+        let max_size = config.service_config().max_priority_queue_size;
 
         if queue_depth >= max_size {
             tracing::warn!(

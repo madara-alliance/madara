@@ -30,4 +30,21 @@ pub struct ServiceCliArgs {
     /// New jobs are created when the buffer drops below this size.
     #[arg(env = "MADARA_ORCHESTRATOR_SNOS_JOB_BUFFER_SIZE", long, default_value = "50")]
     pub snos_job_buffer_size: u64,
+
+    /// Maximum number of messages allowed in the priority queue.
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE", long, default_value = "20")]
+    pub max_priority_queue_size: usize,
+
+    /// Maximum time (in seconds) to wait for the priority slot to become empty.
+    #[arg(env = "MADARA_ORCHESTRATOR_PRIORITY_SLOT_WAIT_TIMEOUT", long, default_value = "300")]
+    pub priority_slot_wait_timeout_secs: u64,
+
+    /// Maximum time (in seconds) a message can sit in the priority slot before being
+    /// considered stale. Stale messages are NACKed to enable DLQ flow.
+    #[arg(env = "MADARA_ORCHESTRATOR_PRIORITY_SLOT_STALENESS_TIMEOUT", long, default_value = "300")]
+    pub priority_slot_staleness_timeout_secs: u64,
+
+    /// Interval (in milliseconds) between priority slot availability checks.
+    #[arg(env = "MADARA_ORCHESTRATOR_PRIORITY_SLOT_CHECK_INTERVAL_MS", long, default_value = "1000")]
+    pub priority_slot_check_interval_ms: u64,
 }

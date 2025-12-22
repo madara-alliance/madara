@@ -9,15 +9,11 @@ use crate::core::client::queue::QueueError;
 use crate::core::config::Config;
 use crate::error::event::EventSystemResult;
 use crate::error::ConsumptionError;
-use crate::types::jobs::types::JobStatus;
 use crate::types::priority_slot::{
     clear_stale_from_processing_slot, clear_stale_from_verification_slot, is_processing_slot_empty,
     is_verification_slot_empty, place_in_processing_slot, place_in_verification_slot, PriorityJobSlot,
 };
 use crate::types::queue::QueueType;
-use crate::types::queue_control::{
-    PRIORITY_SLOT_CHECK_INTERVAL_MS, PRIORITY_SLOT_STALENESS_TIMEOUT_SECS, PRIORITY_SLOT_WAIT_TIMEOUT_SECS,
-};
 use crate::worker::parser::job_queue_message::JobQueueMessage;
 use crate::worker::traits::message::MessageParser;
 use omniqueue::Delivery;
@@ -142,9 +138,10 @@ impl PriorityQueueWorker {
     /// - Returns true when the slot is empty
     /// - Returns false on timeout or shutdown
     async fn wait_for_slot_empty(&self) -> bool {
-        let timeout = Duration::from_secs(*PRIORITY_SLOT_WAIT_TIMEOUT_SECS);
-        let staleness_secs = *PRIORITY_SLOT_STALENESS_TIMEOUT_SECS;
-        let check_interval = Duration::from_millis(*PRIORITY_SLOT_CHECK_INTERVAL_MS);
+        let service_config = self.config.service_config();
+        let timeout = Duration::from_secs(service_config.priority_slot_wait_timeout_secs);
+        let staleness_secs = service_config.priority_slot_staleness_timeout_secs;
+        let check_interval = Duration::from_millis(service_config.priority_slot_check_interval_ms);
         let start = Instant::now();
 
         loop {
@@ -249,16 +246,6 @@ impl PriorityQueueWorker {
             }
         };
 
-        // Check if message should be ACKed (job no longer needs this action)
-        if self.should_ack(&job.status) {
-            debug!(
-                "PQ Worker ({}): Job {} no longer needs action (status: {:?}), ACKing",
-                self.action, parsed_msg.id, job.status
-            );
-            delivery.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
-            return Ok(());
-        }
-
         // Create slot entry and place in slot
         let slot_job = PriorityJobSlot::new(parsed_msg.id, job.job_type, delivery);
 
@@ -272,17 +259,5 @@ impl PriorityQueueWorker {
         }
 
         Ok(())
-    }
-
-    /// Determine if a message should be ACKed based on job status.
-    ///
-    /// ACK conditions:
-    /// - Verification action AND status != PendingVerification
-    /// - Processing action AND status NOT IN (PendingRetry, Created)
-    fn should_ack(&self, status: &JobStatus) -> bool {
-        match self.action {
-            PriorityAction::Verification => !matches!(status, JobStatus::PendingVerification),
-            PriorityAction::Processing => !matches!(status, JobStatus::Created | JobStatus::PendingRetry),
-        }
     }
 }

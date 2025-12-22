@@ -4,39 +4,6 @@ use orchestrator_utils::env_utils::get_env_var_or_default;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-/// Maximum number of messages allowed in the priority queue
-/// Can be configured via MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE environment variable
-pub static MAX_PRIORITY_QUEUE_SIZE: LazyLock<usize> = LazyLock::new(|| {
-    get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE", "20")
-        .parse()
-        .expect("MADARA_ORCHESTRATOR_MAX_PRIORITY_QUEUE_SIZE must be a valid integer")
-});
-
-/// Maximum time (in seconds) to wait for the priority slot to become empty.
-/// Can be configured via MADARA_ORCHESTRATOR_PRIORITY_SLOT_WAIT_TIMEOUT environment variable
-pub static PRIORITY_SLOT_WAIT_TIMEOUT_SECS: LazyLock<u64> = LazyLock::new(|| {
-    get_env_var_or_default("MADARA_ORCHESTRATOR_PRIORITY_SLOT_WAIT_TIMEOUT", "300")
-        .parse()
-        .expect("MADARA_ORCHESTRATOR_PRIORITY_SLOT_WAIT_TIMEOUT must be a valid integer")
-});
-
-/// Maximum time (in seconds) a message can sit in the priority slot before being
-/// considered stale. Stale messages are NACKed to enable DLQ flow.
-/// Can be configured via MADARA_ORCHESTRATOR_PRIORITY_SLOT_STALENESS_TIMEOUT environment variable
-pub static PRIORITY_SLOT_STALENESS_TIMEOUT_SECS: LazyLock<u64> = LazyLock::new(|| {
-    get_env_var_or_default("MADARA_ORCHESTRATOR_PRIORITY_SLOT_STALENESS_TIMEOUT", "300")
-        .parse()
-        .expect("MADARA_ORCHESTRATOR_PRIORITY_SLOT_STALENESS_TIMEOUT must be a valid integer")
-});
-
-/// Interval (in milliseconds) between priority slot availability checks.
-/// Can be configured via MADARA_ORCHESTRATOR_PRIORITY_SLOT_CHECK_INTERVAL_MS environment variable
-pub static PRIORITY_SLOT_CHECK_INTERVAL_MS: LazyLock<u64> = LazyLock::new(|| {
-    get_env_var_or_default("MADARA_ORCHESTRATOR_PRIORITY_SLOT_CHECK_INTERVAL_MS", "1000")
-        .parse()
-        .expect("MADARA_ORCHESTRATOR_PRIORITY_SLOT_CHECK_INTERVAL_MS must be a valid integer")
-});
-
 #[derive(Clone)]
 pub struct DlqConfig {
     pub max_receive_count: u32,
