@@ -13,6 +13,7 @@ use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
+use crate::types::constant::DA_SEGMENT_FILE_NAME;
 use orchestrator_atlantic_service::constants::{CAIRO_PIE_FILE_NAME, PROOF_FILE_NAME};
 use orchestrator_prover_client_interface::{Task, TaskStatus, TaskType};
 use starknet_core::types::Felt;
@@ -118,6 +119,18 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     &metadata.cairo_pie_path,
                 )
                 .await?;
+
+                // Fetch DA segment from prover and store it in storage
+                // The DA segment contains the encrypted/compressed state diff for KZG proof
+                if !metadata.da_segment_path.is_empty() {
+                    AggregatorJobHandler::fetch_and_store_artifact(
+                        &config,
+                        &aggregator_query_id,
+                        DA_SEGMENT_FILE_NAME,
+                        &metadata.da_segment_path,
+                    )
+                    .await?;
+                }
 
                 // Fetch aggregator snos output and store it in storage
                 // TODO: Uncomment this code when atlantic provides the snos output for aggregator jobs
