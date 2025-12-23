@@ -49,9 +49,6 @@ pub struct StateDiff {
     pub declared_classes: Vec<DeclaredClassItem>,
     pub nonces: HashMap<Felt, Felt>,
     pub replaced_classes: Vec<DeployedContractItem>,
-    /// New in Starknet 0.14.1 - parsed but not stored in DB
-    #[serde(default)]
-    pub migrated_compiled_classes: Vec<Felt>,
 }
 
 impl From<mp_state_update::StateDiff> for StateDiff {
@@ -78,7 +75,6 @@ impl From<mp_state_update::StateDiff> for StateDiff {
                     class_hash,
                 })
                 .collect(),
-            migrated_compiled_classes: Vec::new(),
         }
     }
 }
