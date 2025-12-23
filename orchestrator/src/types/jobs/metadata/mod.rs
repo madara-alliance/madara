@@ -110,6 +110,7 @@ pub struct AggregatorMetadata {
     /// Path of blob data (legacy, used for L3)
     pub blob_data_path: String,
     /// Path to the DA segment file from the prover (used for L2 with encryption)
+    /// TODO (mohit 23/12/2025): verify the actual file structure with atlantic team
     pub da_segment_path: String,
 
     // Job populated field
@@ -203,6 +204,7 @@ pub struct StateUpdateMetadata {
     /// Paths to blob data files for each block/batch (legacy, used for L3)
     pub blob_data_paths: Vec<String>,
     /// Paths to DA segment files for each batch (used for L2 with encryption)
+    /// TODO (mohit 23/12/2025): verify if we get a single DA segment file or one per batch
     #[serde(default)]
     pub da_segment_paths: Vec<String>,
 
