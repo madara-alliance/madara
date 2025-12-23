@@ -13,11 +13,11 @@ pub(crate) use orchestrator_ethereum_settlement_client::conversion::hex_string_t
 // use starknet_os::io::output::StarknetOsOutput;
 use starknet_core::types::Felt;
 
+pub mod conversion;
+pub mod encrypted_blob;
 pub mod fact_info;
 pub mod fact_node;
 pub mod fact_topology;
-
-pub mod conversion;
 
 /// biguint_vec_to_u8_vec - Converts a vector of BigUint numbers to a vector of u8 bytes.
 ///

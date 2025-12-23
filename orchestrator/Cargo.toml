@@ -136,6 +136,7 @@ hyper = { version = "0.14", features = ["full"] }
 rstest = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 mockito = "1.6.1"
+c-kzg = { workspace = true }
 
 [build-dependencies]
 build-version.workspace = true
