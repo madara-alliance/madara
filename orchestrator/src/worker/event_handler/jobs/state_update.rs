@@ -12,7 +12,7 @@ use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::{
-    fetch_blob_data_for_batch, fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block,
+    fetch_blob_data_for_block, fetch_da_segment_for_batch, fetch_program_output_for_block, fetch_snos_for_block,
 };
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
@@ -41,9 +41,11 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
 
         // Validate required paths
+        // Note: For L2, da_segment_paths are used; for L3, blob_data_paths are used
+        // We check if at least one of blob_data_paths or da_segment_paths is present
         if state_metadata.snos_output_paths.is_empty()
             || state_metadata.program_output_paths.is_empty()
-            || state_metadata.blob_data_paths.is_empty()
+            || (state_metadata.blob_data_paths.is_empty() && state_metadata.da_segment_paths.is_empty())
         {
             error!("Missing required paths in metadata");
             return Err(JobError::Other(OtherError(eyre!("Missing required paths in metadata"))));
@@ -105,6 +107,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let snos_output_paths = state_metadata.snos_output_paths.clone();
         let program_output_paths = state_metadata.program_output_paths.clone();
         let blob_data_paths = state_metadata.blob_data_paths.clone();
+        let da_segment_paths = state_metadata.da_segment_paths.clone();
 
         let mut nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
 
@@ -133,7 +136,9 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 };
             let program_output = fetch_program_output_for_block(i, config.clone(), &program_output_paths).await?;
             let blob_data = match config.layer() {
-                Layer::L2 => fetch_blob_data_for_batch(i, config.clone(), &blob_data_paths).await?,
+                // For L2, use DA segment from prover (encrypted/compressed state diff)
+                Layer::L2 => fetch_da_segment_for_batch(i, config.clone(), &da_segment_paths).await?,
+                // For L3, use locally stored blob data
                 Layer::L3 => fetch_blob_data_for_block(i, config.clone(), &blob_data_paths).await?,
             };
 
