@@ -103,51 +103,25 @@ mod tests {
         [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", "testing_aggregator.json"].iter().collect()
     }
 
+    /// Verifies that the DA segment from the prover can be converted to blobs
+    /// and that the KZG proof matches the program output from the CairoPIE.
     #[tokio::test]
     async fn test_da_segment_kzg_verification() {
         use crate::worker::utils::fact_info::get_program_output;
 
-        // 1. Load CairoPIE
-        let pie_path = get_test_cairo_pie_path();
-        let cairo_pie = CairoPie::read_zip_file(&pie_path).expect("Failed to load CairoPIE");
-
-        // 2. Get program output as Felt252
+        // Load CairoPIE and extract program output
+        let cairo_pie = CairoPie::read_zip_file(&get_test_cairo_pie_path()).expect("Failed to load CairoPIE");
         let program_output_felts = get_program_output(&cairo_pie, true).expect("Failed to get program output");
+        let program_output: Vec<[u8; 32]> = program_output_felts.iter().map(|f| f.to_bytes_be()).collect();
 
-        println!("\n=== Program Output ===");
-        println!("Length: {} felts", program_output_felts.len());
-        println!("[10] x_0: {:?}", program_output_felts.get(10));
-        println!("[11] n_blobs: {:?}", program_output_felts.get(11));
-
-        // 3. Convert program output to Vec<[u8; 32]> for build_input_bytes
-        let program_output: Vec<[u8; 32]> = program_output_felts
-            .iter()
-            .map(|f| f.to_bytes_be())
-            .collect();
-
-        // 4. Load DA segment and convert to blobs
-        let da_path = get_test_da_segment_path();
-        let da_json = std::fs::read_to_string(&da_path).expect("Failed to read DA segment file");
+        // Load DA segment and convert to blobs (applies FFT transformation)
+        let da_json = std::fs::read_to_string(get_test_da_segment_path()).expect("Failed to read DA segment");
         let da_segment = parse_da_segment_json(&da_json).expect("Failed to parse DA segment");
-
-        println!("\n=== DA Segment ===");
-        println!("Length: {} felts", da_segment.len());
-
         let blobs = da_segment_to_blobs(da_segment).expect("Failed to convert DA segment to blobs");
-        println!("Generated {} blob(s)", blobs.len());
 
-        // 5. Use build_input_bytes - this internally calls build_proof which verifies y_0
-        println!("\n=== Calling build_input_bytes ===");
-        let result = EthereumSettlementClient::build_input_bytes(program_output, blobs).await;
-
-        match result {
-            Ok(input_bytes) => {
-                println!("✅ SUCCESS! build_input_bytes passed!");
-                println!("Input bytes length: {} chars", input_bytes.len());
-            }
-            Err(e) => {
-                panic!("❌ FAILED! build_input_bytes error: {}", e);
-            }
-        }
+        // Verify KZG proof matches - build_input_bytes internally validates y_0 values
+        EthereumSettlementClient::build_input_bytes(program_output, blobs)
+            .await
+            .expect("KZG proof verification failed - y_0 mismatch between DA segment and program output");
     }
 }
