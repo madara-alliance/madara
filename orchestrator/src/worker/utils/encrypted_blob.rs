@@ -91,6 +91,10 @@ mod tests {
     use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
     use std::path::PathBuf;
 
+    // Test artifacts source:
+    // - test_aggregator.zip and testing_aggregator.json are from commit aef88ee1b2f686c5b50cf83621bc24516a93f8f4
+    // - Repository: https://github.com/Mohiiit/aggregator-poc.git
+
     fn get_test_cairo_pie_path() -> PathBuf {
         [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", "test_aggregator.zip"].iter().collect()
     }
