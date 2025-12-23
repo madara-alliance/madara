@@ -87,9 +87,8 @@ pub fn parse_da_segment_json(json_str: &str) -> Result<Vec<Felt252>, DaSegmentEr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use c_kzg::{Blob, Bytes32};
     use cairo_vm::vm::runners::cairo_pie::CairoPie;
-    use orchestrator_ethereum_settlement_client::KZG_SETTINGS;
+    use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
     use std::path::PathBuf;
 
     fn get_test_cairo_pie_path() -> PathBuf {
@@ -100,25 +99,29 @@ mod tests {
         [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", "testing_aggregator.json"].iter().collect()
     }
 
-    #[test]
-    fn test_da_segment_kzg_verification() {
+    #[tokio::test]
+    async fn test_da_segment_kzg_verification() {
         use crate::worker::utils::fact_info::get_program_output;
 
         // 1. Load CairoPIE
         let pie_path = get_test_cairo_pie_path();
         let cairo_pie = CairoPie::read_zip_file(&pie_path).expect("Failed to load CairoPIE");
 
-        // 2. Get program output
-        let program_output = get_program_output(&cairo_pie, true).expect("Failed to get program output");
+        // 2. Get program output as Felt252
+        let program_output_felts = get_program_output(&cairo_pie, true).expect("Failed to get program output");
 
         println!("\n=== Program Output ===");
-        println!("Length: {} felts", program_output.len());
-        println!("[10] x_0: {:?}", program_output.get(10));
-        println!("[11] n_blobs: {:?}", program_output.get(11));
-        println!("[14] y_0_low: {:?}", program_output.get(14));
-        println!("[15] y_0_high: {:?}", program_output.get(15));
+        println!("Length: {} felts", program_output_felts.len());
+        println!("[10] x_0: {:?}", program_output_felts.get(10));
+        println!("[11] n_blobs: {:?}", program_output_felts.get(11));
 
-        // 3. Load DA segment
+        // 3. Convert program output to Vec<[u8; 32]> for build_input_bytes
+        let program_output: Vec<[u8; 32]> = program_output_felts
+            .iter()
+            .map(|f| f.to_bytes_be())
+            .collect();
+
+        // 4. Load DA segment and convert to blobs
         let da_path = get_test_da_segment_path();
         let da_json = std::fs::read_to_string(&da_path).expect("Failed to read DA segment file");
         let da_segment = parse_da_segment_json(&da_json).expect("Failed to parse DA segment");
@@ -126,52 +129,21 @@ mod tests {
         println!("\n=== DA Segment ===");
         println!("Length: {} felts", da_segment.len());
 
-        // 4. Convert DA segment to blob bytes
         let blobs = da_segment_to_blobs(da_segment).expect("Failed to convert DA segment to blobs");
-
         println!("Generated {} blob(s)", blobs.len());
-        assert_eq!(blobs.len(), 1, "Expected 1 blob");
 
-        // 5. Get x_0 and expected y_0 from program output
-        let x_0_felt = &program_output[10];
-        let x_0 = Bytes32::new(x_0_felt.to_bytes_be());
+        // 5. Use build_input_bytes - this internally calls build_proof which verifies y_0
+        println!("\n=== Calling build_input_bytes ===");
+        let result = EthereumSettlementClient::build_input_bytes(program_output, blobs).await;
 
-        let y_0_low = &program_output[14];
-        let y_0_high = &program_output[15];
-
-        // Combine y_0: high || low (big-endian 256-bit)
-        let mut expected_y_0 = [0u8; 32];
-        let y_0_low_bytes = y_0_low.to_bytes_be();
-        let y_0_high_bytes = y_0_high.to_bytes_be();
-        expected_y_0[0..16].copy_from_slice(&y_0_high_bytes[16..32]);
-        expected_y_0[16..32].copy_from_slice(&y_0_low_bytes[16..32]);
-
-        println!("\n=== KZG Verification ===");
-        println!("x_0: {}", hex::encode(x_0.as_slice()));
-        println!("Expected y_0: {}", hex::encode(&expected_y_0));
-
-        // 6. Compute KZG proof from blob
-        let blob_bytes: [u8; 131072] = blobs[0].clone().try_into().expect("Invalid blob size");
-        let blob = Blob::new(blob_bytes);
-
-        let commitment = KZG_SETTINGS.blob_to_kzg_commitment(&blob).expect("Failed to compute commitment");
-        println!("Commitment: {:?}", commitment);
-
-        let (_proof, computed_y_0) = KZG_SETTINGS.compute_kzg_proof(&blob, &x_0).expect("Failed to compute proof");
-        println!("Computed y_0: {}", hex::encode(computed_y_0.as_slice()));
-
-        // 7. Verify y_0 matches
-        if computed_y_0.as_slice() == expected_y_0 {
-            println!("\n✅ SUCCESS! KZG proof verification passed!");
-        } else {
-            println!("\n❌ FAILED! y_0 values do not match.");
-            println!("The DA segment and CairoPIE may be from different runs.");
+        match result {
+            Ok(input_bytes) => {
+                println!("✅ SUCCESS! build_input_bytes passed!");
+                println!("Input bytes length: {} chars", input_bytes.len());
+            }
+            Err(e) => {
+                panic!("❌ FAILED! build_input_bytes error: {}", e);
+            }
         }
-
-        assert_eq!(
-            computed_y_0.as_slice(),
-            expected_y_0,
-            "KZG proof verification failed: y_0 mismatch"
-        );
     }
 }
