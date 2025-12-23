@@ -94,6 +94,7 @@ mod tests {
     // Test artifacts source:
     // - test_aggregator.zip and testing_aggregator.json are from commit aef88ee1b2f686c5b50cf83621bc24516a93f8f4
     // - Repository: https://github.com/Mohiiit/aggregator-poc.git
+    // - Aggregator used SNOS CairoPIEs from Paradex testnet blocks 490000 and 490001
 
     fn get_test_cairo_pie_path() -> PathBuf {
         [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", "test_aggregator.zip"].iter().collect()
