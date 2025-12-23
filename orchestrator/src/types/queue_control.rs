@@ -3,6 +3,17 @@ use crate::types::Layer;
 use orchestrator_utils::env_utils::get_env_var_or_default;
 use std::collections::HashMap;
 use std::sync::LazyLock;
+use std::time::Duration;
+
+/// Maximum time to wait for the priority slot to become empty.
+pub const PRIORITY_SLOT_WAIT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Maximum time a message can sit in the priority slot before being
+/// considered stale. Stale messages are NACKed to enable DLQ flow.
+pub const PRIORITY_SLOT_STALENESS_TIMEOUT_SECS: u64 = 300;
+
+/// Interval between priority slot availability checks.
+pub const PRIORITY_SLOT_CHECK_INTERVAL: Duration = Duration::from_millis(1000);
 
 #[derive(Clone)]
 pub struct DlqConfig {
@@ -171,6 +182,24 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2],
+        },
+    );
+    map.insert(
+        QueueType::PriorityProcessingQueue,
+        QueueConfig {
+            visibility_timeout: 600, // 2x expected max processing time for slot wait + processing
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
+            queue_control: QueueControlConfig::new(1), // Single reader (PQ Worker)
+            supported_layers: vec![Layer::L2, Layer::L3],
+        },
+    );
+    map.insert(
+        QueueType::PriorityVerificationQueue,
+        QueueConfig {
+            visibility_timeout: 600, // 2x expected max processing time for slot wait + processing
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
+            queue_control: QueueControlConfig::new(1), // Single reader (PQ Worker)
+            supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
     map

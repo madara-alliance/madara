@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::super::error::JobRouteError;
 use super::super::types::{
-    ApiResponse, JobId, JobRouteResult, JobStatusQuery, JobStatusResponse, JobStatusResponseItem,
+    ApiResponse, JobId, JobRouteResult, JobStatusQuery, JobStatusResponse, JobStatusResponseItem, PriorityQuery,
 };
 use crate::core::config::Config;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
@@ -22,12 +22,13 @@ use crate::worker::service::JobService;
 /// This endpoint initiates the processing of a job identified by its UUID. It performs the
 /// following:
 /// 1. Validates and parses the job ID from the URL path parameter
-/// 2. Calls the job processing logic
+/// 2. Calls the job processing logic (optionally via priority queue)
 /// 3. Records metrics for successful/failed operations
 /// 4. Returns an appropriate API response
 ///
 /// # Arguments
 /// * `Path(JobId { id })` - The job ID extracted from the URL path
+/// * `Query(query)` - Query parameters including optional priority flag
 /// * `State(config)` - Shared application configuration
 ///
 /// # Returns
@@ -38,25 +39,40 @@ use crate::worker::service::JobService;
 /// * `JobRouteError::ProcessingError` - If job processing fails
 async fn handle_process_job_request(
     Path(JobId { id }): Path<JobId>,
+    Query(query): Query<PriorityQuery>,
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
     // Record job_id in the current request span for consistent logging
     Span::current().record("job_id", tracing::field::display(job_id));
 
-    match JobService::queue_job_for_processing(job_id, config.clone()).await {
+    match JobService::queue_job_for_processing(job_id, config.clone(), query.priority).await {
         Ok(_) => {
-            info!("Job queued for processing successfully");
-            ORCHESTRATOR_METRICS
-                .successful_job_operations
-                .add(1.0, &[KeyValue::new("operation_type", "queue_process")]);
-            Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} queued for processing", id))))
-                .into_response())
+            let queue_type = if query.priority { "PRIORITY" } else { "normal" };
+            info!("Job queued for {} processing successfully", queue_type);
+            ORCHESTRATOR_METRICS.successful_job_operations.add(
+                1.0,
+                &[
+                    KeyValue::new("operation_type", "queue_process"),
+                    KeyValue::new("priority", if query.priority { "true" } else { "false" }),
+                ],
+            );
+            Ok(Json(ApiResponse::<()>::success(Some(format!(
+                "Job with id {} queued for {} processing",
+                id, queue_type
+            ))))
+            .into_response())
         }
         Err(e) => {
             error!(error = %e, "Failed to queue job for processing");
-            ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &[KeyValue::new("operation_type", "queue_process")]);
-            Err(JobRouteError::ProcessingError(e.to_string()))
+            ORCHESTRATOR_METRICS.failed_job_operations.add(
+                1.0,
+                &[
+                    KeyValue::new("operation_type", "queue_process"),
+                    KeyValue::new("priority", if query.priority { "true" } else { "false" }),
+                ],
+            );
+            Err(e.into())
         }
     }
 }
@@ -65,13 +81,14 @@ async fn handle_process_job_request(
 ///
 /// This endpoint queues the job for verification by:
 /// 1. Validates and parses the job ID
-/// 2. Adds the job to the verification queue
+/// 2. Adds the job to the verification queue (optionally via priority queue)
 /// 3. Resets verification attempt counter
 /// 4. Records metrics for the queue operation
 /// 5. Returns immediate response
 ///
 /// # Arguments
 /// * `Path(JobId { id })` - The job ID extracted from the URL path
+/// * `Query(query)` - Query parameters including optional priority flag
 /// * `State(config)` - Shared application configuration
 ///
 /// # Returns
@@ -82,23 +99,40 @@ async fn handle_process_job_request(
 /// * `JobRouteError::ProcessingError` - If queueing for verification fails
 async fn handle_verify_job_request(
     Path(JobId { id }): Path<JobId>,
+    Query(query): Query<PriorityQuery>,
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
     // Record job_id in the current request span for consistent logging
     Span::current().record("job_id", tracing::field::display(job_id));
 
-    match JobService::queue_job_for_verification(job_id, config.clone()).await {
+    match JobService::queue_job_for_verification(job_id, config.clone(), query.priority).await {
         Ok(_) => {
-            info!("Job queued for verification successfully");
-            ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &[KeyValue::new("operation_type", "queue_verify")]);
-            Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} queued for verification", id))))
-                .into_response())
+            let queue_type = if query.priority { "PRIORITY" } else { "normal" };
+            info!("Job queued for {} verification successfully", queue_type);
+            ORCHESTRATOR_METRICS.successful_job_operations.add(
+                1.0,
+                &[
+                    KeyValue::new("operation_type", "queue_verify"),
+                    KeyValue::new("priority", if query.priority { "true" } else { "false" }),
+                ],
+            );
+            Ok(Json(ApiResponse::<()>::success(Some(format!(
+                "Job with id {} queued for {} verification",
+                id, queue_type
+            ))))
+            .into_response())
         }
         Err(e) => {
             error!(error = %e, "Failed to queue job for verification");
-            ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &[KeyValue::new("operation_type", "queue_verify")]);
-            Err(JobRouteError::ProcessingError(e.to_string()))
+            ORCHESTRATOR_METRICS.failed_job_operations.add(
+                1.0,
+                &[
+                    KeyValue::new("operation_type", "queue_verify"),
+                    KeyValue::new("priority", if query.priority { "true" } else { "false" }),
+                ],
+            );
+            Err(e.into())
         }
     }
 }
@@ -107,12 +141,13 @@ async fn handle_verify_job_request(
 ///
 /// This endpoint attempts to retry a previously failed job. It:
 /// 1. Validates and parses the job ID
-/// 2. Initiates the retry process
+/// 2. Initiates the retry process (optionally via priority queue)
 /// 3. Records metrics with additional retry context
 /// 4. Returns the retry attempt result
 ///
 /// # Arguments
 /// * `Path(JobId { id })` - The job ID extracted from the URL path
+/// * `Query(query)` - Query parameters including optional priority flag
 /// * `State(config)` - Shared application configuration
 ///
 /// # Returns
@@ -123,29 +158,40 @@ async fn handle_verify_job_request(
 /// * `JobRouteError::ProcessingError` - If retry attempt fails
 async fn handle_retry_job_request(
     Path(JobId { id }): Path<JobId>,
+    Query(query): Query<PriorityQuery>,
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
     // Record job_id in the current request span for consistent logging
     Span::current().record("job_id", tracing::field::display(job_id));
 
-    match JobHandlerService::retry_job(job_id, config.clone()).await {
+    match JobHandlerService::retry_job(job_id, config.clone(), query.priority).await {
         Ok(_) => {
-            info!("Job retry initiated successfully");
+            let queue_type = if query.priority { "PRIORITY" } else { "normal" };
+            info!("Job queued for {} retry successfully", queue_type);
             ORCHESTRATOR_METRICS.successful_job_operations.add(
                 1.0,
-                &[KeyValue::new("operation_type", "process_job"), KeyValue::new("operation_info", "retry_job")],
+                &[
+                    KeyValue::new("operation_type", "process_job"),
+                    KeyValue::new("operation_info", "retry_job"),
+                    KeyValue::new("priority", if query.priority { "true" } else { "false" }),
+                ],
             );
 
-            Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} retry initiated", id)))).into_response())
+            Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} queued for {} retry", id, queue_type))))
+                .into_response())
         }
         Err(e) => {
             error!(error = %e, "Failed to retry job");
             ORCHESTRATOR_METRICS.failed_job_operations.add(
                 1.0,
-                &[KeyValue::new("operation_type", "process_job"), KeyValue::new("operation_info", "retry_job")],
+                &[
+                    KeyValue::new("operation_type", "process_job"),
+                    KeyValue::new("operation_info", "retry_job"),
+                    KeyValue::new("priority", if query.priority { "true" } else { "false" }),
+                ],
             );
-            Err(JobRouteError::ProcessingError(e.to_string()))
+            Err(e.into())
         }
     }
 }
