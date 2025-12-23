@@ -7,6 +7,7 @@ use orchestrator_utils::http_client::extract_http_error_text;
 use orchestrator_utils::http_client::HttpClient;
 use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::Method;
+use starknet_core::types::Felt;
 use tracing::{debug, info, warn};
 use url::Url;
 
@@ -437,7 +438,7 @@ impl AtlanticClient {
         mock_proof: bool,
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
-        da_public_keys: Option<Vec<String>>,
+        da_public_keys: Option<Vec<Felt>>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
         let context = format!("mock_proof: {}, chain_id_hex: {:?}", mock_proof, chain_id_hex);
 
