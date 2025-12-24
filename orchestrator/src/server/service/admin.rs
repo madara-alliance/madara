@@ -82,7 +82,8 @@ impl AdminService {
             job_types,
             config.clone(),
             "retry failed",
-            |id, _, cfg| async move { JobHandlerService::retry_job(id, cfg).await },
+            // Use normal queue (non-priority) for bulk retry operations
+            |id, _, cfg| async move { JobHandlerService::retry_job(id, cfg, false).await },
         )
         .await
     }

@@ -9,7 +9,7 @@ use crate::error::job::JobError;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::types::queue::{QueueNameForJobType, QueueType};
+use crate::types::queue::{JobAction, QueueNameForJobType, QueueType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
@@ -70,22 +70,70 @@ impl JobService {
         Self::add_job_to_queue(config, id, job_type.verify_queue_name(), delay).await
     }
 
+    /// Adds a job to the appropriate priority queue based on action
+    async fn add_job_to_priority_queue(id: Uuid, action: JobAction, config: Arc<Config>) -> Result<(), JobError> {
+        // Determine which priority queue to use based on action
+        let queue_type = match action {
+            JobAction::Process => QueueType::PriorityProcessingQueue,
+            JobAction::Verify => QueueType::PriorityVerificationQueue,
+        };
+
+        // Check priority queue depth before adding
+        let queue_depth = config.queue().get_queue_depth(queue_type.clone()).await?;
+        let max_size = config.service_config().max_priority_queue_size;
+
+        if queue_depth >= max_size {
+            tracing::warn!(
+                job_id = %id,
+                action = ?action,
+                queue = ?queue_type,
+                current_size = queue_depth,
+                max_size = max_size,
+                "Priority queue is full, rejecting job"
+            );
+            return Err(JobError::PriorityQueueFull { current_size: queue_depth, max_size });
+        }
+
+        // Use same message format as normal job queue (just id)
+        let message = JobQueueMessage { id };
+        let payload = serde_json::to_string(&message)?;
+
+        config.queue().send_message(queue_type.clone(), payload, None).await?;
+
+        tracing::info!(
+            job_id = %id,
+            action = ?action,
+            queue = ?queue_type,
+            current_queue_depth = queue_depth,
+            max_queue_size = max_size,
+            "Job added to priority queue"
+        );
+
+        Ok(())
+    }
+
     /// Queues a job for processing by adding it to the process queue
     ///
     /// # Arguments
     /// * `id` - UUID of the job to process
     /// * `config` - Shared configuration
+    /// * `priority` - If true, sends to priority queue instead of normal queue
     ///
     /// # Returns
     /// * `Result<(), JobError>` - Success or an error
     ///
     /// # State Transitions
     /// * Any valid state -> PendingProcess
-    pub async fn queue_job_for_processing(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    pub async fn queue_job_for_processing(id: Uuid, config: Arc<Config>, priority: bool) -> Result<(), JobError> {
         let job = Self::get_job(id, config.clone()).await?;
 
-        // Add to process queue directly
-        Self::add_job_to_process_queue(id, &job.job_type, config).await?;
+        if priority {
+            // Send to priority processing queue
+            Self::add_job_to_priority_queue(id, JobAction::Process, config).await?;
+        } else {
+            // Add to process queue directly
+            Self::add_job_to_process_queue(id, &job.job_type, config).await?;
+        }
 
         Ok(())
     }
@@ -95,14 +143,15 @@ impl JobService {
     /// # Arguments
     /// * `id` - UUID of the job to verify
     /// * `config` - Shared configuration
+    /// * `priority` - If true, sends to priority queue instead of normal queue
     ///
     /// # Returns
     /// * `Result<(), JobError>` - Success or an error
     ///
     /// # Notes
     /// * Resets verification attempt count to 0
-    /// * Sets appropriate delay for verification polling
-    pub async fn queue_job_for_verification(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    /// * Sets appropriate delay for verification polling (only for normal queue)
+    pub async fn queue_job_for_verification(id: Uuid, config: Arc<Config>, priority: bool) -> Result<(), JobError> {
         let mut job = Self::get_job(id, config.clone()).await?;
         let job_handler = factory::get_job_handler(&job.job_type).await;
 
@@ -128,14 +177,19 @@ impl JobService {
             )
             .await?;
 
-        // Add to verification queue with appropriate delay
-        Self::add_job_to_verify_queue(
-            config,
-            id,
-            &job.job_type,
-            Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
-        )
-        .await?;
+        if priority {
+            // Send to priority verification queue
+            Self::add_job_to_priority_queue(id, JobAction::Verify, config).await?;
+        } else {
+            // Add to verification queue with appropriate delay
+            Self::add_job_to_verify_queue(
+                config,
+                id,
+                &job.job_type,
+                Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
+            )
+            .await?;
+        }
 
         Ok(())
     }
