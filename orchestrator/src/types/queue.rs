@@ -1,11 +1,18 @@
 use crate::error::event::EventSystemError;
 use crate::types::jobs::types::JobType;
+use serde::{Deserialize, Serialize};
 use strum_macros::{Display, EnumIter};
 
 #[derive(Display, Debug, Clone, PartialEq, Eq, EnumIter, Hash)]
 pub enum JobState {
     Processing,
     Verification,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum JobAction {
+    Process,
+    Verify,
 }
 
 #[derive(Display, Debug, Clone, PartialEq, Eq, EnumIter, Hash)]
@@ -38,6 +45,10 @@ pub enum QueueType {
     JobHandleFailure,
     #[strum(serialize = "worker_trigger")]
     WorkerTrigger,
+    #[strum(serialize = "priority_processing_queue")]
+    PriorityProcessingQueue,
+    #[strum(serialize = "priority_verification_queue")]
+    PriorityVerificationQueue,
 }
 
 impl TryFrom<QueueType> for JobState {
@@ -58,6 +69,12 @@ impl TryFrom<QueueType> for JobState {
             QueueType::AggregatorJobVerification => JobState::Verification,
             QueueType::JobHandleFailure => Err(Self::Error::InvalidJobType(QueueType::JobHandleFailure.to_string()))?,
             QueueType::WorkerTrigger => Err(Self::Error::InvalidJobType(QueueType::WorkerTrigger.to_string()))?,
+            QueueType::PriorityProcessingQueue => {
+                Err(Self::Error::InvalidJobType(QueueType::PriorityProcessingQueue.to_string()))?
+            }
+            QueueType::PriorityVerificationQueue => {
+                Err(Self::Error::InvalidJobType(QueueType::PriorityVerificationQueue.to_string()))?
+            }
         };
         Ok(state)
     }
@@ -87,6 +104,54 @@ impl QueueNameForJobType for JobType {
             JobType::DataSubmission => QueueType::DataSubmissionJobVerification,
             JobType::StateTransition => QueueType::UpdateStateJobVerification,
             JobType::Aggregator => QueueType::AggregatorJobVerification,
+        }
+    }
+}
+
+impl QueueType {
+    /// Returns the job type this queue processes, if applicable.
+    ///
+    /// Returns `None` for system queues (WorkerTrigger, JobHandleFailure, PriorityJobQueue)
+    /// that don't process specific job types.
+    pub fn target_job_type(&self) -> Option<JobType> {
+        match self {
+            Self::SnosJobProcessing | Self::SnosJobVerification => Some(JobType::SnosRun),
+            Self::ProvingJobProcessing | Self::ProvingJobVerification => Some(JobType::ProofCreation),
+            Self::ProofRegistrationJobProcessing | Self::ProofRegistrationJobVerification => {
+                Some(JobType::ProofRegistration)
+            }
+            Self::DataSubmissionJobProcessing | Self::DataSubmissionJobVerification => Some(JobType::DataSubmission),
+            Self::UpdateStateJobProcessing | Self::UpdateStateJobVerification => Some(JobType::StateTransition),
+            Self::AggregatorJobProcessing | Self::AggregatorJobVerification => Some(JobType::Aggregator),
+            Self::WorkerTrigger
+            | Self::JobHandleFailure
+            | Self::PriorityProcessingQueue
+            | Self::PriorityVerificationQueue => None,
+        }
+    }
+
+    /// Returns the action this queue performs, if applicable.
+    ///
+    /// Returns `None` for system queues (WorkerTrigger, JobHandleFailure, Priority queues)
+    /// that don't perform specific actions.
+    pub fn target_action(&self) -> Option<JobAction> {
+        match self {
+            Self::SnosJobProcessing
+            | Self::ProvingJobProcessing
+            | Self::ProofRegistrationJobProcessing
+            | Self::DataSubmissionJobProcessing
+            | Self::UpdateStateJobProcessing
+            | Self::AggregatorJobProcessing => Some(JobAction::Process),
+            Self::SnosJobVerification
+            | Self::ProvingJobVerification
+            | Self::ProofRegistrationJobVerification
+            | Self::DataSubmissionJobVerification
+            | Self::UpdateStateJobVerification
+            | Self::AggregatorJobVerification => Some(JobAction::Verify),
+            Self::WorkerTrigger
+            | Self::JobHandleFailure
+            | Self::PriorityProcessingQueue
+            | Self::PriorityVerificationQueue => None,
         }
     }
 }

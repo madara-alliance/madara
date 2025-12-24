@@ -33,13 +33,13 @@ pub trait JobTrigger: Send + Sync {
     // We assume the system to keep working till a job hasn't failed.
     // As soon as it fails, we currently halt any more execution and wait for manual intervention.
 
-    // Checks if any of the jobs have failed
+    // Checks if any of the jobs have failed (empty job_type vector implies any job)
     // Failure: JobStatus::VerificationFailed, JobStatus::VerificationTimeout, JobStatus::Failed
     // Halts any new job creation till all the count of failed jobs is not Zero.
     async fn is_worker_enabled(&self, config: Arc<Config>) -> color_eyre::Result<bool> {
         let failed_jobs = config
             .database()
-            .get_jobs_by_types_and_statuses(vec![], vec![JobStatus::Failed, JobStatus::VerificationTimeout], Some(1))
+            .get_jobs_by_types_and_statuses(vec![], vec![JobStatus::Failed, JobStatus::VerificationTimeout], None)
             .await?;
 
         if !failed_jobs.is_empty() {

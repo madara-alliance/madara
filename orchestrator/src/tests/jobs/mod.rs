@@ -1032,8 +1032,10 @@ async fn handle_job_failure_job_status_completed_works(#[case] job_type: JobType
 }
 
 #[rstest]
+#[case(false)]
+#[case(true)]
 #[tokio::test]
-async fn test_retry_job_adds_to_process_queue() {
+async fn test_retry_job_adds_to_process_queue(#[case] is_priority: bool) {
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
@@ -1045,17 +1047,17 @@ async fn test_retry_job_adds_to_process_queue() {
     services.config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.id;
 
-    assert!(JobHandlerService::retry_job(job_id, services.config.clone()).await.is_ok());
+    assert!(JobHandlerService::retry_job(job_id, services.config.clone(), is_priority).await.is_ok());
 
     // Verify job status was updated to PendingRetry
     let updated_job = services.config.database().get_job_by_id(job_id).await.unwrap().unwrap();
     assert_eq!(updated_job.status, JobStatus::PendingRetry);
 
-    // Verify message was added to process queue
+    // Verify message was added to the correct queue based on priority
     // Retry a few times in case of timing issues
     let consumed_messages = consume_message_with_retry(
         services.config.queue(),
-        job_item.job_type.process_queue_name(),
+        if is_priority { QueueType::PriorityProcessingQueue } else { job_item.job_type.process_queue_name() },
         QUEUE_CONSUME_MAX_RETRIES,
         QUEUE_CONSUME_RETRY_DELAY_SECS,
     )
@@ -1082,8 +1084,8 @@ async fn test_retry_job_invalid_status(#[case] initial_status: JobStatus) {
     services.config.database().create_job(job_item.clone()).await.unwrap();
     let job_id = job_item.id;
 
-    // Attempt to retry the job
-    let result = JobHandlerService::retry_job(job_id, services.config.clone()).await;
+    // Attempt to retry the job (priority doesn't matter here as it will fail status check)
+    let result = JobHandlerService::retry_job(job_id, services.config.clone(), false).await;
     assert!(result.is_err());
 
     if let Err(error) = result {

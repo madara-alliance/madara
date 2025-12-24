@@ -805,6 +805,8 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
         job_processing_timeout_seconds: 3600,
+        snos_job_buffer_size: 50,
+        max_priority_queue_size: 20,
     };
 
     let server_config = ServerParams {
