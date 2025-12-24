@@ -552,6 +552,7 @@ mod tests {
                 deployed_contracts: vec![],
                 replaced_classes: vec![],
                 nonces: vec![],
+                migrated_compiled_classes: None,
             },
         }
     }

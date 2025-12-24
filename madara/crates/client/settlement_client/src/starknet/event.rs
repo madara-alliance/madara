@@ -260,6 +260,8 @@ mod starknet_event_stream_tests {
                 Felt::from_hex("0x1111").unwrap(), // from
                 Felt::from_hex("0x2222").unwrap(), // to
             ],
+            event_index: 0,
+            transaction_index: 0,
         }
     }
 

@@ -273,12 +273,7 @@ fn is_next_entry_library_call_without_vm(error_stack: &ErrorStack, vm_index: usi
 
 /// Finds the index of the EntryPoint that owns the VM traceback at the given index.
 fn find_parent_entry_point_index(error_stack: &ErrorStack, vm_index: usize) -> Option<usize> {
-    for i in (0..vm_index).rev() {
-        if matches!(&error_stack.stack[i], ErrorStackSegment::EntryPoint(_)) {
-            return Some(i);
-        }
-    }
-    None
+    (0..vm_index).rev().find(|&i| matches!(&error_stack.stack[i], ErrorStackSegment::EntryPoint(_)))
 }
 
 /// Checks if the next CallContract after this VM traceback is the last one before the error.
@@ -388,7 +383,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:330)\nUnknown location (pc=0:11695)\nUnknown location (pc=0:36001)\nUnknown location (pc=0:36001)\nUnknown location (pc=0:36001)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 1: CallContract with VM traceback (should be removed)
@@ -412,7 +407,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:9435)\nUnknown location (pc=0:43555)\nUnknown location (pc=0:93296)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 2: CallContract with VM traceback (should be kept - last before LibraryCall)
@@ -436,7 +431,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:1683)\nUnknown location (pc=0:1669)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 3: LibraryCall with final error
@@ -502,7 +497,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:161)\nUnknown location (pc=0:147)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 1: LibraryCall with VM traceback (should be kept - belongs to LibraryCall)
@@ -526,7 +521,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:1700)\nUnknown location (pc=0:1655)\nError message: multicall 405852601487139132244494309743039711091605094719341446212637486410648343561 failed\nUnknown location (pc=0:179)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 2: CallContract with VM traceback (should be kept - next is LibraryCall)
@@ -550,7 +545,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:1683)\nUnknown location (pc=0:1669)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 3: LibraryCall with final error
@@ -614,7 +609,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:330)\nUnknown location (pc=0:11695)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 1: CallContract with VM traceback (should be kept - last before error)
@@ -638,7 +633,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\nUnknown location (pc=0:118178)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Final error message
@@ -691,7 +686,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:161)\nUnknown location (pc=0:147)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 1: LibraryCall with VM traceback (should be kept - belongs to LibraryCall)
@@ -715,7 +710,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:1700)\nUnknown location (pc=0:1655)\nError message: multicall 1767341249246097106076784707040396935140562465068258416472332980274188751400 failed\nUnknown location (pc=0:179)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 2: CallContract with VM traceback (should be kept - LibraryCall precedes and CallContract->LibraryCall follows)
@@ -739,7 +734,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:6367)\nUnknown location (pc=0:11745)\nUnknown location (pc=0:17461)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 3: CallContract with VM traceback (should be kept - next is LibraryCall)
@@ -763,7 +758,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:1683)\nUnknown location (pc=0:1669)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 4: LibraryCall with final error
@@ -831,7 +826,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:330)\nUnknown location (pc=0:11695)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 1: CallContract with VM traceback (should be removed - next is LibraryCall but traceback is redundant)
@@ -879,7 +874,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:1683)\nUnknown location (pc=0:1669)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 3: LibraryCall with StringFrame error (no VM traceback)
@@ -949,7 +944,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:330)\nUnknown location (pc=0:11695)\nUnknown location (pc=0:36001)\nUnknown location (pc=0:36001)\nUnknown location (pc=0:36001)\nUnknown location (pc=0:36001)\nUnknown location (pc=0:36001)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 1: CallContract with VM traceback (should be filtered - next is LibraryCall but there are more entry points)
@@ -997,7 +992,7 @@ mod tests {
                 error_attr_value: None,
                 traceback: Some("Cairo traceback (most recent call last):\nUnknown location (pc=0:1683)\nUnknown location (pc=0:1669)\n".to_string()),
             }
-            .into(),
+                .into(),
         );
 
         // Entry 3: LibraryCall with final error (no VM traceback, just StringFrame)

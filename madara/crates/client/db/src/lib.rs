@@ -133,6 +133,7 @@ use mp_state_update::StateDiff;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
+use starknet_types_core::felt::Felt;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 pub mod migration;
@@ -752,14 +753,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &block.events,
         );
 
-        // Global state root and block hash.
         let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
+
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
-        tracing::info!("🙇 Block hash {:?} computed for #{}", block_hash, block.header.block_number);
+        tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
         if let Some(header) = self.inner.get_custom_header_with_clear(true) {
             let is_valid = header.is_block_hash_as_expected(&block_hash);
@@ -831,6 +832,12 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// You are only allowed to write block parts past the latest confirmed block.
     pub fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
         self.inner.db.write_classes(block_n, converted_classes)
+    }
+
+    /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
+    /// This updates the ClassInfo stored in the database with the new v2 hash.
+    pub fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()> {
+        self.inner.db.update_class_v2_hashes(migrations)
     }
 
     /// Lower level access to writing primitives. This is only used by the sync process, which

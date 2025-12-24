@@ -118,7 +118,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
     let internal_id = "1";
 
     let pending_state_update = MaybePreConfirmedStateUpdate::PreConfirmedUpdate(PreConfirmedStateUpdate {
-        old_root: Felt::default(),
+        old_root: Some(Felt::default()),
         state_diff: StateDiff {
             storage_diffs: vec![],
             deprecated_declared_classes: vec![],
@@ -126,6 +126,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
             deployed_contracts: vec![],
             replaced_classes: vec![],
             nonces: vec![],
+            migrated_compiled_classes: None,
         },
     });
 

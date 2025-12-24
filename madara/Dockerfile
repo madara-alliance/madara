@@ -68,22 +68,23 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
 
+# TODO(prakhar,20/12/2025): Find a proper fix for this!
 # Fetch cargo dependencies and extract sequencer requirements.txt
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo fetch && \
-    REQUIREMENTS_FILE=$(find /usr/local/cargo/git/checkouts -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | grep -i sequencer | head -1) && \
+    echo "Looking for sequencer requirements.txt in cargo git checkouts..." && \
+    REQUIREMENTS_FILE=$(find /usr/local/cargo/git/checkouts -path "*sequencer*/scripts/requirements.txt" 2>/dev/null | head -1) && \
     if [ -z "$REQUIREMENTS_FILE" ]; then \
-        echo "Searching more broadly for requirements.txt..."; \
-        REQUIREMENTS_FILE=$(find /usr/local/cargo/git/checkouts -name "requirements.txt" 2>/dev/null | head -1); \
-    fi && \
-    if [ -n "$REQUIREMENTS_FILE" ] && [ -f "$REQUIREMENTS_FILE" ]; then \
-        echo "✓ Found requirements.txt at: $REQUIREMENTS_FILE"; \
-        cp "$REQUIREMENTS_FILE" /app/sequencer-requirements.txt; \
-        cat /app/sequencer-requirements.txt; \
-    else \
-        echo "ERROR: Could not find requirements.txt in cargo checkouts"; \
+        echo "ERROR: Could not find requirements.txt in sequencer checkout"; \
+        echo "Available sequencer directories:"; \
+        find /usr/local/cargo/git/checkouts -type d -name "*sequencer*" 2>/dev/null | head -10; \
+        echo "Looking for any requirements.txt files:"; \
+        find /usr/local/cargo/git/checkouts -name "requirements.txt" 2>/dev/null | head -5; \
         exit 1; \
-    fi
+    fi && \
+    echo "✓ Found requirements.txt at: $REQUIREMENTS_FILE" && \
+    cp "$REQUIREMENTS_FILE" /app/sequencer-requirements.txt && \
+    cat /app/sequencer-requirements.txt
 
 # Step 2: Build crate
 FROM base-rust AS builder-rust

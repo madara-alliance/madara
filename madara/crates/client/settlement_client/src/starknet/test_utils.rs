@@ -202,8 +202,10 @@ pub async fn deploy_contract(account: &StarknetAccount, sierra: &[u8]) -> Felt {
     let contract_artifact: SierraClass = serde_json::from_slice(sierra).unwrap();
     let flattened_class = contract_artifact.flatten().unwrap();
 
-    let (compiled_class_hash, _compiled_class) =
-        mp_class::FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm().unwrap();
+    // Use BLAKE hash (v2) for Starknet 0.14.1+ (SNIP-34 migration)
+    let compiled_hashes =
+        mp_class::FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm_with_hashes().unwrap();
+    let compiled_class_hash = compiled_hashes.blake_hash;
 
     let result = account.declare_v3(Arc::new(flattened_class), compiled_class_hash).send().await.unwrap();
     // wait one block

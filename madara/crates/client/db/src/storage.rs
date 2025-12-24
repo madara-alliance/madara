@@ -155,6 +155,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()>;
     fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()>;
     fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()>;
+    /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
+    fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()>;
 
     fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()>;
     fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()>;

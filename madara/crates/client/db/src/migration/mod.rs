@@ -258,7 +258,10 @@ impl MigrationRunner {
 
         for migration in pending {
             if self.abort_flag.load(Ordering::SeqCst) {
-                tracing::warn!("⚠️  Migration aborted by user");
+                tracing::warn!("⚠️  Migration aborted by user, cleaning up state...");
+                // On graceful abort, clean up state file so next run starts fresh.
+                // User explicitly chose to stop, so don't try to resume.
+                self.cleanup_migration_state()?;
                 return Err(MigrationError::Aborted);
             }
 
@@ -269,23 +272,27 @@ impl MigrationRunner {
                 migration.to_version
             );
 
-            let context =
-                MigrationContext::new(db, migration.from_version, migration.to_version, self.abort_flag.clone())
-                    .with_progress_callback(Box::new(|p| {
-                        tracing::info!("   [{}/{}] {}", p.current_step, p.total_steps, p.message);
-                    }));
+            let context = MigrationContext::new(db, self.abort_flag.clone()).with_progress_callback(Box::new(|p| {
+                tracing::info!("   [{}/{}] {}", p.current_step, p.total_steps, p.message);
+            }));
 
             let start = std::time::Instant::now();
-            (migration.migrate)(&context).map_err(|e| {
+            if let Err(e) = (migration.migrate)(&context) {
+                // On graceful abort from within migration, clean up state
+                if matches!(e, MigrationError::Aborted) {
+                    tracing::warn!("⚠️  Migration aborted, cleaning up state...");
+                    let _ = self.cleanup_migration_state();
+                    return Err(e);
+                }
                 tracing::error!("❌ Migration '{}' failed: {}", migration.name, e);
-                tracing::error!("Restore from backup at: {:?}", self.base_path.join(BACKUP_DIR_NAME));
-                MigrationError::MigrationStepFailed {
+                tracing::error!("   Restore from backup at: {:?}", self.base_path.join(BACKUP_DIR_NAME));
+                return Err(MigrationError::MigrationStepFailed {
                     name: migration.name.to_string(),
                     from_version: migration.from_version,
                     to_version: migration.to_version,
                     message: e.to_string(),
-                }
-            })?;
+                });
+            }
 
             tracing::info!("✅ '{}' completed in {:.2}s", migration.name, start.elapsed().as_secs_f64());
 

@@ -7,6 +7,7 @@ use orchestrator_utils::http_client::extract_http_error_text;
 use orchestrator_utils::http_client::HttpClient;
 use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::Method;
+use starknet_core::types::Felt;
 use tracing::{debug, info, warn};
 use url::Url;
 
@@ -20,7 +21,7 @@ use crate::transport::ApiKeyAuth;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
-    AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQueryStep,
+    AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQueryStep, AtlanticSharpProver,
 };
 use crate::AtlanticValidatedArgs;
 
@@ -46,6 +47,8 @@ pub struct AtlanticJobConfig {
     pub network: String,
     /// ID of the chain from which PIE is generated
     pub chain_id_hex: Option<String>,
+    /// SHARP prover backend to use (stone or stwo)
+    pub sharp_prover: AtlanticSharpProver,
 }
 
 /// Struct to store bucket info
@@ -435,6 +438,7 @@ impl AtlanticClient {
         mock_proof: bool,
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
+        da_public_keys: Option<Vec<Felt>>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
         let context = format!("mock_proof: {}, chain_id_hex: {:?}", mock_proof, chain_id_hex);
 
@@ -454,12 +458,13 @@ impl AtlanticClient {
                 let bucket_request = AtlanticCreateBucketRequest {
                     external_id: None,
                     node_width: None,
-                    aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_3,
+                    aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_14_1,
                     aggregator_params: AtlanticAggregatorParams {
                         use_kzg_da: AGGREGATOR_USE_KZG_DA,
                         full_output: AGGREGATOR_FULL_OUTPUT,
                         chain_id_hex: chain_id_clone.clone(),
                         fee_token_address,
+                        public_keys: da_public_keys.clone(),
                     },
                     mock_proof,
                 };
@@ -659,6 +664,7 @@ impl AtlanticClient {
         let cairo_vm = job_config.cairo_vm.clone();
         let result_step = job_config.result.clone();
         let network = job_config.network.clone();
+        let sharp_prover = job_config.sharp_prover.clone();
         let bucket_id = bucket_info.bucket_id.clone();
         let bucket_job_index = bucket_info.bucket_job_index;
 
@@ -670,6 +676,7 @@ impl AtlanticClient {
                 let cairo_vm = cairo_vm.clone();
                 let result_step = result_step.clone();
                 let network = network.clone();
+                let sharp_prover = sharp_prover.clone();
                 let bucket_id = bucket_id.clone();
 
                 async move {
@@ -701,6 +708,7 @@ impl AtlanticClient {
                             .form_text("network", &network)
                             .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                             .form_text("cairoVm", &cairo_vm.as_str())
+                            .form_text("sharpProver", &sharp_prover.as_str())
                             .form_text("externalId", &external_id)
                             .form_file("pieFile", pie_file.as_ref(), "pie.zip", Some("application/zip"))
                             .map_err(|e| AtlanticError::from_io_error("add_job", e))?,
@@ -901,6 +909,7 @@ impl AtlanticClient {
         atlantic_network: impl AsRef<str>,
         atlantic_api_key: &str,
         program_hash: &str,
+        sharp_prover: &AtlanticSharpProver,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         // TODO: we are having two function to atlantic query might need to merge them with appropriate argument
         let job_size = Self::n_steps_to_job_size(n_steps);
@@ -916,6 +925,7 @@ impl AtlanticClient {
         let network_str = network.to_string();
         let program_hash_str = program_hash.to_string();
         let proof_str = proof.to_string();
+        let sharp_prover = sharp_prover.clone();
 
         let result = self
             .retry_request("submit_l2_query", &context, || {
@@ -923,6 +933,7 @@ impl AtlanticClient {
                 let network = network_str.clone();
                 let program_hash = program_hash_str.clone();
                 let proof = proof_str.clone();
+                let sharp_prover = sharp_prover.clone();
 
                 async move {
                     debug!(
@@ -957,6 +968,7 @@ impl AtlanticClient {
                         .form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
                         .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
                         .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
+                        .form_text("sharpProver", &sharp_prover.as_str())
                         .send()
                         .await
                         .map_err(|e| AtlanticError::from_reqwest_error("submit_l2_query", e))?;
