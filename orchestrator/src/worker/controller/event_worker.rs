@@ -1,6 +1,10 @@
 use crate::core::config::Config;
 use crate::error::other::OtherError;
 use crate::error::{event::EventSystemResult, ConsumptionError};
+use crate::types::priority_slot::{
+    take_from_processing_slot_if_matches, take_from_verification_slot_if_matches, PriorityJobSlot,
+};
+use crate::types::queue::JobAction;
 use crate::types::queue::{JobState, QueueType};
 use crate::types::queue_control::{QueueControlConfig, QUEUES};
 use crate::worker::event_handler::service::JobHandlerService;
@@ -9,11 +13,11 @@ use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
 use omniqueue::Delivery;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn, Instrument, Span};
+use tracing::{debug, error, info, warn, Instrument, Span};
 use uuid::Uuid;
 
 pub enum MessageType {
@@ -28,6 +32,9 @@ pub struct EventWorker {
     queue_control: QueueControlConfig,
     cancellation_token: CancellationToken,
 }
+
+const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: Duration = Duration::from_secs(30);
+const NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_secs(1);
 
 impl EventWorker {
     /// new - Create a new EventWorker
@@ -110,14 +117,21 @@ impl EventWorker {
     }
 
     /// get_message - Get the next message from the queue with version-based filtering
-    /// This function blocks until a compatible message is available or an error occurs
+    /// This function blocks until a compatible message is available (with a timeout)
+    /// or an error occurs
     /// Messages with incompatible versions are re-enqueued for other orchestrator instances
-    /// It returns a Result<Delivery, EventSystemError> - never returns None
-    pub async fn get_message(&self) -> EventSystemResult<Delivery> {
+    /// It returns a Result<Option<Delivery>, EventSystemError>
+    pub async fn get_message(&self) -> EventSystemResult<Option<Delivery>> {
+        let start = Instant::now();
+        let timeout = QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS;
+
         loop {
             match self.config.clone().queue().consume_message_from_queue(self.queue_type.clone()).await {
-                Ok(delivery) => return Ok(delivery),
+                Ok(delivery) => return Ok(Some(delivery)),
                 Err(crate::core::client::queue::QueueError::ErrorFromQueueError(omniqueue::QueueError::NoData)) => {
+                    if start.elapsed() > timeout {
+                        return Ok(None);
+                    }
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
@@ -348,6 +362,8 @@ impl EventWorker {
 
             tokio::select! {
                 biased;
+
+                // 1. Handle completed tasks (highest priority)
                 Some(result) = tasks.join_next(), if !tasks.is_empty() => {
                     Self::handle_task_result(result);
 
@@ -356,19 +372,49 @@ impl EventWorker {
                     }
                 }
 
-                // Handle shutdown signal
+                // 2. Handle shutdown signal
                 _ = self.cancellation_token.cancelled() => {
                     info!("Shutdown signal received, breaking from main loop");
                     break;
                 }
 
-                // Process new messages (with backpressure)
+                // 3. Check priority slot - pattern only matches if there's a message
+                // If check_priority_slot() returns None, this branch is skipped
+                // and select proceeds to normal queue. This prevents starvation.
+                Some(priority_slot) = self.check_priority_slot(), if tasks.len() < max_concurrent_tasks => {
+                    let job_queue_msg = JobQueueMessage { id: priority_slot.message.id };
+                    let parsed_message = ParsedMessage::JobQueue(Box::new(job_queue_msg));
+                    let delivery = priority_slot.delivery;
+
+                    let worker = self.clone();
+                    tasks.spawn(async move {
+                        let result = worker.handle_message(&parsed_message).await;
+                        // ACK/NACK the priority delivery after processing
+                        match &result {
+                            Ok(_) => {
+                                if let Err(e) = delivery.ack().await {
+                                    error!("Failed to ACK priority message: {:?}", e);
+                                }
+                            }
+                            Err(_) => {
+                                if let Err(e) = delivery.nack().await {
+                                    error!("Failed to NACK priority message: {:?}", e);
+                                }
+                            }
+                        }
+                        result
+                    });
+                    debug!("Spawned PRIORITY task from slot, active: {}", tasks.len());
+                }
+
+                // 4. Process normal queue messages
                 message_result = self.get_message(), if tasks.len() < max_concurrent_tasks => {
                     match message_result {
                         Ok(message) => {
-                            if let Ok(parsed_message) = self.parse_message(&message) {
-                                // Log received message with queue and payload
-                                match &parsed_message {
+                            match message {
+                                Some(message) => {
+                                    if let Ok(parsed_message) = self.parse_message(&message) {
+                                        match &parsed_message {
                                     ParsedMessage::WorkerTrigger(msg) => {
                                         tracing::debug!(
                                             queue = %self.queue_type,
@@ -384,10 +430,13 @@ impl EventWorker {
                                         );
                                     }
                                 }
-                                let worker = self.clone();
-                                tasks.spawn(async move {
-                                    worker.process_message(message, parsed_message).await
-                                });
+                                        let worker = self.clone();
+                                        tasks.spawn(async move {
+                                            worker.process_message(message, parsed_message).await
+                                        });
+                                    }
+                                },
+                                None => sleep(NO_MESSAGE_SLEEP_DURATION).await,
                             }
                         }
                         Err(e) => {
@@ -409,6 +458,30 @@ impl EventWorker {
         Ok(())
     }
 
+    /// Check if there's a priority job in the global slot that matches this worker.
+    ///
+    /// Only job processing and verification workers check the priority slot.
+    /// System queues (WorkerTrigger, JobHandleFailure, PriorityQueues) do not.
+    ///
+    /// # Returns
+    /// * `Some(PriorityJobSlot)` if a matching priority job was found and taken
+    /// * `None` if no matching job or this worker shouldn't check the slot
+    async fn check_priority_slot(&self) -> Option<PriorityJobSlot> {
+        // Only job processing/verification workers check the slot
+        if !should_check_priority_slot(&self.queue_type) {
+            return None;
+        }
+
+        let target_type = self.queue_type.target_job_type()?;
+        let target_action = self.queue_type.target_action()?;
+
+        // Check the appropriate slot based on action type
+        match target_action {
+            JobAction::Process => take_from_processing_slot_if_matches(&target_type).await,
+            JobAction::Verify => take_from_verification_slot_if_matches(&target_type).await,
+        }
+    }
+
     /// Handle the result of a task
     /// This function handles the result of a task
     /// It logs the result of the task
@@ -424,5 +497,42 @@ impl EventWorker {
                 error!("Task panicked or was cancelled: {:?}", e);
             }
         }
+    }
+}
+
+/// Determines if a queue type should check the priority slot.
+/// System queues (WorkerTrigger, JobHandleFailure, Priority queues) should not check.
+fn should_check_priority_slot(queue_type: &QueueType) -> bool {
+    !matches!(
+        queue_type,
+        QueueType::WorkerTrigger
+            | QueueType::JobHandleFailure
+            | QueueType::PriorityProcessingQueue
+            | QueueType::PriorityVerificationQueue
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_system_queues_should_not_check_priority_slot() {
+        // System queues should not check priority slot
+        assert!(!should_check_priority_slot(&QueueType::WorkerTrigger));
+        assert!(!should_check_priority_slot(&QueueType::JobHandleFailure));
+        assert!(!should_check_priority_slot(&QueueType::PriorityProcessingQueue));
+        assert!(!should_check_priority_slot(&QueueType::PriorityVerificationQueue));
+    }
+
+    #[test]
+    fn test_job_queues_should_check_priority_slot() {
+        // Job processing queues should check priority slot
+        assert!(should_check_priority_slot(&QueueType::SnosJobProcessing));
+        assert!(should_check_priority_slot(&QueueType::ProvingJobProcessing));
+
+        // Job verification queues should check priority slot
+        assert!(should_check_priority_slot(&QueueType::SnosJobVerification));
+        assert!(should_check_priority_slot(&QueueType::ProvingJobVerification));
     }
 }

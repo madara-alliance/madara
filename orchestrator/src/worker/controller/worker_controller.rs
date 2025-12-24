@@ -4,6 +4,7 @@ use crate::error::event::EventSystemResult;
 use crate::types::queue::QueueType;
 use crate::types::Layer;
 use crate::worker::controller::event_worker::EventWorker;
+use crate::worker::controller::priority_queue_worker::{PriorityAction, PriorityQueueWorker};
 
 use futures::future::try_join_all;
 use std::sync::Arc;
@@ -55,6 +56,22 @@ impl WorkerController {
             Layer::L3 => Self::get_l3_queues(),
         };
         let mut worker_set = tokio::task::JoinSet::new();
+
+        // Spawn the dedicated Priority Queue Workers (one for processing, one for verification)
+        Self::spawn_priority_queue_worker(
+            &mut worker_set,
+            self.config.clone(),
+            &self.cancellation_token,
+            PriorityAction::Processing,
+        );
+        Self::spawn_priority_queue_worker(
+            &mut worker_set,
+            self.config.clone(),
+            &self.cancellation_token,
+            PriorityAction::Verification,
+        );
+
+        // Spawn regular event workers for each queue type
         for queue_type in queues.into_iter() {
             let queue_type = queue_type.clone();
             let self_clone = self.clone();
@@ -127,6 +144,38 @@ impl WorkerController {
             QueueType::WorkerTrigger,
             QueueType::JobHandleFailure,
         ]
+    }
+
+    /// Spawn a priority queue worker for the given action type.
+    ///
+    /// # Arguments
+    /// * `worker_set` - The JoinSet to spawn the worker into
+    /// * `config` - The configuration for the worker
+    /// * `cancellation_token` - The parent cancellation token
+    /// * `action` - The priority action type (Processing or Verification)
+    fn spawn_priority_queue_worker(
+        worker_set: &mut tokio::task::JoinSet<EventSystemResult<()>>,
+        config: Arc<Config>,
+        cancellation_token: &CancellationToken,
+        action: PriorityAction,
+    ) {
+        let token = cancellation_token.child_token();
+        let action_str = match action {
+            PriorityAction::Processing => "processing",
+            PriorityAction::Verification => "verification",
+        };
+
+        worker_set.spawn(async move {
+            let span = info_span!("priority_queue_worker", action = action_str);
+            async move {
+                let pq_worker = PriorityQueueWorker::new(config, action, token);
+                pq_worker.run().await
+            }
+            .instrument(span)
+            .await
+        });
+
+        info!("Spawned Priority {:?} Queue Worker", action);
     }
 
     /// Create a span for a queue type.

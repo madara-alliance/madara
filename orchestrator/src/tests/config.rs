@@ -40,6 +40,7 @@ use orchestrator_utils::env_utils::{
 };
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use starknet_core::types::Felt;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr as _;
@@ -805,6 +806,8 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
         job_processing_timeout_seconds: 3600,
+        snos_job_buffer_size: 50,
+        max_priority_queue_size: 20,
     };
 
     let server_config = ServerParams {
@@ -841,8 +844,7 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         aggregator_batch_weights_limit: AggregatorBatchWeights::from(&BouncerWeights::default()),
         da_public_keys: get_env_var_optional("MADARA_ORCHESTRATOR_DA_PUBLIC_KEYS")
             .expect("Couldn't get DA public keys")
-            .map(|s| s.split(',').map(|s| s.to_string()).collect())
-            .unwrap_or_default(),
+            .map(|s| s.split(',').map(|key| Felt::from_hex(key).expect("Invalid DA public key hex string")).collect()),
     };
 
     let instrumentation_params = OTELConfig {

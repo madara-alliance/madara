@@ -17,6 +17,7 @@ use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{
     CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
 };
+use starknet_core::types::Felt;
 use swiftness_proof_parser::{parse, StarkProof};
 use tempfile::NamedTempFile;
 use url::Url;
@@ -58,7 +59,7 @@ pub struct AtlanticProverService {
     pub cairo_verifier_program_hash: Option<String>,
     pub chain_id_hex: Option<String>,
     pub fee_token_address: Option<Felt252>,
-    pub da_public_keys: Option<Vec<String>>,
+    pub da_public_keys: Option<Vec<Felt>>,
 }
 
 #[async_trait]
@@ -337,7 +338,7 @@ impl AtlanticProverService {
         mock_fact_hash: bool,
         cairo_verifier_program_hash: Option<String>,
         fee_token_address: Option<Felt252>,
-        da_public_keys: Option<Vec<String>>,
+        da_public_keys: Option<Vec<Felt>>,
     ) -> Self {
         Self {
             atlantic_client,
@@ -372,7 +373,7 @@ impl AtlanticProverService {
         proof_layout: &LayoutName,
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
-        da_public_keys: Option<Vec<String>>,
+        da_public_keys: Option<Vec<Felt>>,
     ) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
