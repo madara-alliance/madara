@@ -132,14 +132,12 @@ mod tests {
         use crate::worker::utils::fact_info::get_program_output;
 
         // Load CairoPIE and extract program output
-        let cairo_pie =
-            CairoPie::read_zip_file(&get_artifacts_path(cairo_pie_file)).expect("Failed to load CairoPIE");
+        let cairo_pie = CairoPie::read_zip_file(&get_artifacts_path(cairo_pie_file)).expect("Failed to load CairoPIE");
         let program_output_felts = get_program_output(&cairo_pie, true).expect("Failed to get program output");
         let program_output: Vec<[u8; 32]> = program_output_felts.iter().map(|f| f.to_bytes_be()).collect();
 
         // Load DA segment and convert to blobs (applies FFT transformation)
-        let da_json =
-            std::fs::read_to_string(get_artifacts_path(da_segment_file)).expect("Failed to read DA segment");
+        let da_json = std::fs::read_to_string(get_artifacts_path(da_segment_file)).expect("Failed to read DA segment");
         let da_segment = parse_da_segment_json(&da_json).expect("Failed to parse DA segment");
         let blobs = da_segment_to_blobs(da_segment).expect("Failed to convert DA segment to blobs");
 

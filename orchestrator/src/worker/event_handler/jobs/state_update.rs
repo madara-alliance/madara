@@ -40,15 +40,22 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Extract state transition metadata
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
 
-        // Validate required paths
-        // Note: For L2, da_segment_paths are used; for L3, blob_data_paths are used
-        // We check if at least one of blob_data_paths or da_segment_paths is present
-        if state_metadata.snos_output_paths.is_empty()
-            || state_metadata.program_output_paths.is_empty()
-            || (state_metadata.blob_data_paths.is_empty() && state_metadata.da_segment_paths.is_empty())
-        {
-            error!("Missing required paths in metadata");
-            return Err(JobError::Other(OtherError(eyre!("Missing required paths in metadata"))));
+        // Validate required paths based on layer configuration
+        // L2: requires program_output_paths + da_segment_paths
+        // L3: requires program_output_paths + blob_data_paths + snos_output_paths
+        if state_metadata.program_output_paths.is_empty() {
+            error!("program_output_paths is required for all state updates");
+            return Err(JobError::Other(OtherError(eyre!("Missing required program_output_paths in metadata"))));
+        }
+
+        let is_l2_config = !state_metadata.da_segment_paths.is_empty();
+        let is_l3_config = !state_metadata.blob_data_paths.is_empty() && !state_metadata.snos_output_paths.is_empty();
+
+        if !is_l2_config && !is_l3_config {
+            error!("Missing required paths: must provide either (da_segment_paths for L2) or (blob_data_paths + snos_output_paths for L3)");
+            return Err(JobError::Other(OtherError(eyre!(
+                "Missing required paths: must provide either (da_segment_paths for L2) or (blob_data_paths + snos_output_paths for L3)"
+            ))));
         }
         let job_item = JobItem::create(internal_id.clone(), JobType::StateTransition, JobStatus::Created, metadata);
 

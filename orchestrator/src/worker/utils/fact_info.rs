@@ -300,32 +300,50 @@ mod tests {
         assert_eq!(expected_fact, fact_info.fact.to_string());
     }
 
-    /// Extract program output from aggregator CairoPIE and save to JSON file.
-    /// Used to generate test data for state_update_job tests.
-    /// Run with: cargo test test_extract_and_save_program_output -- --ignored --nocapture
-    #[ignore]
+    /// Validate that program output extracted from aggregator CairoPIE matches stored test data.
+    /// This ensures the program_output files are correct and up-to-date.
     #[rstest]
     #[case("index_1_aggregator_14_1.zip", "program_output_batch_1.json")]
     #[case("index_2_aggregator_14_1.zip", "program_output_batch_2.json")]
-    async fn test_extract_and_save_program_output(#[case] cairo_pie_path: &str, #[case] output_file: &str) {
+    #[tokio::test]
+    async fn test_validate_program_output(#[case] cairo_pie_path: &str, #[case] output_file: &str) {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
+
+        // Read the CairoPIE file
         let cairo_pie_path: PathBuf =
             [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_path].iter().collect();
         let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
-        
+
         // Extract program output (is_aggregator = true for aggregator PIEs)
         let program_output = get_program_output(&cairo_pie, true).unwrap();
-        
-        // Convert to hex strings for JSON serialization
-        let hex_strings: Vec<String> = program_output.iter().map(|f| format!("{:#x}", f)).collect();
-        
-        // Save to artifacts directory
+
+        // Convert to hex strings for comparison
+        let extracted_hex_strings: Vec<String> = program_output.iter().map(|f| format!("{:#x}", f)).collect();
+
+        // Read the stored program output file
         let output_path: PathBuf =
             [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", output_file].iter().collect();
-        let json = serde_json::to_string_pretty(&hex_strings).unwrap();
-        std::fs::write(&output_path, json).unwrap();
-        
-        println!("Saved {} felts to {:?}", program_output.len(), output_path);
-        println!("Program output: {:?}", hex_strings);
+        let file_content =
+            std::fs::read_to_string(&output_path).unwrap_or_else(|_| panic!("Failed to read {}", output_file));
+        let stored_hex_strings: Vec<String> =
+            serde_json::from_str(&file_content).unwrap_or_else(|_| panic!("Failed to parse {} as JSON", output_file));
+
+        // Validate they match
+        assert_eq!(
+            extracted_hex_strings.len(),
+            stored_hex_strings.len(),
+            "Program output length mismatch for {}: extracted {} vs stored {}",
+            output_file,
+            extracted_hex_strings.len(),
+            stored_hex_strings.len()
+        );
+
+        for (i, (extracted, stored)) in extracted_hex_strings.iter().zip(stored_hex_strings.iter()).enumerate() {
+            assert_eq!(
+                extracted, stored,
+                "Program output mismatch at index {} for {}: extracted {} vs stored {}",
+                i, output_file, extracted, stored
+            );
+        }
     }
 }
