@@ -17,7 +17,8 @@ use orchestrator::core::client::queue::sqs::InnerSQS;
 use orchestrator::core::client::SQS;
 use orchestrator::types::batch::AggregatorBatch;
 use orchestrator::types::constant::{
-    BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+    BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME,
+    SNOS_OUTPUT_FILE_NAME,
 };
 use orchestrator::types::jobs::external_id::ExternalId;
 use orchestrator::types::jobs::job_item::JobItem;
@@ -639,6 +640,7 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
         snos_output_paths: vec![format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)],
         program_output_paths: vec![format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)],
         blob_data_paths: vec![format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)],
+        da_segment_paths: vec![format!("{}/{}", block_number, DA_SEGMENT_FILE_NAME)],
         tx_hashes: Vec::new(),
         context: SettlementContext::Block(SettlementContextData { to_settle: vec![block_number], last_failed: None }),
     };

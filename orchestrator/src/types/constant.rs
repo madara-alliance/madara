@@ -9,6 +9,7 @@ pub const CAIRO_PIE_FILE_NAME: &str = "cairo_pie.zip";
 pub const PROOF_FILE_NAME: &str = "proof.json";
 pub const PROOF_PART2_FILE_NAME: &str = "proof_part2.json";
 pub const ON_CHAIN_DATA_FILE_NAME: &str = "onchain_data.json";
+pub const DA_SEGMENT_FILE_NAME: &str = "da_blob.json";
 
 pub const STORAGE_STATE_UPDATE_DIR: &str = "state_update";
 pub const STORAGE_BLOB_DIR: &str = "blob";
