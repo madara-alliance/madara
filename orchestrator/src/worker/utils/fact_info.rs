@@ -283,28 +283,49 @@ mod tests {
 
     use super::{get_fact_info, get_program_output};
 
+    /// Test fact computation for various CairoPIE files
+    /// - fibonacci.zip, sepolia_924016.zip: Non-aggregator PIEs (is_aggregator = false)
+    /// - index_1_aggregator_14_1.zip, index_2_aggregator_14_1.zip: Aggregator PIEs from Paradex testnet
     #[rstest]
-    #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782")]
-    #[case("sepolia_924016.zip", "0x033144ad6b132b1012f15e50aa53de1ed91b3b1af729014c3f1c00b702f972ea")]
-    async fn test_fact_info(#[case] cairo_pie_path: &str, #[case] expected_fact: &str) {
-        // TODO: Add a test for the aggregator program
+    #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782", false)]
+    #[case("sepolia_924016.zip", "0x033144ad6b132b1012f15e50aa53de1ed91b3b1af729014c3f1c00b702f972ea", false)]
+    #[case("index_1_aggregator_14_1.zip", "0x33e3f396ba1ff4214ea52123d74dae13dbdc75991af79c92eccaae10924fdac5", true)]
+    #[case("index_2_aggregator_14_1.zip", "0x29f1f10babbf18361fe4a813bccc294b3c3beda3f0448507b2491e10e500b8ea", true)]
+    async fn test_fact_info(#[case] cairo_pie_path: &str, #[case] expected_fact: &str, #[case] is_aggregator: bool) {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
         let cairo_pie_path: PathBuf =
             [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_path].iter().collect();
         let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
-        let fact_info = get_fact_info(&cairo_pie, None, false).unwrap();
+        let fact_info = get_fact_info(&cairo_pie, None, is_aggregator).unwrap();
         assert_eq!(expected_fact, fact_info.fact.to_string());
     }
 
+    /// Extract program output from aggregator CairoPIE and save to JSON file.
+    /// Used to generate test data for state_update_job tests.
+    /// Run with: cargo test test_extract_and_save_program_output -- --ignored --nocapture
     #[ignore]
     #[rstest]
-    #[case("0.zip")]
-    async fn test_program_output(#[case] cairo_pie_path: &str) {
+    #[case("index_1_aggregator_14_1.zip", "program_output_batch_1.json")]
+    #[case("index_2_aggregator_14_1.zip", "program_output_batch_2.json")]
+    async fn test_extract_and_save_program_output(#[case] cairo_pie_path: &str, #[case] output_file: &str) {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
         let cairo_pie_path: PathBuf =
             [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_path].iter().collect();
         let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
-        let program_output = get_program_output(&cairo_pie, false).unwrap();
-        println!("the program output is {:?}", program_output);
+        
+        // Extract program output (is_aggregator = true for aggregator PIEs)
+        let program_output = get_program_output(&cairo_pie, true).unwrap();
+        
+        // Convert to hex strings for JSON serialization
+        let hex_strings: Vec<String> = program_output.iter().map(|f| format!("{:#x}", f)).collect();
+        
+        // Save to artifacts directory
+        let output_path: PathBuf =
+            [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", output_file].iter().collect();
+        let json = serde_json::to_string_pretty(&hex_strings).unwrap();
+        std::fs::write(&output_path, json).unwrap();
+        
+        println!("Saved {} felts to {:?}", program_output.len(), output_path);
+        println!("Program output: {:?}", hex_strings);
     }
 }

@@ -27,16 +27,26 @@ pub enum DaSegmentError {
 
 /// Convert DA segment felts to blob bytes.
 ///
-/// The DA segment is pre-FFT data. This function:
+/// **L2 Usage**: This function is used for L2 settlements where the DA segment
+/// is provided by the prover (Atlantic) as encrypted/compressed state diff data.
+/// The prover generates this segment by encrypting the state diff with symmetric
+/// keys derived from public keys.
+///
+/// For L3 settlements where state diffs are generated locally, use
+/// [`convert_felt_vec_to_blob_data`] instead.
+///
+/// # Process
 /// 1. Pads to BLOB_LEN (4096) boundary
-/// 2. Applies FFT transformation
-/// 3. Converts to blob bytes
+/// 2. Applies FFT transformation for KZG commitment
+/// 3. Converts to blob bytes (131072 bytes per blob = 4096 * 32)
 ///
 /// # Arguments
-/// * `da_segment` - The DA segment as a vector of Felt252
+/// * `da_segment` - The DA segment as a vector of Felt252 (from prover)
 ///
 /// # Returns
-/// * `Vec<Vec<u8>>` - A vector of blobs, each blob is 131072 bytes (4096 * 32)
+/// * `Vec<Vec<u8>>` - A vector of blobs, each blob is 131072 bytes
+///
+/// [`convert_felt_vec_to_blob_data`]: crate::compression::blob::convert_felt_vec_to_blob_data
 pub fn da_segment_to_blobs(da_segment: Vec<Felt252>) -> Result<Vec<Vec<u8>>, DaSegmentError> {
     if da_segment.is_empty() {
         return Err(DaSegmentError::EmptyDaSegment);
@@ -89,34 +99,47 @@ mod tests {
     use super::*;
     use cairo_vm::vm::runners::cairo_pie::CairoPie;
     use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
+    use rstest::rstest;
     use std::path::PathBuf;
 
     // Test artifacts source:
+    //
+    // Paradex testnet aggregator batches (L2 with encrypted DA):
+    // - index_1_aggregator_14_1.zip + da_blob_index_1.json: Batch 1, blocks 490000-490001
+    // - index_2_aggregator_14_1.zip + da_blob_index_2.json: Batch 2, blocks 490002-490003
+    //
+    // Legacy test artifacts (from aggregator-poc repo):
     // - test_aggregator.zip and testing_aggregator.json are from commit aef88ee1b2f686c5b50cf83621bc24516a93f8f4
     // - Repository: https://github.com/Mohiiit/aggregator-poc.git
-    // - Aggregator used SNOS CairoPIEs from Paradex testnet blocks 490000 and 490001
 
-    fn get_test_cairo_pie_path() -> PathBuf {
-        [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", "test_aggregator.zip"].iter().collect()
-    }
-
-    fn get_test_da_segment_path() -> PathBuf {
-        [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", "testing_aggregator.json"].iter().collect()
+    fn get_artifacts_path(filename: &str) -> PathBuf {
+        [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", filename].iter().collect()
     }
 
     /// Verifies that the DA segment from the prover can be converted to blobs
     /// and that the KZG proof matches the program output from the CairoPIE.
+    ///
+    /// This test validates the full L2 DA flow:
+    /// 1. Extract program output from aggregator CairoPIE
+    /// 2. Load DA segment (pre-FFT encrypted state diff from prover)
+    /// 3. Apply FFT transformation and convert to blobs
+    /// 4. Verify KZG commitment matches (y_0 in program output = KZG eval of blob)
+    #[rstest]
+    #[case("index_1_aggregator_14_1.zip", "da_blob_index_1.json")]
+    #[case("index_2_aggregator_14_1.zip", "da_blob_index_2.json")]
     #[tokio::test]
-    async fn test_da_segment_kzg_verification() {
+    async fn test_da_segment_kzg_verification(#[case] cairo_pie_file: &str, #[case] da_segment_file: &str) {
         use crate::worker::utils::fact_info::get_program_output;
 
         // Load CairoPIE and extract program output
-        let cairo_pie = CairoPie::read_zip_file(&get_test_cairo_pie_path()).expect("Failed to load CairoPIE");
+        let cairo_pie =
+            CairoPie::read_zip_file(&get_artifacts_path(cairo_pie_file)).expect("Failed to load CairoPIE");
         let program_output_felts = get_program_output(&cairo_pie, true).expect("Failed to get program output");
         let program_output: Vec<[u8; 32]> = program_output_felts.iter().map(|f| f.to_bytes_be()).collect();
 
         // Load DA segment and convert to blobs (applies FFT transformation)
-        let da_json = std::fs::read_to_string(get_test_da_segment_path()).expect("Failed to read DA segment");
+        let da_json =
+            std::fs::read_to_string(get_artifacts_path(da_segment_file)).expect("Failed to read DA segment");
         let da_segment = parse_da_segment_json(&da_json).expect("Failed to parse DA segment");
         let blobs = da_segment_to_blobs(da_segment).expect("Failed to convert DA segment to blobs");
 
