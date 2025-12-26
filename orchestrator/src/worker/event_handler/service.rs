@@ -214,6 +214,10 @@ impl JobHandlerService {
                     MetricsRecorder::record_job_retry(&job, &job.status.to_string());
                 }
             }
+            JobStatus::LockedForProcessing | JobStatus::PendingVerification | JobStatus::Completed => {
+                warn!(job_id = ?id, status = ?job.status, "Shouldn't process job with current status. Returning safely");
+                return Ok(());
+            }
             _ => {
                 warn!(
                     job_id = ?id,
@@ -430,8 +434,12 @@ impl JobHandlerService {
 
         match job.status {
             // Jobs with `VerificationTimeout` will be retired manually after resetting verification attempt number to 0.
-            JobStatus::PendingVerification | JobStatus::VerificationTimeout => {
+            JobStatus::PendingVerification | JobStatus::VerificationTimeout | JobStatus::VerificationFailed => {
                 debug!(job_id = ?id, status = ?job.status, "Proceeding with verification");
+            }
+            JobStatus::Completed => {
+                warn!(job_id = ?id, status = ?job.status, "Shouldn't verify job with current status. Returning safely");
+                return Ok(());
             }
             _ => {
                 error!(job_id = ?id, status = ?job.status, "Invalid job status for verification");

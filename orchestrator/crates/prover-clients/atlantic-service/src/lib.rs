@@ -160,9 +160,19 @@ impl ProverClient for AtlanticProverService {
                 Ok(response.atlantic_bucket.id)
             }
             Task::CloseBucket(bucket_id) => {
-                let response = self.atlantic_client.close_bucket(&bucket_id, self.atlantic_api_key.clone()).await?;
-                tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
-                Ok(response.atlantic_bucket.id)
+                let existing_bucket = self.atlantic_client.get_bucket(&bucket_id).await?;
+                match existing_bucket.bucket.status {
+                    AtlanticBucketStatus::Open => {
+                        let response =
+                            self.atlantic_client.close_bucket(&bucket_id, self.atlantic_api_key.clone()).await?;
+                        tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
+                    }
+                    _ => {
+                        tracing::warn!(bucket_id = %bucket_id, status = ?existing_bucket.bucket.status, "Atlantic bucket already closed. Skipping re-sending close bucket request");
+                    }
+                };
+
+                Ok(existing_bucket.bucket.id)
             }
         }
     }
