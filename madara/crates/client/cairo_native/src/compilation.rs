@@ -858,6 +858,7 @@ mod tests {
     /// Test that spawn_compilation_if_needed works from non-Tokio threads (e.g., bypass channel).
     /// Uses stored runtime handle initialized at startup.
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_spawn_compilation_from_non_tokio_thread() {
         use std::sync::mpsc;
         use std::thread;
@@ -889,7 +890,7 @@ mod tests {
         let sierra_clone = sierra.clone();
 
         thread::spawn(move || {
-            assert!(!tokio::runtime::Handle::try_current().is_ok(), "Should not have Tokio runtime");
+            assert!(tokio::runtime::Handle::try_current().is_err(), "Should not have Tokio runtime");
             spawn_compilation_if_needed(class_hash, sierra_clone, config_clone);
             thread::sleep(Duration::from_millis(100));
             tx.send((is_compilation_in_progress(&class_hash), cache::cache_contains(&class_hash), class_hash)).unwrap();
