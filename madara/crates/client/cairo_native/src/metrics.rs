@@ -56,21 +56,12 @@ use std::time::Instant;
 #[cfg(test)]
 pub mod test_counters {
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::Mutex;
 
-    /// Global mutex to serialize test execution and prevent interference between parallel tests.
-    /// Tests should acquire this mutex at the start and reset counters before running.
-    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+    /// Global mutex to serialize test execution.
+    static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// Acquire the test mutex and reset all counters.
-    /// Returns a guard that should be held for the duration of the test.
-    /// When the guard is dropped, the mutex is released.
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// let _guard = test_counters::acquire_and_reset();
-    /// // Test code here - metrics are isolated from other parallel tests
-    /// ```
+    /// For async tests, acquire this BEFORE any .await points to avoid issues.
     pub fn acquire_and_reset() -> std::sync::MutexGuard<'static, ()> {
         let guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         reset_all();

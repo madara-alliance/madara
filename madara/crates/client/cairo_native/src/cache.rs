@@ -627,15 +627,11 @@ mod tests {
     use tempfile::TempDir;
 
     use mp_convert::ToFelt;
-    use std::sync::Mutex;
     // Import fixtures from test_utils
     use crate::test_utils::{sierra_class, temp_dir, test_config};
 
     // Import assert_counters macro (exported at crate root due to #[macro_export])
     use crate::assert_counters;
-
-    /// Test mutex to serialize test execution for tests that need to clear/modify caches
-    static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     /// Helper function to create a unique test class hash (module_id=1 for cache.rs)
     fn create_unique_test_class_hash() -> ClassHash {
@@ -705,7 +701,7 @@ mod tests {
         // Acquire metrics mutex to prevent interference with other tests
         use crate::metrics::test_counters;
         let _metrics_guard = test_counters::acquire_and_reset();
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        cache_clear();
 
         // Use unique class_hash to avoid interference with other parallel tests
         let class_hash = create_unique_test_class_hash();
@@ -789,8 +785,7 @@ mod tests {
         // Acquire metrics mutex to prevent interference with other tests
         use crate::metrics::test_counters;
         let _metrics_guard = test_counters::acquire_and_reset();
-
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        cache_clear();
 
         // Create config with small cache limit (2 classes)
         let config = config::NativeConfig::builder()
@@ -914,7 +909,7 @@ mod tests {
         // Acquire metrics mutex to prevent interference with other tests
         use crate::metrics::test_counters;
         let _metrics_guard = test_counters::acquire_and_reset();
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        cache_clear();
 
         // Save to disk to get file size
         let config = config::NativeConfig::builder().with_cache_dir(temp_dir.path().to_path_buf()).build();

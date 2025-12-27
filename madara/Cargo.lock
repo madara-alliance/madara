@@ -717,7 +717,7 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 [[package]]
 name = "apollo_compilation_utils"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-sierra 2.12.3",
@@ -735,7 +735,7 @@ dependencies = [
 [[package]]
 name = "apollo_compile_to_native"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "apollo_compilation_utils",
  "apollo_compile_to_native_types",
@@ -748,7 +748,7 @@ dependencies = [
 [[package]]
 name = "apollo_compile_to_native_types"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "apollo_config",
  "serde",
@@ -758,7 +758,7 @@ dependencies = [
 [[package]]
 name = "apollo_config"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "apollo_infra_utils",
  "clap",
@@ -776,7 +776,7 @@ dependencies = [
 [[package]]
 name = "apollo_infra_utils"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "apollo_proc_macros",
  "assert-json-diff",
@@ -795,7 +795,7 @@ dependencies = [
 [[package]]
 name = "apollo_metrics"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "indexmap 2.9.0",
  "metrics",
@@ -807,7 +807,7 @@ dependencies = [
 [[package]]
 name = "apollo_proc_macros"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -818,7 +818,7 @@ dependencies = [
 [[package]]
 name = "apollo_sizeof"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "apollo_sizeof_macros",
  "starknet-types-core",
@@ -827,7 +827,7 @@ dependencies = [
 [[package]]
 name = "apollo_sizeof_macros"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1759,7 +1759,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "anyhow",
  "apollo_compilation_utils",
@@ -1810,7 +1810,7 @@ dependencies = [
 [[package]]
 name = "blockifier_test_utils"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-starknet-classes",
@@ -3694,9 +3694,9 @@ dependencies = [
 
 [[package]]
 name = "cairo-native"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19404b3af952f1f8f1fcb68c58eafc06d5255002dc7a7c81c800676a0779004a"
+checksum = "8ce3a73f176cbb920f729bc528a152a3c717d46e0d4f1023d56096b6aad1186b"
 dependencies = [
  "aquamarine",
  "ark-ec 0.5.0",
@@ -6448,14 +6448,14 @@ dependencies = [
 
 [[package]]
 name = "m-cairo-test-contracts"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "build-version",
 ]
 
 [[package]]
 name = "m-proc-macros"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "indoc 2.0.6",
  "jsonrpsee",
@@ -6477,7 +6477,7 @@ dependencies = [
 
 [[package]]
 name = "madara"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -6571,7 +6571,7 @@ dependencies = [
 
 [[package]]
 name = "mc-analytics"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6600,7 +6600,7 @@ dependencies = [
 
 [[package]]
 name = "mc-block-production"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -6651,7 +6651,7 @@ dependencies = [
 
 [[package]]
 name = "mc-class-exec"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes",
@@ -6677,7 +6677,7 @@ dependencies = [
 
 [[package]]
 name = "mc-db"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -6737,7 +6737,7 @@ dependencies = [
 
 [[package]]
 name = "mc-devnet"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -6783,7 +6783,7 @@ dependencies = [
 
 [[package]]
 name = "mc-e2e-tests"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -6813,7 +6813,7 @@ dependencies = [
 
 [[package]]
 name = "mc-exec"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -6849,7 +6849,7 @@ dependencies = [
 
 [[package]]
 name = "mc-gateway-client"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6883,7 +6883,7 @@ dependencies = [
 
 [[package]]
 name = "mc-gateway-server"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
@@ -6913,7 +6913,7 @@ dependencies = [
 
 [[package]]
 name = "mc-mempool"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -6960,7 +6960,7 @@ dependencies = [
 
 [[package]]
 name = "mc-rpc"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -6999,7 +6999,7 @@ dependencies = [
 
 [[package]]
 name = "mc-settlement-client"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -7058,7 +7058,7 @@ dependencies = [
 
 [[package]]
 name = "mc-submit-tx"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7081,7 +7081,7 @@ dependencies = [
 
 [[package]]
 name = "mc-sync"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -7127,7 +7127,7 @@ dependencies = [
 
 [[package]]
 name = "mc-telemetry"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7300,7 +7300,7 @@ dependencies = [
 
 [[package]]
 name = "mp-block"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "bigdecimal",
@@ -7337,7 +7337,7 @@ dependencies = [
 
 [[package]]
 name = "mp-bloom-filter"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "ahash",
  "bincode 1.3.3",
@@ -7358,7 +7358,7 @@ dependencies = [
 
 [[package]]
 name = "mp-chain-config"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -7378,7 +7378,7 @@ dependencies = [
 
 [[package]]
 name = "mp-class"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "base64 0.22.1",
  "blockifier",
@@ -7410,7 +7410,7 @@ dependencies = [
 
 [[package]]
 name = "mp-convert"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "assert_matches",
@@ -7427,7 +7427,7 @@ dependencies = [
 
 [[package]]
 name = "mp-gateway"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "hyper 1.6.0",
  "itertools 0.13.0",
@@ -7450,7 +7450,7 @@ dependencies = [
 
 [[package]]
 name = "mp-oracle"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7462,7 +7462,7 @@ dependencies = [
 
 [[package]]
 name = "mp-receipt"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
@@ -7485,7 +7485,7 @@ dependencies = [
 
 [[package]]
 name = "mp-rpc"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -7494,7 +7494,7 @@ dependencies = [
 
 [[package]]
 name = "mp-state-update"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "bincode 1.3.3",
  "blockifier",
@@ -7508,7 +7508,7 @@ dependencies = [
 
 [[package]]
 name = "mp-transactions"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -7533,7 +7533,7 @@ dependencies = [
 
 [[package]]
 name = "mp-utils"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9820,6 +9820,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
+name = "starknet-core"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efb7212226769766c1c7d79b70f9242ffbd213290a41604ecc7e78faa0ed0deb"
+dependencies = [
+ "base64 0.21.7",
+ "crypto-bigint",
+ "flate2",
+ "foldhash",
+ "hex",
+ "indexmap 2.9.0",
+ "num-traits",
+ "serde",
+ "serde_json",
+ "serde_json_pythonic",
+ "serde_with",
+ "sha3",
+ "starknet-core-derive",
+ "starknet-crypto",
+ "starknet-types-core",
+]
+
+[[package]]
+name = "starknet-core-derive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b08520b7d80eda7bf1a223e8db4f9bb5779a12846f15ebf8f8d76667eca7f5ad"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+]
+
+[[package]]
 name = "starknet-crypto"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10029,7 +10063,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.16.0-rc.2"
-source = "git+https://github.com/karnotxyz/sequencer?rev=0f818e011ae8e4085d7a70b0d5e1532499a62de9#0f818e011ae8e4085d7a70b0d5e1532499a62de9"
+source = "git+https://github.com/karnotxyz/sequencer?tag=v0.14.1-alpha.0#9c2b40665faae1fee2fe264b1dbcb1286879563f"
 dependencies = [
  "apollo_infra_utils",
  "apollo_sizeof",
@@ -10055,6 +10089,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha3",
+ "starknet-core",
  "starknet-crypto",
  "starknet-types-core",
  "strum 0.25.0",

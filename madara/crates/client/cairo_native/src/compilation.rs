@@ -245,6 +245,32 @@ fn try_acquire_compilation_permit() -> Option<tokio::sync::SemaphorePermit<'stat
     semaphore.try_acquire().ok()
 }
 
+/// Stored Tokio runtime handle for spawning tasks from non-Tokio threads.
+/// Used when compilation is triggered from blockifier's worker pool (e.g., bypass channel).
+static TOKIO_RUNTIME_HANDLE: std::sync::RwLock<Option<tokio::runtime::Handle>> = std::sync::RwLock::new(None);
+
+/// Initialize the Tokio runtime handle. Must be called from a Tokio context at startup.
+pub fn init_tokio_runtime_handle() {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        if let Ok(mut guard) = TOKIO_RUNTIME_HANDLE.write() {
+            *guard = Some(handle);
+        }
+    }
+}
+
+/// Clear the stored runtime handle (for tests only).
+#[cfg(test)]
+pub(crate) fn clear_tokio_runtime_handle() {
+    if let Ok(mut guard) = TOKIO_RUNTIME_HANDLE.write() {
+        *guard = None;
+    }
+}
+
+/// Get the stored runtime handle for use from non-Tokio threads.
+fn get_stored_runtime_handle() -> Option<tokio::runtime::Handle> {
+    TOKIO_RUNTIME_HANDLE.read().ok().and_then(|guard| guard.clone())
+}
+
 /// Convert Sierra contract class to blockifier compiled class.
 ///
 /// This is shared logic used by both blocking and async compilation paths.
@@ -595,16 +621,31 @@ pub(crate) fn spawn_compilation_if_needed(
 
     // Check if we're in a Tokio runtime context
     // This can be called from blockifier's worker pool threads which don't have a Tokio runtime
+    // In that case, we use the stored runtime handle (initialized at startup)
     let handle = match tokio::runtime::Handle::try_current() {
         Ok(handle) => handle,
         Err(_) => {
-            tracing::debug!(
-                target: "madara_cairo_native",
-                class_hash = %format!("{:#x}", class_hash.to_felt()),
-                "compilation_async_no_runtime_context"
-            );
-            remove_compilation_in_progress(&class_hash);
-            return;
+            // No runtime in current thread - try stored handle (for non-Tokio thread contexts)
+            match get_stored_runtime_handle() {
+                Some(stored_handle) => {
+                    tracing::debug!(
+                        target: "madara_cairo_native",
+                        class_hash = %format!("{:#x}", class_hash.to_felt()),
+                        "compilation_async_using_stored_runtime_handle"
+                    );
+                    stored_handle
+                }
+                None => {
+                    // No stored handle available - cannot spawn async task
+                    tracing::warn!(
+                        target: "madara_cairo_native",
+                        class_hash = %format!("{:#x}", class_hash.to_felt()),
+                        "compilation_async_no_runtime_handle_available"
+                    );
+                    remove_compilation_in_progress(&class_hash);
+                    return;
+                }
+            }
         }
     };
 
@@ -734,21 +775,25 @@ mod tests {
         crate::test_utils::create_unique_test_class_hash(3)
     }
 
+    // Use test_counters::acquire_and_reset() for test synchronization (shared across all modules)
+
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_compilation_semaphore_limit() {
-        // Use a simple mutex guard pattern similar to execution.rs tests
-        static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = crate::metrics::test_counters::acquire_and_reset();
+        let _guard = crate::metrics::test_counters::acquire_and_reset();
 
-        // Clear any existing state
+        // Clear state for this test
         clear_compilations_in_progress();
         cache::cache_clear();
         clear_failed_compilations();
 
-        // Set a low semaphore limit (2 concurrent compilations)
-        let max_concurrent = 2;
+        // Initialize the runtime handle with THIS test's runtime (needed for async spawn)
+        clear_tokio_runtime_handle();
+        init_tokio_runtime_handle();
+
+        // Note: Semaphore is initialized via OnceLock, so we use the existing value if already set
+        // For this test, we use 4 as the limit (consistent with other tests)
+        let max_concurrent = 4;
         init_compilation_semaphore(max_concurrent);
 
         // Create config with async mode
@@ -762,8 +807,8 @@ mod tests {
         // Create test Sierra class
         let sierra = Arc::new(crate::test_utils::get_test_sierra_class().clone());
 
-        // Spawn 5 compilations (more than the limit of 2)
-        let num_compilations = 5;
+        // Spawn 6 compilations (more than the limit of 4)
+        let num_compilations = 6;
         let mut class_hashes = Vec::new();
 
         for _ in 0..num_compilations {
@@ -808,5 +853,60 @@ mod tests {
         // Verify config has valid max_concurrent_compilations
         let exec_config = config.execution_config().expect("test should use enabled config");
         assert!(exec_config.max_concurrent_compilations > 0);
+    }
+
+    /// Test that spawn_compilation_if_needed works from non-Tokio threads (e.g., bypass channel).
+    /// Uses stored runtime handle initialized at startup.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_spawn_compilation_from_non_tokio_thread() {
+        use std::sync::mpsc;
+        use std::thread;
+        use std::time::Duration;
+
+        let _guard = crate::metrics::test_counters::acquire_and_reset();
+
+        // Setup: clear state and initialize runtime handle
+        clear_compilations_in_progress();
+        clear_failed_compilations();
+        cache::cache_clear();
+        clear_tokio_runtime_handle();
+        init_tokio_runtime_handle();
+        init_compilation_semaphore(4);
+
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let config = Arc::new(crate::test_utils::create_test_config(
+            &temp_dir,
+            Some(config::NativeCompilationMode::Async),
+            false,
+        ));
+        let sierra = Arc::new(crate::test_utils::get_test_sierra_class().clone());
+        let class_hash = crate::test_utils::create_unique_test_class_hash(3);
+        cache::cache_remove(&class_hash);
+
+        // Spawn std::thread (no Tokio runtime) to simulate blockifier worker
+        let (tx, rx) = mpsc::channel();
+        let config_clone = config.clone();
+        let sierra_clone = sierra.clone();
+
+        thread::spawn(move || {
+            assert!(tokio::runtime::Handle::try_current().is_err(), "Should not have Tokio runtime");
+            spawn_compilation_if_needed(class_hash, sierra_clone, config_clone);
+            thread::sleep(Duration::from_millis(100));
+            tx.send((is_compilation_in_progress(&class_hash), cache::cache_contains(&class_hash), class_hash)).unwrap();
+        })
+        .join()
+        .expect("Thread panicked");
+
+        let (is_in_progress, is_cached, class_hash) = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(is_in_progress || is_cached, "Compilation should be triggered from non-Tokio thread");
+
+        // Wait for compilation to complete (class should be cached)
+        let timeout = Duration::from_secs(60);
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout && !cache::cache_contains(&class_hash) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(cache::cache_contains(&class_hash), "Compilation should complete successfully");
     }
 }

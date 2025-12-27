@@ -56,21 +56,11 @@ struct SetupBuilder {
     block_time: String,
     block_production_disabled: bool,
     enable_native_execution: bool,
-    native_cache_tempdir: Option<tempfile::TempDir>,
 }
 
 impl SetupBuilder {
     pub fn new(setup: TestSetup) -> Self {
-        // Always create a tempdir to avoid permissions issues with default path
-        let native_cache_tempdir = Some(tempfile::TempDir::new().expect("Failed to create temp dir for native cache"));
-
-        Self {
-            setup,
-            block_time: "2s".into(),
-            block_production_disabled: false,
-            enable_native_execution: false,
-            native_cache_tempdir,
-        }
+        Self { setup, block_time: "2s".into(), block_production_disabled: false, enable_native_execution: false }
     }
     pub fn with_block_production_disabled(mut self, disabled: bool) -> Self {
         self.block_production_disabled = disabled;
@@ -82,8 +72,6 @@ impl SetupBuilder {
     }
     pub fn with_native_execution(mut self, enabled: bool) -> Self {
         self.enable_native_execution = enabled;
-        // Note: We keep the tempdir even when native is disabled to provide a valid
-        // writable path and avoid permissions issues with /usr/share/madara/data/classes
         self
     }
 
@@ -103,14 +91,10 @@ impl SetupBuilder {
         ];
 
         // When native execution is enabled, use blocking mode to ensure strictly native execution (no VM fallback)
-        // Set cache directory via CLI flag to avoid using default /usr/share/madara/data/classes (requires root)
+        // The native cache directory is derived from --base-path (set by MadaraCmdBuilder)
         if self.enable_native_execution {
             args.push("--native-compilation-mode".into());
             args.push("blocking".into());
-            if let Some(ref tempdir) = self.native_cache_tempdir {
-                args.push("--native-cache-dir".into());
-                args.push(tempdir.path().display().to_string());
-            }
         }
 
         args.into_iter().chain(self.block_production_disabled.then_some("--no-block-production".into()))
@@ -129,7 +113,7 @@ impl SetupBuilder {
         let mut sequencer =
             MadaraCmdBuilder::new().label("sequencer").enable_gateway().args(self.sequencer_args()).run();
         sequencer.wait_for_sync_to(0).await;
-        RunningTestSetup::SingleNode { node: sequencer, _native_cache_tempdir: self.native_cache_tempdir }
+        RunningTestSetup::SingleNode { node: sequencer }
     }
 
     async fn run_gateway_and_sequencer(self) -> RunningTestSetup {
@@ -164,20 +148,12 @@ impl SetupBuilder {
         if self.enable_native_execution {
             gateway_args.push("--native-compilation-mode".into());
             gateway_args.push("blocking".into());
-            if let Some(ref tempdir) = self.native_cache_tempdir {
-                gateway_args.push("--native-cache-dir".into());
-                gateway_args.push(tempdir.path().display().to_string());
-            }
         }
 
         let mut gateway = MadaraCmdBuilder::new().label("gateway").enable_gateway().args(gateway_args).run();
         gateway.wait_for_sync_to(0).await; // wait until devnet genesis is synced
 
-        RunningTestSetup::TwoNodes {
-            _sequencer: sequencer,
-            user_facing: gateway,
-            _native_cache_tempdir: self.native_cache_tempdir,
-        }
+        RunningTestSetup::TwoNodes { _sequencer: sequencer, user_facing: gateway }
     }
 
     async fn run_full_node_and_sequencer(self) -> RunningTestSetup {
@@ -207,20 +183,12 @@ impl SetupBuilder {
         if self.enable_native_execution {
             full_node_args.push("--native-compilation-mode".into());
             full_node_args.push("blocking".into());
-            if let Some(ref tempdir) = self.native_cache_tempdir {
-                full_node_args.push("--native-cache-dir".into());
-                full_node_args.push(tempdir.path().display().to_string());
-            }
         }
 
         let mut full_node = MadaraCmdBuilder::new().label("full_node").enable_gateway().args(full_node_args).run();
         full_node.wait_for_sync_to(0).await;
 
-        RunningTestSetup::TwoNodes {
-            _sequencer: sequencer,
-            user_facing: full_node,
-            _native_cache_tempdir: self.native_cache_tempdir,
-        }
+        RunningTestSetup::TwoNodes { _sequencer: sequencer, user_facing: full_node }
     }
 }
 
@@ -228,8 +196,8 @@ use TestSetup::*;
 
 #[allow(clippy::large_enum_variant)]
 enum RunningTestSetup {
-    SingleNode { node: MadaraCmd, _native_cache_tempdir: Option<tempfile::TempDir> },
-    TwoNodes { _sequencer: MadaraCmd, user_facing: MadaraCmd, _native_cache_tempdir: Option<tempfile::TempDir> },
+    SingleNode { node: MadaraCmd },
+    TwoNodes { _sequencer: MadaraCmd, user_facing: MadaraCmd },
 }
 
 impl RunningTestSetup {

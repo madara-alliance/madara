@@ -68,7 +68,7 @@ authors = ["Madara <https://github.com/madara-alliance>"]
 homepage = "https://madara.build"
 edition = "2021"
 repository = "https://github.com/madara-alliance/madara/"
-version = "0.8.0"
+version = "0.10.0"
 license = "Apache-2.0"
 
 [workspace.dependencies]
@@ -131,15 +131,15 @@ starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
 starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
 ] }
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "0f818e011ae8e4085d7a70b0d5e1532499a62de9", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
   "node_api",
   "cairo_native",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "0f818e011ae8e4085d7a70b0d5e1532499a62de9" }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0" }
 cairo-lang-starknet-classes = "2.12.3"
 cairo-lang-utils = "2.12.3"
 cairo-vm = "2.5.0"
-cairo-native = "0.7.1"
+cairo-native = "0.7.3"
 
 alloy = { version = "0.8.3", features = [
   "node-bindings",
