@@ -499,6 +499,9 @@ pub fn setup_and_log(config: &NativeConfig) -> Result<(), String> {
             tracing::info!("Cairo native disabled - all contracts will use Cairo VM");
         }
         NativeConfig::Enabled(exec_config) => {
+            // Initialize the Tokio runtime handle for use from non-Tokio threads (e.g., blockifier workers)
+            // This must be called first, while we're still in a Tokio runtime context
+            crate::compilation::init_tokio_runtime_handle();
             // Initialize the compilation semaphore with the configured concurrency limit
             // Only needed when native execution is enabled
             crate::compilation::init_compilation_semaphore(exec_config.max_concurrent_compilations);
