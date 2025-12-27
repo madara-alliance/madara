@@ -233,7 +233,8 @@ async fn main() -> anyhow::Result<()> {
     // Native execution is opt-in and only enabled when the --enable-native-execution CLI flag
     // is set to true (default: false). When disabled, all contracts will use Cairo VM execution
     // regardless of cache state.
-    let cairo_native_config = run_cmd.cairo_native_params.to_runtime_config();
+    // The native cache directory is derived from base_path as `base_path/native_classes`.
+    let cairo_native_config = run_cmd.cairo_native_params.to_runtime_config(&run_cmd.backend_params.base_path);
 
     // Setup: validate, initialize semaphore, and log configuration
     // Note: Validation happens inside setup_and_log() via NativeConfig::validate()
