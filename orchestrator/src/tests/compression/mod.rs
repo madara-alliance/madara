@@ -24,7 +24,7 @@ async fn test_state_update_to_blob_data_flow(#[case] version: StarknetVersion) -
     info!("Running test_state_update_to_blob_data_flow");
 
     // Download test data
-    // The test data contains state update information about block 8373665 on Ethereum Sepolia
+    // The test data contains state update information about block 9662264 on Ethereum Sepolia
     // Contains the following files:
     // blobs/1.txt
     // blobs/2.txt
@@ -33,18 +33,18 @@ async fn test_state_update_to_blob_data_flow(#[case] version: StarknetVersion) -
     // stateful_compressed_state_update.json
     // stateless_compressed_state_update.json
     // ... other files
-    let data_dir = setup_test_data(vec![("8373665.tar.gz", true)]).await?;
+    let data_dir = setup_test_data(vec![("9662264.tar.gz", true)]).await?;
 
-    let state_updates_path = data_dir.path().join("8373665/state_updates.json").to_str().unwrap().to_string();
+    let state_updates_path = data_dir.path().join("9662264/state_updates.json").to_str().unwrap().to_string();
     let squashed_state_update_path =
-        data_dir.path().join("8373665/squashed_state_update.json").to_str().unwrap().to_string();
+        data_dir.path().join("9662264/squashed_state_update.json").to_str().unwrap().to_string();
     let comp_state_update_path =
-        data_dir.path().join("8373665/stateful_compressed_state_update.json").to_str().unwrap().to_string();
+        data_dir.path().join("9662264/stateful_compressed_state_update.json").to_str().unwrap().to_string();
     let stateless_comp_path =
-        data_dir.path().join("8373665/stateless_compressed_state_update.json").to_str().unwrap().to_string();
+        data_dir.path().join("9662264/stateless_compressed_state_update.json").to_str().unwrap().to_string();
     let blob_paths = vec![
-        data_dir.path().join("8373665/blobs/1.txt").to_str().unwrap().to_string(),
-        data_dir.path().join("8373665/blobs/2.txt").to_str().unwrap().to_string(),
+        data_dir.path().join("9662264/blobs/1.txt").to_str().unwrap().to_string(),
+        data_dir.path().join("9662264/blobs/2.txt").to_str().unwrap().to_string(),
     ];
 
     test_squash_state_updates(&services, &state_updates_path, &squashed_state_update_path).await?;
@@ -64,7 +64,7 @@ async fn test_squash_state_updates(
     let expected_squashed_state_update = read_state_update_from_file(squashed_state_update_path)?;
 
     let squashed_state_update =
-        squash(state_updates_vector.iter().collect::<Vec<_>>(), Some(789877), services.config.madara_rpc_client())
+        squash(state_updates_vector.iter().collect::<Vec<_>>(), Some(2935725), services.config.madara_rpc_client())
             .await?;
 
     assert_eq!(squashed_state_update, expected_squashed_state_update);
@@ -83,7 +83,7 @@ async fn test_stateful_compression(
     let expected_compressed_state_update = read_state_update_from_file(stateful_comp_path)?;
 
     let compressed_state_update =
-        stateful_compress(&uncompressed_state_update, 789877, services.config.madara_rpc_client()).await?;
+        stateful_compress(&uncompressed_state_update, 2935725, services.config.madara_rpc_client()).await?;
 
     assert_eq!(compressed_state_update, expected_compressed_state_update);
 
