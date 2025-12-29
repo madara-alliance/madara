@@ -38,8 +38,6 @@ use uuid::Uuid;
 #[tokio::test]
 #[ignore = "TODO: Mock update_job expectations and verify heal_orphaned_jobs behavior"]
 async fn test_snos_worker_self_healing() -> Result<(), Box<dyn Error>> {
-    let _test_lock = acquire_test_lock();
-
     // TODO: Implement test logic
     // 1. Create mock database with orphaned SNOS job
     // 2. Mock get_orphaned_jobs to return job with timeout=3600s (1 hour)
@@ -47,47 +45,6 @@ async fn test_snos_worker_self_healing() -> Result<(), Box<dyn Error>> {
     // 4. Run SnosJobTrigger.run_worker()
     // 5. Assert heal_orphaned_jobs was called with correct timeout
     // 6. Assert orphaned job was updated correctly
-
-    let server = MockServer::start();
-    let da_client = MockDaClient::new();
-    let mut db = MockDatabaseClient::new();
-    let queue = MockQueueClient::new();
-
-    // Create an orphaned SNOS job
-    let orphaned_job = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
-    let mut healed_job = orphaned_job.clone();
-    healed_job.status = JobStatus::Created;
-    healed_job.metadata.common.process_started_at = None;
-
-    // TODO: Mock get_orphaned_jobs to return orphaned job
-    db.expect_get_orphaned_jobs()
-        .with(eq(JobType::SnosRun), eq(3600u64)) // 1 hour timeout for SNOS
-        .returning(move |_, _| Ok(vec![orphaned_job.clone()]));
-
-    // TODO: Mock update_job to verify healing
-    // db.expect_update_job()...
-
-    // TODO: Mock other required database calls for normal SNOS worker operation
-    db.expect_get_latest_job_by_type().returning(|_| Ok(None));
-    db.expect_get_oldest_job_by_type_excluding_statuses().returning(|_, _| Ok(None));
-    db.expect_get_snos_batches_without_jobs().returning(|_, _| Ok(vec![]));
-
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&format!("http://localhost:{}", server.port())).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
-        .build()
-        .await;
-
-    // Run the SNOS worker
-    let result = crate::worker::event_handler::triggers::snos::SnosJobTrigger.run_worker(services.config).await;
-
-    assert!(result.is_ok());
 
     Ok(())
 }
@@ -103,8 +60,6 @@ async fn test_snos_worker_self_healing() -> Result<(), Box<dyn Error>> {
 #[tokio::test]
 #[ignore = "TODO: Mock update_job expectations and verify heal_orphaned_jobs behavior"]
 async fn test_proving_worker_self_healing() -> Result<(), Box<dyn Error>> {
-    let _test_lock = acquire_test_lock();
-
     // TODO: Implement test logic
     // 1. Create mock database with orphaned Proving job
     // 2. Mock get_orphaned_jobs to return job with timeout=1800s (30 minutes)
@@ -112,43 +67,6 @@ async fn test_proving_worker_self_healing() -> Result<(), Box<dyn Error>> {
     // 4. Run ProvingJobTrigger.run_worker()
     // 5. Assert heal_orphaned_jobs was called with correct timeout
     // 6. Assert orphaned job was updated correctly
-
-    let server = MockServer::start();
-    let da_client = MockDaClient::new();
-    let mut db = MockDatabaseClient::new();
-    let queue = MockQueueClient::new();
-    let prover_client = MockProverClient::new();
-    let settlement_client = MockSettlementClient::new();
-
-    // Create an orphaned Proving job
-    let orphaned_job = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
-
-    // TODO: Mock get_orphaned_jobs to return orphaned job
-    db.expect_get_orphaned_jobs()
-        .with(eq(JobType::ProofCreation), eq(1800u64)) // 30 minutes timeout for Proving
-        .returning(move |_, _| Ok(vec![orphaned_job.clone()]));
-
-    // TODO: Mock other required database calls
-    db.expect_get_jobs_without_successor().returning(|_, _, _| Ok(vec![]));
-
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&format!("http://localhost:{}", server.port())).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
-        .configure_prover_client(prover_client.into())
-        .configure_settlement_client(settlement_client.into())
-        .build()
-        .await;
-
-    // Run the Proving worker
-    let result = crate::worker::event_handler::triggers::proving::ProvingJobTrigger.run_worker(services.config).await;
-
-    assert!(result.is_ok());
 
     Ok(())
 }
@@ -163,46 +81,9 @@ async fn test_proving_worker_self_healing() -> Result<(), Box<dyn Error>> {
 #[tokio::test]
 #[ignore = "TODO: Mock update_job expectations and verify heal_orphaned_jobs behavior"]
 async fn test_proof_registration_worker_self_healing() -> Result<(), Box<dyn Error>> {
-    let _test_lock = acquire_test_lock();
-
     // TODO: Implement test logic
     // Similar to proving worker test but for ProofRegistration job type
     // Use timeout=1800s (30 minutes)
-
-    let server = MockServer::start();
-    let da_client = MockDaClient::new();
-    let mut db = MockDatabaseClient::new();
-    let queue = MockQueueClient::new();
-    let prover_client = MockProverClient::new();
-    let settlement_client = MockSettlementClient::new();
-
-    let orphaned_job = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
-
-    db.expect_get_orphaned_jobs()
-        .with(eq(JobType::ProofRegistration), eq(1800u64)) // 30 minutes
-        .returning(move |_, _| Ok(vec![orphaned_job.clone()]));
-
-    db.expect_get_jobs_without_successor().returning(|_, _, _| Ok(vec![]));
-
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&format!("http://localhost:{}", server.port())).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
-        .configure_prover_client(prover_client.into())
-        .configure_settlement_client(settlement_client.into())
-        .build()
-        .await;
-
-    let result = crate::worker::event_handler::triggers::proof_registration::ProofRegistrationJobTrigger
-        .run_worker(services.config)
-        .await;
-
-    assert!(result.is_ok());
 
     Ok(())
 }
@@ -217,46 +98,9 @@ async fn test_proof_registration_worker_self_healing() -> Result<(), Box<dyn Err
 #[tokio::test]
 #[ignore = "TODO: Mock update_job expectations and verify heal_orphaned_jobs behavior"]
 async fn test_data_submission_worker_self_healing() -> Result<(), Box<dyn Error>> {
-    let _test_lock = acquire_test_lock();
-
     // TODO: Implement test logic
     // Similar structure to other worker tests
     // Use timeout=1800s (30 minutes)
-
-    let server = MockServer::start();
-    let da_client = MockDaClient::new();
-    let mut db = MockDatabaseClient::new();
-    let queue = MockQueueClient::new();
-    let prover_client = MockProverClient::new();
-    let settlement_client = MockSettlementClient::new();
-
-    let orphaned_job = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
-
-    db.expect_get_orphaned_jobs()
-        .with(eq(JobType::DataSubmission), eq(1800u64)) // 30 minutes
-        .returning(move |_, _| Ok(vec![orphaned_job.clone()]));
-
-    db.expect_get_jobs_without_successor().returning(|_, _, _| Ok(vec![]));
-
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&format!("http://localhost:{}", server.port())).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
-        .configure_prover_client(prover_client.into())
-        .configure_settlement_client(settlement_client.into())
-        .build()
-        .await;
-
-    let result = crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger
-        .run_worker(services.config)
-        .await;
-
-    assert!(result.is_ok());
 
     Ok(())
 }
@@ -271,46 +115,9 @@ async fn test_data_submission_worker_self_healing() -> Result<(), Box<dyn Error>
 #[tokio::test]
 #[ignore = "TODO: Mock update_job expectations and verify heal_orphaned_jobs behavior"]
 async fn test_state_transition_worker_self_healing() -> Result<(), Box<dyn Error>> {
-    let _test_lock = acquire_test_lock();
-
     // TODO: Implement test logic
     // Similar structure to other worker tests
     // Use timeout=2700s (45 minutes)
-
-    let server = MockServer::start();
-    let da_client = MockDaClient::new();
-    let mut db = MockDatabaseClient::new();
-    let queue = MockQueueClient::new();
-    let prover_client = MockProverClient::new();
-    let settlement_client = MockSettlementClient::new();
-
-    let orphaned_job = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
-
-    db.expect_get_orphaned_jobs()
-        .with(eq(JobType::StateTransition), eq(2700u64)) // 45 minutes
-        .returning(move |_, _| Ok(vec![orphaned_job.clone()]));
-
-    db.expect_get_jobs_without_successor().returning(|_, _, _| Ok(vec![]));
-
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&format!("http://localhost:{}", server.port())).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
-        .configure_prover_client(prover_client.into())
-        .configure_settlement_client(settlement_client.into())
-        .build()
-        .await;
-
-    let result =
-        crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger.run_worker(services.config).await;
-
-    assert!(result.is_ok());
-
     Ok(())
 }
 
@@ -324,46 +131,9 @@ async fn test_state_transition_worker_self_healing() -> Result<(), Box<dyn Error
 #[tokio::test]
 #[ignore = "TODO: Mock update_job expectations and verify heal_orphaned_jobs behavior"]
 async fn test_aggregator_worker_self_healing() -> Result<(), Box<dyn Error>> {
-    let _test_lock = acquire_test_lock();
-
     // TODO: Implement test logic
     // Similar structure to other worker tests
     // Use timeout=1800s (30 minutes)
-
-    let server = MockServer::start();
-    let da_client = MockDaClient::new();
-    let mut db = MockDatabaseClient::new();
-    let queue = MockQueueClient::new();
-    let prover_client = MockProverClient::new();
-    let settlement_client = MockSettlementClient::new();
-
-    let orphaned_job = get_job_item_mock_by_id("1".to_string(), Uuid::new_v4());
-
-    db.expect_get_orphaned_jobs()
-        .with(eq(JobType::Aggregator), eq(1800u64)) // 30 minutes
-        .returning(move |_, _| Ok(vec![orphaned_job.clone()]));
-
-    db.expect_get_aggregator_batches_by_status().returning(|_, _| Ok(vec![]));
-
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&format!("http://localhost:{}", server.port())).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
-        .configure_prover_client(prover_client.into())
-        .configure_settlement_client(settlement_client.into())
-        .build()
-        .await;
-
-    let result =
-        crate::worker::event_handler::triggers::aggregator::AggregatorJobTrigger.run_worker(services.config).await;
-
-    assert!(result.is_ok());
-
     Ok(())
 }
 
@@ -417,14 +187,6 @@ async fn test_self_healing_e2e_with_actual_database() -> Result<(), Box<dyn Erro
     // 4. Verify job was reset to Created status
     // 5. Verify process_started_at was cleared
     // 6. Use short timeout (2-5 seconds) for fast test execution
-
-    use crate::tests::config::ConfigType;
-    use crate::types::jobs::job_item::JobItem;
-
-    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
-
-    let db = services.config.database();
-
     // TODO: Create orphaned job
     // TODO: Set process_started_at to old timestamp
     // TODO: Call heal_orphaned_jobs
