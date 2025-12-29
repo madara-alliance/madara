@@ -475,7 +475,7 @@ impl DatabaseClient for MongoDbClient {
             }
             None => {
                 warn!(version = %current_job.version, "Failed to update job. Job version is likely outdated");
-                Err(DatabaseError::UpdateFailed(format!("Failed to update job. Identifier - {}, ", current_job.id)))
+                Err(DatabaseError::UpdateFailed(format!("Failed to update job. Identifier: {}", current_job.id)))
             }
         }
     }
@@ -1173,14 +1173,15 @@ impl DatabaseClient for MongoDbClient {
                     "corresponding_jobs": { "$eq": [] }
                 }
             },
-            doc! {
-                "$limit": limit as i64
-            },
             // Stage 4: Sort by snos_batch_id for consistent ordering
             doc! {
                 "$sort": {
                     "index": 1
                 }
+            },
+            // Stage 5: Limit to max number of batches we want
+            doc! {
+                "$limit": limit as i64
             },
         ];
 
