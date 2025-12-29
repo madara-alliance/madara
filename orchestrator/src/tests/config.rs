@@ -805,12 +805,12 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         max_concurrent_created_snos_jobs,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
-        job_processing_timeout_seconds: 3600,
         snos_job_timeout_seconds: 3600,           // 1 hour for SNOS jobs
         proving_job_timeout_seconds: 1800,        // 30 minutes for proving jobs
         proof_registration_timeout_seconds: 1800, // 30 minutes for proof registration
         data_submission_timeout_seconds: 1800,    // 30 minutes for data submission
         state_transition_timeout_seconds: 2700,   // 45 minutes for state transition
+        aggregator_job_timeout_seconds: 1800,     // 30 minutes for aggregator jobs
         snos_job_buffer_size: 50,
         max_priority_queue_size: 20,
     };
