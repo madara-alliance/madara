@@ -60,7 +60,9 @@ impl Resource for InnerSQS {
                     let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
 
                     // Creating the queue
-                    let queue_url = self.create_queue(queue_name.clone(), queue.visibility_timeout).await?;
+                    let queue_url = self
+                        .create_queue(queue_name.clone(), queue.visibility_timeout, queue.message_retention_period)
+                        .await?;
 
                     tracing::info!("Queue created for type {}", queue_type);
 
@@ -78,19 +80,18 @@ impl Resource for InnerSQS {
                             // Create the DLQ
                             let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
 
-                            // Standard DLQ creation (no FIFO attributes)
+                            // Standard DLQ creation (no FIFO attributes, no custom TTL)
+                            let dlq_queue_config = QUEUES.get(&dlq_config.dlq_name).ok_or_else(|| {
+                                OrchestratorError::SetupError(format!(
+                                    "Failed to get DLQ {} in QUEUES",
+                                    &dlq_config.dlq_name
+                                ))
+                            })?;
                             let dlq_url = self
                                 .create_queue(
                                     dlq_name,
-                                    QUEUES
-                                        .get(&dlq_config.dlq_name)
-                                        .ok_or_else(|| {
-                                            OrchestratorError::SetupError(format!(
-                                                "Failed to get DLQ {} in QUEUES",
-                                                &dlq_config.dlq_name
-                                            ))
-                                        })?
-                                        .visibility_timeout,
+                                    dlq_queue_config.visibility_timeout,
+                                    dlq_queue_config.message_retention_period,
                                 )
                                 .await?
                                 .to_string();
