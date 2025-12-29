@@ -105,9 +105,25 @@ impl InnerSQS {
     }
 
     /// Create a new queue with the given name
-    pub async fn create_queue(&self, queue_name: String, visibility_timeout: u32) -> Result<String, OrchestratorError> {
+    ///
+    /// # Arguments
+    /// * `queue_name` - The name of the queue to create
+    /// * `visibility_timeout` - The visibility timeout in seconds
+    /// * `message_retention_period` - Optional message retention period (TTL) in seconds.
+    ///   Valid values: 60 to 1,209,600 seconds. If None, uses SQS default (4 days).
+    pub async fn create_queue(
+        &self,
+        queue_name: String,
+        visibility_timeout: u32,
+        message_retention_period: Option<u32>,
+    ) -> Result<String, OrchestratorError> {
         let mut attributes = HashMap::new();
         attributes.insert(QueueAttributeName::VisibilityTimeout, visibility_timeout.to_string());
+
+        if let Some(retention_period) = message_retention_period {
+            attributes.insert(QueueAttributeName::MessageRetentionPeriod, retention_period.to_string());
+        }
+
         let res = self
             .client()
             .create_queue()
