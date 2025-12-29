@@ -31,8 +31,29 @@ pub struct ServiceCliArgs {
     pub max_concurrent_proving_jobs: Option<usize>,
 
     /// Timeout in seconds for jobs stuck in LockedForProcessing status before self-healing recovery.
+    /// This is used as a fallback for job types that don't have a specific timeout configured.
     #[arg(env = "MADARA_ORCHESTRATOR_JOB_PROCESSING_TIMEOUT_SECONDS", long, default_value = "1800")]
     pub job_processing_timeout_seconds: u64,
+
+    /// Timeout in seconds for SNOS jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_SNOS_JOB_TIMEOUT_SECONDS", long, default_value = "3600")]
+    pub snos_job_timeout_seconds: u64,
+
+    /// Timeout in seconds for Proving jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_PROVING_JOB_TIMEOUT_SECONDS", long, default_value = "1800")]
+    pub proving_job_timeout_seconds: u64,
+
+    /// Timeout in seconds for Proof Registration jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_PROOF_REGISTRATION_TIMEOUT_SECONDS", long, default_value = "1800")]
+    pub proof_registration_timeout_seconds: u64,
+
+    /// Timeout in seconds for Data Submission jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_DATA_SUBMISSION_TIMEOUT_SECONDS", long, default_value = "1800")]
+    pub data_submission_timeout_seconds: u64,
+
+    /// Timeout in seconds for State Transition jobs stuck in LockedForProcessing status.
+    #[arg(env = "MADARA_ORCHESTRATOR_STATE_TRANSITION_TIMEOUT_SECONDS", long, default_value = "2700")]
+    pub state_transition_timeout_seconds: u64,
 
     /// Target number of SNOS jobs to maintain in the processing pipeline/buffer.
     /// New jobs are created when the buffer drops below this size.
