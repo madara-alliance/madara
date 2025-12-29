@@ -6,26 +6,9 @@
 //!
 //! All tests are marked with #[ignore] and contain TODO comments for future implementation.
 
-#![allow(clippy::await_holding_lock)]
-
-use crate::core::client::database::MockDatabaseClient;
-use crate::core::client::queue::MockQueueClient;
-use crate::tests::common::test_utils::acquire_test_lock;
-use crate::tests::config::TestConfigBuilder;
-use crate::tests::workers::utils::get_job_item_mock_by_id;
-use crate::types::jobs::types::{JobStatus, JobType};
-use crate::worker::event_handler::triggers::JobTrigger;
-use httpmock::MockServer;
-use mockall::predicate::eq;
-use orchestrator_da_client_interface::MockDaClient;
-use orchestrator_prover_client_interface::MockProverClient;
-use orchestrator_settlement_client_interface::MockSettlementClient;
+use crate::types::jobs::types::JobType;
 use rstest::rstest;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::JsonRpcClient;
 use std::error::Error;
-use url::Url;
-use uuid::Uuid;
 
 /// Test self-healing for SNOS jobs
 ///
@@ -187,10 +170,5 @@ async fn test_self_healing_e2e_with_actual_database() -> Result<(), Box<dyn Erro
     // 4. Verify job was reset to Created status
     // 5. Verify process_started_at was cleared
     // 6. Use short timeout (2-5 seconds) for fast test execution
-    // TODO: Create orphaned job
-    // TODO: Set process_started_at to old timestamp
-    // TODO: Call heal_orphaned_jobs
-    // TODO: Verify job was healed
-
     Ok(())
 }
