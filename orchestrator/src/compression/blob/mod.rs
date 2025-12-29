@@ -78,7 +78,11 @@ pub async fn state_update_to_blob_data(
     tracing::debug!("Total contract updates in blob: {}", total_contracts);
 
     // Add declared classes count and data
-    add_declared_classes_to_blob_data(state_diff.declared_classes, &mut blob_data);
+    add_declared_classes_to_blob_data(
+        state_diff.declared_classes,
+        state_diff.migrated_compiled_classes.unwrap_or_default(),
+        &mut blob_data,
+    );
 
     tracing::debug!("Created blob data with {} elements", blob_data.len());
 
