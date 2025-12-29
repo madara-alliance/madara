@@ -475,7 +475,7 @@ impl DatabaseClient for MongoDbClient {
             }
             None => {
                 warn!(version = %current_job.version, "Failed to update job. Job version is likely outdated");
-                Err(DatabaseError::UpdateFailed(format!("Failed to update job. Identifier - {}, ", current_job.id)))
+                Err(DatabaseError::UpdateFailed(format!("Failed to update job. Identifier: {}", current_job.id)))
             }
         }
     }
