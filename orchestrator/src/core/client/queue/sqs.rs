@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{OnceCell, RwLock};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct InnerSQS(Client);
 
 impl InnerSQS {
@@ -158,16 +158,6 @@ pub struct SQS {
     queue_url_cache: Arc<RwLock<HashMap<QueueType, Arc<OnceCell<String>>>>>,
 }
 
-impl std::fmt::Debug for SQS {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SQS")
-            .field("inner", &self.inner)
-            .field("queue_template_identifier", &self.queue_template_identifier)
-            .field("queue_url_cache", &"<cache>")
-            .finish()
-    }
-}
-
 impl SQS {
     /// new - Create a new SQS client, with both client and option for the client;
     /// we've needed to pass the aws_config and args to the constructor.
@@ -243,6 +233,13 @@ impl SQS {
 
     pub fn client(&self) -> &Client {
         self.inner.client()
+    }
+
+    /// Returns the number of queue URLs currently cached.
+    /// This is primarily useful for testing to verify caching behavior.
+    #[cfg(test)]
+    pub async fn cached_url_count(&self) -> usize {
+        self.queue_url_cache.read().await.len()
     }
 
     /// get_queue_name - Get the queue name
