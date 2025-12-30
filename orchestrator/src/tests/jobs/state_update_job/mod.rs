@@ -220,21 +220,26 @@ async fn test_process_job_l2_with_da_segment(
     use crate::types::constant::DA_SEGMENT_FILE_NAME;
     use crate::worker::utils::encrypted_blob::{da_segment_to_blobs, parse_da_segment_json};
     use cairo_vm::Felt252;
+    use orchestrator_utils::test_utils::setup_test_data;
 
-    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
-
-    // Load test artifacts
-    let artifacts_dir: PathBuf = [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts"].iter().collect();
+    // Download test artifacts from remote repository
+    let da_segment_file = format!("da_blob_index_{}.json", batch_index);
+    let program_output_file = format!("program_output_batch_{}.json", batch_index);
+    let data_dir = setup_test_data(vec![
+        (Box::leak(da_segment_file.clone().into_boxed_str()) as &str, false),
+        (Box::leak(program_output_file.clone().into_boxed_str()) as &str, false),
+    ])
+    .await
+    .expect("Failed to download test artifacts");
 
     // Load DA segment and convert to blobs (this is what the state update job does)
-    let da_segment_path = artifacts_dir.join(format!("da_blob_index_{}.json", batch_index));
-    let da_json = read_to_string(&da_segment_path).expect("Failed to read DA segment");
+    let da_json = read_to_string(data_dir.path().join(&da_segment_file)).expect("Failed to read DA segment");
     let da_segment = parse_da_segment_json(&da_json).expect("Failed to parse DA segment");
     let blobs = da_segment_to_blobs(da_segment).expect("Failed to convert to blobs");
 
     // Load program output
-    let program_output_path = artifacts_dir.join(format!("program_output_batch_{}.json", batch_index));
-    let program_output_json = read_to_string(&program_output_path).expect("Failed to read program output");
+    let program_output_json =
+        read_to_string(data_dir.path().join(&program_output_file)).expect("Failed to read program output");
     let program_output_hex: Vec<String> = serde_json::from_str(&program_output_json).unwrap();
     let program_output: Vec<[u8; 32]> = program_output_hex
         .iter()
@@ -278,7 +283,7 @@ async fn test_process_job_l2_with_da_segment(
 
     // Mock storage for DA segment
     let da_segment_key = format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch_index, DA_SEGMENT_FILE_NAME);
-    let da_json_clone = read_to_string(&da_segment_path).unwrap();
+    let da_json_clone = da_json.clone();
     storage_client
         .expect_get_data()
         .with(eq(da_segment_key.clone()))

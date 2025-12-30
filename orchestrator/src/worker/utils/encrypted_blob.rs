@@ -99,8 +99,8 @@ mod tests {
     use super::*;
     use cairo_vm::vm::runners::cairo_pie::CairoPie;
     use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
+    use orchestrator_utils::test_utils::setup_test_data;
     use rstest::rstest;
-    use std::path::PathBuf;
 
     // Test artifacts source:
     //
@@ -111,10 +111,6 @@ mod tests {
     // Legacy test artifacts (from aggregator-poc repo):
     // - test_aggregator.zip and testing_aggregator.json are from commit aef88ee1b2f686c5b50cf83621bc24516a93f8f4
     // - Repository: https://github.com/Mohiiit/aggregator-poc.git
-
-    fn get_artifacts_path(filename: &str) -> PathBuf {
-        [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", filename].iter().collect()
-    }
 
     /// Verifies that the DA segment from the prover can be converted to blobs
     /// and that the KZG proof matches the program output from the CairoPIE.
@@ -131,13 +127,20 @@ mod tests {
     async fn test_da_segment_kzg_verification(#[case] cairo_pie_file: &str, #[case] da_segment_file: &str) {
         use crate::worker::utils::fact_info::get_program_output;
 
+        // Download test artifacts from remote repository
+        let data_dir = setup_test_data(vec![(cairo_pie_file, false), (da_segment_file, false)])
+            .await
+            .expect("Failed to download test artifacts");
+
         // Load CairoPIE and extract program output
-        let cairo_pie = CairoPie::read_zip_file(&get_artifacts_path(cairo_pie_file)).expect("Failed to load CairoPIE");
+        let cairo_pie =
+            CairoPie::read_zip_file(&data_dir.path().join(cairo_pie_file)).expect("Failed to load CairoPIE");
         let program_output_felts = get_program_output(&cairo_pie, true).expect("Failed to get program output");
         let program_output: Vec<[u8; 32]> = program_output_felts.iter().map(|f| f.to_bytes_be()).collect();
 
         // Load DA segment and convert to blobs (applies FFT transformation)
-        let da_json = std::fs::read_to_string(get_artifacts_path(da_segment_file)).expect("Failed to read DA segment");
+        let da_json =
+            std::fs::read_to_string(data_dir.path().join(da_segment_file)).expect("Failed to read DA segment");
         let da_segment = parse_da_segment_json(&da_json).expect("Failed to parse DA segment");
         let blobs = da_segment_to_blobs(da_segment).expect("Failed to convert DA segment to blobs");
 
