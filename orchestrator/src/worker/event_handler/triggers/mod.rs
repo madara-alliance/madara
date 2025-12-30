@@ -68,11 +68,12 @@ pub trait JobTrigger: Send + Sync {
     ///
     /// # Behavior
     /// - Only heals jobs that have been locked for longer than the configured timeout
+    /// - Uses job-type specific timeout from service config
     /// - Resets job status from `LockedForProcessing` to `Created`
     /// - Clears the `process_started_at` timestamp to allow fresh processing
     /// - Logs recovery actions for monitoring and debugging
     async fn heal_orphaned_jobs(&self, config: Arc<Config>, job_type: JobType) -> anyhow::Result<u32> {
-        let timeout_seconds = config.service_config().job_processing_timeout_seconds;
+        let timeout_seconds = config.service_config().get_job_timeout(&job_type);
         let orphaned_jobs = config.database().get_orphaned_jobs(&job_type, timeout_seconds).await?;
 
         if orphaned_jobs.is_empty() {

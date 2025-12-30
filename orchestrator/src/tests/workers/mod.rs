@@ -3,6 +3,8 @@ pub mod batching;
 #[cfg(test)]
 pub mod proving;
 #[cfg(test)]
+pub mod self_healing;
+#[cfg(test)]
 pub mod snos;
 mod update_state;
 pub mod utils;
