@@ -108,7 +108,7 @@ jobs:
 
       - name: Run migration tests
         working-directory: madara
-        run: cargo test -p mc-e2e-tests migration_validation -- --ignored --nocapture
+        run: cargo test -p mc-e2e-tests --features migration-tests -- --nocapture
         env:
           MIGRATION_TEST_RPC_URL: "http://localhost:9944"
 
