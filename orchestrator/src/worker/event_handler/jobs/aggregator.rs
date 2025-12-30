@@ -122,15 +122,13 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
                 // Fetch DA segment from prover and store it in storage
                 // The DA segment contains the encrypted/compressed state diff for KZG proof
-                if !metadata.da_segment_path.is_empty() {
-                    AggregatorJobHandler::fetch_and_store_artifact(
-                        &config,
-                        &aggregator_query_id,
-                        DA_SEGMENT_FILE_NAME,
-                        &metadata.da_segment_path,
-                    )
-                    .await?;
-                }
+                AggregatorJobHandler::fetch_and_store_artifact(
+                    &config,
+                    &aggregator_query_id,
+                    DA_SEGMENT_FILE_NAME,
+                    &metadata.da_segment_path,
+                )
+                .await?;
 
                 // Fetch aggregator snos output and store it in storage
                 // TODO: Uncomment this code when atlantic provides the snos output for aggregator jobs
