@@ -3,6 +3,7 @@ use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::AggregatorBatchStatus;
+use crate::types::constant::DA_SEGMENT_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -116,6 +117,16 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     &aggregator_query_id,
                     CAIRO_PIE_FILE_NAME,
                     &metadata.cairo_pie_path,
+                )
+                .await?;
+
+                // Fetch DA segment from prover and store it in storage
+                // The DA segment contains the encrypted/compressed state diff for KZG proof
+                AggregatorJobHandler::fetch_and_store_artifact(
+                    &config,
+                    &aggregator_query_id,
+                    DA_SEGMENT_FILE_NAME,
+                    &metadata.da_segment_path,
                 )
                 .await?;
 

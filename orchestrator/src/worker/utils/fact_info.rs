@@ -279,32 +279,102 @@ mod tests {
     use std::path::PathBuf;
 
     use cairo_vm::vm::runners::cairo_pie::CairoPie;
+    use orchestrator_utils::test_utils::setup_test_data;
     use rstest::rstest;
 
     use super::{get_fact_info, get_program_output};
 
+    /// Test fact computation for local CairoPIE files (non-aggregator PIEs)
+    /// - fibonacci.zip, sepolia_924016.zip: Non-aggregator PIEs (is_aggregator = false)
+    ///
+    /// NOTE: These artifacts are stored locally. Simply deleting the files in the current branch
+    /// won't make the repo lighter because the files would still exist in the git history.
+    /// To truly reduce repo size, we would need to rewrite git history (e.g., using git filter-repo).
+    ///
+    /// TODO(Mohit 30/12/2025): Fix the artifacts issue by deleting them from the entire git history
+    /// and moving all test artifacts to the remote madara-test-artifacts repository.
     #[rstest]
-    #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782")]
-    #[case("sepolia_924016.zip", "0x033144ad6b132b1012f15e50aa53de1ed91b3b1af729014c3f1c00b702f972ea")]
-    async fn test_fact_info(#[case] cairo_pie_path: &str, #[case] expected_fact: &str) {
-        // TODO: Add a test for the aggregator program
+    #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782", false)]
+    #[case("sepolia_924016.zip", "0x033144ad6b132b1012f15e50aa53de1ed91b3b1af729014c3f1c00b702f972ea", false)]
+    async fn test_fact_info_local(
+        #[case] cairo_pie_file: &str,
+        #[case] expected_fact: &str,
+        #[case] is_aggregator: bool,
+    ) {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
         let cairo_pie_path: PathBuf =
-            [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_path].iter().collect();
+            [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_file].iter().collect();
         let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
-        let fact_info = get_fact_info(&cairo_pie, None, false).unwrap();
+        let fact_info = get_fact_info(&cairo_pie, None, is_aggregator).unwrap();
         assert_eq!(expected_fact, fact_info.fact.to_string());
     }
 
-    #[ignore]
+    /// Test fact computation for remote CairoPIE files (aggregator PIEs from Paradex testnet)
+    /// - index_1_aggregator_14_1.zip, index_2_aggregator_14_1.zip: Aggregator PIEs
     #[rstest]
-    #[case("0.zip")]
-    async fn test_program_output(#[case] cairo_pie_path: &str) {
-        dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
-        let cairo_pie_path: PathBuf =
-            [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_path].iter().collect();
-        let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
-        let program_output = get_program_output(&cairo_pie, false).unwrap();
-        println!("the program output is {:?}", program_output);
+    #[case("index_1_aggregator_14_1.zip", "0x33e3f396ba1ff4214ea52123d74dae13dbdc75991af79c92eccaae10924fdac5", true)]
+    #[case("index_2_aggregator_14_1.zip", "0x29f1f10babbf18361fe4a813bccc294b3c3beda3f0448507b2491e10e500b8ea", true)]
+    #[tokio::test]
+    async fn test_fact_info_remote(
+        #[case] cairo_pie_file: &str,
+        #[case] expected_fact: &str,
+        #[case] is_aggregator: bool,
+    ) {
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load .env.test file");
+
+        // Download test artifacts from remote repository
+        let data_dir = setup_test_data(vec![(cairo_pie_file, false)]).await.expect("Failed to download test artifacts");
+
+        let cairo_pie = CairoPie::read_zip_file(&data_dir.path().join(cairo_pie_file)).unwrap();
+        let fact_info = get_fact_info(&cairo_pie, None, is_aggregator).unwrap();
+        assert_eq!(expected_fact, fact_info.fact.to_string());
+    }
+
+    /// Validate that program output extracted from aggregator CairoPIE matches stored test data.
+    /// This ensures the program_output files are correct and up-to-date.
+    #[rstest]
+    #[case("index_1_aggregator_14_1.zip", "program_output_batch_1.json")]
+    #[case("index_2_aggregator_14_1.zip", "program_output_batch_2.json")]
+    #[tokio::test]
+    async fn test_validate_program_output(#[case] cairo_pie_file: &str, #[case] output_file: &str) {
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load .env.test file");
+
+        // Download test artifacts from remote repository
+        let data_dir = setup_test_data(vec![(cairo_pie_file, false), (output_file, false)])
+            .await
+            .expect("Failed to download test artifacts");
+
+        // Read the CairoPIE file
+        let cairo_pie = CairoPie::read_zip_file(&data_dir.path().join(cairo_pie_file)).unwrap();
+
+        // Extract program output (is_aggregator = true for aggregator PIEs)
+        let program_output = get_program_output(&cairo_pie, true).unwrap();
+
+        // Convert to hex strings for comparison
+        let extracted_hex_strings: Vec<String> = program_output.iter().map(|f| format!("{:#x}", f)).collect();
+
+        // Read the stored program output file
+        let file_content = std::fs::read_to_string(data_dir.path().join(output_file))
+            .unwrap_or_else(|_| panic!("Failed to read {}", output_file));
+        let stored_hex_strings: Vec<String> =
+            serde_json::from_str(&file_content).unwrap_or_else(|_| panic!("Failed to parse {} as JSON", output_file));
+
+        // Validate they match
+        assert_eq!(
+            extracted_hex_strings.len(),
+            stored_hex_strings.len(),
+            "Program output length mismatch for {}: extracted {} vs stored {}",
+            output_file,
+            extracted_hex_strings.len(),
+            stored_hex_strings.len()
+        );
+
+        for (i, (extracted, stored)) in extracted_hex_strings.iter().zip(stored_hex_strings.iter()).enumerate() {
+            assert_eq!(
+                extracted, stored,
+                "Program output mismatch at index {} for {}: extracted {} vs stored {}",
+                i, output_file, extracted, stored
+            );
+        }
     }
 }
