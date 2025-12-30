@@ -18,7 +18,9 @@ mod u64_as_bson_int64 {
     where
         S: Serializer,
     {
-        // Safe to cast since block/batch numbers won't exceed i64::MAX
+        if *value > i64::MAX as u64 {
+            return Err(serde::ser::Error::custom(format!("internal_id {} exceeds i64::MAX", value)));
+        }
         serializer.serialize_i64(*value as i64)
     }
 
