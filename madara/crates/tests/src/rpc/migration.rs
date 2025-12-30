@@ -21,15 +21,30 @@
 //! # Running locally
 //!
 //! ```bash
-//! # 1. Start madara with a DB that needs migration
-//! ./madara --base-path /path/to/old-db --network mainnet --no-l1-sync
+//! # 1. Download the base DB fixture from GHCR (contains DB at version v8)
+//! docker pull ghcr.io/madara-alliance/db-fixture:v8
+//! mkdir -p /tmp/migration-test
+//! CONTAINER=$(docker create ghcr.io/madara-alliance/db-fixture:v8 /bin/true)
+//! docker cp "${CONTAINER}:/db.tar.gz" /tmp/db.tar.gz
+//! docker rm "${CONTAINER}"
+//! tar -xzf /tmp/db.tar.gz -C /tmp/migration-test
 //!
-//! # 2. Run migration tests (requires feature flag + test filter)
+//! # 2. Start madara with the old DB (migration runs automatically on startup)
+//! cargo run --bin madara --release -- \
+//!     --base-path /tmp/migration-test \
+//!     --network mainnet \
+//!     --no-l1-sync \
+//!     --rpc-port 9944
+//!
+//! # 3. Run migration tests (requires feature flag + test filter)
 //! cargo test -p mc-e2e-tests --features migration-tests rpc::migration -- --nocapture
 //! ```
 //!
-//! Note: The feature flag enables compilation of this module, and the test filter
-//! `rpc::migration` ensures only migration tests run (not other tests in the crate).
+//! The tests will verify that:
+//! - Madara successfully migrated the DB from v8 to the current version
+//! - RPC endpoints are functional after migration
+//! - State data (blocks, state roots) is intact
+//! - New fields like `migrated_compiled_classes` are properly returned
 //!
 //! # Environment Variables
 //!

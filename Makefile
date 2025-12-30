@@ -244,16 +244,15 @@ check:
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
 	@echo "Running cargo clippy..."
-	@cargo clippy --workspace --no-deps -- -D warnings
-	@cargo clippy --workspace --tests --no-deps -- -D warnings
+	@cargo clippy --workspace --all-features --no-deps -- -D warnings
+	@cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
 	@# TODO(mehul 14/11/2025, hotfix): This is a temporary fix to ensure that the madara is linted.
 	@# Madara does not belong to the toplevel workspace, so we need to lint it separately.
 	@# Remove this once we add madara back to toplevel workspace.
 	@echo "Running cargo clippy for madara..."
 	@cd madara && \
-	cargo clippy --workspace --no-deps -- -D warnings && \
-	cargo clippy --workspace --tests --no-deps -- -D warnings && \
-	cd ..
+	cargo clippy --workspace --all-features --no-deps -- -D warnings && \
+	cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
 	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
 	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore .
 	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
