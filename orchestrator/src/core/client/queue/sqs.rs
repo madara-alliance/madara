@@ -15,9 +15,11 @@ use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::{OnceCell, RwLock};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct InnerSQS(Client);
 
 impl InnerSQS {
@@ -142,10 +144,18 @@ impl InnerSQS {
     }
 }
 
-#[derive(Clone, Debug)]
+/// SQS client with queue URL caching.
+///
+/// Queue URLs are cached per QueueType to avoid redundant GetQueueUrl API calls.
+/// - For ARN-based identifiers: URLs are computed directly without any API call
+/// - For Name-based identifiers: URLs are fetched once and cached
+#[derive(Clone)]
 pub struct SQS {
     pub inner: InnerSQS,
     queue_template_identifier: AWSResourceIdentifier,
+    /// Cache for queue URLs, keyed by QueueType.
+    /// Each entry is lazily initialized on first use.
+    queue_url_cache: Arc<RwLock<HashMap<QueueType, Arc<OnceCell<String>>>>>,
 }
 
 impl SQS {
@@ -176,11 +186,60 @@ impl SQS {
         Self {
             inner: InnerSQS::new(&latest_aws_config),
             queue_template_identifier: args.queue_template_identifier.clone(),
+            queue_url_cache: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Get the queue URL, using cache when available.
+    ///
+    /// For ARN-based identifiers, the URL is computed directly without any API call.
+    /// For Name-based identifiers, the URL is fetched once via GetQueueUrl and cached.
+    async fn get_or_resolve_queue_url(&self, queue_type: &QueueType) -> Result<String, QueueError> {
+        // Fast path: check if URL is already cached
+        {
+            let cache = self.queue_url_cache.read().await;
+            if let Some(cell) = cache.get(queue_type) {
+                if let Some(url) = cell.get() {
+                    return Ok(url.clone());
+                }
+            }
+        }
+
+        // Slow path: get or create the OnceCell for this queue type
+        let cell = {
+            let mut cache = self.queue_url_cache.write().await;
+            cache.entry(queue_type.clone()).or_insert_with(|| Arc::new(OnceCell::new())).clone()
+        };
+
+        // Initialize the cell if not already done (handles concurrent access safely)
+        let url = cell
+            .get_or_try_init(|| async {
+                match &self.queue_template_identifier {
+                    AWSResourceIdentifier::ARN(arn) => {
+                        // No API call needed - construct URL directly from ARN
+                        self.inner.get_queue_url_from_arn(arn, queue_type)
+                    }
+                    AWSResourceIdentifier::Name(_) => {
+                        // API call needed - but only once per queue type
+                        let queue_name = self.get_queue_name(queue_type)?;
+                        self.inner.get_queue_url_from_client(&queue_name).await
+                    }
+                }
+            })
+            .await?;
+
+        Ok(url.clone())
     }
 
     pub fn client(&self) -> &Client {
         self.inner.client()
+    }
+
+    /// Returns the number of queue URLs currently cached.
+    /// This is primarily useful for testing to verify caching behavior.
+    #[cfg(test)]
+    pub async fn cached_url_count(&self) -> usize {
+        self.queue_url_cache.read().await.len()
     }
 
     /// get_queue_name - Get the queue name
@@ -206,13 +265,36 @@ impl SQS {
 
 #[async_trait]
 impl QueueClient for SQS {
+    /// TODO: if possible try to reuse the same producer which got created in the previous run
+    /// get_producer - Get the producer for the given queue
+    /// This function returns the producer for the given queue.
+    /// The producer is used to send messages to the queue.
+    async fn get_producer(&self, queue: QueueType) -> Result<SqsProducer, QueueError> {
+        let queue_url = self.get_or_resolve_queue_url(&queue).await?;
+
+        let producer =
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_producer().await?;
+        Ok(producer)
+    }
+
+    /// get_consumer - Get the consumer for the given queue
+    /// This function returns the consumer for the given queue.
+    /// The consumer is used to receive messages from the queue.
+    async fn get_consumer(&self, queue: QueueType) -> Result<SqsConsumer, QueueError> {
+        let queue_url = self.get_or_resolve_queue_url(&queue).await?;
+
+        let consumer =
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
+        Ok(consumer)
+    }
+
     /// **send_message** - Send a message to the queue with version metadata
     /// This function sends a message to standard SQS queues with version information
     /// stored in message attributes for version-based filtering on the consumer side.
     /// It returns a Result<(), QueueError> indicating whether the operation was successful or not
     async fn send_message(&self, queue: QueueType, payload: String, delay: Option<Duration>) -> Result<(), QueueError> {
         let queue_name = self.get_queue_name(&queue)?;
-        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+        let queue_url = self.get_or_resolve_queue_url(&queue).await?;
 
         let version_attribute = MessageAttributeValue::builder()
             .data_type("String")
@@ -239,30 +321,6 @@ impl QueueClient for SQS {
         Ok(())
     }
 
-    /// TODO: if possible try to reuse the same producer which got created in the previous run
-    /// get_producer - Get the producer for the given queue
-    /// This function returns the producer for the given queue.
-    /// The producer is used to send messages to the queue.
-    async fn get_producer(&self, queue: QueueType) -> Result<SqsProducer, QueueError> {
-        let queue_name = self.get_queue_name(&queue)?;
-        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
-
-        let producer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_producer().await?;
-        Ok(producer)
-    }
-
-    /// get_consumer - Get the consumer for the given queue
-    /// This function returns the consumer for the given queue.
-    /// The consumer is used to receive messages from the queue.
-    async fn get_consumer(&self, queue: QueueType) -> Result<SqsConsumer, QueueError> {
-        let queue_name = self.get_queue_name(&queue)?;
-        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
-
-        let consumer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
-        Ok(consumer)
-    }
     /// Consume a message from the queue with client-side version filtering.
     ///
     /// # Implementation Strategy
@@ -316,7 +374,7 @@ impl QueueClient for SQS {
     /// - If message is malformed (missing body/receipt_handle): Logs critical error and returns NoData
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
         let queue_name = self.get_queue_name(&queue)?;
-        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+        let queue_url = self.get_or_resolve_queue_url(&queue).await?;
 
         let messages = self
             .inner
@@ -452,8 +510,7 @@ impl QueueClient for SQS {
     async fn health_check(&self) -> Result<(), QueueError> {
         // Verify SQS accessibility by getting queue attributes
         // This checks both connectivity and permissions
-        let queue_name = self.get_queue_name(&QueueType::WorkerTrigger)?;
-        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+        let queue_url = self.get_or_resolve_queue_url(&QueueType::WorkerTrigger).await?;
 
         self.inner.client().get_queue_attributes().queue_url(&queue_url).send().await?;
 
@@ -461,8 +518,7 @@ impl QueueClient for SQS {
     }
 
     async fn get_queue_depth(&self, queue: QueueType) -> Result<usize, QueueError> {
-        let queue_name = self.get_queue_name(&queue)?;
-        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+        let queue_url = self.get_or_resolve_queue_url(&queue).await?;
 
         let attributes = self
             .inner

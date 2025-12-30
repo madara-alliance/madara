@@ -32,6 +32,7 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
                 snos_output_paths: vec![format!("{}/{}", internal_id, SNOS_OUTPUT_FILE_NAME)],
                 program_output_paths: vec![format!("{}/{}", internal_id, PROGRAM_OUTPUT_FILE_NAME)],
                 blob_data_paths: vec![format!("{}/{}", internal_id, BLOB_DATA_FILE_NAME)],
+                da_segment_paths: vec![],
                 tx_hashes: Vec::new(),
                 context: SettlementContext::Block(SettlementContextData {
                     to_settle: vec![internal_id],

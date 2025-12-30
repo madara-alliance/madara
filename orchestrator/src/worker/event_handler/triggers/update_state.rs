@@ -229,10 +229,11 @@ impl UpdateStateJobTrigger {
                 e
             })?;
 
-            // Add the snos output path, program output path and blob data path in state transition metadata
+            // Add the snos output path, program output path, blob data path, and da segment path in state transition metadata
             state_metadata.snos_output_paths.push(aggregator_metadata.snos_output_path.clone());
             state_metadata.program_output_paths.push(aggregator_metadata.program_output_path.clone());
             state_metadata.blob_data_paths.push(aggregator_metadata.blob_data_path.clone());
+            state_metadata.da_segment_paths.push(aggregator_metadata.da_segment_path.clone());
         }
 
         Ok(())

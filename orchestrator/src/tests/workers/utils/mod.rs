@@ -135,6 +135,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
                 snos_output_paths: vec![format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)],
                 program_output_paths: vec![format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)],
                 blob_data_paths: vec![format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)],
+                da_segment_paths: vec![],
                 tx_hashes: Vec::new(),
                 context: SettlementContext::Block(SettlementContextData {
                     to_settle: vec![block_number],
