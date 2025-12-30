@@ -43,8 +43,8 @@
 //! │  │ LEVEL 1+ - Sorted, non-overlapping SST files                          │   │
 //! │  │ Each level is ~10x larger than the previous                           │   │
 //! │  │                                                                       │   │
-//! │  │ soft_pending_compaction_bytes = 64GB  (slow writes)                   │   │
-//! │  │ hard_pending_compaction_bytes = 256GB (stop writes)                   │   │
+//! │  │ soft_pending_compaction_bytes = 6GB   (slow writes, for 20GB volume)  │   │
+//! │  │ hard_pending_compaction_bytes = 12GB  (stop writes, for 20GB volume)  │   │
 //! │  └───────────────────────────────────────────────────────────────────────┘   │
 //! └──────────────────────────────────────────────────────────────────────────────┘
 //! ```
@@ -214,6 +214,35 @@ pub struct RocksDBConfig {
 
     /// Write durability mode (WAL and fsync settings)
     pub write_mode: DbWriteMode,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WRITE STALL PREVENTION SETTINGS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// Maximum number of memtables (active + immutable) before write stall.
+    /// Higher values provide more buffer during write bursts but use more memory.
+    /// Default: 5 (allows 4 immutable memtables to queue while flushing)
+    pub max_write_buffer_number: i32,
+
+    /// Number of L0 files that triggers write slowdown.
+    /// When L0 file count reaches this, writes are throttled.
+    /// Default: 20
+    pub level_zero_slowdown_writes_trigger: i32,
+
+    /// Number of L0 files that triggers complete write stop.
+    /// When L0 file count reaches this, writes are blocked until compaction catches up.
+    /// Default: 36
+    pub level_zero_stop_writes_trigger: i32,
+
+    /// Soft limit for pending compaction bytes. When exceeded, writes slow down.
+    /// Should be set based on available disk space (recommended: ~30% of volume).
+    /// Default: 6 GiB (suitable for 20 GiB volumes)
+    pub soft_pending_compaction_bytes_limit: usize,
+
+    /// Hard limit for pending compaction bytes. When exceeded, writes stop completely.
+    /// Should be set based on available disk space (recommended: ~60% of volume).
+    /// Default: 12 GiB (suitable for 20 GiB volumes)
+    pub hard_pending_compaction_bytes_limit: usize,
 }
 
 impl Default for RocksDBConfig {
@@ -233,6 +262,12 @@ impl Default for RocksDBConfig {
             backup_dir: None,
             restore_from_latest_backup: false,
             write_mode: DbWriteMode::default(),
+            // Write stall prevention defaults (tuned for ~20 GiB volumes)
+            max_write_buffer_number: 5,
+            level_zero_slowdown_writes_trigger: 20,
+            level_zero_stop_writes_trigger: 36,
+            soft_pending_compaction_bytes_limit: 6 * GiB,   // ~30% of 20 GiB
+            hard_pending_compaction_bytes_limit: 12 * GiB,  // ~60% of 20 GiB
         }
     }
 }
@@ -285,18 +320,18 @@ impl Default for RocksDBConfig {
 ///                                      (writes completely blocked)
 /// ```
 ///
-/// ### Pending Compaction Limits
+/// ### Pending Compaction Limits (tuned for 20 GiB volumes)
 ///
 /// ```text
 /// Pending Compaction Bytes
 /// ════════════════════════
 ///
-/// 0 GB ─────────────────────────────────────────────────► ∞
-///      │              │                    │
-///      │              │                    │
-///   Normal         64 GB               256 GB
-///   Speed     (soft limit:          (hard limit:
-///              slowdown)              STOP)
+/// 0 GB ───────────────────────────────────────► ∞
+///      │              │              │
+///      │              │              │
+///   Normal          6 GB           12 GB
+///   Speed     (soft limit:    (hard limit:
+///              slowdown)        STOP)
 /// ```
 ///
 /// ### I/O Smoothing with bytes_per_sync
@@ -359,7 +394,7 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     //
     // Setting to 5 allows 4 immutable memtables to queue while flushing,
     // providing much more headroom during write bursts.
-    options.set_max_write_buffer_number(5);
+    options.set_max_write_buffer_number(config.max_write_buffer_number);
 
     // Merge 2 memtables before flushing to L0.
     // This reduces L0 file count (fewer files = less read amplification)
@@ -375,11 +410,11 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     //
     // Slowdown: Writes are artificially delayed (throttled to delayed_write_rate).
     // This gives compaction time to catch up without completely blocking.
-    options.set_level_zero_slowdown_writes_trigger(20);
+    options.set_level_zero_slowdown_writes_trigger(config.level_zero_slowdown_writes_trigger);
 
     // Stop: Writes are completely blocked until compaction reduces L0 files.
     // This is the "emergency brake" to prevent runaway disk usage.
-    options.set_level_zero_stop_writes_trigger(36);
+    options.set_level_zero_stop_writes_trigger(config.level_zero_stop_writes_trigger);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // WRITE STALL PREVENTION - PENDING COMPACTION LIMITS
@@ -387,13 +422,15 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // When compaction falls behind, uncompacted data accumulates.
     // These limits prevent unbounded growth of pending compaction work.
     //
-    // Soft limit: Start slowing writes when pending compaction exceeds 64GB.
+    // Soft limit: Start slowing writes when pending compaction exceeds the limit.
     // This provides early warning before hitting the hard limit.
-    options.set_soft_pending_compaction_bytes_limit(64 * GiB);
+    // Default: 6 GiB (tuned for ~20 GiB volumes, ~30% of capacity)
+    options.set_soft_pending_compaction_bytes_limit(config.soft_pending_compaction_bytes_limit);
 
-    // Hard limit: Stop writes completely at 256GB pending compaction.
-    // This is a safety valve for very large databases.
-    options.set_hard_pending_compaction_bytes_limit(256 * GiB);
+    // Hard limit: Stop writes completely when pending compaction is too high.
+    // This is a safety valve to prevent disk exhaustion.
+    // Default: 12 GiB (tuned for ~20 GiB volumes, ~60% of capacity)
+    options.set_hard_pending_compaction_bytes_limit(config.hard_pending_compaction_bytes_limit);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // I/O SMOOTHING
