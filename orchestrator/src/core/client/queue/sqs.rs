@@ -206,6 +206,31 @@ impl SQS {
 
 #[async_trait]
 impl QueueClient for SQS {
+    /// TODO: if possible try to reuse the same producer which got created in the previous run
+    /// get_producer - Get the producer for the given queue
+    /// This function returns the producer for the given queue.
+    /// The producer is used to send messages to the queue.
+    async fn get_producer(&self, queue: QueueType) -> Result<SqsProducer, QueueError> {
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        let producer =
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_producer().await?;
+        Ok(producer)
+    }
+
+    /// get_consumer - Get the consumer for the given queue
+    /// This function returns the consumer for the given queue.
+    /// The consumer is used to receive messages from the queue.
+    async fn get_consumer(&self, queue: QueueType) -> Result<SqsConsumer, QueueError> {
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        let consumer =
+            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
+        Ok(consumer)
+    }
+
     /// **send_message** - Send a message to the queue with version metadata
     /// This function sends a message to standard SQS queues with version information
     /// stored in message attributes for version-based filtering on the consumer side.
@@ -239,30 +264,6 @@ impl QueueClient for SQS {
         Ok(())
     }
 
-    /// TODO: if possible try to reuse the same producer which got created in the previous run
-    /// get_producer - Get the producer for the given queue
-    /// This function returns the producer for the given queue.
-    /// The producer is used to send messages to the queue.
-    async fn get_producer(&self, queue: QueueType) -> Result<SqsProducer, QueueError> {
-        let queue_name = self.get_queue_name(&queue)?;
-        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
-
-        let producer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_producer().await?;
-        Ok(producer)
-    }
-
-    /// get_consumer - Get the consumer for the given queue
-    /// This function returns the consumer for the given queue.
-    /// The consumer is used to receive messages from the queue.
-    async fn get_consumer(&self, queue: QueueType) -> Result<SqsConsumer, QueueError> {
-        let queue_name = self.get_queue_name(&queue)?;
-        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
-
-        let consumer =
-            SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: false }).build_consumer().await?;
-        Ok(consumer)
-    }
     /// Consume a message from the queue with client-side version filtering.
     ///
     /// # Implementation Strategy
