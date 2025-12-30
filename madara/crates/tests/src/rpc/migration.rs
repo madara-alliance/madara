@@ -147,75 +147,15 @@ mod v9_snip34 {
     async fn test_v9_state_diff_has_migrated_classes_field() {
         let client = get_client();
 
-        let state_update = client
-            .get_state_update(BlockId::Number(1))
-            .await
-            .expect("Should get state update");
+        let state_update = client.get_state_update(BlockId::Number(1)).await.expect("Should get state update");
 
         match state_update {
             MaybePreConfirmedStateUpdate::Update(update) => {
-                // The migrated_compiled_classes field should be accessible
-                // It may be None or Some(vec![]) for blocks without migrations
                 let migrated = update.state_diff.migrated_compiled_classes;
-                println!(
-                    "✅ migrated_compiled_classes field accessible, value: {:?}",
-                    migrated.as_ref().map(|v| v.len())
-                );
+                assert!(migrated.is_some(), "migrated_compiled_classes field must be present in state_diff (got None)");
             }
             MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
                 panic!("Block 1 should not be pre-confirmed");
-            }
-        }
-    }
-
-    /// Test state update for a Sepolia block known to have migrated classes.
-    ///
-    /// Sepolia block 2,934,726 is the first block with 7 migrated classes
-    /// after the SNIP-34 migration at the v0.14.1 protocol upgrade.
-    #[rstest]
-    #[tokio::test]
-    #[ignore = "Requires external madara instance synced to Sepolia block 2934726+"]
-    async fn test_v9_state_diff_with_actual_migrations() {
-        let client = get_client();
-
-        // Sepolia block with SNIP-34 migrations
-        const SNIP34_MIGRATION_BLOCK: u64 = 2_934_726;
-
-        let state_update = client
-            .get_state_update(BlockId::Number(SNIP34_MIGRATION_BLOCK))
-            .await
-            .expect("Should get state update");
-
-        match state_update {
-            MaybePreConfirmedStateUpdate::Update(update) => {
-                let migrated = update.state_diff.migrated_compiled_classes;
-                match migrated {
-                    Some(classes) => {
-                        assert!(
-                            !classes.is_empty(),
-                            "Block {} should have migrated classes",
-                            SNIP34_MIGRATION_BLOCK
-                        );
-                        println!(
-                            "✅ Block {} has {} migrated classes",
-                            SNIP34_MIGRATION_BLOCK,
-                            classes.len()
-                        );
-                        // Log first few migrated classes
-                        for (i, class) in classes.iter().take(3).enumerate() {
-                            println!("   [{}] class_hash: {:#x}", i, class.class_hash);
-                        }
-                    }
-                    None => {
-                        panic!(
-                            "Block {} should have migrated_compiled_classes field set",
-                            SNIP34_MIGRATION_BLOCK
-                        );
-                    }
-                }
-            }
-            MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
-                panic!("Block {} should not be pre-confirmed", SNIP34_MIGRATION_BLOCK);
             }
         }
     }

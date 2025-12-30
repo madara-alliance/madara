@@ -101,8 +101,7 @@ mod tests {
         let update = get_state_update(&rpc, BlockId::Number(0)).unwrap();
         let json = serde_json::to_string(&update).unwrap();
         assert!(
-            json.contains("\"migrated_compiled_classes\":[]")
-                || json.contains("\"migrated_compiled_classes\": []"),
+            json.contains("\"migrated_compiled_classes\":[]") || json.contains("\"migrated_compiled_classes\": []"),
             "Empty migrated_compiled_classes should be serialized in JSON, got: {}",
             json
         );

@@ -24,8 +24,8 @@ use mp_rpc::v0_9_0::{
 };
 use mp_rpc::{admin::BroadcastedDeclareTxnV0, v0_9_0::ExecutionStatus};
 use mp_state_update::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate, ReplacedClassItem,
-    StateDiff, StorageEntry,
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate,
+    ReplacedClassItem, StateDiff, StorageEntry,
 };
 use mp_transactions::{validated::TxTimestamp, InvokeTransaction, InvokeTransactionV0, Transaction};
 use mp_utils::service::ServiceContext;
@@ -691,15 +691,14 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
             deployed_contracts: vec![],
             replaced_classes: vec![],
             nonces: vec![],
-            // SNIP-34: Simulate migrated classes (v2 BLAKE hashes)
             migrated_compiled_classes: vec![
                 MigratedClassItem {
                     class_hash: class_hashes[0],
-                    compiled_class_hash: Felt::from_hex_unchecked("0xb1a4e000001"), // v2 BLAKE hash
+                    compiled_class_hash: Felt::from_hex_unchecked("0xb1a4e000001"),
                 },
                 MigratedClassItem {
                     class_hash: class_hashes[1],
-                    compiled_class_hash: Felt::from_hex_unchecked("0xb1a4e000002"), // v2 BLAKE hash
+                    compiled_class_hash: Felt::from_hex_unchecked("0xb1a4e000002"),
                 },
             ],
         },
