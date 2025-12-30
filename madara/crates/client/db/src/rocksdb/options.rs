@@ -218,7 +218,6 @@ pub struct RocksDBConfig {
     // ═══════════════════════════════════════════════════════════════════════════
     // WRITE STALL PREVENTION SETTINGS
     // ═══════════════════════════════════════════════════════════════════════════
-
     /// Maximum number of memtables (active + immutable) before write stall.
     /// Higher values provide more buffer during write bursts but use more memory.
     /// Default: 5 (allows 4 immutable memtables to queue while flushing)
@@ -266,8 +265,8 @@ impl Default for RocksDBConfig {
             max_write_buffer_number: 5,
             level_zero_slowdown_writes_trigger: 20,
             level_zero_stop_writes_trigger: 36,
-            soft_pending_compaction_bytes_limit: 6 * GiB,   // ~30% of 20 GiB
-            hard_pending_compaction_bytes_limit: 12 * GiB,  // ~60% of 20 GiB
+            soft_pending_compaction_bytes_limit: 6 * GiB,  // ~30% of 20 GiB
+            hard_pending_compaction_bytes_limit: 12 * GiB, // ~60% of 20 GiB
         }
     }
 }

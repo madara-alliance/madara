@@ -157,7 +157,6 @@ pub struct BackendParams {
     // ═══════════════════════════════════════════════════════════════════════════
     // WRITE STALL PREVENTION SETTINGS
     // ═══════════════════════════════════════════════════════════════════════════
-
     /// Maximum number of memtables (active + immutable) before write stall.
     /// Higher values provide more buffer during write bursts but use more memory.
     /// Increase if you see stalls due to memtable count.
