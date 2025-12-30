@@ -127,6 +127,8 @@ mod tests {
     async fn test_da_segment_kzg_verification(#[case] cairo_pie_file: &str, #[case] da_segment_file: &str) {
         use crate::worker::utils::fact_info::get_program_output;
 
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load .env.test file");
+
         // Download test artifacts from remote repository
         let data_dir = setup_test_data(vec![(cairo_pie_file, false), (da_segment_file, false)])
             .await

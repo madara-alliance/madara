@@ -320,6 +320,8 @@ mod tests {
         #[case] expected_fact: &str,
         #[case] is_aggregator: bool,
     ) {
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load .env.test file");
+
         // Download test artifacts from remote repository
         let data_dir = setup_test_data(vec![(cairo_pie_file, false)]).await.expect("Failed to download test artifacts");
 
@@ -335,6 +337,8 @@ mod tests {
     #[case("index_2_aggregator_14_1.zip", "program_output_batch_2.json")]
     #[tokio::test]
     async fn test_validate_program_output(#[case] cairo_pie_file: &str, #[case] output_file: &str) {
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load .env.test file");
+
         // Download test artifacts from remote repository
         let data_dir = setup_test_data(vec![(cairo_pie_file, false), (output_file, false)])
             .await

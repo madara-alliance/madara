@@ -222,6 +222,8 @@ async fn test_process_job_l2_with_da_segment(
     use cairo_vm::Felt252;
     use orchestrator_utils::test_utils::setup_test_data;
 
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load .env.test file");
+
     // Download test artifacts from remote repository
     let da_segment_file = format!("da_blob_index_{}.json", batch_index);
     let program_output_file = format!("program_output_batch_{}.json", batch_index);
