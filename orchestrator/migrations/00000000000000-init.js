@@ -1,14 +1,13 @@
 module.exports = {
   async up(db) {
     // Create indexes for the 'jobs' collection
-    await db.collection("jobs").createIndexes([
-      { key: { id: 1 } },
-      { key: { job_type: 1, internal_id: -1 }, unique: true },
-      { key: { job_type: 1, status: 1, internal_id: -1 } },
-      { key: { status: 1 } },
-      // primarily for get_jobs_without_successor
-      { key: { job_type: 1, status: 1 } },
-    ]);
+    const jobs = db.collection("jobs");
+    await jobs.createIndex({ id: 1 });
+    await jobs.createIndex({ job_type: 1, internal_id: -1 }, { unique: true });
+    await jobs.createIndex({ job_type: 1, status: 1, internal_id: -1 });
+    await jobs.createIndex({ status: 1 });
+    // primarily for get_jobs_without_successor
+    await jobs.createIndex({ job_type: 1, status: 1 });
   },
 
   async down(db) {

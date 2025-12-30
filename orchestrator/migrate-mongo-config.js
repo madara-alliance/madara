@@ -4,7 +4,7 @@ const config = {
   mongodb: {
     // TODO Change (or review) the url to your MongoDB:
     url:
-      process.env.MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URLDB_CONNECTION_URL ||
+      process.env.MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL ||
       "mongodb://localhost:27017",
 
     // TODO Change this to your database name:
@@ -12,10 +12,8 @@ const config = {
       process.env.MADARA_ORCHESTRATOR_DATABASE_NAME || "orchestrator",
 
     options: {
-      useNewUrlParser: true, // removes a deprecation warning when connecting
-      useUnifiedTopology: true, // removes a deprecating warning when connecting
-      //   connectTimeoutMS: 3600000, // increase connection timeout to 1 hour
-      //   socketTimeoutMS: 3600000, // increase socket timeout to 1 hour
+      // connectTimeoutMS: 3600000, // increase connection timeout to 1 hour
+      // socketTimeoutMS: 3600000, // increase socket timeout to 1 hour
     },
   },
 

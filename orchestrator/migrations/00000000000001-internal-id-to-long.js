@@ -1,3 +1,5 @@
+const { Long } = require("mongodb");
+
 module.exports = {
   async up(db) {
     // Migration: Convert internal_id from String to Long (NumberLong)
@@ -38,7 +40,7 @@ module.exports = {
       // Use Long() with string to avoid precision loss warnings
       await jobsCollection.updateOne(
         { _id: doc._id },
-        { $set: { internal_id: Long(internalIdStr) } },
+        { $set: { internal_id: Long.fromString(internalIdStr) } },
       );
 
       updatedCount++;
