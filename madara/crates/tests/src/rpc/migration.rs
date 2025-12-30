@@ -22,11 +22,14 @@
 //!
 //! ```bash
 //! # 1. Start madara with a DB that needs migration
-//! ./madara --base-path /path/to/old-db --network sepolia --no-l1-sync
+//! ./madara --base-path /path/to/old-db --network mainnet --no-l1-sync
 //!
-//! # 2. Run migration tests (requires feature flag)
-//! cargo test -p mc-e2e-tests --features migration-tests -- --nocapture
+//! # 2. Run migration tests (requires feature flag + test filter)
+//! cargo test -p mc-e2e-tests --features migration-tests rpc::migration -- --nocapture
 //! ```
+//!
+//! Note: The feature flag enables compilation of this module, and the test filter
+//! `rpc::migration` ensures only migration tests run (not other tests in the crate).
 //!
 //! # Environment Variables
 //!
