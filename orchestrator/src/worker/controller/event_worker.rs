@@ -125,7 +125,7 @@ impl EventWorker {
         let start = Instant::now();
 
         loop {
-            match self.config.clone().queue().consume_message_from_queue(self.queue_type.clone()).await {
+            match self.config.queue().consume_message_from_queue(self.queue_type.clone()).await {
                 Ok(delivery) => return Ok(Some(delivery)),
                 Err(crate::core::client::queue::QueueError::ErrorFromQueueError(omniqueue::QueueError::NoData)) => {
                     if start.elapsed() > QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS {
