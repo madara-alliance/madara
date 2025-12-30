@@ -105,7 +105,7 @@ async fn test_process_job() {
                 services.config,
                 &mut JobItem {
                     id: Uuid::default(),
-                    internal_id: "0".into(),
+                    internal_id: 0,
                     job_type: JobType::ProofCreation,
                     status: JobStatus::Created,
                     external_id: String::new().into(),

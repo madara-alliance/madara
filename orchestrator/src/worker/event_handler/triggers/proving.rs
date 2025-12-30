@@ -104,7 +104,7 @@ impl JobTrigger for ProvingJobTrigger {
             debug!(job_id = %snos_job.internal_id, "Creating proof creation job for SNOS job");
             match JobHandlerService::create_job(
                 JobType::ProofCreation,
-                snos_job.internal_id.clone(),
+                snos_job.internal_id,
                 proving_metadata,
                 config.clone(),
             )

@@ -201,10 +201,10 @@ impl DAJobHandler {
 
 #[async_trait]
 impl JobHandlerTrait for DAJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::DataSubmission, internal_id);
 
-        let job_item = JobItem::create(internal_id.clone(), JobType::DataSubmission, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id, JobType::DataSubmission, JobStatus::Created, metadata);
 
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::DataSubmission, internal_id);
         Ok(job_item)
@@ -216,7 +216,7 @@ impl JobHandlerTrait for DAJobHandler {
 
         // Get DA-specific metadata
         let mut da_metadata: DaMetadata = job.metadata.specific.clone().try_into()?;
-        let block_no = job.internal_id.parse::<u64>()?;
+        let block_no = job.internal_id;
 
         let state_update = config
             .madara_rpc_client()

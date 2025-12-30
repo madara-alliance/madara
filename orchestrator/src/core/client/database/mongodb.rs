@@ -417,12 +417,12 @@ impl DatabaseClient for MongoDbClient {
 
     async fn get_job_by_internal_id_and_type(
         &self,
-        internal_id: &str,
+        internal_id: u64,
         job_type: &JobType,
     ) -> Result<Option<JobItem>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
-            "internal_id": internal_id,
+            "internal_id": internal_id as i64,
             "job_type": bson::to_bson(&job_type)?,
         };
         debug!("Fetched job by internal ID and type");
@@ -489,22 +489,12 @@ impl DatabaseClient for MongoDbClient {
                 }
             },
             doc! {
-                "$addFields": {
-                    "numeric_internal_id": { "$toLong": "$internal_id" }
-                }
-            },
-            doc! {
                 "$sort": {
-                    "numeric_internal_id": -1
+                    "internal_id": -1
                 }
             },
             doc! {
                 "$limit": 1
-            },
-            doc! {
-                "$project": {
-                    "numeric_internal_id": 0  // Remove the temporary field
-                }
             },
         ];
 
@@ -603,18 +593,13 @@ impl DatabaseClient for MongoDbClient {
         &self,
         job_type: JobType,
         job_status: JobStatus,
-        internal_id: String,
+        internal_id: u64,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
             "status": bson::to_bson(&job_status)?,
-            "$expr": {
-                "$gt": [
-                    { "$toInt": "$internal_id" },  // Convert stored string to number
-                    { "$toInt": &internal_id }     // Convert input string to number
-                ]
-            }
+            "internal_id": { "$gt": internal_id as i64 }
         };
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
         debug!("Fetched jobs after internal ID by job type");
@@ -1147,11 +1132,11 @@ impl DatabaseClient for MongoDbClient {
                 }
             },
             // Stage 2: Lookup to find corresponding SNOS jobs
-            // We look for jobs where internal_id matches the index (as string)
+            // We look for jobs where internal_id matches the index
             doc! {
                 "$lookup": {
                     "from": JOBS_COLLECTION,
-                    "let": { "index": { "$toString": "$index" } },
+                    "let": { "index": "$index" },
                     "pipeline": [
                         {
                             "$match": {
@@ -1218,11 +1203,9 @@ impl DatabaseClient for MongoDbClient {
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
             "status": bson::to_bson(&status)?,
-            "$expr": {
-                "$and": [
-                    { "$gte": [{ "$toInt": "$internal_id" }, gte as i64 ] },
-                    { "$lte": [{ "$toInt": "$internal_id" }, lte as i64 ] }
-                ]
+            "internal_id": {
+                "$gte": gte as i64,
+                "$lte": lte as i64
             }
         };
 
@@ -1291,22 +1274,12 @@ impl DatabaseClient for MongoDbClient {
                 }
             },
             doc! {
-                "$addFields": {
-                    "numeric_internal_id": { "$toLong": "$internal_id" }
-                }
-            },
-            doc! {
                 "$sort": {
-                    "numeric_internal_id": 1
+                    "internal_id": 1
                 }
             },
             doc! {
                 "$limit": 1
-            },
-            doc! {
-                "$project": {
-                    "numeric_internal_id": 0  // Remove the temporary field
-                }
             },
         ];
 

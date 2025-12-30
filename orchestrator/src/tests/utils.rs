@@ -74,7 +74,7 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
 
     JobItem {
         id: Uuid::new_v4(),
-        internal_id: internal_id.to_string(),
+        internal_id,
         job_type,
         status: job_status,
         external_id: ExternalId::Number(0),

@@ -64,7 +64,7 @@ pub trait DatabaseClient: Send + Sync {
     /// * `job_type` - The type of job to search for
     async fn get_job_by_internal_id_and_type(
         &self,
-        internal_id: &str,
+        internal_id: u64,
         job_type: &JobType,
     ) -> Result<Option<JobItem>, DatabaseError>;
 
@@ -115,7 +115,7 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         job_type: JobType,
         job_status: JobStatus,
-        internal_id: String,
+        internal_id: u64,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get all jobs by types and statuses

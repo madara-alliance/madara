@@ -21,9 +21,9 @@ pub struct ProvingJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for ProvingJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::ProofCreation, internal_id);
-        let job_item = JobItem::create(internal_id.clone(), JobType::ProofCreation, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id, JobType::ProofCreation, JobStatus::Created, metadata);
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::ProofCreation, internal_id);
         Ok(job_item)
     }

@@ -34,7 +34,7 @@ struct StateUpdateArtifacts {
 pub struct StateUpdateJobHandler;
 #[async_trait]
 impl JobHandlerTrait for StateUpdateJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::StateTransition, internal_id);
 
         // Extract state transition metadata
@@ -48,7 +48,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             error!("Missing required paths in metadata");
             return Err(JobError::Other(OtherError(eyre!("Missing required paths in metadata"))));
         }
-        let job_item = JobItem::create(internal_id.clone(), JobType::StateTransition, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id, JobType::StateTransition, JobStatus::Created, metadata);
 
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::StateTransition, internal_id);
 
@@ -123,14 +123,13 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             }
 
             // Get the artifacts for the block/batch
-            let snos_output =
-                match fetch_snos_for_block(internal_id.clone(), i, config.clone(), &snos_output_paths).await {
-                    Ok(snos_output) => Some(snos_output),
-                    Err(err) => {
-                        debug!("failed to fetch snos output, proceeding without it: {}", err);
-                        None
-                    }
-                };
+            let snos_output = match fetch_snos_for_block(*internal_id, i, config.clone(), &snos_output_paths).await {
+                Ok(snos_output) => Some(snos_output),
+                Err(err) => {
+                    debug!("failed to fetch snos output, proceeding without it: {}", err);
+                    None
+                }
+            };
             let program_output = fetch_program_output_for_block(i, config.clone(), &program_output_paths).await?;
             let blob_data = match config.layer() {
                 Layer::L2 => fetch_blob_data_for_batch(i, config.clone(), &blob_data_paths).await?,
@@ -226,7 +225,7 @@ impl StateUpdateJobHandler {
         config: &Arc<Config>,
         nums_settled: &[u64],
         job_id: &Uuid,
-        internal_id: &str,
+        internal_id: &u64,
     ) -> Result<JobVerificationStatus, JobError> {
         // verify that the last settled block is indeed the one we expect to be
         let last_settled = nums_settled.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;

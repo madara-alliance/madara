@@ -153,7 +153,7 @@ pub async fn fetch_blob_data_for_block(
 /// * `Result<StarknetOsOutput, JobError>` - A result containing the SNOS output or an error.
 ///
 pub async fn fetch_snos_for_block(
-    internal_id: String,
+    internal_id: u64,
     index: usize,
     config: Arc<Config>,
     snos_output_paths: &[String],

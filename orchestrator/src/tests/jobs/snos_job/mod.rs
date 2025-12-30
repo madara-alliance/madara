@@ -101,7 +101,7 @@ async fn test_process_job() -> color_eyre::Result<()> {
 
     let mut job_item = JobItem {
         id: Uuid::new_v4(),
-        internal_id: "1".into(),
+        internal_id: 1,
         job_type: JobType::SnosRun,
         status: JobStatus::Created,
         external_id: String::new().into(),

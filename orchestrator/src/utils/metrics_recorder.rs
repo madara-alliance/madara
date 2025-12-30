@@ -30,7 +30,7 @@ impl MetricsRecorder {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             KeyValue::new("operation_type", "process_job"),
-            KeyValue::new("internal_id", job.internal_id.clone()),
+            KeyValue::new("internal_id", job.internal_id.to_string()),
         ];
 
         // Record queue wait time
@@ -50,7 +50,7 @@ impl MetricsRecorder {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             KeyValue::new("retry_reason", retry_reason.to_string()),
-            KeyValue::new("internal_id", job.internal_id.clone()),
+            KeyValue::new("internal_id", job.internal_id.to_string()),
         ];
 
         ORCHESTRATOR_METRICS.job_retry_count.add(1.0, &attributes);
@@ -72,7 +72,7 @@ impl MetricsRecorder {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             KeyValue::new("operation_job_status", "Completed"),
-            KeyValue::new("internal_id", job.internal_id.clone()),
+            KeyValue::new("internal_id", job.internal_id.to_string()),
         ];
 
         // Record E2E latency
@@ -95,7 +95,7 @@ impl MetricsRecorder {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             KeyValue::new("failure_reason", failure_reason.to_string()),
-            KeyValue::new("internal_id", job.internal_id.clone()),
+            KeyValue::new("internal_id", job.internal_id.to_string()),
         ];
 
         ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
@@ -107,7 +107,7 @@ impl MetricsRecorder {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             KeyValue::new("timeout_type", "verification"),
-            KeyValue::new("internal_id", job.internal_id.clone()),
+            KeyValue::new("internal_id", job.internal_id.to_string()),
         ];
 
         ORCHESTRATOR_METRICS.job_timeout_count.add(1.0, &attributes);
@@ -118,7 +118,7 @@ impl MetricsRecorder {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             KeyValue::new("final_retry_count", retry_count.to_string()),
-            KeyValue::new("internal_id", job.internal_id.clone()),
+            KeyValue::new("internal_id", job.internal_id.to_string()),
         ];
 
         ORCHESTRATOR_METRICS.job_abandoned_count.add(1.0, &attributes);
@@ -128,7 +128,7 @@ impl MetricsRecorder {
     pub fn record_dependency_wait(job: &JobItem, wait_time_seconds: f64) {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
-            KeyValue::new("internal_id", job.internal_id.clone()),
+            KeyValue::new("internal_id", job.internal_id.to_string()),
         ];
 
         ORCHESTRATOR_METRICS.dependency_wait_time.record(wait_time_seconds, &attributes);
@@ -182,7 +182,7 @@ impl MetricsRecorder {
     pub fn record_orphaned_job(job: &JobItem) {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
-            KeyValue::new("internal_id", job.internal_id.clone()),
+            KeyValue::new("internal_id", job.internal_id.to_string()),
         ];
 
         ORCHESTRATOR_METRICS.orphaned_jobs.add(1.0, &attributes);

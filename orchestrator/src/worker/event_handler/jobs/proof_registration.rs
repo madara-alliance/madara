@@ -18,9 +18,9 @@ pub struct RegisterProofJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for RegisterProofJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::ProofRegistration, internal_id);
-        let job_item = JobItem::create(internal_id.clone(), JobType::ProofRegistration, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id, JobType::ProofRegistration, JobStatus::Created, metadata);
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::ProofRegistration, internal_id);
         Ok(job_item)
     }
@@ -56,7 +56,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
         // Format proof for submission
         let formatted_proof = format!("{{\n\t\"proof\": {}\n}}", proof);
 
-        let task_id = job.internal_id.clone();
+        let task_id = job.internal_id.to_string();
 
         // Submit proof for L2 verification
         let external_id = config

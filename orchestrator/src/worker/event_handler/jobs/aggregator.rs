@@ -23,9 +23,9 @@ pub struct AggregatorJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for AggregatorJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::Aggregator, internal_id);
-        let job_item = JobItem::create(internal_id.clone(), JobType::Aggregator, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id, JobType::Aggregator, JobStatus::Created, metadata);
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::Aggregator, internal_id);
         Ok(job_item)
     }
@@ -138,7 +138,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 // Store the program output in storage
                 AggregatorJobHandler::store_program_output(
                     &config,
-                    job.internal_id.clone(),
+                    job.internal_id,
                     program_output,
                     &metadata.program_output_path,
                 )
@@ -222,18 +222,18 @@ impl AggregatorJobHandler {
 
     pub async fn store_program_output(
         config: &Arc<Config>,
-        batch_index: String,
+        batch_index: u64,
         program_output: Vec<Felt>,
         storage_path: &str,
     ) -> Result<(), SnosError> {
         let program_output: Vec<[u8; 32]> = program_output.iter().map(|f| f.to_bytes_be()).collect();
-        let encoded_data = bincode::serialize(&program_output).map_err(|e| SnosError::ProgramOutputUnserializable {
-            internal_id: batch_index.clone(),
-            message: e.to_string(),
-        })?;
-        config.storage().put_data(encoded_data.into(), storage_path).await.map_err(|e| {
-            SnosError::ProgramOutputUnstorable { internal_id: batch_index.clone(), message: e.to_string() }
-        })?;
+        let encoded_data = bincode::serialize(&program_output)
+            .map_err(|e| SnosError::ProgramOutputUnserializable { internal_id: batch_index, message: e.to_string() })?;
+        config
+            .storage()
+            .put_data(encoded_data.into(), storage_path)
+            .await
+            .map_err(|e| SnosError::ProgramOutputUnstorable { internal_id: batch_index, message: e.to_string() })?;
         Ok(())
     }
 }
