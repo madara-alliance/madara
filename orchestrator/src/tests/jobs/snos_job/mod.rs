@@ -25,7 +25,7 @@ async fn test_create_job() {
     let metadata =
         JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) };
 
-    let job = SnosJobHandler.create_job(String::from("0"), metadata).await;
+    let job = SnosJobHandler.create_job(0, metadata).await;
 
     assert!(job.is_ok());
     let job = job.unwrap();

@@ -216,8 +216,7 @@ async fn create_job_job_handler_returns_error() {
     ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
 
     // Verify that create_job returns an error
-    let result =
-        JobHandlerService::create_job(job_type.clone(), internal_id.clone(), metadata, services.config.clone()).await;
+    let result = JobHandlerService::create_job(job_type.clone(), internal_id, metadata, services.config.clone()).await;
     assert!(result.is_err(), "create_job should return an error when job handler fails");
 
     // Verify the error is the one we expect

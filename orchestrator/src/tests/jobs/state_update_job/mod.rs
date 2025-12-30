@@ -223,7 +223,7 @@ async fn create_job_works() {
         }),
     };
 
-    let job = StateUpdateJobHandler.create_job(String::from("0"), metadata).await;
+    let job = StateUpdateJobHandler.create_job(0, metadata).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
@@ -360,7 +360,7 @@ async fn process_job_works_unit_test() {
     // Add process attempt to common metadata
     metadata.common.process_attempt_no = 0;
 
-    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    let mut job = StateUpdateJobHandler.create_job(0, metadata).await.unwrap();
     assert_eq!(StateUpdateJobHandler.process_job(services.config, &mut job).await.unwrap(), "651056".to_string())
 }
 
@@ -403,7 +403,7 @@ async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[ca
         }),
     };
 
-    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    let mut job = StateUpdateJobHandler.create_job(0, metadata).await.unwrap();
     let status = StateUpdateJobHandler.process_job(services.config, &mut job).await;
     assert!(status.is_err());
 
@@ -462,7 +462,7 @@ async fn process_job_invalid_input_gap_panics() {
         }),
     };
 
-    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    let mut job = StateUpdateJobHandler.create_job(0, metadata).await.unwrap();
     let response = StateUpdateJobHandler.process_job(services.config, &mut job).await;
 
     assert_matches!(response,

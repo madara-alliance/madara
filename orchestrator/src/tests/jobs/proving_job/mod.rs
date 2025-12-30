@@ -33,7 +33,7 @@ async fn test_create_job() {
         specific: JobSpecificMetadata::Proving(ProvingMetadata::default()),
     };
 
-    let job = ProvingJobHandler.create_job(String::from("0"), metadata).await;
+    let job = ProvingJobHandler.create_job(0, metadata).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
