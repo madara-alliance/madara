@@ -144,7 +144,7 @@ mod v9_snip34 {
     #[rstest]
     #[tokio::test]
     #[ignore = "Requires external madara instance on port 9944"]
-    async fn test_v9_state_diff_has_migrated_classes_field() {
+    async fn test_migration_validation_v9_migrated_classes_field() {
         let client = get_client();
 
         let state_update = client.get_state_update(BlockId::Number(1)).await.expect("Should get state update");
