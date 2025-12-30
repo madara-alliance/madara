@@ -421,6 +421,7 @@ impl DatabaseClient for MongoDbClient {
         job_type: &JobType,
     ) -> Result<Option<JobItem>, DatabaseError> {
         let start = Instant::now();
+        // Cast u64 to i64 because BSON only supports signed 64-bit integers
         let filter = doc! {
             "internal_id": internal_id as i64,
             "job_type": bson::to_bson(&job_type)?,
@@ -596,6 +597,7 @@ impl DatabaseClient for MongoDbClient {
         internal_id: u64,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
+        // Cast u64 to i64 because BSON only supports signed 64-bit integers
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
             "status": bson::to_bson(&job_status)?,
@@ -1200,6 +1202,7 @@ impl DatabaseClient for MongoDbClient {
         lte: u64,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
+        // Cast u64 to i64 because BSON only supports signed 64-bit integers
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
             "status": bson::to_bson(&status)?,

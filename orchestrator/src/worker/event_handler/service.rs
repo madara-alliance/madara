@@ -98,7 +98,7 @@ impl JobHandlerService {
 
         // Update job status tracking metrics
         ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            internal_id as u64,
+            internal_id,
             &job_type,
             &JobStatus::Created,
             &job_item.id.to_string(),
@@ -126,21 +126,21 @@ impl JobHandlerService {
         // For Aggregator and StateUpdate jobs, fetch the actual block numbers from the batch
         let block_number = match job_type {
             JobType::StateTransition => {
-                match config.database().get_aggregator_batches_by_indexes(vec![internal_id as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
                     _ => internal_id as f64,
                 }
             }
             JobType::Aggregator => {
                 // Fetch the batch from the database
-                match config.database().get_aggregator_batches_by_indexes(vec![internal_id as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
                     _ => internal_id as f64,
                 }
             }
             JobType::SnosRun => {
                 // Fetch the batch from the database
-                match config.database().get_snos_batches_by_indices(vec![internal_id as u64]).await {
+                match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
                     _ => internal_id as f64,
                 }
