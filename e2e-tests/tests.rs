@@ -40,7 +40,7 @@ use uuid::Uuid;
 /// Expected DB state struct
 #[derive(PartialEq, Debug)]
 struct ExpectedDBState {
-    internal_id: String,
+    internal_id: u64,
     job_type: JobType,
     job_status: JobStatus,
     version: i32,
@@ -206,15 +206,17 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
         .expect("❌ After Batching state DB state assertion failed.");
     println!("✅ Batching state DB state assertion passed");
 
+    let l2_block_number_u64: u64 = l2_block_number.parse().expect("Invalid block number");
+
     let expected_state_after_snos_job = ExpectedDBState {
-        internal_id: l2_block_number.clone(),
+        internal_id: l2_block_number_u64,
         job_type: JobType::SnosRun,
         job_status: JobStatus::Completed,
         version: 4,
     };
     let test_result = wait_for_db_state(
         Duration::from_secs(1500),
-        l2_block_number.clone(),
+        l2_block_number_u64,
         setup_config.mongo_db_instance(),
         expected_state_after_snos_job,
     )
@@ -225,14 +227,14 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     // Check 2: Check that the Proof Creation Jobs have been completed correctly
     // We check for the first block in the batch
     let expected_state_after_proving_job = ExpectedDBState {
-        internal_id: l2_block_number.clone(),
+        internal_id: l2_block_number_u64,
         job_type: JobType::ProofCreation,
         job_status: JobStatus::Completed,
         version: 0, // These are pre-created jobs with version 0
     };
     let test_result = wait_for_db_state(
         Duration::from_secs(1500),
-        l2_block_number.clone(),
+        l2_block_number_u64,
         setup_config.mongo_db_instance(),
         expected_state_after_proving_job,
     )
@@ -241,36 +243,24 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     println!("✅ ProofCreation Job state DB state assertion passed");
 
     // Check 3: Check that the Aggregator Job has been completed correctly
-    let expected_state_after_agg_job = ExpectedDBState {
-        internal_id: String::from("1"),
-        job_type: JobType::Aggregator,
-        job_status: JobStatus::Completed,
-        version: 4,
-    };
-    let test_result = wait_for_db_state(
-        Duration::from_secs(2400),
-        String::from("1"),
-        setup_config.mongo_db_instance(),
-        expected_state_after_agg_job,
-    )
-    .await;
+    let expected_state_after_agg_job =
+        ExpectedDBState { internal_id: 1, job_type: JobType::Aggregator, job_status: JobStatus::Completed, version: 4 };
+    let test_result =
+        wait_for_db_state(Duration::from_secs(2400), 1, setup_config.mongo_db_instance(), expected_state_after_agg_job)
+            .await;
     assert!(test_result.is_ok(), "❌ After Aggregator Job state DB state assertion failed.");
     println!("✅ Aggregator Job state DB state assertion passed");
 
     // Check 4: Check that the State Transition Job has been completed correctly
     let expected_state_after_da_job = ExpectedDBState {
-        internal_id: String::from("1"),
+        internal_id: 1,
         job_type: JobType::StateTransition,
         job_status: JobStatus::Completed,
         version: 4,
     };
-    let test_result = wait_for_db_state(
-        Duration::from_secs(1500),
-        String::from("1"),
-        setup_config.mongo_db_instance(),
-        expected_state_after_da_job,
-    )
-    .await;
+    let test_result =
+        wait_for_db_state(Duration::from_secs(1500), 1, setup_config.mongo_db_instance(), expected_state_after_da_job)
+            .await;
     assert!(test_result.is_ok(), "❌ After Update State Job state DB state assertion failed.");
     println!("✅ UpdateState Job state DB state assertion passed");
 }
@@ -278,17 +268,16 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
 /// Function to check db for expected state continuously
 async fn wait_for_db_state(
     timeout: Duration,
-    l2_block_for_testing: String,
+    l2_block_for_testing: u64,
     mongo_db_server: &MongoDbServer,
     expected_db_state: ExpectedDBState,
 ) -> Result<(), String> {
     let start = Instant::now();
 
     while start.elapsed() < timeout {
-        let db_state =
-            get_job_state_by_type(mongo_db_server, l2_block_for_testing.clone(), expected_db_state.job_type.clone())
-                .await
-                .expect("Failed to get database state");
+        let db_state = get_job_state_by_type(mongo_db_server, l2_block_for_testing, expected_db_state.job_type.clone())
+            .await
+            .expect("Failed to get database state");
 
         match db_state {
             Some(db_state) => {
@@ -335,12 +324,13 @@ async fn wait_for_batch_state(timeout: Duration, index: u64, mongo_db_server: &M
 /// Fetch the job from the database
 async fn get_job_state_by_type(
     mongo_db_server: &MongoDbServer,
-    l2_block_for_testing: String,
+    l2_block_for_testing: u64,
     job_type: JobType,
 ) -> color_eyre::Result<Option<ExpectedDBState>> {
     let mongo_db_client = get_mongo_db_client(mongo_db_server).await;
     let collection = mongo_db_client.database("orchestrator").collection::<JobItem>(JOBS_COLLECTION);
-    let filter = doc! { "internal_id": l2_block_for_testing, "job_type" : mongodb::bson::to_bson(&job_type)? };
+    // Cast u64 to i64 because BSON only supports signed 64-bit integers
+    let filter = doc! { "internal_id": l2_block_for_testing as i64, "job_type" : mongodb::bson::to_bson(&job_type)? };
     let job = collection.find_one(filter, None).await?;
     match job {
         Some(job) => Ok(Some(ExpectedDBState {
@@ -572,7 +562,7 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
 
     let job_item = JobItem {
         id: Uuid::new_v4(),
-        internal_id: l2_block_number.clone(),
+        internal_id: l2_block_number.parse().expect("Invalid block number"),
         job_type: JobType::SnosRun,
         status: JobStatus::Created,
         external_id: ExternalId::Number(0),
@@ -611,7 +601,7 @@ pub async fn put_job_data_in_db_da(mongo_db: &MongoDbServer, l2_block_number: St
 
     let job_item = JobItem {
         id: Uuid::new_v4(),
-        internal_id: (l2_block_number.parse::<u32>().unwrap() - 1).to_string(),
+        internal_id: l2_block_number.parse::<u64>().unwrap() - 1,
         job_type: JobType::DataSubmission,
         status: JobStatus::Completed,
         external_id: ExternalId::Number(0),
@@ -652,7 +642,7 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
 
     let job_item = JobItem {
         id: Uuid::new_v4(),
-        internal_id: block_number.to_string(),
+        internal_id: block_number,
         job_type: JobType::StateTransition,
         status: JobStatus::Completed,
         external_id: ExternalId::Number(0),
@@ -684,7 +674,7 @@ pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_numbe
 
     let job_item = JobItem {
         id: Uuid::new_v4(),
-        internal_id: block_number.to_string(),
+        internal_id: block_number,
         job_type: JobType::ProofCreation,
         status: JobStatus::Completed,
         external_id: ExternalId::Number(0),

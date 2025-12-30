@@ -34,7 +34,7 @@ async fn test_create_job() {
         specific: JobSpecificMetadata::Aggregator(AggregatorMetadata::default()),
     };
 
-    let job = AggregatorJobHandler.create_job(String::from("0"), metadata).await;
+    let job = AggregatorJobHandler.create_job(0, metadata).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
