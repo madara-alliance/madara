@@ -251,30 +251,13 @@ fn handle_blocking_compilation(
         return wait_for_compilation_completion(class_hash, sierra, config, start, compilation_timeout, poll_interval);
     }
 
-    // No compilation in progress - try to start it using spawn_compilation_if_needed
-    // This ensures atomic check and prevents race conditions
-    // Note: spawn_compilation_if_needed requires Tokio runtime; if not available, it returns early
-    compilation::spawn_compilation_if_needed(*class_hash, Arc::new(sierra.clone()), config.clone());
-
-    // Check if compilation actually started (spawn_compilation_if_needed may return early if no runtime)
-    if compilation::is_compilation_in_progress(class_hash) {
-        // Compilation started - wait for it to complete
-        tracing::debug!(
-            target: "madara_cairo_native",
-            class_hash = %format!("{:#x}", class_hash.to_felt()),
-            timeout_secs = compilation_timeout.as_secs(),
-            poll_interval_ms = poll_interval.as_millis(),
-            "compilation_blocking_waiting"
-        );
-        return wait_for_compilation_completion(class_hash, sierra, config, start, compilation_timeout, poll_interval);
-    }
-
-    // No Tokio runtime available - fall back to synchronous compilation
-    // This handles the case where spawn_compilation_if_needed couldn't start async compilation
+    // No compilation in progress - use synchronous compilation directly
+    // In blocking mode, we compile synchronously rather than spawning async
+    // This avoids dependency on Tokio runtime which may not be available
     tracing::debug!(
         target: "madara_cairo_native",
         class_hash = %format!("{:#x}", class_hash.to_felt()),
-        "compilation_blocking_no_runtime_fallback_to_sync"
+        "compilation_blocking_sync"
     );
 
     // Use synchronous compilation directly
@@ -442,14 +425,13 @@ mod tests {
     use mp_class::SierraConvertedClass;
     use rstest::rstest;
     use starknet_api::core::ClassHash;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
     use tempfile::TempDir;
     // Import fixtures from test_utils
     use crate::test_utils::{async_config, blocking_config, sierra_class, temp_dir};
 
-    // Test mutex to serialize test execution for tests that need to clear/modify caches
-    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+    // Use test_counters::acquire_and_reset() for test synchronization (shared across all modules)
 
     // Helper function to create a unique test class hash (module_id=2 for execution.rs)
     fn create_unique_test_class_hash() -> ClassHash {
@@ -518,8 +500,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_sierra_class_memory_cache_hit(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -565,8 +546,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_sierra_class_memory_miss_disk_hit(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -614,14 +594,12 @@ mod tests {
 
     #[rstest]
     fn test_handle_sierra_class_native_disabled(sierra_class: SierraConvertedClass, _temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
         // Create config with native disabled
         let config = Arc::new(config::NativeConfig::Disabled);
-
-        let _metrics_guard = test_counters::acquire_and_reset();
 
         // VM class returned immediately when native is disabled
         let result = handle_sierra_class(
@@ -655,7 +633,7 @@ mod tests {
         _temp_dir: TempDir,
         blocking_config: Arc<config::NativeConfig>,
     ) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -670,10 +648,6 @@ mod tests {
             !compilation::is_compilation_in_progress(&class_hash),
             "Class should not be in compilation_in_progress initially"
         );
-
-        // Reset metrics RIGHT BEFORE the operation to minimize window for other tests to interfere
-        // This ensures metrics from cache tests running in parallel don't leak in
-        let _metrics_guard = test_counters::acquire_and_reset();
 
         // Blocking mode compiles synchronously
         let result = handle_sierra_class(
@@ -716,7 +690,7 @@ mod tests {
         _temp_dir: TempDir,
         async_config: Arc<config::NativeConfig>,
     ) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -730,8 +704,6 @@ mod tests {
             !compilation::has_failed_compilation(&class_hash),
             "Class should not be in failed_compilations initially"
         );
-
-        let _metrics_guard = test_counters::acquire_and_reset();
 
         // Async mode returns VM immediately while compilation happens in background
         let result = handle_sierra_class(
@@ -780,8 +752,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_handle_sierra_class_disk_cache_error(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -847,8 +818,7 @@ mod tests {
         _temp_dir: TempDir,
         async_config: Arc<config::NativeConfig>,
     ) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -893,8 +863,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_sierra_class_blocking_compilation_failure(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -978,8 +947,7 @@ mod tests {
     /// - Timeout events are logged appropriately
     #[rstest]
     fn test_handle_sierra_class_memory_cache_timeout(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -1046,8 +1014,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_handle_sierra_class_disk_cache_timeout(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -1119,8 +1086,7 @@ mod tests {
         _temp_dir: TempDir,
         async_config: Arc<config::NativeConfig>,
     ) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -1199,8 +1165,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_async_mode_retry_enabled(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
         let config = Arc::new(
@@ -1275,8 +1240,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn test_async_mode_retry_disabled(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
         let config = Arc::new(
@@ -1338,8 +1302,7 @@ mod tests {
 
     #[rstest]
     fn test_compilation_timeout_config(sierra_class: SierraConvertedClass, temp_dir: TempDir) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 
@@ -1411,8 +1374,7 @@ mod tests {
         sierra_class: SierraConvertedClass,
         temp_dir: TempDir,
     ) {
-        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let _metrics_guard = test_counters::acquire_and_reset();
+        let _guard = test_counters::acquire_and_reset();
 
         let class_hash = create_unique_test_class_hash();
 

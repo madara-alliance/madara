@@ -4473,7 +4473,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e2e"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -7575,7 +7575,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-atlantic-service"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "async-trait",
@@ -7608,7 +7608,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-da-client-interface"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "async-trait",
  "axum 0.7.9",
@@ -7619,7 +7619,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-ethereum-da-client"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "async-trait",
@@ -7648,7 +7648,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-ethereum-settlement-client"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "alloy-primitives 0.8.26",
@@ -7684,7 +7684,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-gps-fact-checker"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "alloy-primitives 0.8.26",
@@ -7716,7 +7716,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-prover-client-interface"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "async-trait",
  "cairo-vm",
@@ -7728,7 +7728,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-settlement-client-interface"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "async-trait",
  "axum 0.7.9",
@@ -7741,7 +7741,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-sharp-service"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "alloy-primitives 0.8.26",
@@ -7778,7 +7778,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-starknet-da-client"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "async-trait",
  "color-eyre",
@@ -7792,7 +7792,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-starknet-settlement-client"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "alloy-primitives 0.8.26",
@@ -7835,7 +7835,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-utils"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "alloy",
  "alloy-primitives 0.8.26",
@@ -11855,7 +11855,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utils-mock-atlantic-server"
-version = "0.8.0"
+version = "0.10.0"
 dependencies = [
  "axum 0.7.9",
  "chrono",
