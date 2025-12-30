@@ -211,12 +211,12 @@ impl JobHandlerTrait for DAJobHandler {
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::DataSubmission, internal_id);
 
         // Get DA-specific metadata
         let mut da_metadata: DaMetadata = job.metadata.specific.clone().try_into()?;
-        let block_no = job.internal_id;
+        let block_no = internal_id;
 
         let state_update = config
             .madara_rpc_client()
@@ -306,7 +306,7 @@ impl JobHandlerTrait for DAJobHandler {
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::DataSubmission, internal_id);
         let verification_status = config
             .da_client()

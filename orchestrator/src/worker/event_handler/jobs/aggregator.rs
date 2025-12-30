@@ -39,7 +39,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     /// Now, we follow the following logic:
     /// 1. Call close batch for the bucket
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::Aggregator, internal_id);
 
         // Get aggregator metadata
@@ -71,7 +71,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::Aggregator, internal_id);
 
         // Get aggregator metadata
@@ -149,7 +149,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 // Store the program output in storage
                 AggregatorJobHandler::store_program_output(
                     &config,
-                    job.internal_id,
+                    internal_id,
                     program_output,
                     &metadata.program_output_path,
                 )
@@ -193,7 +193,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed", JobType::Aggregator, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Aggregator job #{} failed with error: {}",
-                    job.internal_id, err
+                    internal_id, err
                 )))
             }
         }

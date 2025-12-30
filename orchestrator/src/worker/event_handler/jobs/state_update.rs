@@ -79,7 +79,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     ///
     /// TODO: Update the code in the future releases to fix this.
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::StateTransition, internal_id);
 
         // Get the state transition metadata
@@ -123,7 +123,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Loop over the indices to process
         for &i in &filtered_indices {
             let to_settle_num = blocks_or_batches_to_settle[i];
-            debug!(job_id = %job.internal_id, num = %to_settle_num, "Processing block/batch");
+            debug!(job_id = %internal_id, num = %to_settle_num, "Processing block/batch");
 
             if !self.should_send_state_update_txn(&config, to_settle_num).await? {
                 sent_tx_hashes.push(format!("0x{:0>64}", ""));
@@ -133,7 +133,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             }
 
             // Get the artifacts for the block/batch
-            let snos_output = match fetch_snos_for_block(*internal_id, i, config.clone(), &snos_output_paths).await {
+            let snos_output = match fetch_snos_for_block(internal_id, i, config.clone(), &snos_output_paths).await {
                 Ok(snos_output) => Some(snos_output),
                 Err(err) => {
                     debug!("failed to fetch snos output, proceeding without it: {}", err);
@@ -172,14 +172,14 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 job_id = %job.id,
                 tx_hash = %txn_hash,
                 nonce = %nonce,
-                "State update transaction submitted successfully for job {}. Validating transaction receipt", job.internal_id
+                "State update transaction submitted successfully for job {}. Validating transaction receipt", internal_id
             );
 
             config.settlement_client()
                 .wait_for_tx_finality(&txn_hash)
                 .await
                 .map_err(|e| {
-                    error!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
+                    error!(job_id = %internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
                     JobError::Other(OtherError(e))
                 })?;
 
@@ -202,7 +202,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// 2. The expected last settled block from our configuration is indeed the one found in the
     ///    provider.
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::StateTransition, internal_id);
 
         // Get state update metadata
@@ -237,7 +237,7 @@ impl StateUpdateJobHandler {
         config: &Arc<Config>,
         nums_settled: &[u64],
         job_id: &Uuid,
-        internal_id: &u64,
+        internal_id: u64,
     ) -> Result<JobVerificationStatus, JobError> {
         // verify that the last settled block is indeed the one we expect to be
         let last_settled = nums_settled.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;

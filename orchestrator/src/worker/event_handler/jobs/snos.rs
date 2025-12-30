@@ -88,7 +88,7 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::SnosRun, internal_id);
 
         // Get SNOS metadata
@@ -127,7 +127,7 @@ impl JobHandlerTrait for SnosJobHandler {
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
             error!(error = %e, "SNOS execution failed");
-            SnosError::SnosExecutionError { internal_id: job.internal_id, message: e.to_string() }
+            SnosError::SnosExecutionError { internal_id, message: e.to_string() }
         })?;
         debug!("generate_pie function completed successfully");
 
@@ -175,7 +175,7 @@ impl JobHandlerTrait for SnosJobHandler {
 
         debug!("Storing SNOS outputs");
         // Store the Cairo Pie path
-        self.store(*internal_id, config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
+        self.store(internal_id, config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
 
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::SnosRun, internal_id);
 
@@ -183,7 +183,7 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     async fn verify_job(&self, _config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::SnosRun, internal_id);
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
