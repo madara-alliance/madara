@@ -322,7 +322,7 @@ async fn test_process_job_l2_with_da_segment(
         }),
     };
 
-    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    let mut job = StateUpdateJobHandler.create_job(0, metadata).await.unwrap();
     let result = StateUpdateJobHandler.process_job(services.config, &mut job).await;
 
     assert!(result.is_ok(), "L2 state update with DA segment should succeed: {:?}", result.err());
