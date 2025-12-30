@@ -78,7 +78,11 @@ module.exports = {
       { job_type: 1, internal_id: -1 },
       { unique: true },
     );
-    await jobsCollection.createIndex({ job_type: 1, status: 1, internal_id: -1 });
+    await jobsCollection.createIndex({
+      job_type: 1,
+      status: 1,
+      internal_id: -1,
+    });
 
     console.log("Indexes recreated successfully");
   },
@@ -134,7 +138,11 @@ module.exports = {
       { job_type: 1, internal_id: -1 },
       { unique: true },
     );
-    await jobsCollection.createIndex({ job_type: 1, status: 1, internal_id: -1 });
+    await jobsCollection.createIndex({
+      job_type: 1,
+      status: 1,
+      internal_id: -1,
+    });
 
     console.log("Indexes recreated successfully");
   },
