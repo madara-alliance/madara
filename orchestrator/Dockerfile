@@ -153,11 +153,10 @@ RUN while read dir; do \
 # Copy migration files and install dependencies
 COPY --from=builder-rust /app/orchestrator/migrations /app/migrations
 COPY --from=builder-rust /app/orchestrator/package.json /app/package.json
-COPY --from=builder-rust /app/orchestrator/package-lock.json /app/package-lock.json
 COPY --from=builder-rust /app/orchestrator/migrate-mongo-config.js /app/migrate-mongo-config.js
 
 # Install npm dependencies for migrations
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Create entrypoint script that runs migrations before starting orchestrator
 RUN echo '#!/bin/bash\n\
