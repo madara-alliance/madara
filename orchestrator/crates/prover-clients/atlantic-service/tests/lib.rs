@@ -3,7 +3,8 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
 use orchestrator_atlantic_service::types::{
-    AtlanticCairoVm, AtlanticClient, AtlanticQueriesListResponse, AtlanticQuery, AtlanticQueryStatus, AtlanticQueryStep,
+    AtlanticCairoVm, AtlanticClient, AtlanticQueriesListResponse, AtlanticQuery, AtlanticQueryStatus,
+    AtlanticQueryStep, AtlanticSharpProver,
 };
 use orchestrator_atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
 use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task};
@@ -29,6 +30,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
         cairo_verifier_program_hash: None,
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
+        atlantic_sharp_prover: AtlanticSharpProver::default(),
     };
     // Start a mock server
     let mock_server = MockServer::start();
@@ -102,6 +104,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
         cairo_verifier_program_hash: None,
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
+        atlantic_sharp_prover: AtlanticSharpProver::default(),
     };
 
     let mock_server = MockServer::start();
@@ -206,8 +209,10 @@ async fn atlantic_client_get_task_status_works() {
         cairo_verifier_program_hash: None,
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
+        atlantic_sharp_prover: AtlanticSharpProver::default(),
     };
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None);
+    let atlantic_service =
+        AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None, None);
 
     let atlantic_query_id = "01JPMKV7WFP4JTC0TTQSEAM9GW";
     let task_result = atlantic_service.atlantic_client.get_job_status(atlantic_query_id).await;
@@ -232,8 +237,10 @@ async fn atlantic_client_get_bucket_status_works() {
         cairo_verifier_program_hash: None,
         atlantic_cairo_vm: AtlanticCairoVm::Python,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
+        atlantic_sharp_prover: AtlanticSharpProver::default(),
     };
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None);
+    let atlantic_service =
+        AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None, None);
 
     let bucket_id = "01K0RN2JFJW3382CZPHRBC48NR";
     let task_result = atlantic_service.atlantic_client.get_bucket(bucket_id).await;
@@ -260,10 +267,12 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         cairo_verifier_program_hash: None,
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
+        atlantic_sharp_prover: AtlanticSharpProver::default(),
     };
 
     // Create the Atlantic service with actual configuration
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None);
+    let atlantic_service =
+        AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None, None);
 
     // Load the Cairo PIE from the test data
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;

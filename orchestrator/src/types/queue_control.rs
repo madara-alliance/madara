@@ -3,6 +3,17 @@ use crate::types::Layer;
 use orchestrator_utils::env_utils::get_env_var_or_default;
 use std::collections::HashMap;
 use std::sync::LazyLock;
+use std::time::Duration;
+
+/// Maximum time to wait for the priority slot to become empty.
+pub const PRIORITY_SLOT_WAIT_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Maximum time a message can sit in the priority slot before being
+/// considered stale. Stale messages are NACKed to enable DLQ flow.
+pub const PRIORITY_SLOT_STALENESS_TIMEOUT_SECS: u64 = 300;
+
+/// Interval between priority slot availability checks.
+pub const PRIORITY_SLOT_CHECK_INTERVAL: Duration = Duration::from_millis(1000);
 
 #[derive(Clone)]
 pub struct DlqConfig {
@@ -37,6 +48,9 @@ pub struct QueueConfig {
     pub queue_control: QueueControlConfig,
     pub dlq_config: Option<DlqConfig>,
     pub supported_layers: Vec<Layer>,
+    /// Message retention period (TTL) in seconds. If None, uses SQS default (4 days).
+    /// Valid values: 60 to 1,209,600 seconds.
+    pub message_retention_period: Option<u32>,
 }
 
 // TODO: this should be dynamically created based on the run command params.
@@ -50,6 +64,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: None,
             queue_control: QueueControlConfig::default(),
             supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -59,6 +74,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: None,
             queue_control: QueueControlConfig::default_with_message_count(50),
             supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: Some(60), // 60 second TTL for worker triggers
         },
     );
     map.insert(
@@ -70,6 +86,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
                 get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS", "5").parse().expect("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS does not have correct value. Should be a whole number"),
             ),
             supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -79,6 +96,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::default_with_message_count(5),
             supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -90,6 +108,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
                 get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS", "10").parse().expect("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS does not have correct value. Should be a whole number"),
             ),
             supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -99,6 +118,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -108,6 +128,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -117,6 +138,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -126,6 +148,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -135,6 +158,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -144,6 +168,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -153,6 +178,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -162,6 +188,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2],
+            message_retention_period: None,
         },
     );
     map.insert(
@@ -171,6 +198,27 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2],
+            message_retention_period: None,
+        },
+    );
+    map.insert(
+        QueueType::PriorityProcessingQueue,
+        QueueConfig {
+            visibility_timeout: 600, // 2x expected max processing time for slot wait + processing
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
+            queue_control: QueueControlConfig::new(1), // Single reader (PQ Worker)
+            supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: None,
+        },
+    );
+    map.insert(
+        QueueType::PriorityVerificationQueue,
+        QueueConfig {
+            visibility_timeout: 600, // 2x expected max processing time for slot wait + processing
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
+            queue_control: QueueControlConfig::new(1), // Single reader (PQ Worker)
+            supported_layers: vec![Layer::L2, Layer::L3],
+            message_retention_period: None,
         },
     );
     map

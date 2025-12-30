@@ -157,6 +157,13 @@ pub trait DatabaseClient: Send + Sync {
         job_statuses: Vec<JobStatus>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
+    /// Get the oldest job of the given type from the DB with status not in the given list
+    async fn get_oldest_job_by_type_excluding_statuses(
+        &self,
+        job_type: JobType,
+        job_statuses: Vec<JobStatus>,
+    ) -> Result<Option<JobItem>, DatabaseError>;
+
     /// Get all jobs for a specific block number
     ///
     /// # Arguments
@@ -224,6 +231,7 @@ pub trait DatabaseClient: Send + Sync {
     async fn get_snos_batches_without_jobs(
         &self,
         snos_batch_status: SnosBatchStatus,
+        limit: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Update or create a SNOS batch

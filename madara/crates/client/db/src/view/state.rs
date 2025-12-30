@@ -214,7 +214,11 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
             s.declared_class
                 .as_ref()
                 .and_then(|c| c.as_sierra())
-                .filter(|c| &c.info.compiled_class_hash == compiled_class_hash)
+                .filter(|c| {
+                    // Check canonical hash (v2 if present, else v1)
+                    let canonical = c.info.compiled_class_hash_v2.or(c.info.compiled_class_hash);
+                    canonical.as_ref() == Some(compiled_class_hash)
+                })
                 .map(|c| c.compiled.clone())
         }) {
             return Ok(Some(res));
@@ -233,14 +237,35 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
             return Ok(None);
         };
         let compiled = match class_info {
-            ClassInfo::Sierra(sierra_class_info) => ConvertedClass::Sierra(SierraConvertedClass {
-                class_hash: *class_hash,
-                compiled: self
-                    .get_class_compiled(&sierra_class_info.compiled_class_hash)
-                    .context("Getting class compiled from class_hash")?
-                    .context("Class info found, compiled class should be found")?,
-                info: sierra_class_info,
-            }),
+            ClassInfo::Sierra(sierra_class_info) => {
+                // Try v2 hash first, then fall back to v1 (for migrated classes where
+                // the compiled Sierra may still be stored under the v1 hash).
+                let compiled = if let Some(hash) = sierra_class_info.compiled_class_hash_v2 {
+                    // Try v2 first, fall back to v1 if not found (migration case)
+                    match self.get_class_compiled(&hash).context("Getting class compiled from v2 hash")? {
+                        Some(c) => Some(c),
+                        None => {
+                            // Fallback to v1 hash - compiled class may be stored under old hash
+                            if let Some(v1_hash) = sierra_class_info.compiled_class_hash {
+                                self.get_class_compiled(&v1_hash)
+                                    .context("Getting class compiled from v1 hash fallback")?
+                            } else {
+                                None
+                            }
+                        }
+                    }
+                } else if let Some(hash) = sierra_class_info.compiled_class_hash {
+                    self.get_class_compiled(&hash).context("Getting class compiled from v1 hash")?
+                } else {
+                    None
+                };
+
+                ConvertedClass::Sierra(SierraConvertedClass {
+                    class_hash: *class_hash,
+                    compiled: compiled.context("Class info found, compiled class should be found")?,
+                    info: sierra_class_info,
+                })
+            }
             ClassInfo::Legacy(legacy_class_info) => {
                 ConvertedClass::Legacy(LegacyConvertedClass { class_hash: *class_hash, info: legacy_class_info })
             }

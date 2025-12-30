@@ -1,6 +1,7 @@
 #[cfg(feature = "testing")]
 use alloy::providers::ProviderBuilder;
 use cairo_vm::Felt252;
+use starknet_core::types::Felt;
 
 use crate::utils::rest_client::RestClient;
 use anyhow::Context;
@@ -150,6 +151,7 @@ pub struct ConfigParam {
     pub store_audit_artifacts: bool,
     pub bouncer_weights_limit: BouncerWeights,
     pub aggregator_batch_weights_limit: AggregatorBatchWeights,
+    pub da_public_keys: Option<Vec<Felt>>,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -260,6 +262,7 @@ impl Config {
             store_audit_artifacts: run_cmd.store_audit_artifacts,
             aggregator_batch_weights_limit: AggregatorBatchWeights::from(&bouncer_weights_limit),
             bouncer_weights_limit,
+            da_public_keys: run_cmd.da_public_keys.clone(),
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
@@ -290,6 +293,7 @@ impl Config {
             &params,
             Some(format!("0x{}", hex::encode(&chain_details.chain_id))),
             Some(Felt252::from_str(chain_details.strk_fee_token_address.as_str())?),
+            run_cmd.da_public_keys.clone(),
         );
         let da_client: Box<dyn DaClient + Send + Sync + 'static> = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
@@ -375,6 +379,7 @@ impl Config {
         params: &ConfigParam,
         chain_id_hex: Option<String>,
         fee_token_address: Option<Felt252>,
+        da_public_keys: Option<Vec<Felt>>,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => {
@@ -385,6 +390,7 @@ impl Config {
                 &params.prover_layout_name,
                 chain_id_hex,
                 fee_token_address,
+                da_public_keys,
             )),
         }
     }
@@ -553,6 +559,11 @@ impl Config {
     /// Returns the snos proof layout
     pub fn prover_layout_name(&self) -> &LayoutName {
         &self.params.prover_layout_name
+    }
+
+    /// Returns the DA public keys
+    pub fn da_public_keys(&self) -> Option<&Vec<Felt>> {
+        self.params.da_public_keys.as_ref()
     }
 
     /// Returns the bouncer weights limit

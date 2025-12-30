@@ -96,6 +96,9 @@ impl TryFrom<RunCmd> for ProverConfig {
                         OrchestratorError::SetupCommandError("Atlantic result is required".to_string())
                     })?,
                     cairo_verifier_program_hash: atlantic_args.cairo_verifier_program_hash,
+                    atlantic_sharp_prover: atlantic_args.atlantic_sharp_prover.ok_or_else(|| {
+                        OrchestratorError::RunCommandError("Atlantic sharp prover is required".to_string())
+                    })?,
                 }))
             }
         }

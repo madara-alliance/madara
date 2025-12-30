@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 /// Expected DB version from build - update when version changes
-const EXPECTED_DB_VERSION: u32 = 8;
+const EXPECTED_DB_VERSION: u32 = 9;
 
 fn setup_test_env() -> (TempDir, Arc<ChainConfig>, Arc<NativeConfig>) {
     let temp_dir = TempDir::new().unwrap();

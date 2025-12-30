@@ -1,5 +1,5 @@
 use clap::Args;
-use orchestrator_atlantic_service::types::{AtlanticCairoVm, AtlanticQueryStep};
+use orchestrator_atlantic_service::types::{AtlanticCairoVm, AtlanticQueryStep, AtlanticSharpProver};
 use url::Url;
 
 /// Parameters used to config Atlantic.
@@ -66,4 +66,8 @@ pub struct AtlanticCliArgs {
     )]
     #[arg(required_if_eq("atlantic", "true"))]
     pub atlantic_network: Option<String>,
+
+    /// The SHARP prover backend to use (stone or stwo).
+    #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_SHARP_PROVER", long, default_value = "stone")]
+    pub atlantic_sharp_prover: Option<AtlanticSharpProver>,
 }

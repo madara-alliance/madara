@@ -38,7 +38,14 @@ pub fn apply_to_global_trie<'a>(
                     block_n,
                 )
             },
-            || classes::class_trie_root(backend, &state_diff.declared_classes, block_n),
+            || {
+                classes::class_trie_root(
+                    backend,
+                    &state_diff.declared_classes,
+                    &state_diff.migrated_compiled_classes,
+                    block_n,
+                )
+            },
         );
 
         state_root = Some(calculate_state_root(contract_trie_root?, class_trie_root?));

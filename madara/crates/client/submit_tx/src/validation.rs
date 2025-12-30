@@ -104,7 +104,6 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             | E::ValidateTransactionError { .. }
             | E::ContractConstructorExecutionFailed { .. }
             | E::PanicInValidate { .. }
-            | E::DeclareTransactionCasmHashMissMatch { .. }
             | E::ValidateCairo0Error(_)) => rejected(ValidateFailure, format!("{err:#}")),
             err @ (E::FeeCheckError(_)
             | E::FromStr(_)

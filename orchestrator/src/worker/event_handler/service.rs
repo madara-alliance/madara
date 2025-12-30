@@ -214,6 +214,10 @@ impl JobHandlerService {
                     MetricsRecorder::record_job_retry(&job, &job.status.to_string());
                 }
             }
+            JobStatus::LockedForProcessing | JobStatus::PendingVerification | JobStatus::Completed => {
+                warn!(job_id = ?id, status = ?job.status, "Shouldn't process job with current status. Returning safely");
+                return Ok(());
+            }
             _ => {
                 warn!(
                     job_id = ?id,
@@ -430,8 +434,12 @@ impl JobHandlerService {
 
         match job.status {
             // Jobs with `VerificationTimeout` will be retired manually after resetting verification attempt number to 0.
-            JobStatus::PendingVerification | JobStatus::VerificationTimeout => {
+            JobStatus::PendingVerification | JobStatus::VerificationTimeout | JobStatus::VerificationFailed => {
                 debug!(job_id = ?id, status = ?job.status, "Proceeding with verification");
+            }
+            JobStatus::Completed => {
+                warn!(job_id = ?id, status = ?job.status, "Shouldn't verify job with current status. Returning safely");
+                return Ok(());
             }
             _ => {
                 error!(job_id = ?id, status = ?job.status, "Invalid job status for verification");
@@ -662,18 +670,19 @@ impl JobHandlerService {
     /// # Arguments
     /// * `id` - UUID of the job to retry
     /// * `config` - Shared configuration
+    /// * `priority` - If true, sends to priority queue instead of normal queue
     ///
     /// # Returns
     /// * `Result<(), JobError>` - Success or an error
     ///
     /// # State Transitions
-    /// * `Failed` -> `PendingRetry` -> (normal processing flow)
+    /// * `Failed` -> `PendingRetry` -> (normal or priority processing flow)
     ///
     /// # Notes
     /// * Only jobs in Failed status can be retried
-    /// * Transitions through PendingRetry status before normal processing
-    /// * Uses standard process_job function after status update
-    pub async fn retry_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
+    /// * Transitions through PendingRetry status before processing
+    /// * Uses priority queue if priority flag is set, otherwise normal queue
+    pub async fn retry_job(id: Uuid, config: Arc<Config>, priority: bool) -> Result<(), JobError> {
         let mut job = JobService::get_job(id, config.clone()).await?;
         let internal_id = &job.internal_id;
 
@@ -682,6 +691,7 @@ impl JobHandlerService {
             category = "general",
             function_type = "retry_job",
             block_no = %internal_id,
+            priority = priority,
             "General retry job started for block"
         );
         if job.status != JobStatus::Failed {
@@ -724,24 +734,28 @@ impl JobHandlerService {
                 e
             })?;
 
-        JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await.map_err(|e| {
+        // Queue for processing - use priority queue if requested
+        JobService::queue_job_for_processing(job.id, config.clone(), priority).await.map_err(|e| {
             error!(
                 log_type = "error",
                 category = "general",
                 function_type = "retry_job",
                 block_no = %internal_id,
+                priority = priority,
                 error = %e,
                 "Failed to add job to process queue"
             );
             e
         })?;
 
+        let queue_type = if priority { "PRIORITY" } else { "normal" };
         info!(
             log_type = "completed",
             category = "general",
             function_type = "retry_job",
             block_no = %internal_id,
-            "Successfully queued job for retry"
+            queue_type = queue_type,
+            "Successfully queued job for {} retry", queue_type
         );
 
         Ok(())

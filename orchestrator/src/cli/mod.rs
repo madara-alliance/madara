@@ -5,7 +5,19 @@ use cron::event_bridge::AWSEventBridgeCliArgs;
 use provider::aws::AWSConfigCliArgs;
 pub use server::ServerCliArgs as ServerParams;
 pub use service::ServiceCliArgs as ServiceParams;
+use starknet_core::types::Felt;
 use url::Url;
+
+/// Parses a single hex string into a Felt.
+/// Used with value_delimiter to parse comma-separated DA public keys.
+fn parse_da_public_key(s: &str) -> Result<Felt, String> {
+    let key = s.trim();
+    if key.is_empty() {
+        return Err("DA public key cannot be empty".to_string());
+    }
+    Felt::from_hex(key)
+        .map_err(|e| format!("Invalid DA public key '{}': {}. Expected a valid hex string (e.g., '0x123...')", key, e))
+}
 
 pub mod alert;
 pub mod batching;
@@ -159,6 +171,9 @@ pub struct RunCmd {
 
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_DA_PUBLIC_KEYS", long, value_delimiter = ',', value_parser = parse_da_public_key)]
+    pub da_public_keys: Option<Vec<Felt>>,
 
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_VERSION", long, required = true)]
     pub madara_version: StarknetVersion,

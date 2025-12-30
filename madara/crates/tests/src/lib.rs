@@ -281,10 +281,10 @@ impl MadaraCmd {
         format!("{}", self.rpc_url.as_ref().unwrap())
     }
     pub fn gateway_url(&self) -> String {
-        format!("{}/gateway", self.gateway_root_url.as_ref().unwrap())
+        format!("{}gateway", self.gateway_root_url.as_ref().unwrap())
     }
     pub fn feeder_gateway_url(&self) -> String {
-        format!("{}/feeder_gateway", self.gateway_root_url.as_ref().unwrap())
+        format!("{}feeder_gateway", self.gateway_root_url.as_ref().unwrap())
     }
 
     pub fn db_dir(&self) -> &Path {
@@ -540,6 +540,9 @@ impl MadaraCmdBuilder {
                     .into_iter()
                     .flatten(),
             )
+            // Always use dynamic ports for services that may conflict when running multiple nodes
+            .args(["--analytics-prometheus-endpoint-port", "0"])
+            .args(["--rpc-admin-port", "0"])
             .args(gateway_key_args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

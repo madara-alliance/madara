@@ -4,6 +4,7 @@ use blockifier::state::state_api::{StateReader, StateResult};
 use mc_db::rocksdb::RocksDBStorage;
 use mc_db::{MadaraStateView, MadaraStorageRead};
 use mp_convert::ToFelt;
+use starknet_api::contract_class::compiled_class_hash::{HashVersion, HashableCompiledClass};
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
@@ -141,7 +142,7 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
-        let value = self.view.get_class_info(&class_hash.to_felt()).map_err(|err| {
+        let class_info = self.view.get_class_info(&class_hash.to_felt()).map_err(|err| {
             StateError::StateReadError(format!(
                 "Failed to retrieve class_hash: on={}, class_hash={:#x}: {err:#}",
                 self.view,
@@ -149,20 +150,77 @@ impl<D: MadaraStorageRead> StateReader for BlockifierStateAdapter<D> {
             ))
         })?;
 
-        let value = value.and_then(|c| c.compiled_class_hash()).ok_or_else(|| {
+        let class_info = class_info.ok_or_else(|| {
             StateError::StateReadError(format!(
-                "Class does not have a compiled class hash: on={}, class_hash={:#x}",
+                "Class not found: on={}, class_hash={:#x}",
                 self.view,
                 class_hash.to_felt(),
             ))
         })?;
 
+        // For legacy (Cairo 0) classes, there is no compiled_class_hash concept.
+        // Return default (ZERO) for legacy classes as per blockifier StateReader trait contract.
+        let compiled_class_hash = match &class_info {
+            mp_class::ClassInfo::Legacy(_) => CompiledClassHash::default().0,
+            mp_class::ClassInfo::Sierra(_) => {
+                // Return the canonical compiled_class_hash (v2 if present, else v1).
+                // - If v2 exists: either declared in v0.14.1+ OR already migrated, state uses v2
+                // - If only v1 exists: pre-migration class, state still uses v1
+                class_info.compiled_class_hash().ok_or_else(|| {
+                    StateError::StateReadError(format!(
+                        "Sierra class does not have a compiled class hash: on={}, class_hash={:#x}",
+                        self.view,
+                        class_hash.to_felt(),
+                    ))
+                })?
+            }
+        };
+
         tracing::debug!(
-            "get_compiled_class_hash: on={}, class_hash={:#x} => {value:#x}",
+            "get_compiled_class_hash: on={}, class_hash={:#x} => {compiled_class_hash:#x}",
             self.view,
             class_hash.to_felt(),
         );
 
-        Ok(CompiledClassHash(value))
+        Ok(CompiledClassHash(compiled_class_hash))
+    }
+
+    fn get_compiled_class_hash_v2(
+        &self,
+        class_hash: ClassHash,
+        compiled_class: &RunnableCompiledClass,
+    ) -> StateResult<CompiledClassHash> {
+        // Check if we have the v2 hash stored in the database
+        if let Ok(Some(class_info)) = self.view.get_class_info(&class_hash.to_felt()) {
+            if let Some(v2_hash) = class_info.compiled_class_hash_v2() {
+                tracing::debug!(
+                    "get_compiled_class_hash_v2: on={}, class_hash={:#x} => {v2_hash:#x} (from DB)",
+                    self.view,
+                    class_hash.to_felt(),
+                );
+                return Ok(CompiledClassHash(v2_hash));
+            }
+        }
+
+        // Compute v2 hash on-the-fly from the compiled class
+        let computed_hash = match compiled_class {
+            RunnableCompiledClass::V0(_) => {
+                return Err(StateError::StateReadError(format!(
+                    "Cairo0 classes do not have compiled class hash v2: class_hash={:#x}",
+                    class_hash.to_felt(),
+                )));
+            }
+            RunnableCompiledClass::V1(casm) => casm.hash(&HashVersion::V2),
+            RunnableCompiledClass::V1Native(casm) => casm.hash(&HashVersion::V2),
+        };
+
+        tracing::debug!(
+            "get_compiled_class_hash_v2: on={}, class_hash={:#x} => {:#x} (computed)",
+            self.view,
+            class_hash.to_felt(),
+            computed_hash.0,
+        );
+
+        Ok(computed_hash)
     }
 }

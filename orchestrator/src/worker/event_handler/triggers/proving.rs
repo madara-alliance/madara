@@ -21,10 +21,10 @@ impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: We intentionally do not heal orphaned Proving jobs as
-        // they might create inconsistent state on the atlantic side,
-        // sending request twice, opening the same bucket again, adding the the
-        // same block again etc.
+        // Self-healing: recover any orphaned Proving jobs before creating new ones
+        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofCreation).await {
+            error!(error = %e, "Failed to heal orphaned Proving jobs, continuing with normal processing");
+        }
 
         let successful_snos_jobs = config
             .database()

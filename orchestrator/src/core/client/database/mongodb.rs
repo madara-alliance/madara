@@ -475,7 +475,7 @@ impl DatabaseClient for MongoDbClient {
             }
             None => {
                 warn!(version = %current_job.version, "Failed to update job. Job version is likely outdated");
-                Err(DatabaseError::UpdateFailed(format!("Failed to update job. Identifier - {}, ", current_job.id)))
+                Err(DatabaseError::UpdateFailed(format!("Failed to update job. Identifier: {}", current_job.id)))
             }
         }
     }
@@ -1130,6 +1130,7 @@ impl DatabaseClient for MongoDbClient {
     async fn get_snos_batches_without_jobs(
         &self,
         snos_batch_status: SnosBatchStatus,
+        limit: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
 
@@ -1177,6 +1178,10 @@ impl DatabaseClient for MongoDbClient {
                 "$sort": {
                     "index": 1
                 }
+            },
+            // Stage 5: Limit to max number of batches we want
+            doc! {
+                "$limit": limit as i64
             },
         ];
 
@@ -1264,6 +1269,58 @@ impl DatabaseClient for MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
         Ok(jobs)
+    }
+
+    async fn get_oldest_job_by_type_excluding_statuses(
+        &self,
+        job_type: JobType,
+        job_statuses: Vec<JobStatus>,
+    ) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let pipeline = vec![
+            doc! {
+                "$match": {
+                    "job_type": bson::to_bson(&job_type)?
+                }
+            },
+            doc! {
+                "$match": {
+                    "status": {
+                        "$nin": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+                    }
+                }
+            },
+            doc! {
+                "$addFields": {
+                    "numeric_internal_id": { "$toLong": "$internal_id" }
+                }
+            },
+            doc! {
+                "$sort": {
+                    "numeric_internal_id": 1
+                }
+            },
+            doc! {
+                "$limit": 1
+            },
+            doc! {
+                "$project": {
+                    "numeric_internal_id": 0  // Remove the temporary field
+                }
+            },
+        ];
+
+        debug!("Fetching oldest job by type and excluding statuses");
+
+        let results = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_oldest_job_by_type_excluding_statuses")];
+        let duration = start.elapsed();
+
+        let result = vec_to_single_result(results, "get_oldest_job_by_type_excluding_statuses")?;
+
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(result)
     }
 
     async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError> {

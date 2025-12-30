@@ -28,11 +28,7 @@ pub struct Migration {
 
 impl std::fmt::Debug for Migration {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Migration")
-            .field("from_version", &self.from_version)
-            .field("to_version", &self.to_version)
-            .field("name", &self.name)
-            .finish()
+        write!(f, "Migration({} v{}→v{})", self.name, self.from_version, self.to_version)
     }
 }
 
@@ -44,30 +40,18 @@ impl std::fmt::Debug for Migration {
 /// # Adding a new migration
 ///
 /// 1. Create a new file in `revisions/` (e.g., `revision_0010.rs`)
-/// 2. Implement the `migrate` function
-/// 3. Add the migration to this array
-/// 4. Update `.db-versions.yml` with the new version
+/// 2. Implement a `pub fn migrate(ctx: &MigrationContext) -> Result<(), MigrationError>`
+/// 3. Add the migration to the array below
 pub fn get_migrations() -> &'static [Migration] {
-    &[
-        // Add migrations here as they are implemented.
-        // Example:
-        // Migration {
-        //     from_version: 8,
-        //     to_version: 9,
-        //     name: "snip34_blake_casm_migration",
-        //     migrate: super::revisions::revision_0009::migrate,
-        // },
-    ]
+    &[Migration {
+        from_version: 8,
+        to_version: 9,
+        name: "v8→v9: SierraClassInfo and StateDiff format",
+        migrate: super::revisions::revision_0009::migrate,
+    }]
 }
 
 /// Get migrations needed to upgrade from `from_version` to `to_version`.
-///
-/// Returns migrations in the order they should be applied.
-/// Returns an empty Vec if no migrations are needed.
-///
-/// # Errors
-///
-/// Returns `MigrationError::NoMigrationPath` if there's a gap in the migration chain.
 pub fn get_migrations_for_range(from_version: u32, to_version: u32) -> Result<Vec<&'static Migration>, MigrationError> {
     if from_version >= to_version {
         return Ok(vec![]);
@@ -104,14 +88,7 @@ pub fn get_migrations_for_range(from_version: u32, to_version: u32) -> Result<Ve
     Ok(migrations)
 }
 
-/// Validate the migration registry.
-///
-/// Checks that:
-/// - Migrations are in order
-/// - Each migration increments version by 1
-/// - No duplicate versions
-///
-/// This should be called in tests to ensure the registry is valid.
+/// Validate migration registry (used in tests).
 pub fn validate_registry() -> Result<(), String> {
     let migrations = get_migrations();
 
