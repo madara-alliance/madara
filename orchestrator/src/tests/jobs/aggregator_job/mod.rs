@@ -2,7 +2,9 @@ use super::super::common::default_job_item;
 use crate::core::client::database::MockDatabaseClient;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
-use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, STORAGE_ARTIFACTS_DIR};
+use crate::types::constant::{
+    CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, STORAGE_ARTIFACTS_DIR,
+};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -76,11 +78,12 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
         .with(eq(TaskType::Bucket), eq("bucket_id".to_string()), eq(None), eq(false))
         .times(1)
         .returning(|_, _, _, _| Ok(TaskStatus::Succeeded)); // Testing for the case when the task is completed
-    prover_client.expect_get_task_artifacts().times(2).returning(move |_, file_name| {
+    prover_client.expect_get_task_artifacts().times(3).returning(move |_, file_name| {
         if file_name == "pie.cairo0.zip" {
             // return the actual cairo pie so we can calculate the program output
             Ok(buffer_bytes.to_vec())
         } else {
+            // For DA segment and proof files, return dummy content
             Ok("file_content".to_string().into_bytes().to_vec())
         }
     });
@@ -112,6 +115,7 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
         download_proof: Some(format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, 1, PROOF_FILE_NAME)),
         cairo_pie_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, 1, CAIRO_PIE_FILE_NAME),
         program_output_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, 1, PROGRAM_OUTPUT_FILE_NAME),
+        da_segment_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, 1, DA_SEGMENT_FILE_NAME),
         ..Default::default()
     });
 
