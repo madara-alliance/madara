@@ -22,6 +22,11 @@ impl JobTrigger for AggregatorJobTrigger {
     /// 2. Check if all the child jobs for this batch are Completed
     /// 3. Create the Aggregator job for all such Batches and update the Batch status
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
+        // Self-healing: recover any orphaned Aggregator jobs before creating new ones
+        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::Aggregator).await {
+            error!(error = %e, "Failed to heal orphaned Aggregator jobs, continuing with normal processing");
+        }
+
         // Get all the closed batches
         let closed_batches =
             config.database().get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(10)).await?;

@@ -126,6 +126,12 @@ impl JobTrigger for SnosJobTrigger {
             snos_job_buffer_size,
         );
 
+        // Early return if buffer is full - no jobs to create
+        if max_jobs_to_create == 0 {
+            debug!(buffer_size = %snos_job_buffer_size, "SNOS job buffer is full, no new jobs to create. Returning safely.");
+            return Ok(());
+        }
+
         info!("Creating max {} {:?} jobs", max_jobs_to_create, JobType::SnosRun);
 
         // Get all snos batches that are closed but don't have a SnosRun job created yet
