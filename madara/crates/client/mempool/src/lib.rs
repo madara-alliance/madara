@@ -240,6 +240,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             (ret, lock.summary())
         };
 
+        // Update gauge metrics with current mempool state
+        self.metrics.mempool_current_size.record(summary.num_transactions as u64, &[]);
+        self.metrics.mempool_ready_transactions.record(summary.ready_transactions as u64, &[]);
+
         self.on_txs_removed(&removed_txs);
         if ret.is_ok() {
             if removed_txs.is_empty() {
@@ -306,6 +310,11 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             lock.remove_all_ttl_exceeded_txs(now, &mut removed_txs);
             lock.summary()
         };
+
+        // Update gauge metrics with current mempool state
+        self.metrics.mempool_current_size.record(summary.num_transactions as u64, &[]);
+        self.metrics.mempool_ready_transactions.record(summary.ready_transactions as u64, &[]);
+
         self.on_txs_removed(&removed_txs);
         if !removed_txs.is_empty() {
             tracing::info!(

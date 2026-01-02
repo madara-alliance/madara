@@ -27,7 +27,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 0, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
       "id": 1,
       "options": {
         "colorMode": "value",
@@ -39,7 +39,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "max(block_produced_no{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Chain Height", "refId": "A" }],
-      "title": "",
+      "title": "Chain Height",
       "type": "stat"
     },
     {
@@ -53,7 +53,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 3, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -80,7 +80,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 6, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 1 },
       "id": 60,
       "options": {
         "colorMode": "value",
@@ -106,7 +106,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 9, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 12, "y": 1 },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -118,7 +118,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(transaction_counter_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Total Txns", "refId": "A" }],
-      "title": "",
+      "title": "Total Txns",
       "type": "stat"
     },
     {
@@ -133,7 +133,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 12, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 15, "y": 1 },
       "id": 4,
       "options": {
         "colorMode": "value",
@@ -145,7 +145,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(transaction_counter_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))", "legendFormat": "TPS (1m)", "refId": "A" }],
-      "title": "",
+      "title": "TPS (1m)",
       "type": "stat"
     },
     {
@@ -160,7 +160,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 15, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 18, "y": 1 },
       "id": 5,
       "options": {
         "colorMode": "value",
@@ -172,7 +172,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(transaction_counter_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))", "legendFormat": "Max TPS", "refId": "A" }],
-      "title": "",
+      "title": "Max TPS",
       "type": "stat"
     },
     {
@@ -186,7 +186,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 18, "y": 1 },
+      "gridPos": { "h": 5, "w": 3, "x": 21, "y": 1 },
       "id": 6,
       "options": {
         "colorMode": "value",
@@ -197,34 +197,8 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "accepted_transaction_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Mempool", "refId": "A" }],
-      "title": "",
-      "type": "stat"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "#8F3BB8", "value": null }] },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 5, "w": 3, "x": 21, "y": 1 },
-      "id": 61,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "block_produced_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Blocks Produced", "refId": "A" }],
-      "title": "",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "mempool_current_size{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Mempool", "refId": "A" }],
+      "title": "Mempool",
       "type": "stat"
     },
     {
@@ -304,7 +278,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Total Calls", "refId": "A" }],
-      "title": "",
+      "title": "Total Calls",
       "type": "stat"
     },
     {
@@ -330,7 +304,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))", "legendFormat": "RPS (1m)", "refId": "A" }],
-      "title": "",
+      "title": "RPS (1m)",
       "type": "stat"
     },
     {
@@ -356,7 +330,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "WS Sessions", "refId": "A" }],
-      "title": "",
+      "title": "WS Sessions",
       "type": "stat"
     },
     {
@@ -382,7 +356,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Latency p50", "refId": "A" }],
-      "title": "",
+      "title": "Latency p50",
       "type": "stat"
     },
     {
@@ -408,7 +382,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Latency p99", "refId": "A" }],
-      "title": "",
+      "title": "Latency p99",
       "type": "stat"
     },
     {
@@ -434,7 +408,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(calls_started_total{namespace=~\"$namespace\", pod=~\"$pod\"}) - sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "In-Flight", "refId": "A" }],
-      "title": "",
+      "title": "In-Flight",
       "type": "stat"
     },
     {
@@ -588,7 +562,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_size{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "DB Size", "refId": "A" }],
-      "title": "",
+      "title": "DB Size",
       "type": "stat"
     },
     {
@@ -614,7 +588,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_mem_table_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable", "refId": "A" }],
-      "title": "",
+      "title": "MemTable",
       "type": "stat"
     },
     {
@@ -640,7 +614,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_cache_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Block Cache", "refId": "A" }],
-      "title": "",
+      "title": "Block Cache",
       "type": "stat"
     },
     {
@@ -666,7 +640,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_mem_table_unflushed{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Unflushed", "refId": "A" }],
-      "title": "",
+      "title": "Unflushed",
       "type": "stat"
     },
     {
@@ -692,7 +666,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_mem_table_readers_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Table Readers", "refId": "A" }],
-      "title": "",
+      "title": "Table Readers",
       "type": "stat"
     },
     {
@@ -718,7 +692,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(db_size{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Growth Rate", "refId": "A" }],
-      "title": "",
+      "title": "Growth Rate",
       "type": "stat"
     },
     {
@@ -778,13 +752,15 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "displayName": "L2 Block",
           "mappings": [],
+          "noValue": "-",
           "thresholds": { "mode": "absolute", "steps": [{ "color": "#37872D", "value": null }] },
           "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 50 },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 50 },
       "id": 121,
       "options": {
         "colorMode": "value",
@@ -796,7 +772,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "max(l2_block_number_sum{namespace=~\"$namespace\", pod=~\"$pod\"} / l2_block_number_count{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "L2 Block", "refId": "A" }],
-      "title": "",
+      "title": "L2 Block",
       "type": "stat"
     },
     {
@@ -804,13 +780,15 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "displayName": "Txns Synced",
           "mappings": [],
+          "noValue": "-",
           "thresholds": { "mode": "absolute", "steps": [{ "color": "#8F3BB8", "value": null }] },
           "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 50 },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 50 },
       "id": 122,
       "options": {
         "colorMode": "value",
@@ -822,7 +800,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "transaction_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Txns Synced", "refId": "A" }],
-      "title": "",
+      "title": "Txns Synced",
       "type": "stat"
     },
     {
@@ -830,13 +808,15 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "displayName": "Events Synced",
           "mappings": [],
+          "noValue": "-",
           "thresholds": { "mode": "absolute", "steps": [{ "color": "#3274D9", "value": null }] },
           "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 50 },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 50 },
       "id": 123,
       "options": {
         "colorMode": "value",
@@ -848,7 +828,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "event_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Events Synced", "refId": "A" }],
-      "title": "",
+      "title": "Events Synced",
       "type": "stat"
     },
     {
@@ -856,13 +836,15 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "displayName": "L1 Block",
           "mappings": [],
+          "noValue": "-",
           "thresholds": { "mode": "absolute", "steps": [{ "color": "#FF9830", "value": null }] },
           "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 50 },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 50 },
       "id": 124,
       "options": {
         "colorMode": "value",
@@ -874,7 +856,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_block_number{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "L1 Block", "refId": "A" }],
-      "title": "",
+      "title": "L1 Block",
       "type": "stat"
     },
     {
@@ -882,13 +864,15 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "displayName": "Gas (Wei)",
           "mappings": [],
+          "noValue": "-",
           "thresholds": { "mode": "absolute", "steps": [{ "color": "#56A64B", "value": null }] },
           "unit": "locale"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 50 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 54 },
       "id": 125,
       "options": {
         "colorMode": "value",
@@ -900,7 +884,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_gas_price_wei{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Gas (Wei)", "refId": "A" }],
-      "title": "",
+      "title": "Gas (Wei)",
       "type": "stat"
     },
     {
@@ -908,13 +892,15 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
+          "displayName": "Gas (STRK)",
           "mappings": [],
+          "noValue": "-",
           "thresholds": { "mode": "absolute", "steps": [{ "color": "#C4162A", "value": null }] },
           "unit": "locale"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 50 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 58 },
       "id": 126,
       "options": {
         "colorMode": "value",
@@ -926,7 +912,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "l1_gas_price_strk{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Gas (STRK)", "refId": "A" }],
-      "title": "",
+      "title": "Gas (STRK)",
       "type": "stat"
     },
     {
@@ -944,7 +930,7 @@
           { "matcher": { "id": "byName", "options": "Avg Sync Time" }, "properties": [{ "id": "color", "value": { "fixedColor": "#3274D9", "mode": "fixed" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 54 },
+      "gridPos": { "h": 8, "w": 10, "x": 0, "y": 54 },
       "id": 127,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -970,7 +956,7 @@
           { "matcher": { "id": "byName", "options": "Events/s" }, "properties": [{ "id": "color", "value": { "fixedColor": "#3274D9", "mode": "fixed" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 54 },
+      "gridPos": { "h": 8, "w": 10, "x": 10, "y": 54 },
       "id": 128,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -1038,7 +1024,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "max(db_is_write_stopped{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Write Status", "refId": "A" }],
-      "title": "",
+      "title": "Write Status",
       "type": "stat"
     },
     {
@@ -1064,7 +1050,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Pending Compaction", "refId": "A" }],
-      "title": "",
+      "title": "Pending Compaction",
       "type": "stat"
     },
     {
@@ -1090,7 +1076,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_l0_files_count{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "L0 Files", "refId": "A" }],
-      "title": "",
+      "title": "L0 Files",
       "type": "stat"
     },
     {
@@ -1116,7 +1102,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Immutable MemTables", "refId": "A" }],
-      "title": "",
+      "title": "Immutable MemTables",
       "type": "stat"
     },
     {
@@ -1142,7 +1128,7 @@
       },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_memtable_size_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable Size", "refId": "A" }],
-      "title": "",
+      "title": "MemTable Size",
       "type": "stat"
     },
     {
