@@ -1,4 +1,4 @@
-use crate::cli::RunCmd;
+use crate::cli::{RunCmd, SetupCmd};
 use crate::OrchestratorError;
 
 /// Validated MongoDB parameters
@@ -18,6 +18,23 @@ impl TryFrom<RunCmd> for DatabaseArgs {
                 .mongodb_connection_url
                 .ok_or(OrchestratorError::SetupCommandError("Database Connection URL is required".to_string()))?,
             database_name: run_cmd
+                .mongodb_args
+                .mongodb_database_name
+                .ok_or(OrchestratorError::SetupCommandError("Database Name is required".to_string()))?,
+        })
+    }
+}
+
+impl TryFrom<SetupCmd> for DatabaseArgs {
+    type Error = OrchestratorError;
+
+    fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
+        Ok(Self {
+            connection_uri: setup_cmd
+                .mongodb_args
+                .mongodb_connection_url
+                .ok_or(OrchestratorError::SetupCommandError("Database Connection URL is required".to_string()))?,
+            database_name: setup_cmd
                 .mongodb_args
                 .mongodb_database_name
                 .ok_or(OrchestratorError::SetupCommandError("Database Name is required".to_string()))?,

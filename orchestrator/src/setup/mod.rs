@@ -1,6 +1,9 @@
 use crate::cli::SetupCmd;
+use crate::core::client::lock::mongodb::MongoLockClient;
+use crate::core::client::MongoDbClient;
 use crate::core::cloud::CloudProvider;
 use crate::setup::factory::ResourceFactory;
+use crate::types::params::database::DatabaseArgs;
 use crate::types::params::{AlertArgs, CronArgs, MiscellaneousArgs, QueueArgs, StorageArgs};
 use crate::{OrchestratorError, OrchestratorResult};
 use std::sync::Arc;
@@ -17,6 +20,9 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     let cloud_provider = setup_cloud_provider(setup_cmd).await?;
 
     info!("Setting up resources for Orchestrator...");
+
+    // Setup database indexes
+    setup_database(setup_cmd).await?;
 
     let queue_params = QueueArgs::try_from(setup_cmd.clone())?;
     let storage_params = StorageArgs::try_from(setup_cmd.clone())?;
@@ -42,6 +48,26 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     };
     resources.setup_resource(&setup_cmd.layer).await?;
 
+    Ok(())
+}
+
+/// Setup database indexes for all collections
+async fn setup_database(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
+    info!("Setting up MongoDB indexes...");
+
+    let db_args = DatabaseArgs::try_from(setup_cmd.clone())?;
+
+    // Create indexes for jobs, aggregator_batches, and snos_batches collections
+    let db_client = MongoDbClient::new(&db_args).await?;
+    db_client.ensure_indexes().await?;
+    info!("Created indexes for jobs, aggregator_batches, and snos_batches collections");
+
+    // Create indexes for locks collection
+    let lock_client = MongoLockClient::new(&db_args).await?;
+    lock_client.ensure_indexes().await?;
+    info!("Created indexes for locks collection");
+
+    info!("MongoDB indexes setup complete");
     Ok(())
 }
 

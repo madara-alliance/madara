@@ -235,6 +235,12 @@ pub struct RunCmd {
             .multiple(false)
             .requires("provider")
     ),
+    group(
+        ArgGroup::new("database")
+            .args(&["mongodb"])
+            .required(true)
+            .multiple(false)
+    ),
 )]
 pub struct SetupCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
@@ -259,6 +265,10 @@ pub struct SetupCmd {
     // Cron
     #[clap(flatten)]
     pub aws_event_bridge_args: AWSEventBridgeCliArgs,
+
+    // Database
+    #[clap(flatten)]
+    pub mongodb_args: database::mongodb::MongoDBCliArgs,
 
     // Miscellaneous
     #[arg(env = "MADARA_ORCHESTRATOR_SETUP_TIMEOUT", long, default_value = Some("300"))]

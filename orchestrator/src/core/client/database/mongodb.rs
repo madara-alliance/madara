@@ -80,6 +80,26 @@ impl MongoDbClient {
     }
 
     pub async fn ensure_indexes(&self) -> Result<(), DatabaseError> {
+        // Create indexes for jobs collection
+        let jobs_collection = self.get_job_collection();
+
+        let jobs_indexes = vec![
+            // Index on id
+            IndexModel::builder().keys(doc! { "id": 1 }).build(),
+            // Unique compound index on job_type and internal_id
+            IndexModel::builder()
+                .keys(doc! { "job_type": 1, "internal_id": -1 })
+                .options(IndexOptions::builder().unique(true).build())
+                .build(),
+            // Compound index for job queries by type, status, and internal_id
+            IndexModel::builder().keys(doc! { "job_type": 1, "status": 1, "internal_id": -1 }).build(),
+            // Index on status
+            IndexModel::builder().keys(doc! { "status": 1 }).build(),
+        ];
+
+        jobs_collection.create_indexes(jobs_indexes, None).await?;
+        info!("Created indexes for jobs collection");
+
         // Create indexes for aggregator batch collection
         let aggregator_collection = self.get_aggregator_batch_collection();
 

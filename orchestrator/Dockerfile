@@ -159,6 +159,7 @@ COPY --from=builder-rust /app/orchestrator/migrate-mongo-config.js /app/migrate-
 RUN npm install --omit=dev
 
 # Create entrypoint script that runs migrations before starting orchestrator
+# Note: migrate-mongo handles distributed locking via lockCollectionName and lockTtl config
 RUN echo '#!/bin/bash\n\
   set -e\n\
   \n\

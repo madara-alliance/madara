@@ -54,37 +54,6 @@ module.exports = {
     console.log(
       `Migration complete: ${updatedCount} documents updated, ${errorCount} errors`,
     );
-
-    // Recreate the indexes that use internal_id to ensure proper ordering with the new type
-    // First drop the existing indexes
-    try {
-      await jobsCollection.dropIndex("job_type_1_internal_id_-1");
-    } catch (e) {
-      console.log(
-        "Index job_type_1_internal_id_-1 may not exist, continuing...",
-      );
-    }
-
-    try {
-      await jobsCollection.dropIndex("job_type_1_status_1_internal_id_-1");
-    } catch (e) {
-      console.log(
-        "Index job_type_1_status_1_internal_id_-1 may not exist, continuing...",
-      );
-    }
-
-    // Recreate the indexes
-    await jobsCollection.createIndex(
-      { job_type: 1, internal_id: -1 },
-      { unique: true },
-    );
-    await jobsCollection.createIndex({
-      job_type: 1,
-      status: 1,
-      internal_id: -1,
-    });
-
-    console.log("Indexes recreated successfully");
   },
 
   async down(db) {
@@ -116,34 +85,5 @@ module.exports = {
     }
 
     console.log(`Rollback complete: ${updatedCount} documents updated`);
-
-    // Recreate the indexes
-    try {
-      await jobsCollection.dropIndex("job_type_1_internal_id_-1");
-    } catch (e) {
-      console.log(
-        "Index job_type_1_internal_id_-1 may not exist, continuing...",
-      );
-    }
-
-    try {
-      await jobsCollection.dropIndex("job_type_1_status_1_internal_id_-1");
-    } catch (e) {
-      console.log(
-        "Index job_type_1_status_1_internal_id_-1 may not exist, continuing...",
-      );
-    }
-
-    await jobsCollection.createIndex(
-      { job_type: 1, internal_id: -1 },
-      { unique: true },
-    );
-    await jobsCollection.createIndex({
-      job_type: 1,
-      status: 1,
-      internal_id: -1,
-    });
-
-    console.log("Indexes recreated successfully");
   },
 };

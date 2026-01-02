@@ -16,6 +16,7 @@ use thiserror::Error;
 
 use crate::core::client::alert::AlertError;
 use crate::core::client::database::DatabaseError;
+use crate::core::client::lock::error::LockError;
 use crate::core::client::queue::QueueError;
 use crate::core::client::storage::StorageError;
 use crate::core::error::OrchestratorCoreError;
@@ -39,6 +40,9 @@ pub enum OrchestratorError {
 
     #[error("Database error: {0}")]
     DatabaseCoreError(#[from] DatabaseError),
+
+    #[error("Lock error: {0}")]
+    LockCoreError(#[from] LockError),
 
     #[error("Orchestrator Core Error: {0}")]
     OrchestratorCoreError(#[from] OrchestratorCoreError),
