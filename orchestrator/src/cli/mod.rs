@@ -235,12 +235,6 @@ pub struct RunCmd {
             .multiple(false)
             .requires("provider")
     ),
-    group(
-        ArgGroup::new("database")
-            .args(&["mongodb"])
-            .required(true)
-            .multiple(false)
-    ),
 )]
 pub struct SetupCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]

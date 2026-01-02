@@ -21,8 +21,12 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
 
     info!("Setting up resources for Orchestrator...");
 
-    // Setup database indexes
-    setup_database(setup_cmd).await?;
+    // Setup database indexes (only if MongoDB args are provided)
+    if setup_cmd.mongodb_args.mongodb_connection_url.is_some() {
+        setup_database(setup_cmd).await?;
+    } else {
+        info!("Skipping MongoDB setup (--mongodb not provided)");
+    }
 
     let queue_params = QueueArgs::try_from(setup_cmd.clone())?;
     let storage_params = StorageArgs::try_from(setup_cmd.clone())?;

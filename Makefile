@@ -477,7 +477,7 @@ git-hook:
 .PHONY: setup-l2
 setup-l2: setup-cairo
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
-	@cargo run --package orchestrator --release -- setup --layer l2  --mongodb --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup --layer l2  --mongodb --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: setup-l2-localstack
 setup-l2-localstack:
