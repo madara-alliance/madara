@@ -34,7 +34,7 @@ pub struct EventWorker {
 }
 
 const QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS: Duration = Duration::from_secs(30);
-const NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_secs(1);
+const QUEUE_NO_MESSAGE_SLEEP_DURATION: Duration = Duration::from_millis(1000);
 
 impl EventWorker {
     /// new - Create a new EventWorker
@@ -123,16 +123,15 @@ impl EventWorker {
     /// It returns a Result<Option<Delivery>, EventSystemError>
     pub async fn get_message(&self) -> EventSystemResult<Option<Delivery>> {
         let start = Instant::now();
-        let timeout = QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS;
 
         loop {
-            match self.config.clone().queue().consume_message_from_queue(self.queue_type.clone()).await {
+            match self.config.queue().consume_message_from_queue(self.queue_type.clone()).await {
                 Ok(delivery) => return Ok(Some(delivery)),
                 Err(crate::core::client::queue::QueueError::ErrorFromQueueError(omniqueue::QueueError::NoData)) => {
-                    if start.elapsed() > timeout {
+                    if start.elapsed() > QUEUE_GET_MESSAGE_WAIT_TIMEOUT_SECS {
                         return Ok(None);
                     }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    tokio::time::sleep(QUEUE_NO_MESSAGE_SLEEP_DURATION).await;
                     continue;
                 }
                 Err(e) => {
@@ -436,7 +435,7 @@ impl EventWorker {
                                         });
                                     }
                                 },
-                                None => sleep(NO_MESSAGE_SLEEP_DURATION).await,
+                                None => sleep(QUEUE_NO_MESSAGE_SLEEP_DURATION).await,
                             }
                         }
                         Err(e) => {

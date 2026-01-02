@@ -50,7 +50,7 @@ pub fn create_unique_queue_name(base_name: &str) -> String {
 pub fn default_job_item() -> JobItem {
     JobItem {
         id: Uuid::new_v4(),
-        internal_id: String::from("0"),
+        internal_id: 0,
         job_type: DataSubmission,
         status: Created,
         external_id: ExternalId::String("0".to_string().into_boxed_str()),
@@ -65,15 +65,13 @@ pub fn default_job_item() -> JobItem {
 }
 
 #[fixture]
-pub fn custom_job_item(default_job_item: JobItem, #[default(String::from("0"))] internal_id: String) -> JobItem {
+pub fn custom_job_item(default_job_item: JobItem, #[default(0)] internal_id: u64) -> JobItem {
     let mut job_item = default_job_item;
-    job_item.internal_id = internal_id.clone();
+    job_item.internal_id = internal_id;
 
-    // Update block number in metadata to match internal_id if possible
-    if let Ok(block_number) = internal_id.parse::<u64>() {
-        if let JobSpecificMetadata::Da(ref mut da_metadata) = job_item.metadata.specific {
-            da_metadata.block_number = block_number;
-        }
+    // Update block number in metadata to match internal_id
+    if let JobSpecificMetadata::Da(ref mut da_metadata) = job_item.metadata.specific {
+        da_metadata.block_number = internal_id;
     }
 
     job_item

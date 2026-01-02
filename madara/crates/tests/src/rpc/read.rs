@@ -769,7 +769,8 @@ mod test_rpc_read_calls {
                 deployed_contracts: vec![],
                 replaced_classes: vec![],
                 nonces: vec![],
-                migrated_compiled_classes: None,
+                // Always serialized, even when empty (RPC v0.10.0 spec)
+                migrated_compiled_classes: Some(vec![]),
             },
         });
 

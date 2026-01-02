@@ -4,7 +4,7 @@ const config = {
   mongodb: {
     // TODO Change (or review) the url to your MongoDB:
     url:
-      process.env.MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URLDB_CONNECTION_URL ||
+      process.env.MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL ||
       "mongodb://localhost:27017",
 
     // TODO Change this to your database name:
@@ -12,10 +12,8 @@ const config = {
       process.env.MADARA_ORCHESTRATOR_DATABASE_NAME || "orchestrator",
 
     options: {
-      useNewUrlParser: true, // removes a deprecation warning when connecting
-      useUnifiedTopology: true, // removes a deprecating warning when connecting
-      //   connectTimeoutMS: 3600000, // increase connection timeout to 1 hour
-      //   socketTimeoutMS: 3600000, // increase socket timeout to 1 hour
+      // connectTimeoutMS: 3600000, // increase connection timeout to 1 hour
+      // socketTimeoutMS: 3600000, // increase socket timeout to 1 hour
     },
   },
 
@@ -24,6 +22,13 @@ const config = {
 
   // The mongodb collection where the applied changes are stored. Only edit this when really necessary.
   changelogCollectionName: "changelog",
+
+  // The mongodb collection where the lock will be created.
+  lockCollectionName: "changelog_lock",
+
+  // The value in seconds for the TTL index that will be used for the lock.
+  // Value of 0 will disable the feature.
+  lockTtl: 60,
 
   // The file extension to create migrations and search for in migration dir
   migrationFileExtension: ".js",

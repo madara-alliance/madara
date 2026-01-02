@@ -108,9 +108,7 @@ async fn create_job_job_does_not_exists_in_db_works() {
     // create_job calls get_job_handler exactly once
     ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
-    assert!(JobHandlerService::create_job(JobType::SnosRun, "0".to_string(), metadata, services.config.clone())
-        .await
-        .is_ok());
+    assert!(JobHandlerService::create_job(JobType::SnosRun, 0, metadata, services.config.clone()).await.is_ok());
 
     // Db checks.
     let job_in_db = services.config.database().get_job_by_id(job_item.id).await.unwrap().unwrap();
@@ -155,9 +153,7 @@ async fn create_job_job_exists_in_db_works() {
         }),
     };
 
-    assert!(JobHandlerService::create_job(JobType::ProofCreation, "0".to_string(), metadata, services.config.clone())
-        .await
-        .is_ok());
+    assert!(JobHandlerService::create_job(JobType::ProofCreation, 0, metadata, services.config.clone()).await.is_ok());
 
     // There should be only 1 job in the db
     let jobs_in_db = database_client
@@ -196,7 +192,7 @@ async fn create_job_job_handler_returns_error() {
         .await;
 
     let job_type = JobType::ProofCreation;
-    let internal_id = "0".to_string();
+    let internal_id: u64 = 0;
 
     // Create a proper JobMetadata for the test
     let metadata = JobMetadata {
@@ -220,8 +216,7 @@ async fn create_job_job_handler_returns_error() {
     ctx_guard.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
 
     // Verify that create_job returns an error
-    let result =
-        JobHandlerService::create_job(job_type.clone(), internal_id.clone(), metadata, services.config.clone()).await;
+    let result = JobHandlerService::create_job(job_type.clone(), internal_id, metadata, services.config.clone()).await;
     assert!(result.is_err(), "create_job should return an error when job handler fails");
 
     // Verify the error is the one we expect
@@ -231,7 +226,7 @@ async fn create_job_job_handler_returns_error() {
     );
 
     // Verify no job was created in the database
-    let job_in_db = services.config.database().get_job_by_internal_id_and_type(&internal_id, &job_type).await.unwrap();
+    let job_in_db = services.config.database().get_job_by_internal_id_and_type(internal_id, &job_type).await.unwrap();
     assert!(job_in_db.is_none(), "No job should be created in the database when creation fails");
 
     // Verify no message was added to the queue

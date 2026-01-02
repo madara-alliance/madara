@@ -4,6 +4,11 @@
 //! that data integrity is maintained. They are designed to run against
 //! an external madara instance that has just completed a migration.
 //!
+//! # Feature Flag
+//!
+//! This module is only compiled when the `migration-tests` feature is enabled.
+//! This prevents these tests from running during regular test workflows.
+//!
 //! # How it works
 //!
 //! 1. CI workflow downloads a base DB at the minimum supported version
@@ -16,12 +21,30 @@
 //! # Running locally
 //!
 //! ```bash
-//! # 1. Start madara with a DB that needs migration
-//! ./madara --base-path /path/to/old-db --network sepolia --no-l1-sync
+//! # 1. Download the base DB fixture from GHCR (contains DB at version v8)
+//! docker pull ghcr.io/madara-alliance/db-fixture:v8
+//! mkdir -p /tmp/migration-test
+//! CONTAINER=$(docker create ghcr.io/madara-alliance/db-fixture:v8 /bin/true)
+//! docker cp "${CONTAINER}:/db.tar.gz" /tmp/db.tar.gz
+//! docker rm "${CONTAINER}"
+//! tar -xzf /tmp/db.tar.gz -C /tmp/migration-test
 //!
-//! # 2. Run migration tests
-//! cargo test -p mc-e2e-tests migration_validation -- --ignored --nocapture
+//! # 2. Start madara with the old DB (migration runs automatically on startup)
+//! cargo run --bin madara --release -- \
+//!     --base-path /tmp/migration-test \
+//!     --network mainnet \
+//!     --no-l1-sync \
+//!     --rpc-port 9944
+//!
+//! # 3. Run migration tests (requires feature flag + test filter)
+//! cargo test -p mc-e2e-tests --features migration-tests rpc::migration -- --nocapture
 //! ```
+//!
+//! The tests will verify that:
+//! - Madara successfully migrated the DB from v8 to the current version
+//! - RPC endpoints are functional after migration
+//! - State data (blocks, state roots) is intact
+//! - New fields like `migrated_compiled_classes` are properly returned
 //!
 //! # Environment Variables
 //!
@@ -56,7 +79,6 @@ fn get_client() -> JsonRpcClient<HttpTransport> {
 /// the migrated DB, it should respond to RPC calls.
 #[rstest]
 #[tokio::test]
-#[ignore = "Requires external madara instance on port 9944"]
 async fn test_migration_validation_rpc_healthy() {
     let client = get_client();
 
@@ -72,7 +94,6 @@ async fn test_migration_validation_rpc_healthy() {
 /// Queries the latest block to ensure block storage is intact.
 #[rstest]
 #[tokio::test]
-#[ignore = "Requires external madara instance on port 9944"]
 async fn test_migration_validation_blocks_accessible() {
     let client = get_client();
 
@@ -94,7 +115,6 @@ async fn test_migration_validation_blocks_accessible() {
 /// - state_diff
 #[rstest]
 #[tokio::test]
-#[ignore = "Requires external madara instance on port 9944"]
 async fn test_migration_validation_state_update_intact() {
     let client = get_client();
 
@@ -131,36 +151,31 @@ async fn test_migration_validation_state_update_intact() {
 
 /// Tests specific to v8 → v9 migration (SNIP-34: CASM hash migration)
 ///
-/// These tests will be implemented when the actual migration code is ready.
+/// These tests verify that the `migrated_compiled_classes` field is properly
+/// returned in state updates after the SNIP-34 migration.
 #[cfg(test)]
 mod v9_snip34 {
-    #[allow(unused_imports)]
     use super::*;
 
-    // TODO: Implement when SNIP-34 migration is ready
-    //
-    // Example test structure:
-    //
-    // #[rstest]
-    // #[tokio::test]
-    // #[ignore = "Requires external madara instance on port 9944"]
-    // async fn test_v9_state_diff_has_migrated_classes() {
-    //     let client = get_client();
-    //
-    //     let state_update = client
-    //         .get_state_update(BlockId::Number(1))
-    //         .await
-    //         .expect("Should get state update");
-    //
-    //     // For SNIP-34: verify migrated_classes field exists in state_diff
-    //     // It should be empty for blocks that don't have class migrations
-    //     match state_update {
-    //         MaybePreConfirmedStateUpdate::Update(update) => {
-    //             // Check that the field is accessible
-    //             // Note: The actual field name depends on starknet-providers version
-    //             println!("State diff storage_diffs count: {}", update.state_diff.storage_diffs.len());
-    //         }
-    //         _ => panic!("Expected confirmed state update"),
-    //     }
-    // }
+    /// Verify that state updates include the migrated_compiled_classes field.
+    ///
+    /// The field should be present in all state updates (empty or with values).
+    /// This test queries a block that is expected to have no migrations.
+    #[rstest]
+    #[tokio::test]
+    async fn test_migration_validation_v9_migrated_classes_field() {
+        let client = get_client();
+
+        let state_update = client.get_state_update(BlockId::Number(1)).await.expect("Should get state update");
+
+        match state_update {
+            MaybePreConfirmedStateUpdate::Update(update) => {
+                let migrated = update.state_diff.migrated_compiled_classes;
+                assert!(migrated.is_some(), "migrated_compiled_classes field must be present in state_diff (got None)");
+            }
+            MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
+                panic!("Block 1 should not be pre-confirmed");
+            }
+        }
+    }
 }

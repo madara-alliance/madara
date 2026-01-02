@@ -18,15 +18,15 @@ pub struct RegisterProofJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for RegisterProofJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::ProofRegistration, internal_id);
-        let job_item = JobItem::create(internal_id.clone(), JobType::ProofRegistration, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id, JobType::ProofRegistration, JobStatus::Created, metadata);
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::ProofRegistration, internal_id);
         Ok(job_item)
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::ProofRegistration, internal_id);
 
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
@@ -47,16 +47,16 @@ impl JobHandlerTrait for RegisterProofJobHandler {
 
         let proof = String::from_utf8(proof_file.to_vec()).context(format!(
             "Failed to parse proof file as UTF-8 for job_id: {}, proof_key: {}",
-            job.internal_id, proof_key
+            internal_id, proof_key
         ))?;
 
         let _: StarkProof = parse(proof.clone())
-            .context(format!("Failed to parse proof file as UTF-8, internal-id: {}", job.internal_id))?;
+            .context(format!("Failed to parse proof file as UTF-8, internal-id: {}", internal_id))?;
 
         // Format proof for submission
         let formatted_proof = format!("{{\n\t\"proof\": {}\n}}", proof);
 
-        let task_id = job.internal_id.clone();
+        let task_id = internal_id.to_string();
 
         // Submit proof for L2 verification
         let external_id = config
@@ -65,7 +65,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             .await
             .inspect_err(|e| {
                 error!(error = %e, "Failed to submit proof for L2 verification for job {}",
-                job.internal_id);
+                internal_id);
             })?;
 
         info!(log_type = "completed", job_id = %job.id, external_id = %external_id, "{:?} job {} processed successfully", JobType::ProofRegistration, internal_id);
@@ -73,7 +73,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::ProofRegistration, internal_id);
 
         let task_id: String = job
@@ -104,7 +104,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
                 error!(
                     error = %e,
                     "Failed to get task status from prover client for job {}",
-                    job.internal_id
+                    internal_id
                 )
             })?;
 
@@ -121,7 +121,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             TaskStatus::Succeeded => {
                 if let Some(download_path) = &proving_metadata.download_proof {
                     let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
-                        error!(error = %e, "Failed to fetch proof from prover client for job {}", job.internal_id);
+                        error!(error = %e, "Failed to fetch proof from prover client for job {}", internal_id);
                     })?;
                     debug!("Downloading and storing bridge proof to path: {}", download_path);
                     config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
@@ -133,7 +133,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
                 warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed", JobType::ProofRegistration, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Proof registration job #{} failed with error: {}",
-                    job.internal_id, err
+                    internal_id, err
                 )))
             }
         }

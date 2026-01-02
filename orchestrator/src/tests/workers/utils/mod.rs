@@ -17,29 +17,26 @@ use chrono::{SubsecRound, Utc};
 use mockall::predicate::eq;
 use uuid::Uuid;
 
-pub fn get_job_item_mock_by_id(id: String, uuid: Uuid) -> JobItem {
-    // Parse the ID as a u64 for use in metadata
-    let block_number = id.parse::<u64>().unwrap_or(0);
-
+pub fn get_job_item_mock_by_id(id: u64, uuid: Uuid) -> JobItem {
     // Create appropriate metadata for SnosRun job type
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
             snos_batch_index: 1,
-            start_block: block_number,
-            end_block: block_number,
+            start_block: id,
+            end_block: id,
             num_blocks: 1,
             full_output: true,
-            cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
-            snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
-            program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
+            cairo_pie_path: Some(format!("{}/{}", id, CAIRO_PIE_FILE_NAME)),
+            snos_output_path: Some(format!("{}/{}", id, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", id, PROGRAM_OUTPUT_FILE_NAME)),
             ..Default::default()
         }),
     };
 
     JobItem {
         id: uuid,
-        internal_id: id.clone(),
+        internal_id: id,
         job_type: JobType::SnosRun,
         status: JobStatus::Created,
         external_id: ExternalId::Number(0),
@@ -77,7 +74,7 @@ pub fn get_job_by_mock_id_vector(
 
         jobs_vec.push(JobItem {
             id: uuid,
-            internal_id: i.to_string(),
+            internal_id: i,
             job_type: job_type.clone(),
             status: job_status.clone(),
             external_id: ExternalId::Number(0),
@@ -138,6 +135,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
                 snos_output_paths: vec![format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)],
                 program_output_paths: vec![format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)],
                 blob_data_paths: vec![format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)],
+                da_segment_paths: vec![],
                 tx_hashes: Vec::new(),
                 context: SettlementContext::Block(SettlementContextData {
                     to_settle: vec![block_number],
@@ -180,7 +178,7 @@ pub async fn create_and_store_prerequisite_jobs(
     let snos_uuid = Uuid::new_v4();
     let snos_job = JobItem {
         id: snos_uuid,
-        internal_id: block_number.to_string(),
+        internal_id: block_number,
         job_type: JobType::SnosRun,
         status: job_status.clone(),
         external_id: ExternalId::Number(0),
@@ -194,7 +192,7 @@ pub async fn create_and_store_prerequisite_jobs(
     let aggregator_uuid = Uuid::new_v4();
     let aggregator_job = JobItem {
         id: aggregator_uuid,
-        internal_id: block_number.to_string(),
+        internal_id: block_number,
         job_type: JobType::Aggregator,
         status: job_status,
         external_id: ExternalId::Number(0),
@@ -229,7 +227,7 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabaseClient, mock_job: 
 
     let job_item = JobItem {
         id: uuid,
-        internal_id: id.to_string(),
+        internal_id: block_number,
         job_type: JobType::ProofCreation,
         status: JobStatus::Created,
         external_id: ExternalId::Number(0),
@@ -244,7 +242,7 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabaseClient, mock_job: 
     // Check if a proving job already exists for this SNOS job
     db.expect_get_job_by_internal_id_and_type()
         .times(1)
-        .with(eq(id.clone().to_string()), eq(JobType::ProofCreation))
+        .with(eq(block_number), eq(JobType::ProofCreation))
         .returning(|_, _| Ok(None));
 
     // Create the proving job
@@ -253,6 +251,6 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabaseClient, mock_job: 
     // Store the job in the database
     db.expect_create_job()
         .times(1)
-        .withf(move |item| item.internal_id == id.clone().to_string())
+        .withf(move |item| item.internal_id == block_number)
         .returning(move |_| Ok(job_item_cloned.clone()));
 }
