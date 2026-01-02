@@ -453,7 +453,7 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // previous write is still doing memtable insert.
     //
     // This improves throughput for concurrent writers.
-    options.set_enable_pipelined_write(true);
+    options.set_enable_pipelined_write(false);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // LOGGING & FILE MANAGEMENT
