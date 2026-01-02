@@ -52,7 +52,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "cairo_native_cache_size",
+          "expr": "cairo_native_cache_size{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -93,7 +93,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "cairo_native_cache_hits_memory_total",
+          "expr": "cairo_native_cache_hits_memory_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -134,7 +134,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "cairo_native_cache_hits_disk_total",
+          "expr": "cairo_native_cache_hits_disk_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -175,7 +175,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "cairo_native_cache_evictions_total",
+          "expr": "cairo_native_cache_evictions_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -216,7 +216,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "cairo_native_vm_fallbacks_total",
+          "expr": "cairo_native_vm_fallbacks_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -257,7 +257,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "cairo_native_current_compilations",
+          "expr": "cairo_native_current_compilations{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -319,13 +319,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_hits_memory_total[5m]) / (rate(cairo_native_cache_hits_memory_total[5m]) + rate(cairo_native_cache_memory_miss_total[5m]) + 0.001)",
+          "expr": "rate(cairo_native_cache_hits_memory_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(cairo_native_cache_hits_memory_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(cairo_native_cache_memory_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + 0.001)",
           "legendFormat": "Memory Hit Rate",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_hits_disk_total[5m]) / (rate(cairo_native_cache_hits_disk_total[5m]) + rate(cairo_native_cache_disk_miss_total[5m]) + 0.001)",
+          "expr": "rate(cairo_native_cache_hits_disk_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(cairo_native_cache_hits_disk_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(cairo_native_cache_disk_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + 0.001)",
           "legendFormat": "Disk Hit Rate",
           "refId": "B"
         }
@@ -380,25 +380,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_hits_memory_total[5m])",
+          "expr": "rate(cairo_native_cache_hits_memory_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Memory Hits/s",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_hits_disk_total[5m])",
+          "expr": "rate(cairo_native_cache_hits_disk_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Disk Hits/s",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_memory_miss_total[5m])",
+          "expr": "rate(cairo_native_cache_memory_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Memory Miss/s",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_disk_miss_total[5m])",
+          "expr": "rate(cairo_native_cache_disk_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Disk Miss/s",
           "refId": "D"
         }
@@ -470,25 +470,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_compilations_started_total[5m])",
+          "expr": "rate(cairo_native_compilations_started_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Started/s",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_compilations_succeeded_total[5m])",
+          "expr": "rate(cairo_native_compilations_succeeded_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Succeeded/s",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_compilations_failed_total[5m])",
+          "expr": "rate(cairo_native_compilations_failed_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Failed/s",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_compilations_timeout_total[5m])",
+          "expr": "rate(cairo_native_compilations_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Timeout/s",
           "refId": "D"
         }
@@ -543,19 +543,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(cairo_native_compilation_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(cairo_native_compilation_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.90, rate(cairo_native_compilation_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.90, rate(cairo_native_compilation_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "p90",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, rate(cairo_native_compilation_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(cairo_native_compilation_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -618,19 +618,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_lookup_time_memory_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_lookup_time_memory_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Memory Lookup p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_lookup_time_disk_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_lookup_time_disk_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Disk Lookup p50",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_conversion_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_conversion_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Conversion p50",
           "refId": "C"
         }
@@ -685,13 +685,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_vm_fallbacks_total[5m])",
+          "expr": "rate(cairo_native_vm_fallbacks_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "VM Fallbacks/s",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_compilation_in_progress_skip_total[5m])",
+          "expr": "rate(cairo_native_compilation_in_progress_skip_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "In-Progress Skip/s",
           "refId": "B"
         }
@@ -759,31 +759,31 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_memory_timeout_total[5m])",
+          "expr": "rate(cairo_native_cache_memory_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Memory Timeout/s",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_disk_load_timeout_total[5m])",
+          "expr": "rate(cairo_native_cache_disk_load_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Disk Load Timeout/s",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_disk_load_error_total[5m])",
+          "expr": "rate(cairo_native_cache_disk_load_error_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Disk Load Error/s",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_disk_file_not_found_total[5m])",
+          "expr": "rate(cairo_native_cache_disk_file_not_found_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "File Not Found/s",
           "refId": "D"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cairo_native_cache_disk_file_empty_total[5m])",
+          "expr": "rate(cairo_native_cache_disk_file_empty_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "File Empty/s",
           "refId": "E"
         }
@@ -838,19 +838,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_disk_load_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_disk_load_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Disk Load p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, rate(cairo_native_cache_disk_load_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(cairo_native_cache_disk_load_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Disk Load p99",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_eviction_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(cairo_native_cache_eviction_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Eviction p50",
           "refId": "C"
         }
@@ -885,14 +885,32 @@
         "allValue": ".*",
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-        "definition": "label_values(cairo_native_cache_size, instance)",
+        "definition": "label_values(cairo_native_cache_size, namespace)",
         "hide": 0,
         "includeAll": true,
-        "label": "Instance",
+        "label": "Namespace",
         "multi": true,
-        "name": "instance",
+        "name": "namespace",
         "options": [],
-        "query": { "query": "label_values(cairo_native_cache_size, instance)", "refId": "StandardVariableQuery" },
+        "query": { "query": "label_values(cairo_native_cache_size, namespace)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(cairo_native_cache_size{namespace=~\"$namespace\"}, pod)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Pod",
+        "multi": true,
+        "name": "pod",
+        "options": [],
+        "query": { "query": "label_values(cairo_native_cache_size{namespace=~\"$namespace\"}, pod)", "refId": "StandardVariableQuery" },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,

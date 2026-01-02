@@ -762,6 +762,10 @@ impl BlockProductionTask {
                     "Received ExecutorMessage::BatchExecuted executed_txs={:?}",
                     batch_execution_result.executed_txs
                 );
+
+                // Record batch execution stats metrics
+                self.metrics.record_execution_stats(&batch_execution_result.stats);
+
                 let current_state = self.current_state.as_mut().context("No current state")?;
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")

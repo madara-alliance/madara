@@ -46,7 +46,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "max(block_produced_no)",
+          "expr": "max(block_produced_no{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Chain Height",
           "refId": "A"
         }
@@ -82,7 +82,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "avg(block_production_time)",
+          "expr": "avg(block_production_time{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Avg Block Time",
           "refId": "A"
         }
@@ -119,7 +119,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "avg(tx_execution_time_ms)",
+          "expr": "avg(tx_execution_time_ms{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Avg Tx Time",
           "refId": "A"
         }
@@ -155,7 +155,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(transaction_counter_total)",
+          "expr": "sum(transaction_counter_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Total Txns",
           "refId": "A"
         }
@@ -192,7 +192,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(transaction_counter_total[1m]))",
+          "expr": "sum(rate(transaction_counter_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))",
           "legendFormat": "TPS (1m)",
           "refId": "A"
         }
@@ -229,7 +229,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(transaction_counter_total[1m]))",
+          "expr": "sum(rate(transaction_counter_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))",
           "legendFormat": "Max TPS",
           "refId": "A"
         }
@@ -265,7 +265,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "accepted_transaction_count_total",
+          "expr": "accepted_transaction_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Mempool",
           "refId": "A"
         }
@@ -301,7 +301,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "block_produced_count_total",
+          "expr": "block_produced_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Blocks Produced",
           "refId": "A"
         }
@@ -359,7 +359,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "max(block_produced_no)",
+          "expr": "max(block_produced_no{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Chain Height",
           "refId": "A"
         }
@@ -421,13 +421,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(transaction_counter_total[1m]))",
+          "expr": "sum(rate(transaction_counter_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))",
           "legendFormat": "TPS",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(block_produced_count_total[1m]) * 60",
+          "expr": "rate(block_produced_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) * 60",
           "legendFormat": "Blocks/min",
           "refId": "B"
         }
@@ -475,7 +475,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(db_size)",
+          "expr": "sum(db_size{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "DB Size",
           "refId": "A"
         }
@@ -511,7 +511,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(db_mem_table_total)",
+          "expr": "sum(db_mem_table_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "MemTable",
           "refId": "A"
         }
@@ -547,7 +547,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(db_cache_total)",
+          "expr": "sum(db_cache_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Block Cache",
           "refId": "A"
         }
@@ -583,7 +583,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(db_mem_table_unflushed)",
+          "expr": "sum(db_mem_table_unflushed{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Unflushed",
           "refId": "A"
         }
@@ -619,7 +619,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(db_mem_table_readers_total)",
+          "expr": "sum(db_mem_table_readers_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Table Readers",
           "refId": "A"
         }
@@ -655,7 +655,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(db_size[5m]))",
+          "expr": "sum(rate(db_size{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Growth Rate",
           "refId": "A"
         }
@@ -708,19 +708,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(db_size)",
+          "expr": "sum(db_size{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Total Size",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(db_mem_table_total)",
+          "expr": "sum(db_mem_table_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "MemTable",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(db_cache_total)",
+          "expr": "sum(db_cache_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "legendFormat": "Cache",
           "refId": "C"
         }
@@ -773,7 +773,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "column_sizes",
+          "expr": "column_sizes{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "{{column}}",
           "refId": "A"
         }
@@ -804,14 +804,32 @@
         "allValue": ".*",
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-        "definition": "label_values(block_produced_no, instance)",
+        "definition": "label_values(block_produced_no, namespace)",
         "hide": 0,
         "includeAll": true,
-        "label": "Instance",
+        "label": "Namespace",
         "multi": true,
-        "name": "instance",
+        "name": "namespace",
         "options": [],
-        "query": { "query": "label_values(block_produced_no, instance)", "refId": "StandardVariableQuery" },
+        "query": { "query": "label_values(block_produced_no, namespace)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(block_produced_no{namespace=~\"$namespace\"}, pod)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Pod",
+        "multi": true,
+        "name": "pod",
+        "options": [],
+        "query": { "query": "label_values(block_produced_no{namespace=~\"$namespace\"}, pod)", "refId": "StandardVariableQuery" },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,

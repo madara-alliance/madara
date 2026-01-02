@@ -46,7 +46,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(calls_finished_total)",
+          "expr": "sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "refId": "A"
         }
       ],
@@ -81,7 +81,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(calls_finished_total[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "refId": "A"
         }
       ],
@@ -116,7 +116,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "ws_sessions_opened_total - ws_sessions_closed_total",
+          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -155,7 +155,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(calls_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "refId": "A"
         }
       ],
@@ -194,7 +194,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, rate(calls_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "refId": "A"
         }
       ],
@@ -229,7 +229,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(calls_started_total) - sum(calls_finished_total)",
+          "expr": "sum(calls_started_total{namespace=~\"$namespace\", pod=~\"$pod\"}) - sum(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "refId": "A"
         }
       ],
@@ -281,13 +281,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(calls_started_total[5m]))",
+          "expr": "sum(rate(calls_started_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Requests Started",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(calls_finished_total[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Requests Finished",
           "refId": "B"
         }
@@ -345,13 +345,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(calls_finished_total{success=\"true\"}[5m])) / sum(rate(calls_finished_total[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", success=\"true\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Success Rate",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(calls_finished_total{success=\"false\"}[5m])) / sum(rate(calls_finished_total[5m]))",
+          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", success=\"false\"}[5m])) / sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Error Rate",
           "refId": "B"
         }
@@ -404,7 +404,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "topk(10, sum by (method) (rate(calls_finished_total[5m])))",
+          "expr": "topk(10, sum by (method) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "{{method}}",
           "refId": "A"
         }
@@ -457,25 +457,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(calls_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.50, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.90, rate(calls_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.90, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "p90",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, rate(calls_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.95, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "p95",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, rate(calls_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.99, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "p99",
           "refId": "D"
         }
@@ -519,7 +519,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "max(l2_block_number_sum / l2_block_number_count)",
+          "expr": "max(l2_block_number_sum{namespace=~\"$namespace\", pod=~\"$pod\"} / l2_block_number_count{namespace=~\"$namespace\", pod=~\"$pod\"})",
           "refId": "A"
         }
       ],
@@ -554,7 +554,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "transaction_count_total",
+          "expr": "transaction_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -589,7 +589,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "event_count_total",
+          "expr": "event_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -624,7 +624,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "l1_block_number",
+          "expr": "l1_block_number{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -659,7 +659,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "l1_gas_price_wei",
+          "expr": "l1_gas_price_wei{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -694,7 +694,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "l1_gas_price_strk",
+          "expr": "l1_gas_price_strk{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "refId": "A"
         }
       ],
@@ -746,13 +746,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.5, rate(l2_latest_sync_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.5, rate(l2_latest_sync_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Latest Block Sync Time",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.5, rate(l2_avg_sync_time_bucket[5m]))",
+          "expr": "histogram_quantile(0.5, rate(l2_avg_sync_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
           "legendFormat": "Average Sync Time",
           "refId": "B"
         }
@@ -805,13 +805,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(transaction_count_total[5m])",
+          "expr": "rate(transaction_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Transactions/s",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(event_count_total[5m])",
+          "expr": "rate(event_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])",
           "legendFormat": "Events/s",
           "refId": "B"
         }
@@ -872,7 +872,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "ws_sessions_opened_total - ws_sessions_closed_total",
+          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Active Sessions",
           "refId": "A"
         }
@@ -925,13 +925,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "l1_gas_price_wei",
+          "expr": "l1_gas_price_wei{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "L1 Gas (Wei)",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "l1_gas_price_strk",
+          "expr": "l1_gas_price_strk{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "L1 Gas (STRK)",
           "refId": "B"
         }
@@ -962,14 +962,32 @@
         "allValue": ".*",
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-        "definition": "label_values(calls_started_total, instance)",
+        "definition": "label_values(calls_started_total, namespace)",
         "hide": 0,
         "includeAll": true,
-        "label": "Instance",
+        "label": "Namespace",
         "multi": true,
-        "name": "instance",
+        "name": "namespace",
         "options": [],
-        "query": { "query": "label_values(calls_started_total, instance)", "refId": "StandardVariableQuery" },
+        "query": { "query": "label_values(calls_started_total, namespace)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(calls_started_total{namespace=~\"$namespace\"}, pod)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Pod",
+        "multi": true,
+        "name": "pod",
+        "options": [],
+        "query": { "query": "label_values(calls_started_total{namespace=~\"$namespace\"}, pod)", "refId": "StandardVariableQuery" },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
