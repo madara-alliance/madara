@@ -909,4 +909,140 @@ mod tests {
         }
         assert!(cache::cache_contains(&class_hash), "Compilation should complete successfully");
     }
+
+    /// Reproduces the sierra program extraction issue for a specific class from Paradex mock DB.
+    ///
+    /// This test reads a specific class from an external RocksDB database and attempts
+    /// native compilation to reproduce and debug the `ExtractSierraProgramFailed` error.
+    ///
+    /// Run with:
+    /// ```bash
+    /// cargo test --package mc-class-exec test_specific_class_native_compilation -- --ignored --nocapture
+    /// ```
+    #[tokio::test]
+    #[ignore = "requires external database at /home/ubuntu/home/ubuntu/madara_paradex_mock_db"]
+    async fn test_specific_class_native_compilation() {
+        use mc_db::rocksdb::{RocksDBConfig, RocksDBStorage};
+        use mc_db::storage::MadaraStorageRead;
+        use mp_class::{ClassInfo, CompiledSierra, SierraConvertedClass};
+        use std::path::Path;
+        use std::sync::Arc;
+
+        // Initialize tracing for better debug output
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
+
+        // Database path from the paradex mock run (the 'db' subdirectory contains the actual RocksDB)
+        let db_path = Path::new("/home/ubuntu/home/ubuntu/madara_paradex_mock_db/db");
+
+        // The class hash that is failing
+        let class_hash = starknet_types_core::felt::Felt::from_hex_unchecked(
+            "0x283ac40cc9f517abc49b3b6daf682fdd89169e54daf21c28676bb7047987b52",
+        );
+
+        println!("=== Test: Specific Class Native Compilation ===");
+        println!("Database path: {:?}", db_path);
+        println!("Class hash: {:#x}", class_hash);
+
+        // Check if database exists
+        if !db_path.exists() {
+            panic!(
+                "Database path does not exist: {:?}. \
+                 This test requires the Paradex mock database to be present.",
+                db_path
+            );
+        }
+
+        // Open RocksDB storage directly (bypasses MadaraBackend and NativeConfig type issues)
+        println!("Opening database...");
+        let db = RocksDBStorage::open(db_path, RocksDBConfig::default()).expect("Failed to open RocksDB");
+
+        // Get class info from the database
+        println!("Fetching class info for {:#x}...", class_hash);
+        let class_info_with_block = db.get_class(&class_hash).expect("Failed to query class").unwrap_or_else(|| {
+            panic!("Class not found in database: {:#x}", class_hash);
+        });
+
+        println!("Class found at block: {}", class_info_with_block.block_number);
+
+        // Check if it's a Sierra class
+        let sierra_class_info = match class_info_with_block.class_info {
+            ClassInfo::Sierra(info) => {
+                println!("Class is Sierra type");
+                println!(
+                    "  - Compiled class hash (v1): {:?}",
+                    info.compiled_class_hash.map(|h| format!("{:#x}", h))
+                );
+                println!(
+                    "  - Compiled class hash (v2): {:?}",
+                    info.compiled_class_hash_v2.map(|h| format!("{:#x}", h))
+                );
+                println!("  - Sierra program length: {}", info.contract_class.sierra_program.len());
+                println!("  - Contract class version: {}", info.contract_class.contract_class_version);
+                info
+            }
+            ClassInfo::Legacy(_) => {
+                panic!("Class is not a Sierra class - it's a Legacy class");
+            }
+        };
+
+        // Get the compiled class (CASM) - we need this to build SierraConvertedClass
+        let compiled_class_hash = sierra_class_info
+            .compiled_class_hash_v2
+            .or(sierra_class_info.compiled_class_hash)
+            .expect("No compiled class hash found");
+
+        println!("Fetching compiled class for hash {:#x}...", compiled_class_hash);
+        let compiled_with_block = db
+            .get_class_compiled(&compiled_class_hash)
+            .expect("Failed to query compiled class")
+            .unwrap_or_else(|| {
+                panic!("Compiled class not found for hash: {:#x}", compiled_class_hash);
+            });
+
+        println!("Compiled class found at block: {}", compiled_with_block.block_number);
+
+        // Build SierraConvertedClass (same structure used by the native compilation flow)
+        let sierra = SierraConvertedClass {
+            class_hash,
+            info: sierra_class_info.clone(),
+            compiled: Arc::new(CompiledSierra(compiled_with_block.compiled_sierra.0.clone())),
+        };
+
+        // Create a temporary directory for the native compilation output
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let so_path = temp_dir.path().join(format!("{:#x}.so", class_hash));
+
+        println!("\nAttempting native compilation...");
+        println!("Output path: {:?}", so_path);
+
+        // Attempt native compilation - this is where the error occurs
+        match sierra.info.contract_class.compile_to_native(&so_path) {
+            Ok(executor) => {
+                println!("\n=== SUCCESS ===");
+                println!("Native compilation succeeded!");
+                println!("Executor created: {:?}", std::any::type_name_of_val(&executor));
+
+                // Clean up the .so file
+                let _ = std::fs::remove_file(&so_path);
+            }
+            Err(e) => {
+                println!("\n=== COMPILATION ERROR ===");
+                println!("Error: {:?}", e);
+                println!("\nError details: {}", e);
+
+                // Print additional debug info
+                println!("\n=== Debug Info ===");
+                println!("Sierra program first 10 elements:");
+                for (i, felt) in sierra.info.contract_class.sierra_program.iter().take(10).enumerate() {
+                    println!("  [{}]: {:#x}", i, felt);
+                }
+
+                // This is expected to fail - we want to see the error
+                panic!("Native compilation failed as expected: {}", e);
+            }
+        }
+    }
 }
