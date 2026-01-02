@@ -100,32 +100,6 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "#3274D9", "value": null }] },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 5, "w": 3, "x": 12, "y": 1 },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(transaction_counter_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Total Txns", "refId": "A" }],
-      "title": "Total Txns",
-      "type": "stat"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
           "decimals": 2,
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [{ "color": "#FF9830", "value": null }] },
@@ -133,7 +107,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 15, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 1 },
       "id": 4,
       "options": {
         "colorMode": "value",
@@ -160,7 +134,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 18, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 1 },
       "id": 5,
       "options": {
         "colorMode": "value",
@@ -186,7 +160,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 3, "x": 21, "y": 1 },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 1 },
       "id": 6,
       "options": {
         "colorMode": "value",
@@ -355,7 +329,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Latency p50", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "Latency p50", "refId": "A" }],
       "title": "Latency p50",
       "type": "stat"
     },
@@ -381,7 +355,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Latency p99", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "Latency p99", "refId": "A" }],
       "title": "Latency p99",
       "type": "stat"
     },
@@ -421,18 +395,14 @@
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
           "unit": "reqps"
         },
-        "overrides": [
-          { "matcher": { "id": "byName", "options": "Requests Started" }, "properties": [{ "id": "color", "value": { "fixedColor": "#3274D9", "mode": "fixed" } }] },
-          { "matcher": { "id": "byName", "options": "Requests Finished" }, "properties": [{ "id": "color", "value": { "fixedColor": "#37872D", "mode": "fixed" } }] }
-        ]
+        "overrides": []
       },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
       "id": 107,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_started_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))", "legendFormat": "Requests Started", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))", "legendFormat": "Requests Finished", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "Requests/s", "refId": "A" }
       ],
       "title": "RPC Request Rate",
       "type": "timeseries"
@@ -458,9 +428,9 @@
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "p50", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.90, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "p90", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "p99", "refId": "C" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "p50 (all methods)", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.90, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "p90 (all methods)", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "p99 (all methods)", "refId": "C" }
       ],
       "title": "RPC Latency Percentiles",
       "type": "timeseries"
@@ -480,7 +450,7 @@
           { "matcher": { "id": "byName", "options": "Error Rate" }, "properties": [{ "id": "color", "value": { "fixedColor": "#C4162A", "mode": "fixed" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 27 },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 27 },
       "id": 109,
       "options": { "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -503,7 +473,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 27 },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 27 },
       "id": 110,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -523,12 +493,35 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 27 },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 27 },
       "id": 111,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Active Sessions", "refId": "A" }],
       "title": "Active WebSocket Sessions",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "gradientMode": "opacity", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "insertNulls": false, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 27 },
+      "id": 112,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(5, histogram_quantile(0.50, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))))", "legendFormat": "{{method}} p50", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "topk(5, histogram_quantile(0.90, sum by (le, method) (rate(calls_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))))", "legendFormat": "{{method}} p90", "refId": "B" }
+      ],
+      "title": "Top Methods Latency",
       "type": "timeseries"
     },
     {
@@ -587,8 +580,8 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_mem_table_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable", "refId": "A" }],
-      "title": "MemTable",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_mem_table_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable Allocated", "refId": "A" }],
+      "title": "MemTable Allocated",
       "type": "stat"
     },
     {
@@ -713,7 +706,7 @@
       "pluginVersion": "11.4.0",
       "targets": [
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_size{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Total Size", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_mem_table_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_mem_table_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable Allocated", "refId": "B" },
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_cache_total{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Cache", "refId": "C" }
       ],
       "title": "Storage Over Time",
@@ -1071,8 +1064,8 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_memtable_size_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable Size", "refId": "A" }],
-      "title": "MemTable Size",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_memtable_size_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable Data", "refId": "A" }],
+      "title": "MemTable Data",
       "type": "stat"
     },
     {
@@ -1090,8 +1083,9 @@
           { "matcher": { "id": "byName", "options": "Immutable MemTables" }, "properties": [{ "id": "color", "value": { "fixedColor": "#8F3BB8", "mode": "fixed" } }, { "id": "custom.thresholdsStyle", "value": { "mode": "off" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 68 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 68 },
       "id": 76,
+      "description": "Monitors RocksDB write stall risk.\n\n**L0 Files Thresholds:**\n- Yellow line (15): Warning - approaching slowdown\n- Red line (20): Critical - RocksDB throttles writes\n- Stop at 36 files\n\n**Immutable MemTables:**\n- Stall when >= max_write_buffer_number (default 5)",
       "options": { "legend": { "calcs": ["last", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
@@ -1113,18 +1107,42 @@
         },
         "overrides": [
           { "matcher": { "id": "byName", "options": "Pending Compaction" }, "properties": [{ "id": "color", "value": { "fixedColor": "#C4162A", "mode": "fixed" } }] },
-          { "matcher": { "id": "byName", "options": "MemTable Size" }, "properties": [{ "id": "color", "value": { "fixedColor": "#3274D9", "mode": "fixed" } }, { "id": "custom.thresholdsStyle", "value": { "mode": "off" } }] }
+          { "matcher": { "id": "byName", "options": "MemTable Data" }, "properties": [{ "id": "color", "value": { "fixedColor": "#3274D9", "mode": "fixed" } }, { "id": "custom.thresholdsStyle", "value": { "mode": "off" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 68 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 68 },
       "id": 77,
+      "description": "Monitors compaction backlog and memtable data size.\n\n**Pending Compaction Thresholds:**\n- Yellow line (32 GiB): Warning - compaction falling behind\n- Red line (64 GiB): Critical - risk of write stalls\n\n**MemTable Data:**\n- Current data stored in memtables (before flush to SST files)",
       "options": { "legend": { "calcs": ["last", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_pending_compaction_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Pending Compaction", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_memtable_size_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable Size", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_memtable_size_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "MemTable Data", "refId": "B" }
       ],
-      "title": "Compaction & MemTable Bytes",
+      "title": "Compaction & MemTable Data",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "bars", "fillOpacity": 80, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "insertNulls": false, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "normal" }, "thresholdsStyle": { "mode": "off" } },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 68 },
+      "id": 78,
+      "description": "Shows the distribution of SST files across LSM tree levels.\n\n- **L0**: Recently flushed files (uncompacted, overlapping keys)\n- **L1-L6**: Compacted files (sorted, non-overlapping)\n\nA healthy database has few/no L0 files with data distributed across deeper levels.",
+      "options": { "legend": { "calcs": ["last"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "db_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "{{level}}", "refId": "A" }
+      ],
+      "title": "LSM Tree Level Distribution",
       "type": "timeseries"
     },
     {
@@ -1146,7 +1164,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 77 },
       "id": 201,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
@@ -1165,7 +1183,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 77 },
       "id": 202,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
@@ -1184,7 +1202,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 77 },
       "id": 203,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
@@ -1203,7 +1221,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 77 },
       "id": 204,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
@@ -1217,12 +1235,12 @@
         "defaults": {
           "color": { "mode": "thresholds" },
           "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }] },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "yellow", "value": null }] },
           "unit": "none"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 77 },
       "id": 205,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
@@ -1241,12 +1259,50 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 77 },
       "id": 206,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
       "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_current_compilations{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
       "title": "Active Compilations",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "red", "value": 1 }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 77 },
+      "id": 212,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "pluginVersion": "11.4.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_compilations_failed_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "title": "Compilation Failures",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }, { "color": "orange", "value": 1 }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 77 },
+      "id": 213,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "pluginVersion": "11.4.0",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_compilations_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "title": "Compilation Timeouts",
       "type": "stat"
     },
     {
@@ -1317,9 +1373,10 @@
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, rate(cairo_native_compilation_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "p50", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.90, rate(cairo_native_compilation_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "p90", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, rate(cairo_native_compilation_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "p99", "refId": "C" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilation_time_milliseconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / rate(cairo_native_compilation_time_milliseconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "avg", "refId": "D" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(cairo_native_compilation_time_milliseconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "p50", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.90, sum by (le) (rate(cairo_native_compilation_time_milliseconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "p90", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(cairo_native_compilation_time_milliseconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))", "legendFormat": "p99", "refId": "C" }
       ],
       "title": "Compilation Time",
       "type": "timeseries"
@@ -1345,8 +1402,7 @@
       "targets": [
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_memory_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Memory Timeout/s", "refId": "A" },
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_disk_load_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Disk Load Timeout/s", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_disk_load_error_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Disk Load Error/s", "refId": "C" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_disk_file_not_found_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "File Not Found/s", "refId": "D" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_disk_load_error_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Disk Load Error/s", "refId": "C" }
       ],
       "title": "Cache Errors",
       "type": "timeseries"

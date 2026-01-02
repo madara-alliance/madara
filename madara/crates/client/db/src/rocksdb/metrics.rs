@@ -45,6 +45,9 @@ pub struct DbMetrics {
     pub pending_compaction_bytes: Gauge<u64>,
     pub l0_files_count: Gauge<u64>,
 
+    // LSM tree level metrics
+    pub level_files_count: Gauge<u64>,
+
     // MemTable monitoring
     pub num_immutable_memtables: Gauge<u64>,
     pub memtable_size_bytes: Gauge<u64>,
@@ -136,6 +139,17 @@ impl DbMetrics {
         );
 
         // ═══════════════════════════════════════════════════════════════════════════
+        // LSM TREE LEVEL METRICS
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        let level_files_count = register_gauge_metric_instrument(
+            &meter,
+            "db_level_files_count".to_string(),
+            "Number of SST files at each LSM tree level".to_string(),
+            "".to_string(),
+        );
+
+        // ═══════════════════════════════════════════════════════════════════════════
         // MEMTABLE MONITORING
         // ═══════════════════════════════════════════════════════════════════════════
 
@@ -163,6 +177,7 @@ impl DbMetrics {
             is_write_stopped,
             pending_compaction_bytes,
             l0_files_count,
+            level_files_count,
             num_immutable_memtables,
             memtable_size_bytes,
         })
@@ -199,37 +214,79 @@ impl DbMetrics {
         self.cache_total.record(mem_usage.approximate_cache_total(), &[]);
 
         // ═══════════════════════════════════════════════════════════════════════════
-        // WRITE STALL DETECTION METRICS (from RocksDB properties)
+        // WRITE STALL DETECTION METRICS (aggregated across all column families)
         // ═══════════════════════════════════════════════════════════════════════════
 
-        // Is write stopped? (0 = running, 1 = stopped)
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.is-write-stopped") {
-            self.is_write_stopped.record(val, &[]);
+        // Is write stopped? (0 = running, 1 = stopped) - max across all CFs (any stopped = problem)
+        let mut is_stopped: u64 = 0;
+        for column in ALL_COLUMNS {
+            let cf_handle = db.inner.get_column(column.clone());
+            if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.is-write-stopped") {
+                is_stopped = is_stopped.max(val);
+            }
         }
+        self.is_write_stopped.record(is_stopped, &[]);
 
-        // Pending compaction bytes (leading indicator for stalls)
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.estimate-pending-compaction-bytes") {
-            self.pending_compaction_bytes.record(val, &[]);
+        // Pending compaction bytes (leading indicator for stalls) - sum across all CFs
+        let mut pending_total: u64 = 0;
+        for column in ALL_COLUMNS {
+            let cf_handle = db.inner.get_column(column.clone());
+            if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.estimate-pending-compaction-bytes") {
+                pending_total += val;
+            }
         }
+        self.pending_compaction_bytes.record(pending_total, &[]);
 
-        // L0 file count (slowdown at 20, stop at 36)
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.num-files-at-level0") {
-            self.l0_files_count.record(val, &[]);
+        // L0 file count (slowdown at 20, stop at 36) - aggregated across all column families
+        let mut l0_total: u64 = 0;
+        for column in ALL_COLUMNS {
+            let cf_handle = db.inner.get_column(column.clone());
+            if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.num-files-at-level0") {
+                l0_total += val;
+            }
+        }
+        self.l0_files_count.record(l0_total, &[]);
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // LSM TREE LEVEL METRICS (files at each level, aggregated across all column families)
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        // Record file counts for levels 0-6 (RocksDB typically uses up to 7 levels)
+        for level in 0..=6 {
+            let property = format!("rocksdb.num-files-at-level{}", level);
+            let mut total_files: u64 = 0;
+            for column in ALL_COLUMNS {
+                let cf_handle = db.inner.get_column(column.clone());
+                if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, &property) {
+                    total_files += val;
+                }
+            }
+            self.level_files_count.record(total_files, &[KeyValue::new("level", format!("L{}", level))]);
         }
 
         // ═══════════════════════════════════════════════════════════════════════════
-        // MEMTABLE MONITORING (from RocksDB properties)
+        // MEMTABLE MONITORING (aggregated across all column families)
         // ═══════════════════════════════════════════════════════════════════════════
 
-        // Number of immutable memtables waiting to be flushed
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.num-immutable-mem-table") {
-            self.num_immutable_memtables.record(val, &[]);
+        // Number of immutable memtables waiting to be flushed - sum across all CFs
+        let mut immutable_total: u64 = 0;
+        for column in ALL_COLUMNS {
+            let cf_handle = db.inner.get_column(column.clone());
+            if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.num-immutable-mem-table") {
+                immutable_total += val;
+            }
         }
+        self.num_immutable_memtables.record(immutable_total, &[]);
 
-        // Total size of all memtables
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.cur-size-all-mem-tables") {
-            self.memtable_size_bytes.record(val, &[]);
+        // Total size of all memtables - sum across all CFs
+        let mut memtable_total: u64 = 0;
+        for column in ALL_COLUMNS {
+            let cf_handle = db.inner.get_column(column.clone());
+            if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.cur-size-all-mem-tables") {
+                memtable_total += val;
+            }
         }
+        self.memtable_size_bytes.record(memtable_total, &[]);
 
         Ok(storage_size)
     }
