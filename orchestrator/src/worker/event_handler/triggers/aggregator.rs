@@ -81,9 +81,7 @@ impl JobTrigger for AggregatorJobTrigger {
             };
 
             // Create a new job
-            match JobHandlerService::create_job(JobType::Aggregator, batch.index.to_string(), metadata, config.clone())
-                .await
-            {
+            match JobHandlerService::create_job(JobType::Aggregator, batch.index, metadata, config.clone()).await {
                 Ok(_) => {
                     config
                         .database()

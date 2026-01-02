@@ -209,7 +209,7 @@ pub async fn fetch_da_segment_for_batch(
 /// * `Result<StarknetOsOutput, JobError>` - A result containing the SNOS output or an error.
 ///
 pub async fn fetch_snos_for_block(
-    internal_id: String,
+    internal_id: u64,
     index: usize,
     config: Arc<Config>,
     snos_output_paths: &[String],

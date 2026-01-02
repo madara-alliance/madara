@@ -24,9 +24,9 @@ pub struct AggregatorJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for AggregatorJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::Aggregator, internal_id);
-        let job_item = JobItem::create(internal_id.clone(), JobType::Aggregator, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id, JobType::Aggregator, JobStatus::Created, metadata);
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::Aggregator, internal_id);
         Ok(job_item)
     }
@@ -39,7 +39,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     /// Now, we follow the following logic:
     /// 1. Call close batch for the bucket
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::Aggregator, internal_id);
 
         // Get aggregator metadata
@@ -71,7 +71,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::Aggregator, internal_id);
 
         // Get aggregator metadata
@@ -149,7 +149,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 // Store the program output in storage
                 AggregatorJobHandler::store_program_output(
                     &config,
-                    job.internal_id.clone(),
+                    internal_id,
                     program_output,
                     &metadata.program_output_path,
                 )
@@ -193,7 +193,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed", JobType::Aggregator, internal_id);
                 Ok(JobVerificationStatus::Rejected(format!(
                     "Aggregator job #{} failed with error: {}",
-                    job.internal_id, err
+                    internal_id, err
                 )))
             }
         }
@@ -233,18 +233,18 @@ impl AggregatorJobHandler {
 
     pub async fn store_program_output(
         config: &Arc<Config>,
-        batch_index: String,
+        batch_index: u64,
         program_output: Vec<Felt>,
         storage_path: &str,
     ) -> Result<(), SnosError> {
         let program_output: Vec<[u8; 32]> = program_output.iter().map(|f| f.to_bytes_be()).collect();
-        let encoded_data = bincode::serialize(&program_output).map_err(|e| SnosError::ProgramOutputUnserializable {
-            internal_id: batch_index.clone(),
-            message: e.to_string(),
-        })?;
-        config.storage().put_data(encoded_data.into(), storage_path).await.map_err(|e| {
-            SnosError::ProgramOutputUnstorable { internal_id: batch_index.clone(), message: e.to_string() }
-        })?;
+        let encoded_data = bincode::serialize(&program_output)
+            .map_err(|e| SnosError::ProgramOutputUnserializable { internal_id: batch_index, message: e.to_string() })?;
+        config
+            .storage()
+            .put_data(encoded_data.into(), storage_path)
+            .await
+            .map_err(|e| SnosError::ProgramOutputUnstorable { internal_id: batch_index, message: e.to_string() })?;
         Ok(())
     }
 }

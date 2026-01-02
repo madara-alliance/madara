@@ -4,7 +4,7 @@ use thiserror::Error;
 #[derive(Error, Debug, PartialEq)]
 pub enum ProvingError {
     #[error("Cairo PIE path is not specified - prover job #{internal_id:?}")]
-    CairoPIEWrongPath { internal_id: String },
+    CairoPIEWrongPath { internal_id: u64 },
 
     #[error("Not able to read the cairo PIE file from the zip file provided.")]
     CairoPIENotReadable(String),

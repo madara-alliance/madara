@@ -26,7 +26,7 @@ async fn update_state_worker_with_pending_jobs() {
         .await;
 
     let unique_id = Uuid::new_v4();
-    let mut job_item = get_job_item_mock_by_id("1".to_string(), unique_id);
+    let mut job_item = get_job_item_mock_by_id(1, unique_id);
     job_item.status = JobStatus::PendingVerification;
     job_item.job_type = JobType::StateTransition;
     services.config.database().create_job(job_item).await.unwrap();
@@ -150,7 +150,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 5, JobStatus::Completed).await.unwrap();
 
     // add state transition job for blocks 0-4
-    let mut job_item = get_job_item_mock_by_id("0".to_string(), Uuid::new_v4());
+    let mut job_item = get_job_item_mock_by_id(0, Uuid::new_v4());
     job_item.status = JobStatus::Completed;
     job_item.job_type = JobType::StateTransition;
 
@@ -223,7 +223,7 @@ async fn update_state_worker_next_block_missing() {
 
     // add state transition job for blocks 0-4
     let unique_id = Uuid::new_v4();
-    let mut job_item = get_job_item_mock_by_id("0".to_string(), unique_id);
+    let mut job_item = get_job_item_mock_by_id(0, unique_id);
     job_item.status = JobStatus::Completed;
     job_item.job_type = JobType::StateTransition;
 

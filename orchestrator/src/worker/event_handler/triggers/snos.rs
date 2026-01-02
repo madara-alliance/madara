@@ -89,14 +89,7 @@ impl JobTrigger for SnosJobTrigger {
         // Get latest SNOS job internal ID (if any)
         let latest_job_internal_id =
             if let Some(latest_job) = config.database().get_latest_job_by_type(JobType::SnosRun).await? {
-                Some(latest_job.internal_id.parse::<u64>().map_err(|e| {
-                    eyre!(
-                        "Failed to parse internal id {} for SNOS with id {}: {}",
-                        latest_job.internal_id,
-                        latest_job.id,
-                        e
-                    )
-                })?)
+                Some(latest_job.internal_id)
             } else {
                 None
             };
@@ -107,14 +100,7 @@ impl JobTrigger for SnosJobTrigger {
             .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed])
             .await?
         {
-            Some(oldest_incomplete_job.internal_id.parse::<u64>().map_err(|e| {
-                eyre!(
-                    "Failed to parse internal id {} for SNOS with id {}: {}",
-                    oldest_incomplete_job.internal_id,
-                    oldest_incomplete_job.id,
-                    e
-                )
-            })?)
+            Some(oldest_incomplete_job.internal_id)
         } else {
             None
         };
@@ -149,7 +135,7 @@ impl JobTrigger for SnosJobTrigger {
             // Create a new job and add it to the queue
             match JobHandlerService::create_job(
                 JobType::SnosRun,
-                snos_batch.index.clone().to_string(), /* changing mapping here snos_batch_id => internal_id for snos and then eventually proving jobs*/
+                snos_batch.index, /* changing mapping here snos_batch_id => internal_id for snos and then eventually proving jobs*/
                 snos_metadata,
                 config.clone(),
             )

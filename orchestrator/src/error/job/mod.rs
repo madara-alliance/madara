@@ -60,7 +60,7 @@ pub enum JobError {
 
     /// Indicates an attempt to create a duplicate job
     #[error("Job already exists for internal_id {internal_id:?} and job_type {job_type:?}. Skipping!")]
-    JobAlreadyExists { internal_id: String, job_type: JobType },
+    JobAlreadyExists { internal_id: u64, job_type: JobType },
 
     /// Indicates the job is in an invalid status for the requested operation
     #[error("Invalid status {job_status:?} for job with id {id:?}. Cannot process.")]
