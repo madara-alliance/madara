@@ -477,22 +477,22 @@ git-hook:
 .PHONY: setup-l2
 setup-l2: setup-cairo
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
-	@cargo run --package orchestrator -- setup --layer l2  --mongodb --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: setup-l2-localstack
 setup-l2-localstack:
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer and Localstack...$(RESET)"
-	@cargo run --package orchestrator -- setup --layer l2 --mongodb --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
+	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: setup-l3
 setup-l3:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
-	@cargo run --package orchestrator -- setup --layer l3 --mongodb --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: setup-l3-localstack
 setup-l3-localstack:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer and Localstack...$(RESET)"
-	@cargo run --package orchestrator -- setup --layer l3 --mongodb --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: run-orchestrator-l2
 run-orchestrator-l2:
