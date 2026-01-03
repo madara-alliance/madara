@@ -8,15 +8,15 @@
 //! Key metrics for detecting write stalls:
 //! - `db_is_write_stopped`: 1 if writes are completely blocked
 //! - `db_pending_compaction_bytes`: Backlog of data waiting to be compacted
-//! - `db_l0_files_count`: Number of L0 files (slowdown at 20, stop at 36)
-//! - `db_num_immutable_memtables`: Memtables waiting to be flushed (stall at 5)
+//! - `db_l0_files_count`: Number of L0 files (configurable via CLI)
+//! - `db_num_immutable_memtables`: Memtables waiting to be flushed
 //!
 //! ## Alerting Thresholds
 //!
 //! | Metric | Warning | Critical |
 //! |--------|---------|----------|
 //! | `db_is_write_stopped` | - | = 1 |
-//! | `db_pending_compaction_bytes` | > 32 GiB | > 64 GiB |
+//! | `db_pending_compaction_bytes` | > 4 GiB | > 6 GiB |
 //! | `db_l0_files_count` | >= 15 | >= 20 |
 //! | `db_num_immutable_memtables` | >= 3 | >= 4 |
 
@@ -34,20 +34,18 @@ pub struct DbMetrics {
     pub db_size: Gauge<u64>,
     pub column_sizes: Gauge<u64>,
 
-    // Memory metrics (from MemoryUsageBuilder)
+    // Memory metrics
     pub mem_table_total: Gauge<u64>,
     pub mem_table_unflushed: Gauge<u64>,
     pub mem_table_readers_total: Gauge<u64>,
     pub cache_total: Gauge<u64>,
+    pub num_immutable_memtables: Gauge<u64>,
+    pub memtable_size_bytes: Gauge<u64>,
 
     // Write stall detection metrics
     pub is_write_stopped: Gauge<u64>,
     pub pending_compaction_bytes: Gauge<u64>,
     pub l0_files_count: Gauge<u64>,
-
-    // MemTable monitoring
-    pub num_immutable_memtables: Gauge<u64>,
-    pub memtable_size_bytes: Gauge<u64>,
 }
 
 impl DbMetrics {
@@ -79,7 +77,7 @@ impl DbMetrics {
         );
 
         // ═══════════════════════════════════════════════════════════════════════════
-        // MEMORY METRICS (from MemoryUsageBuilder)
+        // MEMORY METRICS
         // ═══════════════════════════════════════════════════════════════════════════
 
         let mem_table_total = register_gauge_metric_instrument(
@@ -110,6 +108,20 @@ impl DbMetrics {
             "".to_string(),
         );
 
+        let num_immutable_memtables = register_gauge_metric_instrument(
+            &meter,
+            "db_num_immutable_memtables".to_string(),
+            "Number of immutable memtables waiting to be flushed (stall when >= max_write_buffer_number)".to_string(),
+            "".to_string(),
+        );
+
+        let memtable_size_bytes = register_gauge_metric_instrument(
+            &meter,
+            "db_memtable_size_bytes".to_string(),
+            "Total size of all memtables in bytes".to_string(),
+            "".to_string(),
+        );
+
         // ═══════════════════════════════════════════════════════════════════════════
         // WRITE STALL DETECTION METRICS
         // ═══════════════════════════════════════════════════════════════════════════
@@ -124,32 +136,14 @@ impl DbMetrics {
         let pending_compaction_bytes = register_gauge_metric_instrument(
             &meter,
             "db_pending_compaction_bytes".to_string(),
-            "Estimated bytes pending compaction (slowdown at 64GiB, stop at 256GiB)".to_string(),
+            "Estimated bytes pending compaction".to_string(),
             "".to_string(),
         );
 
         let l0_files_count = register_gauge_metric_instrument(
             &meter,
             "db_l0_files_count".to_string(),
-            "Number of files at Level 0 (slowdown at 20, stop at 36)".to_string(),
-            "".to_string(),
-        );
-
-        // ═══════════════════════════════════════════════════════════════════════════
-        // MEMTABLE MONITORING
-        // ═══════════════════════════════════════════════════════════════════════════
-
-        let num_immutable_memtables = register_gauge_metric_instrument(
-            &meter,
-            "db_num_immutable_memtables".to_string(),
-            "Number of immutable memtables waiting to be flushed (stall when >= max_write_buffer_number)".to_string(),
-            "".to_string(),
-        );
-
-        let memtable_size_bytes = register_gauge_metric_instrument(
-            &meter,
-            "db_memtable_size_bytes".to_string(),
-            "Total size of all memtables in bytes".to_string(),
+            "Number of files at Level 0".to_string(),
             "".to_string(),
         );
 
@@ -187,7 +181,7 @@ impl DbMetrics {
         self.db_size.record(storage_size, &[]);
 
         // ═══════════════════════════════════════════════════════════════════════════
-        // MEMORY METRICS (from MemoryUsageBuilder)
+        // MEMORY METRICS
         // ═══════════════════════════════════════════════════════════════════════════
 
         let mut builder = MemoryUsageBuilder::new().context("Creating memory usage builder")?;
@@ -198,8 +192,18 @@ impl DbMetrics {
         self.mem_table_readers_total.record(mem_usage.approximate_mem_table_readers_total(), &[]);
         self.cache_total.record(mem_usage.approximate_cache_total(), &[]);
 
+        // Number of immutable memtables waiting to be flushed
+        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.num-immutable-mem-table") {
+            self.num_immutable_memtables.record(val, &[]);
+        }
+
+        // Total size of all memtables
+        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.cur-size-all-mem-tables") {
+            self.memtable_size_bytes.record(val, &[]);
+        }
+
         // ═══════════════════════════════════════════════════════════════════════════
-        // WRITE STALL DETECTION METRICS (from RocksDB properties)
+        // WRITE STALL DETECTION METRICS
         // ═══════════════════════════════════════════════════════════════════════════
 
         // Is write stopped? (0 = running, 1 = stopped)
@@ -212,23 +216,9 @@ impl DbMetrics {
             self.pending_compaction_bytes.record(val, &[]);
         }
 
-        // L0 file count (slowdown at 20, stop at 36)
+        // L0 file count
         if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.num-files-at-level0") {
             self.l0_files_count.record(val, &[]);
-        }
-
-        // ═══════════════════════════════════════════════════════════════════════════
-        // MEMTABLE MONITORING (from RocksDB properties)
-        // ═══════════════════════════════════════════════════════════════════════════
-
-        // Number of immutable memtables waiting to be flushed
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.num-immutable-mem-table") {
-            self.num_immutable_memtables.record(val, &[]);
-        }
-
-        // Total size of all memtables
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.cur-size-all-mem-tables") {
-            self.memtable_size_bytes.record(val, &[]);
         }
 
         Ok(storage_size)
