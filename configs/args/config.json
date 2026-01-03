@@ -29,7 +29,12 @@
     "db_memtable_other_budget_mib": 128,
     "db_memtable_prefix_bloom_filter_ratio": 0,
     "db_wal": true,
-    "db_fsync": false
+    "db_fsync": false,
+    "db_max_write_buffer_number": 5,
+    "db_l0_slowdown_trigger": 20,
+    "db_l0_stop_trigger": 36,
+    "db_soft_pending_compaction_gib": 6,
+    "db_hard_pending_compaction_gib": 12
   },
   "l2_sync_params": {
     "l2_sync_disabled": false,
