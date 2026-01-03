@@ -87,7 +87,6 @@
 //!
 //! ### 4. I/O Smoothing
 //! - `bytes_per_sync`: Incremental sync during SST writes (prevents I/O spikes)
-//! - `enable_pipelined_write`: Parallel WAL + memtable writes
 //!
 //! ## References
 //!
@@ -345,19 +344,6 @@ impl Default for RocksDBConfig {
 ///           1MB       1MB       1MB       1MB
 ///           Smooth I/O, no spikes
 /// ```
-///
-/// ## Pipelined Writes
-///
-/// ```text
-/// Without pipelining:
-/// Thread 1: [WAL write] ──► [MemTable insert] ──► Done
-/// Thread 2:                 waiting...            [WAL write] ──► ...
-///
-/// With pipelining (enable_pipelined_write=true):
-/// Thread 1: [WAL write] ──► [MemTable insert] ──► Done
-/// Thread 2:       [WAL write] ──► [MemTable insert] ──► Done
-///                 ↑ Can start WAL write while Thread 1 does MemTable
-/// ```
 pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     let mut options = Options::default();
     options.create_if_missing(true);
@@ -440,15 +426,8 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // WAL writes are smaller but more frequent; smaller sync interval is appropriate.
     options.set_wal_bytes_per_sync(512 * KiB as u64);
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // PIPELINED WRITES
-    // ═══════════════════════════════════════════════════════════════════════════
-    // By default, WAL write and memtable insert are sequential.
-    // Pipelining allows the next write to start its WAL write while the
-    // previous write is still doing memtable insert.
-    //
-    // This improves throughput for concurrent writers.
-    options.set_enable_pipelined_write(true);
+    // Note: enable_pipelined_write is NOT used because it's incompatible with
+    // atomic_flush, which we need for cross-column-family consistency.
 
     // ═══════════════════════════════════════════════════════════════════════════
     // LOGGING & FILE MANAGEMENT
