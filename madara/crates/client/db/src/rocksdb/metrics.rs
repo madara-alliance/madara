@@ -163,21 +163,49 @@ impl DbMetrics {
     }
 
     pub fn try_update(&self, db: &RocksDBStorage) -> anyhow::Result<u64> {
-        let mut storage_size = 0;
+        let mut storage_size: u64 = 0;
+        let mut total_immutable_memtables: u64 = 0;
+        let mut total_memtable_size: u64 = 0;
+        let mut total_pending_compaction: u64 = 0;
+        let mut total_l0_files: u64 = 0;
 
         // ═══════════════════════════════════════════════════════════════════════════
-        // STORAGE METRICS
+        // PER-COLUMN-FAMILY METRICS (aggregated across all columns)
         // ═══════════════════════════════════════════════════════════════════════════
 
         for column in ALL_COLUMNS {
             let cf_handle = db.inner.get_column(column.clone());
+
+            // Storage size
             let cf_metadata = db.inner.db.get_column_family_metadata_cf(&cf_handle);
             let column_size = cf_metadata.size;
             storage_size += column_size;
-
             self.column_sizes.record(column_size, &[KeyValue::new("column", column.rocksdb_name)]);
+
+            // Immutable memtables waiting to be flushed
+            if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.num-immutable-mem-table") {
+                total_immutable_memtables += val;
+            }
+
+            // Memtable size
+            if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.cur-size-all-mem-tables") {
+                total_memtable_size += val;
+            }
+
+            // Pending compaction bytes
+            if let Ok(Some(val)) =
+                db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.estimate-pending-compaction-bytes")
+            {
+                total_pending_compaction += val;
+            }
+
+            // L0 file count
+            if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.num-files-at-level0") {
+                total_l0_files += val;
+            }
         }
 
+        // Record aggregated storage metrics
         self.db_size.record(storage_size, &[]);
 
         // ═══════════════════════════════════════════════════════════════════════════
@@ -192,46 +220,31 @@ impl DbMetrics {
         self.mem_table_readers_total.record(mem_usage.approximate_mem_table_readers_total(), &[]);
         self.cache_total.record(mem_usage.approximate_cache_total(), &[]);
 
-        // Number of immutable memtables waiting to be flushed
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.num-immutable-mem-table") {
-            self.num_immutable_memtables.record(val, &[]);
-        }
-
-        // Total size of all memtables
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.cur-size-all-mem-tables") {
-            self.memtable_size_bytes.record(val, &[]);
-        }
+        // Record aggregated per-CF metrics
+        self.num_immutable_memtables.record(total_immutable_memtables, &[]);
+        self.memtable_size_bytes.record(total_memtable_size, &[]);
 
         // ═══════════════════════════════════════════════════════════════════════════
         // WRITE STALL DETECTION METRICS
         // ═══════════════════════════════════════════════════════════════════════════
 
-        // Is write stopped? (0 = running, 1 = stopped)
+        // Is write stopped? (global property, not per-CF)
         if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.is-write-stopped") {
             self.is_write_stopped.record(val, &[]);
         }
 
-        // Pending compaction bytes (leading indicator for stalls)
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.estimate-pending-compaction-bytes") {
-            self.pending_compaction_bytes.record(val, &[]);
-        }
-
-        // L0 file count
-        if let Ok(Some(val)) = db.inner.db.property_int_value("rocksdb.num-files-at-level0") {
-            self.l0_files_count.record(val, &[]);
-        }
+        // Record aggregated per-CF metrics
+        self.pending_compaction_bytes.record(total_pending_compaction, &[]);
+        self.l0_files_count.record(total_l0_files, &[]);
 
         Ok(storage_size)
     }
 
     /// Returns the total storage size
     pub fn update(&self, db: &RocksDBStorage) -> u64 {
-        match self.try_update(db) {
-            Ok(res) => res,
-            Err(err) => {
-                tracing::warn!("Error updating db metrics: {err:#}");
-                0
-            }
-        }
+        self.try_update(db).unwrap_or_else(|err| {
+            tracing::warn!("Error updating db metrics: {err:#}");
+            0
+        })
     }
 }
