@@ -1,8 +1,4 @@
-# OpenTelemetry Collector Configuration for Madara
-# This collector sits between Madara nodes and backends (Prometheus, etc.)
-
 receivers:
-  # OTLP receiver for future OTLP-native metrics/traces/logs
   otlp:
     protocols:
       grpc:
@@ -10,146 +6,13 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
 
-  # Prometheus receiver to scrape Madara metrics
-  prometheus:
-    config:
-      scrape_configs:
-        - job_name: 'madara-sequencer'
-          scrape_interval: 15s
-          static_configs:
-            - targets: ['host.docker.internal:9464']
-              labels:
-                instance: 'sequencer'
-                mode: 'sequencer'
-
-        - job_name: 'madara-fullnode'
-          scrape_interval: 15s
-          static_configs:
-            - targets: ['host.docker.internal:9465']
-              labels:
-                instance: 'fullnode'
-                mode: 'fullnode'
-
-processors:
-  # Batch processor for better performance
-  batch:
-    send_batch_size: 10000
-    timeout: 10s
-    send_batch_max_size: 11000
-
-  # Memory limiter to prevent OOM
-  memory_limiter:
-    check_interval: 1s
-    limit_mib: 512
-    spike_limit_mib: 128
-
-  # Resource processor to add common attributes
-  resource:
-    attributes:
-      - key: service.namespace
-        value: madara
-        action: upsert
-      - key: deployment.environment
-        value: ${OTEL_ENVIRONMENT:-development}
-        action: upsert
-
-  # Attributes processor for metric transformations
-  attributes:
-    actions:
-      - key: collector.name
-        value: madara-otel-collector
-        action: insert
-
-  # Filter processor to drop unwanted metrics (optional)
-  filter/drop_internal:
-    error_mode: ignore
-    metrics:
-      metric:
-        # Drop go runtime metrics if not needed
-        - 'name == "go_gc_duration_seconds"'
-        - 'name == "go_goroutines"'
-        - 'name == "go_info"'
-        - 'name == "go_memstats_alloc_bytes"'
-        - 'name == "go_memstats_buck_hash_sys_bytes"'
-        - 'name == "go_memstats_frees_total"'
-        - 'name == "go_memstats_gc_sys_bytes"'
-        - 'name == "go_memstats_heap_alloc_bytes"'
-        - 'name == "go_memstats_heap_idle_bytes"'
-        - 'name == "go_memstats_heap_inuse_bytes"'
-        - 'name == "go_memstats_heap_objects"'
-        - 'name == "go_memstats_heap_released_bytes"'
-        - 'name == "go_memstats_heap_sys_bytes"'
-        - 'name == "go_memstats_last_gc_time_seconds"'
-        - 'name == "go_memstats_lookups_total"'
-        - 'name == "go_memstats_mallocs_total"'
-        - 'name == "go_memstats_mcache_inuse_bytes"'
-        - 'name == "go_memstats_mcache_sys_bytes"'
-        - 'name == "go_memstats_mspan_inuse_bytes"'
-        - 'name == "go_memstats_mspan_sys_bytes"'
-        - 'name == "go_memstats_next_gc_bytes"'
-        - 'name == "go_memstats_other_sys_bytes"'
-        - 'name == "go_memstats_stack_inuse_bytes"'
-        - 'name == "go_memstats_stack_sys_bytes"'
-        - 'name == "go_memstats_sys_bytes"'
-        - 'name == "go_threads"'
-
 exporters:
-  # Prometheus exporter - exposes metrics for Prometheus to scrape
   prometheus:
     endpoint: 0.0.0.0:8889
-    namespace: madara
-    send_timestamps: true
-    metric_expiration: 5m
-    enable_open_metrics: true
-    resource_to_telemetry_conversion:
-      enabled: true
-
-  # OTLP exporter for sending to other OTLP-compatible backends
-  otlp/backend:
-    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:-localhost:4317}
-    tls:
-      insecure: ${OTEL_EXPORTER_OTLP_INSECURE:-true}
-
-  # Debug exporter for troubleshooting (logs to console)
-  debug:
-    verbosity: basic
-    sampling_initial: 5
-    sampling_thereafter: 200
-
-extensions:
-  # Health check extension
-  health_check:
-    endpoint: 0.0.0.0:13133
-    path: /health
-
-  # pprof extension for profiling
-  pprof:
-    endpoint: 0.0.0.0:1777
-
-  # zpages extension for debugging
-  zpages:
-    endpoint: 0.0.0.0:55679
 
 service:
-  extensions: [health_check, pprof, zpages]
-
   pipelines:
-    # Metrics pipeline
     metrics:
-      receivers: [prometheus, otlp]
-      processors: [memory_limiter, batch, resource, attributes]
+      receivers: [otlp]
       exporters: [prometheus]
 
-    # Metrics pipeline with filtering (alternative - uncomment to use)
-    # metrics/filtered:
-    #   receivers: [prometheus, otlp]
-    #   processors: [memory_limiter, filter/drop_internal, batch, resource, attributes]
-    #   exporters: [prometheus]
-
-  telemetry:
-    logs:
-      level: info
-      encoding: console
-    metrics:
-      level: detailed
-      address: 0.0.0.0:8888

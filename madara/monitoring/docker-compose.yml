@@ -1,4 +1,17 @@
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector:0.142.0
+    container_name: madara-otel-collector
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8889:8889"   # Prometheus exporter
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v3.1.0
     container_name: madara-prometheus
@@ -17,7 +30,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:12.3.0
     container_name: madara-grafana
     ports:
       - "3000:3000"
@@ -38,6 +51,7 @@ services:
       - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/
     depends_on:
       - prometheus
+      - otel-collector
     restart: unless-stopped
 
 volumes:
