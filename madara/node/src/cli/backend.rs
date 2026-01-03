@@ -176,14 +176,14 @@ pub struct BackendParams {
     pub db_l0_stop_trigger: i32,
 
     /// Soft limit for pending compaction in GiB. When exceeded, writes slow down.
-    /// Should be set based on available disk space (recommended: ~30% of volume).
-    /// Default: 6 GiB (suitable for 20 GiB volumes).
+    /// Note: Default is tuned for ~20 GiB volumes. Increase for production databases
+    /// with higher write traffic.
     #[clap(env = "MADARA_DB_SOFT_PENDING_COMPACTION_GIB", long, default_value_t = 6)]
     pub db_soft_pending_compaction_gib: usize,
 
     /// Hard limit for pending compaction in GiB. When exceeded, writes stop completely.
-    /// Should be set based on available disk space (recommended: ~60% of volume).
-    /// Default: 12 GiB (suitable for 20 GiB volumes).
+    /// Note: Default is tuned for ~20 GiB volumes. Increase for production databases
+    /// with higher write traffic.
     #[clap(env = "MADARA_DB_HARD_PENDING_COMPACTION_GIB", long, default_value_t = 12)]
     pub db_hard_pending_compaction_gib: usize,
 }

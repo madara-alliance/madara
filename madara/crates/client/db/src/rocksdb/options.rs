@@ -43,8 +43,8 @@
 //! │  │ LEVEL 1+ - Sorted, non-overlapping SST files                          │   │
 //! │  │ Each level is ~10x larger than the previous                           │   │
 //! │  │                                                                       │   │
-//! │  │ soft_pending_compaction_bytes = 6GB   (slow writes, for 20GB volume)  │   │
-//! │  │ hard_pending_compaction_bytes = 12GB  (stop writes, for 20GB volume)  │   │
+//! │  │ soft_pending_compaction_bytes = 6 GiB  (slow writes)                  │   │
+//! │  │ hard_pending_compaction_bytes = 12 GiB (stop writes)                  │   │
 //! │  └───────────────────────────────────────────────────────────────────────┘   │
 //! └──────────────────────────────────────────────────────────────────────────────┘
 //! ```
@@ -234,13 +234,9 @@ pub struct RocksDBConfig {
     pub level_zero_stop_writes_trigger: i32,
 
     /// Soft limit for pending compaction bytes. When exceeded, writes slow down.
-    /// Should be set based on available disk space (recommended: ~30% of volume).
-    /// Default: 6 GiB (suitable for 20 GiB volumes)
     pub soft_pending_compaction_bytes_limit: usize,
 
     /// Hard limit for pending compaction bytes. When exceeded, writes stop completely.
-    /// Should be set based on available disk space (recommended: ~60% of volume).
-    /// Default: 12 GiB (suitable for 20 GiB volumes)
     pub hard_pending_compaction_bytes_limit: usize,
 }
 
@@ -319,7 +315,10 @@ impl Default for RocksDBConfig {
 ///                                      (writes completely blocked)
 /// ```
 ///
-/// ### Pending Compaction Limits (tuned for 20 GiB volumes)
+/// ### Pending Compaction Limits
+///
+/// Note: Defaults (6/12 GiB) are tuned for ~20 GiB volumes. Increase for
+/// production databases with higher write traffic.
 ///
 /// ```text
 /// Pending Compaction Bytes
@@ -422,13 +421,9 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     // These limits prevent unbounded growth of pending compaction work.
     //
     // Soft limit: Start slowing writes when pending compaction exceeds the limit.
-    // This provides early warning before hitting the hard limit.
-    // Default: 6 GiB (tuned for ~20 GiB volumes, ~30% of capacity)
     options.set_soft_pending_compaction_bytes_limit(config.soft_pending_compaction_bytes_limit);
 
     // Hard limit: Stop writes completely when pending compaction is too high.
-    // This is a safety valve to prevent disk exhaustion.
-    // Default: 12 GiB (tuned for ~20 GiB volumes, ~60% of capacity)
     options.set_hard_pending_compaction_bytes_limit(config.hard_pending_compaction_bytes_limit);
 
     // ═══════════════════════════════════════════════════════════════════════════
