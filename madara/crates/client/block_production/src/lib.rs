@@ -175,6 +175,8 @@ pub(crate) struct CurrentBlockState {
     pub consumed_core_contract_nonces: HashSet<u64>,
     /// We need to keep track of deployed contracts, because blockifier can't make the difference between replaced class / deployed contract :/
     pub deployed_contracts: HashSet<Felt>,
+    /// Track when block production started for metrics
+    pub block_start_time: Instant,
 }
 
 impl CurrentBlockState {
@@ -184,6 +186,7 @@ impl CurrentBlockState {
             block_number,
             consumed_core_contract_nonces: Default::default(),
             deployed_contracts: Default::default(),
+            block_start_time: Instant::now(),
         }
     }
     /// Process the execution result, merging it with the current pending state
@@ -759,6 +762,10 @@ impl BlockProductionTask {
                     "Received ExecutorMessage::BatchExecuted executed_txs={:?}",
                     batch_execution_result.executed_txs
                 );
+
+                // Record batch execution stats metrics
+                self.metrics.record_execution_stats(&batch_execution_result.stats);
+
                 let current_state = self.current_state.as_mut().context("No current state")?;
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
@@ -840,6 +847,7 @@ impl BlockProductionTask {
         self.metrics.block_counter.add(1, &[]);
         self.metrics.block_gauge.record(state.block_number, &attributes);
         self.metrics.transaction_counter.add(n_txs as u64, &[]);
+        self.metrics.block_production_time.record(state.block_start_time.elapsed().as_secs_f64(), &[]);
 
         self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(state.block_number) });
         self.send_state_notification(BlockProductionStateNotification::ClosedBlock);

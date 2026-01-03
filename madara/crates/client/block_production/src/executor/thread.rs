@@ -5,6 +5,7 @@ use anyhow::Context;
 use blockifier::blockifier::transaction_executor::TransactionExecutor;
 use futures::future::OptionFuture;
 use mc_db::MadaraBackend;
+use mc_exec::metrics::{context_label, metrics as exec_metrics, tx_type_to_label};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter};
 use mp_convert::{Felt, ToFelt};
 use starknet_api::contract_class::ContractClass;
@@ -421,10 +422,23 @@ impl ExecutorThread {
 
             // Doesn't process the results, it just inspects them for logging stats, and figures out which classes were declared.
             // Results are processed async, outside the executor.
+            // Calculate average per-tx time for metrics (batch executes all txs together).
+            let avg_tx_time_ms = if !blockifier_results.is_empty() {
+                exec_duration.as_secs_f64() * 1000.0 / blockifier_results.len() as f64
+            } else {
+                0.0
+            };
             for (btx, res) in executed_txs.txs.iter().zip(blockifier_results.iter()) {
                 match res {
                     Ok((execution_info, _state_diff)) => {
                         tracing::trace!("Successful execution of transaction {:#x}", btx.tx_hash().to_felt());
+
+                        // Record tx execution time metric with production context.
+                        exec_metrics().record_tx_execution_time(
+                            avg_tx_time_ms,
+                            tx_type_to_label(btx.tx_type()),
+                            context_label::PRODUCTION,
+                        );
 
                         stats.n_added_to_block += 1;
                         stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);

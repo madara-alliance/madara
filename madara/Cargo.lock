@@ -6819,6 +6819,7 @@ dependencies = [
  "blockifier",
  "cairo-vm",
  "itertools 0.13.0",
+ "mc-analytics",
  "mc-class-exec",
  "mc-db",
  "mp-block",

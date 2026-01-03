@@ -1,3 +1,4 @@
+use crate::metrics::TxExecutionTimer;
 use crate::{Error, ExecutionContext, ExecutionResult, TxExecError};
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::TransactionalState;
@@ -27,13 +28,16 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         let mut executed_prev = 0;
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
+            let tx_type = tx.tx_type();
             tracing::debug!("executing {:#x}", hash.to_felt());
+            let timer = TxExecutionTimer::new();
             tx.execute(&mut self.state, &self.block_context).map_err(|err| TxExecError {
                 view: format!("{}", self.view()),
                 hash,
                 index,
                 err,
             })?;
+            timer.finish(tx_type);
             executed_prev += 1;
         }
 
@@ -60,8 +64,10 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
 
                 let mut transactional_state = TransactionalState::create_transactional(&mut self.state);
                 // NB: We use execute_raw because execute already does transaactional state.
+                let timer = TxExecutionTimer::new();
                 let mut execution_info =
                     tx.execute_raw(&mut transactional_state, &self.block_context, false).map_err(make_reexec_error)?;
+                timer.finish(tx_type);
 
                 execution_info.revert_error = execution_info.revert_error.take().map(|e| e.format_for_receipt());
 

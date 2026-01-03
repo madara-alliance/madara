@@ -163,6 +163,7 @@ mod blockifier_state_adapter;
 mod call;
 mod fee;
 mod layered_state_adapter;
+pub mod metrics;
 pub mod trace;
 
 pub mod execution;

@@ -255,6 +255,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                         &mut removed_txs,
                     );
                 }
+                // Update gauge metrics with current mempool state
+                let summary = guard.summary();
+                self.metrics.mempool_current_size.record(summary.num_transactions as u64, &[]);
+                self.metrics.mempool_ready_transactions.record(summary.ready_transactions as u64, &[]);
             }
 
             // Update the mempool with the modifications.
