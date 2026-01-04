@@ -7,13 +7,23 @@ This directory contains configuration files for monitoring a Madara node using O
 ```text
 ┌─────────────────┐     ┌─────────────────┐
 │ Madara Sequencer│     │ Madara Fullnode │
-│   (port 9464)   │     │   (port 9465)   │
+│                 │     │                 │
 └────────┬────────┘     └────────┬────────┘
          │                       │
-         │  Prometheus metrics   │
+         │      OTLP (gRPC)      │
          │                       │
          └───────────┬───────────┘
                      │
+                     ▼
+         ┌───────────────────────┐
+         │  OTel Collector       │
+         │  (port 4317 gRPC)     │
+         │  - Receives OTLP      │
+         │  - Exports Prometheus │
+         └───────────┬───────────┘
+                     │
+                     │  Prometheus scrape
+                     │  (port 8889)
                      ▼
          ┌───────────────────────┐
          │  Prometheus           │
@@ -53,20 +63,17 @@ docker-compose up -d
 # Access the services
 # Grafana: http://localhost:3000 (admin/admin)
 # Prometheus: http://localhost:9090
-# OTel Collector metrics: http://localhost:8888/metrics
-# OTel Collector health: http://localhost:13133/health
+# OTel Collector Prometheus exporter: http://localhost:8889/metrics
 ```
 
 ## OpenTelemetry Collector
 
-The OpenTelemetry Collector acts as a central hub for collecting, processing, and exporting telemetry data.
+The OpenTelemetry Collector acts as a central hub for collecting and exporting telemetry data.
 
 ### Features
 
-- **Receivers**: Accepts metrics via OTLP (gRPC/HTTP) and Prometheus scraping
-- **Processors**: Batching, memory limiting, resource attribution
+- **Receivers**: Accepts metrics via OTLP (gRPC and HTTP)
 - **Exporters**: Prometheus format for Grafana dashboards
-- **Extensions**: Health check, pprof profiling, zpages debugging
 
 ### Ports
 
@@ -74,22 +81,11 @@ The OpenTelemetry Collector acts as a central hub for collecting, processing, an
 | ----- | -------- | -------------------------- |
 | 4317  | gRPC     | OTLP receiver              |
 | 4318  | HTTP     | OTLP receiver              |
-| 8888  | HTTP     | Collector internal metrics |
 | 8889  | HTTP     | Prometheus exporter        |
-| 13133 | HTTP     | Health check endpoint      |
-| 55679 | HTTP     | zpages debugging           |
-
-### Environment Variables
-
-| Variable                      | Default          | Description               |
-| ----------------------------- | ---------------- | ------------------------- |
-| `OTEL_ENVIRONMENT`            | `development`    | Deployment environment    |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | OTLP backend endpoint     |
-| `OTEL_EXPORTER_OTLP_INSECURE` | `true`           | Disable TLS for OTLP      |
 
 ## Dashboards
 
-The monitoring stack includes 3 consolidated dashboards with navigation links between them and instance selector for multi-node monitoring.
+The monitoring stack includes 2 dashboards.
 
 ### 1. Madara Overview
 
@@ -100,28 +96,11 @@ Comprehensive view of block production and storage:
 - **Block Production**: Chain height, blocks produced, total transactions, TPS, mempool size
 - **Database & Storage**: DB size, MemTable, block cache, column family sizes, growth rate
 
-### 2. Madara Network
+### 2. Madara Fullnode
 
-**UID:** `madara-network`
+**UID:** `madara-fullnode`
 
-RPC and sync performance metrics:
-
-- **RPC Overview**: Total calls, RPS, WebSocket sessions, latency percentiles (p50, p99), in-flight requests
-- **RPC Success/Error Rate**: Success and error rate visualization over time
-- **Top RPC Methods**: Breakdown of most called RPC methods
-- **Sync Progress**: L2 block, transactions/events synced, L1 block, gas prices
-- **WebSocket & Gas**: Active sessions, L1 gas prices (Wei/STRK)
-
-### 3. Madara Cairo Native
-
-**UID:** `madara-cairo-native`
-
-Cairo Native execution metrics:
-
-- **Cache Overview**: Cache size, memory/disk hits, evictions, VM fallbacks, active compilations
-- **Cache Hit Rate**: Memory and disk hit rates, cache operations rate
-- **Compilation**: Compilation rate, compilation time percentiles
-- **Cache Errors & Disk I/O**: Cache error rates (timeouts, load errors, file errors), disk I/O latency
+Fullnode-specific metrics and performance data.
 
 ## Configuration
 
@@ -143,25 +122,7 @@ Cairo Native execution metrics:
 
 ### Multi-Node Monitoring
 
-To monitor multiple Madara nodes, update `otel-collector-config.yaml`:
-
-```yaml
-receivers:
-  prometheus:
-    config:
-      scrape_configs:
-        - job_name: 'madara-sequencer'
-          static_configs:
-            - targets: ['host.docker.internal:9464']
-              labels:
-                instance: 'sequencer'
-
-        - job_name: 'madara-fullnode'
-          static_configs:
-            - targets: ['host.docker.internal:9465']
-              labels:
-                instance: 'fullnode'
-```
+Multiple Madara nodes can send metrics to the same OTel Collector via OTLP. Configure each node with appropriate service name labels using the `--analytics-service-name` CLI option to distinguish them in dashboards.
 
 ## Directory Structure
 
@@ -174,13 +135,12 @@ monitoring/
 └── grafana/
     ├── provisioning/
     │   ├── datasources/
-    │   │   └── prometheus.yml      # Prometheus datasource config
+    │   │   └── datasource.yml      # Prometheus datasource config
     │   └── dashboards/
     │       └── dashboards.yml      # Dashboard provider config
     └── dashboards/
         ├── madara-overview.json    # Block production & storage
-        ├── madara-network.json     # RPC & sync performance
-        └── cairo-native.json       # Cairo Native execution
+        └── madara-fullnode.json    # Fullnode metrics
 ```
 
 ## Metrics Reference
@@ -252,17 +212,14 @@ monitoring/
 
 ### OTel Collector Issues
 
-1. **Health check endpoint**: `curl http://localhost:13133/health`
-2. **View internal metrics**: `curl http://localhost:8888/metrics`
-3. **zpages debugging**: Open `http://localhost:55679/debug/tracez`
-4. **Check logs**: `docker-compose logs otel-collector`
+1. **Check logs**: `docker-compose logs otel-collector`
+2. **Verify Prometheus exporter**: `curl http://localhost:8889/metrics`
 
 ### Prometheus can't reach OTel Collector
 
 1. Verify collector is running: `docker-compose ps otel-collector`
-2. Check collector health: `curl http://localhost:13133/health`
-3. Verify Prometheus targets: `http://localhost:9090/targets`
-4. Check network connectivity between containers
+2. Verify Prometheus targets: `http://localhost:9090/targets`
+3. Check network connectivity between containers
 
 ### No data in Grafana dashboards
 
