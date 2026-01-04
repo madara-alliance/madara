@@ -82,12 +82,48 @@ mod tests {
     }
 
     #[rstest]
-
     fn test_get_state_update_not_found(sample_chain_for_state_updates: (SampleChainForStateUpdates, Starknet)) {
         let (SampleChainForStateUpdates { .. }, rpc) = sample_chain_for_state_updates;
 
         assert_eq!(get_state_update(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound));
         let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
         assert_eq!(get_state_update(&rpc, BlockId::Hash(does_not_exist)), Err(StarknetRpcApiError::BlockNotFound));
+    }
+
+    /// Test that migrated_compiled_classes field is always present in JSON output (SNIP-34)
+    #[rstest]
+    fn test_migrated_compiled_classes_always_serialized(
+        sample_chain_for_state_updates: (SampleChainForStateUpdates, Starknet),
+    ) {
+        let (SampleChainForStateUpdates { .. }, rpc) = sample_chain_for_state_updates;
+
+        // Block 0: empty migrated_compiled_classes - should serialize as "migrated_compiled_classes": []
+        let update = get_state_update(&rpc, BlockId::Number(0)).unwrap();
+        let json = serde_json::to_string(&update).unwrap();
+        assert!(
+            json.contains("\"migrated_compiled_classes\":[]") || json.contains("\"migrated_compiled_classes\": []"),
+            "Empty migrated_compiled_classes should be serialized in JSON, got: {}",
+            json
+        );
+
+        // Block 2: has migrated_compiled_classes - should serialize with values
+        let update = get_state_update(&rpc, BlockId::Number(2)).unwrap();
+        let json = serde_json::to_string(&update).unwrap();
+        assert!(
+            json.contains("migrated_compiled_classes"),
+            "migrated_compiled_classes field should be present in JSON, got: {}",
+            json
+        );
+
+        // Verify the migrated classes have correct structure
+        if let MaybePreConfirmedStateUpdate::Block(state_update) = update {
+            assert_eq!(
+                state_update.state_diff.migrated_compiled_classes.len(),
+                2,
+                "Block 2 should have 2 migrated classes"
+            );
+        } else {
+            panic!("Expected Block, got PreConfirmed");
+        }
     }
 }

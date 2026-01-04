@@ -13,11 +13,11 @@ pub(crate) use orchestrator_ethereum_settlement_client::conversion::hex_string_t
 // use starknet_os::io::output::StarknetOsOutput;
 use starknet_core::types::Felt;
 
+pub mod conversion;
+pub mod encrypted_blob;
 pub mod fact_info;
 pub mod fact_node;
 pub mod fact_topology;
-
-pub mod conversion;
 
 /// biguint_vec_to_u8_vec - Converts a vector of BigUint numbers to a vector of u8 bytes.
 ///
@@ -140,6 +140,62 @@ pub async fn fetch_blob_data_for_block(
     Ok(vec![blob_data.to_vec()])
 }
 
+/// fetch_da_segment_for_batch - Fetches and parses the DA segment for a specific batch.
+/// The DA segment contains the encrypted/compressed state diff from the prover.
+/// This data is used to generate blob data for KZG proof verification.
+///
+/// # Arguments
+/// * `index` - The index of the batch
+/// * `config` - The configuration object
+/// * `da_segment_paths` - A slice of DA segment file paths
+///
+/// # Returns
+/// * `Result<Vec<Vec<u8>>, JobError>` - Blob data ready for KZG proof
+///
+pub async fn fetch_da_segment_for_batch(
+    index: usize,
+    config: Arc<Config>,
+    da_segment_paths: &[String],
+) -> Result<Vec<Vec<u8>>, JobError> {
+    use crate::worker::utils::encrypted_blob::{da_segment_to_blobs, parse_da_segment_json};
+
+    tracing::debug!("Fetching DA segment for batch index {}", index);
+
+    let storage_client = config.storage();
+
+    // Get the path for this batch
+    let path = da_segment_paths.get(index).ok_or_else(|| {
+        tracing::error!("DA segment path not found for index {}", index);
+        JobError::Other(OtherError(eyre!("DA segment path not found for index {}", index)))
+    })?;
+
+    tracing::debug!("Retrieving DA segment from path: {}", path);
+    let da_segment_bytes = storage_client.get_data(path).await.map_err(|e| {
+        tracing::error!("Failed to retrieve DA segment from path {}: {}", path, e);
+        JobError::Other(OtherError(eyre!("Failed to retrieve DA segment from path {}: {}", path, e)))
+    })?;
+
+    // Parse JSON to get the DA segment felts
+    let json_str = String::from_utf8(da_segment_bytes.to_vec()).map_err(|e| {
+        tracing::error!("Failed to parse DA segment as UTF-8 from path {}: {}", path, e);
+        JobError::Other(OtherError(eyre!("Failed to parse DA segment as UTF-8 from path {}: {}", path, e)))
+    })?;
+
+    let da_segment = parse_da_segment_json(&json_str).map_err(|e| {
+        tracing::error!("Failed to parse DA segment JSON from path {}: {}", path, e);
+        JobError::Other(OtherError(eyre!("Failed to parse DA segment JSON from path {}: {}", path, e)))
+    })?;
+
+    // Convert DA segment to blob bytes (applies FFT transformation)
+    let blobs = da_segment_to_blobs(da_segment).map_err(|e| {
+        tracing::error!("Failed to convert DA segment to blobs: {}", e);
+        JobError::Other(OtherError(eyre!("Failed to convert DA segment to blobs: {}", e)))
+    })?;
+
+    tracing::debug!("Successfully converted DA segment to {} blobs for batch index {}", blobs.len(), index);
+    Ok(blobs)
+}
+
 /// fetch_snos_for_block - Fetches the SNOS output for a specific block index.
 /// Retrieves the SNOS output (stored in remote storage during SNOS job) for a particular block.
 ///
@@ -153,7 +209,7 @@ pub async fn fetch_blob_data_for_block(
 /// * `Result<StarknetOsOutput, JobError>` - A result containing the SNOS output or an error.
 ///
 pub async fn fetch_snos_for_block(
-    internal_id: String,
+    internal_id: u64,
     index: usize,
     config: Arc<Config>,
     snos_output_paths: &[String],

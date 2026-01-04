@@ -1,8 +1,8 @@
 use crate::core::config::Config;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use crate::types::constant::{
-    CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR,
-    STORAGE_BLOB_DIR,
+    CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+    STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
 };
 use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -63,6 +63,10 @@ impl JobTrigger for AggregatorJobTrigger {
                         None
                     },
                     blob_data_path: format!("{}/batch/{}", STORAGE_BLOB_DIR, batch.index),
+                    da_segment_path: format!(
+                        "{}/batch/{}/{}",
+                        STORAGE_ARTIFACTS_DIR, batch.index, DA_SEGMENT_FILE_NAME
+                    ),
                     cairo_pie_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, CAIRO_PIE_FILE_NAME),
                     snos_output_path: format!(
                         "{}/batch/{}/{}",
@@ -77,9 +81,7 @@ impl JobTrigger for AggregatorJobTrigger {
             };
 
             // Create a new job
-            match JobHandlerService::create_job(JobType::Aggregator, batch.index.to_string(), metadata, config.clone())
-                .await
-            {
+            match JobHandlerService::create_job(JobType::Aggregator, batch.index, metadata, config.clone()).await {
                 Ok(_) => {
                     config
                         .database()

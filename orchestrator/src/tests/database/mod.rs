@@ -34,12 +34,9 @@ async fn database_create_job_works() {
     database_client.create_job(job_vec[1].clone()).await.unwrap();
     database_client.create_job(job_vec[2].clone()).await.unwrap();
 
-    let get_job_1 =
-        database_client.get_job_by_internal_id_and_type("1", &JobType::ProofCreation).await.unwrap().unwrap();
-    let get_job_2 =
-        database_client.get_job_by_internal_id_and_type("2", &JobType::ProofCreation).await.unwrap().unwrap();
-    let get_job_3 =
-        database_client.get_job_by_internal_id_and_type("3", &JobType::ProofCreation).await.unwrap().unwrap();
+    let get_job_1 = database_client.get_job_by_internal_id_and_type(1, &JobType::ProofCreation).await.unwrap().unwrap();
+    let get_job_2 = database_client.get_job_by_internal_id_and_type(2, &JobType::ProofCreation).await.unwrap().unwrap();
+    let get_job_3 = database_client.get_job_by_internal_id_and_type(3, &JobType::ProofCreation).await.unwrap().unwrap();
 
     assert_eq!(get_job_1, job_vec[0].clone());
     assert_eq!(get_job_2, job_vec[1].clone());
@@ -71,7 +68,7 @@ async fn database_create_job_with_job_exists_fails() {
     assert!(matches!(result, Err(DatabaseError::ItemAlreadyExists(_))));
     // fetch job to see the status wasn't updated
     let fetched_job =
-        database_client.get_job_by_internal_id_and_type("1", &JobType::ProofCreation).await.unwrap().unwrap();
+        database_client.get_job_by_internal_id_and_type(1, &JobType::ProofCreation).await.unwrap().unwrap();
     assert_eq!(fetched_job.status, JobStatus::Created);
 }
 
@@ -187,7 +184,7 @@ async fn database_get_oldest_job_by_type_excluding_statuses_works() {
 
     assert!(oldest_incomplete.is_some(), "Expected to find an incomplete job");
     let oldest_job = oldest_incomplete.unwrap();
-    assert_eq!(oldest_job.internal_id, "3", "Expected oldest non-completed job to have internal_id=3");
+    assert_eq!(oldest_job.internal_id, 3, "Expected oldest non-completed job to have internal_id=3");
     assert_eq!(oldest_job.status, JobStatus::Created);
 
     // Exclude both Completed and Created - should return job with internal_id=4
@@ -198,7 +195,7 @@ async fn database_get_oldest_job_by_type_excluding_statuses_works() {
 
     assert!(oldest_excluding_multiple.is_some());
     let job = oldest_excluding_multiple.unwrap();
-    assert_eq!(job.internal_id, "4", "Expected oldest job excluding Completed and Created to have internal_id=4");
+    assert_eq!(job.internal_id, 4, "Expected oldest job excluding Completed and Created to have internal_id=4");
     assert_eq!(job.status, JobStatus::LockedForProcessing);
 }
 
@@ -232,7 +229,7 @@ async fn database_get_jobs_after_internal_id_by_job_type_works() {
     database_client.create_job(job_vec[5].clone()).await.unwrap();
 
     let jobs_after_internal_id = database_client
-        .get_jobs_after_internal_id_by_job_type(JobType::SnosRun, JobStatus::Completed, "2".to_string())
+        .get_jobs_after_internal_id_by_job_type(JobType::SnosRun, JobStatus::Completed, 2)
         .await
         .unwrap();
 
@@ -276,7 +273,7 @@ async fn database_test_update_job() {
         assert_eq!(JobType::DataSubmission, job_after_updates_db.job_type);
         assert_eq!(JobStatus::LockedForProcessing, job_after_updates_db.status);
         assert_eq!(1, job_after_updates_db.version);
-        assert_eq!(456.to_string(), job_after_updates_db.internal_id);
+        assert_eq!(456, job_after_updates_db.internal_id);
 
         // Check metadata was updated correctly
         if let JobSpecificMetadata::Da(da_metadata) = &job_after_updates_db.metadata.specific {
@@ -594,8 +591,8 @@ async fn test_get_orphaned_jobs() {
     let orphaned_jobs = database_client.get_orphaned_jobs(&JobType::SnosRun, 3).await.unwrap();
 
     assert_eq!(orphaned_jobs.len(), 2);
-    assert!(orphaned_jobs.iter().any(|j| j.internal_id == "1"));
-    assert!(orphaned_jobs.iter().any(|j| j.internal_id == "3"));
+    assert!(orphaned_jobs.iter().any(|j| j.internal_id == 1));
+    assert!(orphaned_jobs.iter().any(|j| j.internal_id == 3));
 }
 
 /// Test for `get_snos_batches_by_indices` operation in database trait.

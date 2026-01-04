@@ -53,13 +53,8 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             metadata.specific = JobSpecificMetadata::Proving(proving_metadata);
 
             debug!(job_id = %job.internal_id, "Creating proof registration job for proving job");
-            match JobHandlerService::create_job(
-                JobType::ProofRegistration,
-                job.internal_id.to_string(),
-                metadata,
-                config.clone(),
-            )
-            .await
+            match JobHandlerService::create_job(JobType::ProofRegistration, job.internal_id, metadata, config.clone())
+                .await
             {
                 Ok(_) => {}
                 Err(e) => {

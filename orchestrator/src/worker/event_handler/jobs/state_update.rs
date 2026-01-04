@@ -12,7 +12,7 @@ use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::{
-    fetch_blob_data_for_batch, fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block,
+    fetch_blob_data_for_block, fetch_da_segment_for_batch, fetch_program_output_for_block, fetch_snos_for_block,
 };
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
@@ -34,21 +34,30 @@ struct StateUpdateArtifacts {
 pub struct StateUpdateJobHandler;
 #[async_trait]
 impl JobHandlerTrait for StateUpdateJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::StateTransition, internal_id);
 
         // Extract state transition metadata
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
 
-        // Validate required paths
-        if state_metadata.snos_output_paths.is_empty()
-            || state_metadata.program_output_paths.is_empty()
-            || state_metadata.blob_data_paths.is_empty()
-        {
-            error!("Missing required paths in metadata");
-            return Err(JobError::Other(OtherError(eyre!("Missing required paths in metadata"))));
+        // Validate required paths based on layer configuration
+        // L2: requires program_output_paths + da_segment_paths
+        // L3: requires program_output_paths + blob_data_paths + snos_output_paths
+        if state_metadata.program_output_paths.is_empty() {
+            error!("program_output_paths is required for all state updates");
+            return Err(JobError::Other(OtherError(eyre!("Missing required program_output_paths in metadata"))));
         }
-        let job_item = JobItem::create(internal_id.clone(), JobType::StateTransition, JobStatus::Created, metadata);
+
+        let is_l2_config = !state_metadata.da_segment_paths.is_empty();
+        let is_l3_config = !state_metadata.blob_data_paths.is_empty() && !state_metadata.snos_output_paths.is_empty();
+
+        if !is_l2_config && !is_l3_config {
+            error!("Missing required paths: must provide either (da_segment_paths for L2) or (blob_data_paths + snos_output_paths for L3)");
+            return Err(JobError::Other(OtherError(eyre!(
+                "Missing required paths: must provide either (da_segment_paths for L2) or (blob_data_paths + snos_output_paths for L3)"
+            ))));
+        }
+        let job_item = JobItem::create(internal_id, JobType::StateTransition, JobStatus::Created, metadata);
 
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::StateTransition, internal_id);
 
@@ -70,7 +79,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     ///
     /// TODO: Update the code in the future releases to fix this.
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::StateTransition, internal_id);
 
         // Get the state transition metadata
@@ -105,6 +114,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let snos_output_paths = state_metadata.snos_output_paths.clone();
         let program_output_paths = state_metadata.program_output_paths.clone();
         let blob_data_paths = state_metadata.blob_data_paths.clone();
+        let da_segment_paths = state_metadata.da_segment_paths.clone();
 
         let mut nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
 
@@ -113,7 +123,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Loop over the indices to process
         for &i in &filtered_indices {
             let to_settle_num = blocks_or_batches_to_settle[i];
-            debug!(job_id = %job.internal_id, num = %to_settle_num, "Processing block/batch");
+            debug!(job_id = %internal_id, num = %to_settle_num, "Processing block/batch");
 
             if !self.should_send_state_update_txn(&config, to_settle_num).await? {
                 sent_tx_hashes.push(format!("0x{:0>64}", ""));
@@ -123,17 +133,18 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             }
 
             // Get the artifacts for the block/batch
-            let snos_output =
-                match fetch_snos_for_block(internal_id.clone(), i, config.clone(), &snos_output_paths).await {
-                    Ok(snos_output) => Some(snos_output),
-                    Err(err) => {
-                        debug!("failed to fetch snos output, proceeding without it: {}", err);
-                        None
-                    }
-                };
+            let snos_output = match fetch_snos_for_block(internal_id, i, config.clone(), &snos_output_paths).await {
+                Ok(snos_output) => Some(snos_output),
+                Err(err) => {
+                    debug!("failed to fetch snos output, proceeding without it: {}", err);
+                    None
+                }
+            };
             let program_output = fetch_program_output_for_block(i, config.clone(), &program_output_paths).await?;
             let blob_data = match config.layer() {
-                Layer::L2 => fetch_blob_data_for_batch(i, config.clone(), &blob_data_paths).await?,
+                // For L2, use DA segment from prover (encrypted/compressed state diff)
+                Layer::L2 => fetch_da_segment_for_batch(i, config.clone(), &da_segment_paths).await?,
+                // For L3, use locally stored blob data
                 Layer::L3 => fetch_blob_data_for_block(i, config.clone(), &blob_data_paths).await?,
             };
 
@@ -161,14 +172,14 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 job_id = %job.id,
                 tx_hash = %txn_hash,
                 nonce = %nonce,
-                "State update transaction submitted successfully for job {}. Validating transaction receipt", job.internal_id
+                "State update transaction submitted successfully for job {}. Validating transaction receipt", internal_id
             );
 
             config.settlement_client()
                 .wait_for_tx_finality(&txn_hash)
                 .await
                 .map_err(|e| {
-                    error!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
+                    error!(job_id = %internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
                     JobError::Other(OtherError(e))
                 })?;
 
@@ -191,7 +202,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// 2. The expected last settled block from our configuration is indeed the one found in the
     ///    provider.
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::StateTransition, internal_id);
 
         // Get state update metadata
@@ -226,7 +237,7 @@ impl StateUpdateJobHandler {
         config: &Arc<Config>,
         nums_settled: &[u64],
         job_id: &Uuid,
-        internal_id: &str,
+        internal_id: u64,
     ) -> Result<JobVerificationStatus, JobError> {
         // verify that the last settled block is indeed the one we expect to be
         let last_settled = nums_settled.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;

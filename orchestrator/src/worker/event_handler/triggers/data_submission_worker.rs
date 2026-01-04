@@ -62,7 +62,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
 
             match JobHandlerService::create_job(
                 JobType::DataSubmission,
-                proving_job.internal_id.clone(),
+                proving_job.internal_id,
                 da_metadata,
                 config.clone(),
             )

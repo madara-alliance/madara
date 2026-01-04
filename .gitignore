@@ -113,3 +113,4 @@ sequencer_venv/
 sequencer_requirements.txt
 # AI-generated documentation
 AI_docs/
+orchestrator/package-lock.json

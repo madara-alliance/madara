@@ -58,7 +58,7 @@ impl JobHandlerService {
     /// * Automatically adds the job to the process queue upon successful creation
     pub async fn create_job(
         job_type: JobType,
-        internal_id: String,
+        internal_id: u64,
         mut metadata: JobMetadata,
         config: Arc<Config>,
     ) -> Result<(), JobError> {
@@ -79,7 +79,7 @@ impl JobHandlerService {
             "Job creation details"
         );
 
-        let existing_job = config.database().get_job_by_internal_id_and_type(internal_id.as_str(), &job_type).await?;
+        let existing_job = config.database().get_job_by_internal_id_and_type(internal_id, &job_type).await?;
 
         if existing_job.is_some() {
             warn!("{}", JobError::JobAlreadyExists { internal_id, job_type });
@@ -90,16 +90,15 @@ impl JobHandlerService {
         metadata.common.orchestrator_version = Some(crate::types::constant::ORCHESTRATOR_VERSION.to_string());
 
         let job_handler = factory::get_job_handler(&job_type).await;
-        let job_item = job_handler.create_job(internal_id.clone(), metadata).await?;
+        let job_item = job_handler.create_job(internal_id, metadata).await?;
         config.database().create_job(job_item.clone()).await?;
 
         // Record metrics for job creation
         MetricsRecorder::record_job_created(&job_item);
 
         // Update job status tracking metrics
-        let block_num = parse_string(&internal_id).unwrap_or(0.0) as u64;
         ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            block_num,
+            internal_id,
             &job_type,
             &JobStatus::Created,
             &job_item.id.to_string(),
@@ -127,32 +126,26 @@ impl JobHandlerService {
         // For Aggregator and StateUpdate jobs, fetch the actual block numbers from the batch
         let block_number = match job_type {
             JobType::StateTransition => {
-                let batch_number = parse_string(&internal_id)?;
-
-                match config.database().get_aggregator_batches_by_indexes(vec![batch_number as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => batch_number,
+                    _ => internal_id as f64,
                 }
             }
             JobType::Aggregator => {
-                let batch_number = parse_string(&internal_id)?;
-
                 // Fetch the batch from the database
-                match config.database().get_aggregator_batches_by_indexes(vec![batch_number as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => batch_number,
+                    _ => internal_id as f64,
                 }
             }
             JobType::SnosRun => {
-                let batch_number = parse_string(&internal_id)?;
-
                 // Fetch the batch from the database
-                match config.database().get_snos_batches_by_indices(vec![batch_number as u64]).await {
+                match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => batch_number,
+                    _ => internal_id as f64,
                 }
             }
-            _ => parse_string(&internal_id)?,
+            _ => internal_id as f64,
         };
 
         ORCHESTRATOR_METRICS.block_gauge.record(block_number, &attributes);
@@ -276,9 +269,8 @@ impl JobHandlerService {
         );
 
         // Update job status tracking metrics for LockedForProcessing
-        let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
         ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            block_num,
+            job.internal_id,
             &job.job_type,
             &JobStatus::LockedForProcessing,
             &job.id.to_string(),
@@ -353,9 +345,8 @@ impl JobHandlerService {
         );
 
         // Update job status tracking metrics for PendingVerification
-        let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
         ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            block_num,
+            job.internal_id,
             &job.job_type,
             &JobStatus::PendingVerification,
             &job.id.to_string(),
@@ -390,7 +381,7 @@ impl JobHandlerService {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
-        Self::register_block_gauge(job.job_type, &job.internal_id, external_id.into(), &attributes)?;
+        Self::register_block_gauge(job.job_type, job.internal_id, external_id.into(), &attributes)?;
 
         Ok(())
     }
@@ -520,9 +511,8 @@ impl JobHandlerService {
                 );
 
                 // Update job status tracking metrics for Completed
-                let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
                 ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-                    block_num,
+                    job.internal_id,
                     &job.job_type,
                     &JobStatus::Completed,
                     &job.id.to_string(),
@@ -632,7 +622,7 @@ impl JobHandlerService {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
-        Self::register_block_gauge(job.job_type, &job.internal_id, job.external_id, &attributes)?;
+        Self::register_block_gauge(job.job_type, job.internal_id, job.external_id, &attributes)?;
         Ok(())
     }
 
@@ -763,7 +753,7 @@ impl JobHandlerService {
 
     fn register_block_gauge(
         job_type: JobType,
-        internal_id: &str,
+        internal_id: u64,
         external_id: ExternalId,
         attributes: &[KeyValue],
     ) -> Result<(), JobError> {
@@ -772,10 +762,10 @@ impl JobHandlerService {
                 external_id
                     .unwrap_string()
                     .map_err(|e| JobError::Other(OtherError::from(format!("Could not parse string: {e}"))))?,
-            )
+            )?
         } else {
-            parse_string(internal_id)
-        }?;
+            internal_id as f64
+        };
 
         ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
         Ok(())
