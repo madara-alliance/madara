@@ -9,9 +9,6 @@ fn default_service_name() -> String {
 fn default_prometheus_port() -> u16 {
     9464
 }
-fn default_true() -> bool {
-    true
-}
 
 /// Parameters used to config analytics.
 #[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
@@ -41,9 +38,8 @@ pub struct AnalyticsParams {
     #[serde(default = "default_prometheus_port")]
     pub analytics_prometheus_endpoint_port: u16,
 
-    /// Export metrics to OTEL collector (enabled by default when endpoint is set).
+    /// Export metrics to OTEL collector (enabled by default when using OTEL).
     #[arg(env = "OTEL_EXPORT_METRICS", long, default_value_t = true)]
-    #[serde(default = "default_true")]
     pub otel_export_metrics: bool,
 
     /// Export traces to OTEL collector.

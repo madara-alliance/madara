@@ -814,7 +814,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_l0_files_count{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "L0 Files", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})", "legendFormat": "L0 Files", "refId": "A" }],
       "title": "L0 Files",
       "type": "stat"
     },
@@ -891,7 +891,7 @@
       "options": { "legend": { "calcs": ["last", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_l0_files_count{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "L0 Files", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_level_files_count{namespace=~\"$namespace\", pod=~\"$pod\", level=\"L0\"})", "legendFormat": "L0 Files", "refId": "A" },
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(db_num_immutable_memtables{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Immutable MemTables", "refId": "B" }
       ],
       "title": "Write Stall Indicators",

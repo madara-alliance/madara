@@ -17,7 +17,7 @@
 //! |--------|---------|----------|
 //! | `db_is_write_stopped` | - | = 1 |
 //! | `db_pending_compaction_bytes` | > 4 GiB | > 6 GiB |
-//! | `db_l0_files_count` | >= 15 | >= 20 |
+//! | `db_level_files_count` | L0: >= 15 | L0: >= 20 |
 //! | `db_num_immutable_memtables` | >= 3 | >= 4 |
 
 use crate::rocksdb::column::ALL_COLUMNS;
@@ -45,7 +45,6 @@ pub struct DbMetrics {
     // Write stall detection metrics
     pub is_write_stopped: Gauge<u64>,
     pub pending_compaction_bytes: Gauge<u64>,
-    pub l0_files_count: Gauge<u64>,
 
     // LSM tree level metrics
     pub level_files_count: Gauge<u64>,
@@ -158,30 +157,6 @@ impl DbMetrics {
             "".to_string(),
         );
 
-        let l0_files_count = register_gauge_metric_instrument(
-            &meter,
-            "db_l0_files_count".to_string(),
-            "Number of files at Level 0".to_string(),
-            "".to_string(),
-        );
-
-        // ═══════════════════════════════════════════════════════════════════════════
-        // LSM TREE LEVEL METRICS (files at each level, aggregated across all column families)
-        // ═══════════════════════════════════════════════════════════════════════════
-
-        // Record file counts for levels 0-6 (RocksDB typically uses up to 7 levels)
-        for level in 0..=6 {
-            let property = format!("rocksdb.num-files-at-level{}", level);
-            let mut total_files: u64 = 0;
-            for column in ALL_COLUMNS {
-                let cf_handle = db.inner.get_column(column.clone());
-                if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, &property) {
-                    total_files += val;
-                }
-            }
-            self.level_files_count.record(total_files, &[KeyValue::new("level", format!("L{}", level))]);
-        }
-
         Ok(Self {
             db_size,
             column_sizes,
@@ -191,7 +166,6 @@ impl DbMetrics {
             cache_total,
             is_write_stopped,
             pending_compaction_bytes,
-            l0_files_count,
             level_files_count,
             num_immutable_memtables,
             memtable_size_bytes,
@@ -203,7 +177,7 @@ impl DbMetrics {
         let mut total_immutable_memtables: u64 = 0;
         let mut total_memtable_size: u64 = 0;
         let mut total_pending_compaction: u64 = 0;
-        let mut total_l0_files: u64 = 0;
+        let mut total_files_at_level: [u64; 7] = [0; 7];
 
         // ═══════════════════════════════════════════════════════════════════════════
         // PER-COLUMN-FAMILY METRICS (aggregated across all columns)
@@ -239,10 +213,18 @@ impl DbMetrics {
                 total_pending_compaction += val;
             }
 
-            // L0 file count
-            if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, "rocksdb.num-files-at-level0") {
-                total_l0_files += val;
+            // Record file counts for levels 0-6 (RocksDB typically uses up to 7 levels)
+            for level in 0..=6 {
+                let property = format!("rocksdb.num-files-at-level{}", level);
+                if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, &property) {
+                    total_files_at_level[level] += val;
+                }
             }
+        }
+
+        // Record file counts for levels 0-6
+        for level in 0..=6 {
+            self.level_files_count.record(total_files_at_level[level], &[KeyValue::new("level", format!("L{}", level))]);
         }
 
         // Record aggregated storage metrics
@@ -275,7 +257,6 @@ impl DbMetrics {
 
         // Record aggregated per-CF metrics
         self.pending_compaction_bytes.record(total_pending_compaction, &[]);
-        self.l0_files_count.record(total_l0_files, &[]);
 
         Ok(storage_size)
     }
