@@ -7,6 +7,8 @@ use std::path::PathBuf;
 const KiB: usize = 1024;
 #[allow(non_upper_case_globals)]
 const MiB: usize = 1024 * KiB;
+#[allow(non_upper_case_globals)]
+const GiB: usize = 1024 * MiB;
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum StatsLevel {
@@ -151,6 +153,39 @@ pub struct BackendParams {
     /// Recommended: false for production (good balance), true for maximum durability.
     #[clap(env = "MADARA_DB_FSYNC", long, default_value = "false")]
     pub db_fsync: bool,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WRITE STALL PREVENTION SETTINGS
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Maximum number of memtables (active + immutable) before write stall.
+    /// Higher values provide more buffer during write bursts but use more memory.
+    /// Increase if you see stalls due to memtable count.
+    #[clap(env = "MADARA_DB_MAX_WRITE_BUFFER_NUMBER", long, default_value_t = 5)]
+    pub db_max_write_buffer_number: i32,
+
+    /// Number of L0 files that triggers write slowdown.
+    /// When L0 file count reaches this, writes are throttled.
+    /// Increase for faster sync at cost of read performance.
+    #[clap(env = "MADARA_DB_L0_SLOWDOWN_TRIGGER", long, default_value_t = 20)]
+    pub db_l0_slowdown_trigger: i32,
+
+    /// Number of L0 files that triggers complete write stop.
+    /// When L0 file count reaches this, writes are blocked until compaction catches up.
+    /// Should be higher than slowdown trigger.
+    #[clap(env = "MADARA_DB_L0_STOP_TRIGGER", long, default_value_t = 36)]
+    pub db_l0_stop_trigger: i32,
+
+    /// Soft limit for pending compaction in GiB. When exceeded, writes slow down.
+    /// Note: Default is tuned for ~20 GiB volumes. Increase for production databases
+    /// with higher write traffic.
+    #[clap(env = "MADARA_DB_SOFT_PENDING_COMPACTION_GIB", long, default_value_t = 6)]
+    pub db_soft_pending_compaction_gib: usize,
+
+    /// Hard limit for pending compaction in GiB. When exceeded, writes stop completely.
+    /// Note: Default is tuned for ~20 GiB volumes. Increase for production databases
+    /// with higher write traffic.
+    #[clap(env = "MADARA_DB_HARD_PENDING_COMPACTION_GIB", long, default_value_t = 12)]
+    pub db_hard_pending_compaction_gib: usize,
 }
 
 impl BackendParams {
@@ -177,6 +212,12 @@ impl BackendParams {
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
             write_mode: DbWriteMode { wal: self.db_wal, fsync: self.db_fsync },
+            // Write stall prevention settings
+            max_write_buffer_number: self.db_max_write_buffer_number,
+            level_zero_slowdown_writes_trigger: self.db_l0_slowdown_trigger,
+            level_zero_stop_writes_trigger: self.db_l0_stop_trigger,
+            soft_pending_compaction_bytes_limit: self.db_soft_pending_compaction_gib * GiB,
+            hard_pending_compaction_bytes_limit: self.db_hard_pending_compaction_gib * GiB,
         }
     }
 }
