@@ -286,6 +286,11 @@ pub trait DatabaseClient: Send + Sync {
     /// Returns the aggregator batch with the highest `index`, or `None` if no batches exist.
     async fn get_latest_aggregator_batch(&self) -> Result<Option<AggregatorBatch>, DatabaseError>;
 
+    async fn get_oldest_aggregator_batch(
+        &self,
+        version: Option<&str>,
+    ) -> Result<Option<AggregatorBatch>, DatabaseError>;
+
     /// Get aggregator batches by their indexes
     ///
     /// # Arguments
@@ -350,6 +355,7 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         aggregator_index: u64,
     ) -> Result<Option<SnosBatch>, DatabaseError>;
+
     /// Get aggregator batches by status
     ///
     /// # Arguments

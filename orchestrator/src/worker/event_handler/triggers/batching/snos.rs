@@ -2,6 +2,7 @@ use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{SnosBatch, SnosBatchStatus, SnosBatchUpdates};
+use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::worker::event_handler::triggers::batching::utils::{get_block_builtin_weights, get_block_version};
 use crate::worker::event_handler::triggers::batching::BlockProcessingResult;
 use blockifier::bouncer::BouncerWeights;
@@ -116,21 +117,22 @@ impl SnosHandler {
         state: SnosState,
     ) -> Result<BlockProcessingResult<SnosState, NonEmptySnosState>, JobError> {
         info!("Including block {} in snos batch", block_num);
+
+        // Get the starknet version of the current block (applies to all states)
+        let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
+
+        // Check if block's Starknet version is supported (applies to all states)
+        if !block_version.is_supported() {
+            warn!(
+                block_num = %block_num,
+                version = %block_version,
+                "Block's Starknet version is not supported, skipping batching"
+            );
+            return Ok(BlockProcessingResult::NotBatched(state));
+        }
+
         match state {
             SnosState::Empty(ref empty_state) => {
-                // Get the starknet version of the current block
-                let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
-
-                // Check if the starting block's Starknet version is supported
-                if !block_version.is_supported() {
-                    warn!(
-                        block_num = %block_num,
-                        version = %block_version,
-                        "Block's Starknet version is not supported, skipping batching"
-                    );
-                    return Ok(BlockProcessingResult::NotBatched(state));
-                }
-
                 let block_weights = get_block_builtin_weights(
                     block_num,
                     self.config.madara_feeder_gateway_client(),
@@ -243,11 +245,11 @@ pub enum SnosBatchCheckResult {
     /// Batch is already closed
     BatchClosed,
     /// Starknet version mismatch
-    VersionMismatch,
+    StarknetVersionMismatch,
     /// Block's Starknet version is not supported by this orchestrator
     StarknetVersionUnsupported,
-    /// Gap detected in block sequence (block_num != batch.end_block + 1)
-    GapDetected,
+    /// Batch was created by a different orchestrator version
+    OrchestratorVersionMismatch,
     /// Max blocks per batch reached
     MaxBlocksReached,
     /// Batch time limit exceeded
@@ -292,9 +294,14 @@ impl NonEmptySnosState {
             return SnosBatchCheckResult::BatchClosed;
         }
 
+        // Check if batch was created by the current orchestrator version
+        if self.batch.orchestrator_version != ORCHESTRATOR_VERSION {
+            return SnosBatchCheckResult::OrchestratorVersionMismatch;
+        }
+
         // Check version mismatch
         if block_version != self.batch.starknet_version {
-            return SnosBatchCheckResult::VersionMismatch;
+            return SnosBatchCheckResult::StarknetVersionMismatch;
         }
 
         // Check if block version is supported by this orchestrator
@@ -543,7 +550,7 @@ mod tests {
             // Block has different version than batch
             let result = state.check_block_sync(block_weights, StarknetVersion::V0_13_3, None, &limits);
 
-            assert_eq!(result, SnosBatchCheckResult::VersionMismatch);
+            assert_eq!(result, SnosBatchCheckResult::StarknetVersionMismatch);
         }
 
         #[test]
@@ -818,7 +825,7 @@ mod tests {
                     } else {
                         assert_eq!(
                             result,
-                            SnosBatchCheckResult::VersionMismatch,
+                            SnosBatchCheckResult::StarknetVersionMismatch,
                             "Different versions {:?} vs {:?} should mismatch",
                             batch_version,
                             block_version

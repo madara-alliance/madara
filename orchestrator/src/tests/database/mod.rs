@@ -658,8 +658,7 @@ async fn test_get_snos_batches_by_status() {
     database_client.create_snos_batch(batch2.clone()).await.unwrap();
     database_client.create_snos_batch(batch3.clone()).await.unwrap();
 
-    let closed_batches =
-        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, None).await.unwrap();
+    let closed_batches = database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, None).await.unwrap();
 
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().any(|b| b.index == 1));

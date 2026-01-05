@@ -4,6 +4,7 @@ use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights};
+use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::batching::aggregator::AggregatorState::{Empty, NonEmpty};
 use crate::worker::event_handler::triggers::batching::utils::{get_block_builtin_weights, get_block_version};
@@ -161,18 +162,18 @@ impl AggregatorHandler {
         // Fetch Starknet version for the current block
         let current_block_starknet_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
 
+        // Check if block's Starknet version is supported (applies to all states)
+        if !current_block_starknet_version.is_supported() {
+            tracing::warn!(
+                block_num = %block_num,
+                version = %current_block_starknet_version,
+                "Block's Starknet version is not supported, skipping batching"
+            );
+            return Ok(BlockProcessingResult::NotBatched(state));
+        }
+
         match state {
             Empty(ref empty_state) => {
-                // Check if the starting block's Starknet version is supported
-                if !current_block_starknet_version.is_supported() {
-                    tracing::warn!(
-                        block_num = %block_num,
-                        version = %current_block_starknet_version,
-                        "Block's Starknet version is not supported, skipping batching"
-                    );
-                    return Ok(BlockProcessingResult::NotBatched(state));
-                }
-
                 // Get state update for the current block
                 let current_state_update = self
                     .config
@@ -221,7 +222,7 @@ impl AggregatorHandler {
                 "Gap detected in block sequence, closing batch"
             );
             state.close();
-            return Ok(BlockProcessingResult::NotBatched(AggregatorState::NonEmpty(state)));
+            return Ok(BlockProcessingResult::NotBatched(NonEmpty(state)));
         }
 
         // Fetch block weights for the current block
@@ -370,11 +371,11 @@ pub enum BatchCheckResult {
     /// Batch is already closed
     BatchClosed,
     /// Starknet version mismatch
-    VersionMismatch,
+    StarknetVersionMismatch,
     /// Block's Starknet version is not supported by this orchestrator
     StarknetVersionUnsupported,
-    /// Gap detected in block sequence (block_num != batch.end_block + 1)
-    GapDetected,
+    /// Batch was created by a different orchestrator version
+    OrchestratorVersionMismatch,
     /// Max blocks per batch reached
     MaxBlocksReached,
     /// Batch time limit exceeded
@@ -406,9 +407,14 @@ impl NonEmptyAggregatorState {
             return BatchCheckResult::BatchClosed;
         }
 
+        // Check if batch was created by the current orchestrator version
+        if self.batch.orchestrator_version != ORCHESTRATOR_VERSION {
+            return BatchCheckResult::OrchestratorVersionMismatch;
+        }
+
         // Check version mismatch
         if block_version != self.batch.starknet_version {
-            return BatchCheckResult::VersionMismatch;
+            return BatchCheckResult::StarknetVersionMismatch;
         }
 
         // Check if block version is supported by this orchestrator
@@ -636,7 +642,7 @@ mod tests {
             // Block has different version than batch
             let result = state.check_block_sync(&block_weights, StarknetVersion::V0_13_3, &limits);
 
-            assert_eq!(result, BatchCheckResult::VersionMismatch);
+            assert_eq!(result, BatchCheckResult::StarknetVersionMismatch);
         }
 
         #[test]
@@ -840,7 +846,7 @@ mod tests {
                     } else {
                         assert_eq!(
                             result,
-                            BatchCheckResult::VersionMismatch,
+                            BatchCheckResult::StarknetVersionMismatch,
                             "Different versions {:?} vs {:?} should mismatch",
                             batch_version,
                             block_version

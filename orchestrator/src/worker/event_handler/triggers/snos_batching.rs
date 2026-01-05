@@ -1,6 +1,7 @@
 use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
 use crate::error::job::JobError;
+use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::worker::event_handler::triggers::batching::snos::{
     SnosBatchLimits, SnosHandler, SnosState, SnosStateHandler,
 };
@@ -140,8 +141,8 @@ impl SnosBatchingTrigger {
     /// Calculate the range of blocks to process for L2s
     ///
     /// For L2s, SNOS batching depends on aggregator batching:
-    /// - Start: max(last block SNOS batching processed, min_block_to_process)
-    /// - End: min(last block processed by aggregator batching, max_block_to_process, start + max_blocks_to_process_at_once - 1)
+    /// - Start: max(last block SNOS batching processed, min_block_to_process, oldest aggregator batch of current version's start_block)
+    /// - End: min(last block processed by aggregator batching of current version, max_block_to_process, start + max_blocks_to_process_at_once - 1)
     async fn calculate_range_l2(&self, config: &Arc<Config>) -> Result<(u64, u64), JobError> {
         // Get the latest SNOS batch from the DB
         let latest_snos_batch = config.database().get_latest_snos_batch().await?;
@@ -149,21 +150,30 @@ impl SnosBatchingTrigger {
         // Get the latest aggregator batch from the DB
         let latest_aggregator_batch = config.database().get_latest_aggregator_batch().await?;
 
+        // Get the oldest aggregator batch from the DB
+        let oldest_aggregator_batch = config.database().get_oldest_aggregator_batch(Some(ORCHESTRATOR_VERSION)).await?;
+
         // Get the last block processed by SNOS batching
         let last_block_in_snos_batches = latest_snos_batch.map_or(-1, |batch| batch.end_block as i64);
 
         // Get the last block processed by aggregator batching
-        let last_block_in_aggregator_batches = match latest_aggregator_batch {
-            Some(batch) => batch.end_block as i64,
-            None => {
-                // No aggregator batch exists, so we can't process any SNOS batches
-                debug!("No aggregator batch exists, cannot process SNOS batches for L2");
-                return Ok((1, 0)); // Return invalid range to skip processing
-            }
-        };
+        let (first_block_in_aggregator_batches, last_block_in_aggregator_batches) =
+            match (oldest_aggregator_batch, latest_aggregator_batch) {
+                (Some(oldest_batch), Some(latest_batch)) => {
+                    (oldest_batch.start_block as i64, latest_batch.end_block as i64)
+                }
+                _ => {
+                    // No aggregator batch exists, so we can't process any SNOS batches
+                    debug!("No aggregator batch exists, cannot process SNOS batches for L2");
+                    return Ok((1, 0)); // Return invalid range to skip processing
+                }
+            };
 
         // Calculate the first block to assign to SNOS batch
-        let first_block = max(config.service_config().min_block_to_process, (last_block_in_snos_batches + 1) as u64);
+        let first_block = max(
+            max(config.service_config().min_block_to_process, (last_block_in_snos_batches + 1) as u64),
+            first_block_in_aggregator_batches as u64,
+        );
 
         // Calculate the last block to assign to SNOS batch
         // For L2s, we can only process blocks that have been assigned to aggregator batches
@@ -175,6 +185,9 @@ impl SnosBatchingTrigger {
         debug!(
             first_block = %first_block,
             last_block = %last_block,
+            oldest_batch_start = %first_block_in_aggregator_batches,
+            newest_batch_end = %last_block_in_aggregator_batches,
+            orchestrator_version = %ORCHESTRATOR_VERSION,
             "Calculated SNOS batch range for L2"
         );
 

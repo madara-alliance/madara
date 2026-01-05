@@ -736,6 +736,31 @@ impl DatabaseClient for MongoDbClient {
         Ok(batch)
     }
 
+    async fn get_oldest_aggregator_batch(
+        &self,
+        version: Option<&str>,
+    ) -> Result<Option<AggregatorBatch>, DatabaseError> {
+        let start = Instant::now();
+        let options = FindOptions::builder().sort(doc! { "index": 1 }).limit(1).build();
+
+        let mut filter = doc! {};
+
+        if let Some(version) = version {
+            filter.insert("metadata.common.orchestrator_version", version);
+        }
+
+        let mut cursor = self.get_aggregator_batch_collection().find(filter, options).await?;
+        let batch = cursor.try_next().await?;
+
+        debug!(has_batch = batch.is_some(), category = "db_call", "Retrieved oldest aggregator batch");
+
+        let attributes = [KeyValue::new("db_operation_name", "get_oldest_aggregator_batch")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(batch)
+    }
+
     async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError> {
         let start = Instant::now();
         let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();
