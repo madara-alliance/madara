@@ -76,7 +76,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                             parent_job_type,
                             JobStatus::Completed,
                             last_processed,
-                            Some(ORCHESTRATOR_VERSION),
+                            Some(ORCHESTRATOR_VERSION.to_string()),
                         )
                         .await?,
                     Some(last_processed),
@@ -92,7 +92,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                             parent_job_type,
                             JobStatus::Completed,
                             JobType::StateTransition,
-                            Some(ORCHESTRATOR_VERSION),
+                            Some(ORCHESTRATOR_VERSION.to_string()),
                         )
                         .await?,
                     None,

@@ -95,6 +95,7 @@ pub fn build_batch(
     AggregatorBatch {
         id: Uuid::new_v4(),
         index,
+        orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
         num_blocks: end_block - start_block + 1,
         start_block,
         end_block,

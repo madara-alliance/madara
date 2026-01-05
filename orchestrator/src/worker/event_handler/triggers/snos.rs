@@ -123,7 +123,11 @@ impl JobTrigger for SnosJobTrigger {
         // Get all snos batches that are closed but don't have a SnosRun job created yet
         for snos_batch in config
             .database()
-            .get_snos_batches_without_jobs(SnosBatchStatus::Closed, max_jobs_to_create, Some(ORCHESTRATOR_VERSION))
+            .get_snos_batches_without_jobs(
+                SnosBatchStatus::Closed,
+                max_jobs_to_create,
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
             .await?
         {
             // Create SNOS job metadata

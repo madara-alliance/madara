@@ -30,7 +30,11 @@ impl JobTrigger for AggregatorJobTrigger {
         // Get all the closed batches
         let closed_batches = config
             .database()
-            .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(10), Some(ORCHESTRATOR_VERSION))
+            .get_aggregator_batches_by_status(
+                AggregatorBatchStatus::Closed,
+                Some(10),
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
             .await?;
 
         debug!("Found {} closed batches", closed_batches.len());

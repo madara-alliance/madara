@@ -561,6 +561,7 @@ mod tests {
         AggregatorBatch {
             id: uuid::Uuid::new_v4(),
             index: 1,
+            orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
             bucket_id: "test_bucket".to_string(),
             squashed_state_updates_path: "test/path.json".to_string(),
             blob_path: "test/blob".to_string(),

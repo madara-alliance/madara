@@ -35,7 +35,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
                 previous_job_type,
                 JobStatus::Completed,
                 JobType::DataSubmission,
-                Some(ORCHESTRATOR_VERSION),
+                Some(ORCHESTRATOR_VERSION.to_string()),
             )
             .await?;
 

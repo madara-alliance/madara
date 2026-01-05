@@ -31,7 +31,7 @@ impl JobTrigger for ProvingJobTrigger {
                 JobType::SnosRun,
                 JobStatus::Completed,
                 JobType::ProofCreation,
-                Some(ORCHESTRATOR_VERSION),
+                Some(ORCHESTRATOR_VERSION.to_string()),
             )
             .await?;
 

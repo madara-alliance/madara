@@ -93,7 +93,7 @@ pub trait DatabaseClient: Send + Sync {
         job_a_type: JobType,
         job_a_status: JobStatus,
         job_b_type: JobType,
-        orchestrator_version: Option<&str>,
+        orchestrator_version: Option<String>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get the latest job of a specific type and status
@@ -119,7 +119,7 @@ pub trait DatabaseClient: Send + Sync {
         job_type: JobType,
         job_status: JobStatus,
         internal_id: u64,
-        orchestrator_version: Option<&str>,
+        orchestrator_version: Option<String>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get all jobs by types and statuses
@@ -220,7 +220,7 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         status: SnosBatchStatus,
         limit: Option<i64>,
-        orchestrator_version: Option<&str>,
+        orchestrator_version: Option<String>,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Get SNOS batches that don't have corresponding SNOS jobs
@@ -240,7 +240,7 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         snos_batch_status: SnosBatchStatus,
         limit: u64,
-        orchestrator_version: Option<&str>,
+        orchestrator_version: Option<String>,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Update or create a SNOS batch
@@ -288,7 +288,7 @@ pub trait DatabaseClient: Send + Sync {
 
     async fn get_oldest_aggregator_batch(
         &self,
-        version: Option<&str>,
+        version: Option<String>,
     ) -> Result<Option<AggregatorBatch>, DatabaseError>;
 
     /// Get aggregator batches by their indexes
@@ -366,7 +366,7 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         status: AggregatorBatchStatus,
         limit: Option<i64>,
-        orchestrator_version: Option<&str>,
+        orchestrator_version: Option<String>,
     ) -> Result<Vec<AggregatorBatch>, DatabaseError>;
 
     // ================================================================================

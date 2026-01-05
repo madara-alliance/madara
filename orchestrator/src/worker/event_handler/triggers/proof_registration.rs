@@ -28,7 +28,7 @@ impl JobTrigger for ProofRegistrationJobTrigger {
                 JobType::ProofCreation,
                 JobStatus::Completed,
                 JobType::ProofRegistration,
-                Some(ORCHESTRATOR_VERSION),
+                Some(ORCHESTRATOR_VERSION.to_string()),
             )
             .await?;
 

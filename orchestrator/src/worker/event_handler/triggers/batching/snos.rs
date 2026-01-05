@@ -418,6 +418,7 @@ mod tests {
         SnosBatch {
             id: uuid::Uuid::new_v4(),
             index: 1,
+            orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
             aggregator_batch_index,
             starknet_version: version,
             start_block: 0,

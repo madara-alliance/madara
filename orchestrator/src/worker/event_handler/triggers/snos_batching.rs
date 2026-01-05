@@ -151,7 +151,8 @@ impl SnosBatchingTrigger {
         let latest_aggregator_batch = config.database().get_latest_aggregator_batch().await?;
 
         // Get the oldest aggregator batch from the DB
-        let oldest_aggregator_batch = config.database().get_oldest_aggregator_batch(Some(ORCHESTRATOR_VERSION)).await?;
+        let oldest_aggregator_batch =
+            config.database().get_oldest_aggregator_batch(Some(ORCHESTRATOR_VERSION.to_string())).await?;
 
         // Get the last block processed by SNOS batching
         let last_block_in_snos_batches = latest_snos_batch.map_or(-1, |batch| batch.end_block as i64);
