@@ -79,7 +79,11 @@ pub trait DatabaseClient: Send + Sync {
     ///
     /// # Arguments
     /// * `job_type` - The type of job to search for
-    async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>, DatabaseError>;
+    async fn get_latest_job_by_type(
+        &self,
+        job_type: JobType,
+        orchestrator_version: Option<String>,
+    ) -> Result<Option<JobItem>, DatabaseError>;
 
     /// Get jobs without a successor
     ///
@@ -166,6 +170,7 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         job_type: JobType,
         job_statuses: Vec<JobStatus>,
+        orchestrator_version: Option<String>,
     ) -> Result<Option<JobItem>, DatabaseError>;
 
     /// Get all jobs for a specific block number

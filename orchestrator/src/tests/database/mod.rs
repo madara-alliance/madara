@@ -124,7 +124,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
         assert_eq!(jobs_without_successor[0].internal_id, 4);
     } else {
         // job_vec[1] and job_vec[2] have no successors
-        assert_eq!(jobs_without_successor.len(), 2, "Expected 2 jobs without successor"); // snos jobs 2 and 4
+        assert_eq!(jobs_without_successor.len(), 2, "Expected 2 jobs without successor");
     }
 
     // Test with current version filter
@@ -185,7 +185,7 @@ async fn database_get_last_successful_job_by_type_works() {
     database_client.create_job(job_vec[1].clone()).await.unwrap();
     database_client.create_job(job_vec[2].clone()).await.unwrap();
 
-    let last_successful_job = database_client.get_latest_job_by_type(JobType::SnosRun).await.unwrap().unwrap();
+    let last_successful_job = database_client.get_latest_job_by_type(JobType::SnosRun, None).await.unwrap().unwrap();
 
     assert_eq!(last_successful_job, job_vec[2], "Expected job assertion failed");
 }
@@ -220,7 +220,7 @@ async fn database_get_oldest_job_by_type_excluding_statuses_works() {
 
     // Exclude Completed status - should return job with internal_id=3 (oldest non-completed)
     let oldest_incomplete = database_client
-        .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed])
+        .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed], None)
         .await
         .unwrap();
 
@@ -231,7 +231,11 @@ async fn database_get_oldest_job_by_type_excluding_statuses_works() {
 
     // Exclude both Completed and Created - should return job with internal_id=4
     let oldest_excluding_multiple = database_client
-        .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed, JobStatus::Created])
+        .get_oldest_job_by_type_excluding_statuses(
+            JobType::SnosRun,
+            vec![JobStatus::Completed, JobStatus::Created],
+            None,
+        )
         .await
         .unwrap();
 
@@ -733,10 +737,8 @@ async fn test_get_snos_batches_by_status() {
 
     // Test with current version filter - should only return batch 1
     let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
-    let current_version_batches = database_client
-        .get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some(current_version))
-        .await
-        .unwrap();
+    let current_version_batches =
+        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some(current_version)).await.unwrap();
     assert_eq!(current_version_batches.len(), 1);
     assert_eq!(current_version_batches[0].index, 1);
 
@@ -787,10 +789,8 @@ async fn test_get_snos_batches_without_jobs() {
 
     // Test with current version filter - should only return batch 2
     let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
-    let current_version_batches = database_client
-        .get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, Some(current_version))
-        .await
-        .unwrap();
+    let current_version_batches =
+        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, Some(current_version)).await.unwrap();
     assert_eq!(current_version_batches.len(), 1);
     assert_eq!(current_version_batches[0].index, 2);
 
@@ -1059,12 +1059,7 @@ async fn test_get_oldest_aggregator_batch() {
     // Create older batch with old version (index 1, starts at block 100)
     let batch_old = build_batch_with_version(1, 100, 200, "old-version".to_string());
     // Create newer batch with current version (index 2, starts at block 201)
-    let batch_current = build_batch_with_version(
-        2,
-        201,
-        300,
-        crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
-    );
+    let batch_current = build_batch_with_version(2, 201, 300, crate::types::constant::ORCHESTRATOR_VERSION.to_string());
 
     database_client.create_aggregator_batch(batch_old.clone()).await.unwrap();
     database_client.create_aggregator_batch(batch_current.clone()).await.unwrap();

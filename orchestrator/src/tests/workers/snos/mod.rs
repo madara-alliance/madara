@@ -44,12 +44,12 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
     db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
 
     db.expect_get_latest_job_by_type()
-        .with(eq(JobType::SnosRun))
-        .returning(move |_| Ok(Some(get_job_item_mock_by_id(20, Uuid::new_v4()))));
+        .with(eq(JobType::SnosRun), eq(None))
+        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id(20, Uuid::new_v4()))));
 
     db.expect_get_oldest_job_by_type_excluding_statuses()
-        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]))
-        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
+        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]), eq(None))
+        .returning(move |_, _, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
 
     db.expect_get_snos_batches_without_jobs()
         .withf(|job_status, limit, _orchestrator_version| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
@@ -162,12 +162,12 @@ async fn test_create_snos_job_for_existing_batch(
     db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
 
     db.expect_get_latest_job_by_type()
-        .with(eq(JobType::SnosRun))
-        .returning(move |_| Ok(Some(get_job_item_mock_by_id(20, Uuid::new_v4()))));
+        .with(eq(JobType::SnosRun), eq(None))
+        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id(20, Uuid::new_v4()))));
 
     db.expect_get_oldest_job_by_type_excluding_statuses()
-        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]))
-        .returning(move |_, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
+        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]), eq(None))
+        .returning(move |_, _, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
 
     db.expect_get_snos_batches_without_jobs()
         .withf(|job_status, limit, _orchestrator_version| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)

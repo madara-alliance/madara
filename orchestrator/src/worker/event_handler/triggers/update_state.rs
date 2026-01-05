@@ -38,7 +38,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         };
 
         // Get the latest StateTransition job
-        let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition).await?;
+        let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition, None).await?;
         // Get the parent jobs that are completed and are ready to get their StateTransition job created
         let (jobs_to_process, last_processed) = match latest_job {
             Some(job) => {

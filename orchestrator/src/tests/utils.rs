@@ -25,7 +25,12 @@ use std::io::Read;
 use url::Url;
 
 pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64) -> JobItem {
-    build_job_item_with_version(job_type, job_status, internal_id, crate::types::constant::ORCHESTRATOR_VERSION.to_string())
+    build_job_item_with_version(
+        job_type,
+        job_status,
+        internal_id,
+        crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
+    )
 }
 
 /// Build a job item with a custom orchestrator version for testing version filtering
@@ -147,14 +152,24 @@ pub fn build_snos_batch_with_version(
     start_block: u64,
     orchestrator_version: String,
 ) -> SnosBatch {
-    let mut batch =
-        SnosBatch::new(index, aggregator_batch_index, start_block, default_test_bouncer_weights(), StarknetVersion::V0_13_2);
+    let mut batch = SnosBatch::new(
+        index,
+        aggregator_batch_index,
+        start_block,
+        default_test_bouncer_weights(),
+        StarknetVersion::V0_13_2,
+    );
     batch.orchestrator_version = orchestrator_version;
     batch
 }
 
 /// Build an aggregator batch with a custom orchestrator version for testing version filtering
-pub fn build_batch_with_version(index: u64, start_block: u64, end_block: u64, orchestrator_version: String) -> AggregatorBatch {
+pub fn build_batch_with_version(
+    index: u64,
+    start_block: u64,
+    end_block: u64,
+    orchestrator_version: String,
+) -> AggregatorBatch {
     AggregatorBatch {
         id: Uuid::new_v4(),
         index,

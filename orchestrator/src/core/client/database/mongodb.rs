@@ -501,13 +501,25 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>, DatabaseError> {
+    async fn get_latest_job_by_type(
+        &self,
+        job_type: JobType,
+        orchestrator_version: Option<String>,
+    ) -> Result<Option<JobItem>, DatabaseError> {
         let start = Instant::now();
+
+        // Build match filter with optional orchestrator version
+        let mut match_filter = doc! {
+            "job_type": bson::to_bson(&job_type)?
+        };
+
+        if let Some(version) = &orchestrator_version {
+            match_filter.insert("metadata.common.orchestrator_version", version.as_str());
+        }
+
         let pipeline = vec![
             doc! {
-                "$match": {
-                    "job_type": bson::to_bson(&job_type)?
-                }
+                "$match": match_filter,
             },
             doc! {
                 "$sort": {
@@ -1332,20 +1344,23 @@ impl DatabaseClient for MongoDbClient {
         &self,
         job_type: JobType,
         job_statuses: Vec<JobStatus>,
+        orchestrator_version: Option<String>,
     ) -> Result<Option<JobItem>, DatabaseError> {
         let start = Instant::now();
+
+        // Build match filter with optional orchestrator version
+        let mut match_filter = doc! {
+            "job_type": bson::to_bson(&job_type)?,
+            "status": { "$nin": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>() }
+        };
+
+        if let Some(version) = &orchestrator_version {
+            match_filter.insert("metadata.common.orchestrator_version", version.as_str());
+        }
+
         let pipeline = vec![
             doc! {
-                "$match": {
-                    "job_type": bson::to_bson(&job_type)?
-                }
-            },
-            doc! {
-                "$match": {
-                    "status": {
-                        "$nin": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
-                    }
-                }
+                "$match": match_filter,
             },
             doc! {
                 "$sort": {

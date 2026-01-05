@@ -49,7 +49,7 @@ fn calculate_max_snos_jobs_to_create(
 ) -> u64 {
     match (latest_job_internal_id, oldest_incomplete_internal_id) {
         (Some(latest), Some(oldest_incomplete)) => {
-            let num_jobs_in_buffer = latest - oldest_incomplete + 1;
+            let num_jobs_in_buffer = latest.saturating_sub(oldest_incomplete) + 1;
             buffer_size.saturating_sub(num_jobs_in_buffer)
         }
         // No jobs exist, or all jobs are completed - can create full buffer
@@ -87,17 +87,22 @@ impl JobTrigger for SnosJobTrigger {
         let snos_job_buffer_size = config.service_config().snos_job_buffer_size;
 
         // Get latest SNOS job internal ID (if any)
-        let latest_job_internal_id =
-            if let Some(latest_job) = config.database().get_latest_job_by_type(JobType::SnosRun).await? {
-                Some(latest_job.internal_id)
-            } else {
-                None
-            };
+        let latest_job_internal_id = if let Some(latest_job) =
+            config.database().get_latest_job_by_type(JobType::SnosRun, Some(ORCHESTRATOR_VERSION.to_string())).await?
+        {
+            Some(latest_job.internal_id)
+        } else {
+            None
+        };
 
-        // Get oldest incomplete SNOS job internal ID (if any)
+        // Get the oldest incomplete SNOS job internal ID (if any)
         let oldest_incomplete_internal_id = if let Some(oldest_incomplete_job) = config
             .database()
-            .get_oldest_job_by_type_excluding_statuses(JobType::SnosRun, vec![JobStatus::Completed])
+            .get_oldest_job_by_type_excluding_statuses(
+                JobType::SnosRun,
+                vec![JobStatus::Completed],
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
             .await?
         {
             Some(oldest_incomplete_job.internal_id)
