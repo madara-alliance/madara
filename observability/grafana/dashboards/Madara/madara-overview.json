@@ -1254,7 +1254,7 @@
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_vm_fallbacks_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "VM Fallbacks/s", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_vm_fallbacks_fallback_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "VM Fallbacks/s", "refId": "A" },
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilation_in_progress_skip_skip_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "In-Progress Skip/s", "refId": "B" }
       ],
       "title": "Fallback & Skip Rate",

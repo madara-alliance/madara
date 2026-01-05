@@ -159,7 +159,8 @@ The stack also includes 4 Orchestrator-specific dashboards:
 
 ### Multi-Node Monitoring
 
-Multiple Madara nodes can send metrics to the same OTel Collector via OTLP. Configure each node with appropriate service name labels using the `--analytics-service-name` CLI option to distinguish them in dashboards.
+Multiple Madara nodes can send metrics to the same OTel Collector via OTLP.
+Configure each node with appropriate service name labels using the `--analytics-service-name` CLI option to distinguish them in dashboards.
 
 ### Prometheus Scrape Configuration
 

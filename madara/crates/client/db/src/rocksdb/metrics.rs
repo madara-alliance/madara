@@ -183,10 +183,6 @@ impl DbMetrics {
         // PER-COLUMN-FAMILY METRICS (aggregated across all columns)
         // ═══════════════════════════════════════════════════════════════════════════
 
-        // ═══════════════════════════════════════════════════════════════════════════
-        // STORAGE METRICS
-        // ═══════════════════════════════════════════════════════════════════════════
-
         for column in ALL_COLUMNS {
             let cf_handle = db.inner.get_column(column.clone());
 
@@ -214,18 +210,18 @@ impl DbMetrics {
             }
 
             // Record file counts for levels 0-6 (RocksDB typically uses up to 7 levels)
-            for level in 0..=6 {
+            for (level, count) in total_files_at_level.iter_mut().enumerate() {
                 let property = format!("rocksdb.num-files-at-level{}", level);
                 if let Ok(Some(val)) = db.inner.db.property_int_value_cf(&cf_handle, &property) {
-                    total_files_at_level[level] += val;
+                    *count += val;
                 }
             }
         }
 
         // Record file counts for levels 0-6
-        for level in 0..=6 {
+        for (level, count) in total_files_at_level.iter().enumerate() {
             self.level_files_count
-                .record(total_files_at_level[level], &[KeyValue::new("level", format!("L{}", level))]);
+                .record(*count, &[KeyValue::new("level", format!("L{}", level))]);
         }
 
         // Record aggregated storage metrics
