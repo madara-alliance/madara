@@ -1,6 +1,9 @@
 use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::tests::utils::{build_batch, build_job_item, build_snos_batch};
+use crate::tests::utils::{
+    build_batch, build_batch_with_version, build_job_item, build_job_item_with_version, build_snos_batch,
+    build_snos_batch_with_version,
+};
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatchStatus};
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
@@ -75,11 +78,11 @@ async fn database_create_job_with_job_exists_fails() {
 /// Test for `get_jobs_without_successor` operation in database trait.
 /// Creates jobs in the following sequence :
 ///
-/// - Creates 3 snos run jobs with completed status
+/// - Creates 3 snos run jobs with completed status (2 with current version, 1 with old version)
 ///
 /// - Creates 2 proof creation jobs with succession of the 2 snos jobs
 ///
-/// - Should return one snos job without the successor job of proof creation
+/// - Tests both successor logic and orchestrator_version filtering
 #[rstest]
 #[case(true)]
 #[case(false)]
@@ -96,6 +99,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
         build_job_item(JobType::ProofCreation, JobStatus::Created, 1),
         build_job_item(JobType::ProofCreation, JobStatus::Created, 2),
         build_job_item(JobType::ProofCreation, JobStatus::Created, 3),
+        build_job_item_with_version(JobType::SnosRun, JobStatus::Completed, 4, "old-version".to_string()),
     ];
 
     database_client.create_job(job_vec[0].clone()).await.unwrap();
@@ -103,21 +107,59 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
     database_client.create_job(job_vec[2].clone()).await.unwrap();
     database_client.create_job(job_vec[3].clone()).await.unwrap();
     database_client.create_job(job_vec[5].clone()).await.unwrap();
+    database_client.create_job(job_vec[6].clone()).await.unwrap();
     if is_successor {
         database_client.create_job(job_vec[4].clone()).await.unwrap();
     }
 
+    // Test without version filter
     let jobs_without_successor = database_client
         .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None)
         .await
         .unwrap();
 
     if is_successor {
-        assert_eq!(jobs_without_successor.len(), 0, "Expected number of jobs assertion failed.");
+        // job_vec[6] (old version) has no successor
+        assert_eq!(jobs_without_successor.len(), 1, "Expected 1 job without successor (old version job)");
+        assert_eq!(jobs_without_successor[0].internal_id, 4);
     } else {
-        assert_eq!(jobs_without_successor.len(), 1, "Expected number of jobs assertion failed.");
-        assert_eq!(jobs_without_successor[0], job_vec[1], "Expected job assertion failed.");
+        // job_vec[1] and job_vec[2] have no successors
+        assert_eq!(jobs_without_successor.len(), 2, "Expected 2 jobs without successor"); // snos jobs 2 and 4
     }
+
+    // Test with current version filter
+    let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
+    let jobs_current_version = database_client
+        .get_jobs_without_successor(
+            JobType::SnosRun,
+            JobStatus::Completed,
+            JobType::ProofCreation,
+            Some(current_version),
+        )
+        .await
+        .unwrap();
+
+    if is_successor {
+        assert_eq!(jobs_current_version.len(), 0, "All current version jobs have successors");
+    } else {
+        assert_eq!(jobs_current_version.len(), 1, "Only job 2 with current version has no successor");
+        assert_eq!(jobs_current_version[0].internal_id, 2);
+    }
+
+    // Test with old version filter
+    let jobs_old_version = database_client
+        .get_jobs_without_successor(
+            JobType::SnosRun,
+            JobStatus::Completed,
+            JobType::ProofCreation,
+            Some("old-version".to_string()),
+        )
+        .await
+        .unwrap();
+
+    // Job 3 (old version) never has a successor in this test
+    assert_eq!(jobs_old_version.len(), 1, "Old version job has no successor");
+    assert_eq!(jobs_old_version[0].internal_id, 4);
 }
 
 /// Test for `get_latest_job_by_type` operation in database trait.
@@ -202,9 +244,9 @@ async fn database_get_oldest_job_by_type_excluding_statuses_works() {
 /// Test for `get_jobs_after_internal_id_by_job_type` operation in database trait.
 /// Creates the jobs in following sequence :
 ///
-/// - Creates 5 successful jobs.
+/// - Creates 6 jobs (4 SnosRun with mixed versions, 2 ProofCreation)
 ///
-/// - Should return the jobs after internal id
+/// - Tests both internal_id filtering and orchestrator_version filtering
 #[rstest]
 #[tokio::test]
 async fn database_get_jobs_after_internal_id_by_job_type_works() {
@@ -218,7 +260,7 @@ async fn database_get_jobs_after_internal_id_by_job_type_works() {
         build_job_item(JobType::ProofCreation, JobStatus::Completed, 3),
         build_job_item(JobType::ProofCreation, JobStatus::Completed, 4),
         build_job_item(JobType::SnosRun, JobStatus::Completed, 5),
-        build_job_item(JobType::SnosRun, JobStatus::Completed, 6),
+        build_job_item_with_version(JobType::SnosRun, JobStatus::Completed, 6, "old-version".to_string()),
     ];
 
     database_client.create_job(job_vec[0].clone()).await.unwrap();
@@ -228,14 +270,39 @@ async fn database_get_jobs_after_internal_id_by_job_type_works() {
     database_client.create_job(job_vec[4].clone()).await.unwrap();
     database_client.create_job(job_vec[5].clone()).await.unwrap();
 
+    // Test without version filter - should return all SnosRun jobs after id 2
     let jobs_after_internal_id = database_client
         .get_jobs_after_internal_id_by_job_type(JobType::SnosRun, JobStatus::Completed, 2, None)
         .await
         .unwrap();
 
-    assert_eq!(jobs_after_internal_id.len(), 2, "Number of jobs assertion failed");
-    assert_eq!(jobs_after_internal_id[0], job_vec[4]);
-    assert_eq!(jobs_after_internal_id[1], job_vec[5]);
+    assert_eq!(jobs_after_internal_id.len(), 2, "Should return 2 SnosRun jobs after id 2");
+    assert_eq!(jobs_after_internal_id[0].internal_id, 5);
+    assert_eq!(jobs_after_internal_id[1].internal_id, 6);
+
+    // Test with current version filter - should only return job 5
+    let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
+    let jobs_current_version = database_client
+        .get_jobs_after_internal_id_by_job_type(JobType::SnosRun, JobStatus::Completed, 2, Some(current_version))
+        .await
+        .unwrap();
+
+    assert_eq!(jobs_current_version.len(), 1, "Should return 1 job with current version after id 2");
+    assert_eq!(jobs_current_version[0].internal_id, 5);
+
+    // Test with old version filter - should only return job 6
+    let jobs_old_version = database_client
+        .get_jobs_after_internal_id_by_job_type(
+            JobType::SnosRun,
+            JobStatus::Completed,
+            2,
+            Some("old-version".to_string()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(jobs_old_version.len(), 1, "Should return 1 job with old version after id 2");
+    assert_eq!(jobs_old_version[0].internal_id, 6);
 }
 
 #[rstest]
@@ -639,7 +706,7 @@ async fn test_update_snos_batch_status_by_index() {
 }
 
 /// Test for `get_snos_batches_by_status` operation in database trait.
-/// Creates SNOS batches with different statuses and retrieves by status.
+/// Creates SNOS batches with different statuses and versions, tests filtering.
 #[rstest]
 #[tokio::test]
 async fn test_get_snos_batches_by_status() {
@@ -649,7 +716,7 @@ async fn test_get_snos_batches_by_status() {
 
     let mut batch1 = build_snos_batch(1, Some(100), 200);
     let batch2 = build_snos_batch(2, Some(100), 300);
-    let mut batch3 = build_snos_batch(3, Some(100), 400);
+    let mut batch3 = build_snos_batch_with_version(3, Some(100), 400, "old-version".to_string());
 
     batch1.status = SnosBatchStatus::Closed;
     batch3.status = SnosBatchStatus::Closed;
@@ -658,21 +725,37 @@ async fn test_get_snos_batches_by_status() {
     database_client.create_snos_batch(batch2.clone()).await.unwrap();
     database_client.create_snos_batch(batch3.clone()).await.unwrap();
 
+    // Test without version filter - should return all closed batches
     let closed_batches = database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, None).await.unwrap();
-
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().any(|b| b.index == 1));
     assert!(closed_batches.iter().any(|b| b.index == 3));
 
+    // Test with current version filter - should only return batch 1
+    let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
+    let current_version_batches = database_client
+        .get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some(current_version))
+        .await
+        .unwrap();
+    assert_eq!(current_version_batches.len(), 1);
+    assert_eq!(current_version_batches[0].index, 1);
+
+    // Test with old version filter - should only return batch 3
+    let old_version_batches = database_client
+        .get_snos_batches_by_status(SnosBatchStatus::Closed, None, Some("old-version".to_string()))
+        .await
+        .unwrap();
+    assert_eq!(old_version_batches.len(), 1);
+    assert_eq!(old_version_batches[0].index, 3);
+
     // Test with limit
     let limited_batches =
         database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, Some(1), None).await.unwrap();
-
     assert_eq!(limited_batches.len(), 1);
 }
 
 /// Test for `get_snos_batches_without_jobs` operation in database trait.
-/// Creates SNOS batches and checks for those without corresponding jobs.
+/// Creates SNOS batches with different versions and checks for those without corresponding jobs.
 #[rstest]
 #[tokio::test]
 async fn test_get_snos_batches_without_jobs() {
@@ -682,21 +765,42 @@ async fn test_get_snos_batches_without_jobs() {
 
     let mut batch1 = build_snos_batch(1, Some(100), 200);
     let mut batch2 = build_snos_batch(2, Some(100), 300);
+    let mut batch3 = build_snos_batch_with_version(3, Some(100), 400, "old-version".to_string());
     batch1.status = SnosBatchStatus::Closed;
     batch2.status = SnosBatchStatus::Closed;
+    batch3.status = SnosBatchStatus::Closed;
 
     database_client.create_snos_batch(batch1.clone()).await.unwrap();
     database_client.create_snos_batch(batch2.clone()).await.unwrap();
+    database_client.create_snos_batch(batch3.clone()).await.unwrap();
 
     // Create a job for batch 1 only
     let job = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
     database_client.create_job(job).await.unwrap();
 
+    // Test without version filter - should return batches 2 and 3 (no jobs)
     let batches_without_jobs =
         database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, None).await.unwrap();
+    assert_eq!(batches_without_jobs.len(), 2);
+    assert!(batches_without_jobs.iter().any(|b| b.index == 2));
+    assert!(batches_without_jobs.iter().any(|b| b.index == 3));
 
-    assert_eq!(batches_without_jobs.len(), 1);
-    assert_eq!(batches_without_jobs[0].index, 2);
+    // Test with current version filter - should only return batch 2
+    let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
+    let current_version_batches = database_client
+        .get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, Some(current_version))
+        .await
+        .unwrap();
+    assert_eq!(current_version_batches.len(), 1);
+    assert_eq!(current_version_batches[0].index, 2);
+
+    // Test with old version filter - should only return batch 3
+    let old_version_batches = database_client
+        .get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, Some("old-version".to_string()))
+        .await
+        .unwrap();
+    assert_eq!(old_version_batches.len(), 1);
+    assert_eq!(old_version_batches[0].index, 3);
 }
 
 /// Test for `get_aggregator_batches_by_indexes` operation in database trait.
@@ -782,23 +886,18 @@ async fn test_get_aggregator_batch_for_block(
 }
 
 /// Test for `get_aggregator_batches_by_status` operation in database trait.
-/// Creates aggregator batches with different statuses and retrieves by status.
+/// Creates aggregator batches with different statuses and versions, tests filtering.
 #[rstest]
 #[tokio::test]
-async fn test_get_aggregator_batches_by_status(
-    #[from(build_batch)]
-    #[with(1, 100, 200)]
-    mut batch1: AggregatorBatch,
-    #[from(build_batch)]
-    #[with(2, 201, 300)]
-    batch2: AggregatorBatch,
-    #[from(build_batch)]
-    #[with(3, 301, 400)]
-    mut batch3: AggregatorBatch,
-) {
+async fn test_get_aggregator_batches_by_status() {
     let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
     let config = services.config;
     let database_client = config.database();
+
+    let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
+    let mut batch1 = build_batch_with_version(1, 100, 200, current_version.clone());
+    let batch2 = build_batch_with_version(2, 201, 300, current_version.clone());
+    let mut batch3 = build_batch_with_version(3, 301, 400, "old-version".to_string());
 
     batch1.status = AggregatorBatchStatus::Closed;
     batch3.status = AggregatorBatchStatus::Closed;
@@ -807,17 +906,32 @@ async fn test_get_aggregator_batches_by_status(
     database_client.create_aggregator_batch(batch2.clone()).await.unwrap();
     database_client.create_aggregator_batch(batch3.clone()).await.unwrap();
 
+    // Test without version filter - should return all closed batches
     let closed_batches =
         database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, None).await.unwrap();
-
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().any(|b| b.index == 1));
     assert!(closed_batches.iter().any(|b| b.index == 3));
 
+    // Test with current version filter - should only return batch 1
+    let current_version_batches = database_client
+        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, Some(current_version))
+        .await
+        .unwrap();
+    assert_eq!(current_version_batches.len(), 1);
+    assert_eq!(current_version_batches[0].index, 1);
+
+    // Test with old version filter - should only return batch 3
+    let old_version_batches = database_client
+        .get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, Some("old-version".to_string()))
+        .await
+        .unwrap();
+    assert_eq!(old_version_batches.len(), 1);
+    assert_eq!(old_version_batches[0].index, 3);
+
     // Test with limit
     let limited_batches =
         database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(1), None).await.unwrap();
-
     assert_eq!(limited_batches.len(), 1);
 }
 
@@ -931,4 +1045,43 @@ async fn test_close_all_snos_batches_for_aggregator() {
     // Verify batch 3 is still open
     let batch3_after = database_client.get_snos_batches_by_indices(vec![3]).await.unwrap();
     assert_eq!(batch3_after[0].status, SnosBatchStatus::Open);
+}
+
+/// Test for `get_oldest_aggregator_batch` operation in database trait.
+/// Creates aggregator batches with different versions and verifies retrieval.
+#[rstest]
+#[tokio::test]
+async fn test_get_oldest_aggregator_batch() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    // Create older batch with old version (index 1, starts at block 100)
+    let batch_old = build_batch_with_version(1, 100, 200, "old-version".to_string());
+    // Create newer batch with current version (index 2, starts at block 201)
+    let batch_current = build_batch_with_version(
+        2,
+        201,
+        300,
+        crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
+    );
+
+    database_client.create_aggregator_batch(batch_old.clone()).await.unwrap();
+    database_client.create_aggregator_batch(batch_current.clone()).await.unwrap();
+
+    // Query without version filter - should get the truly oldest batch (index 1)
+    let oldest_all = database_client.get_oldest_aggregator_batch(None).await.unwrap();
+    assert!(oldest_all.is_some(), "Should find any batch");
+    assert_eq!(oldest_all.unwrap().index, 1, "Should return the oldest batch regardless of version");
+
+    // Query with current version filter - should get the newer batch (only one with current version)
+    let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
+    let oldest_current = database_client.get_oldest_aggregator_batch(Some(current_version)).await.unwrap();
+    assert!(oldest_current.is_some(), "Should find batch with current version");
+    assert_eq!(oldest_current.unwrap().index, 2, "Should return the batch with current version");
+
+    // Query with old version filter - should get the older batch
+    let oldest_old = database_client.get_oldest_aggregator_batch(Some("old-version".to_string())).await.unwrap();
+    assert!(oldest_old.is_some(), "Should find batch with old version");
+    assert_eq!(oldest_old.unwrap().index, 1, "Should return the batch with old version");
 }

@@ -415,10 +415,31 @@ mod tests {
         aggregator_batch_index: Option<u64>,
         created_at: chrono::DateTime<Utc>,
     ) -> SnosBatch {
+        create_test_snos_batch_with_orchestrator_version(
+            num_blocks,
+            status,
+            version,
+            weights,
+            aggregator_batch_index,
+            created_at,
+            ORCHESTRATOR_VERSION.to_string(),
+        )
+    }
+
+    /// Helper to create a test SNOS batch with a custom orchestrator version
+    fn create_test_snos_batch_with_orchestrator_version(
+        num_blocks: u64,
+        status: SnosBatchStatus,
+        version: StarknetVersion,
+        weights: BouncerWeights,
+        aggregator_batch_index: Option<u64>,
+        created_at: chrono::DateTime<Utc>,
+        orchestrator_version: String,
+    ) -> SnosBatch {
         SnosBatch {
             id: uuid::Uuid::new_v4(),
             index: 1,
-            orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
+            orchestrator_version,
             aggregator_batch_index,
             starknet_version: version,
             start_block: 0,
@@ -552,6 +573,51 @@ mod tests {
             let result = state.check_block_sync(block_weights, StarknetVersion::V0_13_3, None, &limits);
 
             assert_eq!(result, SnosBatchCheckResult::StarknetVersionMismatch);
+        }
+
+        #[test]
+        fn test_orchestrator_version_mismatch_returns_mismatch() {
+            // Create a batch with a different orchestrator version
+            let batch = create_test_snos_batch_with_orchestrator_version(
+                5,
+                SnosBatchStatus::Open,
+                StarknetVersion::V0_13_2,
+                create_test_weights(100, 100),
+                None,
+                Utc::now(),
+                "different-version".to_string(),
+            );
+            let state = NonEmptySnosState::new(batch);
+            let limits = create_test_limits();
+            let block_weights = create_test_weights(100, 100);
+
+            // Even with matching Starknet version, orchestrator version mismatch should be detected
+            let result = state.check_block_sync(block_weights, StarknetVersion::V0_13_2, None, &limits);
+
+            assert_eq!(result, SnosBatchCheckResult::OrchestratorVersionMismatch);
+        }
+
+        #[test]
+        fn test_orchestrator_version_mismatch_checked_before_starknet_version() {
+            // When both orchestrator version and starknet version mismatch,
+            // orchestrator version mismatch should be returned first
+            let batch = create_test_snos_batch_with_orchestrator_version(
+                5,
+                SnosBatchStatus::Open,
+                StarknetVersion::V0_13_2,
+                create_test_weights(100, 100),
+                None,
+                Utc::now(),
+                "different-version".to_string(),
+            );
+            let state = NonEmptySnosState::new(batch);
+            let limits = create_test_limits();
+            let block_weights = create_test_weights(100, 100);
+
+            // Both versions mismatch, but orchestrator version is checked first
+            let result = state.check_block_sync(block_weights, StarknetVersion::V0_13_3, None, &limits);
+
+            assert_eq!(result, SnosBatchCheckResult::OrchestratorVersionMismatch);
         }
 
         #[test]
