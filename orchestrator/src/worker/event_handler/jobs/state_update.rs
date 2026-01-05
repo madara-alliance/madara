@@ -116,22 +116,21 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let blob_data_paths = state_metadata.blob_data_paths.clone();
         let da_segment_paths = state_metadata.da_segment_paths.clone();
 
-        let mut nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
+        let nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
 
-        let mut sent_tx_hashes: Vec<String> = Vec::with_capacity(filtered_indices.len());
+        // Process the batch/block (filtered_indices should contain exactly one index)
+        let i = *filtered_indices
+            .first()
+            .ok_or_else(|| JobError::Other(OtherError(eyre!("No blocks/batches to process after filtering"))))?;
 
-        // Loop over the indices to process
-        for &i in &filtered_indices {
-            let to_settle_num = blocks_or_batches_to_settle[i];
-            debug!(job_id = %internal_id, num = %to_settle_num, "Processing block/batch");
+        let to_settle_num = blocks_or_batches_to_settle[i];
+        debug!(job_id = %internal_id, num = %to_settle_num, "Processing block/batch");
 
-            if !self.should_send_state_update_txn(&config, to_settle_num).await? {
-                sent_tx_hashes.push(format!("0x{:0>64}", ""));
-                state_metadata.tx_hashes = sent_tx_hashes.clone();
-                job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-                continue;
-            }
-
+        if !self.should_send_state_update_txn(&config, to_settle_num).await? {
+            // State update not needed (already settled on-chain)
+            state_metadata.tx_hash = None;
+            job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
+        } else {
             // Get the artifacts for the block/batch
             let snos_output = match fetch_snos_for_block(internal_id, i, config.clone(), &snos_output_paths).await {
                 Ok(snos_output) => Some(snos_output),
@@ -161,7 +160,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 Err(e) => {
                     error!(num = %to_settle_num, error = %e, "Error updating state for block/batch");
                     state_metadata.context = self.update_last_failed(state_metadata.context.clone(), to_settle_num);
-                    state_metadata.tx_hashes = sent_tx_hashes.clone();
                     job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
 
                     return Err(JobError::Other(OtherError(eyre!("Error occurred during the state update: {e}"))));
@@ -183,10 +181,9 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                     JobError::Other(OtherError(e))
                 })?;
 
-            sent_tx_hashes.push(txn_hash);
-            state_metadata.tx_hashes = sent_tx_hashes.clone();
+            state_metadata.tx_hash = Some(txn_hash.clone());
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-            nonce += 1;
+            job.external_id = txn_hash.into();
         }
 
         let val = blocks_or_batches_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;

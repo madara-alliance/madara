@@ -178,7 +178,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
             format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
         ],
         da_segment_paths: vec![],
-        tx_hashes: Vec::new(),
+        tx_hash: None,
         context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
     };
 
@@ -251,7 +251,7 @@ async fn update_state_worker_next_block_missing() {
             format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
         ],
         da_segment_paths: vec![],
-        tx_hashes: Vec::new(),
+        tx_hash: None,
         context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
     };
 

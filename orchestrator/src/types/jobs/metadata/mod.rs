@@ -192,7 +192,7 @@ pub struct SnosMetadata {
 ///
 /// # Field Management
 /// - Worker-initialized fields: blocks and paths configurations
-/// - Job-populated fields: last_failed_block_no and tx_hashes (during processing)
+/// - Job-populated fields: last_failed_block_no and tx_hash (during processing)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct StateUpdateMetadata {
     // Worker-initialized fields
@@ -209,8 +209,8 @@ pub struct StateUpdateMetadata {
     pub da_segment_paths: Vec<String>,
 
     // Job-populated fields
-    /// Transaction hashes for processed blocks/batches
-    pub tx_hashes: Vec<String>,
+    /// Transaction hash for the state update
+    pub tx_hash: Option<String>,
 
     pub context: SettlementContext,
 }

@@ -50,7 +50,7 @@ async fn test_process_job_attempt_not_present_fails() {
         program_output_paths: vec![],
         blob_data_paths: vec![],
         da_segment_paths: vec![],
-        tx_hashes: vec![],
+        tx_hash: None,
         context: SettlementContext::Block(SettlementContextData { to_settle: vec![], last_failed: None }),
     });
 
@@ -74,7 +74,7 @@ async fn create_job_works() {
             program_output_paths: vec![format!("1/{}", PROGRAM_OUTPUT_FILE_NAME)],
             blob_data_paths: vec![format!("1/{}", BLOB_DATA_FILE_NAME)],
             da_segment_paths: vec![],
-            tx_hashes: vec![],
+            tx_hash: None,
             context: SettlementContext::Block(SettlementContextData { to_settle: vec![1], last_failed: None }),
         }),
     };
@@ -127,7 +127,7 @@ async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[ca
             program_output_paths,
             blob_data_paths,
             da_segment_paths: vec![],
-            tx_hashes: vec![],
+            tx_hash: None,
             context: SettlementContext::Block(SettlementContextData { to_settle: block_numbers, last_failed: None }),
         }),
     };
@@ -184,7 +184,7 @@ async fn process_job_invalid_input_gap_panics() {
                 format!("{}/{}", 8, BLOB_DATA_FILE_NAME),
             ],
             da_segment_paths: vec![],
-            tx_hashes: vec![],
+            tx_hash: None,
             context: SettlementContext::Block(SettlementContextData {
                 to_settle: vec![6, 7, 8], // Gap between 4 and 6
                 last_failed: None,
@@ -314,7 +314,7 @@ async fn test_process_job_l2_with_da_segment(
             program_output_paths: vec![program_output_key],
             blob_data_paths: vec![], // Not used for L2 with DA segments
             da_segment_paths: vec![da_segment_key],
-            tx_hashes: vec![],
+            tx_hash: None,
             context: SettlementContext::Batch(SettlementContextData {
                 to_settle: vec![batch_index],
                 last_failed: None,

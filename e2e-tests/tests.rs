@@ -631,7 +631,7 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
         program_output_paths: vec![format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)],
         blob_data_paths: vec![format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)],
         da_segment_paths: vec![format!("{}/{}", block_number, DA_SEGMENT_FILE_NAME)],
-        tx_hashes: Vec::new(),
+        tx_hash: None,
         context: SettlementContext::Block(SettlementContextData { to_settle: vec![block_number], last_failed: None }),
     };
 
