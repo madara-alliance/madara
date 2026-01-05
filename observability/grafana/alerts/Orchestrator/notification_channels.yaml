@@ -11,7 +11,7 @@ notifiers:
     sendReminder: true
     frequency: 5m
     settings:
-      url: "${SLACK_WEBHOOK_URL_CRITICAL}"  # Set this in environment variables
+      url: "${SLACK_WEBHOOK_URL_CRITICAL}" # Set this in environment variables
       recipient: "#madara-critical-alerts"
       username: "Grafana Orchestrator Alerts"
       icon_emoji: ":rotating_light:"
@@ -87,14 +87,14 @@ notifiers:
       subject: "Orchestrator Daily Alert Summary"
       message: |
         Daily summary of orchestrator alerts:
-        
+
         Alert: {{ .GroupLabels.alertname }}
         Count: {{ len .Alerts }}
-        
+
         {{ range .Alerts }}
         - {{ .Annotations.summary }}
         {{ end }}
-        
+
         View dashboard: {{ .ExternalURL }}
 
   # Webhook for custom integrations
@@ -124,7 +124,7 @@ notification_policies:
           label: severity
           match: equals
           value: critical
-        receiver: 
+        receiver:
           - slack-critical
           - pagerduty-critical
         continue: true

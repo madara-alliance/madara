@@ -1,5 +1,7 @@
 use crate::util::ExecutionStats;
-use mc_analytics::{register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument};
+use mc_analytics::{
+    register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument,
+};
 use opentelemetry::metrics::{Counter, Gauge, Histogram};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 

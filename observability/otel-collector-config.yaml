@@ -9,10 +9,56 @@ receivers:
 exporters:
   prometheus:
     endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+
+processors:
+  resource:
+    attributes:
+      # Local testing: Insert static namespace and pod labels
+      - key: namespace
+        value: local
+        action: insert
+      - key: pod
+        value: madara-local
+        action: insert
 
 service:
   pipelines:
     metrics:
       receivers: [otlp]
+      processors: [resource]
       exporters: [prometheus]
-
+# PRODUCTION CONFIGURATION NOTES:
+# For production/Kubernetes environments, the infrastructure team should:
+# 1. Add k8sattributes processor to extract Kubernetes metadata
+# 2. Replace the resource processor config to copy from k8s attributes instead of using static values:
+#
+#    processors:
+#      k8sattributes:
+#        auth_type: serviceAccount
+#        extract:
+#          metadata:
+#            - k8s.namespace.name
+#            - k8s.pod.name
+#      resource:
+#        attributes:
+#          - key: namespace
+#            from_attribute: k8s.namespace.name
+#            action: insert
+#          - key: pod
+#            from_attribute: k8s.pod.name
+#            action: insert
+#
+# 3. Update the pipeline to include k8sattributes BEFORE resource:
+#    service:
+#      pipelines:
+#        metrics:
+#          receivers: [otlp]
+#          processors: [k8sattributes, resource]
+#          exporters: [prometheus]
+#
+# This ensures:
+# - Production: k8sattributes extracts k8s.namespace.name/k8s.pod.name → resource processor copies to namespace/pod
+# - Local: resource processor inserts static namespace="local" and pod="madara-local"
+# - Both environments: Grafana dashboards can query for "namespace" and "pod" labels consistently

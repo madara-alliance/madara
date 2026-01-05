@@ -224,7 +224,8 @@ impl DbMetrics {
 
         // Record file counts for levels 0-6
         for level in 0..=6 {
-            self.level_files_count.record(total_files_at_level[level], &[KeyValue::new("level", format!("L{}", level))]);
+            self.level_files_count
+                .record(total_files_at_level[level], &[KeyValue::new("level", format!("L{}", level))]);
         }
 
         // Record aggregated storage metrics

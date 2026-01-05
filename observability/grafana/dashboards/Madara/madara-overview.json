@@ -64,7 +64,7 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "1 / rate(block_produced_count_total[5m])", "legendFormat": "Block Interval", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "1 / rate(block_produced_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Block Interval", "refId": "A" }],
       "title": "Block Interval",
       "type": "stat"
     },
@@ -91,7 +91,7 @@
         "textMode": "value"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "avg(tx_execution_time_ms_milliseconds_sum / tx_execution_time_ms_milliseconds_count)", "legendFormat": "Avg Tx Exec", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(tx_execution_time_ms_milliseconds_sum{namespace=~\"$namespace\", pod=~\"$pod\", context=\"production\"}[5m])) / sum(rate(tx_execution_time_ms_milliseconds_count{namespace=~\"$namespace\", pod=~\"$pod\", context=\"production\"}[5m]))", "legendFormat": "Avg Tx Exec", "refId": "A" }],
       "title": "Avg Tx Exec",
       "type": "stat"
     },
@@ -222,8 +222,36 @@
       "type": "timeseries"
     },
     {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "insertNulls": false, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "ms"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "fixedColor": "#37872D", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p90" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF9830", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "fixedColor": "#C4162A", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "id": 61,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(tx_execution_time_ms_milliseconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\", context=\"production\"}[5m])))", "legendFormat": "p50", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.90, sum by (le) (rate(tx_execution_time_ms_milliseconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\", context=\"production\"}[5m])))", "legendFormat": "p90", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(tx_execution_time_ms_milliseconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\", context=\"production\"}[5m])))", "legendFormat": "p99", "refId": "C" }
+      ],
+      "title": "Tx Execution Time",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
       "id": 100,
       "panels": [],
       "title": "RPC Overview",
@@ -240,7 +268,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 15 },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 23 },
       "id": 101,
       "options": {
         "colorMode": "value",
@@ -266,7 +294,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 15 },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 23 },
       "id": 102,
       "options": {
         "colorMode": "value",
@@ -277,8 +305,8 @@
         "textMode": "value_and_name"
       },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))", "legendFormat": "RPS (1m)", "refId": "A" }],
-      "title": "RPS (1m)",
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))", "legendFormat": "RPS (5m)", "refId": "A" }],
+      "title": "RPS (5m)",
       "type": "stat"
     },
     {
@@ -292,7 +320,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 15 },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 23 },
       "id": 103,
       "options": {
         "colorMode": "value",
@@ -318,7 +346,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 15 },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 23 },
       "id": 104,
       "options": {
         "colorMode": "value",
@@ -344,7 +372,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 15 },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 23 },
       "id": 105,
       "options": {
         "colorMode": "value",
@@ -370,7 +398,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 15 },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 23 },
       "id": 106,
       "options": {
         "colorMode": "value",
@@ -397,7 +425,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
       "id": 107,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -423,7 +451,7 @@
           { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "fixedColor": "#C4162A", "mode": "fixed" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
       "id": 108,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -450,7 +478,7 @@
           { "matcher": { "id": "byName", "options": "Error Rate" }, "properties": [{ "id": "color", "value": { "fixedColor": "#C4162A", "mode": "fixed" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 27 },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 35 },
       "id": 109,
       "options": { "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -473,7 +501,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 27 },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 35 },
       "id": 110,
       "options": { "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -493,7 +521,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 27 },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 35 },
       "id": 111,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -513,7 +541,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 27 },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 35 },
       "id": 112,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -526,7 +554,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 35 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
       "id": 51,
       "panels": [],
       "title": "Database & Storage",
@@ -543,7 +571,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 36 },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 44 },
       "id": 10,
       "options": {
         "colorMode": "value",
@@ -569,7 +597,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 36 },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 44 },
       "id": 11,
       "options": {
         "colorMode": "value",
@@ -595,7 +623,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 36 },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 44 },
       "id": 12,
       "options": {
         "colorMode": "value",
@@ -621,7 +649,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 36 },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 44 },
       "id": 13,
       "options": {
         "colorMode": "value",
@@ -647,7 +675,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 36 },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 44 },
       "id": 14,
       "options": {
         "colorMode": "value",
@@ -673,7 +701,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 36 },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 44 },
       "id": 15,
       "options": {
         "colorMode": "value",
@@ -700,7 +728,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 49 },
       "id": 16,
       "options": { "legend": { "calcs": ["last"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -724,7 +752,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 49 },
       "id": 17,
       "options": { "legend": { "calcs": ["last"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -734,7 +762,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 57 },
       "id": 70,
       "panels": [],
       "title": "RocksDB Write Stall Detection",
@@ -751,7 +779,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 63 },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 71 },
       "id": 71,
       "options": {
         "colorMode": "background",
@@ -777,7 +805,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 5, "x": 4, "y": 63 },
+      "gridPos": { "h": 5, "w": 5, "x": 4, "y": 71 },
       "id": 72,
       "options": {
         "colorMode": "value",
@@ -803,7 +831,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 5, "x": 9, "y": 63 },
+      "gridPos": { "h": 5, "w": 5, "x": 9, "y": 71 },
       "id": 73,
       "options": {
         "colorMode": "value",
@@ -829,7 +857,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 5, "x": 14, "y": 63 },
+      "gridPos": { "h": 5, "w": 5, "x": 14, "y": 71 },
       "id": 74,
       "options": {
         "colorMode": "value",
@@ -855,7 +883,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 5, "x": 19, "y": 63 },
+      "gridPos": { "h": 5, "w": 5, "x": 19, "y": 71 },
       "id": 75,
       "options": {
         "colorMode": "value",
@@ -885,7 +913,7 @@
           { "matcher": { "id": "byName", "options": "Immutable MemTables" }, "properties": [{ "id": "color", "value": { "fixedColor": "#8F3BB8", "mode": "fixed" } }, { "id": "custom.thresholdsStyle", "value": { "mode": "off" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 68 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 76 },
       "id": 76,
       "description": "Monitors RocksDB write stall risk.\n\n**L0 Files Thresholds:**\n- Yellow line (15): Warning - approaching slowdown\n- Red line (20): Critical - RocksDB throttles writes\n- Stop at 36 files\n\n**Immutable MemTables:**\n- Stall when >= max_write_buffer_number (default 5)",
       "options": { "legend": { "calcs": ["last", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
@@ -912,7 +940,7 @@
           { "matcher": { "id": "byName", "options": "MemTable Data" }, "properties": [{ "id": "color", "value": { "fixedColor": "#3274D9", "mode": "fixed" } }, { "id": "custom.thresholdsStyle", "value": { "mode": "off" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 68 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 76 },
       "id": 77,
       "description": "Monitors compaction backlog and memtable data size.\n\n**Pending Compaction Thresholds:**\n- Yellow line (32 GiB): Warning - compaction falling behind\n- Red line (64 GiB): Critical - risk of write stalls\n\n**MemTable Data:**\n- Current data stored in memtables (before flush to SST files)",
       "options": { "legend": { "calcs": ["last", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
@@ -936,7 +964,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 68 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 76 },
       "id": 78,
       "description": "Shows the distribution of SST files across LSM tree levels.\n\n- **L0**: Recently flushed files (uncompacted, overlapping keys)\n- **L1-L6**: Compacted files (sorted, non-overlapping)\n\nA healthy database has few/no L0 files with data distributed across deeper levels.",
       "options": { "legend": { "calcs": ["last"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
@@ -949,7 +977,7 @@
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 76 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 84 },
       "id": 200,
       "panels": [],
       "title": "Cairo Native Execution",
@@ -966,11 +994,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 85 },
       "id": 201,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_cache_size{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_cache_size_class{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
       "title": "Cache Size",
       "type": "stat"
     },
@@ -985,11 +1013,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 85 },
       "id": 202,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_cache_hits_memory_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_cache_hits_memory_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
       "title": "Memory Hits",
       "type": "stat"
     },
@@ -1004,11 +1032,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 85 },
       "id": 203,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_cache_hits_disk_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_cache_hits_disk_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
       "title": "Disk Hits",
       "type": "stat"
     },
@@ -1023,11 +1051,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 85 },
       "id": 204,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_cache_evictions_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_cache_evictions_eviction_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
       "title": "Evictions",
       "type": "stat"
     },
@@ -1042,11 +1070,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 85 },
       "id": 205,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_vm_fallbacks_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_vm_fallbacks_fallback_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
       "title": "VM Fallbacks",
       "type": "stat"
     },
@@ -1061,11 +1089,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 85 },
       "id": 206,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_current_compilations{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_current_compilations_compilation{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
       "title": "Active Compilations",
       "type": "stat"
     },
@@ -1080,11 +1108,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 85 },
       "id": 212,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_compilations_failed_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_compilations_failed_compilation_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
       "title": "Compilation Failures",
       "type": "stat"
     },
@@ -1099,11 +1127,11 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 77 },
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 85 },
       "id": 213,
       "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "pluginVersion": "11.4.0",
-      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_compilations_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "cairo_native_compilations_timeout_compilation_total{namespace=~\"$namespace\", pod=~\"$pod\"}", "refId": "A" }],
       "title": "Compilation Timeouts",
       "type": "stat"
     },
@@ -1119,13 +1147,13 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 81 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 89 },
       "id": 207,
       "options": { "legend": { "calcs": ["mean", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_hits_memory_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(cairo_native_cache_hits_memory_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(cairo_native_cache_memory_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + 0.001)", "legendFormat": "Memory Hit Rate", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_hits_disk_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(cairo_native_cache_hits_disk_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(cairo_native_cache_disk_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + 0.001)", "legendFormat": "Disk Hit Rate", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_hits_memory_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(cairo_native_cache_hits_memory_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(cairo_native_cache_memory_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + 0.001)", "legendFormat": "Memory Hit Rate", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_hits_disk_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) / (rate(cairo_native_cache_hits_disk_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + rate(cairo_native_cache_disk_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]) + 0.001)", "legendFormat": "Disk Hit Rate", "refId": "B" }
       ],
       "title": "Cache Hit Rate",
       "type": "timeseries"
@@ -1145,15 +1173,15 @@
           { "matcher": { "id": "byName", "options": "Timeout/s" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 81 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 89 },
       "id": 208,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilations_started_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Started/s", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilations_succeeded_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Succeeded/s", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilations_failed_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Failed/s", "refId": "C" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilations_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Timeout/s", "refId": "D" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilations_started_compilation_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Started/s", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilations_succeeded_compilation_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Succeeded/s", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilations_failed_compilation_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Failed/s", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilations_timeout_compilation_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Timeout/s", "refId": "D" }
       ],
       "title": "Compilation Rate",
       "type": "timeseries"
@@ -1170,7 +1198,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 81 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 89 },
       "id": 209,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
@@ -1197,14 +1225,14 @@
           { "matcher": { "id": "byRegexp", "options": ".*Timeout.*|.*Error.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 89 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 97 },
       "id": 210,
       "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_memory_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Memory Timeout/s", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_disk_load_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Disk Load Timeout/s", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_disk_load_error_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Disk Load Error/s", "refId": "C" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_memory_timeout_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Memory Timeout/s", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_disk_load_timeout_timeout_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Disk Load Timeout/s", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_cache_disk_load_error_error_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "Disk Load Error/s", "refId": "C" }
       ],
       "title": "Cache Errors",
       "type": "timeseries"
@@ -1221,13 +1249,13 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 89 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 97 },
       "id": 211,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_vm_fallbacks_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "VM Fallbacks/s", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilation_in_progress_skip_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "In-Progress Skip/s", "refId": "B" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(cairo_native_compilation_in_progress_skip_skip_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])", "legendFormat": "In-Progress Skip/s", "refId": "B" }
       ],
       "title": "Fallback & Skip Rate",
       "type": "timeseries"

@@ -4,13 +4,13 @@ global:
 
 scrape_configs:
   # Scrape from OpenTelemetry Collector's Prometheus exporter
-  - job_name: 'otel-collector'
+  - job_name: "otel-collector"
     static_configs:
-      - targets: ['host.docker.internal:8889']
+      - targets: ["host.docker.internal:8889"]
         labels:
-          source: 'otel-collector'
+          source: "otel-collector"
 
   # Prometheus self-monitoring
-  - job_name: 'prometheus'
+  - job_name: "prometheus"
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ["localhost:9090"]

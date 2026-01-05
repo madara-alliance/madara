@@ -77,11 +77,11 @@ The OpenTelemetry Collector acts as a central hub for collecting and exporting t
 
 ### Ports
 
-| Port  | Protocol | Description                |
-| ----- | -------- | -------------------------- |
-| 4317  | gRPC     | OTLP receiver              |
-| 4318  | HTTP     | OTLP receiver              |
-| 8889  | HTTP     | Prometheus exporter        |
+| Port | Protocol | Description         |
+| ---- | -------- | ------------------- |
+| 4317 | gRPC     | OTLP receiver       |
+| 4318 | HTTP     | OTLP receiver       |
+| 8889 | HTTP     | Prometheus exporter |
 
 ## Dashboards
 
@@ -205,12 +205,12 @@ observability/
 
 ### Block Production
 
-| Metric                           | Type    | Description              |
-| -------------------------------- | ------- | ------------------------ |
-| `block_produced_no`              | Gauge   | Current block number     |
-| `block_produced_count`           | Counter | Total blocks produced    |
-| `transaction_counter`            | Counter | Total transactions       |
-| `accepted_transaction_count`     | Counter | Mempool transactions     |
+| Metric                       | Type    | Description           |
+| ---------------------------- | ------- | --------------------- |
+| `block_produced_no`          | Gauge   | Current block number  |
+| `block_produced_count`       | Counter | Total blocks produced |
+| `transaction_counter`        | Counter | Total transactions    |
+| `accepted_transaction_count` | Counter | Mempool transactions  |
 
 ### Sync Service
 
@@ -225,46 +225,46 @@ observability/
 
 ### RPC
 
-| Metric               | Type      | Description              |
-| -------------------- | --------- | ------------------------ |
-| `calls_started`      | Counter   | RPC calls started        |
-| `calls_finished`     | Counter   | RPC calls completed      |
-| `calls_time`         | Histogram | RPC call duration (ms)   |
-| `ws_sessions_opened` | Counter   | WebSocket sessions opened|
-| `ws_sessions_closed` | Counter   | WebSocket sessions closed|
+| Metric               | Type      | Description               |
+| -------------------- | --------- | ------------------------- |
+| `calls_started`      | Counter   | RPC calls started         |
+| `calls_finished`     | Counter   | RPC calls completed       |
+| `calls_time`         | Histogram | RPC call duration (ms)    |
+| `ws_sessions_opened` | Counter   | WebSocket sessions opened |
+| `ws_sessions_closed` | Counter   | WebSocket sessions closed |
 
 ### Database
 
-|Metric|Type|Description|
-|------|----|-----------|
-|`db_size`|Gauge|Total database size|
-|`column_sizes`|Gauge|Per-column sizes|
-|`db_mem_table_total`|Gauge|MemTable memory usage|
-|`db_mem_table_unflushed`|Gauge|Unflushed MemTable size|
-|`db_mem_table_readers_total`|Gauge|Table readers memory|
-|`db_cache_total`|Gauge|Block cache size|
+| Metric                       | Type  | Description             |
+| ---------------------------- | ----- | ----------------------- |
+| `db_size`                    | Gauge | Total database size     |
+| `column_sizes`               | Gauge | Per-column sizes        |
+| `db_mem_table_total`         | Gauge | MemTable memory usage   |
+| `db_mem_table_unflushed`     | Gauge | Unflushed MemTable size |
+| `db_mem_table_readers_total` | Gauge | Table readers memory    |
+| `db_cache_total`             | Gauge | Block cache size        |
 
 ### L1 Settlement
 
-| Metric             | Type      | Description        |
-| ------------------ | --------- | ------------------ |
-| `l1_block_number`  | Gauge     | Current L1 block   |
-| `l1_gas_price_wei` | Histogram | L1 gas price (Wei) |
-| `l1_gas_price_strk`| Histogram | L1 gas price (STRK)|
+| Metric              | Type      | Description         |
+| ------------------- | --------- | ------------------- |
+| `l1_block_number`   | Gauge     | Current L1 block    |
+| `l1_gas_price_wei`  | Histogram | L1 gas price (Wei)  |
+| `l1_gas_price_strk` | Histogram | L1 gas price (STRK) |
 
 ### Cairo Native
 
-|Metric|Type|Description|
-|------|----|-----------|
-|`cairo_native_cache_size`|Gauge|Classes in memory cache|
-|`cairo_native_cache_hits_memory`|Counter|Memory cache hits|
-|`cairo_native_cache_hits_disk`|Counter|Disk cache hits|
-|`cairo_native_cache_evictions`|Counter|Cache evictions|
-|`cairo_native_compilations_started`|Counter|Compilations started|
-|`cairo_native_compilations_succeeded`|Counter|Successful compilations|
-|`cairo_native_compilations_failed`|Counter|Failed compilations|
-|`cairo_native_compilation_time`|Histogram|Compilation duration|
-|`cairo_native_vm_fallbacks`|Counter|VM fallback count|
+| Metric                                | Type      | Description             |
+| ------------------------------------- | --------- | ----------------------- |
+| `cairo_native_cache_size`             | Gauge     | Classes in memory cache |
+| `cairo_native_cache_hits_memory`      | Counter   | Memory cache hits       |
+| `cairo_native_cache_hits_disk`        | Counter   | Disk cache hits         |
+| `cairo_native_cache_evictions`        | Counter   | Cache evictions         |
+| `cairo_native_compilations_started`   | Counter   | Compilations started    |
+| `cairo_native_compilations_succeeded` | Counter   | Successful compilations |
+| `cairo_native_compilations_failed`    | Counter   | Failed compilations     |
+| `cairo_native_compilation_time`       | Histogram | Compilation duration    |
+| `cairo_native_vm_fallbacks`           | Counter   | VM fallback count       |
 
 ## Troubleshooting
 

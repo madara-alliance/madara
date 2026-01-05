@@ -124,11 +124,8 @@ impl AnalyticsService {
                 None
             };
 
-            let logger_provider = if self.config.export_logs {
-                Some(self.init_logs_provider(otel_endpoint)?)
-            } else {
-                None
-            };
+            let logger_provider =
+                if self.config.export_logs { Some(self.init_logs_provider(otel_endpoint)?) } else { None };
 
             match (&tracer_provider, &logger_provider) {
                 (Some(tracer), Some(logger)) => {
