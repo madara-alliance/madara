@@ -163,6 +163,16 @@ impl AggregatorHandler {
 
         match state {
             Empty(ref empty_state) => {
+                // Check if the starting block's Starknet version is supported
+                if !current_block_starknet_version.is_supported() {
+                    tracing::warn!(
+                        block_num = %block_num,
+                        version = %current_block_starknet_version,
+                        "Block's Starknet version is not supported, skipping batching"
+                    );
+                    return Ok(BlockProcessingResult::NotBatched(state));
+                }
+
                 // Get state update for the current block
                 let current_state_update = self
                     .config
@@ -202,6 +212,18 @@ impl AggregatorHandler {
         block_num: u64,
         mut state: NonEmptyAggregatorState,
     ) -> Result<BlockProcessingResult<AggregatorState, NonEmptyAggregatorState>, JobError> {
+        // Gap detection - check if block_num is exactly end_block + 1
+        if block_num != state.batch.end_block + 1 {
+            tracing::warn!(
+                expected_block = state.batch.end_block + 1,
+                actual_block = block_num,
+                batch_index = state.batch.index,
+                "Gap detected in block sequence, closing batch"
+            );
+            state.close();
+            return Ok(BlockProcessingResult::NotBatched(AggregatorState::NonEmpty(state)));
+        }
+
         // Fetch block weights for the current block
         let block_weights = AggregatorBatchWeights::from(
             &get_block_builtin_weights(
@@ -349,6 +371,10 @@ pub enum BatchCheckResult {
     BatchClosed,
     /// Starknet version mismatch
     VersionMismatch,
+    /// Block's Starknet version is not supported by this orchestrator
+    StarknetVersionUnsupported,
+    /// Gap detected in block sequence (block_num != batch.end_block + 1)
+    GapDetected,
     /// Max blocks per batch reached
     MaxBlocksReached,
     /// Batch time limit exceeded
@@ -383,6 +409,11 @@ impl NonEmptyAggregatorState {
         // Check version mismatch
         if block_version != self.batch.starknet_version {
             return BatchCheckResult::VersionMismatch;
+        }
+
+        // Check if block version is supported by this orchestrator
+        if !block_version.is_supported() {
+            return BatchCheckResult::StarknetVersionUnsupported;
         }
 
         // Check max blocks reached

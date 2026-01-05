@@ -108,7 +108,7 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
     }
 
     let jobs_without_successor = database_client
-        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation)
+        .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation, None)
         .await
         .unwrap();
 
@@ -229,7 +229,7 @@ async fn database_get_jobs_after_internal_id_by_job_type_works() {
     database_client.create_job(job_vec[5].clone()).await.unwrap();
 
     let jobs_after_internal_id = database_client
-        .get_jobs_after_internal_id_by_job_type(JobType::SnosRun, JobStatus::Completed, 2)
+        .get_jobs_after_internal_id_by_job_type(JobType::SnosRun, JobStatus::Completed, 2, None)
         .await
         .unwrap();
 
@@ -658,14 +658,16 @@ async fn test_get_snos_batches_by_status() {
     database_client.create_snos_batch(batch2.clone()).await.unwrap();
     database_client.create_snos_batch(batch3.clone()).await.unwrap();
 
-    let closed_batches = database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None).await.unwrap();
+    let closed_batches =
+        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, None, None).await.unwrap();
 
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().any(|b| b.index == 1));
     assert!(closed_batches.iter().any(|b| b.index == 3));
 
     // Test with limit
-    let limited_batches = database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, Some(1)).await.unwrap();
+    let limited_batches =
+        database_client.get_snos_batches_by_status(SnosBatchStatus::Closed, Some(1), None).await.unwrap();
 
     assert_eq!(limited_batches.len(), 1);
 }
@@ -691,7 +693,8 @@ async fn test_get_snos_batches_without_jobs() {
     let job = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
     database_client.create_job(job).await.unwrap();
 
-    let batches_without_jobs = database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5).await.unwrap();
+    let batches_without_jobs =
+        database_client.get_snos_batches_without_jobs(SnosBatchStatus::Closed, 5, None).await.unwrap();
 
     assert_eq!(batches_without_jobs.len(), 1);
     assert_eq!(batches_without_jobs[0].index, 2);
@@ -806,7 +809,7 @@ async fn test_get_aggregator_batches_by_status(
     database_client.create_aggregator_batch(batch3.clone()).await.unwrap();
 
     let closed_batches =
-        database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None).await.unwrap();
+        database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, None, None).await.unwrap();
 
     assert_eq!(closed_batches.len(), 2);
     assert!(closed_batches.iter().any(|b| b.index == 1));
@@ -814,7 +817,7 @@ async fn test_get_aggregator_batches_by_status(
 
     // Test with limit
     let limited_batches =
-        database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(1)).await.unwrap();
+        database_client.get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(1), None).await.unwrap();
 
     assert_eq!(limited_batches.len(), 1);
 }

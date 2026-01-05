@@ -120,6 +120,17 @@ impl SnosHandler {
             SnosState::Empty(ref empty_state) => {
                 // Get the starknet version of the current block
                 let block_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
+
+                // Check if the starting block's Starknet version is supported
+                if !block_version.is_supported() {
+                    warn!(
+                        block_num = %block_num,
+                        version = %block_version,
+                        "Block's Starknet version is not supported, skipping batching"
+                    );
+                    return Ok(BlockProcessingResult::NotBatched(state));
+                }
+
                 let block_weights = get_block_builtin_weights(
                     block_num,
                     self.config.madara_feeder_gateway_client(),
@@ -158,6 +169,18 @@ impl SnosHandler {
         aggregator_batch_index: Option<u64>,
         mut state: NonEmptySnosState,
     ) -> Result<BlockProcessingResult<SnosState, NonEmptySnosState>, JobError> {
+        // Gap detection - check if block_num is exactly end_block + 1
+        if block_num != state.batch.end_block + 1 {
+            warn!(
+                expected_block = state.batch.end_block + 1,
+                actual_block = block_num,
+                batch_index = state.batch.index,
+                "Gap detected in block sequence, closing SNOS batch"
+            );
+            state.close();
+            return Ok(BlockProcessingResult::NotBatched(SnosState::NonEmpty(state)));
+        }
+
         // Get the bouncer weights for the current block
         let block_weights = get_block_builtin_weights(
             block_num,
@@ -221,6 +244,10 @@ pub enum SnosBatchCheckResult {
     BatchClosed,
     /// Starknet version mismatch
     VersionMismatch,
+    /// Block's Starknet version is not supported by this orchestrator
+    StarknetVersionUnsupported,
+    /// Gap detected in block sequence (block_num != batch.end_block + 1)
+    GapDetected,
     /// Max blocks per batch reached
     MaxBlocksReached,
     /// Batch time limit exceeded
@@ -268,6 +295,11 @@ impl NonEmptySnosState {
         // Check version mismatch
         if block_version != self.batch.starknet_version {
             return SnosBatchCheckResult::VersionMismatch;
+        }
+
+        // Check if block version is supported by this orchestrator
+        if !block_version.is_supported() {
+            return SnosBatchCheckResult::StarknetVersionUnsupported;
         }
 
         // Check max blocks reached

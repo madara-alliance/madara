@@ -1,10 +1,9 @@
 use crate::core::config::Config;
-use crate::types::constant::PROOF_FILE_NAME;
+use crate::types::constant::{ORCHESTRATOR_VERSION, PROOF_FILE_NAME};
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -28,10 +27,13 @@ impl JobTrigger for ProvingJobTrigger {
 
         let successful_snos_jobs = config
             .database()
-            .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation)
+            .get_jobs_without_successor(
+                JobType::SnosRun,
+                JobStatus::Completed,
+                JobType::ProofCreation,
+                Some(ORCHESTRATOR_VERSION),
+            )
             .await?;
-
-        let successful_snos_jobs = filter_jobs_by_orchestrator_version(successful_snos_jobs);
 
         debug!("Found {} successful SNOS jobs without proving jobs", successful_snos_jobs.len());
 

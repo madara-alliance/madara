@@ -1,7 +1,7 @@
 use crate::core::config::{Config, StarknetVersion};
 use crate::types::batch::SnosBatchStatus;
 use crate::types::constant::{
-    CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+    CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, ORCHESTRATOR_VERSION, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -121,8 +121,10 @@ impl JobTrigger for SnosJobTrigger {
         info!("Creating max {} {:?} jobs", max_jobs_to_create, JobType::SnosRun);
 
         // Get all snos batches that are closed but don't have a SnosRun job created yet
-        for snos_batch in
-            config.database().get_snos_batches_without_jobs(SnosBatchStatus::Closed, max_jobs_to_create).await?
+        for snos_batch in config
+            .database()
+            .get_snos_batches_without_jobs(SnosBatchStatus::Closed, max_jobs_to_create, Some(ORCHESTRATOR_VERSION))
+            .await?
         {
             // Create SNOS job metadata
             let snos_metadata = create_job_metadata(

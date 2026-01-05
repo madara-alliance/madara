@@ -554,6 +554,7 @@ impl DatabaseClient for MongoDbClient {
         job_a_type: JobType,
         job_a_status: JobStatus,
         job_b_type: JobType,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         // Convert enums to Bson strings
@@ -561,14 +562,20 @@ impl DatabaseClient for MongoDbClient {
         let job_a_status_bson = Bson::String(format!("{:?}", job_a_status));
         let job_b_type_bson = Bson::String(format!("{:?}", job_b_type));
 
+        // Build match filter with optional orchestrator version
+        let mut match_filter = doc! {
+            "job_type": job_a_type_bson,
+            "status": job_a_status_bson,
+        };
+        if let Some(version) = orchestrator_version {
+            match_filter.insert("metadata.common.orchestrator_version", version);
+        }
+
         // Construct the aggregation pipeline
         let pipeline = vec![
-            // Stage 1: Match job_a_type with job_a_status
+            // Stage 1: Match job_a_type with job_a_status and orchestrator_version
             doc! {
-                "$match": {
-                    "job_type": job_a_type_bson,
-                    "status": job_a_status_bson,
-                }
+                "$match": match_filter
             },
             // Stage 2: Lookup to find corresponding job_b_type jobs
             doc! {
@@ -615,14 +622,18 @@ impl DatabaseClient for MongoDbClient {
         job_type: JobType,
         job_status: JobStatus,
         internal_id: u64,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         // Cast u64 to i64 because BSON only supports signed 64-bit integers
-        let filter = doc! {
+        let mut filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
             "status": bson::to_bson(&job_status)?,
             "internal_id": { "$gt": internal_id as i64 }
         };
+        if let Some(version) = orchestrator_version {
+            filter.insert("metadata.common.orchestrator_version", version);
+        }
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
         debug!("Fetched jobs after internal ID by job type");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_after_internal_id_by_job_type")];
@@ -1086,11 +1097,15 @@ impl DatabaseClient for MongoDbClient {
         &self,
         status: AggregatorBatchStatus,
         limit: Option<i64>,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<AggregatorBatch>, DatabaseError> {
         let start = Instant::now();
-        let filter = doc! {
+        let mut filter = doc! {
             "status": status.to_string(),
         };
+        if let Some(version) = orchestrator_version {
+            filter.insert("orchestrator_version", version);
+        }
         let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
         let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
 
@@ -1110,11 +1125,15 @@ impl DatabaseClient for MongoDbClient {
         &self,
         status: SnosBatchStatus,
         limit: Option<i64>,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
-        let filter = doc! {
+        let mut filter = doc! {
             "status": status.to_string(),
         };
+        if let Some(version) = orchestrator_version {
+            filter.insert("orchestrator_version", version);
+        }
         let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
         let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
 
@@ -1138,6 +1157,7 @@ impl DatabaseClient for MongoDbClient {
         &self,
         snos_batch_status: SnosBatchStatus,
         limit: u64,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
 
@@ -1145,13 +1165,19 @@ impl DatabaseClient for MongoDbClient {
         let snos_batch_status_str = snos_batch_status.to_string();
         let snos_job_type_bson = Bson::String(format!("{:?}", JobType::SnosRun));
 
+        // Build match filter with optional orchestrator version
+        let mut match_filter = doc! {
+            "status": snos_batch_status_str
+        };
+        if let Some(version) = orchestrator_version {
+            match_filter.insert("orchestrator_version", version);
+        }
+
         // Construct the aggregation pipeline
         let pipeline = vec![
-            // Stage 1: Match SNOS batches with the specified status
+            // Stage 1: Match SNOS batches with the specified status and orchestrator_version
             doc! {
-                "$match": {
-                    "status": snos_batch_status_str
-                }
+                "$match": match_filter
             },
             // Stage 2: Lookup to find corresponding SNOS jobs
             // We look for jobs where internal_id matches the index

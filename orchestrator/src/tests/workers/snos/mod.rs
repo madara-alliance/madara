@@ -52,10 +52,10 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
         .returning(move |_, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
 
     db.expect_get_snos_batches_without_jobs()
-        .withf(|job_status, limit| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
+        .withf(|job_status, limit, _orchestrator_version| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
         .returning({
             let completed_snos_batches = completed_snos_batches.clone();
-            move |_, _| {
+            move |_, _, _| {
                 Ok(completed_snos_batches
                     .iter()
                     .map(|&index| {
@@ -170,10 +170,10 @@ async fn test_create_snos_job_for_existing_batch(
         .returning(move |_, _| Ok(Some(get_job_item_mock_by_id(10, Uuid::new_v4()))));
 
     db.expect_get_snos_batches_without_jobs()
-        .withf(|job_status, limit| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
+        .withf(|job_status, limit, _orchestrator_version| matches!(job_status, SnosBatchStatus::Closed) && *limit == 39)
         .returning({
             let completed_snos_batches = completed_snos_batches.clone();
-            move |_, _| {
+            move |_, _, _| {
                 Ok(completed_snos_batches
                     .iter()
                     .map(|&index| {

@@ -87,11 +87,13 @@ pub trait DatabaseClient: Send + Sync {
     /// * `job_a_type` - Type of the first job
     /// * `job_a_status` - Status of the first job
     /// * `job_b_type` - Type of the successor job to check for
+    /// * `orchestrator_version` - Optional orchestrator version filter
     async fn get_jobs_without_successor(
         &self,
         job_a_type: JobType,
         job_a_status: JobStatus,
         job_b_type: JobType,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get the latest job of a specific type and status
@@ -111,11 +113,13 @@ pub trait DatabaseClient: Send + Sync {
     /// * `job_type` - The type of job to search for
     /// * `job_status` - The status of jobs to search for
     /// * `internal_id` - The internal ID threshold (exclusive)
+    /// * `orchestrator_version` - Optional orchestrator version filter
     async fn get_jobs_after_internal_id_by_job_type(
         &self,
         job_type: JobType,
         job_status: JobStatus,
         internal_id: u64,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get all jobs by types and statuses
@@ -211,10 +215,12 @@ pub trait DatabaseClient: Send + Sync {
     /// # Arguments
     /// * `status` - The status to filter by
     /// * `limit` - Optional limit on number of results
+    /// * `orchestrator_version` - Optional orchestrator version filter
     async fn get_snos_batches_by_status(
         &self,
         status: SnosBatchStatus,
         limit: Option<i64>,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Get SNOS batches that don't have corresponding SNOS jobs
@@ -225,6 +231,8 @@ pub trait DatabaseClient: Send + Sync {
     ///
     /// # Arguments
     /// * `snos_batch_status` - Status of SNOS batches to check (typically Closed)
+    /// * `limit` - Maximum number of batches to return
+    /// * `orchestrator_version` - Optional orchestrator version filter
     ///
     /// # Returns
     /// Vector of SNOS batches that don't have corresponding SNOS jobs (in any status)
@@ -232,6 +240,7 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         snos_batch_status: SnosBatchStatus,
         limit: u64,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;
 
     /// Update or create a SNOS batch
@@ -346,10 +355,12 @@ pub trait DatabaseClient: Send + Sync {
     /// # Arguments
     /// * `status` - The status to filter by
     /// * `limit` - Optional limit on number of results
+    /// * `orchestrator_version` - Optional orchestrator version filter
     async fn get_aggregator_batches_by_status(
         &self,
         status: AggregatorBatchStatus,
         limit: Option<i64>,
+        orchestrator_version: Option<&str>,
     ) -> Result<Vec<AggregatorBatch>, DatabaseError>;
 
     // ================================================================================
