@@ -9,6 +9,7 @@ use crate::core::config::StarknetVersion;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::default_test_bouncer_weights;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
+use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::worker::event_handler::triggers::aggregator_batching::{
     AggregatorBatchingTrigger, AGGREGATOR_BATCHING_WORKER_KEY,
 };
@@ -36,7 +37,7 @@ use url::Url;
 #[case(false)]
 #[case(true)]
 #[tokio::test]
-async fn test_batching_worker_only(#[case] has_existing_batch: bool) -> Result<(), Box<dyn Error>> {
+async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Box<dyn Error>> {
     let server = MockServer::start();
     let mut database = MockDatabaseClient::new();
     let mut storage = MockStorageClient::new();
@@ -52,6 +53,7 @@ async fn test_batching_worker_only(#[case] has_existing_batch: bool) -> Result<(
         // DB does not have existing batches
         // Returning None for both aggregator and SNOS batches
         database.expect_get_latest_aggregator_batch().returning(|| Ok(None));
+        database.expect_get_oldest_aggregator_batch().returning(move |_| Ok(None));
         database.expect_get_latest_snos_batch().returning(|| Ok(None));
 
         // Batch containing blocks from 0 to 5
@@ -68,6 +70,7 @@ async fn test_batching_worker_only(#[case] has_existing_batch: bool) -> Result<(
             squashed_state_updates_path: "state_update/batch/1.json".to_string(),
             created_at: chrono::Utc::now(),
             starknet_version: StarknetVersion::V0_13_2,
+            orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
             ..Default::default()
         };
 
@@ -79,13 +82,18 @@ async fn test_batching_worker_only(#[case] has_existing_batch: bool) -> Result<(
             num_blocks: 4,
             builtin_weights: default_test_bouncer_weights(),
             starknet_version: StarknetVersion::V0_13_2,
-            status: crate::types::batch::SnosBatchStatus::Open,
+            orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
+            status: SnosBatchStatus::Open,
             created_at: chrono::Utc::now(),
             ..Default::default()
         };
 
         // Returning existing batches
+        let existing_aggregator_batch_clone = existing_aggregator_batch.clone();
         database.expect_get_latest_aggregator_batch().returning(move || Ok(Some(existing_aggregator_batch.clone())));
+        database
+            .expect_get_oldest_aggregator_batch()
+            .returning(move |_| Ok(Some(existing_aggregator_batch_clone.clone())));
         database.expect_get_latest_snos_batch().returning(move || Ok(Some(existing_snos_batch.clone())));
 
         // Batch containing blocks from 4 to 7
@@ -213,6 +221,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         squashed_state_updates_path: "state_update/batch/1.json".to_string(),
         created_at: chrono::Utc::now(),
         starknet_version: StarknetVersion::V0_13_2,
+        orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
         status: AggregatorBatchStatus::Closed,
         ..Default::default()
     };
@@ -233,10 +242,14 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
 
     // Use a shared variable to track the latest aggregator batch
     let latest_aggregator_batch = Arc::new(Mutex::new(existing_aggregator_batch.clone()));
-    let latest_aggregator_batch_clone = latest_aggregator_batch.clone();
+    let latest_aggregator_batch_clone_1 = latest_aggregator_batch.clone();
+    let latest_aggregator_batch_clone_2 = latest_aggregator_batch.clone();
     database
         .expect_get_latest_aggregator_batch()
-        .returning(move || Ok(Some(latest_aggregator_batch_clone.lock().unwrap().clone())));
+        .returning(move || Ok(Some(latest_aggregator_batch_clone_1.lock().unwrap().clone())));
+    database
+        .expect_get_oldest_aggregator_batch()
+        .returning(move |_| Ok(Some(latest_aggregator_batch_clone_2.lock().unwrap().clone())));
     database.expect_get_latest_snos_batch().returning(move || Ok(Some(existing_snos_batch.clone())));
 
     storage.expect_get_data().returning(|_| Ok(Bytes::from(get_dummy_state_update(1).to_string())));
@@ -283,6 +296,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
                 blob_len: 0,
                 squashed_state_updates_path: "state_update/batch/2.json".to_string(),
                 starknet_version: StarknetVersion::V0_13_2,
+                orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
                 ..Default::default()
             }))
         } else {
@@ -452,6 +466,7 @@ async fn test_batching_worker_l3(#[case] has_existing_batch: bool) -> Result<(),
             num_blocks: 4,
             builtin_weights: default_test_bouncer_weights(),
             starknet_version: StarknetVersion::V0_13_2,
+            orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
             status: SnosBatchStatus::Open,
             created_at: chrono::Utc::now(),
             ..Default::default()
