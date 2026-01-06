@@ -39,7 +39,8 @@ module.exports = {
         );
 
         // Use the last valid hash, or null if none exist
-        const txHash = validHashes.length > 0 ? validHashes[validHashes.length - 1] : null;
+        const txHash =
+          validHashes.length > 0 ? validHashes[validHashes.length - 1] : null;
 
         // Build the update operation
         const updateOp = {
