@@ -48,6 +48,9 @@ pub struct AnalyticsConfig {
     pub service_name: String,
     pub collection_endpoint: Option<Url>,
     pub prometheus_endpoint_config: PrometheusEndpointConfig,
+    pub export_metrics: bool,
+    pub export_traces: bool,
+    pub export_logs: bool,
 }
 
 impl Default for AnalyticsConfig {
@@ -56,15 +59,18 @@ impl Default for AnalyticsConfig {
             service_name: "Madara".into(),
             collection_endpoint: None,
             prometheus_endpoint_config: Default::default(),
+            export_metrics: true,
+            export_traces: false,
+            export_logs: false,
         }
     }
 }
 
 #[derive(Clone)]
 struct Providers {
-    meter_provider: SdkMeterProvider,
-    tracer_provider: SdkTracerProvider,
-    logger_provider: SdkLoggerProvider,
+    meter_provider: Option<SdkMeterProvider>,
+    tracer_provider: Option<SdkTracerProvider>,
+    logger_provider: Option<SdkLoggerProvider>,
 }
 
 pub struct AnalyticsService {
@@ -102,19 +108,58 @@ impl AnalyticsService {
                 return Ok(());
             };
 
-            let tracer_provider = self.init_tracer_provider(otel_endpoint)?;
-            global::set_tracer_provider(tracer_provider.clone());
+            let meter_provider = self
+                .config
+                .export_metrics
+                .then(|| -> anyhow::Result<SdkMeterProvider> {
+                    let provider = self.init_meter_provider(otel_endpoint)?;
+                    global::set_meter_provider(provider.clone());
+                    Ok(provider)
+                })
+                .transpose()?;
 
-            let meter_provider = self.init_meter_provider(otel_endpoint)?;
-            global::set_meter_provider(meter_provider.clone());
+            let tracer_provider = self
+                .config
+                .export_traces
+                .then(|| -> anyhow::Result<SdkTracerProvider> {
+                    let provider = self.init_tracer_provider(otel_endpoint)?;
+                    global::set_tracer_provider(provider.clone());
+                    Ok(provider)
+                })
+                .transpose()?;
 
-            let logger_provider = self.init_logs_provider(otel_endpoint)?;
-            tracing_subscriber
-                .with(OpenTelemetryLayer::new(
-                    tracer_provider.tracer(format!("{}{}", self.config.service_name, "_subscriber")),
-                ))
-                .with(OpenTelemetryTracingBridge::new(&logger_provider))
-                .init();
+            let logger_provider = self
+                .config
+                .export_logs
+                .then(|| -> anyhow::Result<SdkLoggerProvider> {
+                    let provider = self.init_logs_provider(otel_endpoint)?;
+                    Ok(provider)
+                })
+                .transpose()?;
+
+            match (&tracer_provider, &logger_provider) {
+                (Some(tracer), Some(logger)) => {
+                    tracing_subscriber
+                        .with(OpenTelemetryLayer::new(
+                            tracer.tracer(format!("{}{}", self.config.service_name, "_subscriber")),
+                        ))
+                        .with(OpenTelemetryTracingBridge::new(logger))
+                        .init();
+                }
+                (Some(tracer), None) => {
+                    tracing_subscriber
+                        .with(OpenTelemetryLayer::new(
+                            tracer.tracer(format!("{}{}", self.config.service_name, "_subscriber")),
+                        ))
+                        .init();
+                }
+                (None, Some(logger)) => {
+                    tracing_subscriber.with(OpenTelemetryTracingBridge::new(logger)).init();
+                }
+                (None, None) => {
+                    tracing_subscriber.init();
+                }
+            }
 
             self.providers = Some(Providers { meter_provider, tracer_provider, logger_provider });
 
@@ -190,9 +235,15 @@ impl Service for AnalyticsService {
             }
 
             if let Some(provider) = providers {
-                provider.logger_provider.shutdown()?;
-                provider.meter_provider.shutdown()?;
-                provider.tracer_provider.shutdown()?;
+                if let Some(logger_provider) = provider.logger_provider {
+                    logger_provider.shutdown()?;
+                }
+                if let Some(meter_provider) = provider.meter_provider {
+                    meter_provider.shutdown()?;
+                }
+                if let Some(tracer_provider) = provider.tracer_provider {
+                    tracer_provider.shutdown()?;
+                }
             }
             anyhow::Ok(())
         });
@@ -250,7 +301,6 @@ impl CounterType<f64> for f64 {
         meter.f64_counter(name).with_description(description).with_unit(unit).build()
     }
 }
-
 pub fn register_counter_metric_instrument<T: CounterType<T> + Display>(
     crate_meter: &Meter,
     instrument_name: String,
