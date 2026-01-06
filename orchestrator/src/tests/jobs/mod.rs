@@ -863,8 +863,8 @@ async fn verify_job_with_pending_status_works() {
     // Create a job with proper metadata structure
     let mut job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
 
-    // Set verification_attempt_no to 1 to simulate max attempts reached
-    job_item.metadata.common.verification_attempt_no = 1;
+    // Set verification_attempt_no to 0 - after increment in verify_job it will be 1 (max attempts)
+    job_item.metadata.common.verification_attempt_no = 0;
 
     // Creating job in a database
     database_client.create_job(job_item.clone()).await.unwrap();
