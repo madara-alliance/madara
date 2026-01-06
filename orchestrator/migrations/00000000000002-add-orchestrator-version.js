@@ -17,10 +17,10 @@ module.exports = {
     const jobsCollection = db.collection("jobs");
     const jobsResult = await jobsCollection.updateMany(
       { "metadata.common.orchestrator_version": { $exists: false } },
-      { $set: { "metadata.common.orchestrator_version": DEFAULT_VERSION } }
+      { $set: { "metadata.common.orchestrator_version": DEFAULT_VERSION } },
     );
     console.log(
-      `jobs: Updated ${jobsResult.modifiedCount} documents with metadata.common.orchestrator_version "${DEFAULT_VERSION}"`
+      `jobs: Updated ${jobsResult.modifiedCount} documents with metadata.common.orchestrator_version "${DEFAULT_VERSION}"`,
     );
 
     // Update batch collections - orchestrator_version is at root level
@@ -31,15 +31,17 @@ module.exports = {
 
       const result = await collection.updateMany(
         { orchestrator_version: { $exists: false } },
-        { $set: { orchestrator_version: DEFAULT_VERSION } }
+        { $set: { orchestrator_version: DEFAULT_VERSION } },
       );
 
       console.log(
-        `${collectionName}: Updated ${result.modifiedCount} documents with orchestrator_version "${DEFAULT_VERSION}"`
+        `${collectionName}: Updated ${result.modifiedCount} documents with orchestrator_version "${DEFAULT_VERSION}"`,
       );
     }
 
-    console.log("Migration complete: orchestrator_version field added to all collections");
+    console.log(
+      "Migration complete: orchestrator_version field added to all collections",
+    );
   },
 
   async down(db) {
@@ -52,10 +54,10 @@ module.exports = {
     const jobsCollection = db.collection("jobs");
     const jobsResult = await jobsCollection.updateMany(
       { "metadata.common.orchestrator_version": { $exists: true } },
-      { $unset: { "metadata.common.orchestrator_version": "" } }
+      { $unset: { "metadata.common.orchestrator_version": "" } },
     );
     console.log(
-      `jobs: Removed metadata.common.orchestrator_version from ${jobsResult.modifiedCount} documents`
+      `jobs: Removed metadata.common.orchestrator_version from ${jobsResult.modifiedCount} documents`,
     );
 
     // Remove from batch collections
@@ -66,14 +68,16 @@ module.exports = {
 
       const result = await collection.updateMany(
         { orchestrator_version: { $exists: true } },
-        { $unset: { orchestrator_version: "" } }
+        { $unset: { orchestrator_version: "" } },
       );
 
       console.log(
-        `${collectionName}: Removed orchestrator_version from ${result.modifiedCount} documents`
+        `${collectionName}: Removed orchestrator_version from ${result.modifiedCount} documents`,
       );
     }
 
-    console.log("Rollback complete: orchestrator_version field removed from all collections");
+    console.log(
+      "Rollback complete: orchestrator_version field removed from all collections",
+    );
   },
 };
