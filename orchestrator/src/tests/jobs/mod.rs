@@ -157,7 +157,7 @@ async fn create_job_job_exists_in_db_works() {
 
     // There should be only 1 job in the db
     let jobs_in_db = database_client
-        .get_jobs_by_types_and_statuses(vec![JobType::ProofCreation], vec![JobStatus::Created], None)
+        .get_jobs_by_types_and_statuses(vec![JobType::ProofCreation], vec![JobStatus::Created], None, None)
         .await
         .unwrap();
     assert_eq!(jobs_in_db.len(), 1);
@@ -226,7 +226,8 @@ async fn create_job_job_handler_returns_error() {
     );
 
     // Verify no job was created in the database
-    let job_in_db = services.config.database().get_job_by_internal_id_and_type(internal_id, &job_type).await.unwrap();
+    let job_in_db =
+        services.config.database().get_job_by_internal_id_and_type(internal_id, &job_type).await.unwrap();
     assert!(job_in_db.is_none(), "No job should be created in the database when creation fails");
 
     // Verify no message was added to the queue

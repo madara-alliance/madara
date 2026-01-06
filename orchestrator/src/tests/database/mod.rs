@@ -528,6 +528,7 @@ async fn test_get_jobs_by_types_and_statuses() {
             vec![JobType::SnosRun, JobType::ProofCreation],
             vec![JobStatus::Completed],
             None,
+            None,
         )
         .await
         .unwrap();
@@ -542,6 +543,7 @@ async fn test_get_jobs_by_types_and_statuses() {
             vec![JobType::SnosRun, JobType::ProofCreation],
             vec![JobStatus::Completed],
             Some(1),
+            None,
         )
         .await
         .unwrap();
@@ -629,7 +631,7 @@ async fn test_get_orphaned_jobs() {
     // Wait for jobs to become orphaned
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-    let orphaned_jobs = database_client.get_orphaned_jobs(&JobType::SnosRun, 3).await.unwrap();
+    let orphaned_jobs = database_client.get_orphaned_jobs(&JobType::SnosRun, 3, None).await.unwrap();
 
     assert_eq!(orphaned_jobs.len(), 2);
     assert!(orphaned_jobs.iter().any(|j| j.internal_id == 1));

@@ -66,7 +66,7 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         internal_id: u64,
         job_type: &JobType,
-    ) -> Result<Option<JobItem>, DatabaseError>; // TODO: Maybe add orchestrator version
+    ) -> Result<Option<JobItem>, DatabaseError>;
 
     /// Update a job in the database
     ///
@@ -121,12 +121,14 @@ pub trait DatabaseClient: Send + Sync {
     /// * `job_type` - Vector of job types to search for
     /// * `status` - Vector of statuses to search for
     /// * `limit` - Optional limit on number of results
+    /// * `orchestrator_version` - Optional orchestrator version filter
     async fn get_jobs_by_types_and_statuses(
         &self,
         job_type: Vec<JobType>,
         status: Vec<JobStatus>,
         limit: Option<i64>,
-    ) -> Result<Vec<JobItem>, DatabaseError>; // TODO: Maybe add orchestrator version
+        orchestrator_version: Option<String>,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get jobs between internal IDs for a specific type and status
     ///
@@ -141,7 +143,7 @@ pub trait DatabaseClient: Send + Sync {
         status: JobStatus,
         gte: u64,
         lte: u64,
-    ) -> Result<Vec<JobItem>, DatabaseError>; // TODO: Maybe add orchestrator version
+    ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get the oldest job of the given type from the DB with status not in the given list
     async fn get_oldest_job_by_type_excluding_statuses(
@@ -162,7 +164,13 @@ pub trait DatabaseClient: Send + Sync {
     /// # Arguments
     /// * `job_type` - The type of job to search for
     /// * `timeout_seconds` - Timeout threshold in seconds
-    async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError>; // TODO: Maybe add orchestrator version
+    /// * `orchestrator_version` - Optional orchestrator version filter
+    async fn get_orphaned_jobs(
+        &self,
+        job_type: &JobType,
+        timeout_seconds: u64,
+        orchestrator_version: Option<String>,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
 
     /// Get all jobs by status
     async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError>;
@@ -174,7 +182,7 @@ pub trait DatabaseClient: Send + Sync {
     /// Get the latest SNOS batch from the database
     ///
     /// Returns the SNOS batch with the highest `snos_batch_id`, or `None` if no batches exist.
-    async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError>; // TODO: Maybe add orchestrator version
+    async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError>;
 
     /// Get SNOS batches by their sequential IDs
     ///
@@ -267,7 +275,7 @@ pub trait DatabaseClient: Send + Sync {
     /// Get the latest aggregator batch from the database
     ///
     /// Returns the aggregator batch with the highest `index`, or `None` if no batches exist.
-    async fn get_latest_aggregator_batch(&self) -> Result<Option<AggregatorBatch>, DatabaseError>; // TODO: Maybe add orchestrator version
+    async fn get_latest_aggregator_batch(&self) -> Result<Option<AggregatorBatch>, DatabaseError>;
 
     async fn get_oldest_aggregator_batch(
         &self,

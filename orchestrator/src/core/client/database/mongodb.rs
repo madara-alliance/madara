@@ -659,6 +659,7 @@ impl DatabaseClient for MongoDbClient {
         job_type: Vec<JobType>,
         job_status: Vec<JobStatus>,
         limit: Option<i64>,
+        orchestrator_version: Option<String>,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
 
@@ -674,6 +675,10 @@ impl DatabaseClient for MongoDbClient {
         if !job_status.is_empty() {
             let serialized_statuses: Result<Vec<Bson>, _> = job_status.iter().map(bson::to_bson).collect();
             filter.insert("status", doc! { "$in": serialized_statuses? });
+        }
+
+        if let Some(version) = &orchestrator_version {
+            filter.insert("metadata.common.orchestrator_version", version.as_str());
         }
 
         let find_options = limit.map(|val| FindOptions::builder().limit(Some(val)).build());
@@ -1371,7 +1376,12 @@ impl DatabaseClient for MongoDbClient {
         Ok(results)
     }
 
-    async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError> {
+    async fn get_orphaned_jobs(
+        &self,
+        job_type: &JobType,
+        timeout_seconds: u64,
+        orchestrator_version: Option<String>,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
 
         // Calculate the cutoff time (current time - timeout)
@@ -1379,13 +1389,17 @@ impl DatabaseClient for MongoDbClient {
 
         // Query for jobs of the specific type in LockedForProcessing status with
         // process_started_at older than cutoff
-        let filter = doc! {
+        let mut filter = doc! {
             "job_type": bson::to_bson(job_type)?,
             "status": bson::to_bson(&JobStatus::LockedForProcessing)?,
             "metadata.common.process_started_at": {
                 "$lt": cutoff_time.timestamp()
             }
         };
+
+        if let Some(version) = &orchestrator_version {
+            filter.insert("metadata.common.orchestrator_version", version.as_str());
+        }
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
 

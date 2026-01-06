@@ -42,7 +42,7 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
     let mut queue = MockQueueClient::new();
     let mut job_handler = MockJobHandlerTrait::new();
 
-    db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
+    db.expect_get_orphaned_jobs().returning(|_, _, _| Ok(Vec::new()));
 
     db.expect_get_latest_job_by_type()
         .with(eq(JobType::SnosRun), eq(Some(ORCHESTRATOR_VERSION.to_string())))
@@ -160,7 +160,7 @@ async fn test_create_snos_job_for_existing_batch(
     });
 
     // No orphaned jobs
-    db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
+    db.expect_get_orphaned_jobs().returning(|_, _, _| Ok(Vec::new()));
 
     db.expect_get_latest_job_by_type()
         .with(eq(JobType::SnosRun), eq(Some(ORCHESTRATOR_VERSION.to_string())))
