@@ -128,7 +128,11 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         if !self.should_send_state_update_txn(&config, to_settle_num).await? {
             // State update not needed (already settled on-chain)
-            state_metadata.tx_hash = None;
+            // Setting tx_hash to an empty string, to denote that no transaction was sent in current run
+            // Only if tx_hash is not already set
+            if state_metadata.tx_hash.is_none() {
+                state_metadata.tx_hash = Some(format!("0x{:0>64}", ""));
+            }
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
         } else {
             // Get the artifacts for the block/batch
