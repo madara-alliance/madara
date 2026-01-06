@@ -442,6 +442,9 @@ impl JobHandlerService {
 
         job.metadata.common.verification_started_at = Some(Utc::now());
 
+        // Increment verification attempt counter
+        job.metadata.common.verification_attempt_no += 1;
+
         // Record verification started
         MetricsRecorder::record_verification_started(&job);
 
@@ -586,9 +589,6 @@ impl JobHandlerService {
                         })?;
                     operation_job_status = Some(JobStatus::VerificationTimeout);
                 } else {
-                    // Increment verification attempts
-                    job.metadata.common.verification_attempt_no += 1;
-
                     config
                         .database()
                         .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
