@@ -1,3 +1,4 @@
+use crate::inner::MempoolStateSummary;
 use mc_analytics::{register_counter_metric_instrument, register_gauge_metric_instrument};
 use opentelemetry::metrics::{Counter, Gauge};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
@@ -39,5 +40,10 @@ impl MempoolMetrics {
         );
 
         Self { accepted_transaction_counter, mempool_current_size, mempool_ready_transactions }
+    }
+
+    pub fn record_mempool_state(&self, summary: &MempoolStateSummary) {
+        self.mempool_current_size.record(summary.num_transactions as u64, &[]);
+        self.mempool_ready_transactions.record(summary.ready_transactions as u64, &[]);
     }
 }

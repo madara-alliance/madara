@@ -8,7 +8,7 @@
 //! Key metrics for detecting write stalls:
 //! - `db_is_write_stopped`: 1 if writes are completely blocked
 //! - `db_pending_compaction_bytes`: Backlog of data waiting to be compacted
-//! - `db_l0_files_count`: Number of L0 files (configurable via CLI)
+//! - `db_level_files_count`: Number of files at each LSM tree level
 //! - `db_num_immutable_memtables`: Memtables waiting to be flushed
 //!
 //! ## Alerting Thresholds

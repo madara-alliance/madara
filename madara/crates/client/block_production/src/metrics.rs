@@ -4,6 +4,7 @@ use mc_analytics::{
 };
 use opentelemetry::metrics::{Counter, Gauge, Histogram};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
+use tracing::warn;
 
 pub struct BlockProductionMetrics {
     pub block_gauge: Gauge<u64>,
@@ -120,6 +121,16 @@ impl BlockProductionMetrics {
         self.txs_reverted.add(stats.n_reverted as u64, &[]);
         self.txs_rejected.add(stats.n_rejected as u64, &[]);
         self.classes_declared.add(stats.declared_classes as u64, &[]);
-        self.l2_gas_consumed.add(stats.l2_gas_consumed as u64, &[]);
+
+        // Safely convert u128 to u64 for metrics, logging if truncation occurs
+        let gas_consumed_u64 = stats.l2_gas_consumed.try_into().unwrap_or_else(|_| {
+            warn!(
+                "l2_gas_consumed ({}) exceeds u64::MAX ({}), saturating to u64::MAX for metrics",
+                stats.l2_gas_consumed,
+                u64::MAX
+            );
+            u64::MAX
+        });
+        self.l2_gas_consumed.add(gas_consumed_u64, &[]);
     }
 }

@@ -73,7 +73,10 @@
   },
   "analytics_params": {
     "analytics_service_name": "madara_analytics",
-    "analytics_collection_endpoint": null
+    "analytics_collection_endpoint": null,
+    "otel_export_metrics": true,
+    "otel_export_traces": false,
+    "otel_export_logs": false
   },
   "telemetry_params": {
     "telemetry": false,

@@ -108,24 +108,34 @@ impl AnalyticsService {
                 return Ok(());
             };
 
-            let meter_provider = if self.config.export_metrics {
-                let provider = self.init_meter_provider(otel_endpoint)?;
-                global::set_meter_provider(provider.clone());
-                Some(provider)
-            } else {
-                None
-            };
+            let meter_provider = self
+                .config
+                .export_metrics
+                .then(|| -> anyhow::Result<SdkMeterProvider> {
+                    let provider = self.init_meter_provider(otel_endpoint)?;
+                    global::set_meter_provider(provider.clone());
+                    Ok(provider)
+                })
+                .transpose()?;
 
-            let tracer_provider = if self.config.export_traces {
-                let provider = self.init_tracer_provider(otel_endpoint)?;
-                global::set_tracer_provider(provider.clone());
-                Some(provider)
-            } else {
-                None
-            };
+            let tracer_provider = self
+                .config
+                .export_traces
+                .then(|| -> anyhow::Result<SdkTracerProvider> {
+                    let provider = self.init_tracer_provider(otel_endpoint)?;
+                    global::set_tracer_provider(provider.clone());
+                    Ok(provider)
+                })
+                .transpose()?;
 
-            let logger_provider =
-                if self.config.export_logs { Some(self.init_logs_provider(otel_endpoint)?) } else { None };
+            let logger_provider = self
+                .config
+                .export_logs
+                .then(|| -> anyhow::Result<SdkLoggerProvider> {
+                    let provider = self.init_logs_provider(otel_endpoint)?;
+                    Ok(provider)
+                })
+                .transpose()?;
 
             match (&tracer_provider, &logger_provider) {
                 (Some(tracer), Some(logger)) => {
@@ -291,7 +301,6 @@ impl CounterType<f64> for f64 {
         meter.f64_counter(name).with_description(description).with_unit(unit).build()
     }
 }
-
 pub fn register_counter_metric_instrument<T: CounterType<T> + Display>(
     crate_meter: &Meter,
     instrument_name: String,

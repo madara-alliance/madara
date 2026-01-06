@@ -100,11 +100,3 @@ impl Default for TxExecutionTimer {
         Self::new()
     }
 }
-
-/// Record average transaction execution time for a batch (used in block production).
-pub fn record_batch_avg_tx_time(batch_duration_ms: f64, num_txs: usize, tx_type: &str) {
-    if num_txs > 0 {
-        let avg_time = batch_duration_ms / num_txs as f64;
-        metrics().record_tx_execution_time(avg_time, tx_type, context_label::PRODUCTION);
-    }
-}
