@@ -66,7 +66,7 @@ pub trait DatabaseClient: Send + Sync {
         &self,
         internal_id: u64,
         job_type: &JobType,
-    ) -> Result<Option<JobItem>, DatabaseError>;
+    ) -> Result<Option<JobItem>, DatabaseError>; // TODO: Maybe add orchestrator version
 
     /// Update a job in the database
     ///
@@ -100,17 +100,6 @@ pub trait DatabaseClient: Send + Sync {
         orchestrator_version: Option<String>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
-    /// Get the latest job of a specific type and status
-    ///
-    /// # Arguments
-    /// * `job_type` - The type of job to search for
-    /// * `job_status` - The status of job to search for
-    async fn get_latest_job_by_type_and_status(
-        &self,
-        job_type: JobType,
-        job_status: JobStatus,
-    ) -> Result<Option<JobItem>, DatabaseError>;
-
     /// Get jobs after a specific internal id by job type
     ///
     /// # Arguments
@@ -137,7 +126,7 @@ pub trait DatabaseClient: Send + Sync {
         job_type: Vec<JobType>,
         status: Vec<JobStatus>,
         limit: Option<i64>,
-    ) -> Result<Vec<JobItem>, DatabaseError>;
+    ) -> Result<Vec<JobItem>, DatabaseError>; // TODO: Maybe add orchestrator version
 
     /// Get jobs between internal IDs for a specific type and status
     ///
@@ -152,18 +141,7 @@ pub trait DatabaseClient: Send + Sync {
         status: JobStatus,
         gte: u64,
         lte: u64,
-    ) -> Result<Vec<JobItem>, DatabaseError>;
-
-    /// Get jobs by their type and statuses
-    ///
-    /// # Arguments
-    /// * `job_type` - The type of job to search for
-    /// * `job_statuses` - Vector of statuses to match
-    async fn get_jobs_by_type_and_statuses(
-        &self,
-        job_type: &JobType,
-        job_statuses: Vec<JobStatus>,
-    ) -> Result<Vec<JobItem>, DatabaseError>;
+    ) -> Result<Vec<JobItem>, DatabaseError>; // TODO: Maybe add orchestrator version
 
     /// Get the oldest job of the given type from the DB with status not in the given list
     async fn get_oldest_job_by_type_excluding_statuses(
@@ -184,7 +162,7 @@ pub trait DatabaseClient: Send + Sync {
     /// # Arguments
     /// * `job_type` - The type of job to search for
     /// * `timeout_seconds` - Timeout threshold in seconds
-    async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError>;
+    async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError>; // TODO: Maybe add orchestrator version
 
     /// Get all jobs by status
     async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError>;
@@ -196,7 +174,7 @@ pub trait DatabaseClient: Send + Sync {
     /// Get the latest SNOS batch from the database
     ///
     /// Returns the SNOS batch with the highest `snos_batch_id`, or `None` if no batches exist.
-    async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError>;
+    async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError>; // TODO: Maybe add orchestrator version
 
     /// Get SNOS batches by their sequential IDs
     ///
@@ -289,7 +267,7 @@ pub trait DatabaseClient: Send + Sync {
     /// Get the latest aggregator batch from the database
     ///
     /// Returns the aggregator batch with the highest `index`, or `None` if no batches exist.
-    async fn get_latest_aggregator_batch(&self) -> Result<Option<AggregatorBatch>, DatabaseError>;
+    async fn get_latest_aggregator_batch(&self) -> Result<Option<AggregatorBatch>, DatabaseError>; // TODO: Maybe add orchestrator version
 
     async fn get_oldest_aggregator_batch(
         &self,
@@ -386,43 +364,6 @@ pub trait DatabaseClient: Send + Sync {
     /// # Returns
     /// Vector of all SNOS batches (any status) that belong to the specified aggregator batch
     async fn get_snos_batches_by_aggregator_index(
-        &self,
-        aggregator_index: u64,
-    ) -> Result<Vec<SnosBatch>, DatabaseError>;
-
-    /// Get open SNOS batches for a specific aggregator batch
-    ///
-    /// # Arguments
-    /// * `aggregator_index` - The index of the aggregator batch
-    ///
-    /// # Returns
-    /// Vector of SNOS batches with status `Open` that belong to the specified aggregator batch
-    async fn get_open_snos_batches_by_aggregator_index(
-        &self,
-        aggregator_index: u64,
-    ) -> Result<Vec<SnosBatch>, DatabaseError>;
-
-    /// Get the next available SNOS batch ID
-    ///
-    /// This method finds the highest existing `snos_batch_id` and returns the next sequential number.
-    /// If no SNOS batches exist, returns 1.
-    ///
-    /// # Returns
-    /// The next available SNOS batch ID for creating new batches
-    async fn get_next_snos_batch_id(&self) -> Result<u64, DatabaseError>;
-
-    /// Close all SNOS batches for a specific aggregator batch
-    ///
-    /// This method is used when an aggregator batch closes to ensure all its
-    /// contained SNOS batches are also closed, maintaining the hierarchical
-    /// relationship constraint.
-    ///
-    /// # Arguments
-    /// * `aggregator_index` - The index of the aggregator batch whose SNOS batches should be closed
-    ///
-    /// # Returns
-    /// Vector of all SNOS batches that were closed by this operation
-    async fn close_all_snos_batches_for_aggregator(
         &self,
         aggregator_index: u64,
     ) -> Result<Vec<SnosBatch>, DatabaseError>;

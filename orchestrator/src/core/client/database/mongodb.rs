@@ -686,52 +686,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    async fn get_latest_job_by_type_and_status(
-        &self,
-        job_type: JobType,
-        job_status: JobStatus,
-    ) -> Result<Option<JobItem>, DatabaseError> {
-        let start = Instant::now();
-
-        // Convert job_type to Bson
-        let job_type_bson = bson::to_bson(&job_type)?;
-        let status_bson = bson::to_bson(&job_status)?;
-
-        // Construct the aggregation pipeline
-        let pipeline = vec![
-            // Stage 1: Match by type + status
-            doc! {
-                "$match": {
-                    "job_type": job_type_bson,
-                    "status": status_bson,
-                }
-            },
-            // Stage 2: Sort by block_number descending
-            doc! {
-                "$sort": {
-                    "metadata.specific.block_number": -1
-                }
-            },
-            // Stage 3: Take only the top document
-            doc! { "$limit": 1 },
-        ];
-
-        debug!("Fetching latest job by type and status");
-
-        let collection: Collection<JobItem> = self.get_job_collection();
-
-        // Execute pipeline and convert Vec<JobItem> to Option<JobItem>
-        let results = self.execute_pipeline::<JobItem, JobItem>(collection, pipeline, None).await?;
-
-        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
-
-        let result = vec_to_single_result(results, "get_latest_job_by_type_and_status")?;
-
-        let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-        Ok(result)
-    }
-
     async fn get_latest_aggregator_batch(&self) -> Result<Option<AggregatorBatch>, DatabaseError> {
         let start = Instant::now();
         let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();
@@ -1314,32 +1268,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    async fn get_jobs_by_type_and_statuses(
-        &self,
-        job_type: &JobType,
-        job_statuses: Vec<JobStatus>,
-    ) -> Result<Vec<JobItem>, DatabaseError> {
-        let start = Instant::now();
-        let filter = doc! {
-            "job_type": bson::to_bson(job_type)?,
-            "status": {
-                "$in": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
-            }
-        };
-
-        let find_options = FindOptions::builder().sort(doc! { "internal_id": -1 }).build();
-
-        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
-
-        debug!(job_count = jobs.len(), "Retrieved jobs by type and statuses");
-
-        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_type_and_statuses")];
-        let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-
-        Ok(jobs)
-    }
-
     async fn get_oldest_job_by_type_excluding_statuses(
         &self,
         job_type: JobType,
@@ -1523,93 +1451,6 @@ impl DatabaseClient for MongoDbClient {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(batches)
-    }
-
-    /// Get open SNOS batches for a specific aggregator batch
-    async fn get_open_snos_batches_by_aggregator_index(
-        &self,
-        aggregator_index: u64,
-    ) -> Result<Vec<SnosBatch>, DatabaseError> {
-        let start = Instant::now();
-        let filter = doc! {
-            "aggregator_batch_index": aggregator_index as i64,
-            "status": "Open"
-        };
-
-        let batches: Vec<SnosBatch> = self.get_snos_batch_collection().find(filter, None).await?.try_collect().await?;
-
-        tracing::debug!(
-            aggregator_index = aggregator_index,
-            open_snos_batch_count = batches.len(),
-            category = "db_call",
-            "Retrieved open SNOS batches by aggregator index"
-        );
-
-        let attributes = [KeyValue::new("db_operation_name", "get_open_snos_batches_by_aggregator_index")];
-        let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-        Ok(batches)
-    }
-
-    /// Get the next available SNOS batch ID
-    async fn get_next_snos_batch_id(&self) -> Result<u64, DatabaseError> {
-        let start = Instant::now();
-        let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();
-
-        let mut cursor = self.get_snos_batch_collection().find(doc! {}, options).await?;
-        let latest_batch = cursor.try_next().await?;
-
-        let next_id = latest_batch.map_or(1, |batch| batch.index + 1);
-
-        tracing::debug!(next_snos_batch_id = next_id, category = "db_call", "Generated next SNOS batch ID");
-
-        let attributes = [KeyValue::new("db_operation_name", "get_next_snos_batch_id")];
-        let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-        Ok(next_id)
-    }
-
-    /// Close all SNOS batches for a specific aggregator batch
-    async fn close_all_snos_batches_for_aggregator(
-        &self,
-        aggregator_index: u64,
-    ) -> Result<Vec<SnosBatch>, DatabaseError> {
-        let start = Instant::now();
-        let filter = doc! {
-            "aggregator_batch_index": aggregator_index as i64,
-            "status": { "$ne": "Closed" }
-        };
-
-        let update = doc! {
-            "$set": {
-                "status": "Closed",
-                "updated_at": Bson::DateTime(Utc::now().round_subsecs(0).into())
-            }
-        };
-
-        // Update all matching documents
-        let update_result = self.get_snos_batch_collection().update_many(filter.clone(), update, None).await?;
-
-        tracing::debug!(
-            aggregator_index = aggregator_index,
-            closed_snos_batches = update_result.modified_count,
-            category = "db_call",
-            "Closed SNOS batches for aggregator"
-        );
-
-        // Return the updated batches by querying for closed batches
-        let updated_filter = doc! {
-            "aggregator_batch_index": aggregator_index as i64,
-            "status": "Closed"
-        };
-
-        let updated_batches: Vec<SnosBatch> =
-            self.get_snos_batch_collection().find(updated_filter, None).await?.try_collect().await?;
-
-        let attributes = [KeyValue::new("db_operation_name", "close_all_snos_batches_for_aggregator")];
-        let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-        Ok(updated_batches)
     }
 
     async fn health_check(&self) -> Result<(), DatabaseError> {
