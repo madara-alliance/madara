@@ -1,7 +1,7 @@
 use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::{
-    build_batch, build_aggregator_batch_with_version, build_job_item, build_job_item_with_version, build_snos_batch,
+    build_aggregator_batch_with_version, build_batch, build_job_item, build_job_item_with_version, build_snos_batch,
     build_snos_batch_with_version,
 };
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatchStatus};
@@ -579,36 +579,6 @@ async fn test_get_jobs_between_internal_ids() {
     assert_eq!(retrieved_jobs[2], jobs[3]);
 }
 
-/// Test for `get_jobs_by_type_and_statuses` operation in database trait.
-/// Creates jobs with different statuses and retrieves by type and multiple statuses.
-#[rstest]
-#[tokio::test]
-async fn test_get_jobs_by_type_and_statuses() {
-    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
-    let config = services.config;
-    let database_client = config.database();
-
-    let jobs = [
-        build_job_item(JobType::SnosRun, JobStatus::Completed, 1),
-        build_job_item(JobType::SnosRun, JobStatus::Created, 2),
-        build_job_item(JobType::SnosRun, JobStatus::Failed, 3),
-        build_job_item(JobType::ProofCreation, JobStatus::Completed, 4),
-    ];
-
-    for job in &jobs {
-        database_client.create_job(job.clone()).await.unwrap();
-    }
-
-    let retrieved_jobs = database_client
-        .get_jobs_by_type_and_statuses(&JobType::SnosRun, vec![JobStatus::Completed, JobStatus::Failed])
-        .await
-        .unwrap();
-
-    assert_eq!(retrieved_jobs.len(), 2);
-    assert!(retrieved_jobs.contains(&jobs[0]));
-    assert!(retrieved_jobs.contains(&jobs[2]));
-}
-
 /// Test for `get_jobs_by_block_number` operation in database trait.
 /// Creates jobs with different block numbers and retrieves by block number.
 #[rstest]
@@ -963,90 +933,6 @@ async fn test_get_snos_batches_by_aggregator_index() {
     assert!(batches_for_agg1.iter().any(|b| b.index == 2));
 }
 
-/// Test for `get_open_snos_batches_by_aggregator_index` operation in database trait.
-/// Creates SNOS batches with different statuses for an aggregator batch.
-#[rstest]
-#[tokio::test]
-async fn test_get_open_snos_batches_by_aggregator_index() {
-    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
-    let config = services.config;
-    let database_client = config.database();
-
-    let mut batch1 = build_snos_batch(1, Some(1), 200);
-    let mut batch2 = build_snos_batch(2, Some(1), 300);
-    let mut batch3 = build_snos_batch(3, Some(1), 400);
-
-    batch1.aggregator_batch_index = Some(1);
-    batch2.aggregator_batch_index = Some(1);
-    batch3.aggregator_batch_index = Some(1);
-    batch2.status = SnosBatchStatus::Closed;
-
-    database_client.create_snos_batch(batch1.clone()).await.unwrap();
-    database_client.create_snos_batch(batch2.clone()).await.unwrap();
-    database_client.create_snos_batch(batch3.clone()).await.unwrap();
-
-    let open_batches = database_client.get_open_snos_batches_by_aggregator_index(1).await.unwrap();
-
-    assert_eq!(open_batches.len(), 2);
-    assert!(open_batches.iter().any(|b| b.index == 1));
-    assert!(open_batches.iter().any(|b| b.index == 3));
-}
-
-/// Test for `get_next_snos_batch_id` operation in database trait.
-/// Creates SNOS batches and verifies next ID calculation.
-#[rstest]
-#[tokio::test]
-async fn test_get_next_snos_batch_id() {
-    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
-    let config = services.config;
-    let database_client = config.database();
-
-    // Initially, should return 1
-    let next_id = database_client.get_next_snos_batch_id().await.unwrap();
-    assert_eq!(next_id, 1);
-
-    // Create some batches
-    database_client.create_snos_batch(build_snos_batch(1, Some(100), 200)).await.unwrap();
-    database_client.create_snos_batch(build_snos_batch(2, Some(100), 300)).await.unwrap();
-
-    // Should now return 3
-    let next_id = database_client.get_next_snos_batch_id().await.unwrap();
-    assert_eq!(next_id, 3);
-}
-
-/// Test for `close_all_snos_batches_for_aggregator` operation in database trait.
-/// Creates open SNOS batches for an aggregator and closes them all.
-#[rstest]
-#[tokio::test]
-async fn test_close_all_snos_batches_for_aggregator() {
-    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
-    let config = services.config;
-    let database_client = config.database();
-
-    let mut batch1 = build_snos_batch(1, Some(1), 200);
-    let mut batch2 = build_snos_batch(2, Some(1), 300);
-    let mut batch3 = build_snos_batch(3, Some(2), 400);
-
-    batch1.aggregator_batch_index = Some(1);
-    batch2.aggregator_batch_index = Some(1);
-    batch3.aggregator_batch_index = Some(2);
-
-    database_client.create_snos_batch(batch1.clone()).await.unwrap();
-    database_client.create_snos_batch(batch2.clone()).await.unwrap();
-    database_client.create_snos_batch(batch3.clone()).await.unwrap();
-
-    let closed_batches = database_client.close_all_snos_batches_for_aggregator(1).await.unwrap();
-
-    assert_eq!(closed_batches.len(), 2);
-    assert!(closed_batches.iter().all(|b| b.status == SnosBatchStatus::Closed));
-    assert!(closed_batches.iter().any(|b| b.index == 1));
-    assert!(closed_batches.iter().any(|b| b.index == 2));
-
-    // Verify batch 3 is still open
-    let batch3_after = database_client.get_snos_batches_by_indices(vec![3]).await.unwrap();
-    assert_eq!(batch3_after[0].status, SnosBatchStatus::Open);
-}
-
 /// Test for `get_oldest_aggregator_batch` operation in database trait.
 /// Creates aggregator batches with different versions and verifies retrieval.
 #[rstest]
@@ -1059,7 +945,8 @@ async fn test_get_oldest_aggregator_batch() {
     // Create older batch with old version (index 1, starts at block 100)
     let batch_old = build_aggregator_batch_with_version(1, 100, 200, "old-version".to_string());
     // Create newer batch with current version (index 2, starts at block 201)
-    let batch_current = build_aggregator_batch_with_version(2, 201, 300, crate::types::constant::ORCHESTRATOR_VERSION.to_string());
+    let batch_current =
+        build_aggregator_batch_with_version(2, 201, 300, crate::types::constant::ORCHESTRATOR_VERSION.to_string());
 
     database_client.create_aggregator_batch(batch_old.clone()).await.unwrap();
     database_client.create_aggregator_batch(batch_current.clone()).await.unwrap();

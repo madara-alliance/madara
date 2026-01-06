@@ -111,9 +111,6 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     // Mock SNOS batch operations
     database.expect_create_snos_batch().returning(Ok);
     database.expect_update_or_create_snos_batch().returning(|batch, _| Ok(batch.clone()));
-    database.expect_get_next_snos_batch_id().returning(|| Ok(1));
-    database.expect_get_open_snos_batches_by_aggregator_index().returning(|_| Ok(vec![]));
-    database.expect_close_all_snos_batches_for_aggregator().returning(|_| Ok(vec![]));
 
     if has_existing_batch {
         storage.expect_get_data().returning(|_| Ok(Bytes::from(get_dummy_state_update(1).to_string())));
@@ -280,9 +277,6 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         snos_batches_updated_clone.lock().unwrap().push(batch.clone());
         Ok(batch.clone())
     });
-    database.expect_get_next_snos_batch_id().returning(|| Ok(2));
-    database.expect_get_open_snos_batches_by_aggregator_index().returning(|_| Ok(vec![]));
-    database.expect_close_all_snos_batches_for_aggregator().returning(|_| Ok(vec![]));
 
     // Mock get_aggregator_batch_for_block - needed for SNOS batching in L2 mode
     // Returns aggregator batch 2 for blocks 4-7
