@@ -1,7 +1,7 @@
 use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::{
-    build_batch, build_batch_with_version, build_job_item, build_job_item_with_version, build_snos_batch,
+    build_batch, build_aggregator_batch_with_version, build_job_item, build_job_item_with_version, build_snos_batch,
     build_snos_batch_with_version,
 };
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, SnosBatchStatus};
@@ -895,9 +895,9 @@ async fn test_get_aggregator_batches_by_status() {
     let database_client = config.database();
 
     let current_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
-    let mut batch1 = build_batch_with_version(1, 100, 200, current_version.clone());
-    let batch2 = build_batch_with_version(2, 201, 300, current_version.clone());
-    let mut batch3 = build_batch_with_version(3, 301, 400, "old-version".to_string());
+    let mut batch1 = build_aggregator_batch_with_version(1, 100, 200, current_version.clone());
+    let batch2 = build_aggregator_batch_with_version(2, 201, 300, current_version.clone());
+    let mut batch3 = build_aggregator_batch_with_version(3, 301, 400, "old-version".to_string());
 
     batch1.status = AggregatorBatchStatus::Closed;
     batch3.status = AggregatorBatchStatus::Closed;
@@ -1057,9 +1057,9 @@ async fn test_get_oldest_aggregator_batch() {
     let database_client = config.database();
 
     // Create older batch with old version (index 1, starts at block 100)
-    let batch_old = build_batch_with_version(1, 100, 200, "old-version".to_string());
+    let batch_old = build_aggregator_batch_with_version(1, 100, 200, "old-version".to_string());
     // Create newer batch with current version (index 2, starts at block 201)
-    let batch_current = build_batch_with_version(2, 201, 300, crate::types::constant::ORCHESTRATOR_VERSION.to_string());
+    let batch_current = build_aggregator_batch_with_version(2, 201, 300, crate::types::constant::ORCHESTRATOR_VERSION.to_string());
 
     database_client.create_aggregator_batch(batch_old.clone()).await.unwrap();
     database_client.create_aggregator_batch(batch_current.clone()).await.unwrap();

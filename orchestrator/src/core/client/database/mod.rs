@@ -293,7 +293,7 @@ pub trait DatabaseClient: Send + Sync {
 
     async fn get_oldest_aggregator_batch(
         &self,
-        version: Option<String>,
+        orchestrator_version: Option<String>,
     ) -> Result<Option<AggregatorBatch>, DatabaseError>;
 
     /// Get aggregator batches by their indexes

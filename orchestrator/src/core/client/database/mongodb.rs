@@ -750,14 +750,14 @@ impl DatabaseClient for MongoDbClient {
 
     async fn get_oldest_aggregator_batch(
         &self,
-        version: Option<String>,
+        orchestrator_version: Option<String>,
     ) -> Result<Option<AggregatorBatch>, DatabaseError> {
         let start = Instant::now();
         let options = FindOptions::builder().sort(doc! { "index": 1 }).limit(1).build();
 
         let mut filter = doc! {};
 
-        if let Some(version) = &version {
+        if let Some(version) = &orchestrator_version {
             filter.insert("orchestrator_version", version.as_str());
         }
 

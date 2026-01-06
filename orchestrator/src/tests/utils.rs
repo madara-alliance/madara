@@ -164,7 +164,7 @@ pub fn build_snos_batch_with_version(
 }
 
 /// Build an aggregator batch with a custom orchestrator version for testing version filtering
-pub fn build_batch_with_version(
+pub fn build_aggregator_batch_with_version(
     index: u64,
     start_block: u64,
     end_block: u64,
