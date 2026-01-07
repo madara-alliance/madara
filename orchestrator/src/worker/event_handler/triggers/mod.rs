@@ -9,6 +9,7 @@ pub(crate) mod snos_batching;
 pub(crate) mod update_state;
 
 use crate::core::config::Config;
+use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics_recorder::MetricsRecorder;
@@ -39,7 +40,12 @@ pub trait JobTrigger: Send + Sync {
     async fn is_worker_enabled(&self, config: Arc<Config>) -> color_eyre::Result<bool> {
         let failed_jobs = config
             .database()
-            .get_jobs_by_types_and_statuses(vec![], vec![JobStatus::Failed, JobStatus::VerificationTimeout], None)
+            .get_jobs_by_types_and_statuses(
+                vec![],
+                vec![JobStatus::Failed, JobStatus::VerificationTimeout],
+                None,
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
             .await?;
 
         if !failed_jobs.is_empty() {
@@ -74,7 +80,10 @@ pub trait JobTrigger: Send + Sync {
     /// - Logs recovery actions for monitoring and debugging
     async fn heal_orphaned_jobs(&self, config: Arc<Config>, job_type: JobType) -> anyhow::Result<u32> {
         let timeout_seconds = config.service_config().get_job_timeout(&job_type);
-        let orphaned_jobs = config.database().get_orphaned_jobs(&job_type, timeout_seconds).await?;
+        let orphaned_jobs = config
+            .database()
+            .get_orphaned_jobs(&job_type, timeout_seconds, Some(ORCHESTRATOR_VERSION.to_string()))
+            .await?;
 
         if orphaned_jobs.is_empty() {
             return Ok(0);

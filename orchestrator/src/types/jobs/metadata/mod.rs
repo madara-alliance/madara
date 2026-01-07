@@ -37,7 +37,8 @@ pub struct CommonMetadata {
     /// Orchestrator version that created this job.
     /// Used to ensure only compatible orchestrator versions process jobs they can handle.
     /// This prevents version conflicts in multi-version deployments.
-    pub orchestrator_version: Option<String>,
+    #[serde(default)]
+    pub orchestrator_version: String,
 }
 
 /// Metadata specific to data availability (DA) jobs.

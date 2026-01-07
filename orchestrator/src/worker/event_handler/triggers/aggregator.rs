@@ -1,8 +1,8 @@
 use crate::core::config::Config;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use crate::types::constant::{
-    CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
-    STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
+    CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, ORCHESTRATOR_VERSION, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME,
+    SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
 };
 use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -28,8 +28,14 @@ impl JobTrigger for AggregatorJobTrigger {
         }
 
         // Get all the closed batches
-        let closed_batches =
-            config.database().get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(10)).await?;
+        let closed_batches = config
+            .database()
+            .get_aggregator_batches_by_status(
+                AggregatorBatchStatus::Closed,
+                Some(10),
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
+            .await?;
 
         debug!("Found {} closed batches", closed_batches.len());
 

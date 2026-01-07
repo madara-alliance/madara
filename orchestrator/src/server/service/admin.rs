@@ -33,8 +33,10 @@ impl AdminService {
         F: Fn(Uuid, JobType, Arc<Config>) -> Fut,
         Fut: std::future::Future<Output = Result<(), JobError>>,
     {
-        let jobs =
-            config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![status.clone()], None).await?;
+        let jobs = config
+            .database()
+            .get_jobs_by_types_and_statuses(job_types.clone(), vec![status.clone()], None, None)
+            .await?;
         info!(job_types = ?job_types, status = ?status, count = jobs.len(), "Admin: {} - found jobs", op_name);
 
         let mut successful_job_ids = Vec::new();
