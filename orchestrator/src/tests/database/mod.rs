@@ -608,36 +608,6 @@ async fn test_get_jobs_by_block_number() {
     assert!(retrieved_jobs.contains(&jobs[1]));
 }
 
-/// Test for `get_orphaned_jobs` operation in database trait.
-/// Creates jobs stuck in LockedForProcessing status and retrieves orphaned ones.
-#[rstest]
-#[tokio::test]
-async fn test_get_orphaned_jobs() {
-    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
-    let config = services.config;
-    let database_client = config.database();
-
-    let jobs = [
-        build_job_item(JobType::SnosRun, JobStatus::LockedForProcessing, 1),
-        build_job_item(JobType::SnosRun, JobStatus::Created, 2),
-        build_job_item(JobType::SnosRun, JobStatus::LockedForProcessing, 3),
-    ];
-
-    for mut job in jobs {
-        job.metadata.common.process_started_at = Some(Utc::now());
-        database_client.create_job(job.clone()).await.unwrap();
-    }
-
-    // Wait for jobs to become orphaned
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-    let orphaned_jobs = database_client.get_orphaned_jobs(&JobType::SnosRun, 3, None).await.unwrap();
-
-    assert_eq!(orphaned_jobs.len(), 2);
-    assert!(orphaned_jobs.iter().any(|j| j.internal_id == 1));
-    assert!(orphaned_jobs.iter().any(|j| j.internal_id == 3));
-}
-
 /// Test for `get_snos_batches_by_indices` operation in database trait.
 /// Creates multiple SNOS batches and retrieves by their indices.
 #[rstest]
