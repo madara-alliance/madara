@@ -133,12 +133,21 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         // If running, shut down block production cleanly before reorg
         if bp_was_running {
             tracing::info!("🔌 Stopping block production service for reorg...");
+
+            // Subscribe BEFORE calling service_remove to not miss the broadcast
+            let mut ctx = self.ctx.clone();
+            // Prime the subscription by calling it once (this sets up the receiver)
+            let _ = tokio::time::timeout(std::time::Duration::from_millis(1), ctx.service_subscribe()).await;
+
             self.ctx.service_remove(MadaraServiceId::BlockProduction);
 
-            // Wait for block production service to actually stop using service_subscribe
-            let mut ctx = self.ctx.clone();
+            // Wait for block production service to actually stop
             let shutdown_result = tokio::time::timeout(SERVICE_GRACE_PERIOD, async {
                 loop {
+                    // Check if already stopped
+                    if self.ctx.service_status(MadaraServiceId::BlockProduction) == MadaraServiceStatus::Off {
+                        break;
+                    }
                     match ctx.service_subscribe().await {
                         Some(transport)
                             if transport.svc_id == MadaraServiceId::BlockProduction.svc_id()
@@ -184,12 +193,21 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         // Restart block production if it was running before
         if bp_was_running {
             tracing::info!("🔌 Restarting block production service after reorg...");
+
+            // Subscribe BEFORE calling service_add to not miss the broadcast
+            let mut ctx = self.ctx.clone();
+            // Prime the subscription by calling it once (this sets up the receiver)
+            let _ = tokio::time::timeout(std::time::Duration::from_millis(1), ctx.service_subscribe()).await;
+
             self.ctx.service_add(MadaraServiceId::BlockProduction);
 
-            // Wait for block production service to actually start using service_subscribe
-            let mut ctx = self.ctx.clone();
+            // Wait for block production service to actually start
             let startup_result = tokio::time::timeout(SERVICE_GRACE_PERIOD, async {
                 loop {
+                    // Check if already started
+                    if self.ctx.service_status(MadaraServiceId::BlockProduction) == MadaraServiceStatus::On {
+                        break;
+                    }
                     match ctx.service_subscribe().await {
                         Some(transport)
                             if transport.svc_id == MadaraServiceId::BlockProduction.svc_id()
