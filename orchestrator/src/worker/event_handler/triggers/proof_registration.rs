@@ -16,11 +16,6 @@ pub struct ProofRegistrationJobTrigger;
 #[async_trait]
 impl JobTrigger for ProofRegistrationJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: recover any orphaned ProofRegistration jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofRegistration).await {
-            error!(error = %e, "Failed to heal orphaned ProofRegistration jobs, continuing with normal processing");
-        }
-
         let db = config.database();
 
         let successful_proving_jobs = db
