@@ -4,6 +4,7 @@ use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights};
+use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::batching::aggregator::AggregatorState::{Empty, NonEmpty};
 use crate::worker::event_handler::triggers::batching::utils::{get_block_builtin_weights, get_block_version};
@@ -161,6 +162,16 @@ impl AggregatorHandler {
         // Fetch Starknet version for the current block
         let current_block_starknet_version = get_block_version(block_num, self.config.madara_rpc_client()).await?;
 
+        // Check if block's Starknet version is supported (applies to all states)
+        if !current_block_starknet_version.is_supported() {
+            tracing::warn!(
+                block_num = %block_num,
+                version = %current_block_starknet_version,
+                "Block's Starknet version is not supported, skipping batching"
+            );
+            return Ok(BlockProcessingResult::NotBatched(state));
+        }
+
         match state {
             Empty(ref empty_state) => {
                 // Get state update for the current block
@@ -202,6 +213,18 @@ impl AggregatorHandler {
         block_num: u64,
         mut state: NonEmptyAggregatorState,
     ) -> Result<BlockProcessingResult<AggregatorState, NonEmptyAggregatorState>, JobError> {
+        // Gap detection - check if block_num is exactly end_block + 1
+        if block_num != state.batch.end_block + 1 {
+            tracing::warn!(
+                expected_block = state.batch.end_block + 1,
+                actual_block = block_num,
+                batch_index = state.batch.index,
+                "Gap detected in block sequence, closing batch"
+            );
+            state.close();
+            return Ok(BlockProcessingResult::NotBatched(NonEmpty(state)));
+        }
+
         // Fetch block weights for the current block
         let block_weights = AggregatorBatchWeights::from(
             &get_block_builtin_weights(
@@ -348,7 +371,11 @@ pub enum BatchCheckResult {
     /// Batch is already closed
     BatchClosed,
     /// Starknet version mismatch
-    VersionMismatch,
+    StarknetVersionMismatch,
+    /// Block's Starknet version is not supported by this orchestrator
+    StarknetVersionUnsupported,
+    /// Batch was created by a different orchestrator version
+    OrchestratorVersionMismatch,
     /// Max blocks per batch reached
     MaxBlocksReached,
     /// Batch time limit exceeded
@@ -380,9 +407,19 @@ impl NonEmptyAggregatorState {
             return BatchCheckResult::BatchClosed;
         }
 
+        // Check if batch was created by the current orchestrator version
+        if self.batch.orchestrator_version != ORCHESTRATOR_VERSION {
+            return BatchCheckResult::OrchestratorVersionMismatch;
+        }
+
         // Check version mismatch
         if block_version != self.batch.starknet_version {
-            return BatchCheckResult::VersionMismatch;
+            return BatchCheckResult::StarknetVersionMismatch;
+        }
+
+        // Check if block version is supported by this orchestrator
+        if !block_version.is_supported() {
+            return BatchCheckResult::StarknetVersionUnsupported;
         }
 
         // Check max blocks reached
@@ -521,9 +558,29 @@ mod tests {
         weights: AggregatorBatchWeights,
         created_at: DateTime<Utc>,
     ) -> AggregatorBatch {
+        create_test_batch_with_orchestrator_version(
+            num_blocks,
+            status,
+            version,
+            weights,
+            created_at,
+            ORCHESTRATOR_VERSION.to_string(),
+        )
+    }
+
+    /// Helper to create a test batch with a custom orchestrator version
+    fn create_test_batch_with_orchestrator_version(
+        num_blocks: u64,
+        status: AggregatorBatchStatus,
+        version: StarknetVersion,
+        weights: AggregatorBatchWeights,
+        created_at: DateTime<Utc>,
+        orchestrator_version: String,
+    ) -> AggregatorBatch {
         AggregatorBatch {
             id: uuid::Uuid::new_v4(),
             index: 1,
+            orchestrator_version,
             bucket_id: "test_bucket".to_string(),
             squashed_state_updates_path: "test/path.json".to_string(),
             blob_path: "test/blob".to_string(),
@@ -605,7 +662,50 @@ mod tests {
             // Block has different version than batch
             let result = state.check_block_sync(&block_weights, StarknetVersion::V0_13_3, &limits);
 
-            assert_eq!(result, BatchCheckResult::VersionMismatch);
+            assert_eq!(result, BatchCheckResult::StarknetVersionMismatch);
+        }
+
+        #[test]
+        fn test_orchestrator_version_mismatch_returns_mismatch() {
+            // Create a batch with a different orchestrator version
+            let batch = create_test_batch_with_orchestrator_version(
+                5,
+                AggregatorBatchStatus::Open,
+                StarknetVersion::V0_13_2,
+                AggregatorBatchWeights::new(100, 100),
+                Utc::now(),
+                "different-version".to_string(),
+            );
+            let state = NonEmptyAggregatorState::new(batch, create_test_state_update());
+            let limits = create_test_limits();
+            let block_weights = AggregatorBatchWeights::new(100, 100);
+
+            // Even with matching Starknet version, orchestrator version mismatch should be detected
+            let result = state.check_block_sync(&block_weights, StarknetVersion::V0_13_2, &limits);
+
+            assert_eq!(result, BatchCheckResult::OrchestratorVersionMismatch);
+        }
+
+        #[test]
+        fn test_orchestrator_version_mismatch_checked_before_starknet_version() {
+            // When both orchestrator version and starknet version mismatch,
+            // orchestrator version mismatch should be returned first
+            let batch = create_test_batch_with_orchestrator_version(
+                5,
+                AggregatorBatchStatus::Open,
+                StarknetVersion::V0_13_2,
+                AggregatorBatchWeights::new(100, 100),
+                Utc::now(),
+                "different-version".to_string(),
+            );
+            let state = NonEmptyAggregatorState::new(batch, create_test_state_update());
+            let limits = create_test_limits();
+            let block_weights = AggregatorBatchWeights::new(100, 100);
+
+            // Both versions mismatch, but orchestrator version is checked first
+            let result = state.check_block_sync(&block_weights, StarknetVersion::V0_13_3, &limits);
+
+            assert_eq!(result, BatchCheckResult::OrchestratorVersionMismatch);
         }
 
         #[test]
@@ -809,7 +909,7 @@ mod tests {
                     } else {
                         assert_eq!(
                             result,
-                            BatchCheckResult::VersionMismatch,
+                            BatchCheckResult::StarknetVersionMismatch,
                             "Different versions {:?} vs {:?} should mismatch",
                             batch_version,
                             block_version

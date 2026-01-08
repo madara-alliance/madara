@@ -131,7 +131,7 @@ Key services run concurrently:
 
 **Chain Tip Management:**
 
-- `ChainTip` enum: Empty | Confirmed(block_n) | Preconfirmed(Arc<PreconfirmedBlock>)
+- `ChainTip` enum: Empty | Confirmed(block_n) | Preconfirmed(Arc<`PreconfirmedBlock`>)
 - Preconfirmed blocks saved to DB (optional) for crash recovery
 - Atomic transitions validated by `MadaraBackendWriter`
 

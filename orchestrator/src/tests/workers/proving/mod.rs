@@ -51,7 +51,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
     // Create mock SNOS jobs with snos_fact field set
     let mut snos_jobs = Vec::new();
 
-    db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
+    db.expect_get_orphaned_jobs().returning(|_, _, _| Ok(Vec::new()));
     db.expect_get_aggregator_batch_for_block().returning(|_| {
         Ok(Some(AggregatorBatch {
             index: 1,
@@ -85,12 +85,12 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
     // Mock db call for getting successful SNOS jobs without successor
     db.expect_get_jobs_without_successor()
         .times(1)
-        .withf(|job_type, job_status, successor_type| {
+        .withf(|job_type, job_status, successor_type, _orchestrator_version| {
             *job_type == JobType::SnosRun
                 && *job_status == JobStatus::Completed
                 && *successor_type == JobType::ProofCreation
         })
-        .returning(move |_, _, _| Ok(snos_jobs.clone()));
+        .returning(move |_, _, _, _| Ok(snos_jobs.clone()));
 
     // Set up expectations for each job
     for i in 1..=num_jobs {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::config::Config;
 use crate::types::constant::{
-    BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+    BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, ORCHESTRATOR_VERSION, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_item::JobItem;
@@ -123,7 +123,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
             }),
         },
         JobType::Aggregator => JobMetadata {
-            common: CommonMetadata::default(),
+            common: CommonMetadata { orchestrator_version: ORCHESTRATOR_VERSION.to_string(), ..Default::default() },
             specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                 batch_num: block_number,
                 ..Default::default()

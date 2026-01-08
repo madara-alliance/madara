@@ -119,6 +119,11 @@ pub struct AggregatorBatch {
     /// All blocks in a batch must have the same Starknet version for prover compatibility
     pub starknet_version: StarknetVersion,
 
+    /// Orchestrator version that created this batch.
+    /// Used to ensure only compatible orchestrator versions process batches they can handle.
+    #[serde(default)]
+    pub orchestrator_version: String,
+
     /// Start block number of the aggregator batch (inclusive)
     /// This is the lowest block number across all contained SNOS batches
     pub start_block: u64,
@@ -211,6 +216,7 @@ impl AggregatorBatch {
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
             starknet_version,
+            orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
             status: AggregatorBatchStatus::Open,
             builtin_weights,
         }
@@ -304,6 +310,11 @@ pub struct SnosBatch {
 
     pub starknet_version: StarknetVersion,
 
+    /// Orchestrator version that created this batch.
+    /// Used to ensure only compatible orchestrator versions process batches they can handle.
+    #[serde(default)]
+    pub orchestrator_version: String,
+
     /// Start block number of the batch (inclusive)
     pub start_block: u64,
 
@@ -357,6 +368,7 @@ impl SnosBatch {
             index,
             aggregator_batch_index,
             starknet_version,
+            orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
             start_block,
             end_block: start_block,
             num_blocks: 1,

@@ -1,11 +1,10 @@
 use crate::core::config::Config;
+use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::types::jobs::metadata::{
     AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SettlementContext,
     SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-
-use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -38,7 +37,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         };
 
         // Get the latest StateTransition job
-        let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition).await?;
+        let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition, None).await?;
         // Get the parent jobs that are completed and are ready to get their StateTransition job created
         let (jobs_to_process, last_processed) = match latest_job {
             Some(job) => {
@@ -72,7 +71,12 @@ impl JobTrigger for UpdateStateJobTrigger {
                 (
                     config
                         .database()
-                        .get_jobs_after_internal_id_by_job_type(parent_job_type, JobStatus::Completed, last_processed)
+                        .get_jobs_after_internal_id_by_job_type(
+                            parent_job_type,
+                            JobStatus::Completed,
+                            last_processed,
+                            Some(ORCHESTRATOR_VERSION.to_string()),
+                        )
                         .await?,
                     Some(last_processed),
                 )
@@ -83,14 +87,17 @@ impl JobTrigger for UpdateStateJobTrigger {
                 (
                     config
                         .database()
-                        .get_jobs_without_successor(parent_job_type, JobStatus::Completed, JobType::StateTransition)
+                        .get_jobs_without_successor(
+                            parent_job_type,
+                            JobStatus::Completed,
+                            JobType::StateTransition,
+                            Some(ORCHESTRATOR_VERSION.to_string()),
+                        )
                         .await?,
                     None,
                 )
             }
         };
-
-        let jobs_to_process = filter_jobs_by_orchestrator_version(jobs_to_process);
 
         let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id).collect();
         to_process.sort();

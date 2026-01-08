@@ -25,9 +25,25 @@ use std::io::Read;
 use url::Url;
 
 pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64) -> JobItem {
+    build_job_item_with_version(
+        job_type,
+        job_status,
+        internal_id,
+        crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
+    )
+}
+
+/// Build a job item with a custom orchestrator version for testing version filtering
+pub fn build_job_item_with_version(
+    job_type: JobType,
+    job_status: JobStatus,
+    internal_id: u64,
+    orchestrator_version: String,
+) -> JobItem {
+    let common = CommonMetadata { orchestrator_version, ..Default::default() };
     let metadata = match job_type {
         JobType::StateTransition => JobMetadata {
-            common: CommonMetadata::default(),
+            common,
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
                 snos_output_path: Some(format!("{}/{}", internal_id, SNOS_OUTPUT_FILE_NAME)),
                 program_output_path: Some(format!("{}/{}", internal_id, PROGRAM_OUTPUT_FILE_NAME)),
@@ -41,7 +57,7 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
             }),
         },
         JobType::SnosRun => JobMetadata {
-            common: CommonMetadata::default(),
+            common,
             specific: JobSpecificMetadata::Snos(SnosMetadata {
                 snos_batch_index: 1,
                 start_block: internal_id,
@@ -55,7 +71,7 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
             }),
         },
         JobType::ProofCreation => JobMetadata {
-            common: CommonMetadata::default(),
+            common,
             specific: JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number: internal_id,
                 input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", internal_id, CAIRO_PIE_FILE_NAME))),
@@ -63,7 +79,7 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
             }),
         },
         JobType::DataSubmission => JobMetadata {
-            common: CommonMetadata::default(),
+            common,
             specific: JobSpecificMetadata::Da(DaMetadata {
                 block_number: internal_id,
                 blob_data_path: Some(format!("{}/{}", internal_id, BLOB_DATA_FILE_NAME)),
@@ -95,6 +111,7 @@ pub fn build_batch(
     AggregatorBatch {
         id: Uuid::new_v4(),
         index,
+        orchestrator_version: crate::types::constant::ORCHESTRATOR_VERSION.to_string(),
         num_blocks: end_block - start_block + 1,
         start_block,
         end_block,
@@ -126,6 +143,50 @@ pub fn default_test_bouncer_weights() -> BouncerWeights {
 /// Helper function to build a SNOS batch for tests
 pub fn build_snos_batch(index: u64, aggregator_batch_index: Option<u64>, start_block: u64) -> SnosBatch {
     SnosBatch::new(index, aggregator_batch_index, start_block, default_test_bouncer_weights(), StarknetVersion::V0_13_2)
+}
+
+/// Build a SNOS batch with a custom orchestrator version for testing version filtering
+pub fn build_snos_batch_with_version(
+    index: u64,
+    aggregator_batch_index: Option<u64>,
+    start_block: u64,
+    orchestrator_version: String,
+) -> SnosBatch {
+    let mut batch = SnosBatch::new(
+        index,
+        aggregator_batch_index,
+        start_block,
+        default_test_bouncer_weights(),
+        StarknetVersion::V0_13_2,
+    );
+    batch.orchestrator_version = orchestrator_version;
+    batch
+}
+
+/// Build an aggregator batch with a custom orchestrator version for testing version filtering
+pub fn build_aggregator_batch_with_version(
+    index: u64,
+    start_block: u64,
+    end_block: u64,
+    orchestrator_version: String,
+) -> AggregatorBatch {
+    AggregatorBatch {
+        id: Uuid::new_v4(),
+        index,
+        orchestrator_version,
+        num_blocks: end_block - start_block + 1,
+        start_block,
+        end_block,
+        blob_len: 0,
+        squashed_state_updates_path: String::from("path/to/file.json"),
+        blob_path: String::from("path/to/file.json"),
+        created_at: Utc::now().round_subsecs(0),
+        updated_at: Utc::now().round_subsecs(0),
+        bucket_id: String::from("ABCD1234"),
+        status: AggregatorBatchStatus::Open,
+        builtin_weights: AggregatorBatchWeights::default(),
+        starknet_version: StarknetVersion::V0_13_2,
+    }
 }
 
 pub async fn build_test_config_with_real_provider() -> Result<TestConfigBuilderReturns> {

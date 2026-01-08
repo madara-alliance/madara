@@ -87,7 +87,7 @@ impl JobHandlerService {
         }
 
         // Set orchestrator version on job creation
-        metadata.common.orchestrator_version = Some(crate::types::constant::ORCHESTRATOR_VERSION.to_string());
+        metadata.common.orchestrator_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
 
         let job_handler = factory::get_job_handler(&job_type).await;
         let job_item = job_handler.create_job(internal_id, metadata).await?;

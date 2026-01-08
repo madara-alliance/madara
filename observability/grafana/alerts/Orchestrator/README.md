@@ -107,19 +107,19 @@ Ensure your Prometheus is configured to scrape the necessary metrics:
 ```yaml
 # prometheus.yml
 scrape_configs:
-  - job_name: 'orchestrator'
+  - job_name: "orchestrator"
     static_configs:
-      - targets: ['orchestrator:8080']
+      - targets: ["orchestrator:8080"]
     metrics_path: /metrics
     scrape_interval: 15s
 
-  - job_name: 'blackbox'
+  - job_name: "blackbox"
     metrics_path: /probe
     params:
       module: [orchestrator_health]
     static_configs:
       - targets:
-        - http://orchestrator:8080/health
+          - http://orchestrator:8080/health
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

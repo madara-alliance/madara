@@ -67,9 +67,9 @@ async fn test_admin_retry_all_failed_jobs() {
     let jobs = vec![job1.clone(), job2.clone()];
 
     db.expect_get_jobs_by_types_and_statuses()
-        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::Failed])
+        .withf(|t, s, _, _| t.is_empty() && s == &vec![JobStatus::Failed])
         .times(1)
-        .returning(move |_, _, _| Ok(jobs.clone()));
+        .returning(move |_, _, _, _| Ok(jobs.clone()));
     // get_job_by_id is called twice per job:
     // 1. In retry_job to fetch the job and validate status
     // 2. In queue_job_for_processing to get the job type for the queue
@@ -97,9 +97,9 @@ async fn test_admin_reverify_verification_timeout_jobs() {
     let jobs = vec![job.clone()];
 
     db.expect_get_jobs_by_types_and_statuses()
-        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::VerificationTimeout])
+        .withf(|t, s, _, _| t.is_empty() && s == &vec![JobStatus::VerificationTimeout])
         .times(1)
-        .returning(move |_, _, _| Ok(jobs.clone()));
+        .returning(move |_, _, _, _| Ok(jobs.clone()));
     queue
         .expect_send_message()
         .times(1)
@@ -123,9 +123,9 @@ async fn test_admin_requeue_pending_verification() {
     let jobs = vec![job.clone()];
 
     db.expect_get_jobs_by_types_and_statuses()
-        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::PendingVerification])
+        .withf(|t, s, _, _| t.is_empty() && s == &vec![JobStatus::PendingVerification])
         .times(1)
-        .returning(move |_, _, _| Ok(jobs.clone()));
+        .returning(move |_, _, _, _| Ok(jobs.clone()));
     queue
         .expect_send_message()
         .times(1)
@@ -149,9 +149,9 @@ async fn test_admin_requeue_created_jobs() {
     let jobs = vec![job.clone()];
 
     db.expect_get_jobs_by_types_and_statuses()
-        .withf(|t, s, _| t.is_empty() && s == &vec![JobStatus::Created])
+        .withf(|t, s, _, _| t.is_empty() && s == &vec![JobStatus::Created])
         .times(1)
-        .returning(move |_, _, _| Ok(jobs.clone()));
+        .returning(move |_, _, _, _| Ok(jobs.clone()));
     queue
         .expect_send_message()
         .times(1)
