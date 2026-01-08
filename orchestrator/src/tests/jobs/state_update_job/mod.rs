@@ -46,10 +46,10 @@ async fn test_process_job_attempt_not_present_fails() {
 
     // Update job metadata to use the proper structure
     job.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-        snos_output_paths: vec![],
-        program_output_paths: vec![],
-        blob_data_paths: vec![],
-        da_segment_paths: vec![],
+        snos_output_path: None,
+        program_output_path: None,
+        blob_data_path: None,
+        da_segment_path: None,
         tx_hash: None,
         context: SettlementContext::Block(SettlementContextData { to_settle: vec![], last_failed: None }),
     });
@@ -70,10 +70,10 @@ async fn create_job_works() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_paths: vec![format!("1/{}", SNOS_OUTPUT_FILE_NAME)],
-            program_output_paths: vec![format!("1/{}", PROGRAM_OUTPUT_FILE_NAME)],
-            blob_data_paths: vec![format!("1/{}", BLOB_DATA_FILE_NAME)],
-            da_segment_paths: vec![],
+            snos_output_path: Some(format!("1/{}", SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("1/{}", PROGRAM_OUTPUT_FILE_NAME)),
+            blob_data_path: Some(format!("1/{}", BLOB_DATA_FILE_NAME)),
+            da_segment_path: None,
             tx_hash: None,
             context: SettlementContext::Block(SettlementContextData { to_settle: vec![1], last_failed: None }),
         }),
@@ -111,22 +111,17 @@ async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[ca
         .build()
         .await;
 
-    // Create paths for each block number
-    let snos_output_paths = block_numbers.iter().map(|block| format!("{}/{}", block, SNOS_OUTPUT_FILE_NAME)).collect();
-
-    let program_output_paths =
-        block_numbers.iter().map(|block| format!("{}/{}", block, PROGRAM_OUTPUT_FILE_NAME)).collect();
-
-    let blob_data_paths = block_numbers.iter().map(|block| format!("{}/{}", block, BLOB_DATA_FILE_NAME)).collect();
+    // Create paths using the first block number (since we now process one at a time)
+    let first_block = block_numbers[0];
 
     // Create proper metadata structure with invalid block numbers but valid paths
     let metadata = JobMetadata {
         common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_paths,
-            program_output_paths,
-            blob_data_paths,
-            da_segment_paths: vec![],
+            snos_output_path: Some(format!("{}/{}", first_block, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", first_block, PROGRAM_OUTPUT_FILE_NAME)),
+            blob_data_path: Some(format!("{}/{}", first_block, BLOB_DATA_FILE_NAME)),
+            da_segment_path: None,
             tx_hash: None,
             context: SettlementContext::Block(SettlementContextData { to_settle: block_numbers, last_failed: None }),
         }),
@@ -168,22 +163,10 @@ async fn process_job_invalid_input_gap_panics() {
     let metadata = JobMetadata {
         common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_paths: vec![
-                format!("{}/{}", 6, SNOS_OUTPUT_FILE_NAME),
-                format!("{}/{}", 7, SNOS_OUTPUT_FILE_NAME),
-                format!("{}/{}", 8, SNOS_OUTPUT_FILE_NAME),
-            ],
-            program_output_paths: vec![
-                format!("{}/{}", 6, PROGRAM_OUTPUT_FILE_NAME),
-                format!("{}/{}", 7, PROGRAM_OUTPUT_FILE_NAME),
-                format!("{}/{}", 8, PROGRAM_OUTPUT_FILE_NAME),
-            ],
-            blob_data_paths: vec![
-                format!("{}/{}", 6, BLOB_DATA_FILE_NAME),
-                format!("{}/{}", 7, BLOB_DATA_FILE_NAME),
-                format!("{}/{}", 8, BLOB_DATA_FILE_NAME),
-            ],
-            da_segment_paths: vec![],
+            snos_output_path: Some(format!("{}/{}", 6, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", 6, PROGRAM_OUTPUT_FILE_NAME)),
+            blob_data_path: Some(format!("{}/{}", 6, BLOB_DATA_FILE_NAME)),
+            da_segment_path: None,
             tx_hash: None,
             context: SettlementContext::Block(SettlementContextData {
                 to_settle: vec![6, 7, 8], // Gap between 4 and 6
@@ -310,10 +293,10 @@ async fn test_process_job_l2_with_da_segment(
     let metadata = JobMetadata {
         common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_paths: vec![], // Not used for L2 batch settlement
-            program_output_paths: vec![program_output_key],
-            blob_data_paths: vec![], // Not used for L2 with DA segments
-            da_segment_paths: vec![da_segment_key],
+            snos_output_path: None, // Not used for L2 batch settlement
+            program_output_path: Some(program_output_key),
+            blob_data_path: None, // Not used for L2 with DA segments
+            da_segment_path: Some(da_segment_key),
             tx_hash: None,
             context: SettlementContext::Batch(SettlementContextData {
                 to_settle: vec![batch_index],

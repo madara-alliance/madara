@@ -29,10 +29,10 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
         JobType::StateTransition => JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-                snos_output_paths: vec![format!("{}/{}", internal_id, SNOS_OUTPUT_FILE_NAME)],
-                program_output_paths: vec![format!("{}/{}", internal_id, PROGRAM_OUTPUT_FILE_NAME)],
-                blob_data_paths: vec![format!("{}/{}", internal_id, BLOB_DATA_FILE_NAME)],
-                da_segment_paths: vec![],
+                snos_output_path: Some(format!("{}/{}", internal_id, SNOS_OUTPUT_FILE_NAME)),
+                program_output_path: Some(format!("{}/{}", internal_id, PROGRAM_OUTPUT_FILE_NAME)),
+                blob_data_path: Some(format!("{}/{}", internal_id, BLOB_DATA_FILE_NAME)),
+                da_segment_path: None,
                 tx_hash: None,
                 context: SettlementContext::Block(SettlementContextData {
                     to_settle: vec![internal_id],

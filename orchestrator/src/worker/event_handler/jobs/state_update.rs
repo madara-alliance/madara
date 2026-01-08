@@ -11,9 +11,7 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::{
-    fetch_blob_data_for_block, fetch_da_segment_for_batch, fetch_program_output_for_block, fetch_snos_for_block,
-};
+use crate::worker::utils::{fetch_blob_data, fetch_da_segment, fetch_program_output, fetch_snos_output};
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
@@ -41,20 +39,20 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
 
         // Validate required paths based on layer configuration
-        // L2: requires program_output_paths + da_segment_paths
-        // L3: requires program_output_paths + blob_data_paths + snos_output_paths
-        if state_metadata.program_output_paths.is_empty() {
-            error!("program_output_paths is required for all state updates");
-            return Err(JobError::Other(OtherError(eyre!("Missing required program_output_paths in metadata"))));
+        // L2: requires program_output_path + da_segment_path
+        // L3: requires program_output_path + blob_data_path + snos_output_path
+        if state_metadata.program_output_path.is_none() {
+            error!("program_output_path is required for all state updates");
+            return Err(JobError::Other(OtherError(eyre!("Missing required program_output_path in metadata"))));
         }
 
-        let is_l2_config = !state_metadata.da_segment_paths.is_empty();
-        let is_l3_config = !state_metadata.blob_data_paths.is_empty() && !state_metadata.snos_output_paths.is_empty();
+        let is_l2_config = state_metadata.da_segment_path.is_some();
+        let is_l3_config = state_metadata.blob_data_path.is_some() && state_metadata.snos_output_path.is_some();
 
         if !is_l2_config && !is_l3_config {
-            error!("Missing required paths: must provide either (da_segment_paths for L2) or (blob_data_paths + snos_output_paths for L3)");
+            error!("Missing required paths: must provide either (da_segment_path for L2) or (blob_data_path + snos_output_path for L3)");
             return Err(JobError::Other(OtherError(eyre!(
-                "Missing required paths: must provide either (da_segment_paths for L2) or (blob_data_paths + snos_output_paths for L3)"
+                "Missing required paths: must provide either (da_segment_path for L2) or (blob_data_path + snos_output_path for L3)"
             ))));
         }
         let job_item = JobItem::create(internal_id, JobType::StateTransition, JobStatus::Created, metadata);
@@ -111,11 +109,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             .map(|(i, _)| i)
             .collect();
 
-        let snos_output_paths = state_metadata.snos_output_paths.clone();
-        let program_output_paths = state_metadata.program_output_paths.clone();
-        let blob_data_paths = state_metadata.blob_data_paths.clone();
-        let da_segment_paths = state_metadata.da_segment_paths.clone();
-
         let nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
 
         // Process the batch/block (filtered_indices should contain exactly one index)
@@ -136,19 +129,20 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
         } else {
             // Get the artifacts for the block/batch
-            let snos_output = match fetch_snos_for_block(internal_id, i, config.clone(), &snos_output_paths).await {
-                Ok(snos_output) => Some(snos_output),
-                Err(err) => {
-                    debug!("failed to fetch snos output, proceeding without it: {}", err);
-                    None
-                }
-            };
-            let program_output = fetch_program_output_for_block(i, config.clone(), &program_output_paths).await?;
+            let snos_output =
+                match fetch_snos_output(internal_id, config.clone(), &state_metadata.snos_output_path).await {
+                    Ok(snos_output) => Some(snos_output),
+                    Err(err) => {
+                        debug!("failed to fetch snos output, proceeding without it: {}", err);
+                        None
+                    }
+                };
+            let program_output = fetch_program_output(config.clone(), &state_metadata.program_output_path).await?;
             let blob_data = match config.layer() {
                 // For L2, use DA segment from prover (encrypted/compressed state diff)
-                Layer::L2 => fetch_da_segment_for_batch(i, config.clone(), &da_segment_paths).await?,
+                Layer::L2 => fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?,
                 // For L3, use locally stored blob data
-                Layer::L3 => fetch_blob_data_for_block(i, config.clone(), &blob_data_paths).await?,
+                Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
             };
 
             let txn_hash = match self

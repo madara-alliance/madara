@@ -155,29 +155,12 @@ async fn update_state_worker_continues_from_previous_state_update() {
     job_item.job_type = JobType::StateTransition;
 
     // Create proper StateUpdateMetadata with blocks 0-4
+    // Note: Since we now process one block/batch per job, we use the first block's paths
     let state_metadata = StateUpdateMetadata {
-        snos_output_paths: vec![
-            format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, SNOS_OUTPUT_FILE_NAME),
-        ],
-        program_output_paths: vec![
-            format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, PROGRAM_OUTPUT_FILE_NAME),
-        ],
-        blob_data_paths: vec![
-            format!("{}/{}", 0, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 1, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 2, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 3, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
-        ],
-        da_segment_paths: vec![],
+        snos_output_path: Some(format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME)),
+        program_output_path: Some(format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME)),
+        blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
+        da_segment_path: None,
         tx_hash: None,
         context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
     };
@@ -228,29 +211,12 @@ async fn update_state_worker_next_block_missing() {
     job_item.job_type = JobType::StateTransition;
 
     // Create proper StateUpdateMetadata with blocks 0-4
+    // Note: Since we now process one block/batch per job, we use the first block's paths
     let state_metadata = StateUpdateMetadata {
-        snos_output_paths: vec![
-            format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, SNOS_OUTPUT_FILE_NAME),
-        ],
-        program_output_paths: vec![
-            format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, PROGRAM_OUTPUT_FILE_NAME),
-        ],
-        blob_data_paths: vec![
-            format!("{}/{}", 0, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 1, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 2, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 3, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
-        ],
-        da_segment_paths: vec![],
+        snos_output_path: Some(format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME)),
+        program_output_path: Some(format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME)),
+        blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
+        da_segment_path: None,
         tx_hash: None,
         context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
     };
