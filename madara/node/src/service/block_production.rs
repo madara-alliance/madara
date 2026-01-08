@@ -9,9 +9,15 @@ use std::{io::Write, sync::Arc};
 
 pub struct BlockProductionService {
     backend: Arc<MadaraBackend>,
-    task: Option<BlockProductionTask>,
+    mempool: Arc<mc_mempool::Mempool>,
+    metrics: Arc<BlockProductionMetrics>,
+    l1_client: Arc<dyn SettlementClient>,
+    no_charge_fee: bool,
     n_devnet_contracts: u64,
     disabled: bool,
+    /// The current task handle, if the service is running.
+    /// This is recreated on each start to support service restarts.
+    current_handle: Option<BlockProductionHandle>,
 }
 
 impl BlockProductionService {
@@ -27,10 +33,26 @@ impl BlockProductionService {
 
         Ok(Self {
             backend: backend.clone(),
-            task: Some(BlockProductionTask::new(backend.clone(), mempool, metrics, l1_client, no_charge_fee)),
+            mempool,
+            metrics,
+            l1_client,
+            no_charge_fee,
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
+            current_handle: None,
         })
+    }
+
+    /// Creates a new BlockProductionTask for this service.
+    /// Called on each start to support service restarts.
+    fn create_task(&self) -> BlockProductionTask {
+        BlockProductionTask::new(
+            self.backend.clone(),
+            self.mempool.clone(),
+            self.metrics.clone(),
+            self.l1_client.clone(),
+            self.no_charge_fee,
+        )
     }
 }
 
@@ -38,8 +60,11 @@ impl BlockProductionService {
 impl Service for BlockProductionService {
     #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let block_production_task = self.task.take().context("Service already started")?;
         if !self.disabled {
+            // Create a fresh task on each start to support service restarts
+            let block_production_task = self.create_task();
+            // Store the handle for external access
+            self.current_handle = Some(block_production_task.handle());
             runner.service_loop(move |ctx| block_production_task.run(ctx));
         }
 
@@ -91,6 +116,6 @@ impl BlockProductionService {
     }
 
     pub fn handle(&self) -> BlockProductionHandle {
-        self.task.as_ref().expect("Service started").handle()
+        self.current_handle.clone().expect("Service not started")
     }
 }
