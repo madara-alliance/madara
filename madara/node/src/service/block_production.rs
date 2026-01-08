@@ -15,9 +15,9 @@ pub struct BlockProductionService {
     no_charge_fee: bool,
     n_devnet_contracts: u64,
     disabled: bool,
-    /// The current task handle, if the service is running.
-    /// This is recreated on each start to support service restarts.
-    current_handle: Option<BlockProductionHandle>,
+    /// The initial task created at construction time.
+    /// Used to get the handle before service starts, then consumed on first start.
+    initial_task: Option<BlockProductionTask>,
 }
 
 impl BlockProductionService {
@@ -31,6 +31,15 @@ impl BlockProductionService {
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
 
+        // Create initial task so handle() can be called before start()
+        let initial_task = BlockProductionTask::new(
+            backend.clone(),
+            mempool.clone(),
+            metrics.clone(),
+            l1_client.clone(),
+            no_charge_fee,
+        );
+
         Ok(Self {
             backend: backend.clone(),
             mempool,
@@ -39,12 +48,12 @@ impl BlockProductionService {
             no_charge_fee,
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
-            current_handle: None,
+            initial_task: Some(initial_task),
         })
     }
 
     /// Creates a new BlockProductionTask for this service.
-    /// Called on each start to support service restarts.
+    /// Called on restarts after the initial task has been consumed.
     fn create_task(&self) -> BlockProductionTask {
         BlockProductionTask::new(
             self.backend.clone(),
@@ -61,10 +70,8 @@ impl Service for BlockProductionService {
     #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         if !self.disabled {
-            // Create a fresh task on each start to support service restarts
-            let block_production_task = self.create_task();
-            // Store the handle for external access
-            self.current_handle = Some(block_production_task.handle());
+            // Use initial task on first start, create fresh task on restarts
+            let block_production_task = self.initial_task.take().unwrap_or_else(|| self.create_task());
             runner.service_loop(move |ctx| block_production_task.run(ctx));
         }
 
@@ -116,6 +123,6 @@ impl BlockProductionService {
     }
 
     pub fn handle(&self) -> BlockProductionHandle {
-        self.current_handle.clone().expect("Service not started")
+        self.initial_task.as_ref().expect("Service already started, handle no longer available").handle()
     }
 }

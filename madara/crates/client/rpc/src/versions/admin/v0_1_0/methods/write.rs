@@ -190,49 +190,14 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         self.backend.chain_tip.send_replace(backend_chain_tip);
         tracing::info!("✅ Blockchain reverted successfully");
 
-        // Restart block production if it was running before
+        // Note: We intentionally do NOT restart block production here.
+        // The RPC layer holds a BlockProductionHandle with channels connected to the old task.
+        // Restarting would create new channels, leaving the RPC with stale handles.
+        // A node restart is required to resume block production after a revert.
         if bp_was_running {
-            tracing::info!("🔌 Restarting block production service after reorg...");
-
-            // Subscribe BEFORE calling service_add to not miss the broadcast
-            let mut ctx = self.ctx.clone();
-            // Prime the subscription by calling it once (this sets up the receiver)
-            let _ = tokio::time::timeout(std::time::Duration::from_millis(1), ctx.service_subscribe()).await;
-
-            self.ctx.service_add(MadaraServiceId::BlockProduction);
-
-            // Wait for block production service to actually start
-            let startup_result = tokio::time::timeout(SERVICE_GRACE_PERIOD, async {
-                loop {
-                    // Check if already started
-                    if self.ctx.service_status(MadaraServiceId::BlockProduction) == MadaraServiceStatus::On {
-                        break;
-                    }
-                    match ctx.service_subscribe().await {
-                        Some(transport)
-                            if transport.svc_id == MadaraServiceId::BlockProduction.svc_id()
-                                && transport.status == MadaraServiceStatus::On =>
-                        {
-                            break;
-                        }
-                        None => {
-                            // Context was cancelled
-                            break;
-                        }
-                        _ => continue,
-                    }
-                }
-            })
-            .await;
-
-            if startup_result.is_err() {
-                return Err(StarknetRpcApiError::ErrUnexpectedError {
-                    error: "Timeout waiting for block production service to restart".to_string().into(),
-                }
-                .into());
-            }
-
-            tracing::info!("✅ Block production service restarted with fresh state");
+            tracing::warn!(
+                "⚠️  Block production was stopped for revert. A node restart is required to resume block production."
+            );
         }
 
         Ok(())
