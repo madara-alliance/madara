@@ -8,7 +8,6 @@ use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatc
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
-use chrono::Utc;
 use rstest::*;
 
 #[rstest]
