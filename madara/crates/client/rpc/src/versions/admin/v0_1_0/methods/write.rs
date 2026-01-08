@@ -11,8 +11,7 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
-use std::time::Duration;
+use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, ServiceId, SERVICE_GRACE_PERIOD};
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
@@ -128,17 +127,42 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         // Check if block production is currently running (sequencer mode)
-        let bp_was_running = matches!(
-            self.ctx.service_status(MadaraServiceId::BlockProduction),
-            MadaraServiceStatus::On
-        );
+        let bp_was_running =
+            matches!(self.ctx.service_status(MadaraServiceId::BlockProduction), MadaraServiceStatus::On);
 
         // If running, shut down block production cleanly before reorg
         if bp_was_running {
             tracing::info!("🔌 Stopping block production service for reorg...");
             self.ctx.service_remove(MadaraServiceId::BlockProduction);
-            // Allow time for clean shutdown of executor threads and channels
-            tokio::time::sleep(Duration::from_millis(100)).await;
+
+            // Wait for block production service to actually stop using service_subscribe
+            let mut ctx = self.ctx.clone();
+            let shutdown_result = tokio::time::timeout(SERVICE_GRACE_PERIOD, async {
+                loop {
+                    match ctx.service_subscribe().await {
+                        Some(transport)
+                            if transport.svc_id == MadaraServiceId::BlockProduction.svc_id()
+                                && transport.status == MadaraServiceStatus::Off =>
+                        {
+                            break;
+                        }
+                        None => {
+                            // Context was cancelled, service should be stopping
+                            break;
+                        }
+                        _ => continue,
+                    }
+                }
+            })
+            .await;
+
+            if shutdown_result.is_err() {
+                return Err(StarknetRpcApiError::ErrUnexpectedError {
+                    error: "Timeout waiting for block production service to stop".to_string().into(),
+                }
+                .into());
+            }
+
             tracing::info!("✅ Block production service stopped");
         }
 
@@ -161,6 +185,35 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         if bp_was_running {
             tracing::info!("🔌 Restarting block production service after reorg...");
             self.ctx.service_add(MadaraServiceId::BlockProduction);
+
+            // Wait for block production service to actually start using service_subscribe
+            let mut ctx = self.ctx.clone();
+            let startup_result = tokio::time::timeout(SERVICE_GRACE_PERIOD, async {
+                loop {
+                    match ctx.service_subscribe().await {
+                        Some(transport)
+                            if transport.svc_id == MadaraServiceId::BlockProduction.svc_id()
+                                && transport.status == MadaraServiceStatus::On =>
+                        {
+                            break;
+                        }
+                        None => {
+                            // Context was cancelled
+                            break;
+                        }
+                        _ => continue,
+                    }
+                }
+            })
+            .await;
+
+            if startup_result.is_err() {
+                return Err(StarknetRpcApiError::ErrUnexpectedError {
+                    error: "Timeout waiting for block production service to restart".to_string().into(),
+                }
+                .into());
+            }
+
             tracing::info!("✅ Block production service restarted with fresh state");
         }
 
