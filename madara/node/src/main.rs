@@ -398,7 +398,7 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.rpc_params.clone(),
         backend.clone(),
         tx_submit.clone(),
-        service_block_production.handle(),
+        service_block_production.shared_handle(),
     );
 
     // Feeder gateway

@@ -161,6 +161,10 @@ mod util;
 
 pub use handle::BlockProductionHandle;
 
+/// A shared handle that can be updated when the block production service restarts.
+/// This allows RPC to always have access to the current handle.
+pub type SharedBlockProductionHandle = std::sync::Arc<tokio::sync::RwLock<Option<BlockProductionHandle>>>;
+
 /// Used for listening to state changes in tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockProductionStateNotification {

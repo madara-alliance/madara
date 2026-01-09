@@ -12,6 +12,7 @@ use mp_rpc::v0_9_0::{
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, ServiceId, SERVICE_GRACE_PERIOD};
+
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
@@ -20,13 +21,10 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         declare_transaction: BroadcastedDeclareTxnV0,
     ) -> RpcResult<ClassAndTxnHash> {
-        Ok(self
-            .block_prod_handle
-            .as_ref()
-            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
-            .submit_declare_v0_transaction(declare_transaction)
-            .await
-            .map_err(StarknetRpcApiError::from)?)
+        let handle_guard =
+            self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?.read().await;
+        let handle = handle_guard.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        Ok(handle.submit_declare_v0_transaction(declare_transaction).await.map_err(StarknetRpcApiError::from)?)
     }
 
     /// Submit a declare transaction, bypassing mempool and all validation.
@@ -35,13 +33,10 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         declare_transaction: BroadcastedDeclareTxn,
     ) -> RpcResult<ClassAndTxnHash> {
-        Ok(self
-            .block_prod_handle
-            .as_ref()
-            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
-            .submit_declare_transaction(declare_transaction)
-            .await
-            .map_err(StarknetRpcApiError::from)?)
+        let handle_guard =
+            self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?.read().await;
+        let handle = handle_guard.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        Ok(handle.submit_declare_transaction(declare_transaction).await.map_err(StarknetRpcApiError::from)?)
     }
 
     /// Submit a deploy account transaction, bypassing mempool and all validation.
@@ -50,10 +45,10 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTxn,
     ) -> RpcResult<ContractAndTxnHash> {
-        Ok(self
-            .block_prod_handle
-            .as_ref()
-            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+        let handle_guard =
+            self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?.read().await;
+        let handle = handle_guard.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        Ok(handle
             .submit_deploy_account_transaction(deploy_account_transaction)
             .await
             .map_err(StarknetRpcApiError::from)?)
@@ -65,26 +60,19 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult> {
-        Ok(self
-            .block_prod_handle
-            .as_ref()
-            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
-            .submit_invoke_transaction(invoke_transaction)
-            .await
-            .map_err(StarknetRpcApiError::from)?)
+        let handle_guard =
+            self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?.read().await;
+        let handle = handle_guard.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        Ok(handle.submit_invoke_transaction(invoke_transaction).await.map_err(StarknetRpcApiError::from)?)
     }
 
     /// Force close a block.
     /// Only works in block production mode.
     async fn close_block(&self) -> RpcResult<()> {
-        Ok(self
-            .block_prod_handle
-            .as_ref()
-            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
-            .close_block()
-            .await
-            .context("Force-closing block")
-            .map_err(StarknetRpcApiError::from)?)
+        let handle_guard =
+            self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?.read().await;
+        let handle = handle_guard.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        Ok(handle.close_block().await.context("Force-closing block").map_err(StarknetRpcApiError::from)?)
     }
 
     /// Force revert chain to a previous block by hash.
@@ -132,7 +120,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         // If running, shut down block production cleanly before reorg
         if bp_was_running {
-            tracing::info!("🔌 Stopping block production service for reorg...");
+            tracing::info!("Stopping block production service for reorg...");
 
             // Subscribe BEFORE calling service_remove to not miss the broadcast
             let mut ctx = self.ctx.clone();
@@ -172,11 +160,11 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                 .into());
             }
 
-            tracing::info!("✅ Block production service stopped");
+            tracing::info!("Block production service stopped");
         }
 
         // Perform the blockchain reorg
-        tracing::info!("🔄 Reverting blockchain to block {}", target_block_n);
+        tracing::info!("Reverting blockchain to block {}", target_block_n);
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
 
         // Update chain tip cache
@@ -188,16 +176,49 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
         self.backend.chain_tip.send_replace(backend_chain_tip);
-        tracing::info!("✅ Blockchain reverted successfully");
+        tracing::info!("Blockchain reverted successfully");
 
-        // Note: We intentionally do NOT restart block production here.
-        // The RPC layer holds a BlockProductionHandle with channels connected to the old task.
-        // Restarting would create new channels, leaving the RPC with stale handles.
-        // A node restart is required to resume block production after a revert.
+        // Restart block production if it was running before
+        // The shared handle will be automatically updated by BlockProductionService::start()
         if bp_was_running {
-            tracing::warn!(
-                "⚠️  Block production was stopped for revert. A node restart is required to resume block production."
-            );
+            tracing::info!("Restarting block production service...");
+
+            // Subscribe to wait for restart
+            let mut ctx = self.ctx.clone();
+            let _ = tokio::time::timeout(std::time::Duration::from_millis(1), ctx.service_subscribe()).await;
+
+            self.ctx.service_add(MadaraServiceId::BlockProduction);
+
+            // Wait for block production service to start
+            let restart_result = tokio::time::timeout(SERVICE_GRACE_PERIOD, async {
+                loop {
+                    if self.ctx.service_status(MadaraServiceId::BlockProduction) == MadaraServiceStatus::On {
+                        break;
+                    }
+                    match ctx.service_subscribe().await {
+                        Some(transport)
+                            if transport.svc_id == MadaraServiceId::BlockProduction.svc_id()
+                                && transport.status == MadaraServiceStatus::On =>
+                        {
+                            break;
+                        }
+                        None => {
+                            break;
+                        }
+                        _ => continue,
+                    }
+                }
+            })
+            .await;
+
+            if restart_result.is_err() {
+                return Err(StarknetRpcApiError::ErrUnexpectedError {
+                    error: "Timeout waiting for block production service to restart".to_string().into(),
+                }
+                .into());
+            }
+
+            tracing::info!("Block production service restarted successfully");
         }
 
         Ok(())
@@ -207,13 +228,10 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         l1_handler_message: L1HandlerTransactionWithFee,
     ) -> RpcResult<L1HandlerTransactionResult> {
-        Ok(self
-            .block_prod_handle
-            .as_ref()
-            .unwrap()
-            .submit_l1_handler_transaction(l1_handler_message)
-            .await
-            .map_err(StarknetRpcApiError::from)?)
+        let handle_guard =
+            self.block_prod_handle.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?.read().await;
+        let handle = handle_guard.as_ref().ok_or(StarknetRpcApiError::UnimplementedMethod)?;
+        Ok(handle.submit_l1_handler_transaction(l1_handler_message).await.map_err(StarknetRpcApiError::from)?)
     }
 
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()> {

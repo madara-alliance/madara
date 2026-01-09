@@ -830,7 +830,8 @@ pub struct Starknet {
     pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
-    pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
+    /// Shared handle that is automatically updated when block production service restarts.
+    pub(crate) block_prod_handle: Option<mc_block_production::SharedBlockProductionHandle>,
     pub ctx: ServiceContext,
     pub(crate) rpc_unsafe_enabled: bool,
 }
@@ -840,7 +841,7 @@ impl Starknet {
         backend: Arc<MadaraBackend>,
         add_transaction_provider: Arc<dyn SubmitTransaction>,
         storage_proof_config: StorageProofConfig,
-        block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
+        block_prod_handle: Option<mc_block_production::SharedBlockProductionHandle>,
         ctx: ServiceContext,
     ) -> Self {
         let ws_handles = Arc::new(WsSubscribeHandles::new());

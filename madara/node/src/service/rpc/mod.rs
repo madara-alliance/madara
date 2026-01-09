@@ -1,7 +1,7 @@
 use self::server::rpc_api_build;
 use crate::{cli::RpcParams, submit_tx::MakeSubmitTransactionSwitch};
 use jsonrpsee::server::ServerHandle;
-use mc_block_production::BlockProductionHandle;
+use mc_block_production::SharedBlockProductionHandle;
 use mc_db::MadaraBackend;
 use mc_rpc::{rpc_api_admin, rpc_api_user, Starknet};
 use metrics::RpcMetrics;
@@ -26,7 +26,7 @@ pub struct RpcService {
     submit_tx_provider: MakeSubmitTransactionSwitch,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
-    block_prod_handle: Option<BlockProductionHandle>,
+    block_prod_handle: Option<SharedBlockProductionHandle>,
 }
 
 impl RpcService {
@@ -49,7 +49,7 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
-        block_prod_handle: BlockProductionHandle,
+        block_prod_handle: SharedBlockProductionHandle,
     ) -> Self {
         Self {
             config,

@@ -1,6 +1,6 @@
 use crate::cli::block_production::BlockProductionParams;
 use anyhow::Context;
-use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask};
+use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionTask, SharedBlockProductionHandle};
 use mc_db::MadaraBackend;
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_settlement_client::SettlementClient;
@@ -18,6 +18,9 @@ pub struct BlockProductionService {
     /// The initial task created at construction time.
     /// Used to get the handle before service starts, then consumed on first start.
     initial_task: Option<BlockProductionTask>,
+    /// Shared handle that can be updated on service restart.
+    /// RPC holds a clone of this Arc and always reads the current handle.
+    shared_handle: SharedBlockProductionHandle,
 }
 
 impl BlockProductionService {
@@ -40,6 +43,9 @@ impl BlockProductionService {
             no_charge_fee,
         );
 
+        // Create shared handle with the initial task's handle
+        let shared_handle = Arc::new(tokio::sync::RwLock::new(Some(initial_task.handle())));
+
         Ok(Self {
             backend: backend.clone(),
             mempool,
@@ -49,6 +55,7 @@ impl BlockProductionService {
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
             initial_task: Some(initial_task),
+            shared_handle,
         })
     }
 
@@ -71,7 +78,17 @@ impl Service for BlockProductionService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         if !self.disabled {
             // Use initial task on first start, create fresh task on restarts
-            let block_production_task = self.initial_task.take().unwrap_or_else(|| self.create_task());
+            let block_production_task = match self.initial_task.take() {
+                Some(task) => task,
+                None => {
+                    // Restart case: create new task and update shared handle
+                    let task = self.create_task();
+                    let new_handle = task.handle();
+                    *self.shared_handle.write().await = Some(new_handle);
+                    tracing::info!("🔄 Block production service restarted with new handle");
+                    task
+                }
+            };
             runner.service_loop(move |ctx| block_production_task.run(ctx));
         }
 
@@ -122,7 +139,9 @@ impl BlockProductionService {
         anyhow::Ok(())
     }
 
-    pub fn handle(&self) -> BlockProductionHandle {
-        self.initial_task.as_ref().expect("Service already started, handle no longer available").handle()
+    /// Returns a shared handle that is automatically updated when the service restarts.
+    /// RPC should use this instead of handle() to always have access to the current handle.
+    pub fn shared_handle(&self) -> SharedBlockProductionHandle {
+        self.shared_handle.clone()
     }
 }
