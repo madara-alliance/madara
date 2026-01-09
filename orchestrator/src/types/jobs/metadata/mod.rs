@@ -194,6 +194,8 @@ pub struct SnosMetadata {
 /// # Field Management
 /// - Worker-initialized fields: blocks and paths configurations
 /// - Job-populated fields: last_failed_block_no and tx_hash (during processing)
+///
+/// TODO(heemankv, 09-01-26): Use enum for paths to type-gate by settlement type (BlobSettlement vs CalldataSettlement)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct StateUpdateMetadata {
     // Worker-initialized fields
