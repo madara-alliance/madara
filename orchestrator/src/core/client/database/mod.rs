@@ -159,19 +159,6 @@ pub trait DatabaseClient: Send + Sync {
     /// * `block_number` - The block number to search for
     async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError>;
 
-    /// Get jobs stuck in LockedForProcessing status beyond timeout for specific job type
-    ///
-    /// # Arguments
-    /// * `job_type` - The type of job to search for
-    /// * `timeout_seconds` - Timeout threshold in seconds
-    /// * `orchestrator_version` - Optional orchestrator version filter
-    async fn get_orphaned_jobs(
-        &self,
-        job_type: &JobType,
-        timeout_seconds: u64,
-        orchestrator_version: Option<String>,
-    ) -> Result<Vec<JobItem>, DatabaseError>;
-
     /// Get all jobs by status
     async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError>;
 

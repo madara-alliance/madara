@@ -27,11 +27,6 @@ impl JobTrigger for UpdateStateJobTrigger {
     /// 3. Sanitize and Trim this list of batches
     /// 4. Create a StateTransition job for doing state transitions for all the batches in this list
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: recover any orphaned StateTransition jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::StateTransition).await {
-            error!(error = %e, "Failed to heal orphaned StateTransition jobs, continuing with normal processing");
-        }
-
         let parent_job_type = match config.layer() {
             Layer::L2 => JobType::Aggregator,
             Layer::L3 => JobType::DataSubmission,
