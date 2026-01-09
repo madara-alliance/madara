@@ -179,10 +179,18 @@ impl JobHandlerService {
     /// * Updates the job version to prevent concurrent processing
     /// * Adds processing completion timestamp to metadata
     /// * Automatically adds the job to verification queue upon successful processing
+    /// * For jobs stuck in LockedForProcessing, heals them if they're older than the configured
+    ///   timeout (stale), otherwise acks the message assuming it's a duplicate
+    ///
+    /// # Important
+    /// The queue visibility timeout MUST be greater than the job healing timeout configured via
+    /// environment variables (e.g., MADARA_ORCHESTRATOR_SNOS_JOB_TIMEOUT_SECONDS). If visibility
+    /// timeout is shorter, messages may become visible again before the healing timeout expires,
+    /// leading to duplicate processing attempts that get incorrectly treated as stale jobs.
     pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(
             log_type = "starting",
             category = "general",
@@ -207,7 +215,73 @@ impl JobHandlerService {
                     MetricsRecorder::record_job_retry(&job, &job.status.to_string());
                 }
             }
-            JobStatus::LockedForProcessing | JobStatus::PendingVerification | JobStatus::Completed => {
+            JobStatus::LockedForProcessing => {
+                // Self-healing for orphaned jobs: Check if the job is stale (older than timeout).
+                // If stale, we assume the previous processor crashed/timed out and heal the job
+                // to process it normally. If not stale, we assume this is a duplicate message
+                // and ack it safely.
+                //
+                // WARNING: For this to work correctly, the queue visibility timeout MUST be
+                // greater than the healing timeout. Otherwise, messages may become visible
+                // before the healing timeout expires, causing false positive stale detection.
+                let timeout_seconds = config.service_config().get_job_timeout(&job.job_type);
+                let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
+
+                let is_stale = match job.metadata.common.process_started_at {
+                    Some(started_at) => started_at < cutoff_time,
+                    // If process_started_at is None, the job was never properly started - treat as stale
+                    None => true,
+                };
+
+                if is_stale {
+                    // Job is stale - heal it and continue processing
+                    warn!(
+                        job_id = ?id,
+                        job_type = ?job.job_type,
+                        internal_id = %job.internal_id,
+                        timeout_seconds = timeout_seconds,
+                        "Found stale job in LockedForProcessing state, healing and reprocessing"
+                    );
+
+                    // Record orphaned job metric
+                    MetricsRecorder::record_orphaned_job(&job);
+
+                    // Reset process_started_at to allow fresh processing
+                    job.metadata.common.process_started_at = None;
+
+                    // Update job status back to Created to allow normal processing flow
+                    job = config
+                        .database()
+                        .update_job(
+                            &job,
+                            JobItemUpdates::new()
+                                .update_status(JobStatus::Created)
+                                .update_metadata(job.metadata.clone())
+                                .build(),
+                        )
+                        .await
+                        .inspect_err(|e| {
+                            error!(job_id = ?id, error = ?e, "Failed to heal stale job");
+                        })?;
+
+                    info!(
+                        job_id = ?id,
+                        job_type = ?job.job_type,
+                        internal_id = %job.internal_id,
+                        "Successfully healed stale job - reset from {} to Created", JobStatus::LockedForProcessing
+                    );
+                    // Continue with normal processing below
+                } else {
+                    // Job is not stale - this is likely a duplicate message, ack it safely
+                    debug!(
+                        job_id = ?id,
+                        status = ?job.status,
+                        "Job is {} but not stale, assuming duplicate message. ACKing safely.", JobStatus::LockedForProcessing
+                    );
+                    return Ok(());
+                }
+            }
+            JobStatus::PendingVerification | JobStatus::Completed => {
                 warn!(job_id = ?id, status = ?job.status, "Shouldn't process job with current status. Returning safely");
                 return Ok(());
             }

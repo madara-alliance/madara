@@ -19,11 +19,6 @@ impl JobTrigger for DataSubmissionJobTrigger {
     // 1. Fetch the latest completed Proving jobs without Data Submission jobs as successor jobs
     // 2. Create jobs.
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: recover any orphaned DataSubmission jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::DataSubmission).await {
-            error!(error = %e, "Failed to heal orphaned DataSubmission jobs, continuing with normal processing");
-        }
-
         let previous_job_type = match config.layer() {
             Layer::L2 => JobType::ProofCreation,
             Layer::L3 => JobType::ProofRegistration,
