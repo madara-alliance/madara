@@ -111,7 +111,7 @@ impl JobHandlerTrait for SnosJobHandler {
         let versioned_constants = config.snos_config().versioned_constants.clone();
 
         // Get DA public keys (already parsed as Felt values in config)
-        let public_keys: Option<Vec<Felt>> = config.da_public_keys().cloned();
+        // let public_keys: Option<Vec<Felt>> = config.da_public_keys().cloned();
 
         let input = PieGenerationInput {
             rpc_url: snos_url.to_string(),
@@ -122,7 +122,7 @@ impl JobHandlerTrait for SnosJobHandler {
             output_path: None, // No file output
             layout: config.params.snos_layout_name,
             versioned_constants,
-            public_keys,
+            // public_keys,
         };
 
         let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {

@@ -4,7 +4,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use color_eyre::eyre::eyre;
 use starknet_core::types::{
-    BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, MigratedCompiledClassItem,
+    BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt,
     NonceUpdate, ReplacedClassItem, StateDiff, StateUpdate, StorageEntry,
 };
 use std::collections::{HashMap, HashSet};
@@ -54,8 +54,8 @@ struct StateDiffMap {
     deprecated_declared_classes: HashSet<Felt>,
     nonces: HashMap<Felt, Felt>,
     replaced_classes: HashMap<Felt, Felt>,
-    /// Migrated classes (SNIP-34): class_hash -> new BLAKE compiled_class_hash
-    migrated_compiled_classes: HashMap<Felt, Felt>,
+    // Migrated classes (SNIP-34): class_hash -> new BLAKE compiled_class_hash
+    // migrated_compiled_classes: HashMap<Felt, Felt>,
 }
 
 impl StateDiffMap {
@@ -101,11 +101,11 @@ impl StateDiffMap {
             }
 
             // Process migrated classes (SNIP-34)
-            if let Some(ref migrated) = update.state_diff.migrated_compiled_classes {
-                for item in migrated {
-                    state_diff_map.migrated_compiled_classes.insert(item.class_hash, item.compiled_class_hash);
-                }
-            }
+            // if let Some(ref migrated) = update.state_diff.migrated_compiled_classes {
+            //     for item in migrated {
+            //         state_diff_map.migrated_compiled_classes.insert(item.class_hash, item.compiled_class_hash);
+            //     }
+            // }
         }
 
         state_diff_map
@@ -148,12 +148,12 @@ impl StateDiffMap {
         // Deprecated classes - no RPC calls needed
         let deprecated_declared_classes = self.deprecated_declared_classes.into_iter().collect();
 
-        // Convert migrated classes back to Vec - no RPC calls needed
-        let migrated_compiled_classes: Vec<MigratedCompiledClassItem> = self
-            .migrated_compiled_classes
-            .into_iter()
-            .map(|(class_hash, compiled_class_hash)| MigratedCompiledClassItem { class_hash, compiled_class_hash })
-            .collect();
+        // // Convert migrated classes back to Vec
+        // let migrated_compiled_classes: Vec<MigratedCompiledClassItem> = self
+        //     .migrated_compiled_classes
+        //     .into_iter()
+        //     .map(|(class_hash, compiled_class_hash)| MigratedCompiledClassItem { class_hash, compiled_class_hash })
+        //     .collect();
 
         Ok(StateDiff {
             storage_diffs,
@@ -162,11 +162,11 @@ impl StateDiffMap {
             deprecated_declared_classes,
             nonces,
             replaced_classes,
-            migrated_compiled_classes: if migrated_compiled_classes.is_empty() {
-                None
-            } else {
-                Some(migrated_compiled_classes)
-            },
+            // migrated_compiled_classes: if migrated_compiled_classes.is_empty() {
+            //     None
+            // } else {
+            //     Some(migrated_compiled_classes)
+            // },
         })
     }
 }

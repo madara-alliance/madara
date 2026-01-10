@@ -10,9 +10,9 @@ pub fn sort_state_diff(state_diff: &mut StateUpdate) {
     // Sort the rest
     state_diff.state_diff.deprecated_declared_classes.sort();
     state_diff.state_diff.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
-    if let Some(ref mut migrated_compiled_classes) = state_diff.state_diff.migrated_compiled_classes {
-        migrated_compiled_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
-    }
+    // if let Some(ref mut migrated_compiled_classes) = state_diff.state_diff.migrated_compiled_classes {
+    //     migrated_compiled_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
+    // }
     state_diff.state_diff.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
     state_diff.state_diff.replaced_classes.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
     state_diff.state_diff.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));

@@ -80,7 +80,7 @@ pub async fn state_update_to_blob_data(
     // Add declared classes count and data
     add_declared_classes_to_blob_data(
         state_diff.declared_classes,
-        state_diff.migrated_compiled_classes.unwrap_or_default(),
+        // state_diff.migrated_compiled_classes.unwrap_or_default(),
         &mut blob_data,
     );
 
