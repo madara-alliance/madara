@@ -7576,6 +7576,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-error",
+ "tracing-log",
  "tracing-opentelemetry",
  "tracing-subscriber",
  "tracing-test",

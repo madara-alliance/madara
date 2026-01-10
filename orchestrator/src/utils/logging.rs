@@ -400,6 +400,10 @@ pub fn init_logging() {
         .install()
         .expect("Unable to install color_eyre");
 
+    // Initialize the log-to-tracing bridge so that crates using the `log` crate
+    // (like generate-pie, rpc-client, etc.) have their logs captured by tracing
+    tracing_log::LogTracer::init().expect("Failed to initialize log tracer");
+
     // Read from `RUST_LOG` environment variable, with fallback to default
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         // Fallback if RUST_LOG is not set or invalid
