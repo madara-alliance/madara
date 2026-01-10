@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use sysinfo::{Pid, System};
+use sysinfo::{Pid, ProcessesToUpdate, System};
 use tracing::{debug, error, info, warn};
 
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
@@ -62,11 +62,11 @@ pub fn start_resource_monitor() -> ResourceMonitorHandle {
         info!("Resource monitor started for process {}", pid);
 
         // Initial refresh to get baseline
-        sys.refresh_process(pid);
+        sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
 
         while !shutdown_flag_clone.load(Ordering::SeqCst) {
-            // Refresh process information
-            sys.refresh_process(pid);
+            // Refresh process information for our specific process
+            sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
 
             if let Some(process) = sys.process(pid) {
                 // Get memory usage in GB
