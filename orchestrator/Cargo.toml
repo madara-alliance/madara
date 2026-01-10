@@ -121,6 +121,7 @@ indexmap = "2.6.0"
 jemallocator = "0.5.4"
 num-integer = "0.1.46"
 rayon = "1.10.0"
+sysinfo = { workspace = true }
 tracing-test = "0.2.5"
 
 [features]

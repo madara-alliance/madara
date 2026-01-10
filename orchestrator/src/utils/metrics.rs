@@ -46,6 +46,9 @@ pub struct OrchestratorMetrics {
     pub batch_creation_time: Gauge<f64>,
     // Job Status Tracking
     pub job_status_tracker: JobStatusTracker,
+    // Process Resource Metrics
+    pub process_memory_gb: Gauge<f64>,
+    pub process_cpu_percent: Gauge<f64>,
     // Atlantic Service Metrics
     // These metrics use an "operation" label to distinguish between different API calls
     // (e.g., "add_job", "get_job_status", "submit_l2_query", "create_bucket", etc.)
@@ -287,6 +290,21 @@ impl Metrics for OrchestratorMetrics {
 
         let job_status_tracker = JobStatusTracker { job_status_gauge, job_transition_gauge, job_details_gauge };
 
+        // Process Resource Metrics
+        let process_memory_gb = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "process_memory_gb".to_string(),
+            "Memory usage of the orchestrator process in GB".to_string(),
+            "GB".to_string(),
+        );
+
+        let process_cpu_percent = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "process_cpu_percent".to_string(),
+            "CPU usage of the orchestrator process as a percentage".to_string(),
+            "%".to_string(),
+        );
+
         // Atlantic Service Metrics
         let atlantic_api_call_duration = register_gauge_metric_instrument(
             &orchestrator_meter,
@@ -352,6 +370,8 @@ impl Metrics for OrchestratorMetrics {
             batching_rate,
             batch_creation_time,
             job_status_tracker,
+            process_memory_gb,
+            process_cpu_percent,
             atlantic_api_call_duration,
             atlantic_api_calls_total,
             atlantic_api_errors_total,

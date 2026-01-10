@@ -23,6 +23,7 @@ use orchestrator::types::params::OTELConfig;
 use orchestrator::utils::instrument::OrchestratorInstrumentation;
 use orchestrator::utils::logging::init_logging;
 use orchestrator::utils::preflight::run_preflight_checks;
+use orchestrator::utils::resource_monitor::start_resource_monitor;
 use orchestrator::utils::signal_handler::SignalHandler;
 use orchestrator::worker::initialize_worker;
 use orchestrator::OrchestratorResult;
@@ -88,6 +89,10 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     // Run pre-flight health checks to ensure all dependencies are accessible
     run_preflight_checks(config.database(), config.storage(), config.queue(), config.alerts()).await?;
 
+    // Start resource monitoring (memory and CPU) in a background thread
+    let resource_monitor = start_resource_monitor();
+    info!("Resource monitor started - tracking memory (GB) and CPU usage every 1 second");
+
     // Run the server in a separate tokio spawn task
     setup_server(config.clone()).await?;
 
@@ -121,6 +126,9 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
             run_cmd.graceful_shutdown_timeout,
         )
         .await;
+
+    // Shutdown resource monitor (runs in a separate OS thread, not async)
+    resource_monitor.shutdown();
 
     match shutdown_result {
         Ok(()) => {

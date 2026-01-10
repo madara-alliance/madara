@@ -324,6 +324,7 @@ utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
 
 base64ct = "=1.6.0"
 zip = "4.3.0"
+sysinfo = "0.32"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
