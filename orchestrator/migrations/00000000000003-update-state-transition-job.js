@@ -8,12 +8,14 @@ module.exports = {
     // - program_output_paths: Vec<String> -> program_output_path: Option<String>
     // - blob_data_paths: Vec<String> -> blob_data_path: Option<String>
     // - da_segment_paths: Vec<String> -> da_segment_path: Option<String>
+    // - context.to_settle: Vec<u64> -> context.to_settle: u64
     //
     // It also sets external_id to the transaction hash for tracking purposes.
     //
     // Logic for each array field:
     // - If array is empty or contains only empty values -> set to null
     // - If array has valid values -> use the last valid value (for tx_hashes) or first value (for paths)
+    // - For context.to_settle: use the first value (since we now process one block/batch per job)
     // - Remove the old array field
 
     const jobsCollection = db.collection("jobs");
@@ -90,6 +92,17 @@ module.exports = {
           updateSet["metadata.specific.da_segment_path"] =
             validPaths.length > 0 ? validPaths[0] : null;
           updateUnset["metadata.specific.da_segment_paths"] = "";
+        }
+
+        // Convert context.to_settle from array to single value
+        if (specific.context?.to_settle !== undefined) {
+          const toSettle = specific.context.to_settle;
+          if (Array.isArray(toSettle)) {
+            // Use the first value from the array (or 0 if empty)
+            updateSet["metadata.specific.context.to_settle"] =
+              toSettle.length > 0 ? toSettle[0] : 0;
+          }
+          // If it's already a number, no change needed
         }
 
         // Only update if there are changes
@@ -179,6 +192,15 @@ module.exports = {
           const path = specific.da_segment_path;
           updateSet["metadata.specific.da_segment_paths"] = path ? [path] : [];
           updateUnset["metadata.specific.da_segment_path"] = "";
+        }
+
+        // Convert context.to_settle back to array
+        if (specific.context?.to_settle !== undefined) {
+          const toSettle = specific.context.to_settle;
+          if (typeof toSettle === "number") {
+            updateSet["metadata.specific.context.to_settle"] = [toSettle];
+          }
+          // If it's already an array, no change needed
         }
 
         // Only update if there are changes

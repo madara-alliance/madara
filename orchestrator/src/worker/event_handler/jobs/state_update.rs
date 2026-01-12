@@ -15,13 +15,16 @@ use crate::worker::utils::{fetch_blob_data, fetch_da_segment, fetch_program_outp
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
-use orchestrator_utils::collections::{has_dup, is_sorted};
+
 use orchestrator_utils::layer::Layer;
 use starknet_core::types::Felt;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+/// Empty transaction hash used when state update is already settled on-chain
+const EMPTY_TX_HASH: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 struct StateUpdateArtifacts {
     snos_output: Option<Vec<Felt>>,
@@ -83,40 +86,19 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Get the state transition metadata
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
-        let (blocks_or_batches_to_settle, last_failed_block_or_batch) = match state_metadata.context.clone() {
+        let to_settle_num = match state_metadata.context.clone() {
             SettlementContext::Block(data) => {
-                self.validate_block_numbers(config.clone(), &data.to_settle).await?;
-                if !data.to_settle.is_empty() {
-                    tracing::Span::current().record("block_start", data.to_settle[0]);
-                    tracing::Span::current().record("block_end", data.to_settle[data.to_settle.len() - 1]);
-                }
-                (data.to_settle, data.last_failed.unwrap_or(0))
+                self.validate_block_numbers(config.clone(), data.to_settle).await?;
+                tracing::Span::current().record("block", data.to_settle);
+                data.to_settle
             }
             SettlementContext::Batch(data) => {
-                if !data.to_settle.is_empty() {
-                    tracing::Span::current().record("batch_start", data.to_settle[0]);
-                    tracing::Span::current().record("batch_end", data.to_settle[data.to_settle.len() - 1]);
-                }
-                (data.to_settle, data.last_failed.unwrap_or(1)) // The lowest possible batch number is 1
+                tracing::Span::current().record("batch", data.to_settle);
+                data.to_settle
             }
         };
 
-        // Filter block numbers if there was a previous failure
-        let filtered_indices: Vec<usize> = blocks_or_batches_to_settle
-            .iter()
-            .enumerate()
-            .filter(|(_, &num)| num >= last_failed_block_or_batch)
-            .map(|(i, _)| i)
-            .collect();
-
         let nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
-
-        // Process the batch/block (filtered_indices should contain exactly one index)
-        let i = *filtered_indices
-            .first()
-            .ok_or_else(|| JobError::Other(OtherError(eyre!("No blocks/batches to process after filtering"))))?;
-
-        let to_settle_num = blocks_or_batches_to_settle[i];
         debug!(job_id = %internal_id, num = %to_settle_num, "Processing block/batch");
 
         if !self.should_send_state_update_txn(&config, to_settle_num).await? {
@@ -124,7 +106,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             // Setting tx_hash to an empty string, to denote that no transaction was sent in current run
             // Only if tx_hash is not already set
             if state_metadata.tx_hash.is_none() {
-                state_metadata.tx_hash = Some(format!("0x{:0>64}", ""));
+                state_metadata.tx_hash = Some(EMPTY_TX_HASH.to_string());
             }
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
         } else {
@@ -184,11 +166,9 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             job.external_id = txn_hash.into();
         }
 
-        let val = blocks_or_batches_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;
-
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::StateTransition, internal_id);
 
-        Ok(val.to_string())
+        Ok(to_settle_num.to_string())
     }
 
     /// Returns the status of the passed job.
@@ -203,13 +183,13 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Get state update metadata
         let state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
-        let nums_settled = match state_metadata.context.clone() {
+        let num_settled = match state_metadata.context.clone() {
             SettlementContext::Block(data) => data.to_settle,
             SettlementContext::Batch(data) => data.to_settle,
         };
 
         // Get the status from the settlement contract
-        let result = Self::verify_through_contract(&config, &nums_settled, &job.id, internal_id).await?;
+        let result = Self::verify_through_contract(&config, num_settled, &job.id, internal_id).await?;
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} verification completed", JobType::StateTransition, internal_id);
         Ok(result)
     }
@@ -230,31 +210,30 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 impl StateUpdateJobHandler {
     async fn verify_through_contract(
         config: &Arc<Config>,
-        nums_settled: &[u64],
+        num_settled: u64,
         job_id: &Uuid,
         internal_id: u64,
     ) -> Result<JobVerificationStatus, JobError> {
         // verify that the last settled block is indeed the one we expect to be
-        let last_settled = nums_settled.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;
         let (expected_last_block_number, batch_index) = match config.layer() {
             Layer::L2 => {
-                // Get the batch details for the last-settled batch
-                let batches = config.database().get_aggregator_batches_by_indexes(vec![*last_settled]).await?;
+                // Get the batch details for the settled batch
+                let batches = config.database().get_aggregator_batches_by_indexes(vec![num_settled]).await?;
                 if let Some(batch) = batches.first() {
-                    // Return the end block of the last batch
+                    // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
                 } else {
-                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
+                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", num_settled))))
                 }
             }
             Layer::L3 => {
-                // Get the batch details for the last-settled batch
-                let batches = config.database().get_snos_batches_by_indices(vec![*last_settled]).await?;
+                // Get the batch details for the settled batch
+                let batches = config.database().get_snos_batches_by_indices(vec![num_settled]).await?;
                 if let Some(batch) = batches.first() {
-                    // Return the end block of the last batch
+                    // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
                 } else {
-                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
+                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", num_settled))))
                 }
             }
         }?;
@@ -360,27 +339,14 @@ impl StateUpdateJobHandler {
         }
     }
 
-    /// Validate that the list of block numbers to process is valid.
-    async fn validate_block_numbers(&self, config: Arc<Config>, block_numbers: &[u64]) -> Result<(), JobError> {
-        // if any block is settled then previous block number should be just before that
-        // if no block is settled (confirmed by special number), then the block to settle should be 0
-
-        if block_numbers.is_empty() {
-            Err(StateUpdateError::BlockNumberNotFound)?;
-        }
-        if has_dup(block_numbers) {
-            Err(StateUpdateError::DuplicateBlockNumbers)?;
-        }
-        if !is_sorted(block_numbers) {
-            Err(StateUpdateError::UnsortedBlockNumbers)?;
-        }
-
-        // Check for any gap between the last settled block and the first block to settle
+    /// Validate that the block number to process is valid.
+    async fn validate_block_numbers(&self, config: Arc<Config>, block_number: u64) -> Result<(), JobError> {
+        // Check for any gap between the last settled block and the block to settle
         let last_settled_block =
             config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
 
-        let expected_first_block = last_settled_block.map_or(0, |block| block + 1);
-        if block_numbers[0] != expected_first_block {
+        let expected_block = last_settled_block.map_or(0, |block| block + 1);
+        if block_number != expected_block {
             Err(StateUpdateError::GapBetweenFirstAndLastBlock)?;
         }
 

@@ -50,10 +50,7 @@ pub fn build_job_item_with_version(
                 blob_data_path: Some(format!("{}/{}", internal_id, BLOB_DATA_FILE_NAME)),
                 da_segment_path: None,
                 tx_hash: None,
-                context: SettlementContext::Block(SettlementContextData {
-                    to_settle: vec![internal_id],
-                    last_failed: None,
-                }),
+                context: SettlementContext::Block(SettlementContextData { to_settle: internal_id, last_failed: None }),
             }),
         },
         JobType::SnosRun => JobMetadata {

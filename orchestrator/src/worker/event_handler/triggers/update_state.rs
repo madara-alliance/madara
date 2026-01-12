@@ -58,15 +58,10 @@ impl JobTrigger for UpdateStateJobTrigger {
                     e
                 })?;
 
-                let mut processed = match state_update_metadata.context {
+                let last_processed = match state_update_metadata.context {
                     SettlementContext::Block(block) => block.to_settle,
                     SettlementContext::Batch(batch) => batch.to_settle,
                 };
-                processed.sort();
-
-                let last_processed = *processed
-                    .last()
-                    .ok_or_else(|| eyre!("No blocks/batches found in previous state transition job"))?;
 
                 (
                     config
@@ -134,10 +129,8 @@ impl JobTrigger for UpdateStateJobTrigger {
         let batch_or_block_number = to_process[0];
 
         // Getting settlement context
-        let settlement_context = SettlementContext::Batch(SettlementContextData {
-            to_settle: vec![batch_or_block_number],
-            last_failed: None,
-        });
+        let settlement_context =
+            SettlementContext::Batch(SettlementContextData { to_settle: batch_or_block_number, last_failed: None });
 
         // Prepare state transition metadata
         let mut state_update_metadata = StateUpdateMetadata { context: settlement_context, ..Default::default() };

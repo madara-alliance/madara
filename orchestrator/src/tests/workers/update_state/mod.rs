@@ -69,7 +69,7 @@ async fn update_state_worker_first_block() {
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![1]);
+    assert_eq!(data.to_settle, 1);
 }
 
 #[rstest]
@@ -130,7 +130,7 @@ async fn update_state_worker_selects_consecutive_blocks() {
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![1]);
+    assert_eq!(data.to_settle, 1);
 }
 
 #[rstest]
@@ -162,7 +162,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
         blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
         da_segment_path: None,
         tx_hash: None,
-        context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
+        context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
     };
 
     job_item.metadata =
@@ -184,7 +184,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![5]);
+    assert_eq!(data.to_settle, 5);
 }
 
 #[rstest]
@@ -218,7 +218,7 @@ async fn update_state_worker_next_block_missing() {
         blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
         da_segment_path: None,
         tx_hash: None,
-        context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
+        context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
     };
 
     job_item.metadata =

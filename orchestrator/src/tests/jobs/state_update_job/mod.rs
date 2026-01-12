@@ -51,7 +51,7 @@ async fn test_process_job_attempt_not_present_fails() {
         blob_data_path: None,
         da_segment_path: None,
         tx_hash: None,
-        context: SettlementContext::Block(SettlementContextData { to_settle: vec![], last_failed: None }),
+        context: SettlementContext::Block(SettlementContextData { to_settle: 0, last_failed: None }),
     });
 
     let res = StateUpdateJobHandler.process_job(services.config, &mut job).await.unwrap_err();
@@ -75,7 +75,7 @@ async fn create_job_works() {
             blob_data_path: Some(format!("1/{}", BLOB_DATA_FILE_NAME)),
             da_segment_path: None,
             tx_hash: None,
-            context: SettlementContext::Block(SettlementContextData { to_settle: vec![1], last_failed: None }),
+            context: SettlementContext::Block(SettlementContextData { to_settle: 1, last_failed: None }),
         }),
     };
 
@@ -123,7 +123,7 @@ async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[ca
             blob_data_path: Some(format!("{}/{}", first_block, BLOB_DATA_FILE_NAME)),
             da_segment_path: None,
             tx_hash: None,
-            context: SettlementContext::Block(SettlementContextData { to_settle: block_numbers, last_failed: None }),
+            context: SettlementContext::Block(SettlementContextData { to_settle: first_block, last_failed: None }),
         }),
     };
 
@@ -169,7 +169,7 @@ async fn process_job_invalid_input_gap_panics() {
             da_segment_path: None,
             tx_hash: None,
             context: SettlementContext::Block(SettlementContextData {
-                to_settle: vec![6, 7, 8], // Gap between 4 and 6
+                to_settle: 6, // Gap between 4 and 6
                 last_failed: None,
             }),
         }),
@@ -298,10 +298,7 @@ async fn test_process_job_l2_with_da_segment(
             blob_data_path: None, // Not used for L2 with DA segments
             da_segment_path: Some(da_segment_key),
             tx_hash: None,
-            context: SettlementContext::Batch(SettlementContextData {
-                to_settle: vec![batch_index],
-                last_failed: None,
-            }),
+            context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
         }),
     };
 

@@ -71,8 +71,8 @@ pub enum ProvingInputType {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SettlementContextData {
     // Worker initialized field
-    /// Batch/block numbers that need to be settled
-    pub to_settle: Vec<u64>,
+    /// Batch/block number to be settled
+    pub to_settle: u64,
     // Job populated field
     /// Last batch/block number that failed processing
     pub last_failed: Option<u64>,
