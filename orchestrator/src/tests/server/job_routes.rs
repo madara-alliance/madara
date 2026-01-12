@@ -309,7 +309,7 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
     let mut state_transition_job_specific_metadata = state_transition_job.metadata.specific.clone();
     if let JobSpecificMetadata::StateUpdate(ref mut x) = state_transition_job_specific_metadata {
         if let SettlementContext::Block(ref mut y) = x.context {
-            y.to_settle = vec![block_number, block_number + 1];
+            y.to_settle = block_number;
         } else {
             panic!("Unexpected settlement context");
         }

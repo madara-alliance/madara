@@ -1334,10 +1334,10 @@ impl DatabaseClient for MongoDbClient {
             }
         };
 
-        // Query for StateTransition jobs where metadata.specific.blocks_to_settle contains the block_number
+        // Query for StateTransition jobs where metadata.specific.context.to_settle equals block_number
         let query_state_transition = doc! {
             "job_type": bson::to_bson(&JobType::StateTransition)?,
-            "metadata.specific.context.to_settle": { "$elemMatch": { "$eq": block_number_i64 } }
+            "metadata.specific.context.to_settle": block_number_i64
         };
 
         // Query for SnosRun and Aggregator jobs
