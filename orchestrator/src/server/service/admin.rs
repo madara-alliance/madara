@@ -99,7 +99,7 @@ impl AdminService {
             job_types,
             config.clone(),
             "reverify verification-timeout",
-            |id, job_type, cfg| async move { JobService::add_job_to_verify_queue(cfg, id, &job_type, None).await },
+            |id, _job_type, cfg| async move { JobService::queue_job_for_verification(id, cfg, false).await },
         )
         .await
     }
