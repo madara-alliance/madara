@@ -26,7 +26,7 @@ async fn update_state_worker_with_pending_jobs() {
         .await;
 
     let unique_id = Uuid::new_v4();
-    let mut job_item = get_job_item_mock_by_id("1".to_string(), unique_id);
+    let mut job_item = get_job_item_mock_by_id(1, unique_id);
     job_item.status = JobStatus::PendingVerification;
     job_item.job_type = JobType::StateTransition;
     services.config.database().create_job(job_item).await.unwrap();
@@ -34,7 +34,7 @@ async fn update_state_worker_with_pending_jobs() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     assert_eq!(latest_job.status, JobStatus::PendingVerification);
     assert_eq!(latest_job.job_type, JobType::StateTransition);
     assert_eq!(latest_job.id, unique_id);
@@ -62,7 +62,7 @@ async fn update_state_worker_first_block() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     assert_eq!(latest_job.status, JobStatus::Created);
     assert_eq!(latest_job.job_type, JobType::StateTransition);
 
@@ -95,7 +95,7 @@ async fn update_state_worker_first_block_missing() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     // update state worker should not create any job
-    assert!(services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().is_none());
+    assert!(services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().is_none());
 }
 
 #[rstest]
@@ -122,7 +122,7 @@ async fn update_state_worker_selects_consecutive_blocks() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     // update state worker should not create any job
     assert_eq!(latest_job.status, JobStatus::Created);
     assert_eq!(latest_job.job_type, JobType::StateTransition);
@@ -150,7 +150,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 5, JobStatus::Completed).await.unwrap();
 
     // add state transition job for blocks 0-4
-    let mut job_item = get_job_item_mock_by_id("0".to_string(), Uuid::new_v4());
+    let mut job_item = get_job_item_mock_by_id(0, Uuid::new_v4());
     job_item.status = JobStatus::Completed;
     job_item.job_type = JobType::StateTransition;
 
@@ -193,7 +193,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     // update state worker should not create any job
     assert_eq!(latest_job.status, JobStatus::Created);
     assert_eq!(latest_job.job_type, JobType::StateTransition);
@@ -223,7 +223,7 @@ async fn update_state_worker_next_block_missing() {
 
     // add state transition job for blocks 0-4
     let unique_id = Uuid::new_v4();
-    let mut job_item = get_job_item_mock_by_id("0".to_string(), unique_id);
+    let mut job_item = get_job_item_mock_by_id(0, unique_id);
     job_item.status = JobStatus::Completed;
     job_item.job_type = JobType::StateTransition;
 
@@ -266,6 +266,6 @@ async fn update_state_worker_next_block_missing() {
     assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
-        services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
+        services.config.database().get_latest_job_by_type(JobType::StateTransition, None).await.unwrap().unwrap();
     assert_eq!(latest_job.id, unique_id);
 }

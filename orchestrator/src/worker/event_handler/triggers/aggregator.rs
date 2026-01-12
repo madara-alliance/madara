@@ -1,8 +1,8 @@
 use crate::core::config::Config;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use crate::types::constant::{
-    CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
-    STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
+    CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, ORCHESTRATOR_VERSION, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME,
+    SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
 };
 use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -22,14 +22,15 @@ impl JobTrigger for AggregatorJobTrigger {
     /// 2. Check if all the child jobs for this batch are Completed
     /// 3. Create the Aggregator job for all such Batches and update the Batch status
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: recover any orphaned Aggregator jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::Aggregator).await {
-            error!(error = %e, "Failed to heal orphaned Aggregator jobs, continuing with normal processing");
-        }
-
         // Get all the closed batches
-        let closed_batches =
-            config.database().get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(10)).await?;
+        let closed_batches = config
+            .database()
+            .get_aggregator_batches_by_status(
+                AggregatorBatchStatus::Closed,
+                Some(10),
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
+            .await?;
 
         debug!("Found {} closed batches", closed_batches.len());
 
@@ -81,9 +82,7 @@ impl JobTrigger for AggregatorJobTrigger {
             };
 
             // Create a new job
-            match JobHandlerService::create_job(JobType::Aggregator, batch.index.to_string(), metadata, config.clone())
-                .await
-            {
+            match JobHandlerService::create_job(JobType::Aggregator, batch.index, metadata, config.clone()).await {
                 Ok(_) => {
                     config
                         .database()

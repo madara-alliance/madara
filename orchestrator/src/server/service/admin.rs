@@ -33,8 +33,10 @@ impl AdminService {
         F: Fn(Uuid, JobType, Arc<Config>) -> Fut,
         Fut: std::future::Future<Output = Result<(), JobError>>,
     {
-        let jobs =
-            config.database().get_jobs_by_types_and_statuses(job_types.clone(), vec![status.clone()], None).await?;
+        let jobs = config
+            .database()
+            .get_jobs_by_types_and_statuses(job_types.clone(), vec![status.clone()], None, None)
+            .await?;
         info!(job_types = ?job_types, status = ?status, count = jobs.len(), "Admin: {} - found jobs", op_name);
 
         let mut successful_job_ids = Vec::new();
@@ -97,7 +99,7 @@ impl AdminService {
             job_types,
             config.clone(),
             "reverify verification-timeout",
-            |id, job_type, cfg| async move { JobService::add_job_to_verify_queue(cfg, id, &job_type, None).await },
+            |id, _job_type, cfg| async move { JobService::queue_job_for_verification(id, cfg, false).await },
         )
         .await
     }

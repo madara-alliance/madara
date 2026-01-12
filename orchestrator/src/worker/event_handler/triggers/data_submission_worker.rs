@@ -1,9 +1,8 @@
 use crate::core::config::Config;
-use crate::types::constant::BLOB_DATA_FILE_NAME;
+use crate::types::constant::{BLOB_DATA_FILE_NAME, ORCHESTRATOR_VERSION};
 use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::Layer;
-use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -20,11 +19,6 @@ impl JobTrigger for DataSubmissionJobTrigger {
     // 1. Fetch the latest completed Proving jobs without Data Submission jobs as successor jobs
     // 2. Create jobs.
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: recover any orphaned DataSubmission jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::DataSubmission).await {
-            error!(error = %e, "Failed to heal orphaned DataSubmission jobs, continuing with normal processing");
-        }
-
         let previous_job_type = match config.layer() {
             Layer::L2 => JobType::ProofCreation,
             Layer::L3 => JobType::ProofRegistration,
@@ -32,10 +26,13 @@ impl JobTrigger for DataSubmissionJobTrigger {
 
         let successful_proving_jobs = config
             .database()
-            .get_jobs_without_successor(previous_job_type, JobStatus::Completed, JobType::DataSubmission)
+            .get_jobs_without_successor(
+                previous_job_type,
+                JobStatus::Completed,
+                JobType::DataSubmission,
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
             .await?;
-
-        let successful_proving_jobs = filter_jobs_by_orchestrator_version(successful_proving_jobs);
 
         for proving_job in successful_proving_jobs {
             // Extract proving metadata
@@ -62,7 +59,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
 
             match JobHandlerService::create_job(
                 JobType::DataSubmission,
-                proving_job.internal_id.clone(),
+                proving_job.internal_id,
                 da_metadata,
                 config.clone(),
             )

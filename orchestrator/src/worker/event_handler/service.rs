@@ -58,7 +58,7 @@ impl JobHandlerService {
     /// * Automatically adds the job to the process queue upon successful creation
     pub async fn create_job(
         job_type: JobType,
-        internal_id: String,
+        internal_id: u64,
         mut metadata: JobMetadata,
         config: Arc<Config>,
     ) -> Result<(), JobError> {
@@ -79,7 +79,7 @@ impl JobHandlerService {
             "Job creation details"
         );
 
-        let existing_job = config.database().get_job_by_internal_id_and_type(internal_id.as_str(), &job_type).await?;
+        let existing_job = config.database().get_job_by_internal_id_and_type(internal_id, &job_type).await?;
 
         if existing_job.is_some() {
             warn!("{}", JobError::JobAlreadyExists { internal_id, job_type });
@@ -87,19 +87,18 @@ impl JobHandlerService {
         }
 
         // Set orchestrator version on job creation
-        metadata.common.orchestrator_version = Some(crate::types::constant::ORCHESTRATOR_VERSION.to_string());
+        metadata.common.orchestrator_version = crate::types::constant::ORCHESTRATOR_VERSION.to_string();
 
         let job_handler = factory::get_job_handler(&job_type).await;
-        let job_item = job_handler.create_job(internal_id.clone(), metadata).await?;
+        let job_item = job_handler.create_job(internal_id, metadata).await?;
         config.database().create_job(job_item.clone()).await?;
 
         // Record metrics for job creation
         MetricsRecorder::record_job_created(&job_item);
 
         // Update job status tracking metrics
-        let block_num = parse_string(&internal_id).unwrap_or(0.0) as u64;
         ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            block_num,
+            internal_id,
             &job_type,
             &JobStatus::Created,
             &job_item.id.to_string(),
@@ -127,32 +126,26 @@ impl JobHandlerService {
         // For Aggregator and StateUpdate jobs, fetch the actual block numbers from the batch
         let block_number = match job_type {
             JobType::StateTransition => {
-                let batch_number = parse_string(&internal_id)?;
-
-                match config.database().get_aggregator_batches_by_indexes(vec![batch_number as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => batch_number,
+                    _ => internal_id as f64,
                 }
             }
             JobType::Aggregator => {
-                let batch_number = parse_string(&internal_id)?;
-
                 // Fetch the batch from the database
-                match config.database().get_aggregator_batches_by_indexes(vec![batch_number as u64]).await {
+                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => batch_number,
+                    _ => internal_id as f64,
                 }
             }
             JobType::SnosRun => {
-                let batch_number = parse_string(&internal_id)?;
-
                 // Fetch the batch from the database
-                match config.database().get_snos_batches_by_indices(vec![batch_number as u64]).await {
+                match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
                     Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => batch_number,
+                    _ => internal_id as f64,
                 }
             }
-            _ => parse_string(&internal_id)?,
+            _ => internal_id as f64,
         };
 
         ORCHESTRATOR_METRICS.block_gauge.record(block_number, &attributes);
@@ -186,10 +179,18 @@ impl JobHandlerService {
     /// * Updates the job version to prevent concurrent processing
     /// * Adds processing completion timestamp to metadata
     /// * Automatically adds the job to verification queue upon successful processing
+    /// * For jobs stuck in LockedForProcessing, heals them if they're older than the configured
+    ///   timeout (stale), otherwise acks the message assuming it's a duplicate
+    ///
+    /// # Important
+    /// The queue visibility timeout MUST be greater than the job healing timeout configured via
+    /// environment variables (e.g., MADARA_ORCHESTRATOR_SNOS_JOB_TIMEOUT_SECONDS). If visibility
+    /// timeout is shorter, messages may become visible again before the healing timeout expires,
+    /// leading to duplicate processing attempts that get incorrectly treated as stale jobs.
     pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(
             log_type = "starting",
             category = "general",
@@ -214,7 +215,73 @@ impl JobHandlerService {
                     MetricsRecorder::record_job_retry(&job, &job.status.to_string());
                 }
             }
-            JobStatus::LockedForProcessing | JobStatus::PendingVerification | JobStatus::Completed => {
+            JobStatus::LockedForProcessing => {
+                // Self-healing for orphaned jobs: Check if the job is stale (older than timeout).
+                // If stale, we assume the previous processor crashed/timed out and heal the job
+                // to process it normally. If not stale, we assume this is a duplicate message
+                // and ack it safely.
+                //
+                // WARNING: For this to work correctly, the queue visibility timeout MUST be
+                // greater than the healing timeout. Otherwise, messages may become visible
+                // before the healing timeout expires, causing false positive stale detection.
+                let timeout_seconds = config.service_config().get_job_timeout(&job.job_type);
+                let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
+
+                let is_stale = match job.metadata.common.process_started_at {
+                    Some(started_at) => started_at < cutoff_time,
+                    // If process_started_at is None, the job was never properly started - treat as stale
+                    None => true,
+                };
+
+                if is_stale {
+                    // Job is stale - heal it and continue processing
+                    warn!(
+                        job_id = ?id,
+                        job_type = ?job.job_type,
+                        internal_id = %job.internal_id,
+                        timeout_seconds = timeout_seconds,
+                        "Found stale job in LockedForProcessing state, healing and reprocessing"
+                    );
+
+                    // Record orphaned job metric
+                    MetricsRecorder::record_orphaned_job(&job);
+
+                    // Reset process_started_at to allow fresh processing
+                    job.metadata.common.process_started_at = None;
+
+                    // Update job status back to Created to allow normal processing flow
+                    job = config
+                        .database()
+                        .update_job(
+                            &job,
+                            JobItemUpdates::new()
+                                .update_status(JobStatus::Created)
+                                .update_metadata(job.metadata.clone())
+                                .build(),
+                        )
+                        .await
+                        .inspect_err(|e| {
+                            error!(job_id = ?id, error = ?e, "Failed to heal stale job");
+                        })?;
+
+                    info!(
+                        job_id = ?id,
+                        job_type = ?job.job_type,
+                        internal_id = %job.internal_id,
+                        "Successfully healed stale job - reset from {} to Created", JobStatus::LockedForProcessing
+                    );
+                    // Continue with normal processing below
+                } else {
+                    // Job is not stale - this is likely a duplicate message, ack it safely
+                    debug!(
+                        job_id = ?id,
+                        status = ?job.status,
+                        "Job is {} but not stale, assuming duplicate message. ACKing safely.", JobStatus::LockedForProcessing
+                    );
+                    return Ok(());
+                }
+            }
+            JobStatus::PendingVerification | JobStatus::Completed => {
                 warn!(job_id = ?id, status = ?job.status, "Shouldn't process job with current status. Returning safely");
                 return Ok(());
             }
@@ -276,9 +343,8 @@ impl JobHandlerService {
         );
 
         // Update job status tracking metrics for LockedForProcessing
-        let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
         ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            block_num,
+            job.internal_id,
             &job.job_type,
             &JobStatus::LockedForProcessing,
             &job.id.to_string(),
@@ -353,9 +419,8 @@ impl JobHandlerService {
         );
 
         // Update job status tracking metrics for PendingVerification
-        let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
         ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            block_num,
+            job.internal_id,
             &job.job_type,
             &JobStatus::PendingVerification,
             &job.id.to_string(),
@@ -390,7 +455,7 @@ impl JobHandlerService {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
-        Self::register_block_gauge(job.job_type, &job.internal_id, external_id.into(), &attributes)?;
+        Self::register_block_gauge(job.job_type, job.internal_id, external_id.into(), &attributes)?;
 
         Ok(())
     }
@@ -520,9 +585,8 @@ impl JobHandlerService {
                 );
 
                 // Update job status tracking metrics for Completed
-                let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
                 ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-                    block_num,
+                    job.internal_id,
                     &job.job_type,
                     &JobStatus::Completed,
                     &job.id.to_string(),
@@ -632,7 +696,7 @@ impl JobHandlerService {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
-        Self::register_block_gauge(job.job_type, &job.internal_id, job.external_id, &attributes)?;
+        Self::register_block_gauge(job.job_type, job.internal_id, job.external_id, &attributes)?;
         Ok(())
     }
 
@@ -763,7 +827,7 @@ impl JobHandlerService {
 
     fn register_block_gauge(
         job_type: JobType,
-        internal_id: &str,
+        internal_id: u64,
         external_id: ExternalId,
         attributes: &[KeyValue],
     ) -> Result<(), JobError> {
@@ -772,10 +836,10 @@ impl JobHandlerService {
                 external_id
                     .unwrap_string()
                     .map_err(|e| JobError::Other(OtherError::from(format!("Could not parse string: {e}"))))?,
-            )
+            )?
         } else {
-            parse_string(internal_id)
-        }?;
+            internal_id as f64
+        };
 
         ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
         Ok(())

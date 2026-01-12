@@ -79,7 +79,7 @@ async fn create_job_works() {
         }),
     };
 
-    let job = StateUpdateJobHandler.create_job(String::from("0"), metadata).await;
+    let job = StateUpdateJobHandler.create_job(0, metadata).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
@@ -132,7 +132,7 @@ async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[ca
         }),
     };
 
-    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    let mut job = StateUpdateJobHandler.create_job(0, metadata).await.unwrap();
     let status = StateUpdateJobHandler.process_job(services.config, &mut job).await;
     assert!(status.is_err());
 
@@ -192,7 +192,7 @@ async fn process_job_invalid_input_gap_panics() {
         }),
     };
 
-    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    let mut job = StateUpdateJobHandler.create_job(0, metadata).await.unwrap();
     let response = StateUpdateJobHandler.process_job(services.config, &mut job).await;
 
     assert_matches!(response,
@@ -322,7 +322,7 @@ async fn test_process_job_l2_with_da_segment(
         }),
     };
 
-    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    let mut job = StateUpdateJobHandler.create_job(0, metadata).await.unwrap();
     let result = StateUpdateJobHandler.process_job(services.config, &mut job).await;
 
     assert!(result.is_ok(), "L2 state update with DA segment should succeed: {:?}", result.err());

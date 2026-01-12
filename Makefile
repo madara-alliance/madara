@@ -241,6 +241,7 @@ check:
 	@npx prettier --check .
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
 	@cargo fmt -- --check
+	@cd madara && cargo fmt -- --check
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
 	@echo "Running cargo clippy..."
@@ -272,6 +273,7 @@ fmt:
 	@taplo format --config=./taplo/taplo.toml
 	@echo -e "$(INFO)Running cargo fmt...$(RESET)"
 	@cargo fmt
+	@cd madara && cargo fmt
 	@echo -e "$(PASS)Code formatting complete!$(RESET)"
 
 .PHONY: test-orchestrator-e2e
@@ -474,7 +476,7 @@ git-hook:
 	@git config core.hooksPath .githooks
 
 .PHONY: setup-l2
-setup-l2:
+setup-l2: setup-cairo
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
 	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
@@ -490,7 +492,7 @@ setup-l3:
 
 .PHONY: setup-l3-localstack
 setup-l3-localstack:
-	@echo -e "$(DIM)Setting up orchestrator with L3 layer abd Localstack...$(RESET)"
+	@echo -e "$(DIM)Setting up orchestrator with L3 layer and Localstack...$(RESET)"
 	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
 
 .PHONY: run-orchestrator-l2

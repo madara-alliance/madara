@@ -1,17 +1,17 @@
 use crate::core::config::Config;
+use crate::types::constant::ORCHESTRATOR_VERSION;
 use crate::types::jobs::metadata::{
     AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SettlementContext,
     SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::constants::{STATE_UPDATE_MAX_NO_BATCH_PROCESSING, STATE_UPDATE_MAX_NO_BLOCK_PROCESSING};
-use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
-use itertools::Itertools;
+
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
@@ -27,18 +27,13 @@ impl JobTrigger for UpdateStateJobTrigger {
     /// 3. Sanitize and Trim this list of batches
     /// 4. Create a StateTransition job for doing state transitions for all the batches in this list
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: recover any orphaned StateTransition jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::StateTransition).await {
-            error!(error = %e, "Failed to heal orphaned StateTransition jobs, continuing with normal processing");
-        }
-
         let parent_job_type = match config.layer() {
             Layer::L2 => JobType::Aggregator,
             Layer::L3 => JobType::DataSubmission,
         };
 
         // Get the latest StateTransition job
-        let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition).await?;
+        let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition, None).await?;
         // Get the parent jobs that are completed and are ready to get their StateTransition job created
         let (jobs_to_process, last_processed) = match latest_job {
             Some(job) => {
@@ -75,7 +70,8 @@ impl JobTrigger for UpdateStateJobTrigger {
                         .get_jobs_after_internal_id_by_job_type(
                             parent_job_type,
                             JobStatus::Completed,
-                            last_processed.to_string(),
+                            last_processed,
+                            Some(ORCHESTRATOR_VERSION.to_string()),
                         )
                         .await?,
                     Some(last_processed),
@@ -87,16 +83,19 @@ impl JobTrigger for UpdateStateJobTrigger {
                 (
                     config
                         .database()
-                        .get_jobs_without_successor(parent_job_type, JobStatus::Completed, JobType::StateTransition)
+                        .get_jobs_without_successor(
+                            parent_job_type,
+                            JobStatus::Completed,
+                            JobType::StateTransition,
+                            Some(ORCHESTRATOR_VERSION.to_string()),
+                        )
                         .await?,
                     None,
                 )
             }
         };
 
-        let jobs_to_process = filter_jobs_by_orchestrator_version(jobs_to_process);
-
-        let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id.parse::<u64>()).try_collect()?;
+        let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id).collect();
         to_process.sort();
 
         // no parent jobs completed after the last settled block
@@ -151,10 +150,8 @@ impl JobTrigger for UpdateStateJobTrigger {
         };
 
         // Create the state transition job
-        let new_job_id = to_process[0].to_string();
-        match JobHandlerService::create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone())
-            .await
-        {
+        let new_job_id = to_process[0];
+        match JobHandlerService::create_job(JobType::StateTransition, new_job_id, metadata, config.clone()).await {
             Ok(_) => {}
             Err(e) => {
                 error!(error = %e, "Failed to create new {:?} job for {}", JobType::StateTransition, new_job_id);
@@ -182,7 +179,7 @@ impl UpdateStateJobTrigger {
             // Get SNOS job paths
             let snos_job = config
                 .database()
-                .get_job_by_internal_id_and_type(&block_number.to_string(), &JobType::SnosRun)
+                .get_job_by_internal_id_and_type(*block_number, &JobType::SnosRun)
                 .await?
                 .ok_or_else(|| eyre!("SNOS job not found for block {}", block_number))?;
             let snos_metadata: SnosMetadata = snos_job.metadata.specific.try_into().map_err(|e| {
@@ -200,7 +197,7 @@ impl UpdateStateJobTrigger {
             // Get DA job blob path
             let da_job = config
                 .database()
-                .get_job_by_internal_id_and_type(&block_number.to_string(), &JobType::DataSubmission)
+                .get_job_by_internal_id_and_type(*block_number, &JobType::DataSubmission)
                 .await?
                 .ok_or_else(|| eyre!("DA job not found for block {}", block_number))?;
 
@@ -227,9 +224,9 @@ impl UpdateStateJobTrigger {
             // Get the aggregator job metadata for the batch
             let aggregator_job = config
                 .database()
-                .get_job_by_internal_id_and_type(&batch_no.to_string(), &JobType::Aggregator)
+                .get_job_by_internal_id_and_type(*batch_no, &JobType::Aggregator)
                 .await?
-                .ok_or_else(|| eyre!("SNOS job not found for block {}", batch_no))?;
+                .ok_or_else(|| eyre!("Aggregator job not found for batch {}", batch_no))?;
             let aggregator_metadata: AggregatorMetadata = aggregator_job.metadata.specific.try_into().map_err(|e| {
                 error!(job_id = %aggregator_job.internal_id, error = %e, "Invalid metadata type for Aggregator job");
                 e

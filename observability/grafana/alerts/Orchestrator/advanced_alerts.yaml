@@ -112,7 +112,7 @@ groups:
               to: 0
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'increase(worker_restarts_total[5m])'
+              expr: "increase(worker_restarts_total[5m])"
               refId: A
           - refId: B
             datasourceUid: "-100"
@@ -163,7 +163,7 @@ groups:
               to: 0
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'batch_size_bytes / 24576 * 100'  # MAX_BLOB_SIZE = 24576
+              expr: "batch_size_bytes / 24576 * 100" # MAX_BLOB_SIZE = 24576
               refId: A
           - refId: B
             datasourceUid: "-100"
@@ -210,7 +210,7 @@ groups:
               to: 0
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'batch_size_bytes / 24576 * 100'
+              expr: "batch_size_bytes / 24576 * 100"
               refId: A
           - refId: B
             datasourceUid: "-100"
@@ -258,7 +258,7 @@ groups:
               to: 0
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'shutdown_duration_seconds'
+              expr: "shutdown_duration_seconds"
               refId: A
           - refId: B
             datasourceUid: "-100"
@@ -266,7 +266,7 @@ groups:
               conditions:
                 - evaluator:
                     params:
-                      - 240  # 80% of 300s timeout
+                      - 240 # 80% of 300s timeout
                     type: gt
                   operator:
                     type: and
@@ -309,7 +309,7 @@ groups:
               to: 0
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'time() - job_locked_timestamp{status="LockedForProcessing"} > 1800'  # 30 minutes
+              expr: 'time() - job_locked_timestamp{status="LockedForProcessing"} > 1800' # 30 minutes
               refId: A
           - refId: B
             datasourceUid: "-100"
@@ -504,7 +504,7 @@ groups:
               to: 1800
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'avg(rate(successful_job_operations_jobs_total[30m] offset 30m))'
+              expr: "avg(rate(successful_job_operations_jobs_total[30m] offset 30m))"
               legendFormat: "baseline"
               refId: A
           - refId: B
@@ -513,7 +513,7 @@ groups:
               to: 0
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'avg(rate(successful_job_operations_jobs_total[30m]))'
+              expr: "avg(rate(successful_job_operations_jobs_total[30m]))"
               legendFormat: "current"
               refId: B
           - refId: C
@@ -529,7 +529,7 @@ groups:
               conditions:
                 - evaluator:
                     params:
-                      - 50  # 50% drop
+                      - 50 # 50% drop
                     type: gt
                   operator:
                     type: and

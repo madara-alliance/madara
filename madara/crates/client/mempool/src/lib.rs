@@ -240,6 +240,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             (ret, lock.summary())
         };
 
+        self.metrics.record_mempool_state(&summary);
+
         self.on_txs_removed(&removed_txs);
         if ret.is_ok() {
             if removed_txs.is_empty() {
@@ -306,6 +308,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             lock.remove_all_ttl_exceeded_txs(now, &mut removed_txs);
             lock.summary()
         };
+
+        self.metrics.record_mempool_state(&summary);
+
         self.on_txs_removed(&removed_txs);
         if !removed_txs.is_empty() {
             tracing::info!(

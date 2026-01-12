@@ -5,30 +5,30 @@ use thiserror::Error;
 #[derive(Error, Debug, PartialEq)]
 pub enum SnosError {
     #[error("Block numbers to run must be specified (snos job #{internal_id:?})")]
-    UnspecifiedBlockNumber { internal_id: String },
+    UnspecifiedBlockNumber { internal_id: u64 },
     #[error("No block numbers found (snos job #{internal_id:?})")]
-    BlockNumberNotFound { internal_id: String },
+    BlockNumberNotFound { internal_id: u64 },
     #[error("Invalid specified block number \"{block_number:?}\" (snos job #{internal_id:?})")]
-    InvalidBlockNumber { internal_id: String, block_number: String },
+    InvalidBlockNumber { internal_id: u64, block_number: String },
 
     #[error("Could not serialize the Cairo Pie (snos job #{internal_id:?}): {message}")]
-    CairoPieUnserializable { internal_id: String, message: String },
+    CairoPieUnserializable { internal_id: u64, message: String },
     #[error("Could not store the Cairo Pie (snos job #{internal_id:?}): {message}")]
-    CairoPieUnstorable { internal_id: String, message: String },
+    CairoPieUnstorable { internal_id: u64, message: String },
 
     #[error("Could not serialize the Snos Output (snos job #{internal_id:?}): {message}")]
-    SnosOutputUnserializable { internal_id: String, message: String },
+    SnosOutputUnserializable { internal_id: u64, message: String },
     #[error("Could not serialize the Program Output (snos job #{internal_id:?}): {message}")]
-    ProgramOutputUnserializable { internal_id: String, message: String },
+    ProgramOutputUnserializable { internal_id: u64, message: String },
     #[error("Could not store the Snos output (snos job #{internal_id:?}): {message}")]
-    SnosOutputUnstorable { internal_id: String, message: String },
+    SnosOutputUnstorable { internal_id: u64, message: String },
     #[error("Could not store the Program output (snos job #{internal_id:?}): {message}")]
-    ProgramOutputUnstorable { internal_id: String, message: String },
+    ProgramOutputUnstorable { internal_id: u64, message: String },
 
     // ProveBlockError from Snos is not usable with #[from] since it does not implement PartialEq.
     // Instead, we convert it to string & pass it into the [SnosExecutionError] error.
     #[error("Error while running SNOS (snos job #{internal_id:?}): {message}")]
-    SnosExecutionError { internal_id: String, message: String },
+    SnosExecutionError { internal_id: u64, message: String },
 
     #[error("Error when calculating fact info: {0}")]
     FactCalculationError(#[from] FactError),
@@ -36,9 +36,9 @@ pub enum SnosError {
     #[error("Other error: {0}")]
     Other(#[from] OtherError),
     #[error("Could not serialize the On Chain Data (Snos job #{internal_id:?}): {message}")]
-    OnChainDataUnserializable { internal_id: String, message: String },
+    OnChainDataUnserializable { internal_id: u64, message: String },
     #[error("Could not store the On Chain Data (snos job #{internal_id:?}): {message}")]
-    OnChainDataUnstorable { internal_id: String, message: String },
+    OnChainDataUnstorable { internal_id: u64, message: String },
     #[error("Un-supported KZG flag")]
     UnsupportedKZGFlag,
 }

@@ -33,7 +33,7 @@ async fn test_create_job() {
         specific: JobSpecificMetadata::Proving(ProvingMetadata::default()),
     };
 
-    let job = ProvingJobHandler.create_job(String::from("0"), metadata).await;
+    let job = ProvingJobHandler.create_job(0, metadata).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
@@ -105,7 +105,7 @@ async fn test_process_job() {
                 services.config,
                 &mut JobItem {
                     id: Uuid::default(),
-                    internal_id: "0".into(),
+                    internal_id: 0,
                     job_type: JobType::ProofCreation,
                     status: JobStatus::Created,
                     external_id: String::new().into(),

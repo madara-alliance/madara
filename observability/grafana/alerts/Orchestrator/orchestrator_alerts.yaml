@@ -176,7 +176,7 @@ groups:
               to: 0
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'sum by(operation_job_type) (rate(failed_job_operations_jobs_total[5m])) / (sum by(operation_job_type) (rate(successful_job_operations_jobs_total[5m])) + sum by(operation_job_type) (rate(failed_job_operations_jobs_total[5m])))'
+              expr: "sum by(operation_job_type) (rate(failed_job_operations_jobs_total[5m])) / (sum by(operation_job_type) (rate(successful_job_operations_jobs_total[5m])) + sum by(operation_job_type) (rate(failed_job_operations_jobs_total[5m])))"
               refId: A
           - refId: B
             datasourceUid: "-100"
@@ -271,7 +271,7 @@ groups:
               to: 0
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'avg by(operation_job_type) (jobs_response_time_seconds)'
+              expr: "avg by(operation_job_type) (jobs_response_time_seconds)"
               refId: A
           - refId: B
             datasourceUid: "-100"
@@ -317,7 +317,7 @@ groups:
               to: 0
             datasourceUid: PBFA97CFB590B2093
             model:
-              expr: 'avg(db_calls_response_time_seconds)'
+              expr: "avg(db_calls_response_time_seconds)"
               refId: A
           - refId: B
             datasourceUid: "-100"

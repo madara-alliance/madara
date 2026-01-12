@@ -21,15 +21,15 @@ pub struct ProvingJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for ProvingJobHandler {
-    async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
+    async fn create_job(&self, internal_id: u64, metadata: JobMetadata) -> Result<JobItem, JobError> {
         debug!(log_type = "starting", "{:?} job {} creation started", JobType::ProofCreation, internal_id);
-        let job_item = JobItem::create(internal_id.clone(), JobType::ProofCreation, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id, JobType::ProofCreation, JobStatus::Created, metadata);
         debug!(log_type = "completed", "{:?} job {} creation completed", JobType::ProofCreation, internal_id);
         Ok(job_item)
     }
 
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::ProofCreation, internal_id);
 
         // Get proving metadata
@@ -95,7 +95,7 @@ impl JobHandlerTrait for ProvingJobHandler {
     }
 
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = &job.internal_id;
+        let internal_id = job.internal_id;
         debug!(log_type = "starting", job_id = %job.id, "{:?} job {} verification started", JobType::ProofCreation, internal_id);
 
         // Get proving metadata
@@ -106,7 +106,7 @@ impl JobHandlerTrait for ProvingJobHandler {
             .external_id
             .unwrap_string()
             .map_err(|e| {
-                error!(job_id = %job.internal_id, error = %e, "Failed to unwrap external_id");
+                error!(job_id = %internal_id, error = %e, "Failed to unwrap external_id");
                 JobError::Other(OtherError(e))
             })?
             .into();
@@ -127,7 +127,7 @@ impl JobHandlerTrait for ProvingJobHandler {
             config.prover_client().get_task_status(TaskType::Job, &task_id, fact, cross_verify).await.inspect_err(
                 |e| {
                     error!(
-                        job_id = %job.internal_id,
+                        job_id = %internal_id,
                         error = %e,
                         "Failed to get task status from prover client"
                     );
@@ -161,10 +161,7 @@ impl JobHandlerTrait for ProvingJobHandler {
             }
             TaskStatus::Failed(err) => {
                 warn!(log_type = "rejected", job_id = %job.id, "{:?} job {} verification failed", JobType::ProofCreation, internal_id);
-                Ok(JobVerificationStatus::Rejected(format!(
-                    "Prover job #{} failed with error: {}",
-                    job.internal_id, err
-                )))
+                Ok(JobVerificationStatus::Rejected(format!("Prover job #{} failed with error: {}", internal_id, err)))
             }
         }
     }
@@ -177,7 +174,7 @@ impl JobHandlerTrait for ProvingJobHandler {
     }
 
     fn max_verification_attempts(&self) -> u64 {
-        300
+        900 // 7.5 hrs with 30 secs delay
     }
 
     fn verification_polling_delay_seconds(&self) -> u64 {

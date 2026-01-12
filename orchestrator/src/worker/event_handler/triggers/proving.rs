@@ -1,10 +1,9 @@
 use crate::core::config::Config;
-use crate::types::constant::PROOF_FILE_NAME;
+use crate::types::constant::{ORCHESTRATOR_VERSION, PROOF_FILE_NAME};
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -21,17 +20,15 @@ impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: recover any orphaned Proving jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofCreation).await {
-            error!(error = %e, "Failed to heal orphaned Proving jobs, continuing with normal processing");
-        }
-
         let successful_snos_jobs = config
             .database()
-            .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation)
+            .get_jobs_without_successor(
+                JobType::SnosRun,
+                JobStatus::Completed,
+                JobType::ProofCreation,
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
             .await?;
-
-        let successful_snos_jobs = filter_jobs_by_orchestrator_version(successful_snos_jobs);
 
         debug!("Found {} successful SNOS jobs without proving jobs", successful_snos_jobs.len());
 
@@ -104,7 +101,7 @@ impl JobTrigger for ProvingJobTrigger {
             debug!(job_id = %snos_job.internal_id, "Creating proof creation job for SNOS job");
             match JobHandlerService::create_job(
                 JobType::ProofCreation,
-                snos_job.internal_id.clone(),
+                snos_job.internal_id,
                 proving_metadata,
                 config.clone(),
             )

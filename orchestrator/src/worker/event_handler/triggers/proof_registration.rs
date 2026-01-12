@@ -1,8 +1,7 @@
 use crate::core::config::Config;
-use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
+use crate::types::constant::{ORCHESTRATOR_VERSION, PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::metadata::{JobSpecificMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::filter_jobs_by_orchestrator_version;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -17,18 +16,16 @@ pub struct ProofRegistrationJobTrigger;
 #[async_trait]
 impl JobTrigger for ProofRegistrationJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        // Self-healing: recover any orphaned ProofRegistration jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofRegistration).await {
-            error!(error = %e, "Failed to heal orphaned ProofRegistration jobs, continuing with normal processing");
-        }
-
         let db = config.database();
 
         let successful_proving_jobs = db
-            .get_jobs_without_successor(JobType::ProofCreation, JobStatus::Completed, JobType::ProofRegistration)
+            .get_jobs_without_successor(
+                JobType::ProofCreation,
+                JobStatus::Completed,
+                JobType::ProofRegistration,
+                Some(ORCHESTRATOR_VERSION.to_string()),
+            )
             .await?;
-
-        let successful_proving_jobs = filter_jobs_by_orchestrator_version(successful_proving_jobs);
 
         debug!("Found {} successful proving jobs without proof registration jobs", successful_proving_jobs.len());
 
@@ -53,13 +50,8 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             metadata.specific = JobSpecificMetadata::Proving(proving_metadata);
 
             debug!(job_id = %job.internal_id, "Creating proof registration job for proving job");
-            match JobHandlerService::create_job(
-                JobType::ProofRegistration,
-                job.internal_id.to_string(),
-                metadata,
-                config.clone(),
-            )
-            .await
+            match JobHandlerService::create_job(JobType::ProofRegistration, job.internal_id, metadata, config.clone())
+                .await
             {
                 Ok(_) => {}
                 Err(e) => {
