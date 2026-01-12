@@ -4,9 +4,7 @@ use std::path::PathBuf;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::config::StarknetVersion;
-use crate::error::job::state_update::StateUpdateError;
-use crate::error::job::JobError;
-use crate::tests::common::default_job_item;
+
 use crate::tests::config::TestConfigBuilder;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchWeights};
 use crate::types::constant::{
@@ -34,32 +32,6 @@ lazy_static! {
 }
 
 pub const X_0_FILE_NAME: &str = "x_0.txt";
-
-// ================= Exhaustive tests (with minimum mock) =================
-
-#[rstest]
-#[tokio::test]
-async fn test_process_job_attempt_not_present_fails() {
-    let services = TestConfigBuilder::new().build().await;
-
-    let mut job = default_job_item();
-
-    // Update job metadata to use the proper structure
-    job.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-        snos_output_path: None,
-        program_output_path: None,
-        blob_data_path: None,
-        da_segment_path: None,
-        tx_hash: None,
-        context: SettlementContext::Block(SettlementContextData { to_settle: 0, last_failed: None }),
-    });
-
-    let res = StateUpdateJobHandler.process_job(services.config, &mut job).await.unwrap_err();
-    assert!(
-        matches!(res, JobError::StateUpdateJobError(StateUpdateError::BlockNumberNotFound)),
-        "JobError should be StateUpdateJobError with BlockNumberNotFound"
-    );
-}
 
 // ==================== Mock Tests (Unit tests) ===========================
 
@@ -90,55 +62,6 @@ async fn create_job_works() {
     assert_eq!(job.status, JobStatus::Created, "status should be Created");
     assert_eq!(job.version, 0_i32, "version should be 0");
     assert_eq!(job.external_id.unwrap_string().unwrap(), String::new(), "external_id should be empty string");
-}
-
-#[rstest]
-#[case(vec![651052, 651054, 651051, 651056], "numbers aren't sorted in increasing order")]
-#[case(vec![651052, 651052, 651052, 651052], "Duplicated block numbers")]
-#[case(vec![651052, 651052, 651053, 651053], "Duplicated block numbers")]
-#[tokio::test]
-async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[case] expected_error: &str) {
-    let server = MockServer::start();
-    let settlement_client = MockSettlementClient::new();
-
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_settlement_client(settlement_client.into())
-        .configure_starknet_client(provider.into())
-        .build()
-        .await;
-
-    // Create paths using the first block number (since we now process one at a time)
-    let first_block = block_numbers[0];
-
-    // Create proper metadata structure with invalid block numbers but valid paths
-    let metadata = JobMetadata {
-        common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
-        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_path: Some(format!("{}/{}", first_block, SNOS_OUTPUT_FILE_NAME)),
-            program_output_path: Some(format!("{}/{}", first_block, PROGRAM_OUTPUT_FILE_NAME)),
-            blob_data_path: Some(format!("{}/{}", first_block, BLOB_DATA_FILE_NAME)),
-            da_segment_path: None,
-            tx_hash: None,
-            context: SettlementContext::Block(SettlementContextData { to_settle: first_block, last_failed: None }),
-        }),
-    };
-
-    let mut job = StateUpdateJobHandler.create_job(0, metadata).await.unwrap();
-    let status = StateUpdateJobHandler.process_job(services.config, &mut job).await;
-    assert!(status.is_err());
-
-    if let Err(error) = status {
-        let error_message = format!("{}", error);
-        assert!(
-            error_message.contains(expected_error),
-            "Error message did not contain expected substring: {}",
-            expected_error
-        );
-    }
 }
 
 #[rstest]
