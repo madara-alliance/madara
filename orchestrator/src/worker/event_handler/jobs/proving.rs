@@ -174,7 +174,7 @@ impl JobHandlerTrait for ProvingJobHandler {
     }
 
     fn max_verification_attempts(&self) -> u64 {
-        300
+        900 // 7.5 hrs with 30 secs delay
     }
 
     fn verification_polling_delay_seconds(&self) -> u64 {

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use httpmock::MockServer;
 use mockall::predicate::eq;
 use rstest::*;
@@ -9,10 +11,12 @@ use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::server::route::admin::BulkJobResponse;
 use crate::server::types::ApiResponse;
+use crate::tests::common::test_utils::get_job_handler_context_safe;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::utils::build_job_item;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
+use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use hyper::{Body, Request};
 use orchestrator_da_client_interface::MockDaClient;
 use orchestrator_prover_client_interface::MockProverClient;
@@ -94,17 +98,35 @@ async fn test_admin_reverify_verification_timeout_jobs() {
     let mut queue = MockQueueClient::new();
 
     let job = build_job_item(JobType::DataSubmission, JobStatus::VerificationTimeout, 4001);
+    let job_id = job.id;
+    let job_type = job.job_type.clone();
     let jobs = vec![job.clone()];
 
     db.expect_get_jobs_by_types_and_statuses()
         .withf(|t, s, _, _| t.is_empty() && s == &vec![JobStatus::VerificationTimeout])
         .times(1)
         .returning(move |_, _, _, _| Ok(jobs.clone()));
+
+    // queue_job_for_verification calls get_job which uses get_job_by_id
+    let j = job.clone();
+    db.expect_get_job_by_id().with(eq(job_id)).times(1).returning(move |_| Ok(Some(j.clone())));
+
+    // queue_job_for_verification updates job status and metadata
+    db.expect_update_job().times(1).returning(|job, _| Ok(job.clone()));
+
     queue
         .expect_send_message()
         .times(1)
         .withf(|qt, _, _| *qt == QueueType::DataSubmissionJobVerification)
         .returning(|_, _, _| Ok(()));
+
+    // Set up mock job handler for verification_polling_delay_seconds
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+
+    let ctx = get_job_handler_context_safe();
+    ctx.expect().with(eq(job_type)).times(1).returning(move |_| Arc::clone(&job_handler));
 
     let addr = build_test_config(db, queue).await;
     let resp = call_endpoint(&addr, "/admin/jobs/reverify/verification-timeout").await;
