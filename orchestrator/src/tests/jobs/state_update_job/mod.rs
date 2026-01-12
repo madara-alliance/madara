@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::config::StarknetVersion;
-
+use crate::error::job::state_update::StateUpdateError;
+use crate::error::job::JobError;
 use crate::tests::config::TestConfigBuilder;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchWeights};
 use crate::types::constant::{
