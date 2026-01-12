@@ -51,7 +51,6 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
     // Create mock SNOS jobs with snos_fact field set
     let mut snos_jobs = Vec::new();
 
-    db.expect_get_orphaned_jobs().returning(|_, _, _| Ok(Vec::new()));
     db.expect_get_aggregator_batch_for_block().returning(|_| {
         Ok(Some(AggregatorBatch {
             index: 1,

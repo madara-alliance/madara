@@ -78,11 +78,6 @@ impl JobTrigger for SnosJobTrigger {
     /// - Respects concurrency limits defined in service configuration
     /// - Processes blocks in order while filling available slots efficiently
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
-        // Self-healing: recover any orphaned SNOS jobs before creating new ones
-        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::SnosRun).await {
-            error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
-        }
-
         // Get the target buffer size from config (configurable via env, defaults to 50)
         let snos_job_buffer_size = config.service_config().snos_job_buffer_size;
 

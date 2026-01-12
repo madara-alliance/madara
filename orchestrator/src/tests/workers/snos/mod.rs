@@ -42,8 +42,6 @@ async fn test_snos_worker(#[case] completed_snos_batches: Vec<u64>) -> Result<()
     let mut queue = MockQueueClient::new();
     let mut job_handler = MockJobHandlerTrait::new();
 
-    db.expect_get_orphaned_jobs().returning(|_, _, _| Ok(Vec::new()));
-
     db.expect_get_latest_job_by_type()
         .with(eq(JobType::SnosRun), eq(Some(ORCHESTRATOR_VERSION.to_string())))
         .returning(move |_, _| Ok(Some(get_job_item_mock_by_id(20, Uuid::new_v4()))));
@@ -158,9 +156,6 @@ async fn test_create_snos_job_for_existing_batch(
         when.path("/").body_includes("starknet_blockNumber");
         then.status(200).body(serde_json::to_vec(&sequencer_response).unwrap());
     });
-
-    // No orphaned jobs
-    db.expect_get_orphaned_jobs().returning(|_, _, _| Ok(Vec::new()));
 
     db.expect_get_latest_job_by_type()
         .with(eq(JobType::SnosRun), eq(Some(ORCHESTRATOR_VERSION.to_string())))

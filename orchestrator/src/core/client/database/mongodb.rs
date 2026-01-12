@@ -1376,46 +1376,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(results)
     }
 
-    async fn get_orphaned_jobs(
-        &self,
-        job_type: &JobType,
-        timeout_seconds: u64,
-        orchestrator_version: Option<String>,
-    ) -> Result<Vec<JobItem>, DatabaseError> {
-        let start = Instant::now();
-
-        // Calculate the cutoff time (current time - timeout)
-        let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
-
-        // Query for jobs of the specific type in LockedForProcessing status with
-        // process_started_at older than cutoff
-        let mut filter = doc! {
-            "job_type": bson::to_bson(job_type)?,
-            "status": bson::to_bson(&JobStatus::LockedForProcessing)?,
-            "metadata.common.process_started_at": {
-                "$lt": cutoff_time.timestamp()
-            }
-        };
-
-        if let Some(version) = &orchestrator_version {
-            filter.insert("metadata.common.orchestrator_version", version.as_str());
-        }
-
-        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
-
-        debug!(
-            cutoff_time = %cutoff_time,
-            orphaned_count = jobs.len(),
-            "Found orphaned jobs in LockedForProcessing status"
-        );
-
-        let attributes = [KeyValue::new("db_operation_name", "get_orphaned_jobs")];
-        let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-
-        Ok(jobs)
-    }
-
     async fn get_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
 
