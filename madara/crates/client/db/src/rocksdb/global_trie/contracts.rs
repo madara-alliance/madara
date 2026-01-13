@@ -1,3 +1,4 @@
+use crate::metrics::metrics;
 use crate::rocksdb::trie::WrappedBonsaiError;
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
@@ -9,6 +10,7 @@ use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, StarkHash};
 use std::collections::HashMap;
+use std::time::Instant;
 
 #[derive(Debug, Default)]
 struct ContractLeaf {
@@ -55,7 +57,9 @@ pub fn contract_trie_root(
     tracing::trace!("contract_storage_trie commit");
 
     // Then we commit them
+    let storage_commit_start = Instant::now();
     contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+    metrics().contract_storage_trie_commit_duration.record(storage_commit_start.elapsed().as_secs_f64(), &[]);
 
     for NonceUpdate { contract_address, nonce } in nonces {
         contract_leafs.entry(*contract_address).or_default().nonce = Some(*nonce);
@@ -90,7 +94,9 @@ pub fn contract_trie_root(
 
     tracing::trace!("contract_trie committing");
 
+    let contract_commit_start = Instant::now();
     contract_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+    metrics().contract_trie_commit_duration.record(contract_commit_start.elapsed().as_secs_f64(), &[]);
     let root_hash = contract_trie.root_hash(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("contract_trie committed");
