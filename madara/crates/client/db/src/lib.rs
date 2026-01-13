@@ -684,7 +684,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let preconfirmed_view =
             self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
         let (mut block, classes) = preconfirmed_view.get_full_block_with_classes()?;
-        metrics().get_full_block_with_classes_duration.record(fetch_start.elapsed().as_secs_f64(), &[]);
+        let fetch_secs = fetch_start.elapsed().as_secs_f64();
+        metrics().get_full_block_with_classes_duration.record(fetch_secs, &[]);
+        metrics().get_full_block_with_classes_last.record(fetch_secs, &[]);
 
         if let Some(mut state_diff) = state_diff {
             state_diff.old_declared_contracts =
@@ -756,7 +758,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &block.state_diff,
             &block.events,
         );
-        metrics().block_commitments_compute_duration.record(commitments_start.elapsed().as_secs_f64(), &[]);
+        let commitments_secs = commitments_start.elapsed().as_secs_f64();
+        metrics().block_commitments_compute_duration.record(commitments_secs, &[]);
+        metrics().block_commitments_compute_last.record(commitments_secs, &[]);
 
         let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
@@ -765,7 +769,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         let hash_start = Instant::now();
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
-        metrics().block_hash_compute_duration.record(hash_start.elapsed().as_secs_f64(), &[]);
+        let hash_secs = hash_start.elapsed().as_secs_f64();
+        metrics().block_hash_compute_duration.record(hash_secs, &[]);
+        metrics().block_hash_compute_last.record(hash_secs, &[]);
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
@@ -784,7 +790,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.write_state_diff(block.header.block_number, &block.state_diff)?;
         self.write_events(block.header.block_number, &block.events)?;
         self.write_classes(block.header.block_number, classes)?;
-        metrics().db_write_block_parts_duration.record(write_start.elapsed().as_secs_f64(), &[]);
+        let write_secs = write_start.elapsed().as_secs_f64();
+        metrics().db_write_block_parts_duration.record(write_secs, &[]);
+        metrics().db_write_block_parts_last.record(write_secs, &[]);
 
         Ok(AddFullBlockResult { new_state_root: global_state_root, commitments, block_hash, parent_block_hash })
     }
