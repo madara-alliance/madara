@@ -484,15 +484,13 @@ fn cleanup_orphaned_lock_files(cache_dir: &std::path::PathBuf) {
     let mut cleaned_count = 0;
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("lock") {
-            if std::fs::remove_file(&path).is_ok() {
-                cleaned_count += 1;
-                tracing::debug!(
-                    target: "madara_cairo_native",
-                    path = %path.display(),
-                    "removed_orphaned_lock_file"
-                );
-            }
+        if path.extension().and_then(|s| s.to_str()) == Some("lock") && std::fs::remove_file(&path).is_ok() {
+            cleaned_count += 1;
+            tracing::debug!(
+                target: "madara_cairo_native",
+                path = %path.display(),
+                "removed_orphaned_lock_file"
+            );
         }
     }
 
