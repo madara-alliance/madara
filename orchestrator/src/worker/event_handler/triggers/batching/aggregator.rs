@@ -258,6 +258,7 @@ impl AggregatorHandler {
                         block_version,
                         &self.batch_config,
                         self.config.madara_rpc_client(),
+                        self.config.params.madara_rpc_url.as_str(),
                     )
                     .await?
                 {
@@ -454,6 +455,7 @@ impl NonEmptyAggregatorState {
         block_version: StarknetVersion,
         batch_limits: &AggregatorBatchConfig,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
+        rpc_url: &str,
     ) -> Result<Option<Self>, JobError> {
         // Perform synchronous checks first
         let check_result = self.check_block_sync(block_weights, block_version, batch_limits);
@@ -475,7 +477,7 @@ impl NonEmptyAggregatorState {
         let squashed_state_update = squash(
             vec![&self.blob, block_state_update],
             if self.batch.start_block == 0 { None } else { Some(self.batch.start_block - 1) },
-            provider,
+            rpc_url,
         )
         .await?;
         // Compress the squashed state update

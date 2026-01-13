@@ -1,32 +1,25 @@
+use crate::compression::batch_rpc::{BatchRpcClient, BatchRpcError};
 use crate::compression::utils::sort_state_diff;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::utils::helpers::retry_async;
 use color_eyre::eyre::eyre;
-use futures::stream::StreamExt;
-use futures::{stream, TryStreamExt};
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Provider, ProviderError};
 use starknet_core::types::{
     BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, MigratedCompiledClassItem,
-    NonceUpdate, ReplacedClassItem, StarknetError, StateDiff, StateUpdate, StorageEntry,
+    NonceUpdate, ReplacedClassItem, StateDiff, StateUpdate, StorageEntry,
 };
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::log::error;
-
-const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 40;
-const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 100;
-const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
-const MAX_GET_CLASS_HASH_AT_CALL_RETRY: u64 = 3;
+use tracing::{debug, info};
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
+///
+/// This function uses batch JSON-RPC calls to efficiently fetch pre-range block
+/// storage values and class hashes, reducing the number of HTTP requests by ~10x.
 pub async fn squash(
     state_updates: Vec<&StateUpdate>,
     pre_range_block: Option<u64>,
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
+    rpc_url: &str,
 ) -> Result<StateUpdate, JobError> {
+    info!("Squashing state updates");
     if state_updates.is_empty() {
         return Err(JobError::Other(OtherError(eyre!("Cannot merge empty state updates"))));
     }
@@ -39,13 +32,19 @@ pub async fn squash(
 
     // Collecting a simplified squashed state diff map
     let state_diff_map = StateDiffMap::from_state_update(state_updates);
-    let state_diff = state_diff_map.get_state_diff(pre_range_block, provider).await?;
+
+    // Create batch RPC client with default config
+    let batch_client = BatchRpcClient::with_defaults(rpc_url.to_string());
+
+    let state_diff = state_diff_map.get_state_diff_batched(pre_range_block, &batch_client).await?;
 
     // Create the merged StateUpdate
     let mut merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
 
     // Sort the merged StateUpdate
     sort_state_diff(&mut merged_update);
+
+    info!("Squashed state updates");
 
     Ok(merged_update)
 }
@@ -115,54 +114,44 @@ impl StateDiffMap {
         state_diff_map
     }
 
-    async fn get_state_diff(
+    /// Get the state diff using batched RPC calls for efficiency.
+    ///
+    /// This method batches all RPC calls to reduce HTTP overhead:
+    /// 1. First, batch-fetch class hashes to determine which contracts existed
+    /// 2. Then, batch-fetch storage values for existing contracts
+    /// 3. Finally, batch-fetch class hashes for replaced classes
+    async fn get_state_diff_batched(
         self,
         pre_range_block: Option<u64>,
-        provider: &Arc<JsonRpcClient<HttpTransport>>,
+        batch_client: &BatchRpcClient,
     ) -> Result<StateDiff, JobError> {
-        // Processing all contracts in parallel.
-        // The idea is that it might be the case that for a contract, a particular storage slot is
-        // changed twice to finally have the original value, in which case the new final value is not
-        // different from the value in the previous batch and hence it shouldn't be in the storage diff
-        // The result is the storage diff of all the contracts
-        let storage_diffs = stream::iter(self.storage_diffs)
-            .map(|(contract_addr, storage_map)| async move {
-                process_single_contract(contract_addr, storage_map, provider, pre_range_block).await
-            })
-            .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
-            .try_filter_map(|contract_storage_diff| async move { Ok(contract_storage_diff) })
-            .try_collect::<Vec<_>>()
-            .await?;
+        // Process storage diffs using batched calls
+        let storage_diffs = process_storage_diffs_batched(&self.storage_diffs, pre_range_block, batch_client).await?;
 
-        // Processing deployed contracts and replaced classes
-        // The idea is that it might be the case that a class is replaced twice to the original value,
-        // in which case we shouldn't put it in replaced classes
-        // Secondly, it might also be possible that a contract is deployed and its class is replaced
-        // in the same batch, in which case we should just update the class hash in deployed contracts
-        // and remove it from the replaced class map
-        let (replaced_classes, deployed_contracts) = process_deployed_contracts_and_replaced_classes(
-            provider,
+        // Process deployed contracts and replaced classes using batched calls
+        let (replaced_classes, deployed_contracts) = process_deployed_contracts_and_replaced_classes_batched(
+            batch_client,
             pre_range_block,
             self.deployed_contracts,
             self.replaced_classes,
         )
         .await?;
 
-        // Declared classes
+        // Declared classes - no RPC calls needed
         let declared_classes = self
             .declared_classes
             .into_iter()
             .map(|(class_hash, compiled_class_hash)| DeclaredClassItem { class_hash, compiled_class_hash })
             .collect();
 
-        // Nonces
+        // Nonces - no RPC calls needed
         let nonces =
             self.nonces.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect();
 
-        // Deprecated classes
+        // Deprecated classes - no RPC calls needed
         let deprecated_declared_classes = self.deprecated_declared_classes.into_iter().collect();
 
-        // Convert migrated classes back to Vec
+        // Convert migrated classes back to Vec - no RPC calls needed
         let migrated_compiled_classes: Vec<MigratedCompiledClassItem> = self
             .migrated_compiled_classes
             .into_iter()
@@ -185,43 +174,182 @@ impl StateDiffMap {
     }
 }
 
-/// Process a class hash and does the following:
-/// 1. Remove all the contracts from replaced classes which are also deployed and update the final class hash in the deployed contracts map
-/// 2. Check the previous class hash for all remaining contracts in replaced_class_hashes
-/// 3. If they are the same, remove them from the mapping
-async fn process_deployed_contracts_and_replaced_classes(
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
-    pre_range_block_option: Option<u64>,
+/// Process storage diffs using batched RPC calls.
+///
+/// For each contract with storage changes:
+/// 1. Check if the contract existed at pre_range_block
+/// 2. For existing contracts, fetch all pre-range storage values
+/// 3. Filter out entries where the value hasn't changed
+/// 4. For new contracts (didn't exist), filter out zero values
+async fn process_storage_diffs_batched(
+    storage_diffs: &HashMap<Felt, HashMap<Felt, Felt>>,
+    pre_range_block: Option<u64>,
+    batch_client: &BatchRpcClient,
+) -> Result<Vec<ContractStorageDiffItem>, JobError> {
+    let pre_range_block = match pre_range_block {
+        Some(block) => block,
+        None => {
+            // No pre-range block, just filter out zero values for all contracts
+            return Ok(storage_diffs
+                .iter()
+                .filter_map(|(contract_addr, storage_map)| {
+                    let entries: Vec<StorageEntry> = storage_map
+                        .iter()
+                        .filter(|(_, value)| **value != Felt::ZERO)
+                        .map(|(key, value)| StorageEntry { key: *key, value: *value })
+                        .collect();
+
+                    if entries.is_empty() {
+                        None
+                    } else {
+                        Some(ContractStorageDiffItem { address: *contract_addr, storage_entries: entries })
+                    }
+                })
+                .collect());
+        }
+    };
+
+    let block_id = BlockId::Number(pre_range_block);
+
+    // Step 1: Batch-fetch class hashes to determine which contracts existed
+    let all_contracts: Vec<Felt> = storage_diffs.keys().copied().collect();
+    debug!("Checking existence of {} contracts at block {}", all_contracts.len(), pre_range_block);
+
+    let contract_existence = batch_client
+        .batch_get_class_hash_at(all_contracts.clone(), block_id)
+        .await
+        .map_err(|e| JobError::ProviderError(format!("Failed to batch get class hashes: {}", e)))?;
+
+    // Separate contracts into existing and new
+    let mut existing_contracts = Vec::new();
+    let mut new_contracts = Vec::new();
+    for addr in &all_contracts {
+        if contract_existence.get(addr).map(|v| v.is_some()).unwrap_or(false) {
+            existing_contracts.push(*addr);
+        } else {
+            new_contracts.push(*addr);
+        }
+    }
+
+    debug!("Found {} existing contracts and {} new contracts", existing_contracts.len(), new_contracts.len());
+
+    // Step 2: For existing contracts, collect all storage queries
+    let storage_queries: Vec<(Felt, Felt)> = existing_contracts
+        .iter()
+        .flat_map(|contract_addr| {
+            storage_diffs
+                .get(contract_addr)
+                .map(|storage_map| storage_map.keys().map(|key| (*contract_addr, *key)).collect::<Vec<_>>())
+                .unwrap_or_default()
+        })
+        .collect();
+
+    debug!("Fetching {} pre-range storage values", storage_queries.len());
+
+    // Step 3: Batch-fetch all pre-range storage values
+    let pre_range_values = if storage_queries.is_empty() {
+        HashMap::new()
+    } else {
+        batch_client
+            .batch_get_storage_at(storage_queries, block_id)
+            .await
+            .map_err(|e| JobError::ProviderError(format!("Failed to batch get storage values: {}", e)))?
+    };
+
+    // Step 4: Build storage diffs by comparing values
+    let mut result = Vec::new();
+
+    // Process existing contracts - compare with pre-range values
+    for contract_addr in &existing_contracts {
+        if let Some(storage_map) = storage_diffs.get(contract_addr) {
+            let entries: Vec<StorageEntry> = storage_map
+                .iter()
+                .filter_map(|(key, new_value)| {
+                    let pre_range_value = pre_range_values.get(&(*contract_addr, *key)).copied().unwrap_or(Felt::ZERO);
+                    if pre_range_value != *new_value {
+                        Some(StorageEntry { key: *key, value: *new_value })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            if !entries.is_empty() {
+                result.push(ContractStorageDiffItem { address: *contract_addr, storage_entries: entries });
+            }
+        }
+    }
+
+    // Process new contracts - filter out zero values
+    for contract_addr in &new_contracts {
+        if let Some(storage_map) = storage_diffs.get(contract_addr) {
+            let entries: Vec<StorageEntry> = storage_map
+                .iter()
+                .filter(|(_, value)| **value != Felt::ZERO)
+                .map(|(key, value)| StorageEntry { key: *key, value: *value })
+                .collect();
+
+            if !entries.is_empty() {
+                result.push(ContractStorageDiffItem { address: *contract_addr, storage_entries: entries });
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Process deployed contracts and replaced classes using batched RPC calls.
+///
+/// 1. Remove contracts from replaced_classes if they're also in deployed_contracts
+///    (update the class hash in deployed_contracts instead)
+/// 2. Batch-fetch class hashes for remaining replaced_class contracts
+/// 3. Filter out replaced classes where the class hasn't actually changed
+async fn process_deployed_contracts_and_replaced_classes_batched(
+    batch_client: &BatchRpcClient,
+    pre_range_block: Option<u64>,
     mut deployed_contracts: HashMap<Felt, Felt>,
     mut replaced_class_hashes: HashMap<Felt, Felt>,
 ) -> Result<(Vec<ReplacedClassItem>, Vec<DeployedContractItem>), JobError> {
-    // Loop through all replaced_class_hashes and check if they exist in the deployed_contracts
-    // Remove the contracts from replaced_class_hashes if they exist in deployed_contracts
-    replaced_class_hashes.retain(|contract_address, class_hash| {
-        match deployed_contracts.get_mut(contract_address) {
-            Some(existing_class_hash) => {
-                // replace the class hash in deployed_contracts
-                *existing_class_hash = *class_hash;
-                // remove
-                false
-            }
-            // keep
-            None => true,
+    // Remove contracts from replaced_class_hashes if they exist in deployed_contracts
+    // and update the deployed contract's class hash
+    replaced_class_hashes.retain(|contract_address, class_hash| match deployed_contracts.get_mut(contract_address) {
+        Some(existing_class_hash) => {
+            *existing_class_hash = *class_hash;
+            false // Remove from replaced_class_hashes
         }
+        None => true, // Keep in replaced_class_hashes
     });
 
-    let replaced_class_hash_items: Vec<ReplacedClassItem> = match pre_range_block_option {
+    // Build replaced class items
+    let replaced_class_hash_items: Vec<ReplacedClassItem> = match pre_range_block {
         Some(pre_range_block) => {
-            stream::iter(replaced_class_hashes)
-                .map(|(contract_address, class_hash)| async move {
-                    process_class(provider, pre_range_block, contract_address, class_hash).await
-                })
-                .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
-                .try_filter_map(|(contract_address, class_hash)| async move {
-                    Ok(class_hash.map(|class_hash| ReplacedClassItem { contract_address, class_hash }))
-                })
-                .try_collect::<Vec<_>>()
-                .await?
+            if replaced_class_hashes.is_empty() {
+                Vec::new()
+            } else {
+                // Batch-fetch class hashes for all contracts in replaced_class_hashes
+                let contracts: Vec<Felt> = replaced_class_hashes.keys().copied().collect();
+                let block_id = BlockId::Number(pre_range_block);
+
+                debug!("Checking previous class hashes for {} replaced contracts", contracts.len());
+
+                let prev_class_hashes = batch_client
+                    .batch_get_class_hash_at(contracts, block_id)
+                    .await
+                    .map_err(|e| JobError::ProviderError(format!("Failed to batch get class hashes: {}", e)))?;
+
+                // Filter: only include if class actually changed
+                replaced_class_hashes
+                    .into_iter()
+                    .filter_map(|(contract_address, new_class_hash)| {
+                        let prev_class_hash = prev_class_hashes.get(&contract_address).copied().flatten();
+
+                        match prev_class_hash {
+                            Some(prev) if prev == new_class_hash => None, // Class didn't change
+                            _ => Some(ReplacedClassItem { contract_address, class_hash: new_class_hash }),
+                        }
+                    })
+                    .collect()
+            }
         }
         None => Vec::new(),
     };
@@ -234,140 +362,97 @@ async fn process_deployed_contracts_and_replaced_classes(
     Ok((replaced_class_hash_items, deployed_contract_items))
 }
 
-async fn process_class(
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
-    pre_range_block: u64,
-    contract_address: Felt,
-    class_hash: Felt,
-) -> Result<(Felt, Option<Felt>), JobError> {
-    match get_class_hash_at(provider, pre_range_block, contract_address).await? {
-        Some(prev_class_hash) => {
-            if prev_class_hash == class_hash {
-                Ok((contract_address, None))
-            } else {
-                Ok((contract_address, Some(class_hash)))
-            }
-        }
-        None => Ok((contract_address, Some(class_hash))),
+impl From<BatchRpcError> for JobError {
+    fn from(err: BatchRpcError) -> Self {
+        JobError::ProviderError(err.to_string())
     }
 }
 
-/// Processes the storage of a single contract to do the following
-/// 1. Check if the contract existed in the `pre_range_block`
-/// 2. If yes, check the value of all keys in the storage map of this contract in the `pre_range_block`
-/// 3. If no, filter the non-zero values in the storage map
-async fn process_single_contract(
-    contract_addr: Felt,
-    storage_map: HashMap<Felt, Felt>,
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
-    pre_range_block_option: Option<u64>,
-) -> Result<Option<ContractStorageDiffItem>, JobError> {
-    let storage_entries = match pre_range_block_option {
-        None => {
-            // pre_range_block is not available, filter non-zero values
-            // We don't need zero values if this is the first block (i.e., pre_range_block doesn't exist)
-            // since zero is the default value
-            storage_map
-                .into_iter()
-                .filter(|(_, value)| *value != Felt::ZERO)
-                .map(|(key, value)| StorageEntry { key, value })
-                .collect()
-        }
-        Some(pre_range_block) => {
-            if check_contract_existed_at_block(provider, contract_addr, pre_range_block).await? {
-                // Process storage entries only for an existing contract
-                stream::iter(storage_map)
-                    .map(|(key, value)| async move {
-                        let pre_range_value =
-                            check_pre_range_storage_value(provider, contract_addr, key, pre_range_block).await?;
-                        Ok::<_, JobError>((key, value, pre_range_value))
-                    })
-                    .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
-                    .try_filter_map(|(key, value, pre_range_value)| async move {
-                        Ok(if pre_range_value != value { Some(StorageEntry { key, value }) } else { None })
-                    })
-                    .try_collect::<Vec<_>>()
-                    .await?
-            } else {
-                // Contract didn't exist, filter non-zero values
-                // We don't need zero values if the contract didn't exist at the pre-range block
-                // since zero is the default value
-                storage_map
-                    .into_iter()
-                    .filter(|(_, value)| *value != Felt::ZERO)
-                    .map(|(key, value)| StorageEntry { key, value })
-                    .collect()
-            }
-        }
-    };
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    if !storage_entries.is_empty() {
-        Ok(Some(ContractStorageDiffItem { address: contract_addr, storage_entries }))
-    } else {
-        Ok(None)
+    #[test]
+    fn test_state_diff_map_from_single_update() {
+        let state_update = StateUpdate {
+            block_hash: Felt::from_hex("0x123").unwrap(),
+            old_root: Felt::from_hex("0x1").unwrap(),
+            new_root: Felt::from_hex("0x2").unwrap(),
+            state_diff: StateDiff {
+                storage_diffs: vec![ContractStorageDiffItem {
+                    address: Felt::from_hex("0x100").unwrap(),
+                    storage_entries: vec![StorageEntry {
+                        key: Felt::from_hex("0x1").unwrap(),
+                        value: Felt::from_hex("0x10").unwrap(),
+                    }],
+                }],
+                deployed_contracts: vec![],
+                declared_classes: vec![],
+                deprecated_declared_classes: vec![],
+                nonces: vec![],
+                replaced_classes: vec![],
+                migrated_compiled_classes: None,
+            },
+        };
+
+        let state_diff_map = StateDiffMap::from_state_update(vec![&state_update]);
+
+        assert_eq!(state_diff_map.storage_diffs.len(), 1);
+        let contract_storage = state_diff_map.storage_diffs.get(&Felt::from_hex("0x100").unwrap()).unwrap();
+        assert_eq!(contract_storage.get(&Felt::from_hex("0x1").unwrap()), Some(&Felt::from_hex("0x10").unwrap()));
     }
-}
 
-/// This function tells if the contract existed at the given block number
-pub async fn check_contract_existed_at_block(
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
-    contract_address: Felt,
-    block_number: u64,
-) -> Result<bool, JobError> {
-    Ok(get_class_hash_at(provider, block_number, contract_address).await?.is_some())
-}
+    #[test]
+    fn test_state_diff_map_merges_multiple_updates() {
+        let update1 = StateUpdate {
+            block_hash: Felt::from_hex("0x123").unwrap(),
+            old_root: Felt::from_hex("0x1").unwrap(),
+            new_root: Felt::from_hex("0x2").unwrap(),
+            state_diff: StateDiff {
+                storage_diffs: vec![ContractStorageDiffItem {
+                    address: Felt::from_hex("0x100").unwrap(),
+                    storage_entries: vec![StorageEntry {
+                        key: Felt::from_hex("0x1").unwrap(),
+                        value: Felt::from_hex("0x10").unwrap(),
+                    }],
+                }],
+                deployed_contracts: vec![],
+                declared_classes: vec![],
+                deprecated_declared_classes: vec![],
+                nonces: vec![],
+                replaced_classes: vec![],
+                migrated_compiled_classes: None,
+            },
+        };
 
-/// This function returns the class hash of a contract at a given block number
-/// If it exists, it returns the class hash along with `exists=true`
-/// If it doesn't exist, it returns the zero-class hash along with `exists=false`
-/// It retries up to [MAX_GET_STORAGE_AT_CALL_RETRY] times
-/// This function does not return error when the contract does not exist
-pub async fn get_class_hash_at(
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
-    block_number: u64,
-    contract_address: Felt,
-) -> Result<Option<Felt>, JobError> {
-    match retry_async(
-        async || provider.get_class_hash_at(BlockId::Number(block_number), contract_address).await,
-        MAX_GET_CLASS_HASH_AT_CALL_RETRY,
-        Some(Duration::from_secs(5)),
-    )
-    .await
-    {
-        Ok(class_hash) => Ok(Some(class_hash)),
-        Err(err) => {
-            if let ProviderError::StarknetError(StarknetError::ContractNotFound) = err {
-                Ok(None)
-            } else {
-                let err_message = format!(
-                    "Failed to get class hash for contract: {} at block {}: {}",
-                    contract_address, block_number, err
-                );
-                error!("{}", &err_message);
-                Err(JobError::ProviderError(err_message))
-            }
-        }
+        let update2 = StateUpdate {
+            block_hash: Felt::from_hex("0x456").unwrap(),
+            old_root: Felt::from_hex("0x2").unwrap(),
+            new_root: Felt::from_hex("0x3").unwrap(),
+            state_diff: StateDiff {
+                storage_diffs: vec![ContractStorageDiffItem {
+                    address: Felt::from_hex("0x100").unwrap(),
+                    storage_entries: vec![StorageEntry {
+                        key: Felt::from_hex("0x1").unwrap(),
+                        value: Felt::from_hex("0x20").unwrap(), // Updated value
+                    }],
+                }],
+                deployed_contracts: vec![],
+                declared_classes: vec![],
+                deprecated_declared_classes: vec![],
+                nonces: vec![],
+                replaced_classes: vec![],
+                migrated_compiled_classes: None,
+            },
+        };
+
+        let state_diff_map = StateDiffMap::from_state_update(vec![&update1, &update2]);
+
+        // Should have the final value from update2
+        let contract_storage = state_diff_map.storage_diffs.get(&Felt::from_hex("0x100").unwrap()).unwrap();
+        assert_eq!(
+            contract_storage.get(&Felt::from_hex("0x1").unwrap()),
+            Some(&Felt::from_hex("0x20").unwrap()) // Latest value
+        );
     }
-}
-
-/// This function returns the storage value of a key at a given block number
-/// It retries up to [MAX_GET_STORAGE_AT_CALL_RETRY] times
-pub async fn check_pre_range_storage_value(
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
-    contract_address: Felt,
-    key: Felt,
-    pre_range_block: u64,
-) -> Result<Felt, JobError> {
-    retry_async(
-        async || provider.get_storage_at(contract_address, key, BlockId::Number(pre_range_block)).await,
-        MAX_GET_STORAGE_AT_CALL_RETRY,
-        Some(Duration::from_secs(5)),
-    )
-    .await
-    .map_err(|err| {
-        JobError::ProviderError(format!(
-            "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-            contract_address, key, pre_range_block, err
-        ))
-    })
 }
