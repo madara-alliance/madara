@@ -1386,13 +1386,13 @@
       "options": { "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(apply_to_global_trie_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(apply_to_global_trie_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Total Merklization", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(contract_trie_root_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(contract_trie_root_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Contract Trie", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(class_trie_root_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(class_trie_root_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Class Trie", "refId": "C" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(block_commitments_compute_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(block_commitments_compute_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Commitments", "refId": "D" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(block_hash_compute_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(block_hash_compute_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Block Hash", "refId": "E" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(apply_to_global_trie_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(apply_to_global_trie_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Total Merklization", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(contract_trie_root_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(contract_trie_root_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Contract Trie", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(class_trie_root_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(class_trie_root_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Class Trie", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(block_commitments_compute_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(block_commitments_compute_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Commitments", "refId": "D" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(block_hash_compute_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(block_hash_compute_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Block Hash", "refId": "E" }
       ],
-      "title": "Close Block Timing (Avg per Block)",
+      "title": "Close Block Timing (Per Block)",
       "type": "timeseries"
     },
     {
@@ -1412,14 +1412,14 @@
       "options": { "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(close_block_total_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(close_block_total_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Total Close Block", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(contract_storage_trie_commit_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(contract_storage_trie_commit_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Storage Trie Commit", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(contract_trie_commit_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(contract_trie_commit_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Contract Trie Commit", "refId": "C" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(class_trie_commit_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(class_trie_commit_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Class Trie Commit", "refId": "D" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(get_full_block_with_classes_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(get_full_block_with_classes_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Fetch Block+Classes", "refId": "E" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(db_write_block_parts_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(db_write_block_parts_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "DB Write", "refId": "F" }
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(close_block_total_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(close_block_total_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Total Close Block", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(contract_storage_trie_commit_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(contract_storage_trie_commit_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Storage Trie Commit", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(contract_trie_commit_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(contract_trie_commit_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Contract Trie Commit", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(class_trie_commit_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(class_trie_commit_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Class Trie Commit", "refId": "D" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(get_full_block_with_classes_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(get_full_block_with_classes_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "Fetch Block+Classes", "refId": "E" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "increase(db_write_block_parts_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[30s]) / increase(db_write_block_parts_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[30s])", "legendFormat": "DB Write", "refId": "F" }
       ],
-      "title": "Close Block Detailed Timing (Avg)",
+      "title": "Close Block Detailed Timing (Per Block)",
       "type": "timeseries"
     }
   ],
