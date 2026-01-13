@@ -6,7 +6,6 @@ use crate::core::client::storage::MockStorageClient;
 use crate::core::config::StarknetVersion;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
-use crate::tests::common::default_job_item;
 use crate::tests::config::TestConfigBuilder;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchWeights};
 use crate::types::constant::{
@@ -35,32 +34,6 @@ lazy_static! {
 
 pub const X_0_FILE_NAME: &str = "x_0.txt";
 
-// ================= Exhaustive tests (with minimum mock) =================
-
-#[rstest]
-#[tokio::test]
-async fn test_process_job_attempt_not_present_fails() {
-    let services = TestConfigBuilder::new().build().await;
-
-    let mut job = default_job_item();
-
-    // Update job metadata to use the proper structure
-    job.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-        snos_output_paths: vec![],
-        program_output_paths: vec![],
-        blob_data_paths: vec![],
-        da_segment_paths: vec![],
-        tx_hashes: vec![],
-        context: SettlementContext::Block(SettlementContextData { to_settle: vec![], last_failed: None }),
-    });
-
-    let res = StateUpdateJobHandler.process_job(services.config, &mut job).await.unwrap_err();
-    assert!(
-        matches!(res, JobError::StateUpdateJobError(StateUpdateError::BlockNumberNotFound)),
-        "JobError should be StateUpdateJobError with BlockNumberNotFound"
-    );
-}
-
 // ==================== Mock Tests (Unit tests) ===========================
 
 #[rstest]
@@ -70,12 +43,12 @@ async fn create_job_works() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_paths: vec![format!("1/{}", SNOS_OUTPUT_FILE_NAME)],
-            program_output_paths: vec![format!("1/{}", PROGRAM_OUTPUT_FILE_NAME)],
-            blob_data_paths: vec![format!("1/{}", BLOB_DATA_FILE_NAME)],
-            da_segment_paths: vec![],
-            tx_hashes: vec![],
-            context: SettlementContext::Block(SettlementContextData { to_settle: vec![1], last_failed: None }),
+            snos_output_path: Some(format!("1/{}", SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("1/{}", PROGRAM_OUTPUT_FILE_NAME)),
+            blob_data_path: Some(format!("1/{}", BLOB_DATA_FILE_NAME)),
+            da_segment_path: None,
+            tx_hash: None,
+            context: SettlementContext::Block(SettlementContextData { to_settle: 1, last_failed: None }),
         }),
     };
 
@@ -90,60 +63,6 @@ async fn create_job_works() {
     assert_eq!(job.status, JobStatus::Created, "status should be Created");
     assert_eq!(job.version, 0_i32, "version should be 0");
     assert_eq!(job.external_id.unwrap_string().unwrap(), String::new(), "external_id should be empty string");
-}
-
-#[rstest]
-#[case(vec![651052, 651054, 651051, 651056], "numbers aren't sorted in increasing order")]
-#[case(vec![651052, 651052, 651052, 651052], "Duplicated block numbers")]
-#[case(vec![651052, 651052, 651053, 651053], "Duplicated block numbers")]
-#[tokio::test]
-async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[case] expected_error: &str) {
-    let server = MockServer::start();
-    let settlement_client = MockSettlementClient::new();
-
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_settlement_client(settlement_client.into())
-        .configure_starknet_client(provider.into())
-        .build()
-        .await;
-
-    // Create paths for each block number
-    let snos_output_paths = block_numbers.iter().map(|block| format!("{}/{}", block, SNOS_OUTPUT_FILE_NAME)).collect();
-
-    let program_output_paths =
-        block_numbers.iter().map(|block| format!("{}/{}", block, PROGRAM_OUTPUT_FILE_NAME)).collect();
-
-    let blob_data_paths = block_numbers.iter().map(|block| format!("{}/{}", block, BLOB_DATA_FILE_NAME)).collect();
-
-    // Create proper metadata structure with invalid block numbers but valid paths
-    let metadata = JobMetadata {
-        common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
-        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_paths,
-            program_output_paths,
-            blob_data_paths,
-            da_segment_paths: vec![],
-            tx_hashes: vec![],
-            context: SettlementContext::Block(SettlementContextData { to_settle: block_numbers, last_failed: None }),
-        }),
-    };
-
-    let mut job = StateUpdateJobHandler.create_job(0, metadata).await.unwrap();
-    let status = StateUpdateJobHandler.process_job(services.config, &mut job).await;
-    assert!(status.is_err());
-
-    if let Err(error) = status {
-        let error_message = format!("{}", error);
-        assert!(
-            error_message.contains(expected_error),
-            "Error message did not contain expected substring: {}",
-            expected_error
-        );
-    }
 }
 
 #[rstest]
@@ -168,25 +87,13 @@ async fn process_job_invalid_input_gap_panics() {
     let metadata = JobMetadata {
         common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_paths: vec![
-                format!("{}/{}", 6, SNOS_OUTPUT_FILE_NAME),
-                format!("{}/{}", 7, SNOS_OUTPUT_FILE_NAME),
-                format!("{}/{}", 8, SNOS_OUTPUT_FILE_NAME),
-            ],
-            program_output_paths: vec![
-                format!("{}/{}", 6, PROGRAM_OUTPUT_FILE_NAME),
-                format!("{}/{}", 7, PROGRAM_OUTPUT_FILE_NAME),
-                format!("{}/{}", 8, PROGRAM_OUTPUT_FILE_NAME),
-            ],
-            blob_data_paths: vec![
-                format!("{}/{}", 6, BLOB_DATA_FILE_NAME),
-                format!("{}/{}", 7, BLOB_DATA_FILE_NAME),
-                format!("{}/{}", 8, BLOB_DATA_FILE_NAME),
-            ],
-            da_segment_paths: vec![],
-            tx_hashes: vec![],
+            snos_output_path: Some(format!("{}/{}", 6, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", 6, PROGRAM_OUTPUT_FILE_NAME)),
+            blob_data_path: Some(format!("{}/{}", 6, BLOB_DATA_FILE_NAME)),
+            da_segment_path: None,
+            tx_hash: None,
             context: SettlementContext::Block(SettlementContextData {
-                to_settle: vec![6, 7, 8], // Gap between 4 and 6
+                to_settle: 6, // Gap between 4 and 6
                 last_failed: None,
             }),
         }),
@@ -310,15 +217,12 @@ async fn test_process_job_l2_with_da_segment(
     let metadata = JobMetadata {
         common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            snos_output_paths: vec![], // Not used for L2 batch settlement
-            program_output_paths: vec![program_output_key],
-            blob_data_paths: vec![], // Not used for L2 with DA segments
-            da_segment_paths: vec![da_segment_key],
-            tx_hashes: vec![],
-            context: SettlementContext::Batch(SettlementContextData {
-                to_settle: vec![batch_index],
-                last_failed: None,
-            }),
+            snos_output_path: None, // Not used for L2 batch settlement
+            program_output_path: Some(program_output_key),
+            blob_data_path: None, // Not used for L2 with DA segments
+            da_segment_path: Some(da_segment_key),
+            tx_hash: None,
+            context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
         }),
     };
 

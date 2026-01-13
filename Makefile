@@ -245,8 +245,8 @@ check:
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
 	@taplo fmt --config=./taplo/taplo.toml --check
 	@echo "Running cargo clippy..."
-	@cargo clippy --workspace --all-features --no-deps -- -D warnings
-	@cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
+	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --no-deps -- -D warnings
+	@$(VENV_ACTIVATE) && cargo clippy --workspace --all-features --tests --no-deps -- -D warnings
 	@# TODO(mehul 14/11/2025, hotfix): This is a temporary fix to ensure that the madara is linted.
 	@# Madara does not belong to the toplevel workspace, so we need to lint it separately.
 	@# Remove this once we add madara back to toplevel workspace.

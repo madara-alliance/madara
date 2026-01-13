@@ -11,19 +11,20 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::{
-    fetch_blob_data_for_block, fetch_da_segment_for_batch, fetch_program_output_for_block, fetch_snos_for_block,
-};
+use crate::worker::utils::{fetch_blob_data, fetch_da_segment, fetch_program_output, fetch_snos_output};
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
-use orchestrator_utils::collections::{has_dup, is_sorted};
+
 use orchestrator_utils::layer::Layer;
 use starknet_core::types::Felt;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
+
+/// Empty transaction hash used when state update is already settled on-chain
+const EMPTY_TX_HASH: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 struct StateUpdateArtifacts {
     snos_output: Option<Vec<Felt>>,
@@ -41,20 +42,20 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
 
         // Validate required paths based on layer configuration
-        // L2: requires program_output_paths + da_segment_paths
-        // L3: requires program_output_paths + blob_data_paths + snos_output_paths
-        if state_metadata.program_output_paths.is_empty() {
-            error!("program_output_paths is required for all state updates");
-            return Err(JobError::Other(OtherError(eyre!("Missing required program_output_paths in metadata"))));
+        // L2: requires program_output_path + da_segment_path
+        // L3: requires program_output_path + blob_data_path + snos_output_path
+        if state_metadata.program_output_path.is_none() {
+            error!("program_output_path is required for all state updates");
+            return Err(JobError::Other(OtherError(eyre!("Missing required program_output_path in metadata"))));
         }
 
-        let is_l2_config = !state_metadata.da_segment_paths.is_empty();
-        let is_l3_config = !state_metadata.blob_data_paths.is_empty() && !state_metadata.snos_output_paths.is_empty();
+        let is_l2_config = state_metadata.da_segment_path.is_some();
+        let is_l3_config = state_metadata.blob_data_path.is_some() && state_metadata.snos_output_path.is_some();
 
         if !is_l2_config && !is_l3_config {
-            error!("Missing required paths: must provide either (da_segment_paths for L2) or (blob_data_paths + snos_output_paths for L3)");
+            error!("Missing required paths: must provide either (da_segment_path for L2) or (blob_data_path + snos_output_path for L3)");
             return Err(JobError::Other(OtherError(eyre!(
-                "Missing required paths: must provide either (da_segment_paths for L2) or (blob_data_paths + snos_output_paths for L3)"
+                "Missing required paths: must provide either (da_segment_path for L2) or (blob_data_path + snos_output_path for L3)"
             ))));
         }
         let job_item = JobItem::create(internal_id, JobType::StateTransition, JobStatus::Created, metadata);
@@ -85,67 +86,45 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Get the state transition metadata
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
-        let (blocks_or_batches_to_settle, last_failed_block_or_batch) = match state_metadata.context.clone() {
+        let to_settle_num = match state_metadata.context.clone() {
             SettlementContext::Block(data) => {
-                self.validate_block_numbers(config.clone(), &data.to_settle).await?;
-                if !data.to_settle.is_empty() {
-                    tracing::Span::current().record("block_start", data.to_settle[0]);
-                    tracing::Span::current().record("block_end", data.to_settle[data.to_settle.len() - 1]);
-                }
-                (data.to_settle, data.last_failed.unwrap_or(0))
+                self.validate_block_numbers(config.clone(), data.to_settle).await?;
+                tracing::Span::current().record("block", data.to_settle);
+                data.to_settle
             }
             SettlementContext::Batch(data) => {
-                if !data.to_settle.is_empty() {
-                    tracing::Span::current().record("batch_start", data.to_settle[0]);
-                    tracing::Span::current().record("batch_end", data.to_settle[data.to_settle.len() - 1]);
-                }
-                (data.to_settle, data.last_failed.unwrap_or(1)) // The lowest possible batch number is 1
+                tracing::Span::current().record("batch", data.to_settle);
+                data.to_settle
             }
         };
 
-        // Filter block numbers if there was a previous failure
-        let filtered_indices: Vec<usize> = blocks_or_batches_to_settle
-            .iter()
-            .enumerate()
-            .filter(|(_, &num)| num >= last_failed_block_or_batch)
-            .map(|(i, _)| i)
-            .collect();
+        let nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
+        debug!(job_id = %internal_id, num = %to_settle_num, "Processing block/batch");
 
-        let snos_output_paths = state_metadata.snos_output_paths.clone();
-        let program_output_paths = state_metadata.program_output_paths.clone();
-        let blob_data_paths = state_metadata.blob_data_paths.clone();
-        let da_segment_paths = state_metadata.da_segment_paths.clone();
-
-        let mut nonce = config.settlement_client().get_nonce().await.map_err(|e| JobError::Other(OtherError(e)))?;
-
-        let mut sent_tx_hashes: Vec<String> = Vec::with_capacity(filtered_indices.len());
-
-        // Loop over the indices to process
-        for &i in &filtered_indices {
-            let to_settle_num = blocks_or_batches_to_settle[i];
-            debug!(job_id = %internal_id, num = %to_settle_num, "Processing block/batch");
-
-            if !self.should_send_state_update_txn(&config, to_settle_num).await? {
-                sent_tx_hashes.push(format!("0x{:0>64}", ""));
-                state_metadata.tx_hashes = sent_tx_hashes.clone();
-                job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-                continue;
+        if !self.should_send_state_update_txn(&config, to_settle_num).await? {
+            // State update not needed (already settled on-chain)
+            // Setting tx_hash to an empty string, to denote that no transaction was sent in current run
+            // Only if tx_hash is not already set
+            if state_metadata.tx_hash.is_none() {
+                state_metadata.tx_hash = Some(EMPTY_TX_HASH.to_string());
             }
-
+            job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
+        } else {
             // Get the artifacts for the block/batch
-            let snos_output = match fetch_snos_for_block(internal_id, i, config.clone(), &snos_output_paths).await {
-                Ok(snos_output) => Some(snos_output),
-                Err(err) => {
-                    debug!("failed to fetch snos output, proceeding without it: {}", err);
-                    None
-                }
-            };
-            let program_output = fetch_program_output_for_block(i, config.clone(), &program_output_paths).await?;
+            let snos_output =
+                match fetch_snos_output(internal_id, config.clone(), &state_metadata.snos_output_path).await {
+                    Ok(snos_output) => Some(snos_output),
+                    Err(err) => {
+                        debug!("failed to fetch snos output, proceeding without it: {}", err);
+                        None
+                    }
+                };
+            let program_output = fetch_program_output(config.clone(), &state_metadata.program_output_path).await?;
             let blob_data = match config.layer() {
                 // For L2, use DA segment from prover (encrypted/compressed state diff)
-                Layer::L2 => fetch_da_segment_for_batch(i, config.clone(), &da_segment_paths).await?,
+                Layer::L2 => fetch_da_segment(config.clone(), &state_metadata.da_segment_path).await?,
                 // For L3, use locally stored blob data
-                Layer::L3 => fetch_blob_data_for_block(i, config.clone(), &blob_data_paths).await?,
+                Layer::L3 => fetch_blob_data(config.clone(), &state_metadata.blob_data_path).await?,
             };
 
             let txn_hash = match self
@@ -161,7 +140,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 Err(e) => {
                     error!(num = %to_settle_num, error = %e, "Error updating state for block/batch");
                     state_metadata.context = self.update_last_failed(state_metadata.context.clone(), to_settle_num);
-                    state_metadata.tx_hashes = sent_tx_hashes.clone();
                     job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
 
                     return Err(JobError::Other(OtherError(eyre!("Error occurred during the state update: {e}"))));
@@ -183,17 +161,14 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                     JobError::Other(OtherError(e))
                 })?;
 
-            sent_tx_hashes.push(txn_hash);
-            state_metadata.tx_hashes = sent_tx_hashes.clone();
+            state_metadata.tx_hash = Some(txn_hash.clone());
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
-            nonce += 1;
+            job.external_id = txn_hash.into();
         }
-
-        let val = blocks_or_batches_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;
 
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::StateTransition, internal_id);
 
-        Ok(val.to_string())
+        Ok(to_settle_num.to_string())
     }
 
     /// Returns the status of the passed job.
@@ -208,13 +183,13 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Get state update metadata
         let state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
-        let nums_settled = match state_metadata.context.clone() {
+        let num_settled = match state_metadata.context.clone() {
             SettlementContext::Block(data) => data.to_settle,
             SettlementContext::Batch(data) => data.to_settle,
         };
 
         // Get the status from the settlement contract
-        let result = Self::verify_through_contract(&config, &nums_settled, &job.id, internal_id).await?;
+        let result = Self::verify_through_contract(&config, num_settled, &job.id, internal_id).await?;
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} verification completed", JobType::StateTransition, internal_id);
         Ok(result)
     }
@@ -235,31 +210,30 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 impl StateUpdateJobHandler {
     async fn verify_through_contract(
         config: &Arc<Config>,
-        nums_settled: &[u64],
+        num_settled: u64,
         job_id: &Uuid,
         internal_id: u64,
     ) -> Result<JobVerificationStatus, JobError> {
         // verify that the last settled block is indeed the one we expect to be
-        let last_settled = nums_settled.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;
         let (expected_last_block_number, batch_index) = match config.layer() {
             Layer::L2 => {
-                // Get the batch details for the last-settled batch
-                let batches = config.database().get_aggregator_batches_by_indexes(vec![*last_settled]).await?;
+                // Get the batch details for the settled batch
+                let batches = config.database().get_aggregator_batches_by_indexes(vec![num_settled]).await?;
                 if let Some(batch) = batches.first() {
-                    // Return the end block of the last batch
+                    // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
                 } else {
-                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
+                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", num_settled))))
                 }
             }
             Layer::L3 => {
-                // Get the batch details for the last-settled batch
-                let batches = config.database().get_snos_batches_by_indices(vec![*last_settled]).await?;
+                // Get the batch details for the settled batch
+                let batches = config.database().get_snos_batches_by_indices(vec![num_settled]).await?;
                 if let Some(batch) = batches.first() {
-                    // Return the end block of the last batch
+                    // Return the end block of the batch
                     Ok((batch.end_block, batch.index))
                 } else {
-                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
+                    Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", num_settled))))
                 }
             }
         }?;
@@ -365,27 +339,14 @@ impl StateUpdateJobHandler {
         }
     }
 
-    /// Validate that the list of block numbers to process is valid.
-    async fn validate_block_numbers(&self, config: Arc<Config>, block_numbers: &[u64]) -> Result<(), JobError> {
-        // if any block is settled then previous block number should be just before that
-        // if no block is settled (confirmed by special number), then the block to settle should be 0
-
-        if block_numbers.is_empty() {
-            Err(StateUpdateError::BlockNumberNotFound)?;
-        }
-        if has_dup(block_numbers) {
-            Err(StateUpdateError::DuplicateBlockNumbers)?;
-        }
-        if !is_sorted(block_numbers) {
-            Err(StateUpdateError::UnsortedBlockNumbers)?;
-        }
-
-        // Check for any gap between the last settled block and the first block to settle
+    /// Validate that the block number to process is valid.
+    async fn validate_block_numbers(&self, config: Arc<Config>, block_number: u64) -> Result<(), JobError> {
+        // Check for any gap between the last settled block and the block to settle
         let last_settled_block =
             config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
 
-        let expected_first_block = last_settled_block.map_or(0, |block| block + 1);
-        if block_numbers[0] != expected_first_block {
+        let expected_block = last_settled_block.map_or(0, |block| block + 1);
+        if block_number != expected_block {
             Err(StateUpdateError::GapBetweenFirstAndLastBlock)?;
         }
 
