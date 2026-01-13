@@ -45,15 +45,12 @@ pub fn build_job_item_with_version(
         JobType::StateTransition => JobMetadata {
             common,
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-                snos_output_paths: vec![format!("{}/{}", internal_id, SNOS_OUTPUT_FILE_NAME)],
-                program_output_paths: vec![format!("{}/{}", internal_id, PROGRAM_OUTPUT_FILE_NAME)],
-                blob_data_paths: vec![format!("{}/{}", internal_id, BLOB_DATA_FILE_NAME)],
-                da_segment_paths: vec![],
-                tx_hashes: Vec::new(),
-                context: SettlementContext::Block(SettlementContextData {
-                    to_settle: vec![internal_id],
-                    last_failed: None,
-                }),
+                snos_output_path: Some(format!("{}/{}", internal_id, SNOS_OUTPUT_FILE_NAME)),
+                program_output_path: Some(format!("{}/{}", internal_id, PROGRAM_OUTPUT_FILE_NAME)),
+                blob_data_path: Some(format!("{}/{}", internal_id, BLOB_DATA_FILE_NAME)),
+                da_segment_path: None,
+                tx_hash: None,
+                context: SettlementContext::Block(SettlementContextData { to_settle: internal_id, last_failed: None }),
             }),
         },
         JobType::SnosRun => JobMetadata {

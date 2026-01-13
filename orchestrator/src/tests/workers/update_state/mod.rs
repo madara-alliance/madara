@@ -69,7 +69,7 @@ async fn update_state_worker_first_block() {
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![1]);
+    assert_eq!(data.to_settle, 1);
 }
 
 #[rstest]
@@ -130,7 +130,7 @@ async fn update_state_worker_selects_consecutive_blocks() {
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![1]);
+    assert_eq!(data.to_settle, 1);
 }
 
 #[rstest]
@@ -155,31 +155,14 @@ async fn update_state_worker_continues_from_previous_state_update() {
     job_item.job_type = JobType::StateTransition;
 
     // Create proper StateUpdateMetadata with blocks 0-4
+    // Note: Since we now process one block/batch per job, we use the first block's paths
     let state_metadata = StateUpdateMetadata {
-        snos_output_paths: vec![
-            format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, SNOS_OUTPUT_FILE_NAME),
-        ],
-        program_output_paths: vec![
-            format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, PROGRAM_OUTPUT_FILE_NAME),
-        ],
-        blob_data_paths: vec![
-            format!("{}/{}", 0, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 1, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 2, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 3, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
-        ],
-        da_segment_paths: vec![],
-        tx_hashes: Vec::new(),
-        context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
+        snos_output_path: Some(format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME)),
+        program_output_path: Some(format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME)),
+        blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
+        da_segment_path: None,
+        tx_hash: None,
+        context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
     };
 
     job_item.metadata =
@@ -201,7 +184,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
     let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
-    assert_eq!(data.to_settle, vec![5]);
+    assert_eq!(data.to_settle, 5);
 }
 
 #[rstest]
@@ -228,31 +211,14 @@ async fn update_state_worker_next_block_missing() {
     job_item.job_type = JobType::StateTransition;
 
     // Create proper StateUpdateMetadata with blocks 0-4
+    // Note: Since we now process one block/batch per job, we use the first block's paths
     let state_metadata = StateUpdateMetadata {
-        snos_output_paths: vec![
-            format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, SNOS_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, SNOS_OUTPUT_FILE_NAME),
-        ],
-        program_output_paths: vec![
-            format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 1, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 2, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 3, PROGRAM_OUTPUT_FILE_NAME),
-            format!("{}/{}", 4, PROGRAM_OUTPUT_FILE_NAME),
-        ],
-        blob_data_paths: vec![
-            format!("{}/{}", 0, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 1, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 2, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 3, BLOB_DATA_FILE_NAME),
-            format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
-        ],
-        da_segment_paths: vec![],
-        tx_hashes: Vec::new(),
-        context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
+        snos_output_path: Some(format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME)),
+        program_output_path: Some(format!("{}/{}", 0, PROGRAM_OUTPUT_FILE_NAME)),
+        blob_data_path: Some(format!("{}/{}", 0, BLOB_DATA_FILE_NAME)),
+        da_segment_path: None,
+        tx_hash: None,
+        context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
     };
 
     job_item.metadata =

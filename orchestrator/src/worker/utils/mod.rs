@@ -53,82 +53,25 @@ pub fn biguint_to_32_bytes(num: &BigUint) -> [u8; 32] {
     result
 }
 
-/// fetch_blob_data_for_batch - Fetches blob data for a specific batch
-/// Fetching the blob data (stored in remote storage during Batching) for a particular batch
+/// fetch_blob_data - Fetches blob data for the state update job.
+/// Fetching the blob data (stored in remote storage during DA job) for a particular block/batch.
 ///
 /// # Arguments
-/// * `index` - The index of the batch
-/// * `config` - The configuration object
-/// * `blob_data_paths` - A slice of blob data directory paths
-///
-/// # Returns
-/// * `Result<Vec<Vec<u8>>, JobError>` - A result containing a vector of blob data or an error.
-///
-pub async fn fetch_blob_data_for_batch(
-    index: usize,
-    config: Arc<Config>,
-    blob_data_paths: &[String],
-) -> Result<Vec<Vec<u8>>, JobError> {
-    // TODO: Check if we can optimize the memory usage here
-    tracing::debug!("Fetching blob data for batch index {}", index);
-
-    let storage_client = config.storage();
-
-    // Get the directory path for this batch
-    let dir_path = blob_data_paths.get(index).ok_or_else(|| {
-        tracing::error!("Blob data path not found for index {}", index);
-        JobError::Other(OtherError(eyre!("Blob data path not found for index {}", index)))
-    })?;
-
-    // Get the blob files for this batch
-    let mut files = config.storage().list_files_in_dir(dir_path).await.map_err(|e| {
-        tracing::error!("Failed to list files in path {}: {}", dir_path, e);
-        JobError::Other(OtherError(eyre!("Failed to list files in path {}: {}", dir_path, e)))
-    })?;
-    // Sort the files by name (which is the blob index)
-    files.sort();
-
-    tracing::debug!("Retrieving blob data from {} files in directory: {}", files.len(), dir_path);
-
-    let mut blobs = Vec::new();
-
-    for file in files {
-        let blob_data = storage_client.get_data(&file).await.map_err(|e| {
-            tracing::error!("Failed to retrieve blob data from path {}: {}", file, e);
-            JobError::Other(OtherError(eyre!("Failed to retrieve blob data from path {}: {}", file, e)))
-        })?;
-        blobs.push(blob_data.to_vec());
-    }
-
-    tracing::debug!("Successfully retrieved blob data for batch index {}", index);
-    Ok(blobs)
-}
-
-/// fetch_blob_data_for_block - Fetches blob data for a specific block index.
-/// Fetching the blob data (stored in remote storage during DA job) for a particular block
-///
-/// # Arguments
-/// * `block_index` - The index of the block.
 /// * `config` - The configuration object.
-/// * `blob_data_paths` - A slice of blob data paths.
+/// * `blob_data_path` - Optional path to the blob data file.
 ///
 /// # Returns
 /// * `Result<Vec<Vec<u8>>, JobError>` - A result containing a vector of blob data or an error.
 ///
-pub async fn fetch_blob_data_for_block(
-    block_index: usize,
-    config: Arc<Config>,
-    blob_data_paths: &[String],
-) -> Result<Vec<Vec<u8>>, JobError> {
-    tracing::debug!("Fetching blob data for block index {}", block_index);
+pub async fn fetch_blob_data(config: Arc<Config>, blob_data_path: &Option<String>) -> Result<Vec<Vec<u8>>, JobError> {
+    let path = blob_data_path.as_ref().ok_or_else(|| {
+        tracing::error!("Blob data path not provided");
+        JobError::Other(OtherError(eyre!("Blob data path not provided")))
+    })?;
+
+    tracing::debug!("Fetching blob data from path: {}", path);
 
     let storage_client = config.storage();
-
-    // Get the path for this block
-    let path = blob_data_paths.get(block_index).ok_or_else(|| {
-        tracing::error!("Blob data path not found for index {}", block_index);
-        JobError::Other(OtherError(eyre!("Blob data path not found for index {}", block_index)))
-    })?;
 
     tracing::debug!("Retrieving blob data from path: {}", path);
     let blob_data = storage_client.get_data(path).await.map_err(|e| {
@@ -136,38 +79,32 @@ pub async fn fetch_blob_data_for_block(
         JobError::Other(OtherError(eyre!("Failed to retrieve blob data from path {}: {}", path, e)))
     })?;
 
-    tracing::debug!("Successfully retrieved blob data for block index {}", block_index);
+    tracing::debug!("Successfully retrieved blob data from path: {}", path);
     Ok(vec![blob_data.to_vec()])
 }
 
-/// fetch_da_segment_for_batch - Fetches and parses the DA segment for a specific batch.
+/// fetch_da_segment - Fetches and parses the DA segment for the state update job.
 /// The DA segment contains the encrypted/compressed state diff from the prover.
 /// This data is used to generate blob data for KZG proof verification.
 ///
 /// # Arguments
-/// * `index` - The index of the batch
 /// * `config` - The configuration object
-/// * `da_segment_paths` - A slice of DA segment file paths
+/// * `da_segment_path` - Optional path to the DA segment file
 ///
 /// # Returns
 /// * `Result<Vec<Vec<u8>>, JobError>` - Blob data ready for KZG proof
 ///
-pub async fn fetch_da_segment_for_batch(
-    index: usize,
-    config: Arc<Config>,
-    da_segment_paths: &[String],
-) -> Result<Vec<Vec<u8>>, JobError> {
+pub async fn fetch_da_segment(config: Arc<Config>, da_segment_path: &Option<String>) -> Result<Vec<Vec<u8>>, JobError> {
     use crate::worker::utils::encrypted_blob::{da_segment_to_blobs, parse_da_segment_json};
 
-    tracing::debug!("Fetching DA segment for batch index {}", index);
+    let path = da_segment_path.as_ref().ok_or_else(|| {
+        tracing::error!("DA segment path not provided");
+        JobError::Other(OtherError(eyre!("DA segment path not provided")))
+    })?;
+
+    tracing::debug!("Fetching DA segment from path: {}", path);
 
     let storage_client = config.storage();
-
-    // Get the path for this batch
-    let path = da_segment_paths.get(index).ok_or_else(|| {
-        tracing::error!("DA segment path not found for index {}", index);
-        JobError::Other(OtherError(eyre!("DA segment path not found for index {}", index)))
-    })?;
 
     tracing::debug!("Retrieving DA segment from path: {}", path);
     let da_segment_bytes = storage_client.get_data(path).await.map_err(|e| {
@@ -192,36 +129,34 @@ pub async fn fetch_da_segment_for_batch(
         JobError::Other(OtherError(eyre!("Failed to convert DA segment to blobs: {}", e)))
     })?;
 
-    tracing::debug!("Successfully converted DA segment to {} blobs for batch index {}", blobs.len(), index);
+    tracing::debug!("Successfully converted DA segment to {} blobs from path: {}", blobs.len(), path);
     Ok(blobs)
 }
 
-/// fetch_snos_for_block - Fetches the SNOS output for a specific block index.
-/// Retrieves the SNOS output (stored in remote storage during SNOS job) for a particular block.
+/// fetch_snos_output - Fetches the SNOS output for the state update job.
+/// Retrieves the SNOS output (stored in remote storage during SNOS job).
 ///
 /// # Arguments
 /// * `internal_id` - The internal ID of the job.
-/// * `index` - The index of the block.
 /// * `config` - The configuration object.
-/// * `snos_output_paths` - A slice of SNOS output paths.
+/// * `snos_output_path` - Optional path to the SNOS output file.
 ///
 /// # Returns
-/// * `Result<StarknetOsOutput, JobError>` - A result containing the SNOS output or an error.
+/// * `Result<Vec<Felt>, JobError>` - A result containing the SNOS output or an error.
 ///
-pub async fn fetch_snos_for_block(
+pub async fn fetch_snos_output(
     internal_id: u64,
-    index: usize,
     config: Arc<Config>,
-    snos_output_paths: &[String],
+    snos_output_path: &Option<String>,
 ) -> Result<Vec<Felt>, JobError> {
-    tracing::debug!(job_id = %internal_id, "Fetching SNOS output for block index {}", index);
+    let snos_path = snos_output_path.as_ref().ok_or_else(|| {
+        tracing::error!(job_id = %internal_id, "SNOS output path not provided");
+        JobError::Other(OtherError(eyre!("SNOS output path not provided for job ID {}", internal_id)))
+    })?;
+
+    tracing::debug!(job_id = %internal_id, "Fetching SNOS output from path: {}", snos_path);
 
     let storage_client = config.storage();
-
-    let snos_path = snos_output_paths.get(index).ok_or_else(|| {
-        tracing::error!(job_id = %internal_id, "SNOS path not found for index {}", index);
-        JobError::Other(OtherError(eyre!("Failed to get the SNOS path for job ID {}", internal_id)))
-    })?;
 
     tracing::debug!(job_id = %internal_id, "Retrieving SNOS output from path: {}", snos_path);
     let snos_output_bytes = storage_client.get_data(snos_path).await.map_err(|e| {
@@ -240,20 +175,27 @@ pub async fn fetch_snos_for_block(
     })
 }
 
-pub async fn fetch_program_output_for_block(
-    block_index: usize,
+/// fetch_program_output - Fetches the program output for the state update job.
+///
+/// # Arguments
+/// * `config` - The configuration object.
+/// * `program_output_path` - Optional path to the program output file.
+///
+/// # Returns
+/// * `Result<Vec<[u8; 32]>, JobError>` - A result containing the program output or an error.
+///
+pub async fn fetch_program_output(
     config: Arc<Config>,
-    program_output_paths: &[String],
+    program_output_path: &Option<String>,
 ) -> Result<Vec<[u8; 32]>, JobError> {
-    tracing::debug!("Fetching program output for block index {}", block_index);
+    let path = program_output_path.as_ref().ok_or_else(|| {
+        tracing::error!("Program output path not provided");
+        JobError::Other(OtherError(eyre!("Program output path not provided")))
+    })?;
+
+    tracing::debug!("Fetching program output from path: {}", path);
 
     let storage_client = config.storage();
-
-    // Get the path for this block
-    let path = program_output_paths.get(block_index).ok_or_else(|| {
-        tracing::error!("Program output path not found for index {}", block_index);
-        JobError::Other(OtherError(eyre!("Program output path not found for index {}", block_index)))
-    })?;
 
     tracing::debug!("Retrieving program output from path: {}", path);
     let program_output = storage_client.get_data(path).await.map_err(|e| {
