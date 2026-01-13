@@ -47,10 +47,21 @@ pub trait JobTrigger: Send + Sync {
             .await?;
 
         if !failed_jobs.is_empty() {
+            // Group jobs by status to provide accurate logging
+            let failed_count = failed_jobs.iter().filter(|j| j.status == JobStatus::Failed).count();
+            let timeout_count = failed_jobs.iter().filter(|j| j.status == JobStatus::VerificationTimeout).count();
+
+            let status_summary = match (failed_count > 0, timeout_count > 0) {
+                (true, true) => format!("{} Failed, {} VerificationTimeout", failed_count, timeout_count),
+                (true, false) => format!("{} Failed", failed_count),
+                (false, true) => format!("{} VerificationTimeout", timeout_count),
+                (false, false) => "0".to_string(),
+            };
+
             tracing::warn!(
-                "There are {} {} jobs in the DB. Not creating new jobs to prevent inconsistencies (existing jobs will be processed). Please manually fix the failed jobs before continuing!",
+                "There are {} jobs in the DB ({}). Not creating new jobs to prevent inconsistencies (existing jobs will be processed). Please manually fix the failed jobs before continuing!",
                 failed_jobs.len(),
-                JobStatus::Failed
+                status_summary
             );
             return Ok(false);
         }
