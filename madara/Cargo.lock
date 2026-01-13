@@ -6661,7 +6661,6 @@ dependencies = [
  "lazy_static",
  "m-cairo-test-contracts",
  "mc-analytics",
- "mc-db",
  "mp-class",
  "mp-convert",
  "opentelemetry",
@@ -6674,7 +6673,6 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

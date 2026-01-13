@@ -118,11 +118,30 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
 # Step 3: runner
 FROM debian:bookworm-slim AS runner
 
+# Copy Makefile for LLVM installation
+COPY Makefile /tmp/Makefile
+
+# Install LLVM 19 for Cairo Native runtime compilation (compiles Sierra to native on-the-fly)
 RUN apt-get -y update && \
-    apt-get install -y openssl ca-certificates tini curl &&\
-    apt-get autoremove -y; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y openssl ca-certificates tini curl wget gnupg software-properties-common make && \
+    cd /tmp && make -f Makefile install-llvm19 CODENAME=bookworm && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/Makefile
+
+# Set LLVM environment variables for Cairo Native runtime
+ENV MLIR_SYS_190_PREFIX=/usr/lib/llvm-19
+ENV LLVM_SYS_191_PREFIX=/usr/lib/llvm-19
+ENV TABLEGEN_190_PREFIX=/usr/lib/llvm-19
+ENV PATH="/usr/lib/llvm-19/bin:${PATH}"
+
+# Set compilers for Cairo Native runtime compilation
+ENV CC=clang-19
+ENV CXX=clang-19
+
+# Configure linker search paths for Cairo Native runtime compilation
+ENV LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib/x86_64-linux-gnu:/lib
 
 WORKDIR /app
 

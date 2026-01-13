@@ -46,5 +46,3 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 m-cairo-test-contracts = { path = "../../../crates/cairo-test-contracts" }
 rstest = "0.18"
-mc-db = { path = "../../client/db", features = ["testing"] }
-tracing-subscriber = { workspace = true }
