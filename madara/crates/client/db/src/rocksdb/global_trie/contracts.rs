@@ -59,7 +59,9 @@ pub fn contract_trie_root(
     // Then we commit them
     let storage_commit_start = Instant::now();
     contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
-    metrics().contract_storage_trie_commit_duration.record(storage_commit_start.elapsed().as_secs_f64(), &[]);
+    let storage_commit_secs = storage_commit_start.elapsed().as_secs_f64();
+    metrics().contract_storage_trie_commit_duration.record(storage_commit_secs, &[]);
+    metrics().contract_storage_trie_commit_last.record(storage_commit_secs, &[]);
 
     for NonceUpdate { contract_address, nonce } in nonces {
         contract_leafs.entry(*contract_address).or_default().nonce = Some(*nonce);
@@ -96,7 +98,9 @@ pub fn contract_trie_root(
 
     let contract_commit_start = Instant::now();
     contract_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
-    metrics().contract_trie_commit_duration.record(contract_commit_start.elapsed().as_secs_f64(), &[]);
+    let contract_commit_secs = contract_commit_start.elapsed().as_secs_f64();
+    metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
+    metrics().contract_trie_commit_last.record(contract_commit_secs, &[]);
     let root_hash = contract_trie.root_hash(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("contract_trie committed");

@@ -55,15 +55,21 @@ pub fn apply_to_global_trie<'a>(
             },
         );
 
-        // Record individual trie durations
-        metrics().contract_trie_root_duration.record(contract_duration.as_secs_f64(), &[]);
-        metrics().class_trie_root_duration.record(class_duration.as_secs_f64(), &[]);
+        // Record individual trie durations (histogram + gauge)
+        let contract_secs = contract_duration.as_secs_f64();
+        let class_secs = class_duration.as_secs_f64();
+        metrics().contract_trie_root_duration.record(contract_secs, &[]);
+        metrics().contract_trie_root_last.record(contract_secs, &[]);
+        metrics().class_trie_root_duration.record(class_secs, &[]);
+        metrics().class_trie_root_last.record(class_secs, &[]);
 
         state_root = Some(calculate_state_root(contract_trie_root?, class_trie_root?));
     }
 
-    // Record total merklization duration
-    metrics().apply_to_global_trie_duration.record(total_start.elapsed().as_secs_f64(), &[]);
+    // Record total merklization duration (histogram + gauge)
+    let total_secs = total_start.elapsed().as_secs_f64();
+    metrics().apply_to_global_trie_duration.record(total_secs, &[]);
+    metrics().apply_to_global_trie_last.record(total_secs, &[]);
 
     state_root.context("Applying an empty batch to the global trie")
 }
