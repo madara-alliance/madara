@@ -71,8 +71,8 @@ pub enum ProvingInputType {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SettlementContextData {
     // Worker initialized field
-    /// Batch/block numbers that need to be settled
-    pub to_settle: Vec<u64>,
+    /// Batch/block number to be settled
+    pub to_settle: u64,
     // Job populated field
     /// Last batch/block number that failed processing
     pub last_failed: Option<u64>,
@@ -193,25 +193,26 @@ pub struct SnosMetadata {
 ///
 /// # Field Management
 /// - Worker-initialized fields: blocks and paths configurations
-/// - Job-populated fields: last_failed_block_no and tx_hashes (during processing)
+/// - Job-populated fields: last_failed_block_no and tx_hash (during processing)
+///
+/// TODO(heemankv, 09-01-26): Use enum for paths to type-gate by settlement type (BlobSettlement vs CalldataSettlement)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct StateUpdateMetadata {
     // Worker-initialized fields
-    /// Paths to SNOS output files for each block/batch
-    pub snos_output_paths: Vec<String>,
-    /// Paths to program output files for each block/batch
-    pub program_output_paths: Vec<String>,
-    /// Paths to blob data files for each block/batch (legacy, used for L3)
-    pub blob_data_paths: Vec<String>,
-    /// Paths to DA segment files for each batch (used for L2 with encryption)
+    /// Path to SNOS output file for the block/batch
+    pub snos_output_path: Option<String>,
+    /// Path to program output file for the block/batch
+    pub program_output_path: Option<String>,
+    /// Path to blob data file for the block/batch (legacy, used for L3)
+    pub blob_data_path: Option<String>,
+    /// Path to DA segment file for the batch (used for L2 with encryption)
     /// Note: One DA segment per aggregator job, one state update per aggregator job
-    /// TODO (mohit 23/12/2025): verify file structure with atlantic team
     #[serde(default)]
-    pub da_segment_paths: Vec<String>,
+    pub da_segment_path: Option<String>,
 
     // Job-populated fields
-    /// Transaction hashes for processed blocks/batches
-    pub tx_hashes: Vec<String>,
+    /// Transaction hash for the state update
+    pub tx_hash: Option<String>,
 
     pub context: SettlementContext,
 }
