@@ -1368,6 +1368,59 @@
       ],
       "title": "Bouncer Weights",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "insertNulls": false, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "auto", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 122 },
+      "id": 305,
+      "options": { "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(apply_to_global_trie_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(apply_to_global_trie_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Total Merklization", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(contract_trie_root_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(contract_trie_root_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Contract Trie", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(class_trie_root_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(class_trie_root_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Class Trie", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(block_commitments_compute_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(block_commitments_compute_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Commitments", "refId": "D" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(block_hash_compute_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(block_hash_compute_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Block Hash", "refId": "E" }
+      ],
+      "title": "Close Block Timing (Avg per Block)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "insertNulls": false, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "auto", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 122 },
+      "id": 306,
+      "options": { "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(close_block_total_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(close_block_total_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Total Close Block", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(contract_storage_trie_commit_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(contract_storage_trie_commit_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Storage Trie Commit", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(contract_trie_commit_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(contract_trie_commit_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Contract Trie Commit", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(class_trie_commit_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(class_trie_commit_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Class Trie Commit", "refId": "D" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(get_full_block_with_classes_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(get_full_block_with_classes_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "Fetch Block+Classes", "refId": "E" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(db_write_block_parts_duration_seconds_sum{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]) / rate(db_write_block_parts_duration_seconds_count{namespace=~\"$namespace\", pod=~\"$pod\"}[1m])", "legendFormat": "DB Write", "refId": "F" }
+      ],
+      "title": "Close Block Detailed Timing (Avg)",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",
