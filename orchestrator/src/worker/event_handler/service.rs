@@ -665,7 +665,7 @@ impl JobHandlerService {
 
                     // Send SNS alert for verification timeout
                     let alert_message = format!(
-                        "Job Verification Timeout Alert: Job ID: {}, Type: {:?}, Block: {}, Verification Attempts: {}",
+                        "Job Verification Timeout Alert: Job ID: {}, Type: {:?}, Internal_Id: {}, Verification Attempts: {}",
                         job.id, job.job_type, internal_id, job.metadata.common.verification_attempt_no
                     );
 
