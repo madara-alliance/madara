@@ -136,6 +136,9 @@ use prelude::*;
 use starknet_types_core::felt::Felt;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
+pub mod metrics;
+use metrics::metrics;
 pub mod migration;
 mod prelude;
 pub mod storage;
@@ -677,11 +680,11 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         pre_v0_13_2_hash_override: bool,
         state_diff: Option<StateDiff>,
     ) -> Result<AddFullBlockResult> {
-        let (mut block, classes) = self
-            .inner
-            .block_view_on_preconfirmed()
-            .context("There is no current preconfirmed block")?
-            .get_full_block_with_classes()?;
+        let fetch_start = Instant::now();
+        let preconfirmed_view =
+            self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
+        let (mut block, classes) = preconfirmed_view.get_full_block_with_classes()?;
+        metrics().get_full_block_with_classes_duration.record(fetch_start.elapsed().as_secs_f64(), &[]);
 
         if let Some(mut state_diff) = state_diff {
             state_diff.old_declared_contracts =
@@ -743,6 +746,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             Felt::ZERO // genesis
         };
 
+        let commitments_start = Instant::now();
         let commitments = BlockCommitments::compute(
             &CommitmentComputationContext {
                 protocol_version: self.inner.chain_config.latest_protocol_version,
@@ -752,13 +756,16 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &block.state_diff,
             &block.events,
         );
+        metrics().block_commitments_compute_duration.record(commitments_start.elapsed().as_secs_f64(), &[]);
 
         let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
 
+        let hash_start = Instant::now();
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
+        metrics().block_hash_compute_duration.record(hash_start.elapsed().as_secs_f64(), &[]);
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
@@ -771,11 +778,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         // Save the block.
 
+        let write_start = Instant::now();
         self.write_header(BlockHeaderWithSignatures { header, block_hash, consensus_signatures: vec![] })?;
         self.write_transactions(block.header.block_number, &block.transactions)?;
         self.write_state_diff(block.header.block_number, &block.state_diff)?;
         self.write_events(block.header.block_number, &block.events)?;
         self.write_classes(block.header.block_number, classes)?;
+        metrics().db_write_block_parts_duration.record(write_start.elapsed().as_secs_f64(), &[]);
 
         Ok(AddFullBlockResult { new_state_root: global_state_root, commitments, block_hash, parent_block_hash })
     }

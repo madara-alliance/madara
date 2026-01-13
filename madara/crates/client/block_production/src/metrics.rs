@@ -19,6 +19,27 @@ pub struct BlockProductionMetrics {
     pub txs_rejected: Counter<u64>,
     pub classes_declared: Counter<u64>,
     pub l2_gas_consumed: Counter<u64>,
+
+    // Close block timing metrics
+    pub close_block_total_duration: Histogram<f64>,
+    pub close_preconfirmed_duration: Histogram<f64>,
+    pub executor_finalize_duration: Histogram<f64>,
+
+    // Block data gauges
+    pub block_event_count: Gauge<u64>,
+    pub block_state_diff_length: Gauge<u64>,
+    pub block_declared_classes_count: Gauge<u64>,
+    pub block_deployed_contracts_count: Gauge<u64>,
+    pub block_storage_diffs_count: Gauge<u64>,
+    pub block_nonce_updates_count: Gauge<u64>,
+    pub block_consumed_l1_nonces_count: Gauge<u64>,
+
+    // Bouncer weights gauges
+    pub block_bouncer_l1_gas: Gauge<u64>,
+    pub block_bouncer_sierra_gas: Gauge<u64>,
+    pub block_bouncer_n_events: Gauge<u64>,
+    pub block_bouncer_message_segment_length: Gauge<u64>,
+    pub block_bouncer_state_diff_size: Gauge<u64>,
 }
 
 impl BlockProductionMetrics {
@@ -99,6 +120,102 @@ impl BlockProductionMetrics {
             "gas".to_string(),
         );
 
+        // Close block timing metrics
+        let close_block_total_duration = register_histogram_metric_instrument(
+            &meter,
+            "close_block_total_duration_seconds".to_string(),
+            "Total time to close a block".to_string(),
+            "s".to_string(),
+        );
+        let close_preconfirmed_duration = register_histogram_metric_instrument(
+            &meter,
+            "close_preconfirmed_duration_seconds".to_string(),
+            "Time to close preconfirmed block with state diff".to_string(),
+            "s".to_string(),
+        );
+        let executor_finalize_duration = register_histogram_metric_instrument(
+            &meter,
+            "executor_finalize_duration_seconds".to_string(),
+            "Time for executor.finalize() to complete".to_string(),
+            "s".to_string(),
+        );
+
+        // Block data gauges
+        let block_event_count = register_gauge_metric_instrument(
+            &meter,
+            "block_event_count".to_string(),
+            "Number of events in the closed block".to_string(),
+            "events".to_string(),
+        );
+        let block_state_diff_length = register_gauge_metric_instrument(
+            &meter,
+            "block_state_diff_length".to_string(),
+            "State diff length of the closed block".to_string(),
+            "entries".to_string(),
+        );
+        let block_declared_classes_count = register_gauge_metric_instrument(
+            &meter,
+            "block_declared_classes_count".to_string(),
+            "Number of declared classes in the closed block".to_string(),
+            "classes".to_string(),
+        );
+        let block_deployed_contracts_count = register_gauge_metric_instrument(
+            &meter,
+            "block_deployed_contracts_count".to_string(),
+            "Number of deployed contracts in the closed block".to_string(),
+            "contracts".to_string(),
+        );
+        let block_storage_diffs_count = register_gauge_metric_instrument(
+            &meter,
+            "block_storage_diffs_count".to_string(),
+            "Number of storage diff entries in the closed block".to_string(),
+            "entries".to_string(),
+        );
+        let block_nonce_updates_count = register_gauge_metric_instrument(
+            &meter,
+            "block_nonce_updates_count".to_string(),
+            "Number of nonce updates in the closed block".to_string(),
+            "updates".to_string(),
+        );
+        let block_consumed_l1_nonces_count = register_gauge_metric_instrument(
+            &meter,
+            "block_consumed_l1_nonces_count".to_string(),
+            "Number of L1 to L2 nonces consumed in the closed block".to_string(),
+            "nonces".to_string(),
+        );
+
+        // Bouncer weights gauges
+        let block_bouncer_l1_gas = register_gauge_metric_instrument(
+            &meter,
+            "block_bouncer_l1_gas".to_string(),
+            "L1 gas consumed from bouncer weights".to_string(),
+            "gas".to_string(),
+        );
+        let block_bouncer_sierra_gas = register_gauge_metric_instrument(
+            &meter,
+            "block_bouncer_sierra_gas".to_string(),
+            "Sierra gas consumed from bouncer weights".to_string(),
+            "gas".to_string(),
+        );
+        let block_bouncer_n_events = register_gauge_metric_instrument(
+            &meter,
+            "block_bouncer_n_events".to_string(),
+            "Number of events from bouncer weights".to_string(),
+            "events".to_string(),
+        );
+        let block_bouncer_message_segment_length = register_gauge_metric_instrument(
+            &meter,
+            "block_bouncer_message_segment_length".to_string(),
+            "Message segment length from bouncer weights".to_string(),
+            "length".to_string(),
+        );
+        let block_bouncer_state_diff_size = register_gauge_metric_instrument(
+            &meter,
+            "block_bouncer_state_diff_size".to_string(),
+            "State diff size from bouncer weights".to_string(),
+            "size".to_string(),
+        );
+
         Self {
             block_gauge,
             block_counter,
@@ -111,6 +228,21 @@ impl BlockProductionMetrics {
             txs_rejected,
             classes_declared,
             l2_gas_consumed,
+            close_block_total_duration,
+            close_preconfirmed_duration,
+            executor_finalize_duration,
+            block_event_count,
+            block_state_diff_length,
+            block_declared_classes_count,
+            block_deployed_contracts_count,
+            block_storage_diffs_count,
+            block_nonce_updates_count,
+            block_consumed_l1_nonces_count,
+            block_bouncer_l1_gas,
+            block_bouncer_sierra_gas,
+            block_bouncer_n_events,
+            block_bouncer_message_segment_length,
+            block_bouncer_state_diff_size,
         }
     }
 
