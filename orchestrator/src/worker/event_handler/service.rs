@@ -676,7 +676,7 @@ impl JobHandlerService {
                             "Failed to send SNS alert for verification timeout"
                         );
                     } else {
-                        info!(
+                        debug!(
                             job_id = ?job.id,
                             "SNS alert sent successfully for verification timeout"
                         );
