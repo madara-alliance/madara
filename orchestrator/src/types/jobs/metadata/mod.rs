@@ -215,6 +215,13 @@ pub struct StateUpdateMetadata {
     pub tx_hash: Option<String>,
 
     pub context: SettlementContext,
+
+    // Storage cleanup tracking
+    /// Timestamp when storage artifacts were tagged for expiration.
+    /// Used by StorageCleanupTrigger to track which jobs have been processed.
+    /// When None, the job's artifacts have not yet been tagged for cleanup.
+    #[serde(default)]
+    pub storage_artifacts_tagged_at: Option<DateTime<Utc>>,
 }
 
 /// Enum containing all possible job-specific metadata types.
