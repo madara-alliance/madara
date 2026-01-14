@@ -28,6 +28,7 @@ use crate::worker::event_handler::triggers::proof_registration::ProofRegistratio
 use crate::worker::event_handler::triggers::proving::ProvingJobTrigger;
 use crate::worker::event_handler::triggers::snos::SnosJobTrigger;
 use crate::worker::event_handler::triggers::snos_batching::SnosBatchingTrigger;
+use crate::worker::event_handler::triggers::storage_cleanup::StorageCleanupTrigger;
 use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
@@ -875,6 +876,7 @@ impl JobHandlerService {
             WorkerTriggerType::ProofRegistration => Box::new(ProofRegistrationJobTrigger),
             WorkerTriggerType::Aggregator => Box::new(AggregatorJobTrigger),
             WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
+            WorkerTriggerType::StorageCleanup => Box::new(StorageCleanupTrigger),
         }
     }
 }
