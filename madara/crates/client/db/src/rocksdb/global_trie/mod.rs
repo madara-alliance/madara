@@ -1,3 +1,4 @@
+use crate::metrics::metrics;
 use crate::rocksdb::trie::WrappedBonsaiError;
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use mp_state_update::StateDiff;
@@ -5,6 +6,7 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
+use std::time::Instant;
 
 mod classes;
 mod contracts;
@@ -23,33 +25,52 @@ pub fn apply_to_global_trie<'a>(
     start_block_n: u64,
     state_diffs: impl IntoIterator<Item = &'a StateDiff>,
 ) -> Result<Felt> {
+    let total_start = Instant::now();
     let mut state_root = None;
     for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
         tracing::debug!("applying state_diff block_n={block_n}");
 
-        let (contract_trie_root, class_trie_root) = rayon::join(
+        let ((contract_trie_root, contract_duration), (class_trie_root, class_duration)) = rayon::join(
             || {
-                contracts::contract_trie_root(
+                let start = Instant::now();
+                let result = contracts::contract_trie_root(
                     backend,
                     &state_diff.deployed_contracts,
                     &state_diff.replaced_classes,
                     &state_diff.nonces,
                     &state_diff.storage_diffs,
                     block_n,
-                )
+                );
+                (result, start.elapsed())
             },
             || {
-                classes::class_trie_root(
+                let start = Instant::now();
+                let result = classes::class_trie_root(
                     backend,
                     &state_diff.declared_classes,
                     &state_diff.migrated_compiled_classes,
                     block_n,
-                )
+                );
+                (result, start.elapsed())
             },
         );
 
+        // Record individual trie durations (histogram + gauge)
+        let contract_secs = contract_duration.as_secs_f64();
+        let class_secs = class_duration.as_secs_f64();
+        metrics().contract_trie_root_duration.record(contract_secs, &[]);
+        metrics().contract_trie_root_last.record(contract_secs, &[]);
+        metrics().class_trie_root_duration.record(class_secs, &[]);
+        metrics().class_trie_root_last.record(class_secs, &[]);
+
         state_root = Some(calculate_state_root(contract_trie_root?, class_trie_root?));
     }
+
+    // Record total merklization duration (histogram + gauge)
+    let total_secs = total_start.elapsed().as_secs_f64();
+    metrics().apply_to_global_trie_duration.record(total_secs, &[]);
+    metrics().apply_to_global_trie_last.record(total_secs, &[]);
+
     state_root.context("Applying an empty batch to the global trie")
 }
 

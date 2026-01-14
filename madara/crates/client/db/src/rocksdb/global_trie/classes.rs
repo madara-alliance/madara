@@ -1,3 +1,4 @@
+use crate::metrics::metrics;
 use crate::rocksdb::trie::WrappedBonsaiError;
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
@@ -8,6 +9,7 @@ use mp_state_update::{DeclaredClassItem, MigratedClassItem};
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
+use std::time::Instant;
 
 // "CONTRACT_CLASS_LEAF_V0"
 const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");
@@ -58,7 +60,11 @@ pub fn class_trie_root(
     }
 
     tracing::trace!("class_trie committing");
+    let class_commit_start = Instant::now();
     class_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+    let class_commit_secs = class_commit_start.elapsed().as_secs_f64();
+    metrics().class_trie_commit_duration.record(class_commit_secs, &[]);
+    metrics().class_trie_commit_last.record(class_commit_secs, &[]);
 
     let root_hash = class_trie.root_hash(super::bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
 

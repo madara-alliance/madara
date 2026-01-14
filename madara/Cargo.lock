@@ -7308,6 +7308,7 @@ dependencies = [
  "bitvec",
  "blockifier",
  "bonsai-trie",
+ "mc-analytics",
  "mp-chain-config",
  "mp-convert",
  "mp-receipt",

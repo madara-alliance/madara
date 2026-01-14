@@ -825,6 +825,26 @@ impl BlockProductionTask {
         let state_diff =
             mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
 
+        // Record state diff data gauges before moving state_diff
+        self.metrics.block_declared_classes_count.record(state_diff.declared_classes.len() as u64, &[]);
+        self.metrics.block_deployed_contracts_count.record(state_diff.deployed_contracts.len() as u64, &[]);
+        self.metrics.block_storage_diffs_count.record(state_diff.storage_diffs.len() as u64, &[]);
+        self.metrics.block_nonce_updates_count.record(state_diff.nonces.len() as u64, &[]);
+        self.metrics.block_state_diff_length.record(state_diff.len() as u64, &[]);
+
+        // Record bouncer weights gauges
+        self.metrics.block_bouncer_l1_gas.record(block_exec_summary.bouncer_weights.l1_gas as u64, &[]);
+        self.metrics.block_bouncer_sierra_gas.record(block_exec_summary.bouncer_weights.sierra_gas.0 as u64, &[]);
+        self.metrics.block_bouncer_n_events.record(block_exec_summary.bouncer_weights.n_events as u64, &[]);
+        self.metrics
+            .block_bouncer_message_segment_length
+            .record(block_exec_summary.bouncer_weights.message_segment_length as u64, &[]);
+        self.metrics.block_bouncer_state_diff_size.record(block_exec_summary.bouncer_weights.state_diff_size as u64, &[]);
+
+        // Record consumed L1 nonces count
+        self.metrics.block_consumed_l1_nonces_count.record(state.consumed_core_contract_nonces.len() as u64, &[]);
+
+        let close_preconfirmed_start = Instant::now();
         Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
             state.block_number,
@@ -834,9 +854,13 @@ impl BlockProductionTask {
         )
         .await
         .context("Closing block")?;
+        self.metrics.close_preconfirmed_duration.record(close_preconfirmed_start.elapsed().as_secs_f64(), &[]);
 
         let time_to_close = start_time.elapsed();
         tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
+
+        // Record timing metrics
+        self.metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
 
         // Record metrics
         let attributes = [
