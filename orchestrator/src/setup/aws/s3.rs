@@ -138,7 +138,7 @@ impl InnerAWSS3 {
             .map_err(|e| OrchestratorError::ResourceSetupError(format!("Failed to build tag filter: {:?}", e)))?;
 
         // Create the lifecycle rule filter (filter by tag)
-        let filter = LifecycleRuleFilter::Tag(tag_filter);
+        let filter = LifecycleRuleFilter::builder().tag(tag_filter).build();
 
         // Create the expiration action
         let expiration = LifecycleExpiration::builder().days(EXPIRATION_DAYS).build();
