@@ -6,7 +6,7 @@ use cairo_vm::Felt252;
 use orchestrator_utils::http_client::extract_http_error_text;
 use orchestrator_utils::http_client::HttpClient;
 use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
-use reqwest::Method;
+use reqwest::{Method, StatusCode};
 use starknet_core::types::Felt;
 use tracing::{debug, info, warn};
 use url::Url;
@@ -21,7 +21,7 @@ use crate::transport::ApiKeyAuth;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
-    AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQueryStep, AtlanticSharpProver,
+    AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver,
 };
 use crate::AtlanticValidatedArgs;
 
@@ -322,6 +322,99 @@ impl AtlanticClient {
             .await?;
 
         Ok(result)
+    }
+
+    /// Fetch an Atlantic query by its dedup ID.
+    ///
+    /// This is the preferred method for idempotency checks. The server derives the
+    /// project ID from the API key, so no separate project_id parameter is needed.
+    ///
+    /// # Arguments
+    /// * `dedup_id` - The dedup ID to look up (typically our job ID)
+    /// * `api_key` - API key for authentication
+    ///
+    /// # Returns
+    /// * `Ok(Some(query))` - Query found
+    /// * `Ok(None)` - Query not found (404)
+    /// * `Err(...)` - Other error
+    pub async fn get_query_by_dedup_id(
+        &self,
+        dedup_id: &str,
+        api_key: &str,
+    ) -> Result<Option<AtlanticQuery>, AtlanticError> {
+        let context = format!("dedup_id: {}", dedup_id);
+        let dedup_id = dedup_id.to_string();
+        let api_key = api_key.to_string();
+
+        self.retry_request("get_query_by_dedup_id", &context, || {
+            let dedup_id = dedup_id.clone();
+            let api_key = api_key.clone();
+
+            async move {
+                debug!(
+                    operation = "get_query_by_dedup_id",
+                    dedup_id = %dedup_id,
+                    "Looking up query by dedup ID"
+                );
+
+                let response = self
+                    .client
+                    .request()
+                    .method(Method::GET)
+                    .header(
+                        ApiKeyAuth::header_name(),
+                        HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
+                            operation: "get_query_by_dedup_id".to_string(),
+                            message: format!("Invalid API key header value: {}", e),
+                        })?,
+                    )
+                    .path("atlantic-query-by-dedup-id")
+                    .query_param("dedupId", &dedup_id)
+                    .send()
+                    .await
+                    .map_err(|e| AtlanticError::from_reqwest_error("get_query_by_dedup_id", e))?;
+
+                let status = response.status();
+
+                // 404 means query doesn't exist - this is not an error
+                if status == StatusCode::NOT_FOUND {
+                    debug!(
+                        operation = "get_query_by_dedup_id",
+                        dedup_id = %dedup_id,
+                        "Query not found (first submission)"
+                    );
+                    return Ok(None);
+                }
+
+                if status.is_success() {
+                    let response: AtlanticGetStatusResponse = response
+                        .json()
+                        .await
+                        .map_err(|e| AtlanticError::parse_error("get_query_by_dedup_id", e.to_string()))?;
+
+                    debug!(
+                        operation = "get_query_by_dedup_id",
+                        dedup_id = %dedup_id,
+                        query_id = %response.atlantic_query.id,
+                        status = ?response.atlantic_query.status,
+                        "Query found"
+                    );
+                    return Ok(Some(response.atlantic_query));
+                }
+
+                // Other error
+                let (error_text, status) = extract_http_error_text(response, "get query by dedup id").await;
+                debug!(
+                    operation = "get_query_by_dedup_id",
+                    dedup_id = %dedup_id,
+                    status = %status,
+                    error = %error_text,
+                    "Failed to get query by dedup ID"
+                );
+                Err(AtlanticError::from_http_error_response("get_query_by_dedup_id", status, error_text))
+            }
+        })
+        .await
     }
 
     /// Search Atlantic queries with optional filters
