@@ -6,6 +6,7 @@ pub(crate) mod proof_registration;
 pub(crate) mod proving;
 pub(crate) mod snos;
 pub(crate) mod snos_batching;
+pub(crate) mod storage_cleanup;
 pub(crate) mod update_state;
 
 use crate::core::config::Config;
