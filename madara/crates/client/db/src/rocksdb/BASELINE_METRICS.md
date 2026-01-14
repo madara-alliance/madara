@@ -10,11 +10,16 @@
 
 ## Executive Summary
 
-The current RocksDB configuration is causing significant write pressure:
-- **61% of the time** L0 files exceeded the slowdown threshold (20 files)
-- **22% of the time** L0 files exceeded the stop threshold (36 files)
-- L0 files peaked at **146 files** (4x the stop threshold)
+**Important**: The `db_level_files_count` metric is **aggregated across all 27 column families**.
+Write stall thresholds are applied **per column family**, not to the aggregated total.
+
+Corrected analysis:
+- L0 peaked at 146 **total across 27 CFs** = ~5.4 files per CF average (below 20 threshold)
+- `db_is_write_stopped` was always 0, confirming no write stalls occurred
 - **No block cache configured** - all reads go to disk
+
+The current configuration is adequate for preventing write stalls, but the new defaults
+provide additional headroom for larger databases and burst write scenarios.
 
 ---
 
@@ -57,13 +62,17 @@ The current RocksDB configuration is causing significant write pressure:
 | **p95** | 70 |
 | **p99** | 146 |
 
-### Threshold Violations
+### Threshold Analysis (Aggregated vs Per-CF)
 
-| Condition | Count | Percentage |
-|-----------|-------|------------|
-| L0 > 20 (slowdown threshold) | 52/85 samples | **61%** |
-| L0 > 36 (stop threshold) | 19/85 samples | **22%** |
-| L0 > 48 (proposed new stop) | 10/85 samples | 12% |
+**Note**: These are aggregated counts across 27 column families.
+Per-CF thresholds (20 slowdown, 36 stop) apply individually, not to the sum.
+
+| Condition (Aggregated) | Count | Avg Per CF |
+|------------------------|-------|------------|
+| L0 > 20 (aggregated) | 52/85 samples | ~0.8-5.4 per CF |
+| L0 > 36 (aggregated) | 19/85 samples | ~1.3-5.4 per CF |
+
+**Actual per-CF estimate**: 146 max ÷ 27 CFs = ~5.4 L0 files per CF (well below 20 threshold)
 
 ---
 
@@ -155,21 +164,24 @@ Compaction is keeping up with write load in terms of bytes, but L0 file count is
 | `db_is_write_stopped` Max | 0 |
 | Detected Write Stops | 0 |
 
-**Note**: The `db_is_write_stopped` metric shows 0, but the high L0 file counts indicate write throttling (slowdowns) were occurring frequently.
+**Note**: The `db_is_write_stopped` metric shows 0, confirming no write stalls occurred.
+The high aggregated L0 counts are the sum across 27 column families, not per-CF values.
 
 ---
 
 ## Key Findings
 
-1. **L0 File Pressure is Critical**: L0 files exceeded the stop threshold 22% of the time, indicating frequent write stalls or severe throttling.
+1. **No Write Stalls Detected**: `db_is_write_stopped` was consistently 0, confirming the system is healthy.
 
-2. **Current Thresholds Too Aggressive**: The default 20/36 thresholds were tuned for ~20 GiB databases, but this production DB is ~270 GiB (13x larger).
+2. **Metrics Are Aggregated**: The `db_level_files_count` metric sums across all 27 column families.
+   - L0 = 146 aggregated ≈ 5.4 per CF (well below 20 threshold)
+   - Immutable memtables = 19 aggregated ≈ 0.7 per CF (well below 5 threshold)
 
-3. **No Block Cache**: All reads go directly to disk, wasting the table readers memory (~2 GiB).
+3. **No Block Cache**: All reads go directly to disk. Adding block cache would improve read performance.
 
-4. **Memtable Pressure**: Immutable memtables reached 19 at peak, far exceeding the max_write_buffer_number of 5.
+4. **Compaction Keeping Up**: Pending compaction bytes stayed at 0, indicating healthy compaction.
 
-5. **Compaction Bytes OK**: Pending compaction bytes stayed at 0, suggesting the byte-based limits are appropriate.
+5. **Headroom for Growth**: Current config works but new defaults provide buffer for larger databases.
 
 ---
 
