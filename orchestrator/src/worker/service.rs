@@ -260,7 +260,7 @@ impl JobService {
                         "Failed to send SNS alert for job failure"
                     );
                 } else {
-                    tracing::info!(
+                    tracing::debug!(
                         job_id = ?job.id,
                         "SNS alert sent successfully for job failure"
                     );

@@ -312,7 +312,15 @@ impl ProverClient for AtlanticProverService {
         Ok(bucket
             .queries
             .iter()
-            .find(|query| matches!(query.step, Some(AtlanticQueryStep::FactHashRegistration)))
+            .find(|query| {
+                matches!(
+                    query.step,
+                    // For Mocked queries we search for FactHashRegistration
+                    // For Real queries we search for ProofGenerationAndVerification
+                    Some(AtlanticQueryStep::FactHashRegistration)
+                        | Some(AtlanticQueryStep::ProofGenerationAndVerification)
+                )
+            })
             .ok_or(ProverClientError::FailedToGetAggregatorId(bucket_id.to_string()))?
             .id
             .clone())
