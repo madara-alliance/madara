@@ -79,27 +79,16 @@ impl ProverClient for AtlanticProverService {
                 num_steps: n_steps,
                 external_id,
             }) => {
-                let existing_job = self
-                    .atlantic_client
-                    .search_atlantic_queries(
-                        &self.atlantic_api_key,
-                        &external_id,
-                        Some(1),
-                        Some(self.atlantic_network.as_str()),
-                    )
-                    .await?
-                    .atlantic_queries
-                    .into_iter()
-                    .find(|query| {
-                        query.external_id.as_deref() == Some(external_id.as_str()) || query.id == external_id
-                    });
+                // Direct lookup by dedup ID - O(1), no list filtering needed
+                let existing_job =
+                    self.atlantic_client.get_query_by_dedup_id(&external_id, &self.atlantic_api_key).await?;
 
                 if let Some(existing_job) = existing_job {
                     match existing_job.status {
                         AtlanticQueryStatus::Failed => {
                             tracing::warn!(
                                 atlantic_query_id = %existing_job.id,
-                                external_id = %external_id,
+                                dedup_id = %external_id,
                                 status = ?existing_job.status,
                                 "Existing Atlantic job found in failed state. Resubmitting."
                             );
@@ -108,7 +97,7 @@ impl ProverClient for AtlanticProverService {
                             Self::ensure_bucket_details_match(&existing_job, &bucket_id, bucket_job_index)?;
                             tracing::info!(
                                 atlantic_query_id = %existing_job.id,
-                                external_id = %external_id,
+                                dedup_id = %external_id,
                                 status = ?existing_job.status,
                                 "Atlantic job already exists. Skipping resubmission."
                             );
