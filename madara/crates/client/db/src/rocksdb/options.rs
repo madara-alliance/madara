@@ -19,7 +19,7 @@
 //! │   │ (writes here)   │    │ (waiting flush)  │    │ (waiting flush)  │        │
 //! │   └─────────────────┘    └──────────────────┘    └──────────────────┘        │
 //! │          │                        │                      │                   │
-//! │          │         max_write_buffer_number = 5           │                   │
+//! │          │         max_write_buffer_number = 6           │                   │
 //! │          │         (WRITE STALL if exceeded)             │                   │
 //! │          │                        │                      │                   │
 //! └──────────┼────────────────────────┼──────────────────────┼───────────────────┘
@@ -34,8 +34,8 @@
 //! │  │ LEVEL 0 (L0) - Unsorted, overlapping SST files from memtable flushes  │   │
 //! │  │ [SST][SST][SST][SST][SST]...                                          │   │
 //! │  │                                                                       │   │
-//! │  │ level_zero_slowdown_writes_trigger = 20  (start slowing writes)       │   │
-//! │  │ level_zero_stop_writes_trigger = 36      (stop writes completely)     │   │
+//! │  │ level_zero_slowdown_writes_trigger = 24  (start slowing writes)       │   │
+//! │  │ level_zero_stop_writes_trigger = 48      (stop writes completely)     │   │
 //! │  └───────────────────────────────────────────────────────────────────────┘   │
 //! │                 │ COMPACTION (merge + sort + push down)                      │
 //! │                 ▼                                                            │
@@ -43,8 +43,8 @@
 //! │  │ LEVEL 1+ - Sorted, non-overlapping SST files                          │   │
 //! │  │ Each level is ~10x larger than the previous                           │   │
 //! │  │                                                                       │   │
-//! │  │ soft_pending_compaction_bytes = 6 GiB  (slow writes)                  │   │
-//! │  │ hard_pending_compaction_bytes = 12 GiB (stop writes)                  │   │
+//! │  │ soft_pending_compaction_bytes = 48 GiB  (slow writes)                 │   │
+//! │  │ hard_pending_compaction_bytes = 96 GiB (stop writes)                  │   │
 //! │  └───────────────────────────────────────────────────────────────────────┘   │
 //! └──────────────────────────────────────────────────────────────────────────────┘
 //! ```
@@ -245,23 +245,24 @@ impl Default for RocksDBConfig {
             enable_statistics: false,
             statistics_period_sec: 60,
             statistics_level: StatsLevel::All,
-            // TODO: these might not be the best defaults at all
+            // Memory budgets tuned for production workloads (~8 GiB pod memory)
             memtable_blocks_budget_bytes: 1 * GiB,
-            memtable_contracts_budget_bytes: 128 * MiB,
+            memtable_contracts_budget_bytes: 256 * MiB, // Increased for state update throughput
             memtable_other_budget_bytes: 128 * MiB,
-            memtable_prefix_bloom_filter_ratio: 0.0,
+            memtable_prefix_bloom_filter_ratio: 0.1, // Enable bloom filters for faster negative lookups
             max_saved_trie_logs: None,
             max_kept_snapshots: None,
             snapshot_interval: 5,
             backup_dir: None,
             restore_from_latest_backup: false,
             write_mode: DbWriteMode::default(),
-            // Write stall prevention defaults (tuned for ~20 GiB volumes)
-            max_write_buffer_number: 5,
-            level_zero_slowdown_writes_trigger: 20,
-            level_zero_stop_writes_trigger: 36,
-            soft_pending_compaction_bytes_limit: 6 * GiB,  // ~30% of 20 GiB
-            hard_pending_compaction_bytes_limit: 12 * GiB, // ~60% of 20 GiB
+            // Write stall prevention defaults (tuned for ~250+ GiB production databases)
+            // Based on baseline metrics showing L0 files reaching 146 with previous defaults
+            max_write_buffer_number: 6, // Extra buffer during burst writes
+            level_zero_slowdown_writes_trigger: 24, // 20% more headroom before throttling
+            level_zero_stop_writes_trigger: 48, // Maintains 2x ratio, prevents hard stops
+            soft_pending_compaction_bytes_limit: 48 * GiB, // ~18% of typical production DB size
+            hard_pending_compaction_bytes_limit: 96 * GiB, // ~36% of typical production DB size
         }
     }
 }
@@ -289,14 +290,14 @@ impl Default for RocksDBConfig {
 /// ### MemTable Configuration
 ///
 /// ```text
-/// max_write_buffer_number = 5
+/// max_write_buffer_number = 6
 ///
-/// ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-/// │  Active  │ │ Immut #1 │ │ Immut #2 │ │ Immut #3 │ │ Immut #4 │
-/// │MemTable  │ │(flushing)│ │(waiting) │ │(waiting) │ │(waiting) │
-/// └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
+/// ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+/// │  Active  │ │ Immut #1 │ │ Immut #2 │ │ Immut #3 │ │ Immut #4 │ │ Immut #5 │
+/// │MemTable  │ │(flushing)│ │(waiting) │ │(waiting) │ │(waiting) │ │(waiting) │
+/// └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
 ///      │
-///      │  With max=5, we can queue 4 immutable memtables
+///      │  With max=6, we can queue 5 immutable memtables
 ///      │  This prevents stalls when flush is slow
 ///      ▼
 /// ```
@@ -305,30 +306,29 @@ impl Default for RocksDBConfig {
 ///
 /// ```text
 /// L0: [SST][SST][SST]...[SST][SST][SST]
-///      1    2    3  ...  18   19   20
+///      1    2    3  ...  22   23   24
 ///                              │    │
-///                              │    └─ level_zero_slowdown_writes_trigger = 20
+///                              │    └─ level_zero_slowdown_writes_trigger = 24
 ///                              │       (writes throttled to delayed_write_rate)
 ///                              │
-///      At 36 files ────────────┴────── level_zero_stop_writes_trigger = 36
+///      At 48 files ────────────┴────── level_zero_stop_writes_trigger = 48
 ///                                      (writes completely blocked)
 /// ```
 ///
 /// ### Pending Compaction Limits
 ///
-/// Note: Defaults (6/12 GiB) are tuned for ~20 GiB volumes. Increase for
-/// production databases with higher write traffic.
+/// Note: Defaults (48/96 GiB) are tuned for ~250+ GiB production databases.
 ///
 /// ```text
 /// Pending Compaction Bytes
 /// ════════════════════════
 ///
-/// 0 GB ───────────────────────────────────────► ∞
-///      │              │              │
-///      │              │              │
-///   Normal          6 GB           12 GB
-///   Speed     (soft limit:    (hard limit:
-///              slowdown)        STOP)
+/// 0 GB ───────────────────────────────────────────────────► ∞
+///      │                      │                      │
+///      │                      │                      │
+///   Normal                  48 GB                  96 GB
+///   Speed             (soft limit:            (hard limit:
+///                      slowdown)                STOP)
 /// ```
 ///
 /// ### I/O Smoothing with bytes_per_sync

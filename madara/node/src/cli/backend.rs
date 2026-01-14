@@ -125,15 +125,15 @@ pub struct BackendParams {
     pub db_memtable_blocks_budget_mib: usize,
 
     /// Set the memtable budget for a set of columns.
-    #[clap(env = "MADARA_DB_MEMTABLE_CONTRACTS_BUDGET_MIB", long, default_value_t = 128)]
+    #[clap(env = "MADARA_DB_MEMTABLE_CONTRACTS_BUDGET_MIB", long, default_value_t = 256)]
     pub db_memtable_contracts_budget_mib: usize,
 
     /// Set the memtable budget for a set of columns.
     #[clap(env = "MADARA_DB_MEMTABLE_OTHER_BUDGET_MIB", long, default_value_t = 128)]
     pub db_memtable_other_budget_mib: usize,
 
-    /// Set the rocksdb prefix bloom filter ratio.
-    #[clap(env = "MADARA_DB_MEMTABLE_PREFIX_BLOOM_FILTER_RATIO", long, default_value_t = 0.0)]
+    /// Set the rocksdb prefix bloom filter ratio. Values > 0 enable bloom filters for faster negative lookups.
+    #[clap(env = "MADARA_DB_MEMTABLE_PREFIX_BLOOM_FILTER_RATIO", long, default_value_t = 0.1)]
     pub db_memtable_prefix_bloom_filter_ratio: f64,
 
     /// The block you want to start syncing from. This will most probably break your database.
@@ -156,35 +156,34 @@ pub struct BackendParams {
 
     // ═══════════════════════════════════════════════════════════════════════════
     // WRITE STALL PREVENTION SETTINGS
+    // Tuned for ~250+ GiB production databases based on baseline metrics analysis
     // ═══════════════════════════════════════════════════════════════════════════
     /// Maximum number of memtables (active + immutable) before write stall.
     /// Higher values provide more buffer during write bursts but use more memory.
     /// Increase if you see stalls due to memtable count.
-    #[clap(env = "MADARA_DB_MAX_WRITE_BUFFER_NUMBER", long, default_value_t = 5)]
+    #[clap(env = "MADARA_DB_MAX_WRITE_BUFFER_NUMBER", long, default_value_t = 6)]
     pub db_max_write_buffer_number: i32,
 
     /// Number of L0 files that triggers write slowdown.
     /// When L0 file count reaches this, writes are throttled.
     /// Increase for faster sync at cost of read performance.
-    #[clap(env = "MADARA_DB_L0_SLOWDOWN_TRIGGER", long, default_value_t = 20)]
+    #[clap(env = "MADARA_DB_L0_SLOWDOWN_TRIGGER", long, default_value_t = 24)]
     pub db_l0_slowdown_trigger: i32,
 
     /// Number of L0 files that triggers complete write stop.
     /// When L0 file count reaches this, writes are blocked until compaction catches up.
-    /// Should be higher than slowdown trigger.
-    #[clap(env = "MADARA_DB_L0_STOP_TRIGGER", long, default_value_t = 36)]
+    /// Should be higher than slowdown trigger (recommended: 2x slowdown trigger).
+    #[clap(env = "MADARA_DB_L0_STOP_TRIGGER", long, default_value_t = 48)]
     pub db_l0_stop_trigger: i32,
 
     /// Soft limit for pending compaction in GiB. When exceeded, writes slow down.
-    /// Note: Default is tuned for ~20 GiB volumes. Increase for production databases
-    /// with higher write traffic.
-    #[clap(env = "MADARA_DB_SOFT_PENDING_COMPACTION_GIB", long, default_value_t = 6)]
+    /// Default is tuned for ~250+ GiB production databases (~18% of DB size).
+    #[clap(env = "MADARA_DB_SOFT_PENDING_COMPACTION_GIB", long, default_value_t = 48)]
     pub db_soft_pending_compaction_gib: usize,
 
     /// Hard limit for pending compaction in GiB. When exceeded, writes stop completely.
-    /// Note: Default is tuned for ~20 GiB volumes. Increase for production databases
-    /// with higher write traffic.
-    #[clap(env = "MADARA_DB_HARD_PENDING_COMPACTION_GIB", long, default_value_t = 12)]
+    /// Default is tuned for ~250+ GiB production databases (~36% of DB size).
+    #[clap(env = "MADARA_DB_HARD_PENDING_COMPACTION_GIB", long, default_value_t = 96)]
     pub db_hard_pending_compaction_gib: usize,
 }
 
