@@ -11,6 +11,7 @@ use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
+use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
@@ -366,7 +367,6 @@ impl JobHandlerService {
                 external_id
             }
             Ok(Err(e)) => {
-                // Reset job state so it can be retried when the message comes back
                 error!(
                     job_id = ?id,
                     job_type = ?job.job_type,
@@ -375,21 +375,7 @@ impl JobHandlerService {
                     error = ?e,
                     "Failed to process job, resetting state for retry"
                 );
-                job.metadata.common.process_started_at = None;
-                if let Err(db_err) = config
-                    .database()
-                    .update_job(
-                        &job,
-                        JobItemUpdates::new()
-                            .update_status(original_status)
-                            .update_metadata(job.metadata.clone())
-                            .build(),
-                    )
-                    .await
-                {
-                    error!(job_id = ?id, error = ?db_err, "Failed to reset job state after processing error");
-                }
-                return Err(e);
+                return Err(Self::reset_job_for_retry(&mut job, config.clone(), original_status, e).await);
             }
             Err(panic) => {
                 let panic_msg = panic
@@ -398,26 +384,10 @@ impl JobHandlerService {
                     .or_else(|| panic.downcast_ref::<&str>().copied())
                     .unwrap_or("Unknown panic message");
 
-                // Reset job state so it can be retried when the message comes back
                 error!(job_id = ?id, panic_msg = %panic_msg, "Job handler panicked during processing, resetting state for retry");
-                job.metadata.common.process_started_at = None;
-                if let Err(db_err) = config
-                    .database()
-                    .update_job(
-                        &job,
-                        JobItemUpdates::new()
-                            .update_status(original_status)
-                            .update_metadata(job.metadata.clone())
-                            .build(),
-                    )
-                    .await
-                {
-                    error!(job_id = ?id, error = ?db_err, "Failed to reset job state after panic");
-                }
-                return Err(JobError::Other(OtherError::from(format!(
-                    "Job handler panicked with message: {}",
-                    panic_msg
-                ))));
+                let panic_error =
+                    JobError::Other(OtherError::from(format!("Job handler panicked with message: {}", panic_msg)));
+                return Err(Self::reset_job_for_retry(&mut job, config.clone(), original_status, panic_error).await);
             }
         };
 
@@ -690,6 +660,25 @@ impl JobHandlerService {
                             JobError::from(e)
                         })?;
                     operation_job_status = Some(JobStatus::VerificationTimeout);
+
+                    // Send SNS alert for verification timeout
+                    let alert_message = format!(
+                        "Job Verification Timeout Alert: Job ID: {}, Type: {:?}, Internal_Id: {}, Verification Attempts: {}",
+                        job.id, job.job_type, internal_id, job.metadata.common.verification_attempt_no
+                    );
+
+                    if let Err(e) = config.alerts().send_message(alert_message).await {
+                        error!(
+                            job_id = ?job.id,
+                            error = ?e,
+                            "Failed to send SNS alert for verification timeout"
+                        );
+                    } else {
+                        debug!(
+                            job_id = ?job.id,
+                            "SNS alert sent successfully for verification timeout"
+                        );
+                    }
                 } else {
                     config
                         .database()
@@ -871,6 +860,37 @@ impl JobHandlerService {
 
         ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
         Ok(())
+    }
+
+    /// Resets job state to allow retry when the message comes back from the queue.
+    ///
+    /// Clears `process_started_at` and restores the job to its original status.
+    /// If the DB update fails, returns an error combining both the original error
+    /// and the DB error context.
+    async fn reset_job_for_retry(
+        job: &mut JobItem,
+        config: Arc<Config>,
+        original_status: JobStatus,
+        original_error: JobError,
+    ) -> JobError {
+        job.metadata.common.process_started_at = None;
+        match config
+            .database()
+            .update_job(
+                job,
+                JobItemUpdates::new().update_status(original_status).update_metadata(job.metadata.clone()).build(),
+            )
+            .await
+        {
+            Ok(_) => original_error,
+            Err(db_err) => {
+                error!(job_id = ?job.id, error = ?db_err, "Failed to reset job state for retry");
+                JobError::Other(OtherError::from(format!(
+                    "Failed to reset job state: {}. Original error: {}",
+                    db_err, original_error
+                )))
+            }
+        }
     }
 
     /// To get Box<dyn Worker> handler from `WorkerTriggerType`.

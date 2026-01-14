@@ -848,10 +848,15 @@ async fn verify_job_with_pending_status_works() {
     // Acquire test lock to serialize this test with others that use mocks
     let _test_lock = acquire_test_lock();
 
+    // Mock alert client to handle verification timeout alert
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+
     // Building config
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
         .build()
         .await;
 
