@@ -802,7 +802,7 @@ impl AtlanticClient {
                             .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                             .form_text("cairoVm", &cairo_vm.as_str())
                             .form_text("sharpProver", &sharp_prover.as_str())
-                            .form_text("externalId", &external_id)
+                            .form_text("dedupId", &external_id)
                             .form_file("pieFile", pie_file.as_ref(), "pie.zip", Some("application/zip"))
                             .map_err(|e| AtlanticError::from_io_error("add_job", e))?,
                         ProvingParams { layout },
