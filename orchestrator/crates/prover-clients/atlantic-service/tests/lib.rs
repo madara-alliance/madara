@@ -3,8 +3,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
 use orchestrator_atlantic_service::types::{
-    AtlanticCairoVm, AtlanticClient, AtlanticQueriesListResponse, AtlanticQuery, AtlanticQueryStatus,
-    AtlanticQueryStep, AtlanticSharpProver,
+    AtlanticCairoVm, AtlanticClient, AtlanticQuery, AtlanticQueryStatus, AtlanticQueryStep, AtlanticSharpProver,
 };
 use orchestrator_atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
 use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task};
@@ -35,19 +34,13 @@ async fn atlantic_client_submit_task_when_mock_works() {
     // Start a mock server
     let mock_server = MockServer::start();
 
-    // Create a mock for the search endpoint (returns empty list - no existing queries)
-    let network = atlantic_params.atlantic_network.clone();
-    let search_mock = mock_server.mock(|when, then| {
-        when.method("GET")
-            .path("/atlantic-queries")
-            .header_exists("api-key")
-            .query_param_exists("search")
-            .query_param("limit", "1")
-            .query_param("network", network.as_str());
+    // Create a mock for the dedup lookup endpoint (returns 404 - no existing query)
+    let dedup_mock = mock_server.mock(|when, then| {
+        when.method("GET").path("/atlantic-query-by-dedup-id").header_exists("api-key").query_param_exists("dedupId");
 
-        let response = AtlanticQueriesListResponse { atlantic_queries: vec![], total: 0 };
-
-        then.status(200).header("content-type", "application/json").json_body_obj(&response);
+        then.status(404).header("content-type", "application/json").json_body(serde_json::json!({
+            "error": "Not found"
+        }));
     });
 
     // Create a mock for the submit endpoint
@@ -77,7 +70,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
         .await;
 
     assert!(task_result.is_ok());
-    search_mock.assert();
+    dedup_mock.assert();
     submit_mock.assert();
 }
 
@@ -109,54 +102,44 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
 
     let mock_server = MockServer::start();
 
-    let search_mock = mock_server.mock(|when, then| {
+    let dedup_mock = mock_server.mock(|when, then| {
         when.method("GET")
-            .path("/atlantic-queries")
-            .query_param("search", external_id.as_str())
-            .query_param("limit", "1")
-            .query_param("network", "TESTNET");
+            .path("/atlantic-query-by-dedup-id")
+            .header_exists("api-key")
+            .query_param("dedupId", external_id.as_str());
 
-        let response = AtlanticQueriesListResponse {
-            atlantic_queries: vec![AtlanticQuery {
-                id: "existing_query_id".to_string(),
-                external_id: Some(external_id.clone()),
-                transaction_id: None,
-                status: AtlanticQueryStatus::Received,
-                step: None,
-                program_hash: None,
-                integrity_fact_hash: None,
-                sharp_fact_hash: None,
-                layout: None,
-                is_fact_mocked: None,
-                chain: None,
-                job_size: None,
-                declared_job_size: None,
-                cairo_vm: None,
-                cairo_version: None,
-                steps: vec![],
-                error_reason: None,
-                submitted_by_client: "client".to_string(),
-                project_id: "project".to_string(),
-                created_at: "2024-01-01T00:00:00Z".to_string(),
-                completed_at: None,
-                result: None,
-                network: Some("TESTNET".to_string()),
-                hints: None,
-                sharp_prover: None,
-                bucket_id: Some(bucket_id.clone()),
-                bucket_job_index: Some(bucket_job_index as i32),
-                customer_name: None,
-                is_job_size_valid: true,
-                is_proof_mocked: None,
-                client: AtlanticClient {
-                    client_id: None,
-                    name: None,
-                    email: None,
-                    is_email_verified: None,
-                    image: None,
-                },
-            }],
-            total: 1,
+        let response = AtlanticQuery {
+            id: "existing_query_id".to_string(),
+            external_id: Some(external_id.clone()),
+            transaction_id: None,
+            status: AtlanticQueryStatus::Received,
+            step: None,
+            program_hash: None,
+            integrity_fact_hash: None,
+            sharp_fact_hash: None,
+            layout: None,
+            is_fact_mocked: None,
+            chain: None,
+            job_size: None,
+            declared_job_size: None,
+            cairo_vm: None,
+            cairo_version: None,
+            steps: vec![],
+            error_reason: None,
+            submitted_by_client: "client".to_string(),
+            project_id: "project".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            completed_at: None,
+            result: None,
+            network: Some("TESTNET".to_string()),
+            hints: None,
+            sharp_prover: None,
+            bucket_id: Some(bucket_id.clone()),
+            bucket_job_index: Some(bucket_job_index as i32),
+            customer_name: None,
+            is_job_size_valid: true,
+            is_proof_mocked: None,
+            client: AtlanticClient { client_id: None, name: None, email: None, is_email_verified: None, image: None },
         };
 
         then.status(200).header("content-type", "application/json").json_body_obj(&response);
@@ -187,7 +170,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
         .expect("submit_task should return existing job id");
 
     assert_eq!(task_result, "existing_query_id");
-    search_mock.assert_calls(1);
+    dedup_mock.assert_calls(1);
     submit_mock.assert_calls(0);
 }
 

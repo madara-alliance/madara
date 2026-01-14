@@ -138,14 +138,6 @@ pub struct AtlanticClient {
     pub image: Option<String>,
 }
 
-/// This is the response struct for the `/atlantic-queries` GET endpoint
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AtlanticQueriesListResponse {
-    pub atlantic_queries: Vec<AtlanticQuery>,
-    pub total: u64,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AtlanticAggregatorParams {
