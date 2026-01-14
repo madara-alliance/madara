@@ -21,7 +21,7 @@ use crate::transport::ApiKeyAuth;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
-    AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver,
+    AtlanticGetStatusResponse, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver,
 };
 use crate::AtlanticValidatedArgs;
 
@@ -415,106 +415,6 @@ impl AtlanticClient {
             }
         })
         .await
-    }
-
-    /// Search Atlantic queries with optional filters
-    /// This function searches through Atlantic queries using the provided search string
-    /// and optional additional filters like limit, offset, network, status, and result.
-    ///
-    /// # Arguments
-    /// * `atlantic_api_key` - API key for authentication (sent via header)
-    /// * `search_string` - The search string to filter queries
-    /// * `limit` - Optional limit for the number of results (default: None)
-    /// * `network` - Optional network filter (default: None)
-    ///
-    /// # Returns
-    /// Returns a list of Atlantic queries matching the search criteria and total count
-    pub async fn search_atlantic_queries(
-        &self,
-        atlantic_api_key: impl AsRef<str>,
-        search_string: impl AsRef<str>,
-        limit: Option<u32>,
-        network: Option<&str>,
-    ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
-        let search = search_string.as_ref().to_string();
-        let context = format!("search: {}, limit: {:?}, network: {:?}", search, limit, network);
-
-        debug!(
-            operation = "search_atlantic_queries",
-            search = %search,
-            limit = ?limit,
-            network = ?network,
-            "Searching Atlantic queries"
-        );
-
-        let api_key = atlantic_api_key.as_ref().to_string();
-        let network_str = network.map(|s| s.to_string());
-
-        let result = self
-            .retry_request("search_atlantic_queries", &context, || {
-                let api_key = api_key.clone();
-                let search = search.clone();
-                let network = network_str.clone();
-
-                async move {
-                    let mut request = self
-                        .client
-                        .request()
-                        .method(Method::GET)
-                        .header(
-                            ApiKeyAuth::header_name(),
-                            HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
-                                operation: "search_atlantic_queries".to_string(),
-                                message: format!("Invalid API key header value: {}", e),
-                            })?,
-                        )
-                        .path("atlantic-queries")
-                        .query_param("search", &search);
-
-                    // Add optional query parameters
-                    if let Some(limit_val) = limit {
-                        request = request.query_param("limit", &limit_val.to_string());
-                    }
-                    if let Some(ref network_val) = network {
-                        request = request.query_param("network", network_val);
-                    }
-
-                    let response = request
-                        .send()
-                        .await
-                        .map_err(|e| AtlanticError::from_reqwest_error("search_atlantic_queries", e))?;
-
-                    let status = response.status();
-                    if status.is_success() {
-                        let queries_response: AtlanticQueriesListResponse = response
-                            .json()
-                            .await
-                            .map_err(|e| AtlanticError::parse_error("search_atlantic_queries", e.to_string()))?;
-
-                        debug!(
-                            operation = "search_atlantic_queries",
-                            status = %status,
-                            search = %search,
-                            total_results = queries_response.total,
-                            "Search completed successfully"
-                        );
-                        Ok(queries_response)
-                    } else {
-                        let (error_text, status) = extract_http_error_text(response, "search atlantic queries").await;
-                        debug!(
-                            operation = "search_atlantic_queries",
-                            status = %status,
-                            search = %search,
-                            error = %error_text,
-                            "Search failed"
-                        );
-                        Err(AtlanticError::from_http_error_response("search_atlantic_queries", status, error_text))
-                    }
-                }
-            })
-            .await?;
-
-        Ok(result)
     }
 
     /// Create a new bucket for Applicative Recursion.
