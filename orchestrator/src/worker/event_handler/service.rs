@@ -662,6 +662,25 @@ impl JobHandlerService {
                             JobError::from(e)
                         })?;
                     operation_job_status = Some(JobStatus::VerificationTimeout);
+
+                    // Send SNS alert for verification timeout
+                    let alert_message = format!(
+                        "Job Verification Timeout Alert: Job ID: {}, Type: {:?}, Internal_Id: {}, Verification Attempts: {}",
+                        job.id, job.job_type, internal_id, job.metadata.common.verification_attempt_no
+                    );
+
+                    if let Err(e) = config.alerts().send_message(alert_message).await {
+                        error!(
+                            job_id = ?job.id,
+                            error = ?e,
+                            "Failed to send SNS alert for verification timeout"
+                        );
+                    } else {
+                        debug!(
+                            job_id = ?job.id,
+                            "SNS alert sent successfully for verification timeout"
+                        );
+                    }
                 } else {
                     config
                         .database()
