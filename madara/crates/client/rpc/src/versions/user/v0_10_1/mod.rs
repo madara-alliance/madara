@@ -5,9 +5,10 @@ use mp_rpc::v0_10_1::{
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, ContractStorageKeysItem,
     EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult,
     MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs,
-    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, SimulateTransactionsResult, SimulationFlag,
-    SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TraceBlockTransactionsResult,
-    TraceFlag, TraceTransactionResult, TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
+    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, ResponseFlag, SimulateTransactionsResult,
+    SimulationFlag, SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
+    TraceBlockTransactionsResult, TraceFlag, TraceTransactionResult, TxnFinalityAndExecutionStatus,
+    TxnReceiptWithBlockInfo, TxnWithHash,
 };
 use starknet_types_core::felt::Felt;
 
@@ -68,8 +69,13 @@ pub trait StarknetReadRpcApi {
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedBlockWithTxHashes>;
 
     /// Get block information with full transactions given the block id
+    /// v0.10.1: Added optional response_flags parameter for INCLUDE_PROOF_FACTS support
     #[method(name = "getBlockWithTxs")]
-    fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedBlockWithTxs>;
+    fn get_block_with_txs(
+        &self,
+        block_id: BlockId,
+        response_flags: Option<Vec<ResponseFlag>>,
+    ) -> RpcResult<MaybePreConfirmedBlockWithTxs>;
 
     /// Get the contract class at a given contract address for a given block id
     #[method(name = "getClassAt")]
@@ -97,12 +103,23 @@ pub trait StarknetReadRpcApi {
     fn get_storage_at(&self, contract_address: Felt, key: Felt, block_id: BlockId) -> RpcResult<Felt>;
 
     /// Get the details of a transaction by a given block id and index
+    /// v0.10.1: Added optional response_flags parameter for INCLUDE_PROOF_FACTS support
     #[method(name = "getTransactionByBlockIdAndIndex")]
-    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<TxnWithHash>;
+    fn get_transaction_by_block_id_and_index(
+        &self,
+        block_id: BlockId,
+        index: u64,
+        response_flags: Option<Vec<ResponseFlag>>,
+    ) -> RpcResult<TxnWithHash>;
 
     /// Returns the information about a transaction by transaction hash.
+    /// v0.10.1: Added optional response_flags parameter for INCLUDE_PROOF_FACTS support
     #[method(name = "getTransactionByHash")]
-    fn get_transaction_by_hash(&self, transaction_hash: Felt) -> RpcResult<TxnWithHash>;
+    fn get_transaction_by_hash(
+        &self,
+        transaction_hash: Felt,
+        response_flags: Option<Vec<ResponseFlag>>,
+    ) -> RpcResult<TxnWithHash>;
 
     /// Returns the receipt of a transaction by transaction hash.
     #[method(name = "getTransactionReceipt")]

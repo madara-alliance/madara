@@ -9,7 +9,7 @@ use mp_convert::Felt;
 use mp_rpc::v0_10_1::{
     BlockHashAndNumber, BroadcastedTxn, ContractStorageKeysItem, EventFilterWithPageRequest, EventsChunk, FeeEstimate,
     FunctionCall, GetStorageProofResult, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes,
-    MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1,
+    MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, ResponseFlag,
     SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TxnFinalityAndExecutionStatus,
     TxnReceiptWithBlockInfo, TxnWithHash,
 };
@@ -71,7 +71,14 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
         V0_10_0Impl::get_block_with_tx_hashes(self, block_id)
     }
 
-    fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedBlockWithTxs> {
+    fn get_block_with_txs(
+        &self,
+        block_id: BlockId,
+        _response_flags: Option<Vec<ResponseFlag>>,
+    ) -> RpcResult<MaybePreConfirmedBlockWithTxs> {
+        // Note: response_flags is accepted but not yet used.
+        // INCLUDE_PROOF_FACTS would require fetching proof_facts from storage,
+        // which is not yet implemented.
         V0_10_0Impl::get_block_with_txs(self, block_id)
     }
 
@@ -99,11 +106,26 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
         V0_9_0Impl::get_storage_at(self, contract_address, key, block_id)
     }
 
-    fn get_transaction_by_block_id_and_index(&self, block_id: BlockId, index: u64) -> RpcResult<TxnWithHash> {
+    fn get_transaction_by_block_id_and_index(
+        &self,
+        block_id: BlockId,
+        index: u64,
+        _response_flags: Option<Vec<ResponseFlag>>,
+    ) -> RpcResult<TxnWithHash> {
+        // Note: response_flags is accepted but not yet used.
+        // INCLUDE_PROOF_FACTS would require fetching proof_facts from storage,
+        // which is not yet implemented.
         V0_9_0Impl::get_transaction_by_block_id_and_index(self, block_id, index)
     }
 
-    fn get_transaction_by_hash(&self, transaction_hash: Felt) -> RpcResult<TxnWithHash> {
+    fn get_transaction_by_hash(
+        &self,
+        transaction_hash: Felt,
+        _response_flags: Option<Vec<ResponseFlag>>,
+    ) -> RpcResult<TxnWithHash> {
+        // Note: response_flags is accepted but not yet used.
+        // INCLUDE_PROOF_FACTS would require fetching proof_facts from storage,
+        // which is not yet implemented.
         V0_9_0Impl::get_transaction_by_hash(self, transaction_hash)
     }
 
