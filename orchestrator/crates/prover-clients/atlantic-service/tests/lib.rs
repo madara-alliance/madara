@@ -206,15 +206,32 @@ async fn atlantic_client_get_query_by_dedup_id_found() {
     let atlantic_service =
         AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None, None);
 
-    // Use a known dedup_id that already exists on Atlantic (avoids submitting a new job)
-    let dedup_id = "fa1df7d1-8c25-49c7-82ae-c86a5abfe09e";
+    // Use a known dedup_id that exists - we'll first submit a job to get one
+    let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
+    let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("Failed to read Cairo PIE zip file");
 
-    // Lookup by dedup_id - should find the existing query
-    let result = atlantic_service.atlantic_client.get_query_by_dedup_id(dedup_id, &api_key).await;
+    let dedup_id = format!("test-dedup-{}", uuid::Uuid::new_v4());
+
+    // Submit a job with a known dedup_id
+    let query_id = atlantic_service
+        .submit_task(Task::CreateJob(CreateJobInfo {
+            cairo_pie: Box::new(cairo_pie),
+            bucket_id: None,
+            bucket_job_index: None,
+            num_steps: None,
+            external_id: dedup_id.clone(),
+        }))
+        .await
+        .expect("Failed to submit task");
+
+    // Now lookup by dedup_id - should find the query we just submitted
+    let result = atlantic_service.atlantic_client.get_query_by_dedup_id(&dedup_id, &api_key).await;
 
     assert!(result.is_ok(), "get_query_by_dedup_id should succeed: {:?}", result.err());
     let query = result.unwrap();
     assert!(query.is_some(), "Query should be found for dedup_id: {}", dedup_id);
+    let query = query.unwrap();
+    assert_eq!(query.id, query_id, "Query ID should match the submitted job");
 }
 
 /// Test get_query_by_dedup_id - query does not exist
