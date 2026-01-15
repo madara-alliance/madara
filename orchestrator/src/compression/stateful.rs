@@ -1,24 +1,16 @@
+use crate::compression::batch_rpc::BatchRpcClient;
 use crate::compression::utils::sort_state_diff;
-use crate::utils::helpers::retry_async;
 use color_eyre::{eyre, Result};
-use futures::{stream, StreamExt};
-use itertools::Itertools;
 use starknet::core::types::{
     ContractStorageDiffItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem, StateUpdate, StorageEntry,
 };
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Provider, ProviderError};
-use starknet_core::types::{BlockId, StarknetError};
+use starknet_core::types::BlockId;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::warn;
+use tracing::{debug, warn};
 
 // https://community.starknet.io/t/starknet-v0-13-4-pre-release-notes/115257
 const STATEFUL_SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
 const STATEFUL_MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
-const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
-const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 3000;
 
 /// Compresses a state update using stateful compression
 ///
@@ -30,19 +22,20 @@ const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 3000;
 /// # Arguments
 /// * `state_update` - StateUpdate to compress
 /// * `last_block_before_state_update` - The last block before the state update
-/// * `provider` - Provider to use for fetching values from the special address
+/// * `rpc_url` - RPC URL for fetching values from the special address
 ///
 /// # Returns
 /// A compressed StateUpdate with values mapped according to the special address mappings
 pub async fn compress(
     state_update: &StateUpdate,
     last_block_before_state_update: u64,
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
+    rpc_url: &str,
 ) -> Result<StateUpdate> {
     let mut state_update = state_update.clone();
 
+    let batch_client = BatchRpcClient::with_defaults(rpc_url.to_string());
     let mapping =
-        CompressedKeyValues::from_state_update_and_provider(&state_update, last_block_before_state_update, provider)
+        CompressedKeyValues::from_state_update_batched(&state_update, last_block_before_state_update, &batch_client)
             .await?;
 
     // Process storage diffs
@@ -73,17 +66,17 @@ pub async fn compress(
 struct CompressedKeyValues(HashMap<Felt, Felt>);
 
 impl CompressedKeyValues {
-    /// Creates a new CompressedKeyValues using state update and provider
+    /// Creates a new CompressedKeyValues using state update and batch RPC client
     /// This will create a HashMap which will contain all the required addresses and storage keys
     /// `key` - address/storage key
     /// `value` - compressed mapping for the address/storage key
     /// PLEASE NOTE: All the keys that will be required for the stateful compression will be present
     /// in the HashMap.
     /// You can read more about it in the community notes for stateful compression linked above
-    async fn from_state_update_and_provider(
+    async fn from_state_update_batched(
         state_update: &StateUpdate,
         last_block_before_state_update: u64,
-        provider: &Arc<JsonRpcClient<HttpTransport>>,
+        batch_client: &BatchRpcClient,
     ) -> Result<Self> {
         let mut mappings: HashMap<Felt, Felt> = HashMap::new();
         let mut keys: HashSet<Felt> = HashSet::new();
@@ -110,34 +103,50 @@ impl CompressedKeyValues {
             keys.insert(replaced_class.contract_address);
         });
 
-        // Fetch the values for the keys from the special address (0x2)
+        // Fetch the values for the keys from the special address (0x2) in the current state update
         let compressed_key_values = Self::get_compressed_key_values_from_state_update(state_update)?;
 
-        // Fetch the value for the keys in the special address either from the current mapping or from the provider
-        // Doing this in parallel
-        stream::iter(keys)
-            .map(|key| {
-                let special_address_mappings = compressed_key_values.clone();
-                async move {
-                    match special_address_mappings.get(&key).cloned() {
-                        Some(value) => Ok((key, value)),
-                        None => Ok((
-                            key,
-                            Self::get_compressed_key_from_provider(provider, &key, last_block_before_state_update)
-                                .await?,
-                        )),
-                    }
-                }
-            })
-            .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .try_collect::<_, Vec<(Felt, Felt)>, ProviderError>()?
-            .iter()
-            .for_each(|(key, value)| {
+        // Separate keys into those found in state update vs those needing provider lookup
+        let mut keys_needing_provider: Vec<Felt> = Vec::new();
+
+        for key in &keys {
+            if Self::skip_address_compression(*key) {
+                // Keys below threshold map to themselves
+                mappings.insert(*key, *key);
+            } else if let Some(value) = compressed_key_values.get(key) {
+                // Found in current state update
                 mappings.insert(*key, *value);
-            });
+            } else {
+                // Need to fetch from provider
+                keys_needing_provider.push(*key);
+            }
+        }
+
+        // Batch-fetch all keys that need provider lookup
+        if !keys_needing_provider.is_empty() {
+            debug!(
+                "Batch-fetching {} compressed key values from provider at block {}",
+                keys_needing_provider.len(),
+                last_block_before_state_update
+            );
+
+            // Build storage queries: all keys are fetched from STATEFUL_SPECIAL_ADDRESS
+            let storage_queries: Vec<(Felt, Felt)> =
+                keys_needing_provider.iter().map(|key| (STATEFUL_SPECIAL_ADDRESS, *key)).collect();
+
+            let block_id = BlockId::Number(last_block_before_state_update);
+            let provider_values = batch_client
+                .batch_get_storage_at(storage_queries, block_id)
+                .await
+                .map_err(|e| eyre::eyre!("Failed to batch get compressed key values from provider: {}", e))?;
+
+            // Add fetched values to mappings
+            for key in keys_needing_provider {
+                let value = provider_values.get(&(STATEFUL_SPECIAL_ADDRESS, key)).copied().unwrap_or(Felt::ZERO);
+                mappings.insert(key, value);
+            }
+        }
+
         Ok(Self(mappings))
     }
 
@@ -160,34 +169,6 @@ impl CompressedKeyValues {
             warn!("didn't get any key for the alias address of 0x2");
         }
         Ok(mappings)
-    }
-
-    /// Returns the mapping for a key after fetching it from the provider
-    async fn get_compressed_key_from_provider(
-        provider: &Arc<JsonRpcClient<HttpTransport>>,
-        key: &Felt,
-        last_block_before_state_update: u64,
-    ) -> Result<Felt, ProviderError> {
-        if Self::skip_address_compression(*key) {
-            return Ok(*key);
-        }
-
-        retry_async(
-            async || {
-                provider
-                    .get_storage_at(STATEFUL_SPECIAL_ADDRESS, key, BlockId::Number(last_block_before_state_update))
-                    .await
-            },
-            MAX_GET_STORAGE_AT_CALL_RETRY,
-            Some(Duration::from_secs(5)),
-        )
-        .await
-        .map_err(|err| {
-            ProviderError::StarknetError(StarknetError::UnexpectedError(format!(
-                "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-                STATEFUL_SPECIAL_ADDRESS, key, last_block_before_state_update, err
-            )))
-        })
     }
 
     /// Determines if we can skip a contract or storage address from stateful compression mapping
