@@ -116,6 +116,7 @@ impl BatchRpcClient {
     ///
     /// Returns a HashMap mapping (contract_address, key) to the storage value.
     /// If a storage slot doesn't exist, ZERO is returned for that slot.
+    #[allow(clippy::type_complexity)]
     pub async fn batch_get_storage_at(
         &self,
         queries: Vec<(Felt, Felt)>, // (contract_address, key)
