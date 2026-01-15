@@ -113,6 +113,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
             .query_param("dedupId", external_id.as_str());
 
         // Response must be wrapped in { "atlanticQuery": ... } to match AtlanticQueryByDedupIdResponse
+        // Note: The real API does not return `client` field for this endpoint
         let response = serde_json::json!({
             "atlanticQuery": {
                 "id": "existing_query_id",
@@ -144,14 +145,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
                 "bucketJobIndex": bucket_job_index as i32,
                 "customerName": null,
                 "isJobSizeValid": true,
-                "isProofMocked": null,
-                "client": {
-                    "clientId": null,
-                    "name": null,
-                    "email": null,
-                    "isEmailVerified": null,
-                    "image": null
-                }
+                "isProofMocked": null
             }
         });
 

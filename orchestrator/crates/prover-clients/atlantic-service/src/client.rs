@@ -380,10 +380,8 @@ impl AtlanticClient {
                         dedup_id = %dedup_id,
                         "Query not found (first submission)"
                     );
-                    return Ok(None);
-                }
-
-                if status.is_success() {
+                    Ok(None)
+                } else if status.is_success() {
                     let response: AtlanticQueryByDedupIdResponse = response
                         .json()
                         .await
@@ -396,19 +394,19 @@ impl AtlanticClient {
                         status = ?response.atlantic_query.status,
                         "Query found"
                     );
-                    return Ok(Some(response.atlantic_query));
+                    Ok(Some(response.atlantic_query))
+                } else {
+                    // Other error
+                    let (error_text, status) = extract_http_error_text(response, "get query by dedup id").await;
+                    debug!(
+                        operation = "get_query_by_dedup_id",
+                        dedup_id = %dedup_id,
+                        status = %status,
+                        error = %error_text,
+                        "Failed to get query by dedup ID"
+                    );
+                    Err(AtlanticError::from_http_error_response("get_query_by_dedup_id", status, error_text))
                 }
-
-                // Other error
-                let (error_text, status) = extract_http_error_text(response, "get query by dedup id").await;
-                debug!(
-                    operation = "get_query_by_dedup_id",
-                    dedup_id = %dedup_id,
-                    status = %status,
-                    error = %error_text,
-                    "Failed to get query by dedup ID"
-                );
-                Err(AtlanticError::from_http_error_response("get_query_by_dedup_id", status, error_text))
             }
         })
         .await
