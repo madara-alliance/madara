@@ -740,7 +740,7 @@ impl JobHandlerService {
         JobService::move_job_to_failed(
             &job,
             config.clone(),
-            format!("Received failure queue message for job with status: {}", status),
+            format!("Job moved to DLQ after exhausting retries (last status: {})", status),
         )
         .await
     }
@@ -864,9 +864,9 @@ impl JobHandlerService {
 
     /// Resets job state to allow retry when the message comes back from the queue.
     ///
-    /// Clears `process_started_at` and restores the job to its original status.
-    /// If the DB update fails, returns an error combining both the original error
-    /// and the DB error context.
+    /// Clears `process_started_at`, prepends the error to `failure_reason`, and restores
+    /// the job to its original status. If the DB update fails, returns an error combining
+    /// both the original error and the DB error context.
     async fn reset_job_for_retry(
         job: &mut JobItem,
         config: Arc<Config>,
@@ -874,6 +874,13 @@ impl JobHandlerService {
         original_error: JobError,
     ) -> JobError {
         job.metadata.common.process_started_at = None;
+        // Prepend the error message so it's preserved if the job eventually goes to DLQ
+        let new_error =
+            format!("Processing attempt {} failed: {}", job.metadata.common.process_attempt_no, original_error);
+        job.metadata.common.failure_reason = Some(match &job.metadata.common.failure_reason {
+            Some(existing) => format!("{} | {}", new_error, existing),
+            None => new_error,
+        });
         match config
             .database()
             .update_job(

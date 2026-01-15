@@ -224,8 +224,12 @@ impl JobService {
         let internal_id = &job.internal_id;
 
         tracing::debug!(job_id = ?job.id, "Updating job status to Failed in database");
-        // Update failure information in common metadata
-        job_metadata.common.failure_reason = Some(reason.clone());
+        // Prepend new failure reason to existing failure history
+        let full_failure_reason = match &job_metadata.common.failure_reason {
+            Some(existing) => format!("{} | {}", reason, existing),
+            None => reason.clone(),
+        };
+        job_metadata.common.failure_reason = Some(full_failure_reason.clone());
 
         match config
             .database()
@@ -247,10 +251,10 @@ impl JobService {
                     .failed_jobs
                     .add(1.0, &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))]);
 
-                // Send SNS alert for job failure
+                // Send SNS alert for job failure with full failure history
                 let alert_message = format!(
                     "Job Failed Alert: Job ID: {}, Type: {:?}, Block: {}, Reason: {}",
-                    job.id, job.job_type, internal_id, reason
+                    job.id, job.job_type, internal_id, full_failure_reason
                 );
 
                 if let Err(e) = config.alerts().send_message(alert_message).await {
