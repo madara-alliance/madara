@@ -5,28 +5,27 @@ pub use crate::v0_10_0::{
     BlockHeader, BlockNumber, BlockNumberHelper, BlockNumberParams, BlockStatus, BlockTag, BlockWithReceipts,
     BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2,
     BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn, CallParams, ChainId, ChainIdParams, ClassAndTxnHash,
-    CommonReceiptProperties, ContractAbi, ContractAbiEntry, ContractAndTxnHash, ContractClass,
-    ContractLeavesDataItem, ContractStorageDiffItem, ContractStorageKeysItem, ContractsProof, DaMode,
-    DataAvailability, DeclareTxn, DeclareTxnReceipt, DeclareTxnV0, DeclareTxnV1, DeclareTxnV2, DeclareTxnV3,
-    DeployAccountTxn, DeployAccountTxnReceipt, DeployAccountTxnV1, DeployAccountTxnV3, DeployTxn, DeployTxnReceipt,
-    DeployedContractItem, DeprecatedCairoEntryPoint, DeprecatedContractClass, DeprecatedEntryPointsByType,
-    EntryPointsByType, EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event, EventAbiEntry, EventAbiType,
-    EventContent, ExecutionResources, ExecutionStatus, FeeEstimate, FeeEstimateCommon, FeePayment, FunctionAbiEntry,
-    FunctionAbiType, FunctionCall, FunctionStateMutability, GetBlockTransactionCountParams,
-    GetBlockWithReceiptsParams, GetBlockWithTxHashesParams, GetBlockWithTxsParams, GetClassAtParams,
-    GetClassHashAtParams, GetClassParams, GetNonceParams, GetStateUpdateParams, GetStorageAtParams,
-    GetStorageProofResult, GetTransactionByBlockIdAndIndexParams, GetTransactionByHashParams,
-    GetTransactionReceiptParams, GetTransactionStatusParams, GlobalRoots, InvokeTxn, InvokeTxnReceipt, InvokeTxnV0,
-    InvokeTxnV1, KeyValuePair, L1DaMode, L1HandlerTxn, L1HandlerTxnReceipt, MaybeDeprecatedContractClass,
-    MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MerkleNode,
-    MessageFeeEstimate, MigratedClassItem, MsgFromL1, MsgToL1, NewClasses, NodeHashToNodeMappingItem, NonceUpdate,
-    PreConfirmedBlockHeader, PreConfirmedBlockWithReceipts, PreConfirmedBlockWithTxHashes, PreConfirmedBlockWithTxs,
-    PreConfirmedStateUpdate, PriceUnitFri, PriceUnitWei, ReplacedClass, ResourceBounds, ResourceBoundsMapping,
-    ResourcePrice, SierraEntryPoint, Signature, SimulationFlagForEstimateFee, SpecVersionParams, StateDiff,
-    StateUpdate, StarknetGetBlockWithTxsAndReceiptsResult, StorageKey, StructAbiEntry, StructAbiType, StructMember,
-    SyncStatus, SyncingParams, SyncingStatus, TransactionAndReceipt, Txn, TxnExecutionStatus,
-    TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash, TxnReceipt, TxnReceiptWithBlockInfo, TxnStatus,
-    TxnWithHash, TypedParameter,
+    CommonReceiptProperties, ContractAbi, ContractAbiEntry, ContractAndTxnHash, ContractClass, ContractLeavesDataItem,
+    ContractStorageDiffItem, ContractStorageKeysItem, ContractsProof, DaMode, DataAvailability, DeclareTxn,
+    DeclareTxnReceipt, DeclareTxnV0, DeclareTxnV1, DeclareTxnV2, DeclareTxnV3, DeployAccountTxn,
+    DeployAccountTxnReceipt, DeployAccountTxnV1, DeployAccountTxnV3, DeployTxn, DeployTxnReceipt, DeployedContractItem,
+    DeprecatedCairoEntryPoint, DeprecatedContractClass, DeprecatedEntryPointsByType, EntryPointsByType,
+    EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event, EventAbiEntry, EventAbiType, EventContent,
+    ExecutionResources, ExecutionStatus, FeeEstimate, FeeEstimateCommon, FeePayment, FunctionAbiEntry, FunctionAbiType,
+    FunctionCall, FunctionStateMutability, GetBlockTransactionCountParams, GetBlockWithReceiptsParams,
+    GetBlockWithTxHashesParams, GetBlockWithTxsParams, GetClassAtParams, GetClassHashAtParams, GetClassParams,
+    GetNonceParams, GetStateUpdateParams, GetStorageAtParams, GetStorageProofResult,
+    GetTransactionByBlockIdAndIndexParams, GetTransactionByHashParams, GetTransactionReceiptParams,
+    GetTransactionStatusParams, GlobalRoots, InvokeTxn, InvokeTxnReceipt, InvokeTxnV0, InvokeTxnV1, KeyValuePair,
+    L1DaMode, L1HandlerTxn, L1HandlerTxnReceipt, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes,
+    MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MerkleNode, MessageFeeEstimate, MigratedClassItem,
+    MsgFromL1, MsgToL1, NewClasses, NodeHashToNodeMappingItem, NonceUpdate, PreConfirmedBlockHeader,
+    PreConfirmedBlockWithReceipts, PreConfirmedBlockWithTxHashes, PreConfirmedBlockWithTxs, PreConfirmedStateUpdate,
+    PriceUnitFri, PriceUnitWei, ReplacedClass, ResourceBounds, ResourceBoundsMapping, ResourcePrice, SierraEntryPoint,
+    Signature, SimulationFlagForEstimateFee, SpecVersionParams, StarknetGetBlockWithTxsAndReceiptsResult, StateDiff,
+    StateUpdate, StorageKey, StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus,
+    TransactionAndReceipt, Txn, TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash,
+    TxnReceipt, TxnReceiptWithBlockInfo, TxnStatus, TxnWithHash, TypedParameter,
 };
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
@@ -106,12 +105,15 @@ pub struct GetEventsParams {
 }
 
 /// Proof fact element type (NEW in v0.10.1)
-/// Represents a single proof fact associated with a transaction
+/// Represents a single proof fact associated with a transaction.
+/// These are FELT values stored with the transaction.
 pub type ProofFactElem = Felt;
 
 /// Proof element type (NEW in v0.10.1)
-/// Represents a proof element in broadcasted transactions
-pub type ProofElem = Felt;
+/// Represents a proof element in broadcasted transactions.
+/// According to spec: "type": "array", "items": { "type": "integer" }
+/// These are integers passed when submitting transactions.
+pub type ProofElem = u64;
 
 /// INVOKE_TXN_V3 with optional proof_facts (NEW in v0.10.1)
 ///
@@ -161,3 +163,67 @@ pub use crate::v0_10_0::BroadcastedInvokeTxn;
 
 /// Broadcasted transaction enum (v0.10.1)
 pub use crate::v0_10_0::BroadcastedTxn;
+
+// ============================================================================
+// v0.10.1 specific types for INCLUDE_PROOF_FACTS support
+// ============================================================================
+//
+// These types mirror the v0.10.0 types but with InvokeTxnV3 containing proof_facts.
+// Used when the INCLUDE_PROOF_FACTS response flag is set.
+//
+// For backward compatibility:
+// - Old transactions stored without proof_facts will deserialize with proof_facts: None
+// - When INCLUDE_PROOF_FACTS is NOT requested, use the re-exported v0.10.0 types
+// - When INCLUDE_PROOF_FACTS IS requested, use these v0.10.1 specific types
+
+/// Invoke transaction enum with proof_facts support (v0.10.1)
+///
+/// When INCLUDE_PROOF_FACTS is requested, V3 variant includes proof_facts.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "version")]
+pub enum InvokeTxnWithProofFacts {
+    /// Invoke transaction v0
+    #[serde(rename = "0x0")]
+    V0(crate::v0_10_0::InvokeTxnV0),
+    /// Invoke transaction v1
+    #[serde(rename = "0x1")]
+    V1(crate::v0_10_0::InvokeTxnV1),
+    /// Invoke transaction v3 with proof_facts
+    #[serde(rename = "0x3")]
+    V3(InvokeTxnV3),
+}
+
+/// Transaction enum with proof_facts support (v0.10.1)
+///
+/// When INCLUDE_PROOF_FACTS is requested, Invoke variant uses InvokeTxnWithProofFacts.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum TxnWithProofFacts {
+    /// Invoke transaction with proof_facts support
+    #[serde(rename = "INVOKE")]
+    Invoke(InvokeTxnWithProofFacts),
+    /// L1 Handler transaction
+    #[serde(rename = "L1_HANDLER")]
+    L1Handler(crate::v0_10_0::L1HandlerTxn),
+    /// Declare transaction
+    #[serde(rename = "DECLARE")]
+    Declare(crate::v0_10_0::DeclareTxn),
+    /// Deploy transaction (legacy)
+    #[serde(rename = "DEPLOY")]
+    Deploy(crate::v0_10_0::DeployTxn),
+    /// Deploy account transaction
+    #[serde(rename = "DEPLOY_ACCOUNT")]
+    DeployAccount(crate::v0_10_0::DeployAccountTxn),
+}
+
+/// Transaction with hash and proof_facts support (v0.10.1)
+///
+/// Used when INCLUDE_PROOF_FACTS response flag is set.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TxnWithHashAndProofFacts {
+    /// The transaction data with proof_facts support
+    #[serde(flatten)]
+    pub transaction: TxnWithProofFacts,
+    /// The transaction hash
+    pub transaction_hash: Felt,
+}

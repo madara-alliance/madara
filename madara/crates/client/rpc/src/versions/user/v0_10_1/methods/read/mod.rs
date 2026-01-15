@@ -10,8 +10,8 @@ use mp_rpc::v0_10_1::{
     BlockHashAndNumber, BroadcastedTxn, ContractStorageKeysItem, EventFilterWithPageRequest, EventsChunk, FeeEstimate,
     FunctionCall, GetStorageProofResult, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes,
     MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, ResponseFlag,
-    SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TxnFinalityAndExecutionStatus,
-    TxnReceiptWithBlockInfo, TxnWithHash,
+    SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
+    TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
 };
 
 // v0.10.1 specific implementation

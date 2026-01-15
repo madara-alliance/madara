@@ -56,7 +56,9 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
     ///
     /// This method returns all state values that were read during transaction execution.
     /// It's used for implementing the RETURN_INITIAL_READS flag in RPC v0.10.1.
-    pub fn get_initial_reads(&self) -> Result<blockifier::state::cached_state::StateMaps, blockifier::state::errors::StateError> {
+    pub fn get_initial_reads(
+        &self,
+    ) -> Result<blockifier::state::cached_state::StateMaps, blockifier::state::errors::StateError> {
         self.state.get_initial_reads()
     }
 }

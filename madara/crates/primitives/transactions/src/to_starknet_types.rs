@@ -24,6 +24,18 @@ impl Transaction {
             Transaction::DeployAccount(tx) => mp_rpc::v0_8_1::Txn::DeployAccount(tx.to_rpc_v0_8()),
         }
     }
+    /// Convert to v0.10.1 RPC type with proof_facts support.
+    /// This returns the proof_facts-aware transaction type for use with INCLUDE_PROOF_FACTS flag.
+    /// Old stored transactions will have proof_facts: None (backward compatible).
+    pub fn to_rpc_v0_10_1_with_proof_facts(self) -> mp_rpc::v0_10_1::TxnWithProofFacts {
+        match self {
+            Transaction::Invoke(tx) => mp_rpc::v0_10_1::TxnWithProofFacts::Invoke(tx.to_rpc_v0_10_1_with_proof_facts()),
+            Transaction::L1Handler(tx) => mp_rpc::v0_10_1::TxnWithProofFacts::L1Handler(tx.to_rpc_v0_7()),
+            Transaction::Declare(tx) => mp_rpc::v0_10_1::TxnWithProofFacts::Declare(tx.to_rpc_v0_8()),
+            Transaction::Deploy(tx) => mp_rpc::v0_10_1::TxnWithProofFacts::Deploy(tx.to_rpc_v0_7()),
+            Transaction::DeployAccount(tx) => mp_rpc::v0_10_1::TxnWithProofFacts::DeployAccount(tx.to_rpc_v0_8()),
+        }
+    }
 }
 
 impl InvokeTransaction {
@@ -39,6 +51,15 @@ impl InvokeTransaction {
             InvokeTransaction::V0(tx) => mp_rpc::v0_8_1::InvokeTxn::V0(tx.to_rpc_v0_7()),
             InvokeTransaction::V1(tx) => mp_rpc::v0_8_1::InvokeTxn::V1(tx.to_rpc_v0_7()),
             InvokeTransaction::V3(tx) => mp_rpc::v0_8_1::InvokeTxn::V3(tx.to_rpc_v0_8()),
+        }
+    }
+    /// Convert to v0.10.1 RPC type with proof_facts support.
+    /// V3 transactions include proof_facts (None for old transactions, Some for new).
+    pub fn to_rpc_v0_10_1_with_proof_facts(self) -> mp_rpc::v0_10_1::InvokeTxnWithProofFacts {
+        match self {
+            InvokeTransaction::V0(tx) => mp_rpc::v0_10_1::InvokeTxnWithProofFacts::V0(tx.to_rpc_v0_7()),
+            InvokeTransaction::V1(tx) => mp_rpc::v0_10_1::InvokeTxnWithProofFacts::V1(tx.to_rpc_v0_7()),
+            InvokeTransaction::V3(tx) => mp_rpc::v0_10_1::InvokeTxnWithProofFacts::V3(tx.to_rpc_v0_10_1()),
         }
     }
 }
@@ -94,6 +115,28 @@ impl InvokeTransactionV3 {
             sender_address: self.sender_address,
             signature: self.signature,
             tip: self.tip,
+        }
+    }
+    /// Convert to v0.10.1 RPC type with proof_facts support.
+    /// This includes the proof_facts field for backward compatibility with old stored transactions
+    /// (which will have proof_facts: None due to serde default).
+    pub fn to_rpc_v0_10_1(self) -> mp_rpc::v0_10_1::InvokeTxnV3 {
+        mp_rpc::v0_10_1::InvokeTxnV3 {
+            inner: mp_rpc::v0_10_0::InvokeTxnV3 {
+                account_deployment_data: self.account_deployment_data,
+                calldata: self.calldata,
+                fee_data_availability_mode: self.fee_data_availability_mode.into(),
+                nonce: self.nonce,
+                nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+                paymaster_data: self.paymaster_data,
+                resource_bounds: self.resource_bounds.into(),
+                sender_address: self.sender_address,
+                signature: self.signature,
+                tip: self.tip,
+            },
+            // proof_facts will be None for old transactions (backward compatible)
+            // and Some(vec) for new transactions that include proof facts
+            proof_facts: self.proof_facts,
         }
     }
 }

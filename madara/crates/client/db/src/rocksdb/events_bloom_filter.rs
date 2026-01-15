@@ -314,7 +314,8 @@ mod tests {
         let serialized = serde_json::to_string(&writer).unwrap();
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
-        let searcher = EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![Felt::from(2)], vec![Felt::from(3)]]));
+        let searcher =
+            EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![Felt::from(2)], vec![Felt::from(3)]]));
         assert!(searcher.search(&reader));
     }
 
@@ -364,7 +365,8 @@ mod tests {
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
         // Should match only when all patterns match
-        let searcher = EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![Felt::from(2)], vec![Felt::from(3)]]));
+        let searcher =
+            EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![Felt::from(2)], vec![Felt::from(3)]]));
         assert!(searcher.search(&reader));
     }
 

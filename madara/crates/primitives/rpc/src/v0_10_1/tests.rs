@@ -82,10 +82,7 @@ fn test_address_filter_to_set() {
     assert!(set.contains(&Felt::from_hex("0x10").unwrap()));
 
     // Test conversion for multiple addresses
-    let multiple = AddressFilter::Multiple(vec![
-        Felt::from_hex("0x10").unwrap(),
-        Felt::from_hex("0x20").unwrap(),
-    ]);
+    let multiple = AddressFilter::Multiple(vec![Felt::from_hex("0x10").unwrap(), Felt::from_hex("0x20").unwrap()]);
     let set = multiple.to_set().unwrap();
     assert_eq!(set.len(), 2);
 
@@ -375,10 +372,7 @@ fn test_event_filter_full_example() {
 #[test]
 fn test_event_filter_serialization_roundtrip() {
     let filter = EventFilterWithPageRequest {
-        address: Some(AddressFilter::Multiple(vec![
-            Felt::from_hex("0x10").unwrap(),
-            Felt::from_hex("0x20").unwrap(),
-        ])),
+        address: Some(AddressFilter::Multiple(vec![Felt::from_hex("0x10").unwrap(), Felt::from_hex("0x20").unwrap()])),
         from_block: None,
         to_block: None,
         keys: Some(vec![vec![Felt::from_hex("0x1").unwrap()]]),
@@ -389,4 +383,312 @@ fn test_event_filter_serialization_roundtrip() {
     let json = serde_json::to_string(&filter).unwrap();
     let deserialized: EventFilterWithPageRequest = serde_json::from_str(&json).unwrap();
     assert_eq!(filter, deserialized);
+}
+
+// ============================================================================
+// proof_facts Backward Compatibility Tests
+// ============================================================================
+// These tests verify that old transactions without proof_facts can still be
+// deserialized correctly (backward compatibility), and that new transactions
+// with proof_facts work as expected.
+
+#[test]
+fn test_invoke_txn_v3_without_proof_facts_backward_compat() {
+    // Old transaction format without proof_facts field
+    // This simulates reading from a database with old transactions
+    let txn_json = r#"{
+        "sender_address": "0x1",
+        "calldata": ["0x2", "0x3"],
+        "signature": ["0x4"],
+        "nonce": "0x5",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1"
+    }"#;
+
+    // Should deserialize successfully with proof_facts defaulting to None
+    let txn: InvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
+    assert!(txn.proof_facts.is_none());
+    assert_eq!(txn.inner.sender_address, Felt::from_hex("0x1").unwrap());
+}
+
+#[test]
+fn test_invoke_txn_v3_with_proof_facts() {
+    // New transaction format with proof_facts field
+    let txn_json = r#"{
+        "sender_address": "0x1",
+        "calldata": ["0x2", "0x3"],
+        "signature": ["0x4"],
+        "nonce": "0x5",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1",
+        "proof_facts": ["0x100", "0x200", "0x300"]
+    }"#;
+
+    let txn: InvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
+    assert!(txn.proof_facts.is_some());
+    let proof_facts = txn.proof_facts.unwrap();
+    assert_eq!(proof_facts.len(), 3);
+    assert_eq!(proof_facts[0], Felt::from_hex("0x100").unwrap());
+}
+
+#[test]
+fn test_invoke_txn_v3_with_empty_proof_facts() {
+    // Transaction with empty proof_facts array
+    let txn_json = r#"{
+        "sender_address": "0x1",
+        "calldata": ["0x2"],
+        "signature": ["0x4"],
+        "nonce": "0x5",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1",
+        "proof_facts": []
+    }"#;
+
+    let txn: InvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
+    // Empty array should deserialize as Some([]) not None
+    assert!(txn.proof_facts.is_some());
+    assert!(txn.proof_facts.unwrap().is_empty());
+}
+
+#[test]
+fn test_invoke_txn_v3_serialization_skips_none_proof_facts() {
+    // When proof_facts is None, it should not appear in serialized output
+    let txn = InvokeTxnV3 {
+        inner: crate::v0_10_0::InvokeTxnV3 {
+            sender_address: Felt::from_hex("0x1").unwrap(),
+            calldata: vec![Felt::from_hex("0x2").unwrap()].into(),
+            signature: vec![Felt::from_hex("0x3").unwrap()].into(),
+            nonce: Felt::from_hex("0x4").unwrap(),
+            resource_bounds: crate::v0_10_0::ResourceBoundsMapping {
+                l1_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x10, max_price_per_unit: 0x1 },
+                l2_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x20, max_price_per_unit: 0x2 },
+                l1_data_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x30, max_price_per_unit: 0x3 },
+            },
+            tip: 0,
+            paymaster_data: vec![],
+            account_deployment_data: vec![],
+            nonce_data_availability_mode: crate::v0_10_0::DaMode::L1,
+            fee_data_availability_mode: crate::v0_10_0::DaMode::L1,
+        },
+        proof_facts: None,
+    };
+
+    let json = serde_json::to_string(&txn).unwrap();
+    // proof_facts should NOT appear in the output when it's None
+    assert!(!json.contains("proof_facts"));
+}
+
+#[test]
+fn test_invoke_txn_v3_serialization_includes_proof_facts_when_present() {
+    let txn = InvokeTxnV3 {
+        inner: crate::v0_10_0::InvokeTxnV3 {
+            sender_address: Felt::from_hex("0x1").unwrap(),
+            calldata: vec![Felt::from_hex("0x2").unwrap()].into(),
+            signature: vec![Felt::from_hex("0x3").unwrap()].into(),
+            nonce: Felt::from_hex("0x4").unwrap(),
+            resource_bounds: crate::v0_10_0::ResourceBoundsMapping {
+                l1_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x10, max_price_per_unit: 0x1 },
+                l2_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x20, max_price_per_unit: 0x2 },
+                l1_data_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x30, max_price_per_unit: 0x3 },
+            },
+            tip: 0,
+            paymaster_data: vec![],
+            account_deployment_data: vec![],
+            nonce_data_availability_mode: crate::v0_10_0::DaMode::L1,
+            fee_data_availability_mode: crate::v0_10_0::DaMode::L1,
+        },
+        proof_facts: Some(vec![Felt::from_hex("0x100").unwrap()]),
+    };
+
+    let json = serde_json::to_string(&txn).unwrap();
+    // proof_facts should appear in the output
+    assert!(json.contains("proof_facts"));
+    assert!(json.contains("0x100"));
+}
+
+// ============================================================================
+// TxnWithProofFacts Tests (v0.10.1 specific types)
+// ============================================================================
+
+#[test]
+fn test_txn_with_proof_facts_invoke_v3() {
+    // Test deserialization of TxnWithProofFacts for INVOKE V3
+    let txn_json = r#"{
+        "type": "INVOKE",
+        "version": "0x3",
+        "sender_address": "0x1",
+        "calldata": ["0x2"],
+        "signature": ["0x3"],
+        "nonce": "0x4",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1",
+        "proof_facts": ["0x100"]
+    }"#;
+
+    let txn: TxnWithProofFacts = serde_json::from_str(txn_json).unwrap();
+    match txn {
+        TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(invoke)) => {
+            assert!(invoke.proof_facts.is_some());
+            assert_eq!(invoke.proof_facts.unwrap()[0], Felt::from_hex("0x100").unwrap());
+        }
+        _ => panic!("Expected INVOKE V3 transaction"),
+    }
+}
+
+#[test]
+fn test_txn_with_proof_facts_invoke_v3_no_proof_facts() {
+    // Old V3 transaction without proof_facts
+    let txn_json = r#"{
+        "type": "INVOKE",
+        "version": "0x3",
+        "sender_address": "0x1",
+        "calldata": ["0x2"],
+        "signature": ["0x3"],
+        "nonce": "0x4",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1"
+    }"#;
+
+    let txn: TxnWithProofFacts = serde_json::from_str(txn_json).unwrap();
+    match txn {
+        TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(invoke)) => {
+            // proof_facts should default to None for old transactions
+            assert!(invoke.proof_facts.is_none());
+        }
+        _ => panic!("Expected INVOKE V3 transaction"),
+    }
+}
+
+#[test]
+fn test_txn_with_hash_and_proof_facts() {
+    let txn_json = r#"{
+        "type": "INVOKE",
+        "version": "0x3",
+        "sender_address": "0x1",
+        "calldata": ["0x2"],
+        "signature": ["0x3"],
+        "nonce": "0x4",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1",
+        "proof_facts": ["0x100"],
+        "transaction_hash": "0xabc"
+    }"#;
+
+    let txn: TxnWithHashAndProofFacts = serde_json::from_str(txn_json).unwrap();
+    assert_eq!(txn.transaction_hash, Felt::from_hex("0xabc").unwrap());
+    match txn.transaction {
+        TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(invoke)) => {
+            assert!(invoke.proof_facts.is_some());
+        }
+        _ => panic!("Expected INVOKE V3 transaction"),
+    }
+}
+
+// ============================================================================
+// BroadcastedInvokeTxnV3 proof Tests
+// ============================================================================
+
+#[test]
+fn test_broadcasted_invoke_txn_v3_with_proof() {
+    // Test that proof field (array of integers) is handled correctly
+    let txn_json = r#"{
+        "type": "INVOKE",
+        "version": "0x3",
+        "sender_address": "0x1",
+        "calldata": ["0x2"],
+        "signature": ["0x3"],
+        "nonce": "0x4",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1",
+        "proof": [1, 2, 3, 4, 5]
+    }"#;
+
+    let txn: BroadcastedInvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
+    assert!(txn.proof.is_some());
+    let proof = txn.proof.unwrap();
+    assert_eq!(proof.len(), 5);
+    assert_eq!(proof[0], 1u64);
+    assert_eq!(proof[4], 5u64);
+}
+
+#[test]
+fn test_broadcasted_invoke_txn_v3_without_proof() {
+    // Backward compatibility: no proof field
+    let txn_json = r#"{
+        "type": "INVOKE",
+        "version": "0x3",
+        "sender_address": "0x1",
+        "calldata": ["0x2"],
+        "signature": ["0x3"],
+        "nonce": "0x4",
+        "resource_bounds": {
+            "l1_gas": {"max_amount": "0x10", "max_price_per_unit": "0x1"},
+            "l2_gas": {"max_amount": "0x20", "max_price_per_unit": "0x2"},
+            "l1_data_gas": {"max_amount": "0x30", "max_price_per_unit": "0x3"}
+        },
+        "tip": "0x0",
+        "paymaster_data": [],
+        "account_deployment_data": [],
+        "nonce_data_availability_mode": "L1",
+        "fee_data_availability_mode": "L1"
+    }"#;
+
+    let txn: BroadcastedInvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
+    assert!(txn.proof.is_none());
 }

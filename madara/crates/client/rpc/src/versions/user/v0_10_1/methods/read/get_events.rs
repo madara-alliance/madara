@@ -50,11 +50,7 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
 
     // Convert v0.10.1 AddressFilter to HashSet for database filter
     // Empty set means no address filter (match all addresses)
-    let from_addresses = filter
-        .address
-        .as_ref()
-        .and_then(|af| af.to_set())
-        .unwrap_or_default();
+    let from_addresses = filter.address.as_ref().and_then(|af| af.to_set()).unwrap_or_default();
 
     let mut events_infos = view
         .get_events(EventFilter {
