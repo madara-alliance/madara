@@ -340,6 +340,13 @@ impl AtlanticClient {
         api_key: &str,
     ) -> Result<Option<AtlanticQuery>, AtlanticError> {
         let context = format!("dedup_id: {}", dedup_id);
+
+        debug!(
+            operation = "get_query_by_dedup_id",
+            dedup_id = %dedup_id,
+            "Looking up query by dedup ID"
+        );
+
         let dedup_id = dedup_id.to_string();
         let api_key = api_key.to_string();
 
@@ -348,12 +355,6 @@ impl AtlanticClient {
             let api_key = api_key.clone();
 
             async move {
-                debug!(
-                    operation = "get_query_by_dedup_id",
-                    dedup_id = %dedup_id,
-                    "Looking up query by dedup ID"
-                );
-
                 let response = self
                     .client
                     .request()

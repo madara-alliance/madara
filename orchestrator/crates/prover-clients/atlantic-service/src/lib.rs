@@ -88,7 +88,7 @@ impl ProverClient for AtlanticProverService {
                         AtlanticQueryStatus::Failed => {
                             tracing::warn!(
                                 atlantic_query_id = %existing_job.id,
-                                dedup_id = %external_id,
+                                external_id = %external_id,
                                 status = ?existing_job.status,
                                 "Existing Atlantic job found in failed state. Resubmitting."
                             );
@@ -97,7 +97,7 @@ impl ProverClient for AtlanticProverService {
                             Self::ensure_bucket_details_match(&existing_job, &bucket_id, bucket_job_index)?;
                             tracing::info!(
                                 atlantic_query_id = %existing_job.id,
-                                dedup_id = %external_id,
+                                external_id = %external_id,
                                 status = ?existing_job.status,
                                 "Atlantic job already exists. Skipping resubmission."
                             );
