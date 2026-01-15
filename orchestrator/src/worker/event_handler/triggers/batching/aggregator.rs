@@ -1,3 +1,4 @@
+use crate::compression::batch_rpc::BatchRpcClient;
 use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
 use crate::compression::squash::squash;
 use crate::core::config::{Config, ConfigParam, StarknetVersion};
@@ -78,7 +79,7 @@ impl AggregatorStateHandler {
             &state.blob,
             state.batch.end_block,
             state.batch.starknet_version,
-            self.config.params.madara_rpc_url.as_str(),
+            self.config.batch_rpc_client(),
         )
         .await?;
 
@@ -187,7 +188,7 @@ impl AggregatorHandler {
                             &state_update,
                             block_num.saturating_sub(1),
                             current_block_starknet_version,
-                            self.config.params.madara_rpc_url.as_str(),
+                            self.config.batch_rpc_client(),
                         )
                         .await?;
                         let new_state = NonEmptyAggregatorState::new(
@@ -256,7 +257,7 @@ impl AggregatorHandler {
                         &block_weights,
                         block_version,
                         &self.batch_config,
-                        self.config.params.madara_rpc_url.as_str(),
+                        self.config.batch_rpc_client(),
                     )
                     .await?
                 {
@@ -272,7 +273,7 @@ impl AggregatorHandler {
                             &state_update,
                             block_num.saturating_sub(1),
                             block_version,
-                            self.config.params.madara_rpc_url.as_str(),
+                            self.config.batch_rpc_client(),
                         )
                         .await?
                         .len();
@@ -452,7 +453,7 @@ impl NonEmptyAggregatorState {
         block_weights: &AggregatorBatchWeights,
         block_version: StarknetVersion,
         batch_limits: &AggregatorBatchConfig,
-        rpc_url: &str,
+        batch_client: &BatchRpcClient,
     ) -> Result<Option<Self>, JobError> {
         // Perform synchronous checks first
         let check_result = self.check_block_sync(block_weights, block_version, batch_limits);
@@ -474,7 +475,7 @@ impl NonEmptyAggregatorState {
         let squashed_state_update = squash(
             vec![&self.blob, block_state_update],
             if self.batch.start_block == 0 { None } else { Some(self.batch.start_block - 1) },
-            rpc_url,
+            batch_client,
         )
         .await?;
         // Compress the squashed state update
@@ -482,7 +483,7 @@ impl NonEmptyAggregatorState {
             &squashed_state_update,
             block_num.saturating_sub(1),
             self.batch.starknet_version,
-            rpc_url,
+            batch_client,
         )
         .await?;
         let blob_len = compressed_state_update.len();
@@ -521,11 +522,11 @@ async fn compress_state_update(
     blob: &StateUpdate,
     end_block: u64,
     madara_version: StarknetVersion,
-    rpc_url: &str,
+    batch_client: &BatchRpcClient,
 ) -> Result<Vec<Felt>, JobError> {
     // Perform stateful compression if needed
     let state_update = if madara_version >= StarknetVersion::V0_13_4 {
-        crate::compression::stateful::compress(blob, end_block, rpc_url)
+        crate::compression::stateful::compress(blob, end_block, batch_client)
             .await
             .map_err(|err| JobError::Other(OtherError(err)))?
     } else {

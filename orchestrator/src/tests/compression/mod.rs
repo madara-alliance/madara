@@ -63,12 +63,9 @@ async fn test_squash_state_updates(
     let state_updates_vector = read_state_updates_vec_from_file(state_updates_path)?;
     let expected_squashed_state_update = read_state_update_from_file(squashed_state_update_path)?;
 
-    let squashed_state_update = squash(
-        state_updates_vector.iter().collect::<Vec<_>>(),
-        Some(2935725),
-        services.config.params.madara_rpc_url.as_str(),
-    )
-    .await?;
+    let squashed_state_update =
+        squash(state_updates_vector.iter().collect::<Vec<_>>(), Some(2935725), services.config.batch_rpc_client())
+            .await?;
 
     assert_eq!(squashed_state_update, expected_squashed_state_update);
 
@@ -86,7 +83,7 @@ async fn test_stateful_compression(
     let expected_compressed_state_update = read_state_update_from_file(stateful_comp_path)?;
 
     let compressed_state_update =
-        stateful_compress(&uncompressed_state_update, 2935725, services.config.params.madara_rpc_url.as_str()).await?;
+        stateful_compress(&uncompressed_state_update, 2935725, services.config.batch_rpc_client()).await?;
 
     assert_eq!(compressed_state_update, expected_compressed_state_update);
 

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use thiserror::Error;
 use tracing::{debug, error, warn};
+use url::Url;
 
 /// Default batch size (number of RPC calls per HTTP request)
 pub const DEFAULT_BATCH_SIZE: usize = 100;
@@ -97,18 +98,18 @@ const CONTRACT_NOT_FOUND_CODE: i64 = 20;
 #[derive(Clone)]
 pub struct BatchRpcClient {
     client: Client,
-    rpc_url: String,
+    rpc_url: Url,
     config: BatchRpcConfig,
 }
 
 impl BatchRpcClient {
     /// Create a new BatchRpcClient
-    pub fn new(rpc_url: String, config: BatchRpcConfig) -> Self {
+    pub fn new(rpc_url: Url, config: BatchRpcConfig) -> Self {
         Self { client: Client::new(), rpc_url, config }
     }
 
     /// Create a new BatchRpcClient with default configuration
-    pub fn with_defaults(rpc_url: String) -> Self {
+    pub fn with_defaults(rpc_url: Url) -> Self {
         Self::new(rpc_url, BatchRpcConfig::default())
     }
 
@@ -320,7 +321,7 @@ impl BatchRpcClient {
 
         let response = self
             .client
-            .post(&self.rpc_url)
+            .post(self.rpc_url.as_str())
             .header("Content-Type", "application/json")
             .body(body)
             .send()

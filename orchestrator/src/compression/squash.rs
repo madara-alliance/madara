@@ -17,7 +17,7 @@ use tracing::{debug, info};
 pub async fn squash(
     state_updates: Vec<&StateUpdate>,
     pre_range_block: Option<u64>,
-    rpc_url: &str,
+    batch_client: &BatchRpcClient,
 ) -> Result<StateUpdate, JobError> {
     info!("Squashing state updates");
     if state_updates.is_empty() {
@@ -33,10 +33,7 @@ pub async fn squash(
     // Collecting a simplified squashed state diff map
     let state_diff_map = StateDiffMap::from_state_update(state_updates);
 
-    // Create batch RPC client with default config
-    let batch_client = BatchRpcClient::with_defaults(rpc_url.to_string());
-
-    let state_diff = state_diff_map.get_state_diff_batched(pre_range_block, &batch_client).await?;
+    let state_diff = state_diff_map.get_state_diff_batched(pre_range_block, batch_client).await?;
 
     // Create the merged StateUpdate
     let mut merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };

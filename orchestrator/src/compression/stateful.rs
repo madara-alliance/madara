@@ -15,27 +15,26 @@ const STATEFUL_MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
 /// Compresses a state update using stateful compression
 ///
 /// This function:
-/// 1. Extracts mapping information from the special address (0x2) and provider
+/// 1. Extracts mapping information from the special address (0x2) and batch RPC client
 /// 2. Use this mapping to transform other addresses and values
 /// 3. Preserves all the entries in special addresses (<128) as it is
 ///
 /// # Arguments
 /// * `state_update` - StateUpdate to compress
 /// * `last_block_before_state_update` - The last block before the state update
-/// * `rpc_url` - RPC URL for fetching values from the special address
+/// * `batch_client` - Batch RPC client for efficient batch queries
 ///
 /// # Returns
 /// A compressed StateUpdate with values mapped according to the special address mappings
 pub async fn compress(
     state_update: &StateUpdate,
     last_block_before_state_update: u64,
-    rpc_url: &str,
+    batch_client: &BatchRpcClient,
 ) -> Result<StateUpdate> {
     let mut state_update = state_update.clone();
 
-    let batch_client = BatchRpcClient::with_defaults(rpc_url.to_string());
     let mapping =
-        CompressedKeyValues::from_state_update_batched(&state_update, last_block_before_state_update, &batch_client)
+        CompressedKeyValues::from_state_update_batched(&state_update, last_block_before_state_update, batch_client)
             .await?;
 
     // Process storage diffs

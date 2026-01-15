@@ -1,3 +1,4 @@
+use crate::compression::batch_rpc::BatchRpcClient;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::lock::{LockClient, MockLockClient};
 use crate::core::client::queue::MockQueueClient;
@@ -384,6 +385,9 @@ impl TestConfigBuilder {
         let madara_feeder_gateway_client =
             Arc::new(RestClient::new(params.orchestrator_params.madara_feeder_gateway_url.clone()));
 
+        // Create batch RPC client for efficient batch queries
+        let batch_rpc_client = BatchRpcClient::with_defaults(params.orchestrator_params.madara_rpc_url.clone());
+
         // Create test chain details (using Sepolia defaults for testing)
         let chain_details = ChainDetails {
             chain_id: "SN_SEPOLIA".to_string(),
@@ -398,6 +402,7 @@ impl TestConfigBuilder {
             chain_details,
             starknet_client.clone(),
             madara_feeder_gateway_client,
+            batch_rpc_client,
             database,
             storage,
             lock,
