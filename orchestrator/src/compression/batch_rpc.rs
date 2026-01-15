@@ -199,18 +199,14 @@ impl BatchRpcClient {
         queries: &[(Felt, Felt)],
         block_param: &serde_json::Value,
     ) -> Result<HashMap<(Felt, Felt), Felt>, BatchRpcError> {
-        // Build batch request
+        // Build batch request with positional array params: [contract_address, key, block_id]
         let requests: Vec<JsonRpcRequest<'_>> = queries
             .iter()
             .enumerate()
             .map(|(idx, (contract_addr, key))| JsonRpcRequest {
                 jsonrpc: "2.0",
                 method: "starknet_getStorageAt",
-                params: serde_json::json!({
-                    "contract_address": format!("{:#x}", contract_addr),
-                    "key": format!("{:#x}", key),
-                    "block_id": block_param
-                }),
+                params: serde_json::json!([format!("{:#x}", contract_addr), format!("{:#x}", key), block_param]),
                 id: idx as u64,
             })
             .collect();
@@ -247,17 +243,14 @@ impl BatchRpcClient {
         contracts: &[Felt],
         block_param: &serde_json::Value,
     ) -> Result<HashMap<Felt, Option<Felt>>, BatchRpcError> {
-        // Build batch request
+        // Build batch request with positional array params: [block_id, contract_address]
         let requests: Vec<JsonRpcRequest<'_>> = contracts
             .iter()
             .enumerate()
             .map(|(idx, contract_addr)| JsonRpcRequest {
                 jsonrpc: "2.0",
                 method: "starknet_getClassHashAt",
-                params: serde_json::json!({
-                    "block_id": block_param,
-                    "contract_address": format!("{:#x}", contract_addr)
-                }),
+                params: serde_json::json!([block_param, format!("{:#x}", contract_addr)]),
                 id: idx as u64,
             })
             .collect();
