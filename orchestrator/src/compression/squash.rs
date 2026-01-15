@@ -254,45 +254,68 @@ async fn process_storage_diffs_batched(
     };
 
     // Step 4: Build storage diffs by comparing values
-    let mut result = Vec::new();
-
-    // Process existing contracts - compare with pre-range values
-    for contract_addr in &existing_contracts {
-        if let Some(storage_map) = storage_diffs.get(contract_addr) {
-            let entries: Vec<StorageEntry> = storage_map
-                .iter()
-                .filter_map(|(key, new_value)| {
-                    let pre_range_value = pre_range_values.get(&(*contract_addr, *key)).copied().unwrap_or(Felt::ZERO);
-                    if pre_range_value != *new_value {
-                        Some(StorageEntry { key: *key, value: *new_value })
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            if !entries.is_empty() {
-                result.push(ContractStorageDiffItem { address: *contract_addr, storage_entries: entries });
-            }
-        }
-    }
-
-    // Process new contracts - filter out zero values
-    for contract_addr in &new_contracts {
-        if let Some(storage_map) = storage_diffs.get(contract_addr) {
-            let entries: Vec<StorageEntry> = storage_map
-                .iter()
-                .filter(|(_, value)| **value != Felt::ZERO)
-                .map(|(key, value)| StorageEntry { key: *key, value: *value })
-                .collect();
-
-            if !entries.is_empty() {
-                result.push(ContractStorageDiffItem { address: *contract_addr, storage_entries: entries });
-            }
-        }
-    }
+    // For both existing and new contracts, we compare against pre_range_values.
+    // For new contracts, pre_range_values won't have entries, defaulting to ZERO.
+    let result: Vec<ContractStorageDiffItem> = all_contracts
+        .iter()
+        .filter_map(|contract_addr| {
+            storage_diffs
+                .get(contract_addr)
+                .and_then(|storage_map| build_storage_diff_item(*contract_addr, storage_map, &pre_range_values))
+        })
+        .collect();
 
     Ok(result)
+}
+
+/// Build a ContractStorageDiffItem by comparing new values against pre-range values.
+/// Only includes entries where the value has changed (pre-range defaults to ZERO if not found).
+/// Returns None if no entries changed.
+///
+/// This is a pure function that can be unit tested without mocking RPC calls.
+fn build_storage_diff_item(
+    contract_addr: Felt,
+    storage_map: &HashMap<Felt, Felt>,
+    pre_range_values: &HashMap<(Felt, Felt), Felt>,
+) -> Option<ContractStorageDiffItem> {
+    let entries: Vec<StorageEntry> = storage_map
+        .iter()
+        .filter_map(|(key, new_value)| {
+            let pre_range_value = pre_range_values.get(&(contract_addr, *key)).copied().unwrap_or(Felt::ZERO);
+            if pre_range_value != *new_value {
+                Some(StorageEntry { key: *key, value: *new_value })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if entries.is_empty() {
+        None
+    } else {
+        Some(ContractStorageDiffItem { address: contract_addr, storage_entries: entries })
+    }
+}
+
+/// Filter replaced classes to only include those where the class hash actually changed.
+/// Returns None for contracts that didn't exist before or where the class hash is the same.
+///
+/// This is a pure function that can be unit tested without mocking RPC calls.
+fn filter_changed_replaced_classes(
+    replaced_class_hashes: HashMap<Felt, Felt>,
+    prev_class_hashes: &HashMap<Felt, Option<Felt>>,
+) -> Vec<ReplacedClassItem> {
+    replaced_class_hashes
+        .into_iter()
+        .filter_map(|(contract_address, new_class_hash)| {
+            let prev_class_hash = prev_class_hashes.get(&contract_address).copied().flatten();
+
+            match prev_class_hash {
+                Some(prev) if prev == new_class_hash => None, // Class didn't change
+                _ => Some(ReplacedClassItem { contract_address, class_hash: new_class_hash }),
+            }
+        })
+        .collect()
 }
 
 /// Process deployed contracts and replaced classes using batched RPC calls.
@@ -335,17 +358,7 @@ async fn process_deployed_contracts_and_replaced_classes_batched(
                     .map_err(|e| JobError::ProviderError(format!("Failed to batch get class hashes: {}", e)))?;
 
                 // Filter: only include if class actually changed
-                replaced_class_hashes
-                    .into_iter()
-                    .filter_map(|(contract_address, new_class_hash)| {
-                        let prev_class_hash = prev_class_hashes.get(&contract_address).copied().flatten();
-
-                        match prev_class_hash {
-                            Some(prev) if prev == new_class_hash => None, // Class didn't change
-                            _ => Some(ReplacedClassItem { contract_address, class_hash: new_class_hash }),
-                        }
-                    })
-                    .collect()
+                filter_changed_replaced_classes(replaced_class_hashes, &prev_class_hashes)
             }
         }
         None => Vec::new(),
@@ -451,5 +464,120 @@ mod tests {
             contract_storage.get(&Felt::from_hex("0x1").unwrap()),
             Some(&Felt::from_hex("0x20").unwrap()) // Latest value
         );
+    }
+
+    // ========================================================================
+    // Tests for pure comparison functions
+    // ========================================================================
+
+    /// Comprehensive test for build_storage_diff_item covering all edge cases:
+    /// - Existing contract: unchanged values filtered, changed values included
+    /// - New contract (no pre-range): zero values filtered, non-zero included
+    /// - Returns None when all entries filtered out
+    #[test]
+    fn test_build_storage_diff_item() {
+        let contract_addr = Felt::from_hex("0x100").unwrap();
+        let key1 = Felt::from_hex("0x1").unwrap();
+        let key2 = Felt::from_hex("0x2").unwrap();
+        let key3 = Felt::from_hex("0x3").unwrap();
+        let key4 = Felt::from_hex("0x4").unwrap();
+
+        // Case 1: Existing contract with mixed changes
+        {
+            let mut storage_map = HashMap::new();
+            storage_map.insert(key1, Felt::from_hex("0x10").unwrap()); // Same as pre-range (filtered)
+            storage_map.insert(key2, Felt::from_hex("0x30").unwrap()); // Changed from 0x20 (included)
+            storage_map.insert(key3, Felt::from_hex("0x40").unwrap()); // New key, no pre-range (included)
+            storage_map.insert(key4, Felt::ZERO); // New key but ZERO (filtered)
+
+            let mut pre_range_values = HashMap::new();
+            pre_range_values.insert((contract_addr, key1), Felt::from_hex("0x10").unwrap());
+            pre_range_values.insert((contract_addr, key2), Felt::from_hex("0x20").unwrap());
+
+            let result = build_storage_diff_item(contract_addr, &storage_map, &pre_range_values);
+            assert!(result.is_some());
+            let diff = result.unwrap();
+            assert_eq!(diff.address, contract_addr);
+
+            let entry_map: HashMap<Felt, Felt> = diff.storage_entries.iter().map(|e| (e.key, e.value)).collect();
+            assert_eq!(entry_map.len(), 2);
+            assert!(!entry_map.contains_key(&key1)); // Unchanged - filtered
+            assert_eq!(entry_map.get(&key2), Some(&Felt::from_hex("0x30").unwrap())); // Changed
+            assert_eq!(entry_map.get(&key3), Some(&Felt::from_hex("0x40").unwrap())); // New key
+            assert!(!entry_map.contains_key(&key4)); // ZERO - filtered
+        }
+
+        // Case 2: New contract (empty pre-range) - filters zeros only
+        {
+            let mut storage_map = HashMap::new();
+            storage_map.insert(key1, Felt::from_hex("0x10").unwrap()); // Non-zero (included)
+            storage_map.insert(key2, Felt::ZERO); // Zero (filtered)
+
+            let pre_range_values = HashMap::new(); // Empty - simulates new contract
+
+            let result = build_storage_diff_item(contract_addr, &storage_map, &pre_range_values);
+            assert!(result.is_some());
+            let diff = result.unwrap();
+            assert_eq!(diff.storage_entries.len(), 1);
+            assert_eq!(diff.storage_entries[0].key, key1);
+        }
+
+        // Case 3: Returns None when all entries are filtered
+        {
+            let mut storage_map = HashMap::new();
+            storage_map.insert(key1, Felt::ZERO); // Zero with no pre-range (filtered)
+            storage_map.insert(key2, Felt::from_hex("0x10").unwrap()); // Same as pre-range (filtered)
+
+            let mut pre_range_values = HashMap::new();
+            pre_range_values.insert((contract_addr, key2), Felt::from_hex("0x10").unwrap());
+
+            let result = build_storage_diff_item(contract_addr, &storage_map, &pre_range_values);
+            assert!(result.is_none());
+        }
+    }
+
+    /// Comprehensive test for filter_changed_replaced_classes covering all edge cases:
+    /// - Unchanged class hash (filtered)
+    /// - Changed class hash (included)
+    /// - New contract with None prev (included)
+    /// - Contract missing from prev map (included)
+    /// - Empty input (empty output)
+    #[test]
+    fn test_filter_changed_replaced_classes() {
+        let contract1 = Felt::from_hex("0x100").unwrap();
+        let contract2 = Felt::from_hex("0x200").unwrap();
+        let contract3 = Felt::from_hex("0x300").unwrap();
+        let contract4 = Felt::from_hex("0x400").unwrap();
+        let class_a = Felt::from_hex("0xA").unwrap();
+        let class_b = Felt::from_hex("0xB").unwrap();
+
+        // Case 1: Mixed scenarios
+        {
+            let mut replaced = HashMap::new();
+            replaced.insert(contract1, class_a); // Same as prev (filtered)
+            replaced.insert(contract2, class_b); // Changed from A to B (included)
+            replaced.insert(contract3, class_a); // Prev is None - new contract (included)
+            replaced.insert(contract4, class_b); // Not in prev map (included)
+
+            let mut prev = HashMap::new();
+            prev.insert(contract1, Some(class_a)); // Same
+            prev.insert(contract2, Some(class_a)); // Was A, now B
+            prev.insert(contract3, None); // New contract
+
+            let items = filter_changed_replaced_classes(replaced, &prev);
+            let item_map: HashMap<Felt, Felt> = items.iter().map(|i| (i.contract_address, i.class_hash)).collect();
+
+            assert_eq!(item_map.len(), 3);
+            assert!(!item_map.contains_key(&contract1)); // Unchanged - filtered
+            assert_eq!(item_map.get(&contract2), Some(&class_b)); // Changed
+            assert_eq!(item_map.get(&contract3), Some(&class_a)); // New (prev=None)
+            assert_eq!(item_map.get(&contract4), Some(&class_b)); // Missing from prev
+        }
+
+        // Case 2: Empty input
+        {
+            let items = filter_changed_replaced_classes(HashMap::new(), &HashMap::new());
+            assert!(items.is_empty());
+        }
     }
 }
