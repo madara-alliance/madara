@@ -274,12 +274,9 @@ fn test_simulate_transactions_result_without_initial_reads() {
                 "revert_reason": "test"
             },
             "execution_resources": {
-                "l1_gas": 100,
-                "l1_data_gas": 50,
-                "l2_gas": 200,
-                "computation_resources": {
-                    "steps": 1000
-                }
+                "l1_gas": "0x64",
+                "l1_data_gas": "0x32",
+                "l2_gas": "0xc8"
             }
         }
     }"#;
@@ -308,12 +305,9 @@ fn test_simulate_transactions_result_with_initial_reads() {
                 "revert_reason": "test"
             },
             "execution_resources": {
-                "l1_gas": 100,
-                "l1_data_gas": 50,
-                "l2_gas": 200,
-                "computation_resources": {
-                    "steps": 1000
-                }
+                "l1_gas": "0x64",
+                "l1_data_gas": "0x32",
+                "l2_gas": "0xc8"
             }
         },
         "initial_reads": {
@@ -343,12 +337,9 @@ fn test_trace_block_transactions_result_without_initial_reads() {
                 "revert_reason": "test"
             },
             "execution_resources": {
-                "l1_gas": 100,
-                "l1_data_gas": 50,
-                "l2_gas": 200,
-                "computation_resources": {
-                    "steps": 1000
-                }
+                "l1_gas": "0x64",
+                "l1_data_gas": "0x32",
+                "l2_gas": "0xc8"
             }
         },
         "transaction_hash": "0x123"
