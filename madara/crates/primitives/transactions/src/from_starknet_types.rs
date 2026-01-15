@@ -86,6 +86,7 @@ impl From<mp_rpc::v0_7_1::InvokeTxnV3> for InvokeTransactionV3 {
             account_deployment_data: tx.account_deployment_data,
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+            proof_facts: None,
         }
     }
 }
@@ -102,6 +103,7 @@ impl From<mp_rpc::v0_8_1::InvokeTxnV3> for InvokeTransactionV3 {
             account_deployment_data: tx.account_deployment_data,
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
+            proof_facts: None,
         }
     }
 }

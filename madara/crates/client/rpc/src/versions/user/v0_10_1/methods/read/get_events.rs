@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
@@ -7,16 +5,18 @@ use crate::Starknet;
 use anyhow::Context;
 use mc_db::EventFilter;
 use mp_block::EventWithInfo;
-use mp_rpc::v0_10_0::{EventFilterWithPageRequest, EventsChunk};
+use mp_rpc::v0_10_1::{EventFilterWithPageRequest, EventsChunk};
 
 /// Returns events matching the filter with pagination support.
 ///
-/// v0.10.0: Events include `transaction_index` and `event_index`.
+/// v0.10.1: Address filter supports either a single address or an array of addresses.
+/// - Single address: Filter events from exactly that address
+/// - Array of addresses: Filter events from any of the addresses in the array
+/// - Empty array: Match all addresses (no filter)
+/// - None: Match all addresses (no filter)
 pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
-    // Convert single address to HashSet for database filter
-    let from_addresses: HashSet<_> = filter.address.into_iter().collect();
-    let keys = filter.keys;
     let chunk_size = filter.chunk_size as usize;
+    let keys = filter.keys;
 
     let view = starknet.backend.view_on_latest();
 
@@ -47,6 +47,14 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
 
     let from_block = continuation_token.block_number;
     let from_event_n = continuation_token.event_n as usize;
+
+    // Convert v0.10.1 AddressFilter to HashSet for database filter
+    // Empty set means no address filter (match all addresses)
+    let from_addresses = filter
+        .address
+        .as_ref()
+        .and_then(|af| af.to_set())
+        .unwrap_or_default();
 
     let mut events_infos = view
         .get_events(EventFilter {

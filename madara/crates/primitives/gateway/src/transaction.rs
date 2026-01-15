@@ -306,6 +306,7 @@ impl From<InvokeTransactionV3> for mp_transactions::InvokeTransactionV3 {
             account_deployment_data: tx.account_deployment_data,
             nonce_data_availability_mode: tx.nonce_data_availability_mode,
             fee_data_availability_mode: tx.fee_data_availability_mode,
+            proof_facts: None,
         }
     }
 }

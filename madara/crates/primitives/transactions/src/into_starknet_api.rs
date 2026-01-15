@@ -393,6 +393,7 @@ impl From<starknet_api::transaction::InvokeTransactionV3> for InvokeTransactionV
             account_deployment_data: value.account_deployment_data.0,
             nonce_data_availability_mode: value.nonce_data_availability_mode.into(),
             fee_data_availability_mode: value.fee_data_availability_mode.into(),
+            proof_facts: None,
         }
     }
 }

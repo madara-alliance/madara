@@ -134,6 +134,7 @@ starknet-types-core = { version = "0.2.4", default-features = false, features = 
 blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
   "node_api",
   "cairo_native",
+  "reexecution",
 ] }
 starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0" }
 cairo-lang-starknet-classes = "2.12.3"
