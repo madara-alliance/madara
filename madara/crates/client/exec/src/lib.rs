@@ -148,11 +148,12 @@
 //! [`create_normalized_state_diff`]: crate::state_diff::create_normalized_state_diff
 #![allow(clippy::result_large_err)]
 
-use blockifier::{
-    state::cached_state::CommitmentStateDiff,
-    transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
-};
+use blockifier::state::cached_state::{CommitmentStateDiff, StateMaps};
+use blockifier::transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo};
 use mp_chain_config::StarknetVersion;
+use mp_rpc::v0_10_1::{
+    InitialClassHashRead, InitialDeclaredContract, InitialNonceRead, InitialReads, InitialStorageRead,
+};
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
 use starknet_api::{execution_resources::GasVector, transaction::fields::GasVectorComputationMode};
@@ -237,4 +238,55 @@ pub struct ExecutionResult {
     pub execution_info: TransactionExecutionInfo,
     pub state_diff: CommitmentStateDiff,
     pub gas_vector_computation_mode: GasVectorComputationMode,
+}
+
+/// Converts blockifier's StateMaps to RPC InitialReads.
+///
+/// This function is used to convert the initial state reads collected during
+/// transaction simulation or block tracing to the RPC format defined in
+/// Starknet JSON-RPC v0.10.1.
+///
+/// # Arguments
+///
+/// * `state_maps` - The StateMaps from blockifier containing initial reads
+///
+/// # Returns
+///
+/// An InitialReads struct containing all reads in the RPC format
+pub fn state_maps_to_initial_reads(state_maps: StateMaps) -> InitialReads {
+    InitialReads {
+        storage: state_maps
+            .storage
+            .into_iter()
+            .map(|((contract_address, key), value)| InitialStorageRead {
+                contract_address: Felt::from(contract_address),
+                key: Felt::from(key),
+                value,
+            })
+            .collect(),
+        nonces: state_maps
+            .nonces
+            .into_iter()
+            .map(|(contract_address, nonce)| InitialNonceRead {
+                contract_address: Felt::from(contract_address),
+                nonce: nonce.0,
+            })
+            .collect(),
+        class_hashes: state_maps
+            .class_hashes
+            .into_iter()
+            .map(|(contract_address, class_hash)| InitialClassHashRead {
+                contract_address: Felt::from(contract_address),
+                class_hash: Felt::from(class_hash),
+            })
+            .collect(),
+        declared_contracts: state_maps
+            .declared_contracts
+            .into_iter()
+            .map(|(class_hash, is_declared)| InitialDeclaredContract {
+                class_hash: Felt::from(class_hash),
+                is_declared,
+            })
+            .collect(),
+    }
 }
