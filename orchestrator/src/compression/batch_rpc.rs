@@ -3,7 +3,7 @@
 //! This module provides a batch-capable JSON-RPC client that can send multiple
 //! RPC calls in a single HTTP request, significantly reducing network overhead.
 
-use futures::stream::{self, StreamExt};
+use futures::stream::{self, StreamExt, TryStreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use starknet_core::types::{BlockId, Felt};
@@ -129,27 +129,24 @@ impl BatchRpcClient {
 
         let block_param = Self::block_id_to_param(&block_id);
 
-        // Chunk queries into batches
+        // Pre-chunk queries into owned Vecs. This small allocation (just Vec headers) is necessary
+        // because chunks() returns borrowed slices which don't satisfy Send bounds for async.
         let chunks: Vec<Vec<(Felt, Felt)>> = queries.chunks(self.config.batch_size).map(|c| c.to_vec()).collect();
 
         debug!("Executing {} storage queries in {} batches", queries.len(), chunks.len());
 
-        // Execute batches concurrently
-        let results: Vec<Result<HashMap<(Felt, Felt), Felt>, BatchRpcError>> = stream::iter(chunks)
+        // Execute batches concurrently and merge results incrementally to reduce memory pressure
+        let merged = stream::iter(chunks)
             .map(|chunk| {
                 let block_param = block_param.clone();
                 async move { self.execute_storage_batch(&chunk, &block_param).await }
             })
             .buffer_unordered(self.config.max_concurrent_batches)
-            .collect()
-            .await;
-
-        // Merge results
-        let mut merged = HashMap::new();
-        for result in results {
-            let batch_result = result?;
-            merged.extend(batch_result);
-        }
+            .try_fold(HashMap::new(), |mut acc, batch_result| async move {
+                acc.extend(batch_result);
+                Ok(acc)
+            })
+            .await?;
 
         Ok(merged)
     }
@@ -169,27 +166,24 @@ impl BatchRpcClient {
 
         let block_param = Self::block_id_to_param(&block_id);
 
-        // Chunk contracts into batches
+        // Pre-chunk contracts into owned Vecs. This small allocation (just Vec headers) is necessary
+        // because chunks() returns borrowed slices which don't satisfy Send bounds for async.
         let chunks: Vec<Vec<Felt>> = contracts.chunks(self.config.batch_size).map(|c| c.to_vec()).collect();
 
         debug!("Executing {} class hash queries in {} batches", contracts.len(), chunks.len());
 
-        // Execute batches concurrently
-        let results: Vec<Result<HashMap<Felt, Option<Felt>>, BatchRpcError>> = stream::iter(chunks)
+        // Execute batches concurrently and merge results incrementally to reduce memory pressure
+        let merged = stream::iter(chunks)
             .map(|chunk| {
                 let block_param = block_param.clone();
                 async move { self.execute_class_hash_batch(&chunk, &block_param).await }
             })
             .buffer_unordered(self.config.max_concurrent_batches)
-            .collect()
-            .await;
-
-        // Merge results
-        let mut merged = HashMap::new();
-        for result in results {
-            let batch_result = result?;
-            merged.extend(batch_result);
-        }
+            .try_fold(HashMap::new(), |mut acc, batch_result| async move {
+                acc.extend(batch_result);
+                Ok(acc)
+            })
+            .await?;
 
         Ok(merged)
     }
