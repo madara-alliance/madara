@@ -598,7 +598,10 @@ impl JobHandlerService {
             JobVerificationStatus::Rejected(e) => {
                 error!(job_id = ?id, error = ?e, "Job verification rejected");
 
-                // Update metadata with error information
+                // Update metadata with error information (move current to history, set new)
+                if let Some(previous_reason) = job.metadata.common.failure_reason.take() {
+                    job.metadata.common.previous_failure_reasons.insert(0, previous_reason);
+                }
                 job.metadata.common.failure_reason = Some(e.clone());
                 operation_job_status = Some(JobStatus::VerificationFailed);
 
@@ -874,13 +877,13 @@ impl JobHandlerService {
         original_error: JobError,
     ) -> JobError {
         job.metadata.common.process_started_at = None;
-        // Prepend the error message so it's preserved if the job eventually goes to DLQ
+        // Move current failure_reason to history, then set new error
         let new_error =
             format!("Processing attempt {} failed: {}", job.metadata.common.process_attempt_no, original_error);
-        job.metadata.common.failure_reason = Some(match &job.metadata.common.failure_reason {
-            Some(existing) => format!("{} | {}", new_error, existing),
-            None => new_error,
-        });
+        if let Some(previous_reason) = job.metadata.common.failure_reason.take() {
+            job.metadata.common.previous_failure_reasons.insert(0, previous_reason);
+        }
+        job.metadata.common.failure_reason = Some(new_error);
         match config
             .database()
             .update_job(
