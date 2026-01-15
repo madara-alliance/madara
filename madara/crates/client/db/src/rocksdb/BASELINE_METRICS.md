@@ -1,62 +1,56 @@
 # RocksDB Baseline Metrics Report
 
-**Date**: 2026-01-14
+**Capture Date**: 2026-01-15
+**Time Window**: 2026-01-15 02:20:52 IST to 2026-01-15 14:20:52 IST (12 hours)
 **Pod**: `paradex-mainnet-madara-dev-0`
 **Namespace**: `madara-full-node`
-**Time Window**: Last 12 hours
+**Image**: `ghcr.io/madara-alliance/madara:manual-bf4872f`
 **Data Source**: Victoria Metrics (`vmselect-central.karnot.xyz`)
 
 ---
 
-## Important Notes
+## Time Reference
 
-1. **Aggregated Metrics**: `db_level_files_count` and `db_num_immutable_memtables` are aggregated across all **27 column families**. Write stall thresholds apply per-CF, not to the sum.
-
-2. **No Write Stalls**: `db_is_write_stopped` was consistently 0 during the baseline period.
-
-3. **No Block Cache**: Block cache is not configured (0 MiB), affecting read performance.
+For future comparisons, use data **after** this timestamp:
+- **Unix Timestamp**: `1768467052`
+- **ISO 8601**: `2026-01-15T14:20:52+05:30`
 
 ---
 
-## Key Metrics to Monitor After Changes
+## Key Metrics Summary
 
-When evaluating RocksDB configuration changes, compare these metrics against the baseline:
-
-| Category | Metric | Why It Matters |
-|----------|--------|----------------|
-| **Write Stalls** | `db_is_write_stopped` | Direct indicator of write stalls |
-| **L0 Pressure** | `db_level_files_count{level="L0"}` | Triggers slowdown/stop at thresholds |
-| **Compaction Backlog** | `db_pending_compaction_bytes` | Indicates compaction falling behind |
-| **Block Production** | `close_block_total_duration_seconds` | End-to-end block production time |
-| **Trie Operations** | `apply_to_global_trie_last_seconds` | Dominant operation in block close |
-| **Memory Usage** | Container memory, table readers | Resource utilization |
-| **Throughput** | Blocks per hour | Overall system throughput |
+| Category | Metric | Value | Status |
+|----------|--------|-------|--------|
+| **Write Stalls** | `db_is_write_stopped` max | 0 | ✅ Healthy |
+| **Throughput** | Blocks per Hour | 470.7 | ✅ |
+| **Close Block** | Average | 1.33 sec | ✅ |
+| **Close Block** | p95 | 9.5 sec | ✅ |
+| **Memory** | Container avg | 4.16 GiB | ✅ |
 
 ---
 
-## 1. Write Performance (Latency)
+## 1. Write Performance
 
-### Close Block Duration (End-to-End)
+### Close Block Duration
 
-| Percentile | Value | Notes |
-|------------|-------|-------|
-| **p50** | 5.02 sec | Median block close time |
-| **p95** | 9.53 sec | 95th percentile |
-| **p99** | 9.93 sec | 99th percentile |
-| **Average** | 2.04 sec | Mean close time |
+| Percentile | Value |
+|------------|-------|
+| **p50** | 5.00 sec |
+| **p95** | 9.50 sec |
+| **p99** | 9.90 sec |
+| **Average** | 1.33 sec |
 
 ### Block Operation Breakdown
 
 | Operation | Min | Avg | p95 | Max |
 |-----------|-----|-----|-----|-----|
-| `apply_to_global_trie` | 384 ms | **1,844 ms** | 4,044 ms | 14,367 ms |
-| `contract_storage_trie_commit` | 258 ms | **467 ms** | 793 ms | 1,045 ms |
-| `db_write_block_parts` | 8 ms | **12 ms** | 15 ms | 56 ms |
-| `contract_trie_commit` | 2 ms | **9 ms** | 21 ms | 99 ms |
-| `class_trie_commit` | 0 ms | 0 ms | 0 ms | 0 ms |
-| `block_hash_compute` | 0 ms | 0 ms | 0 ms | 0 ms |
+| `apply_to_global_trie` | 373 ms | **1,241 ms** | 2,656 ms | 4,925 ms |
+| `contract_storage_trie_commit` | 219 ms | **372 ms** | 533 ms | 1,317 ms |
+| `db_write_block_parts` | 6 ms | **11 ms** | 14 ms | 19 ms |
+| `contract_trie_commit` | - | **7 ms** | - | - |
+| `class_trie_commit` | - | **0.6 ms** | - | - |
 
-**Key Insight**: `apply_to_global_trie` dominates block close time (avg 1.8s, 90% of close time).
+**Key Insight**: `apply_to_global_trie` dominates block close time (avg 1.24s, ~93% of close time).
 
 ---
 
@@ -64,170 +58,150 @@ When evaluating RocksDB configuration changes, compare these metrics against the
 
 ### Write Stall Indicators
 
-| Metric | Value | Threshold | Status |
-|--------|-------|-----------|--------|
-| `db_is_write_stopped` | 0 | 1 = stalled | ✅ Healthy |
-| Stall events in 12h | 0 / 81 samples | - | ✅ No stalls |
+| Metric | Value | Status |
+|--------|-------|--------|
+| `db_is_write_stopped` max | 0 | ✅ No stalls |
+| `db_pending_compaction_bytes` max | 0 GiB | ✅ Compaction keeping up |
 
-### L0 File Count (Aggregated across 27 CFs)
+### L0 File Count (Aggregated across all CFs)
 
-| Statistic | Value | Per-CF Estimate |
-|-----------|-------|-----------------|
+| Statistic | Value | Per-CF Estimate (27 CFs) |
+|-----------|-------|--------------------------|
 | **Min** | 7 | ~0.3 |
-| **Avg** | 29 | ~1.1 |
-| **p50** | 22 | ~0.8 |
-| **p95** | 70 | ~2.6 |
-| **Max** | 146 | ~5.4 |
+| **Avg** | 27 | ~1.0 |
+| **p95** | 62 | ~2.3 |
+| **Max** | 112 | ~4.1 |
 
-**Note**: Per-CF threshold is 20 (slowdown) / 36 (stop). Estimates show healthy per-CF counts.
+**Note**: Per-CF threshold is 24 (slowdown) / 48 (stop). Estimates show healthy per-CF counts.
 
 ### Immutable Memtables (Aggregated)
 
 | Statistic | Value | Per-CF Estimate |
 |-----------|-------|-----------------|
 | **Min** | 0 | 0 |
-| **Avg** | 3.24 | ~0.12 |
+| **Avg** | 2.42 | ~0.09 |
 | **p95** | 18 | ~0.67 |
-| **Max** | 19 | ~0.70 |
-
-**Note**: Per-CF threshold is 5 (stall). Estimates show healthy per-CF counts.
-
-### Pending Compaction
-
-| Statistic | Value |
-|-----------|-------|
-| **Min** | 0 GiB |
-| **Max** | 0 GiB |
-| **Avg** | 0 GiB |
-
-**Note**: Compaction is keeping up with writes.
+| **Max** | 20 | ~0.74 |
 
 ---
 
-## 3. LSM Tree Structure (Current Snapshot)
-
-| Level | Files | Notes |
-|-------|-------|-------|
-| **L0** | 47 | Unsorted, triggers compaction |
-| **L1** | 1 | First sorted level |
-| **L2** | 11 | |
-| **L3** | 127 | |
-| **L4** | 242 | |
-| **L5** | 351 | |
-| **L6** | 3,401 | Cold storage |
-| **Total** | 4,180 | Across all CFs |
-
----
-
-## 4. Memory Usage
+## 3. Memory Usage
 
 ### RocksDB Memory
 
 | Component | Min | Avg | Max |
 |-----------|-----|-----|-----|
-| **Table Readers** | 1.47 GiB | 1.89 GiB | 2.39 GiB |
-| **Memtable Total** | 27 MiB | 52 MiB | 83 MiB |
-| **Block Cache** | 0 MiB | 0 MiB | 0 MiB |
+| **Table Readers** | 0.85 GiB | 1.06 GiB | 1.24 GiB |
+| **Memtable Total** | 91 MiB | 123 MiB | 197 MiB |
 
 ### Container Memory
 
 | Statistic | Value |
 |-----------|-------|
-| **Min** | 4.79 GiB |
-| **Avg** | 6.03 GiB |
-| **Max** | 7.35 GiB |
+| **Min** | 2.86 GiB |
+| **Avg** | 4.16 GiB |
+| **Max** | 6.22 GiB |
 | **Limit** | 8 GiB |
+| **Utilization (avg)** | 52% |
 
 ---
 
-## 5. Storage & I/O
-
-### Database Size
+## 4. Throughput
 
 | Metric | Value |
 |--------|-------|
-| **Start (12h ago)** | 278.44 GiB |
-| **End (now)** | 255.48 GiB |
-| **Growth** | -22.96 GiB |
-
-**Note**: Negative growth indicates compaction removed obsolete data.
-
-### PVC Usage
-
-| Metric | Value |
-|--------|-------|
-| **Used** | 256.51 GiB |
-| **Capacity** | 491.08 GiB |
-| **Utilization** | 52.2% |
-
-### Disk I/O Throughput (Average)
-
-| Direction | Throughput |
-|-----------|------------|
-| **Write** | 7.75 MiB/s |
-| **Read** | 9.87 MiB/s |
+| **Blocks in 12h** | 5,648 |
+| **Blocks per Hour** | 470.7 |
+| **Avg Block Time** | 1.33 sec |
 
 ---
 
-## 6. Throughput
-
-| Metric | Value |
-|--------|-------|
-| **Blocks in 12h** | 2,613 |
-| **Blocks per Hour** | 217.75 |
-| **Avg Block Time** | 2.04 sec |
-
----
-
-## 7. Resource Utilization
+## 5. Resource Utilization
 
 ### CPU
 
 | Metric | Value |
 |--------|-------|
-| **Avg CPU Cores** | 0.66 |
+| **Avg CPU Cores** | 1.35 |
 | **CPU Limit** | 4 cores |
-| **Utilization** | 16.5% |
+| **Utilization** | 33.8% |
 
 ---
 
-## 8. Current Configuration (Defaults)
+## 6. Current Configuration
 
 | Parameter | Value | CLI Flag |
 |-----------|-------|----------|
-| `max_write_buffer_number` | 5 | `--db-max-write-buffer-number` |
-| `level_zero_slowdown_writes_trigger` | 20 | `--db-l0-slowdown-trigger` |
-| `level_zero_stop_writes_trigger` | 36 | `--db-l0-stop-trigger` |
-| `soft_pending_compaction_bytes` | 6 GiB | `--db-soft-pending-compaction-gib` |
-| `hard_pending_compaction_bytes` | 12 GiB | `--db-hard-pending-compaction-gib` |
+| `level_zero_slowdown_writes_trigger` | 24 | `--db-l0-slowdown-trigger` |
+| `level_zero_stop_writes_trigger` | 48 | `--db-l0-stop-trigger` |
+| `soft_pending_compaction_bytes` | 48 GiB | `--db-soft-pending-compaction-gib` |
+| `hard_pending_compaction_bytes` | 96 GiB | `--db-hard-pending-compaction-gib` |
+| `max_write_buffer_number` | 6 | `--db-max-write-buffer-number` |
 | `memtable_blocks_budget` | 1024 MiB | `--db-memtable-blocks-budget-mib` |
-| `memtable_contracts_budget` | 128 MiB | `--db-memtable-contracts-budget-mib` |
-| `prefix_bloom_filter_ratio` | 0.0 | `--db-memtable-prefix-bloom-filter-ratio` |
+| `memtable_contracts_budget` | 256 MiB | `--db-memtable-contracts-budget-mib` |
+
+---
+
+## 7. Comparison with Previous Baseline
+
+| Metric | Previous (Jan 14) | Current (Jan 15) | Change |
+|--------|-------------------|------------------|--------|
+| **Throughput** | 217.75 blocks/hr | 470.7 blocks/hr | **+116%** ✅ |
+| **Close Block avg** | 2.04 sec | 1.33 sec | **-35%** ✅ |
+| **apply_to_global_trie avg** | 1,844 ms | 1,241 ms | **-33%** ✅ |
+| **apply_to_global_trie p95** | 4,044 ms | 2,656 ms | **-34%** ✅ |
+| **L0 Files max** | 146 | 112 | **-23%** ✅ |
+| **Table Readers avg** | 1.89 GiB | 1.06 GiB | **-44%** ✅ |
+| **Container Memory avg** | 6.03 GiB | 4.16 GiB | **-31%** ✅ |
+| **Write Stalls** | 0 | 0 | ✅ |
+
+---
+
+## 8. Baseline Values for Scripts
+
+Copy these values to `compare_baseline.sh`:
+
+```bash
+# Write Performance
+BASELINE_CLOSE_BLOCK_P50=5.00
+BASELINE_CLOSE_BLOCK_P95=9.50
+BASELINE_CLOSE_BLOCK_P99=9.90
+BASELINE_CLOSE_BLOCK_AVG=1.33
+
+# Block Operation Breakdown (milliseconds)
+BASELINE_APPLY_TRIE_AVG=1241
+BASELINE_APPLY_TRIE_P95=2656
+BASELINE_CONTRACT_STORAGE_TRIE_AVG=372
+BASELINE_DB_WRITE_PARTS_AVG=11
+
+# RocksDB Internals
+BASELINE_L0_FILES_AVG=27
+BASELINE_L0_FILES_MAX=112
+BASELINE_IMMUTABLE_MEMTABLES_AVG=2.42
+BASELINE_IMMUTABLE_MEMTABLES_MAX=20
+BASELINE_PENDING_COMPACTION_MAX=0
+
+# Memory (GiB)
+BASELINE_TABLE_READERS_AVG=1.06
+BASELINE_CONTAINER_MEMORY_AVG=4.16
+
+# Throughput
+BASELINE_BLOCKS_PER_HOUR=470.7
+
+# I/O (MiB/s) - not available in this capture
+BASELINE_DISK_WRITE_AVG=0
+BASELINE_DISK_READ_AVG=0
+```
 
 ---
 
 ## Comparison Checklist
 
-After applying new configuration, compare:
+When comparing future metrics against this baseline:
 
 - [ ] **Write stalls**: `db_is_write_stopped` should remain 0
-- [ ] **L0 files**: Should not increase significantly (aggregated)
-- [ ] **Block close time**: p50/p95/p99 should not regress
-- [ ] **Trie operations**: `apply_to_global_trie` timing
-- [ ] **Memory usage**: Should stay within limits
-- [ ] **Throughput**: Blocks per hour should not decrease
-- [ ] **Disk I/O**: No significant increase in write amplification
-
----
-
-## Recommended Changes (This PR)
-
-| Parameter | Before | After | Rationale |
-|-----------|--------|-------|-----------|
-| `level_zero_slowdown_writes_trigger` | 20 | **24** | 20% more headroom |
-| `level_zero_stop_writes_trigger` | 36 | **48** | Maintains 2x ratio |
-| `soft_pending_compaction_bytes` | 6 GiB | **48 GiB** | Scale for 250+ GiB DBs |
-| `hard_pending_compaction_bytes` | 12 GiB | **96 GiB** | Scale for 250+ GiB DBs |
-| `max_write_buffer_number` | 5 | **6** | Extra buffer for bursts |
-| `memtable_contracts_budget` | 128 MiB | **256 MiB** | Better state throughput |
-| `prefix_bloom_filter_ratio` | 0.0 | **0.1** | Faster negative lookups |
+- [ ] **L0 files max**: Should stay below 112 (aggregated)
+- [ ] **Block close time**: p95 should stay around 9.5s or lower
+- [ ] **Trie operations**: `apply_to_global_trie` p95 should stay around 2.7s or lower
+- [ ] **Memory usage**: Container memory should stay below 6.2 GiB
+- [ ] **Throughput**: Should maintain ~470 blocks/hr or higher
