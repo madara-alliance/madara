@@ -24,9 +24,7 @@ use url::Url;
 
 use crate::client::{AtlanticBucketInfo, AtlanticClient, AtlanticJobConfig, AtlanticJobInfo};
 use crate::constants::ATLANTIC_FETCH_ARTIFACTS_BASE_URL;
-use crate::types::{
-    AtlanticBucketStatus, AtlanticCairoVm, AtlanticQuerySimple, AtlanticQueryStep, AtlanticSharpProver,
-};
+use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver};
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -442,7 +440,7 @@ impl AtlanticProverService {
     }
 
     fn ensure_bucket_details_match(
-        existing_job: &AtlanticQuerySimple,
+        existing_job: &AtlanticQuery,
         expected_bucket_id: &Option<String>,
         expected_bucket_job_index: Option<u64>,
     ) -> Result<(), ProverClientError> {

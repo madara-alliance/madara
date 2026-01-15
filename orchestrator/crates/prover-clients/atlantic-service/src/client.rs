@@ -21,8 +21,7 @@ use crate::transport::ApiKeyAuth;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
-    AtlanticGetStatusResponse, AtlanticQueryByDedupIdResponse, AtlanticQuerySimple, AtlanticQueryStep,
-    AtlanticSharpProver,
+    AtlanticGetStatusResponse, AtlanticQuery, AtlanticQueryByDedupIdResponse, AtlanticQueryStep, AtlanticSharpProver,
 };
 use crate::AtlanticValidatedArgs;
 
@@ -327,9 +326,6 @@ impl AtlanticClient {
 
     /// Fetch an Atlantic query by its dedup ID.
     ///
-    /// This is the preferred method for idempotency checks. The server derives the
-    /// project ID from the API key, so no separate project_id parameter is needed.
-    ///
     /// # Arguments
     /// * `dedup_id` - The dedup ID to look up (typically our job ID)
     /// * `api_key` - API key for authentication
@@ -342,7 +338,7 @@ impl AtlanticClient {
         &self,
         dedup_id: &str,
         api_key: &str,
-    ) -> Result<Option<AtlanticQuerySimple>, AtlanticError> {
+    ) -> Result<Option<AtlanticQuery>, AtlanticError> {
         let context = format!("dedup_id: {}", dedup_id);
         let dedup_id = dedup_id.to_string();
         let api_key = api_key.to_string();
