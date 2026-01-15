@@ -1,0 +1,69 @@
+# Grafana Contact Points Configuration
+# Defines WHERE alerts are sent (Slack, Email, PagerDuty, etc.)
+#
+# SETUP:
+#   1. Create a Slack Incoming Webhook: https://api.slack.com/messaging/webhooks
+#   2. Set the webhook URL as a Kubernetes secret or environment variable
+#   3. Reference it as ${SLACK_WEBHOOK_URL} below
+#
+# For Kubernetes deployment:
+#   kubectl create secret generic grafana-alerting-secrets \
+#     --from-literal=SLACK_WEBHOOK_URL='https://hooks.slack.com/services/xxx/yyy/zzz' \
+#     -n <grafana-namespace>
+
+apiVersion: 1
+
+contactPoints:
+  # ============================================================================
+  # SLACK - Primary notification channel
+  # ============================================================================
+  - orgId: 1
+    name: slack-alerts
+    receivers:
+      - uid: slack-alerts-receiver
+        type: slack
+        settings:
+          # Webhook URL - use environment variable from K8s secret
+          url: ${SLACK_WEBHOOK_URL}
+
+          # Channel to post to (optional if webhook is channel-specific)
+          # channel: "#madara-alerts"
+
+          # Bot username
+          username: Grafana Alerts
+
+          # Message formatting
+          title: |
+            {{ if eq .Status "firing" }}:rotating_light:{{ else }}:white_check_mark:{{ end }} [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}
+          text: |
+            {{ range .Alerts }}
+            *Alert:* {{ .Labels.alertname }}
+            *Severity:* {{ .Labels.severity }}
+            *Component:* {{ .Labels.component }}
+            *Summary:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            {{ if .DashboardURL }}*Dashboard:* <{{ .DashboardURL }}|View Dashboard>{{ end }}
+            {{ if .PanelURL }}*Panel:* <{{ .PanelURL }}|View Panel>{{ end }}
+            ---
+            {{ end }}
+
+          # Optional: Mention channel on firing alerts
+          # mentionChannel: "here"
+
+        disableResolveMessage: false
+
+  # ============================================================================
+  # FALLBACK - Default receiver (does nothing, used as safety net)
+  # ============================================================================
+  - orgId: 1
+    name: default-fallback
+    receivers:
+      - uid: default-fallback-receiver
+        type: slack
+        settings:
+          url: ${SLACK_WEBHOOK_URL}
+          title: |
+            :question: [UNROUTED] {{ .CommonLabels.alertname }}
+          text: |
+            This alert did not match any notification policy.
+            Labels: {{ .CommonLabels }}

@@ -1,0 +1,753 @@
+# Madara Node Alert Rules for Grafana
+# All alerts are warnings - none are critical
+# Import this into Grafana to set up alerting for Madara nodes
+
+apiVersion: 1
+groups:
+  # ============================================================================
+  # CAIRO NATIVE ALERTS
+  # Monitor compilation failures, timeouts, and cache issues
+  # ============================================================================
+  - name: cairo_native
+    folder: Madara
+    interval: 1m
+    rules:
+      # Alert when Cairo Native compilations are failing
+      - uid: cairo-native-compilation-failures
+        title: "Cairo Native Compilation Failures"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'rate(cairo_native_compilations_failed_total[5m])'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "Cairo Native compilation failures detected. Rate: {{ $values.A.Value | printf \"%.4f\" }} failures/sec"
+          summary: "Cairo Native is failing to compile some contracts"
+          runbook_url: "https://docs.madara.io/runbooks/cairo-native-compilation"
+        labels:
+          severity: warning
+          component: cairo_native
+          team: node
+
+      # Alert when Cairo Native compilations are timing out
+      - uid: cairo-native-compilation-timeouts
+        title: "Cairo Native Compilation Timeouts"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'rate(cairo_native_compilations_timeout_total[5m])'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "Cairo Native compilation timeouts detected. Rate: {{ $values.A.Value | printf \"%.4f\" }} timeouts/sec"
+          summary: "Cairo Native compilations are timing out - may need to increase timeout or check resource constraints"
+          runbook_url: "https://docs.madara.io/runbooks/cairo-native-compilation"
+        labels:
+          severity: warning
+          component: cairo_native
+          team: node
+
+      # Alert when VM fallbacks are happening frequently (indicates Cairo Native issues)
+      - uid: cairo-native-vm-fallbacks-high
+        title: "High Cairo Native VM Fallback Rate"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'rate(cairo_native_vm_fallbacks_total[5m])'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.1
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "High rate of VM fallbacks: {{ $values.A.Value | printf \"%.4f\" }} fallbacks/sec. Cairo Native may not be working correctly."
+          summary: "Cairo Native is falling back to VM execution frequently"
+        labels:
+          severity: warning
+          component: cairo_native
+          team: node
+
+  # ============================================================================
+  # DATABASE / ROCKSDB ALERTS
+  # Monitor DB size, write stalls, compaction issues
+  # ============================================================================
+  - name: database_rocksdb
+    folder: Madara
+    interval: 1m
+    rules:
+      # Alert when DB size exceeds threshold (100GB default, adjust as needed)
+      - uid: db-size-large
+        title: "Database Size Warning"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'db_size'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 107374182400  # 100 GB in bytes
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Database size is {{ $values.A.Value | humanize1024 }}B. Consider cleanup or expanding storage."
+          summary: "Database size exceeds 100GB threshold"
+        labels:
+          severity: warning
+          component: database
+          team: node
+
+      # Alert when RocksDB has stopped accepting writes
+      - uid: db-writes-stopped
+        title: "Database Writes Stopped"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'db_is_write_stopped'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 30s
+        annotations:
+          description: "RocksDB has stopped accepting writes. This indicates severe compaction backlog or resource exhaustion."
+          summary: "Database writes are stopped - compaction cannot keep up"
+          runbook_url: "https://docs.madara.io/runbooks/rocksdb-write-stall"
+        labels:
+          severity: warning
+          component: database
+          team: node
+
+      # Alert when pending compaction bytes is too high (compaction falling behind)
+      - uid: db-compaction-backlog
+        title: "Database Compaction Backlog"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'db_pending_compaction_bytes'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 4294967296  # 4 GB in bytes
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Pending compaction backlog is {{ $values.A.Value | humanize1024 }}B. Compaction is not keeping up with writes."
+          summary: "Database compaction is falling behind - backlog exceeds 4GB"
+          runbook_url: "https://docs.madara.io/runbooks/rocksdb-compaction"
+        labels:
+          severity: warning
+          component: database
+          team: node
+
+      # Alert when L0 files are piling up (compaction bottleneck)
+      - uid: db-l0-files-high
+        title: "Database L0 Files Accumulating"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'db_level_files_count{level="L0"}'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 15
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "L0 file count is {{ $values.A.Value }}. High L0 count causes write slowdowns and read amplification."
+          summary: "L0 files accumulating - compaction bottleneck detected"
+        labels:
+          severity: warning
+          component: database
+          team: node
+
+      # Alert when immutable memtables are piling up (flush bottleneck)
+      - uid: db-immutable-memtables-high
+        title: "Database Immutable Memtables Accumulating"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'db_num_immutable_memtables'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 3
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "Immutable memtable count is {{ $values.A.Value }}. Memtables waiting to be flushed are piling up."
+          summary: "Memtable flush bottleneck - disk I/O may be saturated"
+        labels:
+          severity: warning
+          component: database
+          team: node
+
+      # Alert when memtable memory usage is very high
+      - uid: db-memtable-memory-high
+        title: "Database Memtable Memory Usage High"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'db_mem_table_total'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 2147483648  # 2 GB in bytes
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Memtable memory usage is {{ $values.A.Value | humanize1024 }}B. High memory pressure from unflushed data."
+          summary: "Database memtable memory usage exceeds 2GB"
+        labels:
+          severity: warning
+          component: database
+          team: node
+
+  # ============================================================================
+  # RPC SERVICE ALERTS
+  # Monitor RPC latency and block production time
+  # ============================================================================
+  - name: rpc_service
+    folder: Madara
+    interval: 1m
+    rules:
+      # Alert when RPC P50 latency is high (> 1 second)
+      - uid: rpc-p50-latency-high
+        title: "RPC P50 Latency High"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'histogram_quantile(0.50, sum(rate(calls_time_bucket[5m])) by (le))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1000  # 1000ms = 1 second
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "RPC P50 latency is {{ $values.A.Value | printf \"%.0f\" }}ms. Half of all RPC calls are taking more than 1 second."
+          summary: "RPC median latency exceeds 1 second"
+        labels:
+          severity: warning
+          component: rpc
+          team: node
+
+      # Alert when RPC P99 latency is very high (> 5 seconds)
+      - uid: rpc-p99-latency-high
+        title: "RPC P99 Latency High"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'histogram_quantile(0.99, sum(rate(calls_time_bucket[5m])) by (le))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 5000  # 5000ms = 5 seconds
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "RPC P99 latency is {{ $values.A.Value | printf \"%.0f\" }}ms. Tail latency is very high."
+          summary: "RPC P99 latency exceeds 5 seconds"
+        labels:
+          severity: warning
+          component: rpc
+          team: node
+
+      # Alert when specific slow RPC methods (by method) have high latency
+      - uid: rpc-method-latency-high
+        title: "Slow RPC Method Detected"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'histogram_quantile(0.50, sum(rate(calls_time_bucket[5m])) by (le, method)) > 2000'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "RPC method {{ $labels.method }} has P50 latency of {{ $values.A.Value | printf \"%.0f\" }}ms"
+          summary: "Specific RPC method is slow - check which method needs optimization"
+        labels:
+          severity: warning
+          component: rpc
+          team: node
+
+      # Alert when block production/closing takes too long
+      - uid: block-production-slow
+        title: "Block Production Time High"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'histogram_quantile(0.50, sum(rate(block_production_time_bucket[5m])) by (le))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 10  # 10 seconds
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Block production P50 time is {{ $values.A.Value | printf \"%.2f\" }}s. Blocks are taking longer than expected to close."
+          summary: "Block production/closing is slow - may impact throughput"
+        labels:
+          severity: warning
+          component: block_production
+          team: node
+
+      # Alert when transaction execution time is high
+      - uid: tx-execution-slow
+        title: "Transaction Execution Time High"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'histogram_quantile(0.50, sum(rate(tx_execution_time_ms_milliseconds_bucket[5m])) by (le))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 500  # 500ms
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Transaction execution P50 time is {{ $values.A.Value | printf \"%.0f\" }}ms."
+          summary: "Transaction execution is slow"
+        labels:
+          severity: warning
+          component: rpc
+          team: node
+
+      # Alert when RPC error rate is high
+      - uid: rpc-error-rate-high
+        title: "RPC Error Rate High"
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: PBFA97CFB590B2093
+            model:
+              expr: 'sum(rate(calls_finished_total{success="false"}[5m])) / sum(rate(calls_finished_total[5m]))'
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.05  # 5% error rate
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: "-100"
+              expression: A
+              reducer: last
+              refId: B
+              type: classic_conditions
+        noDataState: OK
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "RPC error rate is {{ $values.A.Value | humanizePercentage }}. More than 5% of calls are failing."
+          summary: "High RPC error rate detected"
+        labels:
+          severity: warning
+          component: rpc
+          team: node

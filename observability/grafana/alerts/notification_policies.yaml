@@ -1,0 +1,102 @@
+# Grafana Notification Policies Configuration
+# Defines HOW alerts are routed to contact points based on labels
+#
+# This configuration routes all alerts to the slack-alerts contact point.
+# Alerts are grouped by alertname to avoid spam when multiple instances fire.
+
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    # Default receiver for all alerts
+    receiver: slack-alerts
+
+    # Group alerts by these labels (reduces noise)
+    # Alerts with the same alertname will be batched together
+    group_by:
+      - grafana_folder
+      - alertname
+
+    # Timing configuration
+    # ─────────────────────────────────────────────────────────────────────────
+    # group_wait: How long to wait before sending the first notification
+    #             for a new group of alerts. Allows batching of initial alerts.
+    #
+    # group_interval: How long to wait before sending updates about new alerts
+    #                 added to an existing group that has already fired.
+    #
+    # repeat_interval: How long to wait before re-sending a notification for
+    #                  an alert that is still firing.
+    # ─────────────────────────────────────────────────────────────────────────
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+
+    # Child routes (optional - for more granular routing in the future)
+    routes:
+      # ========================================================================
+      # MADARA ALERTS
+      # All Madara alerts are warnings, send to Slack
+      # ========================================================================
+      - match:
+          grafana_folder: Madara
+        receiver: slack-alerts
+        group_by:
+          - alertname
+          - component
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        continue: false
+
+      # ========================================================================
+      # ORCHESTRATOR ALERTS
+      # Mix of warnings and critical alerts
+      # ========================================================================
+      - match:
+          grafana_folder: Orchestrator
+        receiver: slack-alerts
+        group_by:
+          - alertname
+          - component
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        continue: false
+
+      # ========================================================================
+      # SEVERITY-BASED ROUTING (for future use)
+      # Uncomment and modify these if you want different handling by severity
+      # ========================================================================
+
+      # Critical alerts - shorter intervals, faster notification
+      # - match:
+      #     severity: critical
+      #   receiver: slack-alerts
+      #   group_wait: 10s
+      #   group_interval: 1m
+      #   repeat_interval: 1h
+      #   continue: false
+
+      # Warning alerts - standard intervals
+      # - match:
+      #     severity: warning
+      #   receiver: slack-alerts
+      #   group_wait: 30s
+      #   group_interval: 5m
+      #   repeat_interval: 4h
+      #   continue: false
+
+# ============================================================================
+# MUTE TIMINGS (Optional)
+# Define time windows when alerts should be silenced
+# ============================================================================
+# muteTimes:
+#   - orgId: 1
+#     name: maintenance-window
+#     time_intervals:
+#       - weekdays: ['saturday', 'sunday']
+#         times:
+#           - start_time: '02:00'
+#             end_time: '06:00'
+#         location: UTC
