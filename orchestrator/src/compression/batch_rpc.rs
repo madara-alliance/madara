@@ -223,13 +223,15 @@ impl BatchRpcClient {
             let value = match response {
                 Ok(val) => Self::parse_felt_result(val)?,
                 Err(err) => {
-                    // For storage, any error means we can't get the value
-                    // Log and return ZERO as a safe default (storage slots default to zero)
-                    warn!(
-                        "Failed to get storage at contract={:#x} key={:#x}: {} (code={})",
-                        contract_addr, key, err.message, err.code
+                    error!(
+                        "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {:?}",
+                        contract_addr, key, block_param, err
                     );
-                    Felt::ZERO
+                    return Err(BatchRpcError::RpcError {
+                        id: idx as u64,
+                        code: err.code,
+                        message: err.message.clone(),
+                    });
                 }
             };
             results.insert((*contract_addr, *key), value);
@@ -272,11 +274,16 @@ impl BatchRpcClient {
                         None
                     } else {
                         // Unexpected error, log but return None to not block processing
-                        warn!(
-                            "Failed to get class hash for contract={:#x}: {} (code={})",
-                            contract_addr, err.message, err.code
+                        let err_message = format!(
+                            "Failed to get class hash for contract: {} at block {}: {:?}",
+                            contract_addr, block_param, err
                         );
-                        None
+                        error!("{}", &err_message);
+                        return Err(BatchRpcError::RpcError {
+                            id: idx as u64,
+                            code: err.code,
+                            message: err.message.clone(),
+                        });
                     }
                 }
             };
