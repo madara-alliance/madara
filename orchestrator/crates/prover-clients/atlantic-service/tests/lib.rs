@@ -3,13 +3,17 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
 use orchestrator_atlantic_service::types::{
-    AtlanticCairoVm, AtlanticClient, AtlanticQuery, AtlanticQueryStatus, AtlanticQueryStep, AtlanticSharpProver,
+    AtlanticCairoVm, AtlanticQueryStatus, AtlanticQueryStep, AtlanticSharpProver,
 };
 use orchestrator_atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
 use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use url::Url;
 mod constants;
+
+// ============================================================================
+// Integration tests
+// ============================================================================
 
 #[tokio::test]
 async fn atlantic_client_submit_task_when_mock_works() {
@@ -108,41 +112,50 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
             .header_exists("api-key")
             .query_param("dedupId", external_id.as_str());
 
-        let response = AtlanticQuery {
-            id: "existing_query_id".to_string(),
-            external_id: Some(external_id.clone()),
-            transaction_id: None,
-            status: AtlanticQueryStatus::Received,
-            step: None,
-            program_hash: None,
-            integrity_fact_hash: None,
-            sharp_fact_hash: None,
-            layout: None,
-            is_fact_mocked: None,
-            chain: None,
-            job_size: None,
-            declared_job_size: None,
-            cairo_vm: None,
-            cairo_version: None,
-            steps: vec![],
-            error_reason: None,
-            submitted_by_client: "client".to_string(),
-            project_id: "project".to_string(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            completed_at: None,
-            result: None,
-            network: Some("TESTNET".to_string()),
-            hints: None,
-            sharp_prover: None,
-            bucket_id: Some(bucket_id.clone()),
-            bucket_job_index: Some(bucket_job_index as i32),
-            customer_name: None,
-            is_job_size_valid: true,
-            is_proof_mocked: None,
-            client: AtlanticClient { client_id: None, name: None, email: None, is_email_verified: None, image: None },
-        };
+        // Response must be wrapped in { "atlanticQuery": ... } to match AtlanticQueryByDedupIdResponse
+        let response = serde_json::json!({
+            "atlanticQuery": {
+                "id": "existing_query_id",
+                "externalId": external_id.clone(),
+                "transactionId": null,
+                "status": "RECEIVED",
+                "step": null,
+                "programHash": null,
+                "integrityFactHash": null,
+                "sharpFactHash": null,
+                "layout": null,
+                "isFactMocked": null,
+                "chain": null,
+                "jobSize": null,
+                "declaredJobSize": null,
+                "cairoVm": null,
+                "cairoVersion": null,
+                "steps": [],
+                "errorReason": null,
+                "submittedByClient": "client",
+                "projectId": "project",
+                "createdAt": "2024-01-01T00:00:00Z",
+                "completedAt": null,
+                "result": null,
+                "network": "TESTNET",
+                "hints": null,
+                "sharpProver": null,
+                "bucketId": bucket_id.clone(),
+                "bucketJobIndex": bucket_job_index as i32,
+                "customerName": null,
+                "isJobSizeValid": true,
+                "isProofMocked": null,
+                "client": {
+                    "clientId": null,
+                    "name": null,
+                    "email": null,
+                    "isEmailVerified": null,
+                    "image": null
+                }
+            }
+        });
 
-        then.status(200).header("content-type", "application/json").json_body_obj(&response);
+        then.status(200).header("content-type", "application/json").json_body(response);
     });
 
     let submit_mock = mock_server.mock(|when, then| {
@@ -172,6 +185,94 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
     assert_eq!(task_result, "existing_query_id");
     dedup_mock.assert_calls(1);
     submit_mock.assert_calls(0);
+}
+
+/// Test get_query_by_dedup_id - query exists
+#[tokio::test]
+async fn atlantic_client_get_query_by_dedup_id_found() {
+    let _ = env_logger::try_init();
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
+    let atlantic_params = AtlanticValidatedArgs {
+        atlantic_api_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"),
+        atlantic_service_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL")).unwrap(),
+        atlantic_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL")).unwrap(),
+        atlantic_mock_fact_hash: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH"),
+        atlantic_prover_type: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_PROVER_TYPE"),
+        atlantic_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SETTLEMENT_LAYER"),
+        atlantic_verifier_contract_address: get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
+        ),
+        atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
+        atlantic_sharp_prover: AtlanticSharpProver::default(),
+    };
+    let api_key = get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY");
+    let atlantic_service =
+        AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None, None);
+
+    // Use a known dedup_id that exists - we'll first submit a job to get one
+    let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
+    let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("Failed to read Cairo PIE zip file");
+
+    let dedup_id = format!("test-dedup-{}", uuid::Uuid::new_v4());
+
+    // Submit a job with a known dedup_id
+    let query_id = atlantic_service
+        .submit_task(Task::CreateJob(CreateJobInfo {
+            cairo_pie: Box::new(cairo_pie),
+            bucket_id: None,
+            bucket_job_index: None,
+            num_steps: None,
+            external_id: dedup_id.clone(),
+        }))
+        .await
+        .expect("Failed to submit task");
+
+    // Now lookup by dedup_id - should find the query we just submitted
+    let result = atlantic_service.atlantic_client.get_query_by_dedup_id(&dedup_id, &api_key).await;
+
+    assert!(result.is_ok(), "get_query_by_dedup_id should succeed: {:?}", result.err());
+    let query = result.unwrap();
+    assert!(query.is_some(), "Query should be found for dedup_id: {}", dedup_id);
+    let query = query.unwrap();
+    assert_eq!(query.id, query_id, "Query ID should match the submitted job");
+}
+
+/// Test get_query_by_dedup_id - query does not exist
+#[tokio::test]
+async fn atlantic_client_get_query_by_dedup_id_not_found() {
+    let _ = env_logger::try_init();
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
+    let atlantic_params = AtlanticValidatedArgs {
+        atlantic_api_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"),
+        atlantic_service_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL")).unwrap(),
+        atlantic_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL")).unwrap(),
+        atlantic_mock_fact_hash: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH"),
+        atlantic_prover_type: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_PROVER_TYPE"),
+        atlantic_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SETTLEMENT_LAYER"),
+        atlantic_verifier_contract_address: get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
+        ),
+        atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
+        atlantic_sharp_prover: AtlanticSharpProver::default(),
+    };
+    let api_key = get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY");
+    let atlantic_service =
+        AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None, None);
+
+    // Use a random dedup_id that definitely doesn't exist
+    let non_existent_dedup_id = format!("non-existent-{}", uuid::Uuid::new_v4());
+
+    let result = atlantic_service.atlantic_client.get_query_by_dedup_id(&non_existent_dedup_id, &api_key).await;
+
+    assert!(result.is_ok(), "get_query_by_dedup_id should succeed (not error on 404)");
+    let query = result.unwrap();
+    assert!(query.is_none(), "Query should not be found (None for 404)");
 }
 
 #[tokio::test]

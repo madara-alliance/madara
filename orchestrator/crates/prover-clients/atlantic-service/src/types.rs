@@ -92,6 +92,52 @@ pub struct AtlanticGetStatusResponse {
     pub metadata_urls: Vec<String>,
 }
 
+/// Response type for `/atlantic-query-by-dedup-id` endpoint.
+/// Unlike `AtlanticGetStatusResponse`, this endpoint does not return `metadata_urls` or `client`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AtlanticQueryByDedupIdResponse {
+    pub atlantic_query: AtlanticQuerySimple,
+}
+
+/// Simplified Atlantic query without the `client` field.
+/// Used by the `/atlantic-query-by-dedup-id` endpoint which doesn't return client info.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AtlanticQuerySimple {
+    pub id: String,
+    pub external_id: Option<String>,
+    pub dedup_id: Option<String>,
+    pub transaction_id: Option<String>,
+    pub status: AtlanticQueryStatus,
+    pub step: Option<AtlanticQueryStep>,
+    pub program_hash: Option<String>,
+    pub integrity_fact_hash: Option<String>,
+    pub sharp_fact_hash: Option<String>,
+    pub layout: Option<String>,
+    pub is_fact_mocked: Option<bool>,
+    pub chain: Option<AtlanticChain>,
+    pub job_size: Option<AtlanticJobSize>,
+    pub declared_job_size: Option<AtlanticJobSize>,
+    pub cairo_vm: Option<AtlanticCairoVm>,
+    pub cairo_version: Option<AtlanticCairoVersion>,
+    pub steps: Vec<AtlanticQueryStep>,
+    pub error_reason: Option<String>,
+    pub submitted_by_client: String,
+    pub project_id: String,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+    pub result: Option<AtlanticQueryStep>,
+    pub network: Option<String>,
+    pub hints: Option<AtlanticHints>,
+    pub sharp_prover: Option<AtlanticSharpProver>,
+    pub bucket_id: Option<String>,
+    pub bucket_job_index: Option<i32>,
+    pub customer_name: Option<String>,
+    pub is_job_size_valid: bool,
+    pub is_proof_mocked: Option<bool>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticQuery {

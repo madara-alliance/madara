@@ -21,7 +21,8 @@ use crate::transport::ApiKeyAuth;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
-    AtlanticGetStatusResponse, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver,
+    AtlanticGetStatusResponse, AtlanticQueryByDedupIdResponse, AtlanticQuerySimple, AtlanticQueryStep,
+    AtlanticSharpProver,
 };
 use crate::AtlanticValidatedArgs;
 
@@ -341,7 +342,7 @@ impl AtlanticClient {
         &self,
         dedup_id: &str,
         api_key: &str,
-    ) -> Result<Option<AtlanticQuery>, AtlanticError> {
+    ) -> Result<Option<AtlanticQuerySimple>, AtlanticError> {
         let context = format!("dedup_id: {}", dedup_id);
         let dedup_id = dedup_id.to_string();
         let api_key = api_key.to_string();
@@ -387,7 +388,7 @@ impl AtlanticClient {
                 }
 
                 if status.is_success() {
-                    let response: AtlanticGetStatusResponse = response
+                    let response: AtlanticQueryByDedupIdResponse = response
                         .json()
                         .await
                         .map_err(|e| AtlanticError::parse_error("get_query_by_dedup_id", e.to_string()))?;
