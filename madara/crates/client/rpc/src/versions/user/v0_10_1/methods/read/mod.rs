@@ -4,14 +4,16 @@ use crate::versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server as V0_8_1Impl;
 use crate::versions::user::v0_9_0::StarknetReadRpcApiV0_9_0Server as V0_9_0Impl;
 use crate::{Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
+use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_chain_config::RpcVersion;
 use mp_convert::Felt;
 use mp_rpc::v0_10_1::{
-    BlockHashAndNumber, BroadcastedTxn, ContractStorageKeysItem, EventFilterWithPageRequest, EventsChunk, FeeEstimate,
-    FunctionCall, GetStorageProofResult, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes,
-    MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, ResponseFlag,
+    BlockHashAndNumber, BlockStatus, BlockWithTxsAndProofFacts, BroadcastedTxn, ContractStorageKeysItem,
+    EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult,
+    MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxsAndProofFacts,
+    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, PreConfirmedBlockWithTxsAndProofFacts, ResponseFlag,
     SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
-    TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
+    TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHashAndProofFacts,
 };
 
 // v0.10.1 specific implementation
@@ -75,11 +77,45 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
         &self,
         block_id: BlockId,
         _response_flags: Option<Vec<ResponseFlag>>,
-    ) -> RpcResult<MaybePreConfirmedBlockWithTxs> {
-        // Note: response_flags is accepted but not yet used.
-        // INCLUDE_PROOF_FACTS would require fetching proof_facts from storage,
-        // which is not yet implemented.
-        V0_10_0Impl::get_block_with_txs(self, block_id)
+    ) -> RpcResult<MaybePreConfirmedBlockWithTxsAndProofFacts> {
+        // v0.10.1: Always use proof_facts-aware conversion.
+        // When proof_facts is None, it's not serialized (backward compatible).
+        // When INCLUDE_PROOF_FACTS flag is set (in future), proof_facts will be populated.
+        let view = self.resolve_block_view(block_id)?;
+        let block_info = view.get_block_info().map_err(StarknetRpcApiError::from)?;
+        let txs: Vec<TxnWithHashAndProofFacts> = view
+            .get_executed_transactions(..)
+            .map_err(StarknetRpcApiError::from)?
+            .into_iter()
+            .map(|tx| TxnWithHashAndProofFacts {
+                transaction: tx.transaction.to_rpc_v0_10_1_with_proof_facts(),
+                transaction_hash: *tx.receipt.transaction_hash(),
+            })
+            .collect();
+
+        let status = if view.is_preconfirmed() {
+            BlockStatus::PreConfirmed
+        } else if view.is_on_l1() {
+            BlockStatus::AcceptedOnL1
+        } else {
+            BlockStatus::AcceptedOnL2
+        };
+
+        Ok(match block_info {
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
+                MaybePreConfirmedBlockWithTxsAndProofFacts::PreConfirmed(PreConfirmedBlockWithTxsAndProofFacts {
+                    transactions: txs,
+                    pre_confirmed_block_header: block.header.to_rpc_v0_9(),
+                })
+            }
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
+                MaybePreConfirmedBlockWithTxsAndProofFacts::Block(BlockWithTxsAndProofFacts {
+                    transactions: txs,
+                    status,
+                    block_header: block.to_rpc_v0_10(),
+                })
+            }
+        })
     }
 
     fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<MaybeDeprecatedContractClass> {
@@ -111,22 +147,37 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
         block_id: BlockId,
         index: u64,
         _response_flags: Option<Vec<ResponseFlag>>,
-    ) -> RpcResult<TxnWithHash> {
-        // Note: response_flags is accepted but not yet used.
-        // INCLUDE_PROOF_FACTS would require fetching proof_facts from storage,
-        // which is not yet implemented.
-        V0_9_0Impl::get_transaction_by_block_id_and_index(self, block_id, index)
+    ) -> RpcResult<TxnWithHashAndProofFacts> {
+        // v0.10.1: Always use proof_facts-aware conversion.
+        // When proof_facts is None, it's not serialized (backward compatible).
+        let view = self.resolve_block_view(block_id)?;
+        let tx = view
+            .get_executed_transaction(index)
+            .map_err(StarknetRpcApiError::from)?
+            .ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
+        Ok(TxnWithHashAndProofFacts {
+            transaction: tx.transaction.to_rpc_v0_10_1_with_proof_facts(),
+            transaction_hash: *tx.receipt.transaction_hash(),
+        })
     }
 
     fn get_transaction_by_hash(
         &self,
         transaction_hash: Felt,
         _response_flags: Option<Vec<ResponseFlag>>,
-    ) -> RpcResult<TxnWithHash> {
-        // Note: response_flags is accepted but not yet used.
-        // INCLUDE_PROOF_FACTS would require fetching proof_facts from storage,
-        // which is not yet implemented.
-        V0_9_0Impl::get_transaction_by_hash(self, transaction_hash)
+    ) -> RpcResult<TxnWithHashAndProofFacts> {
+        // v0.10.1: Always use proof_facts-aware conversion.
+        // When proof_facts is None, it's not serialized (backward compatible).
+        let view = self.backend.view_on_latest();
+        let res = view
+            .find_transaction_by_hash(&transaction_hash)
+            .map_err(StarknetRpcApiError::from)?
+            .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+        let tx = res.get_transaction().map_err(StarknetRpcApiError::from)?;
+        Ok(TxnWithHashAndProofFacts {
+            transaction: tx.transaction.to_rpc_v0_10_1_with_proof_facts(),
+            transaction_hash,
+        })
     }
 
     fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TxnReceiptWithBlockInfo> {
