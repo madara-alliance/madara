@@ -226,7 +226,7 @@ impl JobService {
         tracing::debug!(job_id = ?job.id, "Updating job status to Failed in database");
         // Move current failure_reason to history before setting new one
         if let Some(previous_reason) = job_metadata.common.failure_reason.take() {
-            job_metadata.common.previous_failure_reasons.insert(0, previous_reason);
+            job_metadata.common.previous_failure_reasons.push(previous_reason);
         }
         job_metadata.common.failure_reason = Some(reason.clone());
         // Clone the history before moving job_metadata for the alert message

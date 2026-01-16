@@ -1152,8 +1152,8 @@ async fn move_job_to_failed_sends_sns_alert() {
 /// Tests that `move_job_to_failed` accumulates failure history.
 /// This test verifies that:
 /// 1. When a job has no prior failure_reason, the new reason is set directly
-/// 2. When a job already has a failure_reason, it's moved to previous_failure_reasons
-/// 3. The accumulated history is preserved in the database
+/// 2. When a job already has a failure_reason, it's appended to previous_failure_reasons
+/// 3. The accumulated history is preserved in the database (oldest first)
 #[rstest]
 #[tokio::test]
 async fn move_job_to_failed_accumulates_failure_history() {
@@ -1216,8 +1216,8 @@ async fn move_job_to_failed_accumulates_failure_history() {
 /// Tests that failure history is preserved through multiple retry attempts until DLQ.
 /// This test verifies the end-to-end error accumulation:
 /// 1. Job fails processing (error stored via reset_job_for_retry)
-/// 2. Job eventually goes to DLQ (final reason set, previous moved to history)
-/// 3. The complete history is preserved
+/// 2. Job eventually goes to DLQ (final reason set, previous appended to history)
+/// 3. The complete history is preserved in chronological order (oldest first)
 #[rstest]
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]

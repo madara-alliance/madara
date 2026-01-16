@@ -34,8 +34,8 @@ pub struct CommonMetadata {
     pub verification_completed_at: Option<DateTime<Utc>>,
     /// Most recent failure reason (kept for backwards compatibility)
     pub failure_reason: Option<String>,
-    /// History of previous failure reasons, with most recent first.
-    /// Each processing/verification failure prepends to this list.
+    /// History of previous failure reasons, in chronological order (oldest first).
+    /// Each processing/verification failure appends to this list.
     #[serde(default)]
     pub previous_failure_reasons: Vec<String>,
     /// Orchestrator version that created this job.
