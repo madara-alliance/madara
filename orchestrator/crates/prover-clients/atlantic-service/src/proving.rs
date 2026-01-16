@@ -19,19 +19,6 @@
 //! - [`ProvingParams`]: Parameters passed to the proving layer
 //! - [`create_proving_layer`]: Factory function to create the appropriate layer
 //!
-//! # Example
-//!
-//! ```ignore
-//! use crate::proving::{create_proving_layer, ProvingParams};
-//!
-//! // Create the appropriate layer based on configuration
-//! let layer = create_proving_layer("starknet");
-//!
-//! // Add proving params to request
-//! let request = layer.add_proving_params(request, ProvingParams {
-//!     layout: LayoutName::dynamic,
-//! });
-//! ```
 
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::RequestBuilder;
