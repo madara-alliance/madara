@@ -598,7 +598,10 @@ impl JobHandlerService {
             JobVerificationStatus::Rejected(e) => {
                 error!(job_id = ?id, error = ?e, "Job verification rejected");
 
-                // Update metadata with error information
+                // Update metadata with error information (move current to history, set new)
+                if let Some(previous_reason) = job.metadata.common.failure_reason.take() {
+                    job.metadata.common.previous_failure_reasons.push(previous_reason);
+                }
                 job.metadata.common.failure_reason = Some(e.clone());
                 operation_job_status = Some(JobStatus::VerificationFailed);
 
@@ -740,7 +743,7 @@ impl JobHandlerService {
         JobService::move_job_to_failed(
             &job,
             config.clone(),
-            format!("Received failure queue message for job with status: {}", status),
+            format!("Job moved to DLQ after exhausting retries (last status: {})", status),
         )
         .await
     }
@@ -864,9 +867,9 @@ impl JobHandlerService {
 
     /// Resets job state to allow retry when the message comes back from the queue.
     ///
-    /// Clears `process_started_at` and restores the job to its original status.
-    /// If the DB update fails, returns an error combining both the original error
-    /// and the DB error context.
+    /// Clears `process_started_at`, appends the error to failure history, and restores
+    /// the job to its original status. If the DB update fails, returns an error combining
+    /// both the original error and the DB error context.
     async fn reset_job_for_retry(
         job: &mut JobItem,
         config: Arc<Config>,
@@ -874,6 +877,13 @@ impl JobHandlerService {
         original_error: JobError,
     ) -> JobError {
         job.metadata.common.process_started_at = None;
+        // Move current failure_reason to history, then set new error
+        let new_error =
+            format!("Processing attempt {} failed: {}", job.metadata.common.process_attempt_no, original_error);
+        if let Some(previous_reason) = job.metadata.common.failure_reason.take() {
+            job.metadata.common.previous_failure_reasons.push(previous_reason);
+        }
+        job.metadata.common.failure_reason = Some(new_error);
         match config
             .database()
             .update_job(

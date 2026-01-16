@@ -6,7 +6,7 @@ use cairo_vm::Felt252;
 use orchestrator_utils::http_client::extract_http_error_text;
 use orchestrator_utils::http_client::HttpClient;
 use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
-use reqwest::Method;
+use reqwest::{Method, StatusCode};
 use starknet_core::types::Felt;
 use tracing::{debug, info, warn};
 use url::Url;
@@ -21,7 +21,7 @@ use crate::transport::ApiKeyAuth;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
     AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
-    AtlanticGetStatusResponse, AtlanticQueriesListResponse, AtlanticQueryStep, AtlanticSharpProver,
+    AtlanticGetStatusResponse, AtlanticQuery, AtlanticQueryByDedupIdResponse, AtlanticQueryStep, AtlanticSharpProver,
 };
 use crate::AtlanticValidatedArgs;
 
@@ -31,8 +31,8 @@ pub struct AtlanticJobInfo {
     pub pie_file: PathBuf,
     /// Number of steps
     pub n_steps: Option<usize>,
-    /// External ID to identify the job (used to prevent duplicate submissions)
-    pub external_id: String,
+    /// Dedup ID to identify the job (used to prevent duplicate submissions)
+    pub dedup_id: String,
 }
 
 /// Struct to store job config
@@ -324,104 +324,93 @@ impl AtlanticClient {
         Ok(result)
     }
 
-    /// Search Atlantic queries with optional filters
-    /// This function searches through Atlantic queries using the provided search string
-    /// and optional additional filters like limit, offset, network, status, and result.
+    /// Fetch an Atlantic query by its dedup ID.
     ///
     /// # Arguments
-    /// * `atlantic_api_key` - API key for authentication (sent via header)
-    /// * `search_string` - The search string to filter queries
-    /// * `limit` - Optional limit for the number of results (default: None)
-    /// * `network` - Optional network filter (default: None)
+    /// * `dedup_id` - The dedup ID to look up (typically our job ID)
+    /// * `api_key` - API key for authentication
     ///
     /// # Returns
-    /// Returns a list of Atlantic queries matching the search criteria and total count
-    pub async fn search_atlantic_queries(
+    /// * `Ok(Some(query))` - Query found
+    /// * `Ok(None)` - Query not found (404)
+    /// * `Err(...)` - Other error
+    pub async fn get_query_by_dedup_id(
         &self,
-        atlantic_api_key: impl AsRef<str>,
-        search_string: impl AsRef<str>,
-        limit: Option<u32>,
-        network: Option<&str>,
-    ) -> Result<AtlanticQueriesListResponse, AtlanticError> {
-        let search = search_string.as_ref().to_string();
-        let context = format!("search: {}, limit: {:?}, network: {:?}", search, limit, network);
+        dedup_id: &str,
+        api_key: &str,
+    ) -> Result<Option<AtlanticQuery>, AtlanticError> {
+        let context = format!("dedup_id: {}", dedup_id);
 
         debug!(
-            operation = "search_atlantic_queries",
-            search = %search,
-            limit = ?limit,
-            network = ?network,
-            "Searching Atlantic queries"
+            operation = "get_query_by_dedup_id",
+            dedup_id = %dedup_id,
+            "Looking up query by dedup ID"
         );
 
-        let api_key = atlantic_api_key.as_ref().to_string();
-        let network_str = network.map(|s| s.to_string());
+        let dedup_id = dedup_id.to_string();
+        let api_key = api_key.to_string();
 
-        let result = self
-            .retry_request("search_atlantic_queries", &context, || {
-                let api_key = api_key.clone();
-                let search = search.clone();
-                let network = network_str.clone();
+        self.retry_request("get_query_by_dedup_id", &context, || {
+            let dedup_id = dedup_id.clone();
+            let api_key = api_key.clone();
 
-                async move {
-                    let mut request = self
-                        .client
-                        .request()
-                        .method(Method::GET)
-                        .header(
-                            ApiKeyAuth::header_name(),
-                            HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
-                                operation: "search_atlantic_queries".to_string(),
-                                message: format!("Invalid API key header value: {}", e),
-                            })?,
-                        )
-                        .path("atlantic-queries")
-                        .query_param("search", &search);
+            async move {
+                let response = self
+                    .client
+                    .request()
+                    .method(Method::GET)
+                    .header(
+                        ApiKeyAuth::header_name(),
+                        HeaderValue::from_str(&api_key).map_err(|e| AtlanticError::Other {
+                            operation: "get_query_by_dedup_id".to_string(),
+                            message: format!("Invalid API key header value: {}", e),
+                        })?,
+                    )
+                    .path("atlantic-query-by-dedup-id")
+                    .query_param("dedupId", &dedup_id)
+                    .send()
+                    .await
+                    .map_err(|e| AtlanticError::from_reqwest_error("get_query_by_dedup_id", e))?;
 
-                    // Add optional query parameters
-                    if let Some(limit_val) = limit {
-                        request = request.query_param("limit", &limit_val.to_string());
-                    }
-                    if let Some(ref network_val) = network {
-                        request = request.query_param("network", network_val);
-                    }
+                let status = response.status();
 
-                    let response = request
-                        .send()
+                // 404 means query doesn't exist - this is not an error
+                if status == StatusCode::NOT_FOUND {
+                    debug!(
+                        operation = "get_query_by_dedup_id",
+                        dedup_id = %dedup_id,
+                        "Query not found (first submission)"
+                    );
+                    Ok(None)
+                } else if status.is_success() {
+                    let response: AtlanticQueryByDedupIdResponse = response
+                        .json()
                         .await
-                        .map_err(|e| AtlanticError::from_reqwest_error("search_atlantic_queries", e))?;
+                        .map_err(|e| AtlanticError::parse_error("get_query_by_dedup_id", e.to_string()))?;
 
-                    let status = response.status();
-                    if status.is_success() {
-                        let queries_response: AtlanticQueriesListResponse = response
-                            .json()
-                            .await
-                            .map_err(|e| AtlanticError::parse_error("search_atlantic_queries", e.to_string()))?;
-
-                        debug!(
-                            operation = "search_atlantic_queries",
-                            status = %status,
-                            search = %search,
-                            total_results = queries_response.total,
-                            "Search completed successfully"
-                        );
-                        Ok(queries_response)
-                    } else {
-                        let (error_text, status) = extract_http_error_text(response, "search atlantic queries").await;
-                        debug!(
-                            operation = "search_atlantic_queries",
-                            status = %status,
-                            search = %search,
-                            error = %error_text,
-                            "Search failed"
-                        );
-                        Err(AtlanticError::from_http_error_response("search_atlantic_queries", status, error_text))
-                    }
+                    debug!(
+                        operation = "get_query_by_dedup_id",
+                        dedup_id = %dedup_id,
+                        query_id = %response.atlantic_query.id,
+                        status = ?response.atlantic_query.status,
+                        "Query found"
+                    );
+                    Ok(Some(response.atlantic_query))
+                } else {
+                    // Other error
+                    let (error_text, status) = extract_http_error_text(response, "get query by dedup id").await;
+                    debug!(
+                        operation = "get_query_by_dedup_id",
+                        dedup_id = %dedup_id,
+                        status = %status,
+                        error = %error_text,
+                        "Failed to get query by dedup ID"
+                    );
+                    Err(AtlanticError::from_http_error_response("get_query_by_dedup_id", status, error_text))
                 }
-            })
-            .await?;
-
-        Ok(result)
+            }
+        })
+        .await
     }
 
     /// Create a new bucket for Applicative Recursion.
@@ -642,24 +631,24 @@ impl AtlanticClient {
             pie_file_size_bytes = file_size,
             bucket_id = ?bucket_info.bucket_id,
             bucket_job_index = ?bucket_info.bucket_job_index,
-            external_id = %job_info.external_id,
+            dedup_id = %job_info.dedup_id,
             "Starting job submission"
         );
 
         let context = format!(
-            "layout: {}, job_size: {}, network: {}, pie_file_size: {} bytes, bucket_id: {:?}, bucket_job_index: {:?}, external_id: {}",
+            "layout: {}, job_size: {}, network: {}, pie_file_size: {} bytes, bucket_id: {:?}, bucket_job_index: {:?}, dedup_id: {}",
             job_config.proof_layout,
             job_size,
             job_config.network,
             file_size,
             bucket_info.bucket_id,
             bucket_info.bucket_job_index,
-            job_info.external_id
+            job_info.dedup_id
         );
 
         let api_key_str = api_key.as_ref().to_string();
         let pie_file_path = job_info.pie_file.clone();
-        let external_id = job_info.external_id.clone();
+        let dedup_id = job_info.dedup_id.clone();
         let layout = job_config.proof_layout;
         let cairo_vm = job_config.cairo_vm.clone();
         let result_step = job_config.result.clone();
@@ -672,7 +661,7 @@ impl AtlanticClient {
             .retry_request("add_job", &context, || {
                 let api_key = api_key_str.clone();
                 let pie_file = pie_file_path.clone();
-                let external_id = external_id.clone();
+                let dedup_id = dedup_id.clone();
                 let cairo_vm = cairo_vm.clone();
                 let result_step = result_step.clone();
                 let network = network.clone();
@@ -686,7 +675,7 @@ impl AtlanticClient {
                         job_size = job_size,
                         network = %network,
                         pie_file = ?pie_file,
-                        external_id = %external_id,
+                        dedup_id = %dedup_id,
                         "Building add_job request"
                     );
 
@@ -709,7 +698,7 @@ impl AtlanticClient {
                             .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                             .form_text("cairoVm", &cairo_vm.as_str())
                             .form_text("sharpProver", &sharp_prover.as_str())
-                            .form_text("externalId", &external_id)
+                            .form_text("dedupId", &dedup_id)
                             .form_file("pieFile", pie_file.as_ref(), "pie.zip", Some("application/zip"))
                             .map_err(|e| AtlanticError::from_io_error("add_job", e))?,
                         ProvingParams { layout },
@@ -731,7 +720,7 @@ impl AtlanticClient {
                         result = ?result_step,
                         bucket_id = ?bucket_id,
                         bucket_job_index = ?bucket_job_index,
-                        external_id = %external_id,
+                        dedup_id = %dedup_id,
                         "Sending add_job request"
                     );
 

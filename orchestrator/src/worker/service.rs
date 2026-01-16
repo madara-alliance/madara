@@ -224,8 +224,13 @@ impl JobService {
         let internal_id = &job.internal_id;
 
         tracing::debug!(job_id = ?job.id, "Updating job status to Failed in database");
-        // Update failure information in common metadata
+        // Move current failure_reason to history before setting new one
+        if let Some(previous_reason) = job_metadata.common.failure_reason.take() {
+            job_metadata.common.previous_failure_reasons.push(previous_reason);
+        }
         job_metadata.common.failure_reason = Some(reason.clone());
+        // Clone the history before moving job_metadata for the alert message
+        let previous_reasons_for_alert = job_metadata.common.previous_failure_reasons.clone();
 
         match config
             .database()
@@ -247,10 +252,28 @@ impl JobService {
                     .failed_jobs
                     .add(1.0, &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))]);
 
-                // Send SNS alert for job failure
+                // Send SNS alert for job failure with full failure history
+                let history_summary = if previous_reasons_for_alert.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "\n\nPrevious failures ({} total):\n{}",
+                        previous_reasons_for_alert.len(),
+                        previous_reasons_for_alert
+                            .iter()
+                            .enumerate()
+                            .map(|(i, r)| format!("  {}. {}", i + 1, r))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    )
+                };
                 let alert_message = format!(
-                    "Job Failed Alert: Job ID: {}, Type: {:?}, Block: {}, Reason: {}",
-                    job.id, job.job_type, internal_id, reason
+                    "Job Failed Alert\n\
+                     Job ID: {}\n\
+                     Type: {:?}\n\
+                     Block: {}\n\
+                     Current failure: {}{}",
+                    job.id, job.job_type, internal_id, reason, history_summary
                 );
 
                 if let Err(e) = config.alerts().send_message(alert_message).await {
