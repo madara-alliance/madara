@@ -377,8 +377,10 @@ pub struct InvokeTransactionV3 {
     pub nonce_data_availability_mode: DataAvailabilityMode,
     pub fee_data_availability_mode: DataAvailabilityMode,
     /// Proof facts for RPC v0.10.1+.
-    /// Optional field - defaults to None for backward compatibility with old stored transactions.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Optional field - defaults to None for backward compatibility.
+    /// Note: We keep #[serde(default)] for JSON compatibility but remove skip_serializing_if
+    /// because bincode is positional and requires the field to always be serialized.
+    #[serde(default)]
     pub proof_facts: Option<Vec<Felt>>,
 }
 
