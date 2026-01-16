@@ -401,6 +401,9 @@ build-e2e-binaries:
 	@# Build Bootstrapper
 	@echo -e "$(INFO)Building Bootstrapper...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper/Cargo.toml --bin bootstrapper --release
+	@# Build Bootstrapper V2
+	@echo -e "$(INFO)Building Bootstrapper V2...$(RESET)"
+	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build --manifest-path bootstrapper-v2/Cargo.toml --bin bootstrapper-v2 --release
 	@# Build E2E test package
 	@echo -e "$(INFO)Building E2E test package...$(RESET)"
 	@CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build -p e2e
@@ -424,6 +427,7 @@ make-e2e-binaries-executable:
 	@echo -e "$(DIM)Making binaries executable...$(RESET)"
 	@chmod +x $(CARGO_TARGET_DIR)/release/madara
 	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper
+	@chmod +x $(CARGO_TARGET_DIR)/release/bootstrapper-v2
 	@chmod +x $(CARGO_TARGET_DIR)/release/pathfinder
 	@chmod +x $(CARGO_TARGET_DIR)/release/orchestrator
 	@chmod +x test_utils/scripts/deploy_dummy_verifier.sh
