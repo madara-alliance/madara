@@ -375,20 +375,30 @@ impl From<BatchRpcError> for JobError {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_state_diff_map_from_single_update() {
-        let state_update = StateUpdate {
-            block_hash: Felt::from_hex("0x123").unwrap(),
-            old_root: Felt::from_hex("0x1").unwrap(),
-            new_root: Felt::from_hex("0x2").unwrap(),
+    fn state_update_with_storage(
+        block_hash: &str,
+        old_root: &str,
+        new_root: &str,
+        storage: Vec<(&str, Vec<(&str, &str)>)>,
+    ) -> StateUpdate {
+        StateUpdate {
+            block_hash: Felt::from_hex(block_hash).unwrap(),
+            old_root: Felt::from_hex(old_root).unwrap(),
+            new_root: Felt::from_hex(new_root).unwrap(),
             state_diff: StateDiff {
-                storage_diffs: vec![ContractStorageDiffItem {
-                    address: Felt::from_hex("0x100").unwrap(),
-                    storage_entries: vec![StorageEntry {
-                        key: Felt::from_hex("0x1").unwrap(),
-                        value: Felt::from_hex("0x10").unwrap(),
-                    }],
-                }],
+                storage_diffs: storage
+                    .into_iter()
+                    .map(|(addr, entries)| ContractStorageDiffItem {
+                        address: Felt::from_hex(addr).unwrap(),
+                        storage_entries: entries
+                            .into_iter()
+                            .map(|(k, v)| StorageEntry {
+                                key: Felt::from_hex(k).unwrap(),
+                                value: Felt::from_hex(v).unwrap(),
+                            })
+                            .collect(),
+                    })
+                    .collect(),
                 deployed_contracts: vec![],
                 declared_classes: vec![],
                 deprecated_declared_classes: vec![],
@@ -396,7 +406,12 @@ mod tests {
                 replaced_classes: vec![],
                 migrated_compiled_classes: None,
             },
-        };
+        }
+    }
+
+    #[test]
+    fn test_state_diff_map_from_single_update() {
+        let state_update = state_update_with_storage("0x123", "0x1", "0x2", vec![("0x100", vec![("0x1", "0x10")])]);
 
         let state_diff_map = StateDiffMap::from_state_update(vec![&state_update]);
 
@@ -407,47 +422,8 @@ mod tests {
 
     #[test]
     fn test_state_diff_map_merges_multiple_updates() {
-        let update1 = StateUpdate {
-            block_hash: Felt::from_hex("0x123").unwrap(),
-            old_root: Felt::from_hex("0x1").unwrap(),
-            new_root: Felt::from_hex("0x2").unwrap(),
-            state_diff: StateDiff {
-                storage_diffs: vec![ContractStorageDiffItem {
-                    address: Felt::from_hex("0x100").unwrap(),
-                    storage_entries: vec![StorageEntry {
-                        key: Felt::from_hex("0x1").unwrap(),
-                        value: Felt::from_hex("0x10").unwrap(),
-                    }],
-                }],
-                deployed_contracts: vec![],
-                declared_classes: vec![],
-                deprecated_declared_classes: vec![],
-                nonces: vec![],
-                replaced_classes: vec![],
-                migrated_compiled_classes: None,
-            },
-        };
-
-        let update2 = StateUpdate {
-            block_hash: Felt::from_hex("0x456").unwrap(),
-            old_root: Felt::from_hex("0x2").unwrap(),
-            new_root: Felt::from_hex("0x3").unwrap(),
-            state_diff: StateDiff {
-                storage_diffs: vec![ContractStorageDiffItem {
-                    address: Felt::from_hex("0x100").unwrap(),
-                    storage_entries: vec![StorageEntry {
-                        key: Felt::from_hex("0x1").unwrap(),
-                        value: Felt::from_hex("0x20").unwrap(), // Updated value
-                    }],
-                }],
-                deployed_contracts: vec![],
-                declared_classes: vec![],
-                deprecated_declared_classes: vec![],
-                nonces: vec![],
-                replaced_classes: vec![],
-                migrated_compiled_classes: None,
-            },
-        };
+        let update1 = state_update_with_storage("0x123", "0x1", "0x2", vec![("0x100", vec![("0x1", "0x10")])]);
+        let update2 = state_update_with_storage("0x456", "0x2", "0x3", vec![("0x100", vec![("0x1", "0x20")])]);
 
         let state_diff_map = StateDiffMap::from_state_update(vec![&update1, &update2]);
 
