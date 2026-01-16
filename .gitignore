@@ -60,6 +60,7 @@ benchmarking/reports/*.json
 # idea
 .idea
 .zed
+madara/.vscode/
 
 # local runs
 run.sh

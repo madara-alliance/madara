@@ -986,7 +986,7 @@ async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobT
 
     // Set the failure reason in common metadata
     job_expected.metadata.common.failure_reason =
-        Some(format!("Received failure queue message for job with status: {}", job_status));
+        Some(format!("Job moved to DLQ after exhausting retries (last status: {})", job_status));
 
     // Compare fields individually, excluding timestamps which may differ slightly due to flakiness
     // Timestamps (created_at, updated_at) are excluded as they can differ by milliseconds between creation and update
@@ -1147,4 +1147,159 @@ async fn move_job_to_failed_sends_sns_alert() {
 
     // The SNS alert was automatically sent by move_job_to_failed function
     // If the function completed successfully, it means the SNS alert was sent without errors
+}
+
+/// Tests that `move_job_to_failed` accumulates failure history.
+/// This test verifies that:
+/// 1. When a job has no prior failure_reason, the new reason is set directly
+/// 2. When a job already has a failure_reason, it's appended to previous_failure_reasons
+/// 3. The accumulated history is preserved in the database (oldest first)
+#[rstest]
+#[tokio::test]
+async fn move_job_to_failed_accumulates_failure_history() {
+    // Use mock alert client to avoid needing LocalStack
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(2).returning(|_| Ok(()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
+        .build()
+        .await;
+
+    let database_client = services.config.database();
+
+    // Test Case 1: First failure - no existing failure_reason
+    let job_1 = build_job_item(JobType::SnosRun, JobStatus::PendingVerification, 1);
+    let job_1_id = job_1.id;
+    database_client.create_job(job_1.clone()).await.unwrap();
+
+    let first_failure_reason = "First error: connection timeout";
+    JobService::move_job_to_failed(&job_1, services.config.clone(), first_failure_reason.to_string()).await.unwrap();
+
+    let updated_job_1 = database_client.get_job_by_id(job_1_id).await.unwrap().unwrap();
+    assert_eq!(updated_job_1.status, JobStatus::Failed);
+    assert_eq!(
+        updated_job_1.metadata.common.failure_reason,
+        Some(first_failure_reason.to_string()),
+        "First failure should set failure_reason directly"
+    );
+    assert!(updated_job_1.metadata.common.previous_failure_reasons.is_empty(), "No previous failures should exist");
+
+    // Test Case 2: Subsequent failure - existing failure_reason should be moved to history
+    let mut job_2 = build_job_item(JobType::SnosRun, JobStatus::PendingVerification, 2);
+    let job_2_id = job_2.id;
+    // Pre-set an existing failure reason (simulating a previous failure)
+    job_2.metadata.common.failure_reason = Some("Processing attempt 1 failed: initial error".to_string());
+    database_client.create_job(job_2.clone()).await.unwrap();
+
+    let second_failure_reason = "Job moved to DLQ after exhausting retries";
+    JobService::move_job_to_failed(&job_2, services.config.clone(), second_failure_reason.to_string()).await.unwrap();
+
+    let updated_job_2 = database_client.get_job_by_id(job_2_id).await.unwrap().unwrap();
+    assert_eq!(updated_job_2.status, JobStatus::Failed);
+
+    // Verify the current failure_reason is the new one
+    assert_eq!(
+        updated_job_2.metadata.common.failure_reason,
+        Some(second_failure_reason.to_string()),
+        "failure_reason should be the most recent error"
+    );
+    // Verify the previous failure was moved to history
+    assert_eq!(
+        updated_job_2.metadata.common.previous_failure_reasons,
+        vec!["Processing attempt 1 failed: initial error".to_string()],
+        "Previous failure should be in previous_failure_reasons"
+    );
+}
+
+/// Tests that failure history is preserved through multiple retry attempts until DLQ.
+/// This test verifies the end-to-end error accumulation:
+/// 1. Job fails processing (error stored via reset_job_for_retry)
+/// 2. Job eventually goes to DLQ (final reason set, previous appended to history)
+/// 3. The complete history is preserved in chronological order (oldest first)
+#[rstest]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn failure_history_preserved_through_retries_to_dlq() {
+    let _test_lock = acquire_test_lock();
+
+    // Set up mock alert client
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+
+    let services = TestConfigBuilder::new()
+        .configure_database(ConfigType::Actual)
+        .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
+        .build()
+        .await;
+
+    let database_client = services.config.database();
+
+    // Create a job that will fail processing
+    // process_attempt_no starts at 0, and gets incremented to 1 when process_job runs
+    let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
+    let job_id = job_item.id;
+    database_client.create_job(job_item.clone()).await.unwrap();
+
+    // Set up mock job handler that fails on process
+    let mut job_handler = MockJobHandlerTrait::new();
+    job_handler.expect_check_ready_to_process().times(1).returning(|_| Ok(()));
+    job_handler
+        .expect_process_job()
+        .times(1)
+        .returning(|_, _| Err(JobError::Other("Simulated processing failure".to_string().into())));
+
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx_guard = get_job_handler_context_safe();
+    ctx_guard.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+
+    // Process job - this should fail and store error in failure_reason via reset_job_for_retry
+    let result = JobHandlerService::process_job(job_id, services.config.clone()).await;
+    assert!(result.is_err(), "process_job should return error for retry");
+
+    // Verify the failure reason was recorded with attempt number
+    // process_attempt_no is incremented to 1 before processing, so error shows "attempt 1"
+    let job_after_first_failure = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
+    let failure_reason = job_after_first_failure.metadata.common.failure_reason.as_ref().unwrap();
+    assert!(
+        failure_reason.contains("Processing attempt") && failure_reason.contains("failed"),
+        "failure_reason should contain attempt info. Got: {}",
+        failure_reason
+    );
+    assert!(
+        failure_reason.contains("Simulated processing failure"),
+        "failure_reason should contain original error. Got: {}",
+        failure_reason
+    );
+    assert!(
+        job_after_first_failure.metadata.common.previous_failure_reasons.is_empty(),
+        "No previous failures should exist yet"
+    );
+
+    // Now simulate the job going to DLQ by calling move_job_to_failed
+    let dlq_reason = "Job moved to DLQ after exhausting retries (last status: Created)";
+    JobService::move_job_to_failed(&job_after_first_failure, services.config.clone(), dlq_reason.to_string())
+        .await
+        .unwrap();
+
+    // Verify final state has complete accumulated history
+    let final_job = database_client.get_job_by_id(job_id).await.unwrap().unwrap();
+    assert_eq!(final_job.status, JobStatus::Failed);
+
+    // Most recent error should be in failure_reason
+    assert_eq!(
+        final_job.metadata.common.failure_reason,
+        Some(dlq_reason.to_string()),
+        "failure_reason should be the DLQ message"
+    );
+    // Previous error should be in history
+    assert_eq!(final_job.metadata.common.previous_failure_reasons.len(), 1, "Should have one previous failure");
+    assert!(
+        final_job.metadata.common.previous_failure_reasons[0].contains("Processing attempt")
+            && final_job.metadata.common.previous_failure_reasons[0].contains("failed"),
+        "Previous error should be preserved. Got: {}",
+        final_job.metadata.common.previous_failure_reasons[0]
+    );
 }
