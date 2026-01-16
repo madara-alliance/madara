@@ -692,3 +692,280 @@ fn test_broadcasted_invoke_txn_v3_without_proof() {
     let txn: BroadcastedInvokeTxnV3 = serde_json::from_str(txn_json).unwrap();
     assert!(txn.proof.is_none());
 }
+
+// ============================================================================
+// Block Types with proof_facts Tests (v0.10.1 specific)
+// ============================================================================
+// These tests verify the new block types that include proof_facts support
+// when INCLUDE_PROOF_FACTS response flag is set.
+
+/// Helper function to create a test BlockHeader
+fn create_test_block_header() -> crate::v0_10_0::BlockHeader {
+    crate::v0_10_0::BlockHeader {
+        block_hash: Felt::from_hex("0x123").unwrap(),
+        block_number: 100,
+        l1_da_mode: crate::v0_10_0::L1DaMode::Blob,
+        l1_data_gas_price: crate::v0_10_0::ResourcePrice {
+            price_in_fri: Felt::from_hex("0x1").unwrap(),
+            price_in_wei: Felt::from_hex("0x1").unwrap(),
+        },
+        l1_gas_price: crate::v0_10_0::ResourcePrice {
+            price_in_fri: Felt::from_hex("0x10").unwrap(),
+            price_in_wei: Felt::from_hex("0x10").unwrap(),
+        },
+        l2_gas_price: crate::v0_10_0::ResourcePrice {
+            price_in_fri: Felt::from_hex("0x5").unwrap(),
+            price_in_wei: Felt::from_hex("0x5").unwrap(),
+        },
+        new_root: Felt::from_hex("0xabc").unwrap(),
+        parent_hash: Felt::from_hex("0x122").unwrap(),
+        sequencer_address: Felt::from_hex("0x1234").unwrap(),
+        starknet_version: "0.13.4".to_string(),
+        timestamp: 1700000000,
+        event_commitment: Felt::from_hex("0xaaa1").unwrap(),
+        transaction_commitment: Felt::from_hex("0xabc1").unwrap(),
+        receipt_commitment: Felt::from_hex("0xabc2").unwrap(),
+        state_diff_commitment: Felt::from_hex("0xabc3").unwrap(),
+        // v0.10.0 new fields
+        event_count: 10,
+        transaction_count: 5,
+        state_diff_length: 100,
+    }
+}
+
+/// Helper function to create a test PreConfirmedBlockHeader
+fn create_test_preconfirmed_block_header() -> crate::v0_9_0::PreConfirmedBlockHeader {
+    crate::v0_9_0::PreConfirmedBlockHeader {
+        l1_da_mode: crate::v0_10_0::L1DaMode::Blob,
+        l1_data_gas_price: crate::v0_10_0::ResourcePrice {
+            price_in_fri: Felt::from_hex("0x1").unwrap(),
+            price_in_wei: Felt::from_hex("0x1").unwrap(),
+        },
+        l1_gas_price: crate::v0_10_0::ResourcePrice {
+            price_in_fri: Felt::from_hex("0x10").unwrap(),
+            price_in_wei: Felt::from_hex("0x10").unwrap(),
+        },
+        l2_gas_price: crate::v0_10_0::ResourcePrice {
+            price_in_fri: Felt::from_hex("0x5").unwrap(),
+            price_in_wei: Felt::from_hex("0x5").unwrap(),
+        },
+        block_number: 100,
+        sequencer_address: Felt::from_hex("0x1234").unwrap(),
+        starknet_version: "0.13.4".to_string(),
+        timestamp: 1700000000,
+    }
+}
+
+/// Helper function to create a test InvokeTxnV3 with proof_facts
+fn create_test_invoke_v3_with_proof_facts(proof_facts: Option<Vec<Felt>>) -> InvokeTxnV3 {
+    InvokeTxnV3 {
+        inner: crate::v0_10_0::InvokeTxnV3 {
+            sender_address: Felt::from_hex("0x1").unwrap(),
+            calldata: vec![Felt::from_hex("0x2").unwrap()].into(),
+            signature: vec![Felt::from_hex("0x3").unwrap()].into(),
+            nonce: Felt::from_hex("0x4").unwrap(),
+            resource_bounds: crate::v0_10_0::ResourceBoundsMapping {
+                l1_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x10, max_price_per_unit: 0x1 },
+                l2_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x20, max_price_per_unit: 0x2 },
+                l1_data_gas: crate::v0_10_0::ResourceBounds { max_amount: 0x30, max_price_per_unit: 0x3 },
+            },
+            tip: 0,
+            paymaster_data: vec![],
+            account_deployment_data: vec![],
+            nonce_data_availability_mode: crate::v0_10_0::DaMode::L1,
+            fee_data_availability_mode: crate::v0_10_0::DaMode::L1,
+        },
+        proof_facts,
+    }
+}
+
+// Real Starknet token addresses for testing with realistic values
+const PROOF_FACT_ETH: &str = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+const PROOF_FACT_STRK: &str = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+
+#[test]
+fn test_block_with_txs_and_proof_facts_serialization() {
+    // Test serialization of BlockWithTxsAndProofFacts with proof_facts present
+    let block = BlockWithTxsAndProofFacts {
+        transactions: vec![TxnWithHashAndProofFacts {
+            transaction: TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(
+                create_test_invoke_v3_with_proof_facts(Some(vec![
+                    Felt::from_hex(PROOF_FACT_ETH).unwrap(),
+                    Felt::from_hex(PROOF_FACT_STRK).unwrap(),
+                ])),
+            )),
+            transaction_hash: Felt::from_hex("0xabc").unwrap(),
+        }],
+        status: BlockStatus::AcceptedOnL2,
+        block_header: create_test_block_header(),
+    };
+
+    let json = serde_json::to_string(&block).unwrap();
+
+    // Verify proof_facts is included in serialization
+    assert!(json.contains("proof_facts"));
+    // Verify the actual proof_fact values are present (lowercase hex without leading zeros removed)
+    assert!(json.contains("49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"));
+
+    // Verify round-trip deserialization
+    let deserialized: BlockWithTxsAndProofFacts = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.transactions.len(), 1);
+    assert_eq!(deserialized.status, BlockStatus::AcceptedOnL2);
+}
+
+#[test]
+fn test_block_with_txs_and_proof_facts_none_not_serialized() {
+    // When proof_facts is None, it should NOT appear in serialized JSON
+    let block = BlockWithTxsAndProofFacts {
+        transactions: vec![TxnWithHashAndProofFacts {
+            transaction: TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(
+                create_test_invoke_v3_with_proof_facts(None), // No proof_facts
+            )),
+            transaction_hash: Felt::from_hex("0xabc").unwrap(),
+        }],
+        status: BlockStatus::AcceptedOnL2,
+        block_header: create_test_block_header(),
+    };
+
+    let json = serde_json::to_string(&block).unwrap();
+
+    // proof_facts should NOT be in the output when it's None
+    assert!(!json.contains("proof_facts"));
+}
+
+#[test]
+fn test_block_with_txs_and_proof_facts_mixed_transactions() {
+    // Test block with mix of transactions: some with proof_facts, some without
+    let block = BlockWithTxsAndProofFacts {
+        transactions: vec![
+            // INVOKE V3 with proof_facts
+            TxnWithHashAndProofFacts {
+                transaction: TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(
+                    create_test_invoke_v3_with_proof_facts(Some(vec![Felt::from_hex("0x100").unwrap()])),
+                )),
+                transaction_hash: Felt::from_hex("0x1").unwrap(),
+            },
+            // INVOKE V3 without proof_facts
+            TxnWithHashAndProofFacts {
+                transaction: TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(
+                    create_test_invoke_v3_with_proof_facts(None),
+                )),
+                transaction_hash: Felt::from_hex("0x2").unwrap(),
+            },
+            // INVOKE V1 (doesn't have proof_facts)
+            TxnWithHashAndProofFacts {
+                transaction: TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V1(crate::v0_10_0::InvokeTxnV1 {
+                    sender_address: Felt::from_hex("0x1").unwrap(),
+                    calldata: vec![].into(),
+                    signature: vec![].into(),
+                    nonce: Felt::from_hex("0x0").unwrap(),
+                    max_fee: Felt::from_hex("0x1000").unwrap(),
+                })),
+                transaction_hash: Felt::from_hex("0x3").unwrap(),
+            },
+        ],
+        status: BlockStatus::AcceptedOnL2,
+        block_header: create_test_block_header(),
+    };
+
+    let json = serde_json::to_string(&block).unwrap();
+
+    // Verify we have 3 transactions
+    let deserialized: BlockWithTxsAndProofFacts = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.transactions.len(), 3);
+
+    // First transaction should have proof_facts
+    match &deserialized.transactions[0].transaction {
+        TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(v3)) => {
+            assert!(v3.proof_facts.is_some());
+        }
+        _ => panic!("Expected INVOKE V3"),
+    }
+
+    // Second transaction should NOT have proof_facts
+    match &deserialized.transactions[1].transaction {
+        TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(v3)) => {
+            assert!(v3.proof_facts.is_none());
+        }
+        _ => panic!("Expected INVOKE V3"),
+    }
+}
+
+#[test]
+fn test_preconfirmed_block_with_txs_and_proof_facts() {
+    // Test PreConfirmedBlockWithTxsAndProofFacts type
+    let block = PreConfirmedBlockWithTxsAndProofFacts {
+        transactions: vec![TxnWithHashAndProofFacts {
+            transaction: TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(
+                create_test_invoke_v3_with_proof_facts(Some(vec![Felt::from_hex("0x100").unwrap()])),
+            )),
+            transaction_hash: Felt::from_hex("0xabc").unwrap(),
+        }],
+        pre_confirmed_block_header: create_test_preconfirmed_block_header(),
+    };
+
+    let json = serde_json::to_string(&block).unwrap();
+    assert!(json.contains("proof_facts"));
+
+    // Verify round-trip
+    let deserialized: PreConfirmedBlockWithTxsAndProofFacts = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.transactions.len(), 1);
+}
+
+#[test]
+fn test_maybe_preconfirmed_block_with_txs_and_proof_facts_confirmed() {
+    // Test MaybePreConfirmedBlockWithTxsAndProofFacts::Block variant
+    let block = MaybePreConfirmedBlockWithTxsAndProofFacts::Block(BlockWithTxsAndProofFacts {
+        transactions: vec![TxnWithHashAndProofFacts {
+            transaction: TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(
+                create_test_invoke_v3_with_proof_facts(Some(vec![Felt::from_hex("0x100").unwrap()])),
+            )),
+            transaction_hash: Felt::from_hex("0xabc").unwrap(),
+        }],
+        status: BlockStatus::AcceptedOnL1,
+        block_header: create_test_block_header(),
+    });
+
+    let json = serde_json::to_string(&block).unwrap();
+
+    // Should contain status (confirmed blocks have status)
+    assert!(json.contains("AcceptedOnL1") || json.contains("ACCEPTED_ON_L1"));
+
+    // Verify round-trip
+    let deserialized: MaybePreConfirmedBlockWithTxsAndProofFacts = serde_json::from_str(&json).unwrap();
+    match deserialized {
+        MaybePreConfirmedBlockWithTxsAndProofFacts::Block(b) => {
+            assert_eq!(b.transactions.len(), 1);
+            assert_eq!(b.status, BlockStatus::AcceptedOnL1);
+        }
+        _ => panic!("Expected Block variant"),
+    }
+}
+
+#[test]
+fn test_maybe_preconfirmed_block_with_txs_and_proof_facts_preconfirmed() {
+    // Test MaybePreConfirmedBlockWithTxsAndProofFacts::PreConfirmed variant
+    let block = MaybePreConfirmedBlockWithTxsAndProofFacts::PreConfirmed(PreConfirmedBlockWithTxsAndProofFacts {
+        transactions: vec![TxnWithHashAndProofFacts {
+            transaction: TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(
+                create_test_invoke_v3_with_proof_facts(Some(vec![Felt::from_hex("0x200").unwrap()])),
+            )),
+            transaction_hash: Felt::from_hex("0xdef").unwrap(),
+        }],
+        pre_confirmed_block_header: create_test_preconfirmed_block_header(),
+    });
+
+    let json = serde_json::to_string(&block).unwrap();
+
+    // PreConfirmed blocks should NOT have status field
+    assert!(!json.contains("status"));
+
+    // Verify round-trip
+    let deserialized: MaybePreConfirmedBlockWithTxsAndProofFacts = serde_json::from_str(&json).unwrap();
+    match deserialized {
+        MaybePreConfirmedBlockWithTxsAndProofFacts::PreConfirmed(b) => {
+            assert_eq!(b.transactions.len(), 1);
+        }
+        _ => panic!("Expected PreConfirmed variant"),
+    }
+}

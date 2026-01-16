@@ -227,3 +227,52 @@ pub struct TxnWithHashAndProofFacts {
     /// The transaction hash
     pub transaction_hash: Felt,
 }
+
+// ============================================================================
+// Block Types with proof_facts support (v0.10.1)
+// ============================================================================
+//
+// These block types are returned when the INCLUDE_PROOF_FACTS response flag
+// is set in methods like getBlockWithTxs, getTransactionByHash, etc.
+
+/// Block with transactions including proof_facts (v0.10.1)
+///
+/// Used when INCLUDE_PROOF_FACTS response flag is set for getBlockWithTxs.
+/// Contains transactions with optional proof_facts field for INVOKE_TXN_V3.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockWithTxsAndProofFacts {
+    /// Block status
+    pub status: BlockStatus,
+    /// Block header
+    #[serde(flatten)]
+    pub block_header: crate::v0_10_0::BlockHeader,
+    /// Transactions with proof_facts support
+    pub transactions: Vec<TxnWithHashAndProofFacts>,
+}
+
+/// PreConfirmed block with transactions including proof_facts (v0.10.1)
+///
+/// Used for preconfirmed blocks when INCLUDE_PROOF_FACTS is set.
+/// Unlike confirmed blocks, preconfirmed blocks don't have a status field.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreConfirmedBlockWithTxsAndProofFacts {
+    /// PreConfirmed block header (no block_hash or block_number)
+    #[serde(flatten)]
+    pub pre_confirmed_block_header: crate::v0_9_0::PreConfirmedBlockHeader,
+    /// Transactions with proof_facts support
+    pub transactions: Vec<TxnWithHashAndProofFacts>,
+}
+
+/// Result of getBlockWithTxs when INCLUDE_PROOF_FACTS is set (v0.10.1)
+///
+/// This enum distinguishes between confirmed and preconfirmed blocks,
+/// both of which support proof_facts in their transactions.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MaybePreConfirmedBlockWithTxsAndProofFacts {
+    /// A confirmed block with transactions and proof_facts
+    Block(BlockWithTxsAndProofFacts),
+    /// A preconfirmed block with transactions and proof_facts
+    PreConfirmed(PreConfirmedBlockWithTxsAndProofFacts),
+}
