@@ -31,8 +31,8 @@ pub struct AtlanticJobInfo {
     pub pie_file: PathBuf,
     /// Number of steps
     pub n_steps: Option<usize>,
-    /// External ID to identify the job (used to prevent duplicate submissions)
-    pub external_id: String,
+    /// Dedup ID to identify the job (used to prevent duplicate submissions)
+    pub dedup_id: String,
 }
 
 /// Struct to store job config
@@ -631,24 +631,24 @@ impl AtlanticClient {
             pie_file_size_bytes = file_size,
             bucket_id = ?bucket_info.bucket_id,
             bucket_job_index = ?bucket_info.bucket_job_index,
-            external_id = %job_info.external_id,
+            dedup_id = %job_info.dedup_id,
             "Starting job submission"
         );
 
         let context = format!(
-            "layout: {}, job_size: {}, network: {}, pie_file_size: {} bytes, bucket_id: {:?}, bucket_job_index: {:?}, external_id: {}",
+            "layout: {}, job_size: {}, network: {}, pie_file_size: {} bytes, bucket_id: {:?}, bucket_job_index: {:?}, dedup_id: {}",
             job_config.proof_layout,
             job_size,
             job_config.network,
             file_size,
             bucket_info.bucket_id,
             bucket_info.bucket_job_index,
-            job_info.external_id
+            job_info.dedup_id
         );
 
         let api_key_str = api_key.as_ref().to_string();
         let pie_file_path = job_info.pie_file.clone();
-        let external_id = job_info.external_id.clone();
+        let dedup_id = job_info.dedup_id.clone();
         let layout = job_config.proof_layout;
         let cairo_vm = job_config.cairo_vm.clone();
         let result_step = job_config.result.clone();
@@ -661,7 +661,7 @@ impl AtlanticClient {
             .retry_request("add_job", &context, || {
                 let api_key = api_key_str.clone();
                 let pie_file = pie_file_path.clone();
-                let external_id = external_id.clone();
+                let dedup_id = dedup_id.clone();
                 let cairo_vm = cairo_vm.clone();
                 let result_step = result_step.clone();
                 let network = network.clone();
@@ -675,7 +675,7 @@ impl AtlanticClient {
                         job_size = job_size,
                         network = %network,
                         pie_file = ?pie_file,
-                        external_id = %external_id,
+                        dedup_id = %dedup_id,
                         "Building add_job request"
                     );
 
@@ -698,7 +698,7 @@ impl AtlanticClient {
                             .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                             .form_text("cairoVm", &cairo_vm.as_str())
                             .form_text("sharpProver", &sharp_prover.as_str())
-                            .form_text("dedupId", &external_id)
+                            .form_text("dedupId", &dedup_id)
                             .form_file("pieFile", pie_file.as_ref(), "pie.zip", Some("application/zip"))
                             .map_err(|e| AtlanticError::from_io_error("add_job", e))?,
                         ProvingParams { layout },
@@ -720,7 +720,7 @@ impl AtlanticClient {
                         result = ?result_step,
                         bucket_id = ?bucket_id,
                         bucket_job_index = ?bucket_job_index,
-                        external_id = %external_id,
+                        dedup_id = %dedup_id,
                         "Sending add_job request"
                     );
 

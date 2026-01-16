@@ -69,7 +69,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
             bucket_id: None,
             bucket_job_index: None,
             num_steps: None,
-            external_id: uuid::Uuid::new_v4().to_string(),
+            dedup_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await;
 
@@ -83,7 +83,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
     let _ = env_logger::try_init();
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
 
-    let external_id = uuid::Uuid::new_v4().to_string();
+    let dedup_id = uuid::Uuid::new_v4().to_string();
     let bucket_id = "bucket-123".to_string();
     let bucket_job_index = 1u64;
 
@@ -110,14 +110,14 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
         when.method("GET")
             .path("/atlantic-query-by-dedup-id")
             .header_exists("api-key")
-            .query_param("dedupId", external_id.as_str());
+            .query_param("dedupId", dedup_id.as_str());
 
         // Response must be wrapped in { "atlanticQuery": ... } to match AtlanticQueryByDedupIdResponse
         // Note: The real API does not return `client` field for this endpoint
         let response = serde_json::json!({
             "atlanticQuery": {
                 "id": "existing_query_id",
-                "externalId": external_id.clone(),
+                "externalId": dedup_id.clone(),
                 "transactionId": null,
                 "status": "RECEIVED",
                 "step": null,
@@ -171,7 +171,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
             bucket_id: Some(bucket_id.clone()),
             bucket_job_index: Some(bucket_job_index),
             num_steps: None,
-            external_id: external_id.clone(),
+            dedup_id: dedup_id.clone(),
         }))
         .await
         .expect("submit_task should return existing job id");
@@ -348,7 +348,7 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
             bucket_id: None,
             bucket_job_index: None,
             num_steps: None,
-            external_id: uuid::Uuid::new_v4().to_string(),
+            dedup_id: uuid::Uuid::new_v4().to_string(),
         }))
         .await
         .expect("Failed to submit task to Atlantic service");
