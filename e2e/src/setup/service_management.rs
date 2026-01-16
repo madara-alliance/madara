@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 // Import all the services we've created
 use crate::services::anvil::AnvilService;
-use crate::services::bootstrapper::BootstrapperService;
+use crate::services::bootstrapper_v2::{BootstrapperV2Error, BootstrapperV2Service};
 use crate::services::mock_verifier::MockVerifierDeployerService;
 
 pub use super::config::*;
@@ -14,7 +14,7 @@ use crate::services::constants::*;
 use crate::services::localstack::LocalstackService;
 use crate::services::madara::{MadaraError, MadaraService};
 use crate::services::mongodb::MongoService;
-use crate::services::orchestrator::{OrchestratorError, OrchestratorService};
+use crate::services::orchestrator::{OrchestratorConfig, OrchestratorError, OrchestratorService};
 
 use crate::services::helpers::{retry_with_timeout, NodeRpcMethods};
 use crate::services::mock_prover::MockProverService;
@@ -144,8 +144,16 @@ impl ServiceManager {
 
         timeout(duration, async {
             self.start_anvil(services).await?;
+
+            // Update bootstrapper v2 config with the dynamic Anvil RPC URL
+            if let Some(anvil) = &services.anvil_service {
+                let anvil_endpoint = anvil.endpoint();
+                BootstrapperV2Service::update_config_file("base_layer.rpc_url", anvil_endpoint.as_str())?;
+                println!("✅ Updated bootstrapper v2 config with base_layer.rpc_url: {}", anvil_endpoint);
+            }
+
             self.deploy_mock_verifier().await?;
-            self.bootstrap_l1().await?;
+            self.bootstrap_base().await?;
             Ok(())
         })
         .await
@@ -162,9 +170,14 @@ impl ServiceManager {
             // sleep(Duration::from_secs(12)).await;
             if let Some(madara) = &services.madara_service {
                 madara.wait_for_block_mined(0).await?;
+
+                // Update bootstrapper v2 config with the dynamic Madara RPC URL
+                let madara_endpoint = madara.rpc_endpoint().to_string();
+                BootstrapperV2Service::update_config_file("madara.rpc_url", &madara_endpoint)?;
+                println!("✅ Updated bootstrapper v2 config with madara.rpc_url: {}", madara_endpoint);
             }
 
-            self.bootstrap_l2().await?;
+            self.bootstrap_madara().await?;
 
             // Get the block number for syncing
             if let Some(madara) = &services.madara_service {
@@ -335,35 +348,116 @@ impl ServiceManager {
         let address = MockVerifierDeployerService::run(mock_verifier_config).await?;
 
         println!("🥳 Mock verifier deployed at address {}", address);
-        let _ = BootstrapperService::update_config_file("verifier_address", address.as_str());
+        // Update v2 config file with verifier address (nested path)
+        BootstrapperV2Service::update_config_file("base_layer.core_contract_init_data.verifier", address.as_str())?;
 
         Ok(())
     }
 
-    async fn bootstrap_l1(&self) -> Result<(), SetupError> {
-        println!("🧑‍💻 Bootstrapping L1...");
+    async fn bootstrap_base(&self) -> Result<(), SetupError> {
+        println!("🧑‍💻 Bootstrapping base layer...");
 
-        let bootstrapper_config = self.config.get_bootstrapper_setup_l1_config().clone();
-        let status = BootstrapperService::run(bootstrapper_config).await?;
+        let bootstrapper_config = self.config.get_bootstrapper_setup_base_config().clone();
+        let status = BootstrapperV2Service::run(bootstrapper_config).await?;
 
-        println!("🥳 L1 Bootstrapper finished with {}", status);
+        println!("🥳 Base layer bootstrapper finished with {}", status);
+
+        // Update madara config with the deployed core contract address
+        self.update_madara_config_with_core_contract()?;
+
         Ok(())
     }
 
-    async fn bootstrap_l2(&self) -> Result<(), SetupError> {
-        println!("🧑‍💻 Bootstrapping L2...");
+    fn update_madara_config_with_core_contract(&self) -> Result<(), SetupError> {
+        use crate::services::constants::{BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, DATA_DIR, MADARA_CONFIG};
+        use crate::services::helpers::get_file_path;
 
-        let bootstrapper_config = self.config.get_bootstrapper_setup_l2_config().clone();
-        let status = BootstrapperService::run(bootstrapper_config).await?;
+        // Read the deployed addresses from base_addresses.json
+        let addresses_path = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT));
+        let addresses_content = std::fs::read_to_string(&addresses_path)
+            .map_err(|e| SetupError::BootstrapperV2(BootstrapperV2Error::ConfigReadWriteError(e)))?;
+        let addresses: serde_json::Value = serde_json::from_str(&addresses_content)
+            .map_err(|e| SetupError::BootstrapperV2(BootstrapperV2Error::ConfigParseError(e)))?;
 
-        println!("🥳 L2 Bootstrapper finished with {}", status);
+        // Extract the core contract address from the deployed addresses
+        let core_contract_address = addresses["addresses"]["coreContract"]
+            .as_str()
+            .ok_or_else(|| SetupError::BootstrapperV2(
+                BootstrapperV2Error::InvalidConfig("Core contract address not found in base_addresses.json".to_string())
+            ))?;
+
+        // Read the madara config file
+        let madara_config_path = get_file_path(MADARA_CONFIG);
+        let madara_config_content = std::fs::read_to_string(&madara_config_path)
+            .map_err(|e| SetupError::BootstrapperV2(BootstrapperV2Error::ConfigReadWriteError(e)))?;
+
+        // Replace the eth_core_contract_address line
+        let updated_content = madara_config_content
+            .lines()
+            .map(|line| {
+                if line.starts_with("eth_core_contract_address:") {
+                    format!("eth_core_contract_address: \"{}\"", core_contract_address)
+                } else {
+                    line.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Write the updated config back
+        std::fs::write(&madara_config_path, updated_content)
+            .map_err(|e| SetupError::BootstrapperV2(BootstrapperV2Error::ConfigReadWriteError(e)))?;
+
+        println!("✅ Updated madara config with eth_core_contract_address: {}", core_contract_address);
+
+        Ok(())
+    }
+
+    async fn bootstrap_madara(&self) -> Result<(), SetupError> {
+        println!("🧑‍💻 Bootstrapping Madara...");
+
+        let bootstrapper_config = self.config.get_bootstrapper_setup_madara_config().clone();
+        let status = BootstrapperV2Service::run(bootstrapper_config).await?;
+
+        println!("🥳 Madara bootstrapper finished with {}", status);
         Ok(())
     }
 
     async fn start_orchestrator(&self, services: &mut RunningServices) -> Result<(), SetupError> {
-        let orchestrator_config = self.config.get_orchestrator_run_config().clone();
+        // Read the core contract address from bootstrapper output and add it to orchestrator config
+        let orchestrator_config = self.get_orchestrator_config_with_core_contract()?;
         let orchestrator_service = OrchestratorService::run(orchestrator_config).await?;
         services.orchestrator_service = Some(orchestrator_service);
         Ok(())
+    }
+
+    /// Get orchestrator config with the core contract address from bootstrapper output
+    fn get_orchestrator_config_with_core_contract(&self) -> Result<OrchestratorConfig, SetupError> {
+        use crate::services::constants::{BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, DATA_DIR};
+        use crate::services::helpers::get_file_path;
+
+        // Read the deployed addresses from base_addresses.json
+        let addresses_path = get_file_path(&format!("{}/{}", DATA_DIR, BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT));
+        let addresses_content = std::fs::read_to_string(&addresses_path)
+            .map_err(|e| SetupError::BootstrapperV2(BootstrapperV2Error::ConfigReadWriteError(e)))?;
+        let addresses: serde_json::Value = serde_json::from_str(&addresses_content)
+            .map_err(|e| SetupError::BootstrapperV2(BootstrapperV2Error::ConfigParseError(e)))?;
+
+        // Extract the core contract address
+        let core_contract_address = addresses["addresses"]["coreContract"]
+            .as_str()
+            .ok_or_else(|| SetupError::BootstrapperV2(
+                BootstrapperV2Error::InvalidConfig("Core contract address not found in base_addresses.json".to_string())
+            ))?;
+
+        println!("✅ Using core contract address for orchestrator: {}", core_contract_address);
+
+        // Clone the base config and add the core contract address env var
+        let orchestrator_config = self.config.get_orchestrator_run_config().clone()
+            .builder()
+            .env_var("MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS", core_contract_address)
+            .build();
+
+        Ok(orchestrator_config)
     }
 }

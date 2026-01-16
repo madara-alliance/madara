@@ -1,0 +1,21 @@
+{
+  "base_layer": {
+    "core_contract_init_data": {
+      "aggregatorProgramHash": "0x0",
+      "configHash": "0x0",
+      "programHash": "0x0555444da05154c46b4828affa18b90c38a333e98fee633fda0af05441eceb24",
+      "state": {
+        "blockHash": "0x0",
+        "blockNumber": "0x0",
+        "globalRoot": "0x0"
+      },
+      "verifier": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+    },
+    "implementation_addresses": {},
+    "layer": "ETHEREUM",
+    "rpc_url": "http://127.0.0.1:50610/"
+  },
+  "madara": {
+    "rpc_url": "http://127.0.0.1:50611/"
+  }
+}

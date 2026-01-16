@@ -1,21 +1,21 @@
 {
   "base_layer": {
     "layer": "ETHEREUM",
-    "rpc_url": "http://localhost:8545",
+    "rpc_url": "https://eth-sepolia.g.alchemy.com/v2/PT7G1uVnVHGOyFzH8K7OrNdVfQVT1IgC",
     "implementation_addresses": {},
     "core_contract_init_data": {
-      "programHash": "0x1",
+      "programHash": "0x207fde0facdcfcb085194635233fc46aa3dc8ca7182abf51079e31c88180905",
       "aggregatorProgramHash": "0x0",
-      "verifier": "0x0000000000000000000000000000000000000000",
-      "configHash": "0x0",
+      "verifier": "0x7B21D0bcaE0cB872f74CB1E732a7a874A1601533",
+      "configHash": "0x060f756a649813038b8ccaf6309697a1c3ca87e777e0da695489ff2406816b67",
       "state": {
-        "globalRoot": "0x0",
+        "globalRoot": "0x2fa94c08624de5cb5df5eab907537caa8152479a193f71d9cb21dca19f106ec",
         "blockNumber": "0x0",
         "blockHash": "0x0"
       }
     }
   },
   "madara": {
-    "rpc_url": "http://localhost:9945"
+    "rpc_url": "http://localhost:9944"
   }
 }

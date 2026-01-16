@@ -143,6 +143,7 @@ pub async fn declare_contract(
     let txn = account
         .declare_v3(Arc::new(flattened_class), compiled_class_hash)
         .l1_gas(0)
+        // .l2_gas(1_000_000)
         .l2_gas(0)
         .l1_data_gas(0)
         .send()

@@ -6,7 +6,7 @@ gateway_url: "http://localhost:8080/gateway/"
 native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
 parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 latest_protocol_version: "0.14.1"
-block_time: "10s"
+block_time: "20s"
 pending_block_update_time: "2s"
 execution_batch_size: 16
 bouncer_config:
@@ -32,7 +32,7 @@ bouncer_config:
       mul_mod: 604
       range_check96: 56
 sequencer_address: "0x123"
-eth_core_contract_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512"
+eth_core_contract_address: "0x70e81c48faa13e646b2ff0302ad42d6e8662564a"
 eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
 mempool_max_transactions: 10000
 mempool_max_declare_transactions: 20
