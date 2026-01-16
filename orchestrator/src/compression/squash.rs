@@ -8,7 +8,7 @@ use starknet_core::types::{
     NonceUpdate, ReplacedClassItem, StateDiff, StateUpdate, StorageEntry,
 };
 use std::collections::{HashMap, HashSet};
-use tracing::{debug, info};
+use tracing::debug;
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
 ///
@@ -19,7 +19,7 @@ pub async fn squash(
     pre_range_block: Option<u64>,
     batch_client: &BatchRpcClient,
 ) -> Result<StateUpdate, JobError> {
-    info!("Squashing state updates");
+    debug!("Squashing state updates");
     if state_updates.is_empty() {
         return Err(JobError::Other(OtherError(eyre!("Cannot merge empty state updates"))));
     }
@@ -41,7 +41,7 @@ pub async fn squash(
     // Sort the merged StateUpdate
     sort_state_diff(&mut merged_update);
 
-    info!("Squashed state updates");
+    debug!("Squashed state updates");
 
     Ok(merged_update)
 }
@@ -196,11 +196,8 @@ async fn process_storage_diffs_batched(
                         .map(|(key, value)| StorageEntry { key: *key, value: *value })
                         .collect();
 
-                    if entries.is_empty() {
-                        None
-                    } else {
-                        Some(ContractStorageDiffItem { address: *contract_addr, storage_entries: entries })
-                    }
+                    (!entries.is_empty())
+                        .then_some(ContractStorageDiffItem { address: *contract_addr, storage_entries: entries })
                 })
                 .collect());
         }
@@ -290,11 +287,7 @@ fn build_storage_diff_item(
         })
         .collect();
 
-    if entries.is_empty() {
-        None
-    } else {
-        Some(ContractStorageDiffItem { address: contract_addr, storage_entries: entries })
-    }
+    (!entries.is_empty()).then_some(ContractStorageDiffItem { address: contract_addr, storage_entries: entries })
 }
 
 /// Filter replaced classes to only include those where the class hash actually changed.

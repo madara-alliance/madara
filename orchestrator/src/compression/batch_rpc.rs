@@ -21,6 +21,8 @@ pub const DEFAULT_MAX_CONCURRENT_BATCHES: usize = 10;
 pub const DEFAULT_MAX_RETRIES: u64 = 3;
 /// Default delay between retries in seconds
 pub const DEFAULT_RETRY_DELAY_SECS: u64 = 2;
+/// Default HTTP request timeout in seconds
+pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
 /// Configuration for batch RPC operations
 #[derive(Debug, Clone)]
@@ -33,6 +35,8 @@ pub struct BatchRpcConfig {
     pub max_retries: u64,
     /// Delay between retries in seconds
     pub retry_delay_secs: u64,
+    /// HTTP request timeout in seconds
+    pub request_timeout_secs: u64,
 }
 
 impl Default for BatchRpcConfig {
@@ -42,6 +46,7 @@ impl Default for BatchRpcConfig {
             max_concurrent_batches: DEFAULT_MAX_CONCURRENT_BATCHES,
             max_retries: DEFAULT_MAX_RETRIES,
             retry_delay_secs: DEFAULT_RETRY_DELAY_SECS,
+            request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
         }
     }
 }
@@ -105,7 +110,11 @@ pub struct BatchRpcClient {
 impl BatchRpcClient {
     /// Create a new BatchRpcClient
     pub fn new(rpc_url: Url, config: BatchRpcConfig) -> Self {
-        Self { client: Client::new(), rpc_url, config }
+        let client = Client::builder()
+            .timeout(Duration::from_secs(config.request_timeout_secs))
+            .build()
+            .expect("Failed to create HTTP client");
+        Self { client, rpc_url, config }
     }
 
     /// Create a new BatchRpcClient with default configuration
@@ -127,7 +136,7 @@ impl BatchRpcClient {
             return Ok(HashMap::new());
         }
 
-        let block_param = Self::block_id_to_param(&block_id);
+        let block_param = serde_json::to_value(block_id).expect("BlockId serialization cannot fail");
 
         // Pre-chunk queries into owned Vecs. This small allocation (just Vec headers) is necessary
         // because chunks() returns borrowed slices which don't satisfy Send bounds for async.
@@ -164,7 +173,7 @@ impl BatchRpcClient {
             return Ok(HashMap::new());
         }
 
-        let block_param = Self::block_id_to_param(&block_id);
+        let block_param = serde_json::to_value(block_id).expect("BlockId serialization cannot fail");
 
         // Pre-chunk contracts into owned Vecs. This small allocation (just Vec headers) is necessary
         // because chunks() returns borrowed slices which don't satisfy Send bounds for async.
@@ -350,50 +359,15 @@ impl BatchRpcClient {
         Ok(result_map)
     }
 
-    /// Convert BlockId to JSON-RPC parameter format
-    fn block_id_to_param(block_id: &BlockId) -> serde_json::Value {
-        match block_id {
-            BlockId::Number(n) => serde_json::json!({ "block_number": n }),
-            BlockId::Hash(h) => serde_json::json!({ "block_hash": format!("{:#x}", h) }),
-            BlockId::Tag(tag) => match tag {
-                starknet_core::types::BlockTag::Latest => serde_json::json!("latest"),
-                starknet_core::types::BlockTag::L1Accepted => serde_json::json!("l1_accepted"),
-                starknet_core::types::BlockTag::PreConfirmed => serde_json::json!("pre_confirmed"),
-            },
-        }
-    }
-
     /// Parse a Felt from JSON-RPC response value
     fn parse_felt_result(value: &serde_json::Value) -> Result<Felt, BatchRpcError> {
-        let hex_str =
-            value.as_str().ok_or_else(|| BatchRpcError::InvalidResponse("Expected string for Felt".to_string()))?;
-
-        Felt::from_hex(hex_str)
-            .map_err(|e| BatchRpcError::InvalidResponse(format!("Invalid Felt hex '{}': {}", hex_str, e)))
+        serde_json::from_value(value.clone()).map_err(|e| BatchRpcError::InvalidResponse(e.to_string()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_block_id_to_param_number() {
-        let result = BatchRpcClient::block_id_to_param(&BlockId::Number(123));
-        assert_eq!(result, serde_json::json!({ "block_number": 123 }));
-    }
-
-    #[test]
-    fn test_block_id_to_param_tag_latest() {
-        let result = BatchRpcClient::block_id_to_param(&BlockId::Tag(starknet_core::types::BlockTag::Latest));
-        assert_eq!(result, serde_json::json!("latest"));
-    }
-
-    #[test]
-    fn test_block_id_to_param_tag_l1_accepted() {
-        let result = BatchRpcClient::block_id_to_param(&BlockId::Tag(starknet_core::types::BlockTag::L1Accepted));
-        assert_eq!(result, serde_json::json!("l1_accepted"));
-    }
 
     #[test]
     fn test_parse_felt_result() {
@@ -409,5 +383,6 @@ mod tests {
         assert_eq!(config.max_concurrent_batches, 10);
         assert_eq!(config.max_retries, 3);
         assert_eq!(config.retry_delay_secs, 2);
+        assert_eq!(config.request_timeout_secs, 30);
     }
 }
