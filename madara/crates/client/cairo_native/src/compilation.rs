@@ -299,6 +299,16 @@ pub(crate) fn convert_sierra_to_blockifier_class(
     Ok(blockifier_compiled_class)
 }
 
+/// Clean up compilation artifacts (both .so and .lock files).
+///
+/// Called on compilation timeout or failure to remove partial artifacts.
+/// The .lock file is created by cairo-native's compile_to_native() function.
+/// Safe to call even if files don't exist (errors are silently ignored).
+fn cleanup_compilation_artifacts(path: &PathBuf) {
+    let _ = std::fs::remove_file(path); // .so file
+    let _ = std::fs::remove_file(path.with_extension("lock")); // .lock file
+}
+
 /// Execute native compilation with appropriate timeout handling.
 ///
 /// Handles both async and blocking contexts, returning the executor or an error.
@@ -328,7 +338,7 @@ fn execute_native_compilation(
             }
             Err(_) => {
                 timer.finish(false, true);
-                let _ = std::fs::remove_file(path);
+                cleanup_compilation_artifacts(path);
                 Err(NativeCompilationError::CompilationTimeout(timeout))
             }
         }
@@ -352,7 +362,7 @@ fn execute_native_compilation(
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 timer.finish(false, true);
-                let _ = std::fs::remove_file(path);
+                cleanup_compilation_artifacts(path);
                 Err(NativeCompilationError::CompilationTimeout(timeout))
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -540,7 +550,7 @@ fn handle_async_compilation_failure(
             "compilation_async_timeout"
         );
         // Partial file cleanup attempted
-        let _ = std::fs::remove_file(path);
+        cleanup_compilation_artifacts(path);
         timer.finish(false, true);
     } else {
         // Other failures are errors
@@ -908,5 +918,26 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         assert!(cache::cache_contains(&class_hash), "Compilation should complete successfully");
+    }
+
+    #[test]
+    fn test_cleanup_compilation_artifacts() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let so_path = temp_dir.path().join("test_class.so");
+        let lock_path = temp_dir.path().join("test_class.lock");
+
+        // Create both files
+        std::fs::write(&so_path, b"test").expect("Failed to create .so file");
+        std::fs::write(&lock_path, b"test").expect("Failed to create .lock file");
+        assert!(so_path.exists());
+        assert!(lock_path.exists());
+
+        // Cleanup should remove both
+        cleanup_compilation_artifacts(&so_path);
+        assert!(!so_path.exists(), ".so file should be removed");
+        assert!(!lock_path.exists(), ".lock file should be removed");
+
+        // Cleanup on non-existent files should not panic
+        cleanup_compilation_artifacts(&so_path);
     }
 }

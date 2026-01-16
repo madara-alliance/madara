@@ -72,34 +72,17 @@ impl ProverClient for AtlanticProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CreateJob(CreateJobInfo {
-                cairo_pie,
-                bucket_id,
-                bucket_job_index,
-                num_steps: n_steps,
-                external_id,
-            }) => {
-                let existing_job = self
-                    .atlantic_client
-                    .search_atlantic_queries(
-                        &self.atlantic_api_key,
-                        &external_id,
-                        Some(1),
-                        Some(self.atlantic_network.as_str()),
-                    )
-                    .await?
-                    .atlantic_queries
-                    .into_iter()
-                    .find(|query| {
-                        query.external_id.as_deref() == Some(external_id.as_str()) || query.id == external_id
-                    });
+            Task::CreateJob(CreateJobInfo { cairo_pie, bucket_id, bucket_job_index, num_steps: n_steps, dedup_id }) => {
+                // Direct lookup by dedup ID - O(1), no list filtering needed
+                let existing_job =
+                    self.atlantic_client.get_query_by_dedup_id(&dedup_id, &self.atlantic_api_key).await?;
 
                 if let Some(existing_job) = existing_job {
                     match existing_job.status {
                         AtlanticQueryStatus::Failed => {
                             tracing::warn!(
                                 atlantic_query_id = %existing_job.id,
-                                external_id = %external_id,
+                                dedup_id = %dedup_id,
                                 status = ?existing_job.status,
                                 "Existing Atlantic job found in failed state. Resubmitting."
                             );
@@ -108,7 +91,7 @@ impl ProverClient for AtlanticProverService {
                             Self::ensure_bucket_details_match(&existing_job, &bucket_id, bucket_job_index)?;
                             tracing::info!(
                                 atlantic_query_id = %existing_job.id,
-                                external_id = %external_id,
+                                dedup_id = %dedup_id,
                                 status = ?existing_job.status,
                                 "Atlantic job already exists. Skipping resubmission."
                             );
@@ -127,7 +110,7 @@ impl ProverClient for AtlanticProverService {
                 let atlantic_job_response = self
                     .atlantic_client
                     .add_job(
-                        AtlanticJobInfo { pie_file: pie_file_path.to_path_buf(), n_steps, external_id },
+                        AtlanticJobInfo { pie_file: pie_file_path.to_path_buf(), n_steps, dedup_id },
                         AtlanticJobConfig {
                             proof_layout: self.proof_layout,
                             cairo_vm: self.cairo_vm.clone(),
@@ -312,7 +295,15 @@ impl ProverClient for AtlanticProverService {
         Ok(bucket
             .queries
             .iter()
-            .find(|query| matches!(query.step, Some(AtlanticQueryStep::FactHashRegistration)))
+            .find(|query| {
+                matches!(
+                    query.step,
+                    // For Mocked queries we search for FactHashRegistration
+                    // For Real queries we search for ProofGenerationAndVerification
+                    Some(AtlanticQueryStep::FactHashRegistration)
+                        | Some(AtlanticQueryStep::ProofGenerationAndVerification)
+                )
+            })
             .ok_or(ProverClientError::FailedToGetAggregatorId(bucket_id.to_string()))?
             .id
             .clone())
