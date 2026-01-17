@@ -102,16 +102,13 @@ pub struct InitialReads {
 
 /// Result of simulating a single transaction (MODIFIED in v0.10.1)
 ///
-/// Now includes optional initial_reads when RETURN_INITIAL_READS flag is set.
+/// Per-transaction results do not include initial_reads; these are returned at the top level.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SimulateTransactionsResult {
     /// The fee estimation for this transaction
     pub fee_estimation: crate::v0_10_0::FeeEstimate,
     /// The execution trace of this transaction
     pub transaction_trace: TransactionTrace,
-    /// Initial reads during execution (only present when RETURN_INITIAL_READS flag is set)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initial_reads: Option<InitialReads>,
 }
 
 /// Result of simulating multiple transactions (NEW in v0.10.1)
@@ -127,17 +124,12 @@ pub struct SimulateTransactionsResponse {
 }
 
 /// A single pair of transaction hash and corresponding trace (MODIFIED in v0.10.1)
-///
-/// Now includes optional initial_reads when RETURN_INITIAL_READS flag is set.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceBlockTransactionsResult {
     /// The execution trace of the transaction
     pub trace_root: TransactionTrace,
     /// The hash of the transaction
     pub transaction_hash: Felt,
-    /// Initial reads during execution (only present when RETURN_INITIAL_READS flag is set)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initial_reads: Option<InitialReads>,
 }
 
 /// Response from traceBlockTransactions (NEW in v0.10.1)

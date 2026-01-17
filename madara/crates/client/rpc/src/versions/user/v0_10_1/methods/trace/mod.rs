@@ -7,7 +7,7 @@ use crate::Starknet;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_rpc::v0_10_0::BlockId;
 use mp_rpc::v0_10_1::{
-    BroadcastedTxn, SimulateTransactionsResult, SimulationFlag, TraceBlockTransactionsResult, TraceFlag,
+    BroadcastedTxn, SimulateTransactionsResponse, SimulationFlag, TraceBlockTransactionsResponse, TraceFlag,
     TraceTransactionResult,
 };
 use starknet_types_core::felt::Felt;
@@ -25,7 +25,7 @@ impl StarknetTraceRpcApiV0_10_1Server for Starknet {
         block_id: BlockId,
         transactions: Vec<BroadcastedTxn>,
         simulation_flags: Vec<SimulationFlag>,
-    ) -> RpcResult<Vec<SimulateTransactionsResult>> {
+    ) -> RpcResult<SimulateTransactionsResponse> {
         Ok(simulate_transactions::simulate_transactions(self, block_id, transactions, simulation_flags).await?)
     }
 
@@ -33,7 +33,7 @@ impl StarknetTraceRpcApiV0_10_1Server for Starknet {
         &self,
         block_id: BlockId,
         trace_flags: Option<Vec<TraceFlag>>,
-    ) -> RpcResult<Vec<TraceBlockTransactionsResult>> {
+    ) -> RpcResult<TraceBlockTransactionsResponse> {
         Ok(trace_block_transactions::trace_block_transactions(self, block_id, trace_flags).await?)
     }
 

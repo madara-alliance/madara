@@ -5,9 +5,9 @@ use mp_rpc::v0_10_1::{
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, ContractStorageKeysItem,
     EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult,
     MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxsAndProofFacts,
-    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, ResponseFlag, SimulateTransactionsResult,
+    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, ResponseFlag, SimulateTransactionsResponse,
     SimulationFlag, SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
-    TraceBlockTransactionsResult, TraceFlag, TraceTransactionResult, TxnFinalityAndExecutionStatus,
+    TraceBlockTransactionsResponse, TraceFlag, TraceTransactionResult, TxnFinalityAndExecutionStatus,
     TxnReceiptWithBlockInfo, TxnWithHashAndProofFacts,
 };
 use starknet_types_core::felt::Felt;
@@ -231,7 +231,7 @@ pub trait StarknetTraceRpcApi {
         block_id: BlockId,
         transactions: Vec<BroadcastedTxn>,
         simulation_flags: Vec<SimulationFlag>,
-    ) -> RpcResult<Vec<SimulateTransactionsResult>>;
+    ) -> RpcResult<SimulateTransactionsResponse>;
 
     /// Returns the execution traces of all transactions included in the given block
     /// v0.10.1: Added optional trace_flags parameter for RETURN_INITIAL_READS support
@@ -240,7 +240,7 @@ pub trait StarknetTraceRpcApi {
         &self,
         block_id: BlockId,
         trace_flags: Option<Vec<TraceFlag>>,
-    ) -> RpcResult<Vec<TraceBlockTransactionsResult>>;
+    ) -> RpcResult<TraceBlockTransactionsResponse>;
 
     #[method(name = "traceTransaction")]
     /// Returns the execution trace of a transaction

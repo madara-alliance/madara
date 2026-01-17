@@ -248,65 +248,72 @@ fn test_subscription_tag_include_proof_facts() {
 }
 
 // ============================================================================
-// SimulateTransactionsResult Tests
+// SimulateTransactionsResponse Tests
 // ============================================================================
 
 #[test]
-fn test_simulate_transactions_result_without_initial_reads() {
-    // When initial_reads is None, it should not be serialized
-    let result_json = r#"{
-        "fee_estimation": {
-            "overall_fee": "0x100",
-            "l1_gas_consumed": "0x10",
-            "l1_gas_price": "0x1",
-            "l1_data_gas_consumed": "0x5",
-            "l1_data_gas_price": "0x1",
-            "l2_gas_consumed": "0x20",
-            "l2_gas_price": "0x1",
-            "unit": "FRI"
-        },
-        "transaction_trace": {
-            "type": "INVOKE",
-            "execute_invocation": {
-                "revert_reason": "test"
-            },
-            "execution_resources": {
-                "l1_gas": "0x64",
-                "l1_data_gas": "0x32",
-                "l2_gas": "0xc8"
+fn test_simulate_transactions_response_without_initial_reads() {
+    let response_json = r#"{
+        "simulated_transactions": [
+            {
+                "fee_estimation": {
+                    "overall_fee": "0x100",
+                    "l1_gas_consumed": "0x10",
+                    "l1_gas_price": "0x1",
+                    "l1_data_gas_consumed": "0x5",
+                    "l1_data_gas_price": "0x1",
+                    "l2_gas_consumed": "0x20",
+                    "l2_gas_price": "0x1",
+                    "unit": "FRI"
+                },
+                "transaction_trace": {
+                    "type": "INVOKE",
+                    "execute_invocation": {
+                        "revert_reason": "test"
+                    },
+                    "execution_resources": {
+                        "l1_gas": "0x64",
+                        "l1_data_gas": "0x32",
+                        "l2_gas": "0xc8"
+                    }
+                }
             }
-        }
+        ]
     }"#;
 
-    let result: SimulateTransactionsResult = serde_json::from_str(result_json).unwrap();
-    assert!(result.initial_reads.is_none());
+    let response: SimulateTransactionsResponse = serde_json::from_str(response_json).unwrap();
+    assert!(response.initial_reads.is_none());
+    assert_eq!(response.simulated_transactions.len(), 1);
 }
 
 #[test]
-fn test_simulate_transactions_result_with_initial_reads() {
-    // When RETURN_INITIAL_READS flag is set, initial_reads should be present
-    let result_json = r#"{
-        "fee_estimation": {
-            "overall_fee": "0x100",
-            "l1_gas_consumed": "0x10",
-            "l1_gas_price": "0x1",
-            "l1_data_gas_consumed": "0x5",
-            "l1_data_gas_price": "0x1",
-            "l2_gas_consumed": "0x20",
-            "l2_gas_price": "0x1",
-            "unit": "FRI"
-        },
-        "transaction_trace": {
-            "type": "INVOKE",
-            "execute_invocation": {
-                "revert_reason": "test"
-            },
-            "execution_resources": {
-                "l1_gas": "0x64",
-                "l1_data_gas": "0x32",
-                "l2_gas": "0xc8"
+fn test_simulate_transactions_response_with_initial_reads() {
+    let response_json = r#"{
+        "simulated_transactions": [
+            {
+                "fee_estimation": {
+                    "overall_fee": "0x100",
+                    "l1_gas_consumed": "0x10",
+                    "l1_gas_price": "0x1",
+                    "l1_data_gas_consumed": "0x5",
+                    "l1_data_gas_price": "0x1",
+                    "l2_gas_consumed": "0x20",
+                    "l2_gas_price": "0x1",
+                    "unit": "FRI"
+                },
+                "transaction_trace": {
+                    "type": "INVOKE",
+                    "execute_invocation": {
+                        "revert_reason": "test"
+                    },
+                    "execution_resources": {
+                        "l1_gas": "0x64",
+                        "l1_data_gas": "0x32",
+                        "l2_gas": "0xc8"
+                    }
+                }
             }
-        },
+        ],
         "initial_reads": {
             "storage": [{"contract_address": "0x1", "key": "0x2", "value": "0x3"}],
             "nonces": [],
@@ -315,14 +322,64 @@ fn test_simulate_transactions_result_with_initial_reads() {
         }
     }"#;
 
-    let result: SimulateTransactionsResult = serde_json::from_str(result_json).unwrap();
-    assert!(result.initial_reads.is_some());
-    let reads = result.initial_reads.unwrap();
+    let response: SimulateTransactionsResponse = serde_json::from_str(response_json).unwrap();
+    let reads = response.initial_reads.expect("initial_reads should be present");
     assert_eq!(reads.storage.len(), 1);
 }
 
+#[test]
+fn test_simulate_transactions_response_serialization_top_level_initial_reads() {
+    let result_json = r#"{
+        "fee_estimation": {
+            "overall_fee": "0x100",
+            "l1_gas_consumed": "0x10",
+            "l1_gas_price": "0x1",
+            "l1_data_gas_consumed": "0x5",
+            "l1_data_gas_price": "0x1",
+            "l2_gas_consumed": "0x20",
+            "l2_gas_price": "0x1",
+            "unit": "FRI"
+        },
+        "transaction_trace": {
+            "type": "INVOKE",
+            "execute_invocation": {
+                "revert_reason": "test"
+            },
+            "execution_resources": {
+                "l1_gas": "0x64",
+                "l1_data_gas": "0x32",
+                "l2_gas": "0xc8"
+            }
+        }
+    }"#;
+
+    let result: SimulateTransactionsResult = serde_json::from_str(result_json).unwrap();
+    let response = SimulateTransactionsResponse {
+        simulated_transactions: vec![result],
+        initial_reads: Some(InitialReads {
+            storage: vec![InitialStorageRead {
+                contract_address: Felt::from_hex("0x1").unwrap(),
+                key: Felt::from_hex("0x2").unwrap(),
+                value: Felt::from_hex("0x3").unwrap(),
+            }],
+            nonces: vec![],
+            class_hashes: vec![],
+            declared_contracts: vec![],
+        }),
+    };
+
+    let value = serde_json::to_value(&response).unwrap();
+    assert!(value.get("initial_reads").is_some());
+
+    let items = value
+        .get("simulated_transactions")
+        .and_then(|entry| entry.as_array())
+        .expect("simulated_transactions should be an array");
+    assert!(items[0].get("initial_reads").is_none());
+}
+
 // ============================================================================
-// TraceBlockTransactionsResult Tests
+// TraceBlockTransactionsResponse Tests
 // ============================================================================
 
 #[test]
@@ -343,8 +400,65 @@ fn test_trace_block_transactions_result_without_initial_reads() {
     }"#;
 
     let result: TraceBlockTransactionsResult = serde_json::from_str(result_json).unwrap();
-    assert!(result.initial_reads.is_none());
     assert_eq!(result.transaction_hash, Felt::from_hex("0x123").unwrap());
+}
+
+#[test]
+fn test_trace_block_transactions_response_without_initial_reads() {
+    let response_json = r#"{
+        "traces": [
+            {
+                "trace_root": {
+                    "type": "INVOKE",
+                    "execute_invocation": {
+                        "revert_reason": "test"
+                    },
+                    "execution_resources": {
+                        "l1_gas": "0x64",
+                        "l1_data_gas": "0x32",
+                        "l2_gas": "0xc8"
+                    }
+                },
+                "transaction_hash": "0x123"
+            }
+        ]
+    }"#;
+
+    let response: TraceBlockTransactionsResponse = serde_json::from_str(response_json).unwrap();
+    assert!(response.initial_reads.is_none());
+    assert_eq!(response.traces.len(), 1);
+}
+
+#[test]
+fn test_trace_block_transactions_response_with_initial_reads() {
+    let response_json = r#"{
+        "traces": [
+            {
+                "trace_root": {
+                    "type": "INVOKE",
+                    "execute_invocation": {
+                        "revert_reason": "test"
+                    },
+                    "execution_resources": {
+                        "l1_gas": "0x64",
+                        "l1_data_gas": "0x32",
+                        "l2_gas": "0xc8"
+                    }
+                },
+                "transaction_hash": "0x123"
+            }
+        ],
+        "initial_reads": {
+            "storage": [{"contract_address": "0x1", "key": "0x2", "value": "0x3"}],
+            "nonces": [],
+            "class_hashes": [],
+            "declared_contracts": []
+        }
+    }"#;
+
+    let response: TraceBlockTransactionsResponse = serde_json::from_str(response_json).unwrap();
+    let reads = response.initial_reads.expect("initial_reads should be present");
+    assert_eq!(reads.storage.len(), 1);
 }
 
 // ============================================================================

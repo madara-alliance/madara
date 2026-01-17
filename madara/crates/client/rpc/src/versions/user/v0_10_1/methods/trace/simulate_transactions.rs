@@ -8,7 +8,7 @@ use mc_exec::trace::execution_result_to_tx_trace_v0_9;
 use mc_exec::{state_maps_to_initial_reads, MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
 use mp_convert::ToFelt;
 use mp_rpc::v0_10_0::{BlockId, FeeEstimate, PriceUnitFri};
-use mp_rpc::v0_10_1::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
+use mp_rpc::v0_10_1::{BroadcastedTxn, SimulateTransactionsResponse, SimulateTransactionsResult, SimulationFlag};
 use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 
 pub async fn simulate_transactions(
@@ -16,7 +16,7 @@ pub async fn simulate_transactions(
     block_id: BlockId,
     transactions: Vec<BroadcastedTxn>,
     simulation_flags: Vec<SimulationFlag>,
-) -> StarknetRpcResult<Vec<SimulateTransactionsResult>> {
+) -> StarknetRpcResult<SimulateTransactionsResponse> {
     let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context()?;
 
@@ -77,12 +77,9 @@ pub async fn simulate_transactions(
                         .context("Converting execution infos to fee estimate")?,
                     unit: PriceUnitFri::Fri,
                 },
-                // Clone initial_reads for each transaction result
-                // Note: In a more sophisticated implementation, we might track reads per-transaction
-                initial_reads: initial_reads.clone(),
             })
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;
 
-    Ok(simulated_transactions)
+    Ok(SimulateTransactionsResponse { simulated_transactions, initial_reads })
 }

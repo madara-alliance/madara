@@ -7,13 +7,13 @@ use mc_exec::trace::execution_result_to_tx_trace_v0_9;
 use mc_exec::{state_maps_to_initial_reads, MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
 use mp_convert::ToFelt;
 use mp_rpc::v0_10_0::BlockId;
-use mp_rpc::v0_10_1::{TraceBlockTransactionsResult, TraceFlag};
+use mp_rpc::v0_10_1::{TraceBlockTransactionsResponse, TraceBlockTransactionsResult, TraceFlag};
 
 pub async fn trace_block_transactions(
     starknet: &Starknet,
     block_id: BlockId,
     trace_flags: Option<Vec<TraceFlag>>,
-) -> StarknetRpcResult<Vec<TraceBlockTransactionsResult>> {
+) -> StarknetRpcResult<TraceBlockTransactionsResponse> {
     let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context_at_block_start()?;
 
@@ -62,12 +62,9 @@ pub async fn trace_block_transactions(
             Ok(TraceBlockTransactionsResult {
                 trace_root,
                 transaction_hash,
-                // Clone initial_reads for each transaction result
-                // Note: In a more sophisticated implementation, we might track reads per-transaction
-                initial_reads: initial_reads.clone(),
             })
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;
 
-    Ok(traces)
+    Ok(TraceBlockTransactionsResponse { traces, initial_reads })
 }
