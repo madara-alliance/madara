@@ -2,7 +2,7 @@
 pub use crate::v0_10_0::{
     AddDeclareTransactionParams, AddDeployAccountTransactionParams, AddInvokeTransactionParams,
     AddInvokeTransactionResult, Address, BlockHash, BlockHashAndNumber, BlockHashAndNumberParams, BlockHashHelper,
-    BlockHeader, BlockNumber, BlockNumberHelper, BlockNumberParams, BlockStatus, BlockTag, BlockWithReceipts,
+    BlockHeader, BlockNumber, BlockNumberHelper, BlockNumberParams, BlockStatus, BlockTag,
     BlockWithTxHashes, BlockWithTxs, BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2,
     BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn, CallParams, ChainId, ChainIdParams, ClassAndTxnHash,
     CommonReceiptProperties, ContractAbi, ContractAbiEntry, ContractAndTxnHash, ContractClass, ContractLeavesDataItem,
@@ -20,11 +20,11 @@ pub use crate::v0_10_0::{
     L1DaMode, L1HandlerTxn, L1HandlerTxnReceipt, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes,
     MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MerkleNode, MessageFeeEstimate, MigratedClassItem,
     MsgFromL1, MsgToL1, NewClasses, NodeHashToNodeMappingItem, NonceUpdate, PreConfirmedBlockHeader,
-    PreConfirmedBlockWithReceipts, PreConfirmedBlockWithTxHashes, PreConfirmedBlockWithTxs, PreConfirmedStateUpdate,
+    PreConfirmedBlockWithTxHashes, PreConfirmedBlockWithTxs, PreConfirmedStateUpdate,
     PriceUnitFri, PriceUnitWei, ReplacedClass, ResourceBounds, ResourceBoundsMapping, ResourcePrice, SierraEntryPoint,
-    Signature, SimulationFlagForEstimateFee, SpecVersionParams, StarknetGetBlockWithTxsAndReceiptsResult, StateDiff,
+    Signature, SimulationFlagForEstimateFee, SpecVersionParams, StateDiff,
     StateUpdate, StorageKey, StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus,
-    TransactionAndReceipt, Txn, TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash,
+    Txn, TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash,
     TxnReceipt, TxnReceiptWithBlockInfo, TxnStatus, TxnWithHash, TypedParameter,
 };
 use serde::{Deserialize, Serialize};
@@ -228,6 +228,13 @@ pub struct TxnWithHashAndProofFacts {
     pub transaction_hash: Felt,
 }
 
+/// Transaction and receipt pair with proof_facts-aware transaction (v0.10.1)
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TransactionAndReceipt {
+    pub receipt: TxnReceipt,
+    pub transaction: TxnWithProofFacts,
+}
+
 // ============================================================================
 // Block Types with proof_facts support (v0.10.1)
 // ============================================================================
@@ -275,4 +282,38 @@ pub enum MaybePreConfirmedBlockWithTxsAndProofFacts {
     Block(BlockWithTxsAndProofFacts),
     /// A preconfirmed block with transactions and proof_facts
     PreConfirmed(PreConfirmedBlockWithTxsAndProofFacts),
+}
+
+/// The block object with receipts (v0.10.1)
+///
+/// Uses proof_facts-aware transactions when INCLUDE_PROOF_FACTS is requested.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BlockWithReceipts {
+    /// The transactions in this block
+    pub transactions: Vec<TransactionAndReceipt>,
+    /// The status of the block
+    pub status: BlockStatus,
+    /// The block header
+    #[serde(flatten)]
+    pub block_header: BlockHeader,
+}
+
+/// The dynamic block being constructed by the sequencer (v0.10.1)
+///
+/// Uses proof_facts-aware transactions when INCLUDE_PROOF_FACTS is requested.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PreConfirmedBlockWithReceipts {
+    /// The transactions in this block
+    pub transactions: Vec<TransactionAndReceipt>,
+    #[serde(flatten)]
+    pub pre_confirmed_block_header: PreConfirmedBlockHeader,
+}
+
+/// Result of getBlockWithReceipts (v0.10.1)
+#[allow(clippy::large_enum_variant)]
+#[derive(Eq, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum StarknetGetBlockWithTxsAndReceiptsResult {
+    Block(BlockWithReceipts),
+    PreConfirmed(PreConfirmedBlockWithReceipts),
 }

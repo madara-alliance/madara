@@ -8,12 +8,13 @@ use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_chain_config::RpcVersion;
 use mp_convert::Felt;
 use mp_rpc::v0_10_1::{
-    BlockHashAndNumber, BlockStatus, BlockWithTxsAndProofFacts, BroadcastedTxn, ContractStorageKeysItem,
+    BlockHashAndNumber, BlockStatus, BlockWithReceipts, BlockWithTxsAndProofFacts, BroadcastedTxn, ContractStorageKeysItem,
     EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult,
     MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxsAndProofFacts,
-    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, PreConfirmedBlockWithTxsAndProofFacts, ResponseFlag,
-    SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
-    TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHashAndProofFacts,
+    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, PreConfirmedBlockWithReceipts,
+    PreConfirmedBlockWithTxsAndProofFacts, ResponseFlag, SimulationFlagForEstimateFee,
+    StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TransactionAndReceipt, TxnFinalityAndExecutionStatus,
+    TxnReceiptWithBlockInfo, TxnWithHashAndProofFacts,
 };
 
 // v0.10.1 specific implementation
@@ -21,6 +22,12 @@ pub mod get_events;
 
 // Re-use BlockId from v0.10.0
 use mp_rpc::v0_10_0::BlockId;
+
+fn response_flags_include_proof_facts(response_flags: Option<Vec<ResponseFlag>>) -> bool {
+    response_flags
+        .map(|flags| flags.contains(&ResponseFlag::IncludeProofFacts))
+        .unwrap_or(false)
+}
 
 #[async_trait]
 impl StarknetReadRpcApiV0_10_1Server for Starknet {
@@ -65,8 +72,48 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
         V0_10_0Impl::estimate_message_fee(self, message, block_id).await
     }
 
-    fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
-        V0_10_0Impl::get_block_with_receipts(self, block_id)
+    fn get_block_with_receipts(
+        &self,
+        block_id: BlockId,
+        response_flags: Option<Vec<ResponseFlag>>,
+    ) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
+        let include_proof_facts = response_flags_include_proof_facts(response_flags);
+        let view = self.resolve_block_view(block_id)?;
+        let block_info = view.get_block_info().map_err(StarknetRpcApiError::from)?;
+
+        let status = if view.is_preconfirmed() {
+            BlockStatus::PreConfirmed
+        } else if view.is_on_l1() {
+            BlockStatus::AcceptedOnL1
+        } else {
+            BlockStatus::AcceptedOnL2
+        };
+
+        let transactions_with_receipts = view
+            .get_executed_transactions(..)
+            .map_err(StarknetRpcApiError::from)?
+            .into_iter()
+            .map(|tx| TransactionAndReceipt {
+                receipt: tx.receipt.to_rpc_v0_9(status.into()),
+                transaction: tx.transaction.to_rpc_v0_10_1(include_proof_facts),
+            })
+            .collect();
+
+        Ok(match block_info {
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
+                StarknetGetBlockWithTxsAndReceiptsResult::PreConfirmed(PreConfirmedBlockWithReceipts {
+                    transactions: transactions_with_receipts,
+                    pre_confirmed_block_header: block.header.to_rpc_v0_9(),
+                })
+            }
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
+                StarknetGetBlockWithTxsAndReceiptsResult::Block(BlockWithReceipts {
+                    transactions: transactions_with_receipts,
+                    status,
+                    block_header: block.to_rpc_v0_10(),
+                })
+            }
+        })
     }
 
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedBlockWithTxHashes> {
@@ -76,11 +123,9 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
     fn get_block_with_txs(
         &self,
         block_id: BlockId,
-        _response_flags: Option<Vec<ResponseFlag>>,
+        response_flags: Option<Vec<ResponseFlag>>,
     ) -> RpcResult<MaybePreConfirmedBlockWithTxsAndProofFacts> {
-        // v0.10.1: Always use proof_facts-aware conversion.
-        // When proof_facts is None, it's not serialized (backward compatible).
-        // When INCLUDE_PROOF_FACTS flag is set (in future), proof_facts will be populated.
+        let include_proof_facts = response_flags_include_proof_facts(response_flags);
         let view = self.resolve_block_view(block_id)?;
         let block_info = view.get_block_info().map_err(StarknetRpcApiError::from)?;
         let txs: Vec<TxnWithHashAndProofFacts> = view
@@ -88,7 +133,7 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
             .map_err(StarknetRpcApiError::from)?
             .into_iter()
             .map(|tx| TxnWithHashAndProofFacts {
-                transaction: tx.transaction.to_rpc_v0_10_1_with_proof_facts(),
+                transaction: tx.transaction.to_rpc_v0_10_1(include_proof_facts),
                 transaction_hash: *tx.receipt.transaction_hash(),
             })
             .collect();
@@ -146,17 +191,16 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
         &self,
         block_id: BlockId,
         index: u64,
-        _response_flags: Option<Vec<ResponseFlag>>,
+        response_flags: Option<Vec<ResponseFlag>>,
     ) -> RpcResult<TxnWithHashAndProofFacts> {
-        // v0.10.1: Always use proof_facts-aware conversion.
-        // When proof_facts is None, it's not serialized (backward compatible).
+        let include_proof_facts = response_flags_include_proof_facts(response_flags);
         let view = self.resolve_block_view(block_id)?;
         let tx = view
             .get_executed_transaction(index)
             .map_err(StarknetRpcApiError::from)?
             .ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
         Ok(TxnWithHashAndProofFacts {
-            transaction: tx.transaction.to_rpc_v0_10_1_with_proof_facts(),
+            transaction: tx.transaction.to_rpc_v0_10_1(include_proof_facts),
             transaction_hash: *tx.receipt.transaction_hash(),
         })
     }
@@ -164,10 +208,9 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
     fn get_transaction_by_hash(
         &self,
         transaction_hash: Felt,
-        _response_flags: Option<Vec<ResponseFlag>>,
+        response_flags: Option<Vec<ResponseFlag>>,
     ) -> RpcResult<TxnWithHashAndProofFacts> {
-        // v0.10.1: Always use proof_facts-aware conversion.
-        // When proof_facts is None, it's not serialized (backward compatible).
+        let include_proof_facts = response_flags_include_proof_facts(response_flags);
         let view = self.backend.view_on_latest();
         let res = view
             .find_transaction_by_hash(&transaction_hash)
@@ -175,7 +218,7 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
             .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
         let tx = res.get_transaction().map_err(StarknetRpcApiError::from)?;
         Ok(TxnWithHashAndProofFacts {
-            transaction: tx.transaction.to_rpc_v0_10_1_with_proof_facts(),
+            transaction: tx.transaction.to_rpc_v0_10_1(include_proof_facts),
             transaction_hash,
         })
     }
@@ -228,5 +271,142 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
 
     fn get_compiled_casm(&self, class_hash: Felt) -> RpcResult<serde_json::Value> {
         V0_8_1Impl::get_compiled_casm(self, class_hash)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::rpc_test_setup;
+    use mc_db::MadaraBackend;
+    use mp_block::{
+        header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
+        FullBlockWithoutCommitments, TransactionWithReceipt,
+    };
+    use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
+    use mp_receipt::{
+        ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
+    };
+    use mp_rpc::v0_10_1::{InvokeTxnWithProofFacts, TxnWithProofFacts};
+    use mp_transactions::{DataAvailabilityMode, InvokeTransaction, InvokeTransactionV3, ResourceBoundsMapping, Transaction};
+    use rstest::rstest;
+    use starknet_types_core::felt::Felt;
+    use std::sync::Arc;
+
+    fn add_block_with_invoke_v3_proof_facts(backend: &Arc<MadaraBackend>) -> (Felt, Vec<Felt>) {
+        let tx_hash = Felt::from_hex_unchecked("0x111");
+        let proof_facts = vec![Felt::from_hex_unchecked("0xabc")];
+
+        let _block_hash = backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader {
+                        block_number: 0,
+                        sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+                        block_timestamp: BlockTimestamp(43),
+                        protocol_version: StarknetVersion::V0_13_1_1,
+                        gas_prices: GasPrices {
+                            eth_l1_gas_price: 123,
+                            strk_l1_gas_price: 12,
+                            eth_l1_data_gas_price: 44,
+                            strk_l1_data_gas_price: 52,
+                            eth_l2_gas_price: 0,
+                            strk_l2_gas_price: 0,
+                        },
+                        l1_da_mode: L1DataAvailabilityMode::Blob,
+                    },
+                    state_diff: Default::default(),
+                    transactions: vec![TransactionWithReceipt {
+                        transaction: Transaction::Invoke(InvokeTransaction::V3(InvokeTransactionV3 {
+                            sender_address: Felt::from_hex_unchecked("0x1234"),
+                            calldata: vec![Felt::from_hex_unchecked("0x55")].into(),
+                            signature: vec![].into(),
+                            nonce: Felt::ZERO,
+                            resource_bounds: ResourceBoundsMapping::default(),
+                            tip: 0,
+                            paymaster_data: vec![],
+                            account_deployment_data: vec![],
+                            nonce_data_availability_mode: DataAvailabilityMode::L1,
+                            fee_data_availability_mode: DataAvailabilityMode::L1,
+                            proof_facts: Some(proof_facts.clone()),
+                        })),
+                        receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                            transaction_hash: tx_hash,
+                            actual_fee: FeePayment { amount: Felt::ONE, unit: PriceUnit::Wei },
+                            messages_sent: vec![],
+                            events: vec![],
+                            execution_resources: ExecutionResources::default(),
+                            execution_result: ExecutionResult::Succeeded,
+                        }),
+                    }],
+                    events: vec![],
+                },
+                &[],
+                true,
+            )
+            .unwrap()
+            .block_hash;
+
+        (tx_hash, proof_facts)
+    }
+
+    fn assert_proof_facts(tx: &TxnWithHashAndProofFacts, expected: Option<&[Felt]>) {
+        let TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(tx)) = &tx.transaction else {
+            panic!("expected invoke v3 transaction");
+        };
+        assert_eq!(tx.proof_facts.as_deref(), expected);
+    }
+
+    #[rstest]
+    fn test_response_flags_include_proof_facts(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {
+        let (backend, rpc) = rpc_test_setup;
+        let (tx_hash, proof_facts) = add_block_with_invoke_v3_proof_facts(&backend);
+
+        let no_flags = StarknetReadRpcApiV0_10_1Server::get_transaction_by_hash(&rpc, tx_hash, None).unwrap();
+        assert_proof_facts(&no_flags, None);
+
+        let with_flags = StarknetReadRpcApiV0_10_1Server::get_transaction_by_hash(
+            &rpc,
+            tx_hash,
+            Some(vec![ResponseFlag::IncludeProofFacts]),
+        )
+        .unwrap();
+        assert_proof_facts(&with_flags, Some(&proof_facts));
+
+        let by_index = StarknetReadRpcApiV0_10_1Server::get_transaction_by_block_id_and_index(
+            &rpc,
+            BlockId::Number(0),
+            0,
+            Some(vec![ResponseFlag::IncludeProofFacts]),
+        )
+        .unwrap();
+        assert_proof_facts(&by_index, Some(&proof_facts));
+
+        let block = StarknetReadRpcApiV0_10_1Server::get_block_with_txs(
+            &rpc,
+            BlockId::Number(0),
+            Some(vec![ResponseFlag::IncludeProofFacts]),
+        )
+        .unwrap();
+        let MaybePreConfirmedBlockWithTxsAndProofFacts::Block(block) = block else {
+            panic!("expected confirmed block");
+        };
+        assert_proof_facts(&block.transactions[0], Some(&proof_facts));
+
+        let receipts = StarknetReadRpcApiV0_10_1Server::get_block_with_receipts(
+            &rpc,
+            BlockId::Number(0),
+            Some(vec![ResponseFlag::IncludeProofFacts]),
+        )
+        .unwrap();
+        let StarknetGetBlockWithTxsAndReceiptsResult::Block(block) = receipts else {
+            panic!("expected confirmed receipts block");
+        };
+        let TransactionAndReceipt { transaction, .. } = &block.transactions[0];
+        let TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(tx)) = transaction else {
+            panic!("expected invoke v3 transaction");
+        };
+        assert_eq!(tx.proof_facts.as_deref(), Some(proof_facts.as_slice()));
     }
 }

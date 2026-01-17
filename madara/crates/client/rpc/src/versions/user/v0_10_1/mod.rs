@@ -61,8 +61,13 @@ pub trait StarknetReadRpcApi {
     async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<MessageFeeEstimate>;
 
     /// Get block information with full transactions and receipts given the block id
+    /// v0.10.1: Added optional response_flags parameter for INCLUDE_PROOF_FACTS support
     #[method(name = "getBlockWithReceipts")]
-    fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult>;
+    fn get_block_with_receipts(
+        &self,
+        block_id: BlockId,
+        response_flags: Option<Vec<ResponseFlag>>,
+    ) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult>;
 
     /// Get block information with transaction hashes given the block id
     #[method(name = "getBlockWithTxHashes")]

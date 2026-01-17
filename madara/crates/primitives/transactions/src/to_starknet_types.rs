@@ -36,6 +36,17 @@ impl Transaction {
             Transaction::DeployAccount(tx) => mp_rpc::v0_10_1::TxnWithProofFacts::DeployAccount(tx.to_rpc_v0_8()),
         }
     }
+
+    /// Convert to v0.10.1 RPC type with optional proof_facts inclusion.
+    /// When include_proof_facts is false, proof_facts are stripped even if stored.
+    pub fn to_rpc_v0_10_1(self, include_proof_facts: bool) -> mp_rpc::v0_10_1::TxnWithProofFacts {
+        let txn = self.to_rpc_v0_10_1_with_proof_facts();
+        if include_proof_facts {
+            txn
+        } else {
+            strip_proof_facts(txn)
+        }
+    }
 }
 
 impl InvokeTransaction {
@@ -60,6 +71,16 @@ impl InvokeTransaction {
             InvokeTransaction::V0(tx) => mp_rpc::v0_10_1::InvokeTxnWithProofFacts::V0(tx.to_rpc_v0_7()),
             InvokeTransaction::V1(tx) => mp_rpc::v0_10_1::InvokeTxnWithProofFacts::V1(tx.to_rpc_v0_7()),
             InvokeTransaction::V3(tx) => mp_rpc::v0_10_1::InvokeTxnWithProofFacts::V3(tx.to_rpc_v0_10_1()),
+        }
+    }
+
+    /// Convert to v0.10.1 RPC type, optionally stripping proof_facts for V3.
+    pub fn to_rpc_v0_10_1(self, include_proof_facts: bool) -> mp_rpc::v0_10_1::InvokeTxnWithProofFacts {
+        let txn = self.to_rpc_v0_10_1_with_proof_facts();
+        if include_proof_facts {
+            txn
+        } else {
+            strip_invoke_proof_facts(txn)
         }
     }
 }
@@ -138,6 +159,73 @@ impl InvokeTransactionV3 {
             // and Some(vec) for new transactions that include proof facts
             proof_facts: self.proof_facts,
         }
+    }
+
+    pub fn to_rpc_v0_10_1_with_flag(self, include_proof_facts: bool) -> mp_rpc::v0_10_1::InvokeTxnV3 {
+        let mut rpc = self.to_rpc_v0_10_1();
+        if !include_proof_facts {
+            rpc.proof_facts = None;
+        }
+        rpc
+    }
+}
+
+fn strip_proof_facts(txn: mp_rpc::v0_10_1::TxnWithProofFacts) -> mp_rpc::v0_10_1::TxnWithProofFacts {
+    match txn {
+        mp_rpc::v0_10_1::TxnWithProofFacts::Invoke(tx) => {
+            mp_rpc::v0_10_1::TxnWithProofFacts::Invoke(strip_invoke_proof_facts(tx))
+        }
+        other => other,
+    }
+}
+
+fn strip_invoke_proof_facts(
+    txn: mp_rpc::v0_10_1::InvokeTxnWithProofFacts,
+) -> mp_rpc::v0_10_1::InvokeTxnWithProofFacts {
+    match txn {
+        mp_rpc::v0_10_1::InvokeTxnWithProofFacts::V3(mut tx) => {
+            tx.proof_facts = None;
+            mp_rpc::v0_10_1::InvokeTxnWithProofFacts::V3(tx)
+        }
+        other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{DataAvailabilityMode, ResourceBoundsMapping};
+    use mp_rpc::v0_10_1::{InvokeTxnWithProofFacts, TxnWithProofFacts};
+    use starknet_types_core::felt::Felt;
+
+    #[test]
+    fn invoke_v3_proof_facts_respects_flag() {
+        let tx = Transaction::Invoke(InvokeTransaction::V3(InvokeTransactionV3 {
+            sender_address: Felt::ONE,
+            calldata: vec![Felt::TWO].into(),
+            signature: vec![].into(),
+            nonce: Felt::ZERO,
+            resource_bounds: ResourceBoundsMapping::default(),
+            tip: 0,
+            paymaster_data: vec![],
+            account_deployment_data: vec![],
+            nonce_data_availability_mode: DataAvailabilityMode::L1,
+            fee_data_availability_mode: DataAvailabilityMode::L1,
+            proof_facts: Some(vec![Felt::THREE]),
+        }));
+
+        let with_flag = tx.clone().to_rpc_v0_10_1(true);
+        let without_flag = tx.to_rpc_v0_10_1(false);
+
+        let TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(with_flag)) = with_flag else {
+            panic!("expected invoke v3 with proof_facts");
+        };
+        assert_eq!(with_flag.proof_facts, Some(vec![Felt::THREE]));
+
+        let TxnWithProofFacts::Invoke(InvokeTxnWithProofFacts::V3(without_flag)) = without_flag else {
+            panic!("expected invoke v3 without proof_facts");
+        };
+        assert_eq!(without_flag.proof_facts, None);
     }
 }
 
