@@ -141,17 +141,11 @@ impl SignalHandler {
         let shutdown_future = shutdown_fn();
         let shutdown_result = tokio::time::timeout(timeout_duration, shutdown_future).await;
 
-        // Calculate remaining time to ensure we wait at least the full timeout duration
         let elapsed = start_time.elapsed();
-        let remaining_time = timeout_duration.saturating_sub(elapsed);
 
         match shutdown_result {
             Ok(Ok(())) => {
-                info!("Graceful shutdown completed successfully");
-                if remaining_time > tokio::time::Duration::from_secs(0) {
-                    info!("Waiting remaining {:?} to ensure graceful shutdown", remaining_time);
-                    tokio::time::sleep(remaining_time).await;
-                }
+                info!("Graceful shutdown completed successfully in {:?}", elapsed);
                 Ok(())
             }
             Ok(Err(e)) => {

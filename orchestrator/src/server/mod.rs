@@ -24,18 +24,18 @@ pub use error::{ApiServiceError, ApiServiceResult};
 /// * `config` - Shared application configuration
 ///
 /// # Returns
-/// * `SocketAddr` - The bound address of the server
+/// * `(SocketAddr, JoinHandle<()>)` - The bound address of the server and its task handle
 ///
 /// # Panics
 /// * If the server fails to start
 /// * If the address cannot be bound
-pub async fn setup_server(config: Arc<Config>) -> OrchestratorResult<SocketAddr> {
+pub async fn setup_server(config: Arc<Config>) -> OrchestratorResult<(SocketAddr, tokio::task::JoinHandle<()>)> {
     let (api_server_url, listener) = get_server_url(config.server_config()).await;
 
     let app = server_router(config.clone());
-    tokio::spawn(async move { axum::serve(listener, app).await.expect("Failed to start axum server") });
+    let handle = tokio::spawn(async move { axum::serve(listener, app).await.expect("Failed to start axum server") });
 
-    Ok(api_server_url)
+    Ok((api_server_url, handle))
 }
 
 pub(crate) async fn get_server_url(server_params: &ServerParams) -> (SocketAddr, tokio::net::TcpListener) {
