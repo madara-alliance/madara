@@ -763,13 +763,13 @@ impl BlockProductionTask {
                     batch_execution_result.executed_txs
                 );
 
-                // Record batch execution stats metrics
-                self.metrics.record_execution_stats(&batch_execution_result.stats);
-
                 let current_state = self.current_state.as_mut().context("No current state")?;
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
+
+                // Record batch execution stats metrics
+                self.metrics.record_execution_stats(state.block_number, &batch_execution_result.stats);
 
                 state.append_batch(batch_execution_result).await?;
 
@@ -806,11 +806,13 @@ impl BlockProductionTask {
         tracing::debug!("Close and save block block_n={}", state.block_number);
         let start_time = Instant::now();
 
-        let n_txs = self
-            .backend
-            .block_view_on_preconfirmed()
-            .context("No current pre-confirmed block")?
-            .num_executed_transactions();
+        let preconfirmed_view = self.backend.block_view_on_preconfirmed().context("No current pre-confirmed block")?;
+        let n_txs = preconfirmed_view.num_executed_transactions();
+        let event_count = preconfirmed_view
+            .borrow_content()
+            .executed_transactions()
+            .map(|tx| tx.transaction.receipt.events().len() as u64)
+            .sum::<u64>();
 
         // Build set of v2 hashes for SNIP-34 migrated classes.
         // These are classes that were USED (not declared) in this block and need their
@@ -825,24 +827,41 @@ impl BlockProductionTask {
         let state_diff =
             mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
 
+        let block_number_attributes = [KeyValue::new("block_number", state.block_number.to_string())];
+
         // Record state diff data gauges before moving state_diff
-        self.metrics.block_declared_classes_count.record(state_diff.declared_classes.len() as u64, &[]);
-        self.metrics.block_deployed_contracts_count.record(state_diff.deployed_contracts.len() as u64, &[]);
-        self.metrics.block_storage_diffs_count.record(state_diff.storage_diffs.len() as u64, &[]);
-        self.metrics.block_nonce_updates_count.record(state_diff.nonces.len() as u64, &[]);
-        self.metrics.block_state_diff_length.record(state_diff.len() as u64, &[]);
+        self.metrics
+            .block_declared_classes_count
+            .record(state_diff.declared_classes.len() as u64, &block_number_attributes);
+        self.metrics
+            .block_deployed_contracts_count
+            .record(state_diff.deployed_contracts.len() as u64, &block_number_attributes);
+        self.metrics.block_storage_diffs_count.record(state_diff.storage_diffs.len() as u64, &block_number_attributes);
+        self.metrics.block_nonce_updates_count.record(state_diff.nonces.len() as u64, &block_number_attributes);
+        self.metrics.block_state_diff_length.record(state_diff.len() as u64, &block_number_attributes);
+        self.metrics.block_event_count.record(event_count, &block_number_attributes);
 
         // Record bouncer weights gauges
-        self.metrics.block_bouncer_l1_gas.record(block_exec_summary.bouncer_weights.l1_gas as u64, &[]);
-        self.metrics.block_bouncer_sierra_gas.record(block_exec_summary.bouncer_weights.sierra_gas.0 as u64, &[]);
-        self.metrics.block_bouncer_n_events.record(block_exec_summary.bouncer_weights.n_events as u64, &[]);
+        self.metrics
+            .block_bouncer_l1_gas
+            .record(block_exec_summary.bouncer_weights.l1_gas as u64, &block_number_attributes);
+        self.metrics
+            .block_bouncer_sierra_gas
+            .record(block_exec_summary.bouncer_weights.sierra_gas.0 as u64, &block_number_attributes);
+        self.metrics
+            .block_bouncer_n_events
+            .record(block_exec_summary.bouncer_weights.n_events as u64, &block_number_attributes);
         self.metrics
             .block_bouncer_message_segment_length
-            .record(block_exec_summary.bouncer_weights.message_segment_length as u64, &[]);
-        self.metrics.block_bouncer_state_diff_size.record(block_exec_summary.bouncer_weights.state_diff_size as u64, &[]);
+            .record(block_exec_summary.bouncer_weights.message_segment_length as u64, &block_number_attributes);
+        self.metrics
+            .block_bouncer_state_diff_size
+            .record(block_exec_summary.bouncer_weights.state_diff_size as u64, &block_number_attributes);
 
         // Record consumed L1 nonces count
-        self.metrics.block_consumed_l1_nonces_count.record(state.consumed_core_contract_nonces.len() as u64, &[]);
+        self.metrics
+            .block_consumed_l1_nonces_count
+            .record(state.consumed_core_contract_nonces.len() as u64, &block_number_attributes);
 
         let close_preconfirmed_start = Instant::now();
         Self::close_preconfirmed_block_with_state_diff(
@@ -855,23 +874,33 @@ impl BlockProductionTask {
         .await
         .context("Closing block")?;
         self.metrics.close_preconfirmed_duration.record(close_preconfirmed_start.elapsed().as_secs_f64(), &[]);
+        self.metrics
+            .close_preconfirmed_last
+            .record(close_preconfirmed_start.elapsed().as_secs_f64(), &block_number_attributes);
 
         let time_to_close = start_time.elapsed();
         tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
 
         // Record timing metrics
         self.metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
+        self.metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &block_number_attributes);
 
         // Record metrics
         let attributes = [
+            KeyValue::new("block_number", state.block_number.to_string()),
             KeyValue::new("transactions_added", n_txs.to_string()),
             KeyValue::new("closing_time", time_to_close.as_secs_f32().to_string()),
         ];
 
-        self.metrics.block_counter.add(1, &[]);
+        self.metrics.block_counter.add(1, &block_number_attributes);
         self.metrics.block_gauge.record(state.block_number, &attributes);
-        self.metrics.transaction_counter.add(n_txs as u64, &[]);
+        self.metrics.transaction_counter.add(n_txs as u64, &block_number_attributes);
         self.metrics.block_production_time.record(state.block_start_time.elapsed().as_secs_f64(), &[]);
+        self.metrics
+            .block_production_time_last
+            .record(state.block_start_time.elapsed().as_secs_f64(), &block_number_attributes);
+        self.metrics.block_close_time.record(time_to_close.as_secs_f64(), &[]);
+        self.metrics.block_close_time_last.record(time_to_close.as_secs_f64(), &block_number_attributes);
 
         self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(state.block_number) });
         self.send_state_notification(BlockProductionStateNotification::ClosedBlock);
@@ -898,6 +927,7 @@ impl BlockProductionTask {
         let mut executor = executor::start_executor_thread(
             Arc::clone(&self.backend),
             self.executor_commands_recv.take().context("Task already started")?,
+            self.metrics.clone(),
         )
         .context("Starting executor thread")?;
 
