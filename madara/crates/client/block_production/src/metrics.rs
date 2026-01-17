@@ -11,6 +11,9 @@ pub struct BlockProductionMetrics {
     pub block_counter: Counter<u64>,
     pub transaction_counter: Counter<u64>,
     pub block_production_time: Histogram<f64>,
+    pub block_production_time_last: Gauge<f64>,
+    pub block_close_time: Histogram<f64>,
+    pub block_close_time_last: Gauge<f64>,
     // Batch execution stats
     pub batches_executed: Counter<u64>,
     pub txs_added_to_block: Counter<u64>,
@@ -22,8 +25,11 @@ pub struct BlockProductionMetrics {
 
     // Close block timing metrics
     pub close_block_total_duration: Histogram<f64>,
+    pub close_block_total_last: Gauge<f64>,
     pub close_preconfirmed_duration: Histogram<f64>,
+    pub close_preconfirmed_last: Gauge<f64>,
     pub executor_finalize_duration: Histogram<f64>,
+    pub executor_finalize_last: Gauge<f64>,
 
     // Block data gauges
     pub block_event_count: Gauge<u64>,
@@ -73,6 +79,24 @@ impl BlockProductionMetrics {
             &meter,
             "block_production_time".to_string(),
             "Time to produce a full block from start to close".to_string(),
+            "s".to_string(),
+        );
+        let block_production_time_last = register_gauge_metric_instrument(
+            &meter,
+            "block_production_time_last_seconds".to_string(),
+            "Last block: time to produce a full block from start to close".to_string(),
+            "s".to_string(),
+        );
+        let block_close_time = register_histogram_metric_instrument(
+            &meter,
+            "block_close_time".to_string(),
+            "Time spent closing a block and persisting it".to_string(),
+            "s".to_string(),
+        );
+        let block_close_time_last = register_gauge_metric_instrument(
+            &meter,
+            "block_close_time_last_seconds".to_string(),
+            "Last block: time spent closing a block and persisting it".to_string(),
             "s".to_string(),
         );
 
@@ -127,16 +151,34 @@ impl BlockProductionMetrics {
             "Total time to close a block".to_string(),
             "s".to_string(),
         );
+        let close_block_total_last = register_gauge_metric_instrument(
+            &meter,
+            "close_block_total_last_seconds".to_string(),
+            "Last block: total time to close a block".to_string(),
+            "s".to_string(),
+        );
         let close_preconfirmed_duration = register_histogram_metric_instrument(
             &meter,
             "close_preconfirmed_duration_seconds".to_string(),
             "Time to close preconfirmed block with state diff".to_string(),
             "s".to_string(),
         );
+        let close_preconfirmed_last = register_gauge_metric_instrument(
+            &meter,
+            "close_preconfirmed_last_seconds".to_string(),
+            "Last block: time to close preconfirmed block with state diff".to_string(),
+            "s".to_string(),
+        );
         let executor_finalize_duration = register_histogram_metric_instrument(
             &meter,
             "executor_finalize_duration_seconds".to_string(),
             "Time for executor.finalize() to complete".to_string(),
+            "s".to_string(),
+        );
+        let executor_finalize_last = register_gauge_metric_instrument(
+            &meter,
+            "executor_finalize_last_seconds".to_string(),
+            "Last block: time for executor.finalize() to complete".to_string(),
             "s".to_string(),
         );
 
@@ -221,6 +263,9 @@ impl BlockProductionMetrics {
             block_counter,
             transaction_counter,
             block_production_time,
+            block_production_time_last,
+            block_close_time,
+            block_close_time_last,
             batches_executed,
             txs_added_to_block,
             txs_executed,
@@ -229,8 +274,11 @@ impl BlockProductionMetrics {
             classes_declared,
             l2_gas_consumed,
             close_block_total_duration,
+            close_block_total_last,
             close_preconfirmed_duration,
+            close_preconfirmed_last,
             executor_finalize_duration,
+            executor_finalize_last,
             block_event_count,
             block_state_diff_length,
             block_declared_classes_count,
@@ -246,13 +294,14 @@ impl BlockProductionMetrics {
         }
     }
 
-    pub fn record_execution_stats(&self, stats: &ExecutionStats) {
-        self.batches_executed.add(stats.n_batches as u64, &[]);
-        self.txs_added_to_block.add(stats.n_added_to_block as u64, &[]);
-        self.txs_executed.add(stats.n_executed as u64, &[]);
-        self.txs_reverted.add(stats.n_reverted as u64, &[]);
-        self.txs_rejected.add(stats.n_rejected as u64, &[]);
-        self.classes_declared.add(stats.declared_classes as u64, &[]);
+    pub fn record_execution_stats(&self, block_number: u64, stats: &ExecutionStats) {
+        let attributes = [KeyValue::new("block_number", block_number.to_string())];
+        self.batches_executed.add(stats.n_batches as u64, &attributes);
+        self.txs_added_to_block.add(stats.n_added_to_block as u64, &attributes);
+        self.txs_executed.add(stats.n_executed as u64, &attributes);
+        self.txs_reverted.add(stats.n_reverted as u64, &attributes);
+        self.txs_rejected.add(stats.n_rejected as u64, &attributes);
+        self.classes_declared.add(stats.declared_classes as u64, &attributes);
 
         // Safely convert u128 to u64 for metrics, logging if truncation occurs
         let gas_consumed_u64 = stats.l2_gas_consumed.try_into().unwrap_or_else(|_| {
@@ -263,6 +312,6 @@ impl BlockProductionMetrics {
             );
             u64::MAX
         });
-        self.l2_gas_consumed.add(gas_consumed_u64, &[]);
+        self.l2_gas_consumed.add(gas_consumed_u64, &attributes);
     }
 }

@@ -6,6 +6,7 @@ use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use mp_state_update::{DeclaredClassItem, MigratedClassItem};
+use opentelemetry::KeyValue;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
@@ -63,8 +64,9 @@ pub fn class_trie_root(
     let class_commit_start = Instant::now();
     class_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
     let class_commit_secs = class_commit_start.elapsed().as_secs_f64();
+    let block_number_attributes = [KeyValue::new("block_number", block_number.to_string())];
     metrics().class_trie_commit_duration.record(class_commit_secs, &[]);
-    metrics().class_trie_commit_last.record(class_commit_secs, &[]);
+    metrics().class_trie_commit_last.record(class_commit_secs, &block_number_attributes);
 
     let root_hash = class_trie.root_hash(super::bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
 

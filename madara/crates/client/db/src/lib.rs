@@ -132,6 +132,7 @@ use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
+use opentelemetry::KeyValue;
 use prelude::*;
 use starknet_types_core::felt::Felt;
 use std::path::Path;
@@ -685,8 +686,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
         let (mut block, classes) = preconfirmed_view.get_full_block_with_classes()?;
         let fetch_secs = fetch_start.elapsed().as_secs_f64();
+        let block_number_attributes = [KeyValue::new("block_number", block.header.block_number.to_string())];
         metrics().get_full_block_with_classes_duration.record(fetch_secs, &[]);
-        metrics().get_full_block_with_classes_last.record(fetch_secs, &[]);
+        metrics().get_full_block_with_classes_last.record(fetch_secs, &block_number_attributes);
 
         if let Some(mut state_diff) = state_diff {
             state_diff.old_declared_contracts =
@@ -759,8 +761,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &block.events,
         );
         let commitments_secs = commitments_start.elapsed().as_secs_f64();
+        let block_number_attributes = [KeyValue::new("block_number", block.header.block_number.to_string())];
         metrics().block_commitments_compute_duration.record(commitments_secs, &[]);
-        metrics().block_commitments_compute_last.record(commitments_secs, &[]);
+        metrics().block_commitments_compute_last.record(commitments_secs, &block_number_attributes);
 
         let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
@@ -771,7 +774,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
         let hash_secs = hash_start.elapsed().as_secs_f64();
         metrics().block_hash_compute_duration.record(hash_secs, &[]);
-        metrics().block_hash_compute_last.record(hash_secs, &[]);
+        metrics().block_hash_compute_last.record(hash_secs, &block_number_attributes);
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
@@ -792,7 +795,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.write_classes(block.header.block_number, classes)?;
         let write_secs = write_start.elapsed().as_secs_f64();
         metrics().db_write_block_parts_duration.record(write_secs, &[]);
-        metrics().db_write_block_parts_last.record(write_secs, &[]);
+        metrics().db_write_block_parts_last.record(write_secs, &block_number_attributes);
 
         Ok(AddFullBlockResult { new_state_root: global_state_root, commitments, block_hash, parent_block_hash })
     }

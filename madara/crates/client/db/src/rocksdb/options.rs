@@ -258,9 +258,9 @@ impl Default for RocksDBConfig {
             write_mode: DbWriteMode::default(),
             // Write stall prevention defaults (tuned for ~250+ GiB production databases)
             // Based on baseline metrics showing L0 files reaching 146 with previous defaults
-            max_write_buffer_number: 6, // Extra buffer during burst writes
-            level_zero_slowdown_writes_trigger: 24, // 20% more headroom before throttling
-            level_zero_stop_writes_trigger: 48, // Maintains 2x ratio, prevents hard stops
+            max_write_buffer_number: 6,                    // Extra buffer during burst writes
+            level_zero_slowdown_writes_trigger: 24,        // 20% more headroom before throttling
+            level_zero_stop_writes_trigger: 48,            // Maintains 2x ratio, prevents hard stops
             soft_pending_compaction_bytes_limit: 48 * GiB, // ~18% of typical production DB size
             hard_pending_compaction_bytes_limit: 96 * GiB, // ~36% of typical production DB size
         }

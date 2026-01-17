@@ -37,11 +37,7 @@ impl CommitmentMetrics {
             "s".to_string(),
         );
 
-        Self {
-            transaction_commitment_duration,
-            state_diff_commitment_duration,
-            events_commitment_duration,
-        }
+        Self { transaction_commitment_duration, state_diff_commitment_duration, events_commitment_duration }
     }
 }
 
