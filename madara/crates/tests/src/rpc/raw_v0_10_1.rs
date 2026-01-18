@@ -76,6 +76,14 @@ mod test_rpc_raw_v0_10_1 {
     }
 
     #[tokio::test]
+    async fn test_raw_spec_version_v0_10_1() {
+        let madara = get_madara().await;
+        let result = rpc_result(madara, "starknet_specVersion", json!({})).await;
+
+        assert_eq!(result.as_str(), Some("0.10.1"));
+    }
+
+    #[tokio::test]
     async fn test_raw_trace_transaction_v0_10_1() {
         let madara = get_madara().await;
         let response = rpc_response(
