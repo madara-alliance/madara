@@ -27,6 +27,8 @@ pub struct StorageCleanupTrigger;
 #[async_trait]
 impl JobTrigger for StorageCleanupTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
+        info!("StorageCleanupTrigger started");
+
         // Try to acquire distributed lock
         match config
             .lock()
@@ -34,10 +36,10 @@ impl JobTrigger for StorageCleanupTrigger {
             .await
         {
             Ok(_) => {
-                debug!("{} acquired lock", STORAGE_CLEANUP_WORKER_KEY);
+                debug!("StorageCleanupTrigger acquired distributed lock");
             }
             Err(err) => {
-                debug!("{} failed to acquire lock, returning safely: {}", STORAGE_CLEANUP_WORKER_KEY, err);
+                debug!("StorageCleanupTrigger could not acquire lock (another instance may be running): {}", err);
                 return Ok(());
             }
         }
@@ -51,8 +53,11 @@ impl JobTrigger for StorageCleanupTrigger {
             if result.is_ok() {
                 return Err(e.into());
             }
+        } else {
+            debug!("StorageCleanupTrigger released distributed lock");
         }
 
+        info!("StorageCleanupTrigger completed");
         result
     }
 
@@ -81,6 +86,8 @@ impl StorageCleanupTrigger {
             return Ok(());
         }
 
+        let total_completed = completed_jobs.len();
+
         // Filter to jobs that haven't been tagged yet
         let jobs_to_tag: Vec<_> = completed_jobs
             .into_iter()
@@ -96,11 +103,15 @@ impl StorageCleanupTrigger {
             .collect();
 
         if jobs_to_tag.is_empty() {
-            debug!("No StateTransition jobs need artifact tagging");
+            debug!("Found {} completed StateTransition jobs, all already have artifacts tagged", total_completed);
             return Ok(());
         }
 
-        info!("Processing {} StateTransition jobs for storage cleanup", jobs_to_tag.len());
+        info!("Found {} completed StateTransition jobs, {} need artifact tagging", total_completed, jobs_to_tag.len());
+
+        let total_to_process = jobs_to_tag.len();
+        let mut jobs_processed = 0;
+        let mut total_artifacts_tagged = 0;
 
         for job in jobs_to_tag {
             let job_id = job.internal_id;
@@ -135,9 +146,17 @@ impl StorageCleanupTrigger {
                 continue;
             }
 
+            info!(
+                job_id = %job_id,
+                artifact_count = paths_to_tag.len(),
+                paths = ?paths_to_tag,
+                "Tagging artifacts for expiration"
+            );
+
             // Tag all artifacts
             let tags = vec![(EXPIRATION_TAG_KEY.to_string(), EXPIRATION_TAG_VALUE.to_string())];
             let mut all_tagged = true;
+            let mut tagged_count = 0;
 
             for path in &paths_to_tag {
                 if let Err(e) = config.storage().tag_object(path, tags.clone()).await {
@@ -145,11 +164,18 @@ impl StorageCleanupTrigger {
                     all_tagged = false;
                     break;
                 }
+                tagged_count += 1;
                 debug!(job_id = %job_id, path = %path, "Tagged artifact for expiration");
             }
 
             if !all_tagged {
                 // If any tagging failed, skip updating the job and try again next run
+                warn!(
+                    job_id = %job_id,
+                    tagged = tagged_count,
+                    total = paths_to_tag.len(),
+                    "Partial tagging failure, will retry next run"
+                );
                 continue;
             }
 
@@ -167,8 +193,15 @@ impl StorageCleanupTrigger {
                 continue;
             }
 
+            jobs_processed += 1;
+            total_artifacts_tagged += paths_to_tag.len();
             info!(job_id = %job_id, artifact_count = paths_to_tag.len(), "Successfully tagged artifacts for expiration");
         }
+
+        info!(
+            "Storage cleanup summary: processed {}/{} jobs, tagged {} artifacts total",
+            jobs_processed, total_to_process, total_artifacts_tagged
+        );
 
         Ok(())
     }
