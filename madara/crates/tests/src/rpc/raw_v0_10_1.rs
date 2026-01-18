@@ -168,4 +168,28 @@ mod test_rpc_raw_v0_10_1 {
             assert_optional_proof_facts(tx);
         }
     }
+
+    #[tokio::test]
+    async fn test_raw_trace_block_transactions_return_initial_reads_v0_10_1() {
+        let madara = get_madara().await;
+        let response = rpc_response(
+            madara,
+            "starknet_traceBlockTransactions",
+            json!({"block_id": {"block_number": 19}, "trace_flags": ["RETURN_INITIAL_READS"]}),
+        )
+        .await;
+
+        let error = response.get("error").expect("expected trace to return error");
+        assert_eq!(error.get("code").and_then(|value| value.as_i64()), Some(41));
+        assert_eq!(
+            error.get("message").and_then(|value| value.as_str()),
+            Some("Transaction execution error")
+        );
+        let execution_error = error
+            .get("data")
+            .and_then(|value| value.get("execution_error"))
+            .and_then(|value| value.as_str())
+            .expect("missing execution_error");
+        assert!(execution_error.contains("Unsupported protocol version"));
+    }
 }
