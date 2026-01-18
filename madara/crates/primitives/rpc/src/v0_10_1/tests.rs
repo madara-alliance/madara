@@ -500,6 +500,22 @@ fn test_event_filter_serialization_roundtrip() {
 }
 
 // ============================================================================
+// L1TxnHash Tests
+// ============================================================================
+
+#[test]
+fn test_l1_txn_hash_deserialize_valid() {
+    let hash: L1TxnHash = serde_json::from_str("\"0x1234\"").unwrap();
+    assert_eq!(hash.as_str(), "0x1234");
+}
+
+#[test]
+fn test_l1_txn_hash_deserialize_invalid_prefix() {
+    let err = serde_json::from_str::<L1TxnHash>("\"1234\"").unwrap_err();
+    assert!(err.to_string().contains("expected hex string starting with 0x"));
+}
+
+// ============================================================================
 // proof_facts Backward Compatibility Tests
 // ============================================================================
 // These tests verify that old transactions without proof_facts can still be
