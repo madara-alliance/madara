@@ -113,4 +113,5 @@ sequencer_venv/
 sequencer_requirements.txt
 # AI-generated documentation
 AI_docs/
+.claude
 orchestrator/package-lock.json
