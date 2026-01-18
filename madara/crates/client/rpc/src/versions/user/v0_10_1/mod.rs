@@ -154,6 +154,7 @@ pub trait StarknetReadRpcApi {
         contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult>;
 
+    /// Non-spec in v0.10.1; kept for backward compatibility.
     #[method(name = "getCompiledCasm")]
     fn get_compiled_casm(&self, class_hash: Felt) -> RpcResult<serde_json::Value>;
 }
