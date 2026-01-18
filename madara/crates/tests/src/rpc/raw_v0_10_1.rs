@@ -27,8 +27,9 @@ mod test_rpc_raw_v0_10_1 {
             "params": params,
             "id": 1
         });
+        let rpc_url = format!("{}/rpc/v0_10_1/", madara.rpc_url().trim_end_matches('/'));
         let response = reqwest::Client::new()
-            .post(madara.rpc_url())
+            .post(rpc_url)
             .json(&payload)
             .send()
             .await
@@ -191,5 +192,36 @@ mod test_rpc_raw_v0_10_1 {
             .and_then(|value| value.as_str())
             .expect("missing execution_error");
         assert!(execution_error.contains("Unsupported protocol version"));
+    }
+
+    #[tokio::test]
+    async fn test_raw_get_events_address_array_v0_10_1() {
+        let madara = get_madara().await;
+        let result = rpc_result(
+            madara,
+            "starknet_getEvents",
+            json!({
+                "filter": {
+                    "from_block": {"block_number": 0},
+                    "to_block": {"block_number": 19},
+                    "address": ["0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"],
+                    "keys": [[]],
+                    "chunk_size": 1
+                }
+            }),
+        )
+        .await;
+
+        let events = result
+            .get("events")
+            .and_then(|value| value.as_array())
+            .expect("events should be an array");
+        assert!(events.len() <= 1, "chunk_size should limit event count");
+        if let Some(token) = result.get("continuation_token") {
+            assert!(
+                token.is_string() || token.is_null(),
+                "continuation_token should be string or null"
+            );
+        }
     }
 }
