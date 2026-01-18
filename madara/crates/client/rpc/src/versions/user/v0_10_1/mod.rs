@@ -4,11 +4,11 @@ use mp_rpc::v0_10_1::{
     AddInvokeTransactionResult, BlockHashAndNumber, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, ContractStorageKeysItem,
     EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult,
-    MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxsAndProofFacts,
-    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, ResponseFlag, SimulateTransactionsResponse,
-    SimulationFlag, SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
-    TraceBlockTransactionsResponse, TraceFlag, TraceTransactionResult, TxnFinalityAndExecutionStatus,
-    TxnReceiptWithBlockInfo, TxnWithHashAndProofFacts,
+    L1TxnHash, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes,
+    MaybePreConfirmedBlockWithTxsAndProofFacts, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MessageStatus,
+    MsgFromL1, ResponseFlag, SimulateTransactionsResponse, SimulationFlag, SimulationFlagForEstimateFee,
+    StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TraceBlockTransactionsResponse, TraceFlag,
+    TraceTransactionResult, TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHashAndProofFacts,
 };
 use starknet_types_core::felt::Felt;
 
@@ -140,6 +140,10 @@ pub trait StarknetReadRpcApi {
     /// Get the information about the result of executing the requested block
     #[method(name = "getStateUpdate")]
     fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedStateUpdate>;
+
+    /// Get status and L2 transaction hashes for an L1 transaction hash
+    #[method(name = "getMessagesStatus")]
+    fn get_messages_status(&self, transaction_hash: L1TxnHash) -> RpcResult<Vec<MessageStatus>>;
 
     #[method(name = "getStorageProof")]
     fn get_storage_proof(

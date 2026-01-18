@@ -9,9 +9,9 @@ use mp_chain_config::RpcVersion;
 use mp_convert::Felt;
 use mp_rpc::v0_10_1::{
     BlockHashAndNumber, BlockStatus, BlockWithReceipts, BlockWithTxsAndProofFacts, BroadcastedTxn, ContractStorageKeysItem,
-    EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult,
+    EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult, L1TxnHash,
     MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxsAndProofFacts,
-    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, PreConfirmedBlockWithReceipts,
+    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MessageStatus, MsgFromL1, PreConfirmedBlockWithReceipts,
     PreConfirmedBlockWithTxsAndProofFacts, ResponseFlag, SimulationFlagForEstimateFee,
     StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TransactionAndReceipt, TxnFinalityAndExecutionStatus,
     TxnReceiptWithBlockInfo, TxnWithHashAndProofFacts,
@@ -19,6 +19,7 @@ use mp_rpc::v0_10_1::{
 
 // v0.10.1 specific implementation
 pub mod get_events;
+mod get_messages_status;
 
 // Re-use BlockId from v0.10.0
 use mp_rpc::v0_10_0::BlockId;
@@ -235,6 +236,10 @@ impl StarknetReadRpcApiV0_10_1Server for Starknet {
         V0_10_0Impl::get_state_update(self, block_id)
     }
 
+    fn get_messages_status(&self, transaction_hash: L1TxnHash) -> RpcResult<Vec<MessageStatus>> {
+        Ok(get_messages_status::get_messages_status(self, transaction_hash)?)
+    }
+
     fn get_storage_proof(
         &self,
         block_id: BlockId,
@@ -409,4 +414,5 @@ mod tests {
         };
         assert_eq!(tx.proof_facts.as_deref(), Some(proof_facts.as_slice()));
     }
+
 }

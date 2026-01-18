@@ -115,6 +115,46 @@ pub type ProofFactElem = Felt;
 /// These are integers passed when submitting transactions.
 pub type ProofElem = u64;
 
+/// L1 transaction hash (NEW in v0.10.1)
+///
+/// Represents an Ethereum transaction hash encoded as a hex string.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct L1TxnHash(String);
+
+impl L1TxnHash {
+    pub fn new(value: &str) -> Result<Self, String> {
+        if !value.starts_with("0x") {
+            return Err("expected hex string starting with 0x".to_string());
+        }
+        Ok(Self(value.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for L1TxnHash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        L1TxnHash::new(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Status of L1 handler transactions for a given L1 transaction hash (NEW in v0.10.1)
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageStatus {
+    pub transaction_hash: TxnHash,
+    pub finality_status: TxnFinalityStatus,
+    pub execution_status: TxnExecutionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
+}
+
 /// INVOKE_TXN_V3 with optional proof_facts (NEW in v0.10.1)
 ///
 /// For synced transactions that were submitted with proof facts to the gateway,
