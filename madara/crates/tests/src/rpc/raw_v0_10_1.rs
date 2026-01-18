@@ -234,6 +234,20 @@ mod test_rpc_raw_v0_10_1 {
     }
 
     #[tokio::test]
+    async fn test_raw_trace_block_transactions_invalid_trace_flags_v0_10_1() {
+        let madara = get_madara().await;
+        let response = rpc_response(
+            madara,
+            "starknet_traceBlockTransactions",
+            json!({"block_id": {"block_number": 19}, "trace_flags": ["UNKNOWN_FLAG"]}),
+        )
+        .await;
+
+        let error = response.get("error").expect("expected trace_flags error");
+        assert_eq!(error.get("code").and_then(|value| value.as_i64()), Some(-32602));
+    }
+
+    #[tokio::test]
     async fn test_raw_get_events_address_array_v0_10_1() {
         let madara = get_madara().await;
         let result = rpc_result(
