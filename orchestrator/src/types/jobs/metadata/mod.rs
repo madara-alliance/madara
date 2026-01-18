@@ -32,8 +32,12 @@ pub struct CommonMetadata {
     /// Timestamp when job verification completed
     #[serde(with = "chrono::serde::ts_seconds_option")]
     pub verification_completed_at: Option<DateTime<Utc>>,
-    /// Reason for job failure if any
+    /// Most recent failure reason (kept for backwards compatibility)
     pub failure_reason: Option<String>,
+    /// History of previous failure reasons, in chronological order (oldest first).
+    /// Each processing/verification failure appends to this list.
+    #[serde(default)]
+    pub previous_failure_reasons: Vec<String>,
     /// Orchestrator version that created this job.
     /// Used to ensure only compatible orchestrator versions process jobs they can handle.
     /// This prevents version conflicts in multi-version deployments.
