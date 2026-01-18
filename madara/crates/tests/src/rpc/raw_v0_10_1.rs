@@ -232,4 +232,79 @@ mod test_rpc_raw_v0_10_1 {
             );
         }
     }
+
+    #[tokio::test]
+    async fn test_raw_get_events_empty_address_array_v0_10_1() {
+        let madara = get_madara().await;
+        let result = rpc_result(
+            madara,
+            "starknet_getEvents",
+            json!({
+                "filter": {
+                    "from_block": {"block_number": 0},
+                    "to_block": {"block_number": 19},
+                    "address": [],
+                    "keys": [[]],
+                    "chunk_size": 1
+                }
+            }),
+        )
+        .await;
+
+        let events = result
+            .get("events")
+            .and_then(|value| value.as_array())
+            .expect("events should be an array");
+        assert!(events.len() <= 1, "chunk_size should limit event count");
+    }
+
+    #[tokio::test]
+    async fn test_raw_get_events_single_address_array_v0_10_1() {
+        let madara = get_madara().await;
+        let result = rpc_result(
+            madara,
+            "starknet_getEvents",
+            json!({
+                "filter": {
+                    "from_block": {"block_number": 0},
+                    "to_block": {"block_number": 19},
+                    "address": ["0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"],
+                    "keys": [[]],
+                    "chunk_size": 1
+                }
+            }),
+        )
+        .await;
+
+        let events = result
+            .get("events")
+            .and_then(|value| value.as_array())
+            .expect("events should be an array");
+        assert!(events.len() <= 1, "chunk_size should limit event count");
+    }
+
+    #[tokio::test]
+    async fn test_raw_get_events_single_address_string_v0_10_1() {
+        let madara = get_madara().await;
+        let result = rpc_result(
+            madara,
+            "starknet_getEvents",
+            json!({
+                "filter": {
+                    "from_block": {"block_number": 0},
+                    "to_block": {"block_number": 19},
+                    "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                    "keys": [[]],
+                    "chunk_size": 1
+                }
+            }),
+        )
+        .await;
+
+        let events = result
+            .get("events")
+            .and_then(|value| value.as_array())
+            .expect("events should be an array");
+        assert!(events.len() <= 1, "chunk_size should limit event count");
+    }
 }
