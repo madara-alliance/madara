@@ -743,8 +743,8 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
 }
 
 #[ignore = "Expected to fail until starknet-rust supports v0.10.1 simulate response shape (initial_reads)"]
-#[rstest]
 #[tokio::test]
+#[rstest]
 #[case::full_node_rpc_native(FullNodeAndSequencer, false, true)]
 #[case::full_node_rpc_vm(FullNodeAndSequencer, false, false)]
 #[case::full_node_native(FullNodeAndSequencer, true, true)]
