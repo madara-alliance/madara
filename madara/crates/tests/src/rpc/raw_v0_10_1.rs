@@ -125,6 +125,20 @@ mod test_rpc_raw_v0_10_1 {
     }
 
     #[tokio::test]
+    async fn test_raw_get_transaction_by_hash_invalid_response_flags_v0_10_1() {
+        let madara = get_madara().await;
+        let response = rpc_response(
+            madara,
+            "starknet_getTransactionByHash",
+            json!({"transaction_hash": "0x68fa87ed202095170a2f551017bf646180f43f4687553dc45e61598349a9a8a", "response_flags": ["UNKNOWN_FLAG"]}),
+        )
+        .await;
+
+        let error = response.get("error").expect("expected response_flags error");
+        assert_eq!(error.get("code").and_then(|value| value.as_i64()), Some(-32602));
+    }
+
+    #[tokio::test]
     async fn test_raw_get_transaction_by_block_id_and_index_response_flags_v0_10_1() {
         let madara = get_madara().await;
         let result = rpc_result(
@@ -155,6 +169,23 @@ mod test_rpc_raw_v0_10_1 {
         for tx in transactions {
             assert_optional_proof_facts(tx);
         }
+    }
+
+    #[tokio::test]
+    async fn test_raw_get_block_with_txs_without_response_flags_v0_10_1() {
+        let madara = get_madara().await;
+        let result = rpc_result(
+            madara,
+            "starknet_getBlockWithTxs",
+            json!({"block_id": {"block_number": 19}}),
+        )
+        .await;
+
+        let transactions = result
+            .get("transactions")
+            .and_then(|value| value.as_array())
+            .expect("transactions should be an array");
+        assert!(!transactions.is_empty(), "expected transactions without response_flags");
     }
 
     #[tokio::test]
