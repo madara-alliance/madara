@@ -742,8 +742,6 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
     perform_test(&setup, &setup.json_rpc(), Felt::TWO).await;
 }
 
-// TEMP DISABLED (rpc v0.10.1): starknet-rust simulate response shape lacks top-level `initial_reads`.
-/*
 #[ignore = "Expected to fail until starknet-rust supports v0.10.1 simulate response shape (initial_reads)"]
 #[rstest]
 #[tokio::test]
@@ -975,4 +973,3 @@ async fn declare_sierra_then_deploy(
         perform_test(&setup, &setup.json_rpc()).await;
     }
 }
-*/

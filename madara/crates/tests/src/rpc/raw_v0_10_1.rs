@@ -60,8 +60,6 @@ mod test_rpc_raw_v0_10_1 {
         );
     }
 
-    // TEMP DISABLED (trace): sepolia trace hits unsupported protocol version 0.12.3 in execution.
-    /*
     #[tokio::test]
     async fn test_raw_trace_transaction_v0_10_1() {
         let madara = get_madara().await;
@@ -74,5 +72,4 @@ mod test_rpc_raw_v0_10_1 {
 
         assert_eq!(result["type"].as_str(), Some("L1_HANDLER"));
     }
-    */
 }
