@@ -683,7 +683,10 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         bucket_base
     };
 
-    let storage_params = StorageArgs { bucket_identifier: AWSResourceIdentifier::Name(bucket_name) };
+    let storage_params = StorageArgs {
+        bucket_identifier: AWSResourceIdentifier::Name(bucket_name),
+        storage_expiration_days: crate::cli::storage::aws_s3::DEFAULT_STORAGE_EXPIRATION_DAYS,
+    };
 
     let queue_base = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER");
     let queue_identifier = if let Some(id) = test_id {

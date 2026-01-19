@@ -56,8 +56,6 @@ pub fn get_snos_legacy_dir(job_id: u64) -> String {
 pub const STORAGE_EXPIRATION_TAG_KEY: &str = "expire-after-settlement";
 /// Tag value used to mark objects for expiration
 pub const STORAGE_EXPIRATION_TAG_VALUE: &str = "true";
-/// Number of days after object creation before S3 deletes the object
-pub const STORAGE_EXPIRATION_DAYS: i32 = 14;
 /// Lifecycle rule ID for S3
 pub const STORAGE_LIFECYCLE_RULE_ID: &str = "expire-settled-artifacts";
 /// Worker key for distributed locking

@@ -1,9 +1,7 @@
 use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
-use crate::types::constant::{
-    STORAGE_EXPIRATION_DAYS, STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE, STORAGE_LIFECYCLE_RULE_ID,
-};
+use crate::types::constant::{STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE, STORAGE_LIFECYCLE_RULE_ID};
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::StorageArgs;
 use crate::types::Layer;
@@ -89,7 +87,7 @@ impl Resource for InnerAWSS3 {
         }
 
         // Setup lifecycle rule for automatic expiration (idempotent - safe to run on existing buckets)
-        self.setup_lifecycle_rule(&bucket_name).await?;
+        self.setup_lifecycle_rule(&bucket_name, args.storage_expiration_days).await?;
 
         Ok(())
     }
@@ -113,14 +111,22 @@ impl InnerAWSS3 {
     /// Sets up the lifecycle rule for automatic object expiration based on tags.
     ///
     /// Objects tagged with `expire-after-settlement=true` will be automatically
-    /// deleted by S3 after `STORAGE_EXPIRATION_DAYS` days from their creation date.
+    /// deleted by S3 after `expiration_days` days from their creation date.
     ///
     /// This operation is idempotent - it will overwrite any existing lifecycle
     /// configuration with the same rule ID.
-    async fn setup_lifecycle_rule(&self, bucket_name: &str) -> OrchestratorResult<()> {
+    ///
+    /// # Important
+    /// `put_bucket_lifecycle_configuration` replaces the entire lifecycle configuration,
+    /// not just this rule. If additional lifecycle rules are needed in the future,
+    /// this function should be updated to fetch existing rules first and merge them.
+    ///
+    /// TODO: If adding more lifecycle rules, fetch existing config with
+    /// `get_bucket_lifecycle_configuration` and merge rules before applying.
+    async fn setup_lifecycle_rule(&self, bucket_name: &str, expiration_days: i32) -> OrchestratorResult<()> {
         info!(
             "Setting up S3 lifecycle rule '{}' for bucket '{}' (expire tagged objects after {} days)",
-            STORAGE_LIFECYCLE_RULE_ID, bucket_name, STORAGE_EXPIRATION_DAYS
+            STORAGE_LIFECYCLE_RULE_ID, bucket_name, expiration_days
         );
 
         // Create the tag filter
@@ -134,7 +140,7 @@ impl InnerAWSS3 {
         let filter = LifecycleRuleFilter::builder().tag(tag_filter).build();
 
         // Create the expiration action
-        let expiration = LifecycleExpiration::builder().days(STORAGE_EXPIRATION_DAYS).build();
+        let expiration = LifecycleExpiration::builder().days(expiration_days).build();
 
         // Create the lifecycle rule
         let rule = LifecycleRule::builder()
@@ -166,7 +172,7 @@ impl InnerAWSS3 {
 
         info!(
             "Successfully configured S3 lifecycle rule: objects tagged with '{}={}' will expire after {} days",
-            STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE, STORAGE_EXPIRATION_DAYS
+            STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE, expiration_days
         );
 
         Ok(())

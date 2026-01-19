@@ -73,7 +73,7 @@ impl StorageCleanupTrigger {
             return Ok(());
         }
 
-        info!("Found {} completed StateTransition jobs that need artifact tagging", jobs_to_tag.len());
+        debug!("Found {} completed StateTransition jobs that need artifact tagging", jobs_to_tag.len());
 
         let total_to_process = jobs_to_tag.len();
         let mut jobs_processed = 0;
@@ -145,9 +145,9 @@ impl StorageCleanupTrigger {
 
             if paths_to_tag.is_empty() {
                 // No artifacts found - this is OK, mark as tagged anyway
-                info!(job_id = %job_id, "No artifacts found in storage, marking job as tagged");
+                debug!(job_id = %job_id, "No artifacts found in storage, marking job as tagged");
             } else {
-                info!(
+                debug!(
                     job_id = %job_id,
                     artifact_count = paths_to_tag.len(),
                     paths = ?paths_to_tag,
@@ -156,12 +156,15 @@ impl StorageCleanupTrigger {
             }
 
             // Tag all artifacts
-            let tags = vec![(STORAGE_EXPIRATION_TAG_KEY.to_string(), STORAGE_EXPIRATION_TAG_VALUE.to_string())];
+            // Pre-create tag strings once to avoid repeated allocations
+            let tag_key = STORAGE_EXPIRATION_TAG_KEY.to_string();
+            let tag_value = STORAGE_EXPIRATION_TAG_VALUE.to_string();
             let mut all_tagged = true;
             let mut tagged_count = 0;
 
             for path in &paths_to_tag {
-                match config.storage().tag_object(path, tags.clone()).await {
+                let tags = vec![(tag_key.clone(), tag_value.clone())];
+                match config.storage().tag_object(path, tags).await {
                     Ok(_) => {
                         tagged_count += 1;
                         debug!(job_id = %job_id, path = %path, "Tagged artifact for expiration");
@@ -211,7 +214,7 @@ impl StorageCleanupTrigger {
 
             jobs_processed += 1;
             total_artifacts_tagged += tagged_count;
-            info!(job_id = %job_id, artifact_count = tagged_count, "Successfully tagged artifacts for expiration");
+            debug!(job_id = %job_id, artifact_count = tagged_count, "Successfully tagged artifacts for expiration");
         }
 
         info!(
