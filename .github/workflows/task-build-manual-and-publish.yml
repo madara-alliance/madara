@@ -22,6 +22,9 @@ on:
       manual-sha:
         description: Manual image tag (with commit sha)
         value: ${{ jobs.build-manual-and-publish.outputs.manual-sha }}
+      manual-latest:
+        description: Manual latest image tag (only set when built from main)
+        value: ${{ jobs.build-manual-and-publish.outputs.manual-latest }}
 
 permissions:
   contents: read
@@ -34,6 +37,7 @@ jobs:
     runs-on: blacksmith-8vcpu-ubuntu-2204
     outputs:
       manual-sha: ${{ steps.tag.outputs.manual-sha }}
+      manual-latest: ${{ steps.tag.outputs.manual-latest }}
 
     steps:
       - name: Checkout repository
@@ -68,8 +72,21 @@ jobs:
           IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/${{ inputs.image-name }}"
           SHA=$(git rev-parse --short=7 "$GITHUB_SHA")
           MANUAL_SHA="$IMAGE:manual-$SHA"
+          TAGS="$MANUAL_SHA"
 
           echo "manual-sha=$MANUAL_SHA" >> $GITHUB_OUTPUT
+
+          # Add manual-latest tag when building from main branch
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            MANUAL_LATEST="$IMAGE:manual-latest"
+            echo "manual-latest=$MANUAL_LATEST" >> $GITHUB_OUTPUT
+            TAGS="$TAGS"$'\n'"$MANUAL_LATEST"
+          fi
+
+          # Use heredoc for multiline output
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -88,4 +105,4 @@ jobs:
           context: .
           push: true
           file: ${{ inputs.image-file }}
-          tags: ${{ steps.tag.outputs.manual-sha }}
+          tags: ${{ steps.tag.outputs.tags }}
