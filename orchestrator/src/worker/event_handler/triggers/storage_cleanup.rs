@@ -61,8 +61,6 @@ impl JobTrigger for StorageCleanupTrigger {
 impl StorageCleanupTrigger {
     /// Process completed StateTransition jobs that haven't had their artifacts tagged
     async fn process_completed_jobs(&self, config: &Arc<Config>) -> color_eyre::Result<()> {
-        // Get completed StateTransition jobs that haven't been tagged yet
-        // This query filters at the database level for efficiency
         let jobs_to_tag = config
             .database()
             .get_jobs_without_storage_artifacts_tagged(Some(STORAGE_CLEANUP_MAX_JOBS_PER_RUN as i64))
@@ -82,7 +80,6 @@ impl StorageCleanupTrigger {
         for job in jobs_to_tag {
             let job_id = job.internal_id;
 
-            // Get the metadata for updating later
             let state_metadata: StateUpdateMetadata = match job.metadata.specific.clone().try_into() {
                 Ok(m) => m,
                 Err(e) => {
@@ -91,60 +88,9 @@ impl StorageCleanupTrigger {
                 }
             };
 
-            // List all objects in the batch folders based on internal_id
-            // This is more robust than relying on metadata paths
-            //
-            // Storage paths to clean up:
-            // 1. artifacts/batch/{job_id}/ - Aggregator artifacts (new format)
-            // 2. blob/batch/{job_id}/ - Blob data files
-            // 3. {job_id}/ - SNOS artifacts (old format, at root level)
-            // 4. state_update/batch/{job_id}.json - State update file
-            let artifact_dir = get_batch_artifacts_dir(job_id);
-            let blob_dir = get_batch_blob_dir(job_id);
-            let snos_dir = get_snos_legacy_dir(job_id);
-            let state_update_file = get_batch_state_update_file(job_id);
-
-            let mut paths_to_tag = Vec::new();
-
-            // Get all files in artifacts/batch/{job_id}/ (new format)
-            match config.storage().list_files_in_dir(&artifact_dir).await {
-                Ok(files) => {
-                    debug!(job_id = %job_id, dir = %artifact_dir, file_count = files.len(), "Found artifact files");
-                    paths_to_tag.extend(files);
-                }
-                Err(e) => {
-                    debug!(job_id = %job_id, dir = %artifact_dir, error = %e, "No artifacts directory or error listing");
-                }
-            }
-
-            // Get all files in blob/batch/{job_id}/
-            match config.storage().list_files_in_dir(&blob_dir).await {
-                Ok(files) => {
-                    debug!(job_id = %job_id, dir = %blob_dir, file_count = files.len(), "Found blob files");
-                    paths_to_tag.extend(files);
-                }
-                Err(e) => {
-                    debug!(job_id = %job_id, dir = %blob_dir, error = %e, "No blob directory or error listing");
-                }
-            }
-
-            // Get all files in {job_id}/ (old SNOS format at root level)
-            match config.storage().list_files_in_dir(&snos_dir).await {
-                Ok(files) => {
-                    debug!(job_id = %job_id, dir = %snos_dir, file_count = files.len(), "Found SNOS files (old format)");
-                    paths_to_tag.extend(files);
-                }
-                Err(e) => {
-                    debug!(job_id = %job_id, dir = %snos_dir, error = %e, "No SNOS directory or error listing");
-                }
-            }
-
-            // Add state_update/batch/{job_id}.json file directly (it's a file, not a directory)
-            paths_to_tag.push(state_update_file.clone());
-            debug!(job_id = %job_id, file = %state_update_file, "Added state update file to tag list");
+            let paths_to_tag = self.collect_artifact_paths(config, job_id).await;
 
             if paths_to_tag.is_empty() {
-                // No artifacts found - this is OK, mark as tagged anyway
                 debug!(job_id = %job_id, "No artifacts found in storage, marking job as tagged");
             } else {
                 debug!(
@@ -155,40 +101,9 @@ impl StorageCleanupTrigger {
                 );
             }
 
-            // Tag all artifacts
-            // Pre-create tag strings once to avoid repeated allocations
-            let tag_key = STORAGE_EXPIRATION_TAG_KEY.to_string();
-            let tag_value = STORAGE_EXPIRATION_TAG_VALUE.to_string();
-            let mut all_tagged = true;
-            let mut tagged_count = 0;
-
-            for path in &paths_to_tag {
-                let tags = vec![(tag_key.clone(), tag_value.clone())];
-                match config.storage().tag_object(path, tags).await {
-                    Ok(_) => {
-                        tagged_count += 1;
-                        debug!(job_id = %job_id, path = %path, "Tagged artifact for expiration");
-                    }
-                    Err(e) => {
-                        let error_str = e.to_string();
-                        // Handle non-existent files gracefully (file may have been deleted)
-                        if error_str.contains("NoSuchKey")
-                            || error_str.contains("not found")
-                            || error_str.contains("does not exist")
-                        {
-                            debug!(job_id = %job_id, path = %path, "Artifact not found, skipping");
-                            tagged_count += 1; // Count as success since there's nothing to tag
-                        } else {
-                            error!(job_id = %job_id, path = %path, error = %e, "Failed to tag artifact");
-                            all_tagged = false;
-                            break;
-                        }
-                    }
-                }
-            }
+            let (tagged_count, all_tagged) = self.tag_artifacts(config, job_id, &paths_to_tag).await;
 
             if !all_tagged {
-                // If any tagging failed (excluding not found), skip updating the job and try again next run
                 warn!(
                     job_id = %job_id,
                     tagged = tagged_count,
@@ -198,16 +113,7 @@ impl StorageCleanupTrigger {
                 continue;
             }
 
-            // Update job metadata to mark artifacts as tagged
-            let mut updated_metadata = state_metadata;
-            updated_metadata.storage_artifacts_tagged_at = Some(Utc::now());
-
-            let job_update = JobItemUpdates::new().update_metadata(JobMetadata {
-                common: job.metadata.common.clone(),
-                specific: JobSpecificMetadata::StateUpdate(updated_metadata),
-            });
-
-            if let Err(e) = config.database().update_job(&job, job_update).await {
+            if let Err(e) = self.mark_job_tagged(config, &job, state_metadata).await {
                 error!(job_id = %job_id, error = %e, "Failed to update job metadata after tagging");
                 continue;
             }
@@ -222,6 +128,110 @@ impl StorageCleanupTrigger {
             jobs_processed, total_to_process, total_artifacts_tagged
         );
 
+        Ok(())
+    }
+
+    /// Collect all artifact paths for a given job from the 4 storage locations:
+    /// 1. artifacts/batch/{job_id}/ - Aggregator artifacts (new format)
+    /// 2. blob/batch/{job_id}/ - Blob data files
+    /// 3. {job_id}/ - SNOS artifacts (old format, at root level)
+    /// 4. state_update/batch/{job_id}.json - State update file
+    async fn collect_artifact_paths(&self, config: &Arc<Config>, job_id: u64) -> Vec<String> {
+        let mut paths = Vec::new();
+
+        // Artifacts directory
+        let artifact_dir = get_batch_artifacts_dir(job_id);
+        match config.storage().list_files_in_dir(&artifact_dir).await {
+            Ok(files) => {
+                debug!(job_id = %job_id, dir = %artifact_dir, file_count = files.len(), "Found artifact files");
+                paths.extend(files);
+            }
+            Err(e) => {
+                debug!(job_id = %job_id, dir = %artifact_dir, error = %e, "No artifacts directory or error listing");
+            }
+        }
+
+        // Blob directory
+        let blob_dir = get_batch_blob_dir(job_id);
+        match config.storage().list_files_in_dir(&blob_dir).await {
+            Ok(files) => {
+                debug!(job_id = %job_id, dir = %blob_dir, file_count = files.len(), "Found blob files");
+                paths.extend(files);
+            }
+            Err(e) => {
+                debug!(job_id = %job_id, dir = %blob_dir, error = %e, "No blob directory or error listing");
+            }
+        }
+
+        // SNOS directory (legacy format at root level)
+        let snos_dir = get_snos_legacy_dir(job_id);
+        match config.storage().list_files_in_dir(&snos_dir).await {
+            Ok(files) => {
+                debug!(job_id = %job_id, dir = %snos_dir, file_count = files.len(), "Found SNOS files (old format)");
+                paths.extend(files);
+            }
+            Err(e) => {
+                debug!(job_id = %job_id, dir = %snos_dir, error = %e, "No SNOS directory or error listing");
+            }
+        }
+
+        // State update file (single file, not a directory)
+        let state_update_file = get_batch_state_update_file(job_id);
+        paths.push(state_update_file.clone());
+        debug!(job_id = %job_id, file = %state_update_file, "Added state update file to tag list");
+
+        paths
+    }
+
+    /// Tag artifacts for expiration. Returns (tagged_count, all_succeeded).
+    /// Handles non-existent files gracefully (counts as success).
+    async fn tag_artifacts(&self, config: &Arc<Config>, job_id: u64, paths: &[String]) -> (usize, bool) {
+        let tag_key = STORAGE_EXPIRATION_TAG_KEY.to_string();
+        let tag_value = STORAGE_EXPIRATION_TAG_VALUE.to_string();
+        let mut tagged_count = 0;
+
+        for path in paths {
+            let tags = vec![(tag_key.clone(), tag_value.clone())];
+            match config.storage().tag_object(path, tags).await {
+                Ok(_) => {
+                    tagged_count += 1;
+                    debug!(job_id = %job_id, path = %path, "Tagged artifact for expiration");
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
+                    // Handle non-existent files gracefully (file may have been deleted)
+                    if error_str.contains("NoSuchKey")
+                        || error_str.contains("not found")
+                        || error_str.contains("does not exist")
+                    {
+                        debug!(job_id = %job_id, path = %path, "Artifact not found, skipping");
+                        tagged_count += 1; // Count as success since there's nothing to tag
+                    } else {
+                        error!(job_id = %job_id, path = %path, error = %e, "Failed to tag artifact");
+                        return (tagged_count, false);
+                    }
+                }
+            }
+        }
+
+        (tagged_count, true)
+    }
+
+    /// Update job metadata to mark artifacts as tagged with current timestamp
+    async fn mark_job_tagged(
+        &self,
+        config: &Arc<Config>,
+        job: &crate::types::jobs::job_item::JobItem,
+        mut state_metadata: StateUpdateMetadata,
+    ) -> color_eyre::Result<()> {
+        state_metadata.storage_artifacts_tagged_at = Some(Utc::now());
+
+        let job_update = JobItemUpdates::new().update_metadata(JobMetadata {
+            common: job.metadata.common.clone(),
+            specific: JobSpecificMetadata::StateUpdate(state_metadata),
+        });
+
+        config.database().update_job(job, job_update).await?;
         Ok(())
     }
 }
