@@ -51,6 +51,7 @@ pub fn build_job_item_with_version(
                 da_segment_path: None,
                 tx_hash: None,
                 context: SettlementContext::Block(SettlementContextData { to_settle: internal_id, last_failed: None }),
+                storage_artifacts_tagged_at: None,
             }),
         },
         JobType::SnosRun => JobMetadata {

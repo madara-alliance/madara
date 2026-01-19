@@ -1,5 +1,10 @@
 use crate::core::client::lock::LockValue;
 use crate::core::config::Config;
+use crate::types::constant::{
+    get_batch_artifacts_dir, get_batch_blob_dir, get_batch_state_update_file, get_snos_legacy_dir,
+    STORAGE_CLEANUP_LOCK_DURATION, STORAGE_CLEANUP_MAX_JOBS_PER_RUN, STORAGE_CLEANUP_WORKER_KEY,
+    STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE,
+};
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -7,19 +12,6 @@ use async_trait::async_trait;
 use chrono::Utc;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
-
-/// Worker key for distributed locking
-pub const STORAGE_CLEANUP_WORKER_KEY: &str = "StorageCleanupWorker";
-
-/// Tag key used to mark objects for expiration
-const EXPIRATION_TAG_KEY: &str = "expire-after-settlement";
-const EXPIRATION_TAG_VALUE: &str = "true";
-
-/// Maximum number of jobs to process per run
-const MAX_JOBS_PER_RUN: usize = 200;
-
-/// Lock duration in seconds (5 minutes)
-const CLEANUP_WORKER_LOCK_DURATION: u64 = 300;
 
 pub struct StorageCleanupTrigger;
 
@@ -31,7 +23,7 @@ impl JobTrigger for StorageCleanupTrigger {
         // Try to acquire distributed lock
         match config
             .lock()
-            .acquire_lock(STORAGE_CLEANUP_WORKER_KEY, LockValue::Boolean(false), CLEANUP_WORKER_LOCK_DURATION, None)
+            .acquire_lock(STORAGE_CLEANUP_WORKER_KEY, LockValue::Boolean(false), STORAGE_CLEANUP_LOCK_DURATION, None)
             .await
         {
             Ok(_) => {
@@ -71,8 +63,10 @@ impl StorageCleanupTrigger {
     async fn process_completed_jobs(&self, config: &Arc<Config>) -> color_eyre::Result<()> {
         // Get completed StateTransition jobs that haven't been tagged yet
         // This query filters at the database level for efficiency
-        let jobs_to_tag =
-            config.database().get_jobs_without_storage_artifacts_tagged(Some(MAX_JOBS_PER_RUN as i64)).await?;
+        let jobs_to_tag = config
+            .database()
+            .get_jobs_without_storage_artifacts_tagged(Some(STORAGE_CLEANUP_MAX_JOBS_PER_RUN as i64))
+            .await?;
 
         if jobs_to_tag.is_empty() {
             debug!("No completed StateTransition jobs need artifact tagging");
@@ -105,10 +99,10 @@ impl StorageCleanupTrigger {
             // 2. blob/batch/{job_id}/ - Blob data files
             // 3. {job_id}/ - SNOS artifacts (old format, at root level)
             // 4. state_update/batch/{job_id}.json - State update file
-            let artifact_dir = format!("artifacts/batch/{}", job_id);
-            let blob_dir = format!("blob/batch/{}", job_id);
-            let snos_dir = format!("{}", job_id); // Root-level SNOS artifacts (old format)
-            let state_update_file = format!("state_update/batch/{}.json", job_id);
+            let artifact_dir = get_batch_artifacts_dir(job_id);
+            let blob_dir = get_batch_blob_dir(job_id);
+            let snos_dir = get_snos_legacy_dir(job_id);
+            let state_update_file = get_batch_state_update_file(job_id);
 
             let mut paths_to_tag = Vec::new();
 
@@ -162,7 +156,7 @@ impl StorageCleanupTrigger {
             }
 
             // Tag all artifacts
-            let tags = vec![(EXPIRATION_TAG_KEY.to_string(), EXPIRATION_TAG_VALUE.to_string())];
+            let tags = vec![(STORAGE_EXPIRATION_TAG_KEY.to_string(), STORAGE_EXPIRATION_TAG_VALUE.to_string())];
             let mut all_tagged = true;
             let mut tagged_count = 0;
 

@@ -14,6 +14,58 @@ pub const DA_SEGMENT_FILE_NAME: &str = "da_blob.json";
 pub const STORAGE_STATE_UPDATE_DIR: &str = "state_update";
 pub const STORAGE_BLOB_DIR: &str = "blob";
 pub const STORAGE_ARTIFACTS_DIR: &str = "artifacts";
+pub const STORAGE_BATCH_SUBDIR: &str = "batch";
+
+// ============================================================================
+// Storage Path Helper Functions
+// ============================================================================
+
+/// Returns the directory path for batch artifacts: `artifacts/batch/{batch_index}`
+pub fn get_batch_artifacts_dir(batch_index: u64) -> String {
+    format!("{}/{}/{}", STORAGE_ARTIFACTS_DIR, STORAGE_BATCH_SUBDIR, batch_index)
+}
+
+/// Returns the full path for a specific artifact file: `artifacts/batch/{batch_index}/{filename}`
+pub fn get_batch_artifact_file(batch_index: u64, filename: &str) -> String {
+    format!("{}/{}", get_batch_artifacts_dir(batch_index), filename)
+}
+
+/// Returns the directory path for batch blob data: `blob/batch/{batch_index}`
+pub fn get_batch_blob_dir(batch_index: u64) -> String {
+    format!("{}/{}/{}", STORAGE_BLOB_DIR, STORAGE_BATCH_SUBDIR, batch_index)
+}
+
+/// Returns the full path for a specific blob file: `blob/batch/{batch_index}/{blob_index}.txt`
+pub fn get_batch_blob_file(batch_index: u64, blob_index: u64) -> String {
+    format!("{}/{}.txt", get_batch_blob_dir(batch_index), blob_index)
+}
+
+/// Returns the path for a batch state update file: `state_update/batch/{batch_index}.json`
+pub fn get_batch_state_update_file(batch_index: u64) -> String {
+    format!("{}/{}/{}.json", STORAGE_STATE_UPDATE_DIR, STORAGE_BATCH_SUBDIR, batch_index)
+}
+
+/// Returns the legacy SNOS directory path (at root level): `{job_id}`
+/// This is for backwards compatibility with old format SNOS artifacts
+pub fn get_snos_legacy_dir(job_id: u64) -> String {
+    format!("{}", job_id)
+}
+
+// Storage cleanup constants
+/// Tag key used to mark objects for expiration
+pub const STORAGE_EXPIRATION_TAG_KEY: &str = "expire-after-settlement";
+/// Tag value used to mark objects for expiration
+pub const STORAGE_EXPIRATION_TAG_VALUE: &str = "true";
+/// Number of days after object creation before S3 deletes the object
+pub const STORAGE_EXPIRATION_DAYS: i32 = 14;
+/// Lifecycle rule ID for S3
+pub const STORAGE_LIFECYCLE_RULE_ID: &str = "expire-settled-artifacts";
+/// Worker key for distributed locking
+pub const STORAGE_CLEANUP_WORKER_KEY: &str = "StorageCleanupWorker";
+/// Maximum number of jobs to process per cleanup run, empirically determined
+pub const STORAGE_CLEANUP_MAX_JOBS_PER_RUN: usize = 200;
+/// Lock duration in seconds for storage cleanup worker (5 minutes)
+pub const STORAGE_CLEANUP_LOCK_DURATION: u64 = 300;
 pub const BLOB_LEN: usize = 4096;
 pub const MAX_BLOBS: usize = 6; // TODO: This should be configurable via ENV or config file
 pub const MAX_BLOB_SIZE: usize = BLOB_LEN * MAX_BLOBS; // This represents the maximum size of data that you can use in a single transaction

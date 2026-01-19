@@ -1,5 +1,5 @@
 use crate::core::config::StarknetVersion;
-use crate::types::constant::{STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
+use crate::types::constant::{get_batch_blob_dir, get_batch_blob_file, get_batch_state_update_file};
 use blockifier::bouncer::BouncerWeights;
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
@@ -241,15 +241,15 @@ impl AggregatorBatch {
     }
 
     pub fn get_blob_file_path(batch_index: u64, blob_index: u64) -> String {
-        format!("{}/{}.txt", Self::get_blob_dir_path(batch_index), blob_index)
+        get_batch_blob_file(batch_index, blob_index)
     }
 
     fn get_state_update_file_path(batch_index: u64) -> String {
-        format!("{}/batch/{}.json", STORAGE_STATE_UPDATE_DIR, batch_index)
+        get_batch_state_update_file(batch_index)
     }
 
     fn get_blob_dir_path(batch_index: u64) -> String {
-        format!("{}/batch/{}", STORAGE_BLOB_DIR, batch_index)
+        get_batch_blob_dir(batch_index)
     }
 }
 
