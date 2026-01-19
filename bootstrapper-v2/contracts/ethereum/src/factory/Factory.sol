@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Proxy} from "src/starkware/solidity/upgrade/Proxy.sol";
+import {ProxyV5} from "src/starkware/solidity/upgrade/ProxyV5.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import "./libraries/DataTypes.sol";
@@ -103,7 +103,7 @@ contract Factory is Ownable, Pausable, Implementations {
   ) public onlyOwner returns (address) {
     _requireNotPaused();
     // Deploying proxy with 0 upgradeActivationDelay
-    Proxy coreContractProxy = new Proxy(0);
+    ProxyV5 coreContractProxy = new ProxyV5(0);
     // [sub_contracts_addresses[], eic address, initData].
     // In case of Starknet.sol the initData looks like
     //
@@ -136,8 +136,8 @@ contract Factory is Ownable, Pausable, Implementations {
   }
 
   function deployManagerAndRegistry() public returns (address, address) {
-    Proxy managerProxy = new Proxy(0);
-    Proxy registryProxy = new Proxy(0);
+    ProxyV5 managerProxy = new ProxyV5(0);
+    ProxyV5 registryProxy = new ProxyV5(0);
 
     return (address(managerProxy), address(registryProxy));
   }
@@ -149,7 +149,7 @@ contract Factory is Ownable, Pausable, Implementations {
     address governor
   ) public onlyOwner returns (address) {
     _requireNotPaused();
-    Proxy multiBridgeProxy = new Proxy(0);
+    ProxyV5 multiBridgeProxy = new ProxyV5(0);
     bytes memory initData = abi.encode(
       address(0),
       managerProxy,
@@ -174,7 +174,7 @@ contract Factory is Ownable, Pausable, Implementations {
     address governor
   ) public onlyOwner returns (address) {
     _requireNotPaused();
-    Proxy ethBridgePxoxy = new Proxy(0);
+    ProxyV5 ethBridgePxoxy = new ProxyV5(0);
     // 'eth' is 0x657468
     bytes memory initData = abi.encode(
       eicContract,

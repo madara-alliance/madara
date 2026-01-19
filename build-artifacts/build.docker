@@ -25,7 +25,7 @@ RUN apt-get -y update && apt-get install -y \
   wget \
   curl \
   git
-ENV STARKGATE_REV="45941888479663ac93e898cd7f8504fa9066c54c"
+ENV STARKGATE_REV="v2.1.1"
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV COMPILE_SIERRA=".downloads/cairo/bin/starknet-sierra-compile"
 
