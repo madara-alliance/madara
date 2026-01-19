@@ -472,6 +472,38 @@ impl NativeConfig {
     }
 }
 
+/// Clean up orphaned .lock files from previous ungraceful shutdowns.
+///
+/// Called during startup to remove stale lock files that may have been
+/// left behind if the process was killed during compilation.
+fn cleanup_orphaned_lock_files(cache_dir: &std::path::PathBuf) {
+    let Ok(entries) = std::fs::read_dir(cache_dir) else {
+        return;
+    };
+
+    let mut cleaned_count = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("lock") && std::fs::remove_file(&path).is_ok() {
+            cleaned_count += 1;
+            tracing::debug!(
+                target: "madara_cairo_native",
+                path = %path.display(),
+                "removed_orphaned_lock_file"
+            );
+        }
+    }
+
+    if cleaned_count > 0 {
+        tracing::debug!(
+            target: "madara_cairo_native",
+            count = cleaned_count,
+            cache_dir = %cache_dir.display(),
+            "cleaned_orphaned_lock_files"
+        );
+    }
+}
+
 /// Setup Cairo Native configuration: validate, initialize semaphore, register metrics, and log status.
 ///
 /// This is a convenience function that handles all the setup steps needed when
@@ -499,6 +531,9 @@ pub fn setup_and_log(config: &NativeConfig) -> Result<(), String> {
             tracing::info!("Cairo native disabled - all contracts will use Cairo VM");
         }
         NativeConfig::Enabled(exec_config) => {
+            // Clean up orphaned lock files from previous ungraceful shutdowns
+            cleanup_orphaned_lock_files(&exec_config.cache_dir);
+
             // Initialize the Tokio runtime handle for use from non-Tokio threads (e.g., blockifier workers)
             // This must be called first, while we're still in a Tokio runtime context
             crate::compilation::init_tokio_runtime_handle();
@@ -710,5 +745,32 @@ mod tests {
         } else {
             panic!("Expected Enabled variant");
         }
+    }
+
+    #[test]
+    fn test_cleanup_orphaned_lock_files() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let cache_dir = temp_dir.path().to_path_buf();
+
+        // Create orphaned .lock files
+        std::fs::write(cache_dir.join("class1.lock"), b"").expect("Failed to create lock file");
+        std::fs::write(cache_dir.join("class2.lock"), b"").expect("Failed to create lock file");
+        // Create a valid .so file (should NOT be removed)
+        std::fs::write(cache_dir.join("class3.so"), b"").expect("Failed to create so file");
+
+        cleanup_orphaned_lock_files(&cache_dir);
+
+        // .lock files should be removed
+        assert!(!cache_dir.join("class1.lock").exists());
+        assert!(!cache_dir.join("class2.lock").exists());
+        // .so file should still exist
+        assert!(cache_dir.join("class3.so").exists());
+    }
+
+    #[test]
+    fn test_cleanup_orphaned_lock_files_empty_dir() {
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        // Should not panic on empty directory
+        cleanup_orphaned_lock_files(&temp_dir.path().to_path_buf());
     }
 }
