@@ -311,17 +311,11 @@ impl SettlementClient for EthereumSettlementClient {
                                 attempt += 1;
                                 continue;
                             }
-                            Err(retry_err) => {
-                                bail!("{}", retry_err);
-                            }
+                            Err(retry_err) => return Err(retry_err.into()),
                         }
                     }
-                    SendTransactionError::RetryLimitExceeded { .. } => {
-                        bail!("{}", e);
-                    }
-                    SendTransactionError::Other(_) => {
-                        bail!("Failed to send blob transaction: {:?}", e);
-                    }
+                    SendTransactionError::RetryLimitExceeded { .. } => return Err(e.into()),
+                    SendTransactionError::Other(_) => return Err(e.into()),
                 },
             };
 
