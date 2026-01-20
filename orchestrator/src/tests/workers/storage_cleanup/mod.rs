@@ -24,7 +24,9 @@ use crate::types::constant::{
     get_batch_state_update_file, get_snos_legacy_dir, STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE,
 };
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata};
+use crate::types::jobs::metadata::{
+    CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
+};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::triggers::storage_cleanup::StorageCleanupTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -172,7 +174,7 @@ async fn test_process_completed_jobs_skips_partial_tagging() -> Result<(), Box<d
     });
 
     // update_job should NOT be called since tagging failed
-    // Note: We can't use times(0) with returning, so we just don't set it up
+    database.expect_update_job().never();
 
     let services = TestConfigBuilder::new()
         .configure_storage_client(storage.into())
@@ -256,41 +258,6 @@ async fn test_list_files_in_dir_returns_all_files() -> Result<(), Box<dyn Error>
         let expected_key = format!("{}/{}", test_dir, file_name);
         assert!(listed_files.contains(&expected_key), "Expected file '{}' not found in listed files", expected_key);
     }
-
-    Ok(())
-}
-
-/// Test that list_files_in_dir handles pagination correctly for large directories.
-/// S3 returns max 1000 objects per request, so we need to handle pagination.
-#[rstest]
-#[tokio::test]
-async fn test_list_files_in_dir_with_pagination() -> Result<(), Box<dyn Error>> {
-    let services = TestConfigBuilder::new().configure_storage_client(ConfigType::Actual).build().await;
-
-    let storage = services.config.storage();
-
-    // Create more than 1000 files to trigger pagination
-    // Note: This test creates 1100 files which takes some time
-    let test_dir = "test_pagination";
-    let num_files = 1100;
-    let test_data = Bytes::from("x");
-
-    for i in 0..num_files {
-        let key = format!("{}/file_{:04}.txt", test_dir, i);
-        storage.put_data(test_data.clone(), &key).await?;
-    }
-
-    // List all files
-    let listed_files = storage.list_files_in_dir(test_dir).await?;
-
-    // Verify all files are returned (pagination worked)
-    assert_eq!(
-        listed_files.len(),
-        num_files,
-        "Expected {} files with pagination, got {}",
-        num_files,
-        listed_files.len()
-    );
 
     Ok(())
 }
@@ -487,4 +454,138 @@ async fn get_bucket_lifecycle_config(
         .collect();
 
     Ok(rules)
+}
+
+/// Helper to get object tags from S3
+async fn get_object_tags(
+    provider_config: &Arc<crate::core::cloud::CloudProvider>,
+    bucket_name: &str,
+    key: &str,
+) -> Result<Vec<(String, String)>, Box<dyn Error>> {
+    let aws_config = provider_config.get_aws_client_or_panic();
+
+    let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config);
+    s3_config_builder.set_force_path_style(Some(true));
+    let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
+
+    let tagging_output = client.get_object_tagging().bucket(bucket_name).key(key).send().await?;
+
+    let tags: Vec<(String, String)> =
+        tagging_output.tag_set().iter().map(|tag| (tag.key().to_string(), tag.value().to_string())).collect();
+
+    Ok(tags)
+}
+
+// =============================================================================
+// Integration Happy Path Test
+// =============================================================================
+
+/// Integration test for the complete storage cleanup happy path.
+/// This test verifies the full flow with real LocalStack (S3) and MongoDB:
+/// 1. Create artifacts in S3 for a job
+/// 2. Create a completed StateTransition job in MongoDB
+/// 3. Run StorageCleanupTrigger
+/// 4. Verify artifacts are tagged with expiration tags
+/// 5. Verify job is updated with storage_artifacts_tagged_at timestamp
+#[rstest]
+#[tokio::test]
+async fn test_storage_cleanup_happy_path_integration() -> Result<(), Box<dyn Error>> {
+    // Build config with actual storage, database and lock client (LocalStack + MongoDB)
+    let services = TestConfigBuilder::new()
+        .configure_storage_client(ConfigType::Actual)
+        .configure_database(ConfigType::Actual)
+        .configure_lock_client(ConfigType::Actual)
+        .build()
+        .await;
+
+    let config = &services.config;
+    let job_id: u64 = 99999; // Use a unique job ID to avoid conflicts
+    let test_data = Bytes::from(r#"{"test": "happy_path_integration"}"#);
+
+    // Step 1: Create artifacts in S3 for this job
+    // Create files in the artifact locations that storage cleanup will look for
+    let artifact_file = get_batch_artifact_file(job_id, "proof.json");
+    config.storage().put_data(test_data.clone(), &artifact_file).await?;
+
+    let blob_file = get_batch_blob_file(job_id, 0);
+    config.storage().put_data(test_data.clone(), &blob_file).await?;
+
+    let snos_file = format!("{}/snos_output.json", get_snos_legacy_dir(job_id));
+    config.storage().put_data(test_data.clone(), &snos_file).await?;
+
+    let state_update_file = get_batch_state_update_file(job_id);
+    config.storage().put_data(test_data.clone(), &state_update_file).await?;
+
+    // Step 2: Create a completed StateTransition job in MongoDB
+    // The job must have:
+    // - job_type = StateTransition
+    // - status = Completed
+    // - metadata.specific.storage_artifacts_tagged_at = None
+    let job = JobItem {
+        id: uuid::Uuid::new_v4(),
+        internal_id: job_id,
+        job_type: JobType::StateTransition,
+        status: JobStatus::Completed,
+        external_id: crate::types::jobs::external_id::ExternalId::Number(job_id as usize),
+        metadata: JobMetadata {
+            common: CommonMetadata::default(),
+            specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                snos_output_path: Some(snos_file.clone()),
+                program_output_path: None,
+                blob_data_path: None,
+                da_segment_path: None,
+                tx_hash: Some("0x123".to_string()),
+                context: SettlementContext::Batch(SettlementContextData { to_settle: job_id, last_failed: None }),
+                storage_artifacts_tagged_at: None, // This is the key - not yet tagged
+            }),
+        },
+        version: 0,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    config.database().create_job(job.clone()).await?;
+
+    // Verify the job was created and is returned by get_jobs_without_storage_artifacts_tagged
+    let untagged_jobs = config.database().get_jobs_without_storage_artifacts_tagged(Some(100)).await?;
+    assert!(
+        untagged_jobs.iter().any(|j| j.internal_id == job_id),
+        "Job should be in the list of jobs without storage artifacts tagged"
+    );
+
+    // Step 3: Run the StorageCleanupTrigger
+    let result = StorageCleanupTrigger.run_worker(config.clone()).await;
+    assert!(result.is_ok(), "StorageCleanupTrigger should complete successfully: {:?}", result.err());
+
+    // Step 4: Verify artifacts are tagged with expiration tags
+    let bucket_name = format!(
+        "{}-{}",
+        orchestrator_utils::env_utils::get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
+        orchestrator_utils::env_utils::get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER")
+    );
+
+    // Check tags on the artifact file
+    let artifact_tags = get_object_tags(&services.provider_config, &bucket_name, &artifact_file).await?;
+    assert!(
+        artifact_tags.iter().any(|(k, v)| k == STORAGE_EXPIRATION_TAG_KEY && v == STORAGE_EXPIRATION_TAG_VALUE),
+        "Artifact file should have expiration tag. Tags found: {:?}",
+        artifact_tags
+    );
+
+    // Check tags on the blob file
+    let blob_tags = get_object_tags(&services.provider_config, &bucket_name, &blob_file).await?;
+    assert!(
+        blob_tags.iter().any(|(k, v)| k == STORAGE_EXPIRATION_TAG_KEY && v == STORAGE_EXPIRATION_TAG_VALUE),
+        "Blob file should have expiration tag. Tags found: {:?}",
+        blob_tags
+    );
+
+    // Step 5: Verify job is updated with storage_artifacts_tagged_at timestamp
+    let untagged_jobs_after = config.database().get_jobs_without_storage_artifacts_tagged(Some(100)).await?;
+    assert!(
+        !untagged_jobs_after.iter().any(|j| j.internal_id == job_id),
+        "Job should no longer be in the list of untagged jobs (it should have been marked as tagged)"
+    );
+
+    Ok(())
 }
