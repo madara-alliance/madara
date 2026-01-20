@@ -55,9 +55,13 @@ const MAX_TX_FINALISATION_ATTEMPTS: usize = 30;
 const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
 
 // Ethereum Gas Price Estimation
-const GAS_PRICE_MULTIPLIER_START: f64 = 1.2;
-const GAS_PRICE_INCREMENT_PERCENTAGE: f64 = 1.5; // 50%
-const GAS_PRICE_MIN_INCREMENT_PERCENTAGE: f64 = 1.1; // 10%
+// For EIP-4844 blob transactions, blobpool requires a 100% price bump (2x) to replace a stuck transaction.
+// See: https://github.com/ethereum/go-ethereum/blob/d0af257aa20fe9d3e244570ee4abb9a78ff3b9c4/core/txpool/blobpool/config.go#L34
+// See: https://github.com/paradigmxyz/reth/blob/c2435ff6f8265088b9ded0014051c9a97d0d7b84/crates/transaction-pool/src/config.rs#L29
+// See: https://github.com/NethermindEth/nethermind/blob/471bcb95bac677d2ffde5bb2e882e20186841b24/src/Nethermind/Nethermind.TxPool/Comparison/CompareReplacedBlobTx.cs#L40
+// With 1.1x start and 2.0x increment: 1.1 → 2.2 → fail. Max 2 attempts only.
+const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
+const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
 /// we noticed Starknet uses the same limit on the mainnet
 /// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
 const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
@@ -152,7 +156,7 @@ impl EthereumSettlementClient {
             wallet,
             wallet_address,
             impersonate_account,
-            max_gas_price_mul_factor: 2f64,
+            max_gas_price_mul_factor: 2.5f64,
             tx_finality_retry_wait_in_seconds: 10,
             disable_peerdas: true,
         }
@@ -272,17 +276,26 @@ impl SettlementClient for EthereumSettlementClient {
             let pending_transaction = match self.send_transaction(tx_envelope).await {
                 Result::Ok(pending_transaction) => pending_transaction,
                 Err(e) => match e {
-                    SendTransactionError::ReplacementTransactionUnderpriced(e) => {
-                        let next_mul_factor = self.get_next_mul_factor(mul_factor)?;
-                        warn!(
-                            current_multiplier = %mul_factor,
-                            next_multiplier = %next_mul_factor,
-                            max_multiplier = %self.max_gas_price_mul_factor,
-                            error = ?e,
-                            "Transaction rejected due to low gas price, retrying with higher multiplier"
-                        );
-                        mul_factor = next_mul_factor;
-                        continue;
+                    SendTransactionError::ReplacementTransactionUnderpriced(rpc_err) => {
+                        match self.get_next_mul_factor(mul_factor) {
+                            std::result::Result::Ok(next_mul_factor) => {
+                                warn!(
+                                    current_multiplier = %mul_factor,
+                                    next_multiplier = %next_mul_factor,
+                                    max_multiplier = %self.max_gas_price_mul_factor,
+                                    error = ?rpc_err,
+                                    "Transaction rejected due to low gas price, retrying with higher multiplier"
+                                );
+                                mul_factor = next_mul_factor;
+                                continue;
+                            }
+                            Err(retry_err) => {
+                                bail!("{}", retry_err);
+                            }
+                        }
+                    }
+                    SendTransactionError::RetryLimitExceeded { .. } => {
+                        bail!("{}", e);
                     }
                     SendTransactionError::Other(_) => {
                         bail!("Failed to send blob transaction: {:?}", e);
@@ -518,14 +531,16 @@ impl EthereumSettlementClient {
         (value as f64 * mul_factor) as u128
     }
 
-    fn get_next_mul_factor(&self, mul_factor: f64) -> Result<f64> {
-        let min_mul_factor = GAS_PRICE_MIN_INCREMENT_PERCENTAGE * mul_factor;
-        let max_mul_factor = GAS_PRICE_INCREMENT_PERCENTAGE * mul_factor;
+    fn get_next_mul_factor(&self, mul_factor: f64) -> std::result::Result<f64, SendTransactionError> {
+        let next_mul_factor = GAS_PRICE_INCREMENT_FACTOR * mul_factor;
 
-        if min_mul_factor > self.max_gas_price_mul_factor {
-            bail!("Gas price multiplier is too high")
+        if next_mul_factor > self.max_gas_price_mul_factor {
+            Err(SendTransactionError::RetryLimitExceeded {
+                next_mul: next_mul_factor,
+                max_mul: self.max_gas_price_mul_factor,
+            })
         } else {
-            Ok(self.max_gas_price_mul_factor.min(max_mul_factor))
+            std::result::Result::Ok(next_mul_factor)
         }
     }
 
