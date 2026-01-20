@@ -158,8 +158,7 @@ impl StorageClient for AWSS3 {
     /// # Returns
     /// * `Result<(), StorageError>` - The result of the tagging operation.
     async fn tag_object(&self, key: &str, tags: &[(String, String)]) -> Result<(), StorageError> {
-        let s3_tags: Result<Vec<Tag>, _> =
-            tags.iter().map(|(k, v)| Tag::builder().key(k).value(v).build()).collect();
+        let s3_tags: Result<Vec<Tag>, _> = tags.iter().map(|(k, v)| Tag::builder().key(k).value(v).build()).collect();
 
         let s3_tags = s3_tags.map_err(|e| StorageError::ObjectStreamError(format!("Failed to build tags: {:?}", e)))?;
 
