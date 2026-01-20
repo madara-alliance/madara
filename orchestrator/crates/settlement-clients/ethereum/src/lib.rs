@@ -39,7 +39,8 @@ use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256, DefaultHttpPr
 use lazy_static::lazy_static;
 use mockall::automock;
 use tokio::time::sleep;
-use tracing::{error, info, warn};
+#[allow(unused_imports)] // warn! is used in #[cfg(not(feature = "testing"))] block
+use tracing::{debug, error, info, warn};
 
 // For more details on state update, refer to the core contract logic
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
@@ -281,8 +282,16 @@ impl SettlementClient for EthereumSettlementClient {
         );
 
         let mut mul_factor = GAS_PRICE_MULTIPLIER_START;
+        let mut attempt = 1;
 
         loop {
+            debug!(
+                attempt = attempt,
+                gas_multiplier = %mul_factor,
+                max_multiplier = %self.max_gas_price_mul_factor,
+                "Preparing transaction with gas multiplier"
+            );
+
             let tx_envelope = self.create_transaction(program_output.clone(), state_diff.clone(), mul_factor).await?;
             let pending_transaction = match self.send_transaction(tx_envelope).await {
                 Result::Ok(pending_transaction) => pending_transaction,
@@ -290,14 +299,16 @@ impl SettlementClient for EthereumSettlementClient {
                     SendTransactionError::ReplacementTransactionUnderpriced(rpc_err) => {
                         match self.get_next_mul_factor(mul_factor) {
                             std::result::Result::Ok(next_mul_factor) => {
-                                warn!(
+                                info!(attempt = attempt, "Transaction underpriced, sending replacement transaction");
+                                debug!(
                                     current_multiplier = %mul_factor,
                                     next_multiplier = %next_mul_factor,
                                     max_multiplier = %self.max_gas_price_mul_factor,
                                     error = ?rpc_err,
-                                    "Transaction rejected due to low gas price, retrying with higher multiplier"
+                                    "Increasing gas multiplier for replacement transaction"
                                 );
                                 mul_factor = next_mul_factor;
+                                attempt += 1;
                                 continue;
                             }
                             Err(retry_err) => {
@@ -320,6 +331,7 @@ impl SettlementClient for EthereumSettlementClient {
                 function_type = "blobs",
                 tx_type = if self.disable_peerdas { "blob_proofs" } else { "cell_proofs" },
                 tx_hash = %pending_transaction.tx_hash(),
+                attempt = attempt,
                 "State update transaction submitted to Ethereum with blobs"
             );
 
@@ -330,6 +342,7 @@ impl SettlementClient for EthereumSettlementClient {
                 Some(_) => {
                     info!(
                         tx_hash = %pending_transaction.tx_hash(),
+                        attempt = attempt,
                         "Transaction finalized successfully"
                     );
                 }
