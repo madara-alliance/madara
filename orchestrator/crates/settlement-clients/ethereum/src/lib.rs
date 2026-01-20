@@ -68,10 +68,7 @@ const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
 
 /// Calculates the next gas price multiplier for transaction retry.
 /// Returns an error if the next multiplier would exceed the maximum allowed.
-fn calculate_next_gas_mul_factor(
-    current_mul: f64,
-    max_mul: f64,
-) -> std::result::Result<f64, SendTransactionError> {
+fn calculate_next_gas_mul_factor(current_mul: f64, max_mul: f64) -> std::result::Result<f64, SendTransactionError> {
     let next_mul = GAS_PRICE_INCREMENT_FACTOR * current_mul;
     if next_mul > max_mul {
         Err(SendTransactionError::RetryLimitExceeded { next_mul, max_mul })
