@@ -66,6 +66,20 @@ const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump require
 /// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
 const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
 
+/// Calculates the next gas price multiplier for transaction retry.
+/// Returns an error if the next multiplier would exceed the maximum allowed.
+fn calculate_next_gas_mul_factor(
+    current_mul: f64,
+    max_mul: f64,
+) -> std::result::Result<f64, SendTransactionError> {
+    let next_mul = GAS_PRICE_INCREMENT_FACTOR * current_mul;
+    if next_mul > max_mul {
+        Err(SendTransactionError::RetryLimitExceeded { next_mul, max_mul })
+    } else {
+        std::result::Result::Ok(next_mul)
+    }
+}
+
 lazy_static! {
     pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
     pub static ref KZG_SETTINGS: KzgSettings = KzgSettings::load_trusted_setup_file(
@@ -532,16 +546,7 @@ impl EthereumSettlementClient {
     }
 
     fn get_next_mul_factor(&self, mul_factor: f64) -> std::result::Result<f64, SendTransactionError> {
-        let next_mul_factor = GAS_PRICE_INCREMENT_FACTOR * mul_factor;
-
-        if next_mul_factor > self.max_gas_price_mul_factor {
-            Err(SendTransactionError::RetryLimitExceeded {
-                next_mul: next_mul_factor,
-                max_mul: self.max_gas_price_mul_factor,
-            })
-        } else {
-            std::result::Result::Ok(next_mul_factor)
-        }
+        calculate_next_gas_mul_factor(mul_factor, self.max_gas_price_mul_factor)
     }
 
     /// Method to send blob transaction (standard EIP4844)
@@ -627,5 +632,51 @@ mod test_config {
         }
 
         txn_request
+    }
+}
+
+#[cfg(test)]
+mod gas_multiplier_tests {
+    use super::*;
+
+    #[test]
+    fn test_first_retry_succeeds() {
+        // First attempt: 1.1x, retry should give 2.2x (within 2.5 max)
+        let result = calculate_next_gas_mul_factor(1.1, 2.5);
+        assert!(result.is_ok());
+        let next_mul = result.unwrap();
+        assert!((next_mul - 2.2).abs() < 0.0001, "Expected 2.2, got {}", next_mul);
+    }
+
+    #[test]
+    fn test_second_retry_fails() {
+        // Second attempt: 2.2x * 2.0 = 4.4x (exceeds 2.5 max)
+        let result = calculate_next_gas_mul_factor(2.2, 2.5);
+        assert!(result.is_err());
+        match result {
+            Err(SendTransactionError::RetryLimitExceeded { next_mul, max_mul }) => {
+                assert!((next_mul - 4.4).abs() < 0.0001, "Expected next_mul 4.4, got {}", next_mul);
+                assert!((max_mul - 2.5).abs() < 0.0001, "Expected max_mul 2.5, got {}", max_mul);
+            }
+            _ => panic!("Expected RetryLimitExceeded error"),
+        }
+    }
+
+    #[test]
+    fn test_exactly_at_max_succeeds() {
+        // Edge case: next_mul exactly equals max_mul should succeed
+        // 1.25 * 2.0 = 2.5 (exactly at max)
+        let result = calculate_next_gas_mul_factor(1.25, 2.5);
+        assert!(result.is_ok());
+        let next_mul = result.unwrap();
+        assert!((next_mul - 2.5).abs() < 0.0001, "Expected 2.5, got {}", next_mul);
+    }
+
+    #[test]
+    fn test_just_over_max_fails() {
+        // Edge case: next_mul just over max_mul should fail
+        // 1.26 * 2.0 = 2.52 (just over 2.5)
+        let result = calculate_next_gas_mul_factor(1.26, 2.5);
+        assert!(result.is_err());
     }
 }
