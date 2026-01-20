@@ -131,55 +131,24 @@ impl StorageCleanupTrigger {
         Ok(())
     }
 
-    /// Collect all artifact paths for a given job from the 4 storage locations:
-    /// 1. artifacts/batch/{job_id}/ - Aggregator artifacts (new format)
-    /// 2. blob/batch/{job_id}/ - Blob data files
-    /// 3. {job_id}/ - SNOS artifacts (old format, at root level)
-    /// 4. state_update/batch/{job_id}.json - State update file
+    /// Collect artifact paths from: artifacts/, blob/, snos legacy dirs + state_update file
     async fn collect_artifact_paths(&self, config: &Arc<Config>, job_id: u64) -> Vec<String> {
         let mut paths = Vec::new();
 
-        // Artifacts directory
-        let artifact_dir = get_batch_artifacts_dir(job_id);
-        match config.storage().list_files_in_dir(&artifact_dir).await {
-            Ok(files) => {
-                debug!(job_id = %job_id, dir = %artifact_dir, file_count = files.len(), "Found artifact files");
-                paths.extend(files);
-            }
-            Err(e) => {
-                debug!(job_id = %job_id, dir = %artifact_dir, error = %e, "No artifacts directory or error listing");
-            }
-        }
-
-        // Blob directory
-        let blob_dir = get_batch_blob_dir(job_id);
-        match config.storage().list_files_in_dir(&blob_dir).await {
-            Ok(files) => {
-                debug!(job_id = %job_id, dir = %blob_dir, file_count = files.len(), "Found blob files");
-                paths.extend(files);
-            }
-            Err(e) => {
-                debug!(job_id = %job_id, dir = %blob_dir, error = %e, "No blob directory or error listing");
+        // List files from each artifact directory
+        let dirs = [get_batch_artifacts_dir(job_id), get_batch_blob_dir(job_id), get_snos_legacy_dir(job_id)];
+        for dir in &dirs {
+            match config.storage().list_files_in_dir(dir).await {
+                Ok(files) => {
+                    debug!(job_id = %job_id, dir = %dir, count = files.len(), "Found files");
+                    paths.extend(files);
+                }
+                Err(e) => debug!(job_id = %job_id, dir = %dir, error = %e, "Dir not found or error"),
             }
         }
 
-        // SNOS directory (legacy format at root level)
-        let snos_dir = get_snos_legacy_dir(job_id);
-        match config.storage().list_files_in_dir(&snos_dir).await {
-            Ok(files) => {
-                debug!(job_id = %job_id, dir = %snos_dir, file_count = files.len(), "Found SNOS files (old format)");
-                paths.extend(files);
-            }
-            Err(e) => {
-                debug!(job_id = %job_id, dir = %snos_dir, error = %e, "No SNOS directory or error listing");
-            }
-        }
-
-        // State update file (single file, not a directory)
-        let state_update_file = get_batch_state_update_file(job_id);
-        paths.push(state_update_file.clone());
-        debug!(job_id = %job_id, file = %state_update_file, "Added state update file to tag list");
-
+        // Add state update file (single file, always included)
+        paths.push(get_batch_state_update_file(job_id));
         paths
     }
 

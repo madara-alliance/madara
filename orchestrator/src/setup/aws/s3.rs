@@ -23,14 +23,6 @@ impl Resource for InnerAWSS3 {
     type SetupArgs = StorageArgs;
     type CheckArgs = AWSResourceIdentifier;
 
-    /// create_setup creates a new S3 client and returns an instance of AWSS3
-    ///
-    /// # Arguments
-    /// * `cloud_provider` - The cloud provider configuration.
-    ///
-    /// # Returns
-    /// * `OrchestratorResult<Self>` - The result of the setup operation.
-    ///
     async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
             CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config)),
@@ -108,55 +100,31 @@ impl Resource for InnerAWSS3 {
 }
 
 impl InnerAWSS3 {
-    /// Sets up the lifecycle rule for automatic object expiration based on tags.
-    ///
-    /// Objects tagged with `expire-after-settlement=true` will be automatically
-    /// deleted by S3 after `expiration_days` days from their creation date.
-    ///
-    /// This operation is idempotent - it will overwrite any existing lifecycle
-    /// configuration with the same rule ID.
-    ///
-    /// # Important
-    /// `put_bucket_lifecycle_configuration` replaces the entire lifecycle configuration,
-    /// not just this rule. If additional lifecycle rules are needed in the future,
-    /// this function should be updated to fetch existing rules first and merge them.
-    ///
-    /// TODO: If adding more lifecycle rules, fetch existing config with
+    /// Sets up lifecycle rule for auto-expiration of tagged objects.
+    /// Note: put_bucket_lifecycle_configuration replaces entire config, not just this rule.
+    /// IMP: If adding more lifecycle rules, fetch existing config with
     /// `get_bucket_lifecycle_configuration` and merge rules before applying.
     async fn setup_lifecycle_rule(&self, bucket_name: &str, expiration_days: i32) -> OrchestratorResult<()> {
-        info!(
-            "Setting up S3 lifecycle rule '{}' for bucket '{}' (expire tagged objects after {} days)",
-            STORAGE_LIFECYCLE_RULE_ID, bucket_name, expiration_days
-        );
+        info!("Setting up S3 lifecycle rule '{}' for bucket '{}'", STORAGE_LIFECYCLE_RULE_ID, bucket_name);
 
-        // Create the tag filter
         let tag_filter = Tag::builder()
             .key(STORAGE_EXPIRATION_TAG_KEY)
             .value(STORAGE_EXPIRATION_TAG_VALUE)
             .build()
             .map_err(|e| OrchestratorError::ResourceSetupError(format!("Failed to build tag filter: {:?}", e)))?;
 
-        // Create the lifecycle rule filter (filter by tag)
-        let filter = LifecycleRuleFilter::builder().tag(tag_filter).build();
-
-        // Create the expiration action
-        let expiration = LifecycleExpiration::builder().days(expiration_days).build();
-
-        // Create the lifecycle rule
         let rule = LifecycleRule::builder()
             .id(STORAGE_LIFECYCLE_RULE_ID)
-            .filter(filter)
+            .filter(LifecycleRuleFilter::builder().tag(tag_filter).build())
             .status(ExpirationStatus::Enabled)
-            .expiration(expiration)
+            .expiration(LifecycleExpiration::builder().days(expiration_days).build())
             .build()
             .map_err(|e| OrchestratorError::ResourceSetupError(format!("Failed to build lifecycle rule: {:?}", e)))?;
 
-        // Create the lifecycle configuration
         let lifecycle_config = BucketLifecycleConfiguration::builder().rules(rule).build().map_err(|e| {
             OrchestratorError::ResourceSetupError(format!("Failed to build lifecycle configuration: {:?}", e))
         })?;
 
-        // Apply the lifecycle configuration to the bucket
         self.client()
             .put_bucket_lifecycle_configuration()
             .bucket(bucket_name)
@@ -170,11 +138,7 @@ impl InnerAWSS3 {
                 ))
             })?;
 
-        info!(
-            "Successfully configured S3 lifecycle rule: objects tagged with '{}={}' will expire after {} days",
-            STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE, expiration_days
-        );
-
+        info!("Configured lifecycle rule: tagged objects expire after {} days", expiration_days);
         Ok(())
     }
 }
