@@ -341,8 +341,11 @@ async fn test_setup_lifecycle_rule_creates_correct_config() -> Result<(), Box<dy
     // Build config with Actual storage (this sets up the lifecycle rule)
     let services = TestConfigBuilder::new().configure_storage_client(ConfigType::Actual).build().await;
 
+    // Get the actual bucket name from test config (includes UUID for test isolation)
+    let bucket_name = services.storage_params.bucket_identifier.to_string();
+
     // Get the lifecycle configuration from S3
-    let lifecycle_config = get_bucket_lifecycle_config(&services.provider_config).await?;
+    let lifecycle_config = get_bucket_lifecycle_config(&services.provider_config, &bucket_name).await?;
 
     // Find our rule
     let our_rule = lifecycle_config
@@ -405,6 +408,7 @@ struct LifecycleRuleInfo {
 /// Helper to get bucket lifecycle configuration
 async fn get_bucket_lifecycle_config(
     provider_config: &Arc<crate::core::cloud::CloudProvider>,
+    bucket_name: &str,
 ) -> Result<Vec<LifecycleRuleInfo>, Box<dyn Error>> {
     let aws_config = provider_config.get_aws_client_or_panic();
 
@@ -412,22 +416,7 @@ async fn get_bucket_lifecycle_config(
     s3_config_builder.set_force_path_style(Some(true));
     let client = aws_sdk_s3::Client::from_conf(s3_config_builder.build());
 
-    let bucket_name = format!(
-        "{}-{}",
-        orchestrator_utils::env_utils::get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
-        orchestrator_utils::env_utils::get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER")
-    );
-
-    // Find the test bucket
-    let buckets = client.list_buckets().send().await?;
-    let test_bucket = buckets
-        .buckets()
-        .iter()
-        .find(|b| b.name().map(|n| n.starts_with(&bucket_name)).unwrap_or(false))
-        .and_then(|b| b.name())
-        .ok_or("Test bucket not found")?;
-
-    let lifecycle_output = client.get_bucket_lifecycle_configuration().bucket(test_bucket).send().await?;
+    let lifecycle_output = client.get_bucket_lifecycle_configuration().bucket(bucket_name).send().await?;
 
     let rules: Vec<LifecycleRuleInfo> = lifecycle_output
         .rules()
@@ -558,11 +547,8 @@ async fn test_storage_cleanup_happy_path_integration() -> Result<(), Box<dyn Err
     assert!(result.is_ok(), "StorageCleanupTrigger should complete successfully: {:?}", result.err());
 
     // Step 4: Verify artifacts are tagged with expiration tags
-    let bucket_name = format!(
-        "{}-{}",
-        orchestrator_utils::env_utils::get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
-        orchestrator_utils::env_utils::get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER")
-    );
+    // Use the actual bucket name from test config (includes UUID for test isolation)
+    let bucket_name = services.storage_params.bucket_identifier.to_string();
 
     // Check tags on the artifact file
     let artifact_tags = get_object_tags(&services.provider_config, &bucket_name, &artifact_file).await?;

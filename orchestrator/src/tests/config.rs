@@ -158,6 +158,8 @@ pub struct TestConfigBuilderReturns {
     pub provider_config: Arc<CloudProvider>,
     pub api_server_address: Option<SocketAddr>,
     pub cleanup: TestCleanup,
+    /// Storage configuration with the actual bucket name (including test UUID)
+    pub storage_params: StorageArgs,
 }
 
 /// TestCleanup handles automatic cleanup of test resources when dropped.
@@ -425,6 +427,7 @@ impl TestConfigBuilder {
             provider_config: provider_config.clone(),
             api_server_address,
             cleanup,
+            storage_params: params.storage_params,
         }
     }
 }
