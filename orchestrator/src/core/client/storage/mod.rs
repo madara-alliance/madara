@@ -37,10 +37,10 @@ pub trait StorageClient: Send + Sync {
     ///
     /// # Arguments
     /// * `key` - The key of the object to tag
-    /// * `tags` - A vector of (key, value) pairs representing the tags
+    /// * `tags` - A slice of (key, value) pairs representing the tags (passed by reference to avoid cloning)
     ///
     /// # Returns
     /// * `Ok(())` - If tagging was successful
     /// * `Err(StorageError)` - If tagging fails
-    async fn tag_object(&self, key: &str, tags: Vec<(String, String)>) -> Result<(), StorageError>;
+    async fn tag_object(&self, key: &str, tags: &[(String, String)]) -> Result<(), StorageError>;
 }

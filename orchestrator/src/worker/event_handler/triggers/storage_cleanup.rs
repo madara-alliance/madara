@@ -186,13 +186,12 @@ impl StorageCleanupTrigger {
     /// Tag artifacts for expiration. Returns (tagged_count, all_succeeded).
     /// Handles non-existent files gracefully (counts as success).
     async fn tag_artifacts(&self, config: &Arc<Config>, job_id: u64, paths: &[String]) -> (usize, bool) {
-        let tag_key = STORAGE_EXPIRATION_TAG_KEY.to_string();
-        let tag_value = STORAGE_EXPIRATION_TAG_VALUE.to_string();
+        // Create tags once outside the loop - only a reference is passed, avoiding Vec clones
+        let tags = vec![(STORAGE_EXPIRATION_TAG_KEY.to_string(), STORAGE_EXPIRATION_TAG_VALUE.to_string())];
         let mut tagged_count = 0;
 
         for path in paths {
-            let tags = vec![(tag_key.clone(), tag_value.clone())];
-            match config.storage().tag_object(path, tags).await {
+            match config.storage().tag_object(path, &tags).await {
                 Ok(_) => {
                     tagged_count += 1;
                     debug!(job_id = %job_id, path = %path, "Tagged artifact for expiration");

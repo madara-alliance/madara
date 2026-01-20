@@ -211,7 +211,7 @@ async fn test_tag_object_applies_tags_correctly() -> Result<(), Box<dyn Error>> 
 
     // Apply tags using our method - this should succeed
     let tags = vec![(STORAGE_EXPIRATION_TAG_KEY.to_string(), STORAGE_EXPIRATION_TAG_VALUE.to_string())];
-    storage.tag_object(test_key, tags).await?;
+    storage.tag_object(test_key, &tags).await?;
 
     // Verify file is still accessible after tagging
     let retrieved_data = storage.get_data(test_key).await?;
@@ -347,10 +347,10 @@ async fn test_collect_and_tag_artifacts_integration() -> Result<(), Box<dyn Erro
     // Verify we collected 4 files
     assert_eq!(all_paths.len(), 4, "Expected 4 artifact paths, got {}: {:?}", all_paths.len(), all_paths);
 
-    // Tag all artifacts
+    // Tag all artifacts - pass reference to avoid cloning
     let tags = vec![(STORAGE_EXPIRATION_TAG_KEY.to_string(), STORAGE_EXPIRATION_TAG_VALUE.to_string())];
     for path in &all_paths {
-        storage.tag_object(path, tags.clone()).await?;
+        storage.tag_object(path, &tags).await?;
     }
 
     // Verify all artifacts are still accessible after tagging (tagging didn't break anything)
@@ -409,7 +409,7 @@ async fn test_tag_nonexistent_object_returns_error() -> Result<(), Box<dyn Error
     let nonexistent_key = "definitely/does/not/exist/file.json";
     let tags = vec![(STORAGE_EXPIRATION_TAG_KEY.to_string(), STORAGE_EXPIRATION_TAG_VALUE.to_string())];
 
-    let result = storage.tag_object(nonexistent_key, tags).await;
+    let result = storage.tag_object(nonexistent_key, &tags).await;
 
     // Should return an error (the specific error type depends on S3)
     assert!(result.is_err(), "Tagging non-existent object should return error");
