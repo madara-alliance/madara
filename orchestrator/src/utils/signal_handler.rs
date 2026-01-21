@@ -143,6 +143,9 @@ impl SignalHandler {
 
         let elapsed = start_time.elapsed();
 
+        // TODO(mehul, 21-01-2026): Add tests for graceful shutdown behavior.
+        // This is difficult to test due to OS-level signal handling,
+        // but the timeout and error collection logic could be unit tested with mock futures.
         match shutdown_result {
             Ok(Ok(())) => {
                 info!("Graceful shutdown completed successfully in {:?}", elapsed);

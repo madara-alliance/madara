@@ -111,25 +111,27 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
             || async {
                 let mut had_errors = false;
 
-                // 1. Trigger worker controller shutdown (cancels token and waits for workers)
+                // 1. Gracefully shutdown the server
+                if let Err(e) = server_handle.shutdown().await {
+                    warn!("Server shutdown error: {:?}", e);
+                    had_errors = true;
+                }
+
+                // 2. Trigger worker controller shutdown (cancels token and waits for workers)
                 if let Err(e) = worker_controller.shutdown().await {
-                    warn!("Worker controller shutdown error: {:?}", e);
+                    error!("Worker controller shutdown error: {:?}", e);
                     had_errors = true;
                 }
 
-                // 2. Wait for the worker task to complete
+                // 3. Wait for the worker task to complete
                 if let Err(e) = worker_handle.await {
-                    warn!("Worker task error: {:?}", e);
+                    error!("Worker task error: {:?}", e);
                     had_errors = true;
                 }
-
-                // 3. Abort the server (axum doesn't have graceful shutdown by default)
-                server_handle.abort();
-                let _ = server_handle.await; // Ignore abort error
 
                 // 4. Shutdown OTEL instrumentation
                 if let Err(e) = instrumentation.shutdown() {
-                    warn!("OTEL instrumentation shutdown error: {}", e);
+                    error!("OTEL instrumentation shutdown error: {}", e);
                     had_errors = true;
                 }
 
