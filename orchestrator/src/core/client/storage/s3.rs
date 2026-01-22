@@ -153,12 +153,12 @@ impl StorageClient for AWSS3 {
     ///
     /// # Arguments
     /// * `key` - The key of the object to tag.
-    /// * `tags` - A slice of (key, value) pairs representing the tags.
+    /// * `tags` - A slice of (key, value) string slice pairs representing the tags.
     ///
     /// # Returns
     /// * `Result<(), StorageError>` - The result of the tagging operation.
-    async fn tag_object(&self, key: &str, tags: &[(String, String)]) -> Result<(), StorageError> {
-        let s3_tags: Result<Vec<Tag>, _> = tags.iter().map(|(k, v)| Tag::builder().key(k).value(v).build()).collect();
+    async fn tag_object<'a>(&self, key: &str, tags: &'a [(&'a str, &'a str)]) -> Result<(), StorageError> {
+        let s3_tags: Result<Vec<Tag>, _> = tags.iter().map(|(k, v)| Tag::builder().key(*k).value(*v).build()).collect();
 
         let s3_tags = s3_tags.map_err(|e| StorageError::ObjectStreamError(format!("Failed to build tags: {:?}", e)))?;
 
@@ -167,14 +167,19 @@ impl StorageClient for AWSS3 {
             .build()
             .map_err(|e| StorageError::ObjectStreamError(format!("Failed to build tagging object: {:?}", e)))?;
 
-        self.client()
-            .put_object_tagging()
-            .bucket(self.bucket_name()?)
-            .key(key)
-            .tagging(tagging)
-            .send()
-            .await
-            .map_err(|e| StorageError::ObjectStreamError(format!("Failed to tag object '{}': {}", key, e)))?;
+        self.client().put_object_tagging().bucket(self.bucket_name()?).key(key).tagging(tagging).send().await.map_err(
+            |e| {
+                let error_str = e.to_string();
+                if error_str.contains("NoSuchKey")
+                    || error_str.contains("not found")
+                    || error_str.contains("does not exist")
+                {
+                    StorageError::NotFound(format!("Object '{}' not found", key))
+                } else {
+                    StorageError::ObjectStreamError(format!("Failed to tag object '{}': {}", key, e))
+                }
+            },
+        )?;
 
         Ok(())
     }

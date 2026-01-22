@@ -35,11 +35,8 @@ impl Resource for InnerAWSS3 {
             AWSResourceIdentifier::Name(name) => name.clone(),
         };
 
-        // Check if the bucket already exists
-        // If it does, skip creation but still ensure lifecycle rule is set
-        if self.check_if_exists(&args.bucket_identifier).await? {
-            warn!("  S3 bucket {} already exists , skipping creation", &args.bucket_identifier);
-        } else {
+        // Check if the bucket already exists - skip creation but still ensure lifecycle rule is set
+        if !self.check_if_exists(&args.bucket_identifier).await? {
             // s3 can have empty region in it's arn : e.g: arn:aws:s3:::mo-bucket
             // in such scenarios we would want to default to provided region
 
@@ -76,6 +73,8 @@ impl Resource for InnerAWSS3 {
                     })?;
                 }
             }
+        } else {
+            warn!("  S3 bucket {} already exists , skipping creation", &args.bucket_identifier);
         }
 
         // Setup lifecycle rule for automatic expiration (idempotent - safe to run on existing buckets)

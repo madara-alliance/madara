@@ -250,7 +250,7 @@ async fn test_tag_object_success_and_error_cases() -> Result<(), Box<dyn Error>>
     storage.put_data(Bytes::from(r#"{"test": "tagging"}"#), test_key).await?;
 
     // Test 1: tag_object applies tags correctly
-    let tags = [(STORAGE_EXPIRATION_TAG_KEY.to_string(), STORAGE_EXPIRATION_TAG_VALUE.to_string())];
+    let tags = [(STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE)];
     storage.tag_object(test_key, &tags).await?;
 
     let bucket_name = services.storage_params.bucket_identifier.to_string();

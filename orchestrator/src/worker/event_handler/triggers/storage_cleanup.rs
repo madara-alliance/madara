@@ -1,4 +1,5 @@
 use crate::core::client::lock::LockValue;
+use crate::core::client::storage::StorageError;
 use crate::core::config::Config;
 use crate::types::constant::{
     get_batch_artifacts_dir, get_batch_blob_dir, get_batch_state_update_file, get_snos_legacy_dir,
@@ -155,8 +156,8 @@ impl StorageCleanupTrigger {
     /// Tag artifacts for expiration. Returns (tagged_count, all_succeeded).
     /// Handles non-existent files gracefully (counts as success).
     async fn tag_artifacts(&self, config: &Arc<Config>, job_id: u64, paths: &[String]) -> (usize, bool) {
-        // Create tags once outside the loop - only a reference is passed, avoiding Vec clones
-        let tags = vec![(STORAGE_EXPIRATION_TAG_KEY.to_string(), STORAGE_EXPIRATION_TAG_VALUE.to_string())];
+        // Create tags once - using &str avoids allocations
+        let tags = [(STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE)];
         let mut tagged_count = 0;
 
         for path in paths {
@@ -165,20 +166,17 @@ impl StorageCleanupTrigger {
                     tagged_count += 1;
                     debug!(job_id = %job_id, path = %path, "Tagged artifact for expiration");
                 }
-                Err(e) => {
-                    let error_str = e.to_string();
-                    // Handle non-existent files gracefully (file may have been deleted)
-                    if error_str.contains("NoSuchKey")
-                        || error_str.contains("not found")
-                        || error_str.contains("does not exist")
-                    {
+                Err(e) => match e {
+                    StorageError::NotFound(_) => {
+                        // Handle non-existent files gracefully (file may have been deleted)
                         debug!(job_id = %job_id, path = %path, "Artifact not found, skipping");
                         tagged_count += 1; // Count as success since there's nothing to tag
-                    } else {
+                    }
+                    _ => {
                         error!(job_id = %job_id, path = %path, error = %e, "Failed to tag artifact");
                         return (tagged_count, false);
                     }
-                }
+                },
             }
         }
 
