@@ -298,7 +298,7 @@ impl SettlementClient for EthereumSettlementClient {
             let pending_transaction = match self.send_transaction(tx_envelope).await {
                 Result::Ok(pending_transaction) => pending_transaction,
                 Result::Err(SendTransactionError::ReplacementTransactionUnderpriced(rpc_err)) => {
-                    match self.get_next_mul_factor(mul_factor) {
+                    match calculate_next_gas_mul_factor(mul_factor, self.max_gas_price_mul_factor) {
                         Some(next_mul_factor) => {
                             info!(attempt = attempt, "Transaction underpriced, sending replacement transaction");
                             debug!(
@@ -553,10 +553,6 @@ impl EthereumSettlementClient {
     // add a safety margin to the gas price to handle fluctuations
     fn add_safety_margin(&self, value: u128, mul_factor: f64) -> u128 {
         (value as f64 * mul_factor) as u128
-    }
-
-    fn get_next_mul_factor(&self, mul_factor: f64) -> Option<f64> {
-        calculate_next_gas_mul_factor(mul_factor, self.max_gas_price_mul_factor)
     }
 
     /// Method to send blob transaction (standard EIP4844)
