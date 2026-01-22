@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::constants::{
-    AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL, RETRY_BASE_DELAY_SECONDS, RETRY_TIMEOUT_SECONDS,
+    AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, RETRY_BASE_DELAY_SECONDS, RETRY_TIMEOUT_SECONDS,
 };
 use crate::error::AtlanticError;
 use crate::metrics::ATLANTIC_METRICS;
@@ -68,6 +68,8 @@ pub struct AtlanticClient {
     proving_layer: Box<dyn ProvingLayer>,
     /// Shared HTTP client for external requests (artifacts, proofs from storage)
     external_client: reqwest::Client,
+    /// Base URL for fetching artifacts (proofs, SNOS outputs, etc.)
+    artifacts_base_url: Url,
 }
 
 impl AtlanticClient {
@@ -85,7 +87,17 @@ impl AtlanticClient {
 
         let external_client = reqwest::Client::new();
 
-        Self { client, proving_layer, external_client }
+        Self {
+            client,
+            proving_layer,
+            external_client,
+            artifacts_base_url: atlantic_params.atlantic_artifacts_base_url.clone(),
+        }
+    }
+
+    /// Returns the base URL for fetching artifacts.
+    pub fn artifacts_base_url(&self) -> &Url {
+        &self.artifacts_base_url
     }
 
     /// Generic retry mechanism for all Atlantic API calls (GET and POST)
@@ -830,14 +842,20 @@ impl AtlanticClient {
     /// The proof as a string if the request is successful, otherwise an error is returned
     pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
         // TODO: Update the code once a proper API is available for this
-        let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
+        let proof_path =
+            format!("{}/queries/{}/proof.json", self.artifacts_base_url.as_str().trim_end_matches('/'), task_id);
 
         let context = format!("task_id: {}, url: {}", task_id, proof_path);
         let task_id_clone = task_id.to_string();
+        let artifacts_base_url = self.artifacts_base_url.clone();
 
         let result = self
             .retry_request("get_proof_by_task_id", &context, || {
-                let proof_path = ATLANTIC_PROOF_URL.replace("{}", &task_id_clone);
+                let proof_path = format!(
+                    "{}/queries/{}/proof.json",
+                    artifacts_base_url.as_str().trim_end_matches('/'),
+                    &task_id_clone
+                );
                 let task_id = task_id_clone.clone();
 
                 async move {
