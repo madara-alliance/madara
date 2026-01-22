@@ -1,6 +1,7 @@
 use std::io::Error as IoError;
 use thiserror::Error;
 
+use super::config_hash::ConfigHashError;
 use crate::{
     setup::base_layer::{ethereum::factory::FactorySetupError, BaseLayerError},
     utils::FileError,
@@ -16,6 +17,9 @@ pub enum EthereumError {
 
     #[error("Invalid hex value does not start with 0x")]
     InvalidHexValue,
+
+    #[error("Config hash computation error: {0}")]
+    ConfigHashError(#[from] ConfigHashError),
 
     #[error("Alloy rpc error: {0}")]
     AlloyRpcError(#[from] alloy::transports::RpcError<alloy::transports::TransportErrorKind>),

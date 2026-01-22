@@ -1,7 +1,5 @@
-pub const BOOTSTRAP_ACCOUNT_SIERRA: &str =
-    "contracts/madara/target/dev/OpenZeppelinAccountCairoOne.sierra.json";
-pub const BOOTSTRAP_ACCOUNT_CASM: &str =
-    "contracts/madara/target/dev/OpenZeppelinAccountCairoOne.casm.json";
+pub const BOOTSTRAP_ACCOUNT_SIERRA: &str = "contracts/madara/target/dev/OpenZeppelinAccountCairoOne.sierra.json";
+pub const BOOTSTRAP_ACCOUNT_CASM: &str = "contracts/madara/target/dev/OpenZeppelinAccountCairoOne.casm.json";
 // Hex value of `BOOTSTRAP`
 /// This is a special private key for the bootstrap account.
 /// It can be used to make the first special declare txn without any validation.

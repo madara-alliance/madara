@@ -1,3 +1,4 @@
+pub mod config_hash;
 pub mod constants;
 pub mod error;
 pub mod factory;
@@ -5,6 +6,8 @@ pub mod implementation_contracts;
 
 use std::collections::HashMap;
 
+use crate::config::{ConfigHashConfig, CoreContractInitDataPartial};
+use config_hash::ConfigHashParams;
 use crate::setup::base_layer::BaseLayerError;
 use crate::setup::base_layer::{ethereum::error::EthereumError, BaseLayerSetupTrait};
 use crate::utils::save_addresses_to_file;
@@ -33,7 +36,10 @@ pub struct EthereumSetup {
     // This might be done using a alloy::sol macro.
     implementation_address: HashMap<ImplementationContract, String>,
     base_layer_factory_address: Option<String>,
-    core_contract_init_data: Factory::CoreContractInitData,
+    /// Core contract init data without configHash (computed at runtime)
+    core_contract_init_data: CoreContractInitDataPartial,
+    /// Configuration for computing the config hash dynamically
+    config_hash_config: ConfigHashConfig,
     addresses_output_path: String,
     base_layer_contracts: Option<BaseLayerContracts>,
 }
@@ -43,7 +49,8 @@ impl EthereumSetup {
         rpc_url: String,
         private_key: String,
         implementation_address: HashMap<ImplementationContract, String>,
-        core_contract_init_data: Factory::CoreContractInitData,
+        core_contract_init_data: CoreContractInitDataPartial,
+        config_hash_config: ConfigHashConfig,
         addresses_output_path: &str,
     ) -> Self {
         let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
@@ -53,9 +60,26 @@ impl EthereumSetup {
             implementation_address,
             base_layer_factory_address: None,
             core_contract_init_data,
+            config_hash_config,
             addresses_output_path: addresses_output_path.to_string(),
             base_layer_contracts: None,
         }
+    }
+
+    /// Computes the config hash using chain_id from config and applying Pedersen hash
+    fn compute_config_hash(&self) -> Result<alloy::primitives::U256, EthereumError> {
+        // Parse config hash parameters from config
+        let params = ConfigHashParams::try_from(&self.config_hash_config)?;
+        log::info!("Using chain_id from config: {:#x}", params.chain_id);
+
+        let config_hash = params.compute_os_config_hash();
+        log::info!("Computed config hash: {:#x}", config_hash);
+
+        // Convert Felt to U256 for alloy
+        let config_hash_bytes = config_hash.to_bytes_be();
+        let config_hash_u256 = alloy::primitives::U256::from_be_slice(&config_hash_bytes);
+
+        Ok(config_hash_u256)
     }
 
     async fn deploy_contract_from_artifact(&self, artifact_path: &str) -> Result<Address, EthereumError> {
@@ -186,6 +210,13 @@ impl BaseLayerSetupTrait for EthereumSetup {
     }
 
     async fn setup(&mut self) -> Result<(), BaseLayerError> {
+        // Compute the config hash using chain_id from config
+        let config_hash = self.compute_config_hash()?;
+        log::info!("Using computed config hash: {:#x}", config_hash);
+
+        // Build the full CoreContractInitData with the computed config hash
+        let core_contract_init_data = self.core_contract_init_data.with_config_hash(config_hash);
+
         let provider = ProviderBuilder::new()
             .wallet(self.signer.clone())
             .connect_http(self.rpc_url.parse().map_err(|_| EthereumError::RpcUrlParseError(self.rpc_url.to_string()))?);
@@ -201,7 +232,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
         // Deploy the factory contract
         let factory_deploy = DeployedFactory::deploy_new(provider, self.signer.address(), implementation_contracts)
             .await
-            .map_err(|e| BaseLayerError::FailedToDeployFactory(e))?;
+            .map_err(BaseLayerError::FailedToDeployFactory)?;
         log::info!("Deployed factory at {:?}", factory_deploy.address());
 
         self.base_layer_factory_address = Some(factory_deploy.address().to_string());
@@ -211,9 +242,8 @@ impl BaseLayerSetupTrait for EthereumSetup {
             &self.addresses_output_path,
         )?;
 
-        let base_layer_contracts = factory_deploy
-            .setup(self.core_contract_init_data.clone(), self.signer.address(), self.signer.address())
-            .await?;
+        let base_layer_contracts =
+            factory_deploy.setup(core_contract_init_data, self.signer.address(), self.signer.address()).await?;
 
         // Store the base layer contracts for later use
         self.base_layer_contracts = Some(base_layer_contracts);
@@ -227,7 +257,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
     async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<(), BaseLayerError> {
         // Read the base layer factory address from addresses.json
         let addresses_content = std::fs::read_to_string(&self.addresses_output_path)
-            .map_err(|e| BaseLayerError::FailedToReadBaseLayerOutput(e))?;
+            .map_err(BaseLayerError::FailedToReadBaseLayerOutput)?;
         let addresses: serde_json::Value = serde_json::from_str(&addresses_content)?;
 
         let base_layer_factory_address = addresses["implementation_addresses"]["baseLayerFactory"]
@@ -236,7 +266,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
 
         // Read the L2 bridge addresses from madara_addresses.json
         let madara_addresses_content =
-            std::fs::read_to_string(madara_addresses_path).map_err(|e| BaseLayerError::FailedToReadMadaraOutput(e))?;
+            std::fs::read_to_string(madara_addresses_path).map_err(BaseLayerError::FailedToReadMadaraOutput)?;
         let madara_addresses: serde_json::Value = serde_json::from_str(&madara_addresses_content)?;
 
         let l2_eth_bridge_address = madara_addresses["addresses"]["l2_eth_bridge"]

@@ -1,16 +1,16 @@
 {
   "addresses": {
-    "l2_eth_bridge": "0x6bf35dfc791b14a7598f2b064d9518ed944be90c171a16ce2c2a844961073bf",
-    "l2_eth_token": "0x3436c5ec4371611d803f7984bd753339e8b5caccf9cb7ba6170343434aba184",
-    "l2_token_bridge": "0x6f2eaff7412848dd749967e36bcf84d0a5a9dc5c13886824e07f0a75677fe3f",
-    "madara_factory": "0x797668e629eda5726c90afec6a981248e058153769cd7423039881706e00e89",
+    "l2_eth_bridge": "0x7b616af210e0c597c6d78ac1ce844086755b92727cf296958307fa1420fe5bb",
+    "l2_eth_token": "0x7c8b652df31de2429eb3de75f9fa0a4ef79bf122afd00d7aaeb3cbb4cf50ec",
+    "l2_token_bridge": "0x796d250ddb2f40274b564ed64cd6961d5c42400aaf48f1685a7b13c49c3f353",
+    "madara_factory": "0x4c176171a9c14ce0026b950cf1ea77895f4822bc15f4f1afa36e8a53feb48f2",
     "universal_deployer": "0x2ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125"
   },
   "classes": {
     "eic": "0x21075ec399d5a92f5d5d67be4c6dea154b3d87e7c9fd037031205f7fd514367",
-    "erc20": "0x7f3777c99f3700505ea966676aac4a0d692c2a9f5e667f4c606b51ca1dd3420",
+    "erc20": "0x76791ef97c042f81fbf352ad95f39a22554ee8d7927b2ce3c681f3418b5206a",
     "madara_factory": "0x2f00f73ac8268d4c85f80fd8ef4a2658c6f3cc3466cc9aeb3b23fc1d9ea74e1",
-    "token_bridge": "0x121e34cfc7e960f56fcde4291de664148e43f5a27901973fef532eaabd95d32",
+    "token_bridge": "0x7baff54a088bc6d21b346fb2ff9ed3c9b8e1418992aecae9ff4b9dfe56165e5",
     "universal_deployer": "0x1b2df6d8861670d4a8ca4670433b2418d78169c2947f46dc614e69f333745c8"
   }
 }
