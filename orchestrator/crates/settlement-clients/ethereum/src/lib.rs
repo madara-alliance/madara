@@ -68,13 +68,13 @@ const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump require
 const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
 
 /// Calculates the next gas price multiplier for transaction retry.
-/// Returns an error if the next multiplier would exceed the maximum allowed.
-fn calculate_next_gas_mul_factor(current_mul: f64, max_mul: f64) -> std::result::Result<f64, SendTransactionError> {
+/// Returns None if the next multiplier would exceed the maximum allowed.
+fn calculate_next_gas_mul_factor(current_mul: f64, max_mul: f64) -> Option<f64> {
     let next_mul = GAS_PRICE_INCREMENT_FACTOR * current_mul;
     if next_mul > max_mul {
-        Err(SendTransactionError::RetryLimitExceeded { next_mul, max_mul })
+        None
     } else {
-        std::result::Result::Ok(next_mul)
+        Some(next_mul)
     }
 }
 
@@ -298,7 +298,7 @@ impl SettlementClient for EthereumSettlementClient {
                 Err(e) => match e {
                     SendTransactionError::ReplacementTransactionUnderpriced(rpc_err) => {
                         match self.get_next_mul_factor(mul_factor) {
-                            std::result::Result::Ok(next_mul_factor) => {
+                            Some(next_mul_factor) => {
                                 info!(attempt = attempt, "Transaction underpriced, sending replacement transaction");
                                 debug!(
                                     current_multiplier = %mul_factor,
@@ -311,10 +311,16 @@ impl SettlementClient for EthereumSettlementClient {
                                 attempt += 1;
                                 continue;
                             }
-                            Err(retry_err) => return Err(retry_err.into()),
+                            None => {
+                                let next_mul = GAS_PRICE_INCREMENT_FACTOR * mul_factor;
+                                return Err(eyre!(
+                                    "Transaction retry limit reached: next multiplier ({:.2}x) exceeds maximum ({:.2}x)",
+                                    next_mul,
+                                    self.max_gas_price_mul_factor
+                                ));
+                            }
                         }
                     }
-                    SendTransactionError::RetryLimitExceeded { .. } => return Err(e.into()),
                     SendTransactionError::Other(_) => return Err(e.into()),
                 },
             };
@@ -549,7 +555,7 @@ impl EthereumSettlementClient {
         (value as f64 * mul_factor) as u128
     }
 
-    fn get_next_mul_factor(&self, mul_factor: f64) -> std::result::Result<f64, SendTransactionError> {
+    fn get_next_mul_factor(&self, mul_factor: f64) -> Option<f64> {
         calculate_next_gas_mul_factor(mul_factor, self.max_gas_price_mul_factor)
     }
 
@@ -647,7 +653,7 @@ mod gas_multiplier_tests {
     fn test_first_retry_succeeds() {
         // First attempt: 1.1x, retry should give 2.2x (within 2.5 max)
         let result = calculate_next_gas_mul_factor(1.1, 2.5);
-        assert!(result.is_ok());
+        assert!(result.is_some());
         let next_mul = result.unwrap();
         assert!((next_mul - 2.2).abs() < 0.0001, "Expected 2.2, got {}", next_mul);
     }
@@ -656,14 +662,7 @@ mod gas_multiplier_tests {
     fn test_second_retry_fails() {
         // Second attempt: 2.2x * 2.0 = 4.4x (exceeds 2.5 max)
         let result = calculate_next_gas_mul_factor(2.2, 2.5);
-        assert!(result.is_err());
-        match result {
-            Err(SendTransactionError::RetryLimitExceeded { next_mul, max_mul }) => {
-                assert!((next_mul - 4.4).abs() < 0.0001, "Expected next_mul 4.4, got {}", next_mul);
-                assert!((max_mul - 2.5).abs() < 0.0001, "Expected max_mul 2.5, got {}", max_mul);
-            }
-            _ => panic!("Expected RetryLimitExceeded error"),
-        }
+        assert!(result.is_none(), "Expected None when multiplier exceeds max");
     }
 
     #[test]
@@ -671,7 +670,7 @@ mod gas_multiplier_tests {
         // Edge case: next_mul exactly equals max_mul should succeed
         // 1.25 * 2.0 = 2.5 (exactly at max)
         let result = calculate_next_gas_mul_factor(1.25, 2.5);
-        assert!(result.is_ok());
+        assert!(result.is_some());
         let next_mul = result.unwrap();
         assert!((next_mul - 2.5).abs() < 0.0001, "Expected 2.5, got {}", next_mul);
     }
@@ -681,6 +680,6 @@ mod gas_multiplier_tests {
         // Edge case: next_mul just over max_mul should fail
         // 1.26 * 2.0 = 2.52 (just over 2.5)
         let result = calculate_next_gas_mul_factor(1.26, 2.5);
-        assert!(result.is_err());
+        assert!(result.is_none());
     }
 }
