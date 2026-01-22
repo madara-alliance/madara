@@ -29,6 +29,7 @@ lazy_static! {
         WorkerTriggerType::Proving,
         WorkerTriggerType::UpdateState,
         WorkerTriggerType::Aggregator,
+        WorkerTriggerType::StorageCleanup,
     ];
     pub static ref WORKER_TRIGGERS_L3: Vec<WorkerTriggerType> = vec![
         WorkerTriggerType::SnosBatching,
@@ -37,6 +38,7 @@ lazy_static! {
         WorkerTriggerType::ProofRegistration,
         WorkerTriggerType::DataSubmission,
         WorkerTriggerType::UpdateState,
+        WorkerTriggerType::StorageCleanup,
     ];
 }
 

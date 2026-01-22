@@ -130,6 +130,19 @@ pub trait DatabaseClient: Send + Sync {
         orchestrator_version: Option<String>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 
+    /// Get completed StateTransition jobs that haven't had their storage artifacts tagged yet
+    ///
+    /// # Arguments
+    /// * `limit` - Optional limit on number of results
+    ///
+    /// # Returns
+    /// Jobs where status is Completed, job_type is StateTransition, and
+    /// metadata.specific.storage_artifacts_tagged_at is null or doesn't exist
+    async fn get_jobs_without_storage_artifacts_tagged(
+        &self,
+        limit: Option<i64>,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
+
     /// Get jobs between internal IDs for a specific type and status
     ///
     /// # Arguments

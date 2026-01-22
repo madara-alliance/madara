@@ -9,7 +9,7 @@ use crate::error::job::JobError;
 use crate::tests::config::TestConfigBuilder;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchWeights};
 use crate::types::constant::{
-    BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR,
+    get_batch_artifact_file, BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
@@ -49,6 +49,7 @@ async fn create_job_works() {
             da_segment_path: None,
             tx_hash: None,
             context: SettlementContext::Block(SettlementContextData { to_settle: 1, last_failed: None }),
+            storage_artifacts_tagged_at: None,
         }),
     };
 
@@ -96,6 +97,7 @@ async fn process_job_invalid_input_gap_panics() {
                 to_settle: 6, // Gap between 4 and 6
                 last_failed: None,
             }),
+            storage_artifacts_tagged_at: None,
         }),
     };
 
@@ -191,7 +193,7 @@ async fn test_process_job_l2_with_da_segment(
     settlement_client.expect_wait_for_tx_finality().with(eq("0xabcd")).times(1).returning(|_| Ok(Some(1)));
 
     // Mock storage for DA segment
-    let da_segment_key = format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch_index, DA_SEGMENT_FILE_NAME);
+    let da_segment_key = get_batch_artifact_file(batch_index, DA_SEGMENT_FILE_NAME);
     let da_json_clone = da_json.clone();
     storage_client
         .expect_get_data()
@@ -199,7 +201,7 @@ async fn test_process_job_l2_with_da_segment(
         .returning(move |_| Ok(Bytes::from(da_json_clone.clone())));
 
     // Mock storage for program output
-    let program_output_key = format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch_index, PROGRAM_OUTPUT_FILE_NAME);
+    let program_output_key = get_batch_artifact_file(batch_index, PROGRAM_OUTPUT_FILE_NAME);
     let serialized_program_output = bincode::serialize(&program_output).unwrap();
     storage_client
         .expect_get_data()
@@ -223,6 +225,7 @@ async fn test_process_job_l2_with_da_segment(
             da_segment_path: Some(da_segment_key),
             tx_hash: None,
             context: SettlementContext::Batch(SettlementContextData { to_settle: batch_index, last_failed: None }),
+            storage_artifacts_tagged_at: None,
         }),
     };
 
