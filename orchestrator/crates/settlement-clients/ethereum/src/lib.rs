@@ -39,8 +39,9 @@ use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256, DefaultHttpPr
 use lazy_static::lazy_static;
 use mockall::automock;
 use tokio::time::sleep;
-#[allow(unused_imports)] // warn! is used in #[cfg(not(feature = "testing"))] block
-use tracing::{debug, error, info, warn};
+#[cfg(not(feature = "testing"))]
+use tracing::warn;
+use tracing::{debug, error, info};
 
 // For more details on state update, refer to the core contract logic
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
@@ -60,7 +61,8 @@ const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
 // See: https://github.com/ethereum/go-ethereum/blob/d0af257aa20fe9d3e244570ee4abb9a78ff3b9c4/core/txpool/blobpool/config.go#L34
 // See: https://github.com/paradigmxyz/reth/blob/c2435ff6f8265088b9ded0014051c9a97d0d7b84/crates/transaction-pool/src/config.rs#L29
 // See: https://github.com/NethermindEth/nethermind/blob/471bcb95bac677d2ffde5bb2e882e20186841b24/src/Nethermind/Nethermind.TxPool/Comparison/CompareReplacedBlobTx.cs#L40
-// With 1.1x start and 2.0x increment: 1.1 → 2.2 → fail. Max 2 attempts only.
+// With 1.1x start, 2.0x increment, and default max of 2.5x: 1.1 → 2.2 → 4.4 (exceeds max, fails).
+// The max multiplier is configurable via MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR env variable.
 const GAS_PRICE_MULTIPLIER_START: f64 = 1.1; // 10% above estimated gas price
 const GAS_PRICE_INCREMENT_FACTOR: f64 = 2.0; // 2x multiplier (100% bump required for blob tx replacement)
 /// we noticed Starknet uses the same limit on the mainnet
@@ -295,34 +297,32 @@ impl SettlementClient for EthereumSettlementClient {
             let tx_envelope = self.create_transaction(program_output.clone(), state_diff.clone(), mul_factor).await?;
             let pending_transaction = match self.send_transaction(tx_envelope).await {
                 Result::Ok(pending_transaction) => pending_transaction,
-                Err(e) => match e {
-                    SendTransactionError::ReplacementTransactionUnderpriced(rpc_err) => {
-                        match self.get_next_mul_factor(mul_factor) {
-                            Some(next_mul_factor) => {
-                                info!(attempt = attempt, "Transaction underpriced, sending replacement transaction");
-                                debug!(
-                                    current_multiplier = %mul_factor,
-                                    next_multiplier = %next_mul_factor,
-                                    max_multiplier = %self.max_gas_price_mul_factor,
-                                    error = ?rpc_err,
-                                    "Increasing gas multiplier for replacement transaction"
-                                );
-                                mul_factor = next_mul_factor;
-                                attempt += 1;
-                                continue;
-                            }
-                            None => {
-                                let next_mul = GAS_PRICE_INCREMENT_FACTOR * mul_factor;
-                                return Err(eyre!(
-                                    "Transaction retry limit reached: next multiplier ({:.2}x) exceeds maximum ({:.2}x)",
-                                    next_mul,
-                                    self.max_gas_price_mul_factor
-                                ));
-                            }
+                Result::Err(SendTransactionError::ReplacementTransactionUnderpriced(rpc_err)) => {
+                    match self.get_next_mul_factor(mul_factor) {
+                        Some(next_mul_factor) => {
+                            info!(attempt = attempt, "Transaction underpriced, sending replacement transaction");
+                            debug!(
+                                current_multiplier = %mul_factor,
+                                next_multiplier = %next_mul_factor,
+                                max_multiplier = %self.max_gas_price_mul_factor,
+                                error = ?rpc_err,
+                                "Increasing gas multiplier for replacement transaction"
+                            );
+                            mul_factor = next_mul_factor;
+                            attempt += 1;
+                            continue;
+                        }
+                        None => {
+                            let next_mul = GAS_PRICE_INCREMENT_FACTOR * mul_factor;
+                            return Err(eyre!(
+                                "Transaction retry limit reached: next multiplier ({:.2}x) exceeds maximum ({:.2}x)",
+                                next_mul,
+                                self.max_gas_price_mul_factor
+                            ));
                         }
                     }
-                    SendTransactionError::Other(_) => return Err(e.into()),
-                },
+                }
+                Result::Err(e) => return Err(e.into()),
             };
 
             info!(
