@@ -9,7 +9,7 @@ use crate::core::config::StarknetVersion;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::default_test_bouncer_weights;
 use crate::types::batch::{AggregatorBatchStatus, SnosBatchStatus};
-use crate::types::constant::ORCHESTRATOR_VERSION;
+use crate::types::constant::{get_batch_state_update_file, ORCHESTRATOR_VERSION};
 use crate::worker::event_handler::triggers::aggregator_batching::{
     AggregatorBatchingTrigger, AGGREGATOR_BATCHING_WORKER_KEY,
 };
@@ -67,7 +67,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
             end_block: 3,
             num_blocks: 4,
             blob_len: 0,
-            squashed_state_updates_path: "state_update/batch/1.json".to_string(),
+            squashed_state_updates_path: get_batch_state_update_file(1),
             created_at: chrono::Utc::now(),
             starknet_version: StarknetVersion::V0_13_2,
             orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
@@ -215,7 +215,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
         end_block: 3,
         num_blocks: 4,
         blob_len: 0,
-        squashed_state_updates_path: "state_update/batch/1.json".to_string(),
+        squashed_state_updates_path: get_batch_state_update_file(1),
         created_at: chrono::Utc::now(),
         starknet_version: StarknetVersion::V0_13_2,
         orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
@@ -288,7 +288,7 @@ async fn test_batching_worker_with_multiple_blocks() -> Result<(), Box<dyn Error
                 end_block: 7,
                 num_blocks: 4,
                 blob_len: 0,
-                squashed_state_updates_path: "state_update/batch/2.json".to_string(),
+                squashed_state_updates_path: get_batch_state_update_file(2),
                 starknet_version: StarknetVersion::V0_13_2,
                 orchestrator_version: ORCHESTRATOR_VERSION.to_string(),
                 ..Default::default()
@@ -763,7 +763,7 @@ async fn test_aggregator_no_new_blocks() -> Result<(), Box<dyn Error>> {
         end_block: 9,
         num_blocks: 10,
         blob_len: 0,
-        squashed_state_updates_path: "state_update/batch/1.json".to_string(),
+        squashed_state_updates_path: get_batch_state_update_file(1),
         starknet_version: StarknetVersion::V0_13_2,
         ..Default::default()
     };

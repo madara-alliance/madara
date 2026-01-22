@@ -4,6 +4,7 @@ use crate::core::client::storage::StorageError;
 use crate::types::params::AWSResourceIdentifier;
 use async_trait::async_trait;
 use aws_config::SdkConfig;
+use aws_sdk_s3::types::{Tag, Tagging};
 use aws_sdk_s3::Client;
 use bytes::Bytes;
 
@@ -144,6 +145,41 @@ impl StorageClient for AWSS3 {
             .send()
             .await
             .map_err(|e| StorageError::ObjectStreamError(format!("S3 health check failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Tag an object with the specified key-value pairs.
+    ///
+    /// # Arguments
+    /// * `key` - The key of the object to tag.
+    /// * `tags` - A slice of (key, value) string slice pairs representing the tags.
+    ///
+    /// # Returns
+    /// * `Result<(), StorageError>` - The result of the tagging operation.
+    async fn tag_object<'a>(&self, key: &str, tags: &'a [(&'a str, &'a str)]) -> Result<(), StorageError> {
+        let s3_tags: Result<Vec<Tag>, _> = tags.iter().map(|(k, v)| Tag::builder().key(*k).value(*v).build()).collect();
+
+        let s3_tags = s3_tags.map_err(|e| StorageError::ObjectStreamError(format!("Failed to build tags: {:?}", e)))?;
+
+        let tagging = Tagging::builder()
+            .set_tag_set(Some(s3_tags))
+            .build()
+            .map_err(|e| StorageError::ObjectStreamError(format!("Failed to build tagging object: {:?}", e)))?;
+
+        self.client().put_object_tagging().bucket(self.bucket_name()?).key(key).tagging(tagging).send().await.map_err(
+            |e| {
+                let error_str = e.to_string();
+                if error_str.contains("NoSuchKey")
+                    || error_str.contains("not found")
+                    || error_str.contains("does not exist")
+                {
+                    StorageError::NotFound(format!("Object '{}' not found", key))
+                } else {
+                    StorageError::ObjectStreamError(format!("Failed to tag object '{}': {}", key, e))
+                }
+            },
+        )?;
 
         Ok(())
     }

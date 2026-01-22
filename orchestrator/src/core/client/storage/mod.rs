@@ -29,4 +29,18 @@ pub trait StorageClient: Send + Sync {
     /// * `Ok(())` - If the storage service is healthy and accessible
     /// * `Err(StorageError)` - If the health check fails
     async fn health_check(&self) -> Result<(), StorageError>;
+
+    /// Tag an object with key-value pairs
+    ///
+    /// This method applies tags to an existing object in storage.
+    /// Tags can be used for lifecycle management, cost allocation, or organization.
+    ///
+    /// # Arguments
+    /// * `key` - The key of the object to tag
+    /// * `tags` - A slice of (key, value) string slice pairs representing the tags
+    ///
+    /// # Returns
+    /// * `Ok(())` - If tagging was successful
+    /// * `Err(StorageError)` - If tagging fails
+    async fn tag_object<'a>(&self, key: &str, tags: &'a [(&'a str, &'a str)]) -> Result<(), StorageError>;
 }
