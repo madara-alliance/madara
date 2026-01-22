@@ -846,17 +846,12 @@ impl AtlanticClient {
             format!("{}/queries/{}/proof.json", self.artifacts_base_url.as_str().trim_end_matches('/'), task_id);
 
         let context = format!("task_id: {}, url: {}", task_id, proof_path);
-        let task_id_clone = task_id.to_string();
-        let artifacts_base_url = self.artifacts_base_url.clone();
+        let task_id_owned = task_id.to_string();
 
         let result = self
             .retry_request("get_proof_by_task_id", &context, || {
-                let proof_path = format!(
-                    "{}/queries/{}/proof.json",
-                    artifacts_base_url.as_str().trim_end_matches('/'),
-                    &task_id_clone
-                );
-                let task_id = task_id_clone.clone();
+                let proof_path = proof_path.clone();
+                let task_id = task_id_owned.clone();
 
                 async move {
                     debug!(
