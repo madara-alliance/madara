@@ -448,7 +448,10 @@ async fn implement_api_server(api_server_type: ConfigType, config: Arc<Config>) 
                 panic!(concat!("Mock client is not a ", stringify!($client_type)));
             }
         }
-        ConfigType::Actual => Some(setup_server(config.clone()).await.expect("Failed to setup server")),
+        ConfigType::Actual => {
+            let (addr, _handle) = setup_server(config.clone()).await.expect("Failed to setup server");
+            Some(addr)
+        }
         ConfigType::Dummy => None,
     }
 }

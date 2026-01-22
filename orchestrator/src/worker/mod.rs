@@ -23,18 +23,18 @@ use tracing::{error, warn};
 /// * `shutdown_token` - A cancellation token to signal application shutdown on critical errors
 ///
 /// # Returns
-/// * `OrchestratorResult<WorkerController>` - The worker controller for managing shutdown
+/// * `OrchestratorResult<(WorkerController, JoinHandle<()>)>` - The worker controller and its task handle
 pub async fn initialize_worker(
     config: Arc<Config>,
     shutdown_token: CancellationToken,
-) -> OrchestratorResult<WorkerController> {
+) -> OrchestratorResult<(WorkerController, tokio::task::JoinHandle<()>)> {
     let controller = WorkerController::new(config, shutdown_token.clone());
 
     // Spawn workers in the background - don't wait for them to complete
     let controller_clone = controller.clone();
     let shutdown_token_clone = shutdown_token.clone();
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         match controller_clone.run().await {
             Ok(()) => {
                 warn!("Worker controller completed unexpectedly - this should not happen during normal operation");
@@ -50,5 +50,5 @@ pub async fn initialize_worker(
     });
 
     tracing::info!("Workers initialized and started successfully");
-    Ok(controller)
+    Ok((controller, handle))
 }
