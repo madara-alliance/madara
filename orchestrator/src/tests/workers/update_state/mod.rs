@@ -163,6 +163,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
         da_segment_path: None,
         tx_hash: None,
         context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
+        storage_artifacts_tagged_at: None,
     };
 
     job_item.metadata =
@@ -219,6 +220,7 @@ async fn update_state_worker_next_block_missing() {
         da_segment_path: None,
         tx_hash: None,
         context: SettlementContext::Block(SettlementContextData { to_settle: 4, last_failed: None }),
+        storage_artifacts_tagged_at: None,
     };
 
     job_item.metadata =

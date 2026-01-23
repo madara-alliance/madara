@@ -3,7 +3,7 @@ use crate::core::client::database::MockDatabaseClient;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use crate::types::constant::{
-    CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, STORAGE_ARTIFACTS_DIR,
+    get_batch_artifact_file, CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME,
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
@@ -112,10 +112,10 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     job_item.metadata.specific = JobSpecificMetadata::Aggregator(AggregatorMetadata {
         batch_num: 1,
         bucket_id: "bucket_id".to_string(),
-        download_proof: Some(format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, 1, PROOF_FILE_NAME)),
-        cairo_pie_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, 1, CAIRO_PIE_FILE_NAME),
-        program_output_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, 1, PROGRAM_OUTPUT_FILE_NAME),
-        da_segment_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, 1, DA_SEGMENT_FILE_NAME),
+        download_proof: Some(get_batch_artifact_file(1, PROOF_FILE_NAME)),
+        cairo_pie_path: get_batch_artifact_file(1, CAIRO_PIE_FILE_NAME),
+        program_output_path: get_batch_artifact_file(1, PROGRAM_OUTPUT_FILE_NAME),
+        da_segment_path: get_batch_artifact_file(1, DA_SEGMENT_FILE_NAME),
         ..Default::default()
     });
 

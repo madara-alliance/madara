@@ -34,6 +34,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
         atlantic_sharp_prover: AtlanticSharpProver::default(),
+        atlantic_artifacts_base_url: Url::parse("https://storage.googleapis.com/hero-atlantic-bucket").unwrap(),
     };
     // Start a mock server
     let mock_server = MockServer::start();
@@ -102,6 +103,7 @@ async fn atlantic_client_does_not_resubmit_when_job_exists() {
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
         atlantic_sharp_prover: AtlanticSharpProver::default(),
+        atlantic_artifacts_base_url: Url::parse("https://storage.googleapis.com/hero-atlantic-bucket").unwrap(),
     };
 
     let mock_server = MockServer::start();
@@ -205,6 +207,7 @@ async fn atlantic_client_get_query_by_dedup_id_found() {
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
         atlantic_sharp_prover: AtlanticSharpProver::default(),
+        atlantic_artifacts_base_url: Url::parse("https://storage.googleapis.com/hero-atlantic-bucket").unwrap(),
     };
     let api_key = get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY");
     let atlantic_service =
@@ -238,6 +241,7 @@ async fn atlantic_client_get_query_by_dedup_id_not_found() {
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
         atlantic_sharp_prover: AtlanticSharpProver::default(),
+        atlantic_artifacts_base_url: Url::parse("https://storage.googleapis.com/hero-atlantic-bucket").unwrap(),
     };
     let api_key = get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY");
     let atlantic_service =
@@ -272,6 +276,7 @@ async fn atlantic_client_get_task_status_works() {
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
         atlantic_sharp_prover: AtlanticSharpProver::default(),
+        atlantic_artifacts_base_url: Url::parse("https://storage.googleapis.com/hero-atlantic-bucket").unwrap(),
     };
     let atlantic_service =
         AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None, None);
@@ -300,6 +305,7 @@ async fn atlantic_client_get_bucket_status_works() {
         atlantic_cairo_vm: AtlanticCairoVm::Python,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
         atlantic_sharp_prover: AtlanticSharpProver::default(),
+        atlantic_artifacts_base_url: Url::parse("https://storage.googleapis.com/hero-atlantic-bucket").unwrap(),
     };
     let atlantic_service =
         AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic, None, None, None);
@@ -330,6 +336,7 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         atlantic_cairo_vm: AtlanticCairoVm::Rust,
         atlantic_result: AtlanticQueryStep::ProofGeneration,
         atlantic_sharp_prover: AtlanticSharpProver::default(),
+        atlantic_artifacts_base_url: Url::parse("https://storage.googleapis.com/hero-atlantic-bucket").unwrap(),
     };
 
     // Create the Atlantic service with actual configuration
