@@ -16,8 +16,8 @@ pub struct ConfigHashConfig {
     pub version: String,
     /// Madara chain ID (e.g., "MADARA_DEVNET" or hex "0x4d41444152415f4445564e4554")
     pub madara_chain_id: String,
-    /// STRK fee token address on L2
-    pub strk_fee_token_address: String,
+    /// Madara fee token address on L2
+    pub madara_fee_token: String,
     /// Optional DA public keys for computing public_keys_hash
     #[serde(default)]
     pub da_public_keys: Vec<String>,

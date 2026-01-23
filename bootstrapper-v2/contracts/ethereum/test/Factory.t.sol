@@ -2,9 +2,9 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {Factory} from "src/factory/Factory.sol";
-import "src/factory/libraries/DataTypes.sol";
-import {ConfigureSingleBridgeEIC} from "src/eic/ConfigureSingleBridgeEIC.sol";
+import {Factory} from "../src/factory/Factory.sol";
+import "../src/factory/libraries/DataTypes.sol";
+import {ConfigureSingleBridgeEIC} from "../src/eic/ConfigureSingleBridgeEIC.sol";
 
 // Currently to use this test, 
 // 1. Run anvil. 

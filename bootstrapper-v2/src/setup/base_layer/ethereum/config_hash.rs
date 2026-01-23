@@ -19,8 +19,8 @@ pub struct ConfigHashParams {
     pub version: Felt,
     /// Chain ID from config
     pub chain_id: Felt,
-    /// STRK fee token address on L2
-    pub strk_fee_token_address: Felt,
+    /// Madara fee token address on L2
+    pub madara_fee_token: Felt,
     /// Optional DA public keys for computing public_keys_hash
     pub da_public_keys: Option<Vec<Felt>>,
 }
@@ -32,7 +32,7 @@ impl TryFrom<&ConfigHashConfig> for ConfigHashParams {
         // version and madara_chain_id support both hex (0x...) and ASCII string formats
         let version = felt_from_string(&config.version)?;
         let chain_id = felt_from_string(&config.madara_chain_id)?;
-        let strk_fee_token_address = felt_from_hex(&config.strk_fee_token_address)?;
+        let madara_fee_token = felt_from_hex(&config.madara_fee_token)?;
 
         // Parse DA public keys if present
         let da_public_keys: Option<Vec<Felt>> = if config.da_public_keys.is_empty() {
@@ -42,7 +42,7 @@ impl TryFrom<&ConfigHashConfig> for ConfigHashParams {
             Some(keys?)
         };
 
-        Ok(Self { version, chain_id, strk_fee_token_address, da_public_keys })
+        Ok(Self { version, chain_id, madara_fee_token, da_public_keys })
     }
 }
 
@@ -80,14 +80,14 @@ impl ConfigHashParams {
     ///
     /// Formula:
     /// ```text
-    /// config_hash = Pedersen::hash_array([version, chain_id, strk_fee_token_address, public_keys_hash?])
+    /// config_hash = Pedersen::hash_array([version, chain_id, madara_fee_token, public_keys_hash?])
     /// ```
     ///
     /// Where `public_keys_hash` is only included if non-zero
     pub fn compute_os_config_hash(&self) -> Felt {
         let public_keys_hash = compute_public_keys_hash(&self.da_public_keys);
 
-        let mut data = vec![self.version, self.chain_id, self.strk_fee_token_address];
+        let mut data = vec![self.version, self.chain_id, self.madara_fee_token];
 
         if public_keys_hash != Felt::ZERO {
             data.push(public_keys_hash);
@@ -148,7 +148,7 @@ mod tests {
         let params = ConfigHashParams {
             version: felt_from_hex(DEFAULT_CONFIG_HASH_VERSION).unwrap(),
             chain_id: Felt::from_hex("0x4d41444152415f4445564e4554").unwrap(), // MADARA_DEVNET
-            strk_fee_token_address: Felt::from_hex(
+            madara_fee_token: Felt::from_hex(
                 "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
             )
             .unwrap(),
@@ -167,7 +167,7 @@ mod tests {
         let params = ConfigHashParams {
             version: felt_from_hex(DEFAULT_CONFIG_HASH_VERSION).unwrap(),
             chain_id: Felt::from_hex("0x4d41444152415f4445564e4554").unwrap(), // MADARA_DEVNET
-            strk_fee_token_address: Felt::from_hex(
+            madara_fee_token: Felt::from_hex(
                 "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
             )
             .unwrap(),
