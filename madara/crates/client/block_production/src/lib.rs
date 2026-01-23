@@ -847,7 +847,7 @@ impl BlockProductionTask {
             .record(block_exec_summary.bouncer_weights.l1_gas as u64, &block_number_attributes);
         self.metrics
             .block_bouncer_sierra_gas
-            .record(block_exec_summary.bouncer_weights.sierra_gas.0 as u64, &block_number_attributes);
+            .record(block_exec_summary.bouncer_weights.sierra_gas.0, &block_number_attributes);
         self.metrics
             .block_bouncer_n_events
             .record(block_exec_summary.bouncer_weights.n_events as u64, &block_number_attributes);

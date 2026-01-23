@@ -26,12 +26,10 @@ pub fn apply_to_global_trie<'a>(
     start_block_n: u64,
     state_diffs: impl IntoIterator<Item = &'a StateDiff>,
 ) -> Result<Felt> {
-    let total_start = Instant::now();
     let mut state_root = None;
-    let mut last_block_n = None;
     for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
         tracing::debug!("applying state_diff block_n={block_n}");
-        last_block_n = Some(block_n);
+        let block_start = Instant::now();
 
         let ((contract_trie_root, contract_duration), (class_trie_root, class_duration)) = rayon::join(
             || {
@@ -68,14 +66,11 @@ pub fn apply_to_global_trie<'a>(
         metrics().class_trie_root_last.record(class_secs, &block_number_attributes);
 
         state_root = Some(calculate_state_root(contract_trie_root?, class_trie_root?));
-    }
 
-    // Record total merklization duration (histogram + gauge)
-    let total_secs = total_start.elapsed().as_secs_f64();
-    if let Some(block_n) = last_block_n {
-        let block_number_attributes = [KeyValue::new("block_number", block_n.to_string())];
-        metrics().apply_to_global_trie_duration.record(total_secs, &[]);
-        metrics().apply_to_global_trie_last.record(total_secs, &block_number_attributes);
+        // Record total merklization duration per block (histogram + gauge)
+        let block_secs = block_start.elapsed().as_secs_f64();
+        metrics().apply_to_global_trie_duration.record(block_secs, &[]);
+        metrics().apply_to_global_trie_last.record(block_secs, &block_number_attributes);
     }
 
     state_root.context("Applying an empty batch to the global trie")
