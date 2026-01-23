@@ -342,13 +342,20 @@ impl StateDiff {
     /// `class_hash_to_compiled_class_hash`. This method separates them:
     /// - If the compiled_class_hash is in `migration_v2_hashes` → `migrated_compiled_classes`
     /// - Otherwise → `declared_classes`
+    ///
+    /// Blockifier also doesn't differentiate between deployed contracts and replaced classes.
+    /// The `deployed_contracts_set` parameter contains addresses of contracts that were newly
+    /// deployed in this block (computed during batch execution). Contracts in `address_to_class_hash`
+    /// that are NOT in this set are class replacements.
     pub fn from_blockifier(
         commitment_state_diff: blockifier::state::cached_state::CommitmentStateDiff,
         migration_v2_hashes: &std::collections::HashSet<Felt>,
+        deployed_contracts_set: &std::collections::HashSet<Felt>,
+        old_declared_contracts: Vec<Felt>,
     ) -> Self {
         let mut storage_diffs = Vec::new();
         let mut deployed_contracts = Vec::new();
-        let replaced_classes = Vec::new();
+        let mut replaced_classes = Vec::new();
         let mut declared_classes = Vec::new();
         let mut migrated_compiled_classes = Vec::new();
         let mut nonces = Vec::new();
@@ -363,10 +370,18 @@ impl StateDiff {
             }
         }
 
-        // Convert deployed contracts
+        // Convert deployed contracts vs replaced classes
+        // Contracts in deployed_contracts_set are newly deployed, others are class replacements
         for (address, class_hash) in commitment_state_diff.address_to_class_hash {
-            deployed_contracts
-                .push(DeployedContractItem { address: address.to_felt(), class_hash: class_hash.to_felt() });
+            let address_felt = address.to_felt();
+            let class_hash_felt = class_hash.to_felt();
+
+            if deployed_contracts_set.contains(&address_felt) {
+                deployed_contracts.push(DeployedContractItem { address: address_felt, class_hash: class_hash_felt });
+            } else {
+                replaced_classes
+                    .push(ReplacedClassItem { contract_address: address_felt, class_hash: class_hash_felt });
+            }
         }
 
         // Convert class declarations, separating migrated from newly declared
@@ -396,7 +411,7 @@ impl StateDiff {
 
         StateDiff {
             storage_diffs,
-            old_declared_contracts: Vec::new(),
+            old_declared_contracts,
             declared_classes,
             deployed_contracts,
             replaced_classes,
@@ -597,8 +612,9 @@ mod tests {
         migration_v2_hashes.insert(migrated_compiled_hash_v2.0);
         migration_v2_hashes.insert(another_migrated_compiled_hash_v2.0);
 
-        // Convert using from_blockifier
-        let state_diff = StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes);
+        // Convert using from_blockifier (empty deployed_contracts_set and old_declared_contracts for this test)
+        let state_diff =
+            StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes, &HashSet::new(), Vec::new());
 
         // Verify declared_classes contains only the non-migrated class
         assert_eq!(state_diff.declared_classes.len(), 1);
@@ -641,7 +657,8 @@ mod tests {
         // No migrations
         let migration_v2_hashes = HashSet::new();
 
-        let state_diff = StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes);
+        let state_diff =
+            StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes, &HashSet::new(), Vec::new());
 
         // All classes should be in declared_classes
         assert_eq!(state_diff.declared_classes.len(), 2);
