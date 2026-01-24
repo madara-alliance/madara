@@ -4585,10 +4585,10 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "type": "loki",
+        "uid": "${DS_LOKI}"
       },
-      "description": "Total time to close a block (P50, P95, P99). Note: Bucket boundaries may cause interpolation artifacts.",
+      "description": "Total time to close a block (P50, P95, P99) computed from per-block logs.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4636,7 +4636,7 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "ms"
         },
         "overrides": []
       },
@@ -4666,28 +4666,28 @@
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "type": "loki",
+            "uid": "${DS_LOKI}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(close_block_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap close_block_total_ms [${__interval}])",
           "legendFormat": "Close Block p50",
           "refId": "A"
         },
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "type": "loki",
+            "uid": "${DS_LOKI}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(close_block_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "quantile_over_time(0.95, {namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap close_block_total_ms [${__interval}])",
           "legendFormat": "Close Block p95",
           "refId": "B"
         },
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "type": "loki",
+            "uid": "${DS_LOKI}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(close_block_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap close_block_total_ms [${__interval}])",
           "legendFormat": "Close Block p99",
           "refId": "C"
         }
@@ -4697,10 +4697,10 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "type": "loki",
+        "uid": "${DS_LOKI}"
       },
-      "description": "Full block production time from start to close (P50, P95, P99)",
+      "description": "Full block production time from start to close (P50, P95, P99) computed from per-block logs.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4748,7 +4748,7 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "ms"
         },
         "overrides": []
       },
@@ -4778,28 +4778,28 @@
       "targets": [
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "type": "loki",
+            "uid": "${DS_LOKI}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(block_production_time_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap block_production_ms [${__interval}])",
           "legendFormat": "Block Production p50",
           "refId": "A"
         },
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "type": "loki",
+            "uid": "${DS_LOKI}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(block_production_time_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "quantile_over_time(0.95, {namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap block_production_ms [${__interval}])",
           "legendFormat": "Block Production p95",
           "refId": "B"
         },
         {
           "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "type": "loki",
+            "uid": "${DS_LOKI}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(block_production_time_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap block_production_ms [${__interval}])",
           "legendFormat": "Block Production p99",
           "refId": "C"
         }
@@ -5604,7 +5604,7 @@
             "uid": "${DS_LOKI}"
           },
           "editorMode": "code",
-          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\"",
+          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap $log_field",
           "queryType": "range",
           "refId": "A"
         }
@@ -5826,65 +5826,7 @@
         "overrides": []
       },
       "pluginVersion": 39,
-      "transformations": [
-        {
-          "id": "extractFields",
-          "options": {
-            "source": "Line",
-            "format": "json",
-            "jsonPaths": [
-              {
-                "alias": "timestamp",
-                "path": "timestamp"
-              }
-            ]
-          }
-        },
-        {
-          "id": "filterFieldsByName",
-          "options": {
-            "include": {
-              "pattern": "^(timestamp|Time|__time|$log_field)$"
-            }
-          }
-        },
-        {
-          "id": "convertFieldType",
-          "options": {
-            "conversions": [
-              {
-                "targetField": "timestamp",
-                "destinationType": "time"
-              },
-              {
-                "targetField": "Time",
-                "destinationType": "time"
-              },
-              {
-                "targetField": "__time",
-                "destinationType": "time"
-              },
-              {
-                "targetField": "$log_field",
-                "destinationType": "number"
-              }
-            ]
-          }
-        },
-        {
-          "id": "renameByName",
-          "options": {
-            "renames": {
-              "__time": "Time",
-              "timestamp": "Time"
-            }
-          }
-        },
-        {
-          "id": "prepareTimeSeries",
-          "options": {}
-        }
-      ]
+      "transformations": []
     }
   ],
   "refresh": "5s",
