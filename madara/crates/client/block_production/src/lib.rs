@@ -444,13 +444,14 @@ impl BlockProductionTask {
 
     /// Helper function to close a preconfirmed block with the given state_diff and bouncer weights.
     /// This is used both during normal block closing (EndBlock case) and during restart recovery.
+    /// Returns the result including timing information from the DB layer.
     async fn close_preconfirmed_block_with_state_diff(
         backend: Arc<MadaraBackend>,
         block_number: u64,
         consumed_core_contract_nonces: HashSet<u64>,
         bouncer_weights: &blockifier::bouncer::BouncerWeights,
         state_diff: mp_state_update::StateDiff,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<mc_db::AddFullBlockResult> {
         // Copy bouncer_weights to move into the closure (BouncerWeights implements Copy)
         let bouncer_weights = *bouncer_weights;
         global_spawn_rayon_task(move || {
@@ -468,12 +469,12 @@ impl BlockProductionTask {
                 .context("Saving Bouncer Weights for SNOS")?;
 
             // Close the preconfirmed block with state_diff
-            backend
+            let result = backend
                 .write_access()
                 .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
                 .context("Closing preconfirmed block")?;
 
-            anyhow::Ok(())
+            anyhow::Ok(result)
         })
         .await
     }
@@ -706,7 +707,7 @@ impl BlockProductionTask {
         let state_diff =
             mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
 
-        Self::close_preconfirmed_block_with_state_diff(
+        let _db_result = Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
             block_number,
             consumed_core_contract_nonces,
@@ -829,42 +830,47 @@ impl BlockProductionTask {
 
         let block_number_attributes = [KeyValue::new("block_number", state.block_number.to_string())];
 
+        // Capture state diff counts before moving state_diff
+        let declared_classes_count = state_diff.declared_classes.len();
+        let deployed_contracts_count = state_diff.deployed_contracts.len();
+        let storage_diffs_count = state_diff.storage_diffs.len();
+        let nonce_updates_count = state_diff.nonces.len();
+        let state_diff_len = state_diff.len();
+        let consumed_l1_nonces_count = state.consumed_core_contract_nonces.len();
+
+        // Capture bouncer weights before moving
+        let bouncer_l1_gas = block_exec_summary.bouncer_weights.l1_gas;
+        let bouncer_sierra_gas = block_exec_summary.bouncer_weights.sierra_gas.0;
+        let bouncer_n_events = block_exec_summary.bouncer_weights.n_events;
+        let bouncer_message_segment_length = block_exec_summary.bouncer_weights.message_segment_length;
+        let bouncer_state_diff_size = block_exec_summary.bouncer_weights.state_diff_size;
+
         // Record state diff data gauges before moving state_diff
         self.metrics
             .block_declared_classes_count
-            .record(state_diff.declared_classes.len() as u64, &block_number_attributes);
+            .record(declared_classes_count as u64, &block_number_attributes);
         self.metrics
             .block_deployed_contracts_count
-            .record(state_diff.deployed_contracts.len() as u64, &block_number_attributes);
-        self.metrics.block_storage_diffs_count.record(state_diff.storage_diffs.len() as u64, &block_number_attributes);
-        self.metrics.block_nonce_updates_count.record(state_diff.nonces.len() as u64, &block_number_attributes);
-        self.metrics.block_state_diff_length.record(state_diff.len() as u64, &block_number_attributes);
+            .record(deployed_contracts_count as u64, &block_number_attributes);
+        self.metrics.block_storage_diffs_count.record(storage_diffs_count as u64, &block_number_attributes);
+        self.metrics.block_nonce_updates_count.record(nonce_updates_count as u64, &block_number_attributes);
+        self.metrics.block_state_diff_length.record(state_diff_len as u64, &block_number_attributes);
         self.metrics.block_event_count.record(event_count, &block_number_attributes);
 
         // Record bouncer weights gauges
-        self.metrics
-            .block_bouncer_l1_gas
-            .record(block_exec_summary.bouncer_weights.l1_gas as u64, &block_number_attributes);
-        self.metrics
-            .block_bouncer_sierra_gas
-            .record(block_exec_summary.bouncer_weights.sierra_gas.0, &block_number_attributes);
-        self.metrics
-            .block_bouncer_n_events
-            .record(block_exec_summary.bouncer_weights.n_events as u64, &block_number_attributes);
+        self.metrics.block_bouncer_l1_gas.record(bouncer_l1_gas as u64, &block_number_attributes);
+        self.metrics.block_bouncer_sierra_gas.record(bouncer_sierra_gas, &block_number_attributes);
+        self.metrics.block_bouncer_n_events.record(bouncer_n_events as u64, &block_number_attributes);
         self.metrics
             .block_bouncer_message_segment_length
-            .record(block_exec_summary.bouncer_weights.message_segment_length as u64, &block_number_attributes);
-        self.metrics
-            .block_bouncer_state_diff_size
-            .record(block_exec_summary.bouncer_weights.state_diff_size as u64, &block_number_attributes);
+            .record(bouncer_message_segment_length as u64, &block_number_attributes);
+        self.metrics.block_bouncer_state_diff_size.record(bouncer_state_diff_size as u64, &block_number_attributes);
 
         // Record consumed L1 nonces count
-        self.metrics
-            .block_consumed_l1_nonces_count
-            .record(state.consumed_core_contract_nonces.len() as u64, &block_number_attributes);
+        self.metrics.block_consumed_l1_nonces_count.record(consumed_l1_nonces_count as u64, &block_number_attributes);
 
         let close_preconfirmed_start = Instant::now();
-        Self::close_preconfirmed_block_with_state_diff(
+        let db_result = Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
             state.block_number,
             state.consumed_core_contract_nonces,
@@ -873,12 +879,52 @@ impl BlockProductionTask {
         )
         .await
         .context("Closing block")?;
-        self.metrics.close_preconfirmed_duration.record(close_preconfirmed_start.elapsed().as_secs_f64(), &[]);
-        self.metrics
-            .close_preconfirmed_last
-            .record(close_preconfirmed_start.elapsed().as_secs_f64(), &block_number_attributes);
+        let close_preconfirmed_duration = close_preconfirmed_start.elapsed();
+        self.metrics.close_preconfirmed_duration.record(close_preconfirmed_duration.as_secs_f64(), &[]);
+        self.metrics.close_preconfirmed_last.record(close_preconfirmed_duration.as_secs_f64(), &block_number_attributes);
 
         let time_to_close = start_time.elapsed();
+        let block_production_time = state.block_start_time.elapsed();
+
+        // Emit structured log event for Loki querying (close_block_complete)
+        // All timing values converted to milliseconds for human-readability
+        let timings = &db_result.timings;
+        tracing::info!(
+            target: "close_block",
+            block_number = state.block_number,
+            tx_count = n_txs,
+            event_count = event_count,
+            // High-level timing
+            close_block_total_ms = time_to_close.as_secs_f64() * 1000.0,
+            close_preconfirmed_ms = close_preconfirmed_duration.as_secs_f64() * 1000.0,
+            block_production_ms = block_production_time.as_secs_f64() * 1000.0,
+            // State diff counts
+            state_diff_len = state_diff_len,
+            declared_classes = declared_classes_count,
+            deployed_contracts = deployed_contracts_count,
+            storage_diffs = storage_diffs_count,
+            nonce_updates = nonce_updates_count,
+            consumed_l1_nonces = consumed_l1_nonces_count,
+            // Bouncer weights
+            bouncer_l1_gas = bouncer_l1_gas,
+            bouncer_sierra_gas = bouncer_sierra_gas,
+            bouncer_n_events = bouncer_n_events,
+            bouncer_message_segment_length = bouncer_message_segment_length,
+            bouncer_state_diff_size = bouncer_state_diff_size,
+            // DB timing breakdown (all in ms)
+            get_full_block_ms = timings.get_full_block_with_classes.as_secs_f64() * 1000.0,
+            commitments_ms = timings.block_commitments_compute.as_secs_f64() * 1000.0,
+            merklization_ms = timings.merklization.as_secs_f64() * 1000.0,
+            contract_trie_ms = timings.contract_trie_root.as_secs_f64() * 1000.0,
+            class_trie_ms = timings.class_trie_root.as_secs_f64() * 1000.0,
+            contract_storage_trie_commit_ms = timings.contract_storage_trie_commit.as_secs_f64() * 1000.0,
+            contract_trie_commit_ms = timings.contract_trie_commit.as_secs_f64() * 1000.0,
+            class_trie_commit_ms = timings.class_trie_commit.as_secs_f64() * 1000.0,
+            block_hash_ms = timings.block_hash_compute.as_secs_f64() * 1000.0,
+            db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
+            "close_block_complete"
+        );
+
         tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
 
         // Record timing metrics
@@ -895,10 +941,8 @@ impl BlockProductionTask {
         self.metrics.block_counter.add(1, &block_number_attributes);
         self.metrics.block_gauge.record(state.block_number, &attributes);
         self.metrics.transaction_counter.add(n_txs as u64, &block_number_attributes);
-        self.metrics.block_production_time.record(state.block_start_time.elapsed().as_secs_f64(), &[]);
-        self.metrics
-            .block_production_time_last
-            .record(state.block_start_time.elapsed().as_secs_f64(), &block_number_attributes);
+        self.metrics.block_production_time.record(block_production_time.as_secs_f64(), &[]);
+        self.metrics.block_production_time_last.record(block_production_time.as_secs_f64(), &block_number_attributes);
         self.metrics.block_close_time.record(time_to_close.as_secs_f64(), &[]);
         self.metrics.block_close_time_last.record(time_to_close.as_secs_f64(), &block_number_attributes);
 

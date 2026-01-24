@@ -1,3 +1,4 @@
+use super::ContractTrieTimings;
 use crate::metrics::metrics;
 use crate::rocksdb::trie::WrappedBonsaiError;
 use crate::{prelude::*, rocksdb::RocksDBStorage};
@@ -29,7 +30,7 @@ struct ContractLeaf {
 ///
 /// # Returns
 ///
-/// The contract root.
+/// The contract root and timing information.
 pub fn contract_trie_root(
     backend: &RocksDBStorage,
     deployed_contracts: &[DeployedContractItem],
@@ -37,7 +38,8 @@ pub fn contract_trie_root(
     nonces: &[NonceUpdate],
     storage_diffs: &[ContractStorageDiffItem],
     block_number: u64,
-) -> Result<Felt> {
+) -> Result<(Felt, ContractTrieTimings)> {
+    let mut timings = ContractTrieTimings::default();
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
 
     let mut contract_storage_trie = backend.contract_storage_trie();
@@ -60,7 +62,8 @@ pub fn contract_trie_root(
     // Then we commit them
     let storage_commit_start = Instant::now();
     contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
-    let storage_commit_secs = storage_commit_start.elapsed().as_secs_f64();
+    timings.storage_commit = storage_commit_start.elapsed();
+    let storage_commit_secs = timings.storage_commit.as_secs_f64();
     let block_number_attributes = [KeyValue::new("block_number", block_number.to_string())];
     metrics().contract_storage_trie_commit_duration.record(storage_commit_secs, &[]);
     metrics().contract_storage_trie_commit_last.record(storage_commit_secs, &block_number_attributes);
@@ -100,14 +103,15 @@ pub fn contract_trie_root(
 
     let contract_commit_start = Instant::now();
     contract_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
-    let contract_commit_secs = contract_commit_start.elapsed().as_secs_f64();
+    timings.trie_commit = contract_commit_start.elapsed();
+    let contract_commit_secs = timings.trie_commit.as_secs_f64();
     metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
     metrics().contract_trie_commit_last.record(contract_commit_secs, &block_number_attributes);
     let root_hash = contract_trie.root_hash(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("contract_trie committed");
 
-    Ok(root_hash)
+    Ok((root_hash, timings))
 }
 
 /// Computes the contract state leaf hash
@@ -187,7 +191,7 @@ mod contract_trie_root_tests {
         let block_number = 1;
 
         // Call the function and print the result
-        let result = contract_trie_root(
+        let (result, _timings) = contract_trie_root(
             &backend.db,
             &deployed_contracts,
             &replaced_classes,

@@ -584,7 +584,7 @@ impl BlockImporterCtx {
 
         tracing::debug!("🔄 Applying state diff for blocks {:?} to global trie", block_range);
 
-        let got =
+        let (got, _timings) =
             self.backend.write_access().apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
                 BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
             })?;
@@ -685,7 +685,7 @@ mod tests {
         let importer = BlockImporter::new(backend, validation);
 
         // WHEN: We call update_tries with these parameters
-        let result = importer.ctx().apply_to_global_trie(0..1, vec![state_diff]);
+        let result = importer.ctx().apply_to_global_trie(0..1, vec![state_diff]).map(|_| ());
 
         assert_eq!(expected_result.map_err(|e| format!("{e:#}")), result.map_err(|e| format!("{e:#}")),)
     }
