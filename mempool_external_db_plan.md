@@ -1109,6 +1109,7 @@ mc-db = { path = "../db" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 testcontainers = "0.15"
 testcontainers-modules = { version = "0.3", features = ["mongo"] }
+rstest = "0.18"
 ```
 
 ---
@@ -1119,6 +1120,8 @@ testcontainers-modules = { version = "0.3", features = ["mongo"] }
 - All tests are written before implementation (strict TDD).
 - Tests must cover happy paths and edge cases and represent real behavior.
 - End-to-end test is mandatory to validate full flow.
+- Use `rstest` + fixtures for shared setup and fast, isolated DB allocation.
+- **Hybrid MongoDB strategy**: reuse a running Mongo if available; otherwise start one via Docker/testcontainers.
 
 ### Unit Tests
 
@@ -1222,6 +1225,19 @@ assert tx deleted in mongo
 ```
 
 ### Integration Tests
+
+**Mongo Fixture (Hybrid)**
+- Implement a `#[fixture]` that:
+  1. Checks for a reachable Mongo (env `MONGODB_URI` or default `mongodb://localhost:27017`).
+  2. If reachable, creates a **unique DB name** per test (e.g., `madara_test_<uuid>`).
+  3. If not reachable, spins up Mongo via testcontainers and returns a unique DB name.
+- Each test gets its own DB name to avoid cross-test contention.
+- The fixture should expose `{ client, db_name, uri }` so tests can create collections and clean up.
+
+**Environment Assumption**
+- Tests can run in two modes:
+  - **Fast path**: Mongo is already running (fixture reuses it).
+  - **Fallback path**: Mongo is started via Docker/testcontainers.
 
 ```rust
 #[cfg(test)]
