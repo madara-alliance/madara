@@ -160,6 +160,60 @@ impl Visit for CairoNativeEventVisitor {
     }
 }
 
+/// Visitor that collects all fields from a close_block event into a JSON object
+#[derive(Default)]
+struct CloseBlockEventVisitor {
+    fields: Vec<(String, serde_json::Value)>,
+    message: String,
+}
+
+impl Visit for CloseBlockEventVisitor {
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.fields.push((field.name().to_string(), serde_json::Value::Number(value.into())));
+    }
+
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.fields.push((field.name().to_string(), serde_json::Value::Number(value.into())));
+    }
+
+    fn record_u128(&mut self, field: &Field, value: u128) {
+        // JSON doesn't support u128 natively, convert to string if too large
+        if value <= u64::MAX as u128 {
+            self.fields.push((field.name().to_string(), serde_json::Value::Number((value as u64).into())));
+        } else {
+            self.fields.push((field.name().to_string(), serde_json::Value::String(value.to_string())));
+        }
+    }
+
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        if let Some(n) = serde_json::Number::from_f64(value) {
+            self.fields.push((field.name().to_string(), serde_json::Value::Number(n)));
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.message = value.to_string();
+        } else {
+            self.fields.push((field.name().to_string(), serde_json::Value::String(value.to_string())));
+        }
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.fields.push((field.name().to_string(), serde_json::Value::Bool(value)));
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        if field.name() == "message" {
+            let formatted = format!("{:?}", value);
+            self.message = formatted.trim_matches('"').to_string();
+        } else {
+            let formatted = format!("{:?}", value);
+            self.fields.push((field.name().to_string(), serde_json::Value::String(formatted.trim_matches('"').to_string())));
+        }
+    }
+}
+
 impl CairoNativeEventVisitor {
     pub fn get_message(&self) -> &str {
         &self.message
@@ -499,6 +553,42 @@ impl CustomFormatter {
             )
         }
     }
+
+    /// Format close_block events as JSON for Loki ingestion
+    fn format_close_block(
+        &self,
+        writer: &mut Writer<'_>,
+        event: &tracing::Event<'_>,
+        ts: &SystemTime,
+        level: &Level,
+        target: &str,
+    ) -> fmt::Result {
+        let mut visitor = CloseBlockEventVisitor::default();
+        event.record(&mut visitor);
+
+        // Build JSON object with timestamp, level, target, and all fields
+        let datetime: OffsetDateTime = (*ts).into();
+        let local_datetime = datetime.to_offset(self.local_offset);
+        let timestamp_str = local_datetime
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        let mut json_obj = serde_json::Map::new();
+        json_obj.insert("timestamp".to_string(), serde_json::Value::String(timestamp_str));
+        json_obj.insert("level".to_string(), serde_json::Value::String(level.to_string()));
+        json_obj.insert("target".to_string(), serde_json::Value::String(target.to_string()));
+        json_obj.insert("message".to_string(), serde_json::Value::String(visitor.message.clone()));
+
+        // Add all captured fields
+        for (key, value) in visitor.fields {
+            json_obj.insert(key, value);
+        }
+
+        let json_str = serde_json::to_string(&serde_json::Value::Object(json_obj))
+            .unwrap_or_else(|_| "{}".to_string());
+
+        writeln!(writer, "{}", json_str)
+    }
 }
 
 impl<S, N> FormatEvent<S, N> for CustomFormatter
@@ -523,6 +613,7 @@ where
                 self.format_http_call(&mut writer, event, target, &ts, level)
             }
             (_, "madara_cairo_native") => self.format_cairo_native(&mut writer, event, &ts, level),
+            (_, "close_block") => self.format_close_block(&mut writer, event, &ts, level, target),
             (&Level::INFO, _) => self.format_without_target(&mut writer, event, &ts, level, &Style::new().green()),
             (&Level::WARN, _) => {
                 self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().yellow())

@@ -176,6 +176,8 @@ pub(crate) struct CurrentBlockState {
     pub deployed_contracts: HashSet<Felt>,
     /// Track when block production started for metrics
     pub block_start_time: Instant,
+    /// Accumulated execution stats across all batches for this block
+    pub accumulated_stats: util::ExecutionStats,
 }
 
 impl CurrentBlockState {
@@ -186,6 +188,7 @@ impl CurrentBlockState {
             consumed_core_contract_nonces: Default::default(),
             deployed_contracts: Default::default(),
             block_start_time: Instant::now(),
+            accumulated_stats: Default::default(),
         }
     }
     /// Process the execution result, merging it with the current pending state
@@ -771,6 +774,9 @@ impl BlockProductionTask {
                 // Record batch execution stats metrics
                 self.metrics.record_execution_stats(&batch_execution_result.stats);
 
+                // Accumulate stats for the log event at block close
+                state.accumulated_stats = state.accumulated_stats.clone() + batch_execution_result.stats.clone();
+
                 state.append_batch(batch_execution_result).await?;
 
                 self.send_state_notification(BlockProductionStateNotification::BatchExecuted);
@@ -880,6 +886,7 @@ impl BlockProductionTask {
         // Emit structured log event for Loki querying (close_block_complete)
         // All timing values converted to milliseconds for human-readability
         let timings = &db_result.timings;
+        let exec_stats = &state.accumulated_stats;
         tracing::info!(
             target: "close_block",
             block_number = state.block_number,
@@ -887,8 +894,17 @@ impl BlockProductionTask {
             event_count = event_count,
             // High-level timing
             close_block_total_ms = time_to_close.as_secs_f64() * 1000.0,
+            block_close_ms = time_to_close.as_secs_f64() * 1000.0,
             close_preconfirmed_ms = close_preconfirmed_duration.as_secs_f64() * 1000.0,
             block_production_ms = block_production_time.as_secs_f64() * 1000.0,
+            // Execution stats
+            batches_executed = exec_stats.n_batches,
+            txs_added_to_block = exec_stats.n_added_to_block,
+            txs_executed = exec_stats.n_executed,
+            txs_reverted = exec_stats.n_reverted,
+            txs_rejected = exec_stats.n_rejected,
+            classes_declared = exec_stats.declared_classes,
+            l2_gas_consumed = exec_stats.l2_gas_consumed,
             // State diff counts
             state_diff_len = state_diff_len,
             declared_classes = declared_classes_count,

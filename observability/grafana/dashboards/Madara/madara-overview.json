@@ -1285,10 +1285,10 @@
       "options": { "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "get_full_block_with_classes_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Fetch Block", "refId": "A" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "block_commitments_compute_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Commitments", "refId": "B" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "apply_to_global_trie_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Merklization", "refId": "C" },
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "block_hash_compute_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Block Hash", "refId": "D" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "get_full_block_with_classes_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Fetch Block", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "block_commitments_compute_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Commitments", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "apply_to_global_trie_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Merklization", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "block_hash_compute_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Block Hash", "refId": "D" },
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "db_write_block_parts_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Write Block to DB", "refId": "E" }
       ],
       "title": "Close Block Timing Breakdown (Stacked)",
@@ -1468,7 +1468,7 @@
       "options": { "legend": { "calcs": ["lastNotNull", "mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
       "pluginVersion": "11.4.0",
       "targets": [
-        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "apply_to_global_trie_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"})", "legendFormat": "Total Merklization", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "apply_to_global_trie_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Total Merklization", "refId": "A" },
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "contract_trie_root_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Contract Trie Root", "refId": "B" },
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "class_trie_root_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Class Trie Root", "refId": "C" },
         { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "contract_storage_trie_commit_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}", "legendFormat": "Storage Trie Commit", "refId": "D" },

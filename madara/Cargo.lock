@@ -6589,6 +6589,7 @@ dependencies = [
  "opentelemetry-stdout",
  "opentelemetry_sdk",
  "prometheus",
+ "serde_json",
  "time",
  "tokio",
  "tracing",
