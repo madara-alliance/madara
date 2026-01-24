@@ -3,6 +3,7 @@ use alloy::providers::ProviderBuilder;
 use cairo_vm::Felt252;
 use starknet_core::types::Felt;
 
+use crate::compression::batch_rpc::BatchRpcClient;
 use crate::utils::rest_client::RestClient;
 use anyhow::Context;
 use cairo_vm::types::layout_name::LayoutName;
@@ -166,6 +167,8 @@ pub struct Config {
     madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The Madara feeder gateway client for fetching builtins
     madara_feeder_gateway_client: Arc<RestClient>,
+    /// Batch RPC client for efficient batch queries
+    batch_rpc_client: BatchRpcClient,
     /// The DA client to interact with the DA layer
     da_client: Box<dyn DaClient>,
     /// The service that produces proof and registers it onchain
@@ -193,6 +196,7 @@ impl Config {
         chain_details: ChainDetails,
         madara_rpc_client: Arc<JsonRpcClient<HttpTransport>>,
         madara_feeder_gateway_client: Arc<RestClient>,
+        batch_rpc_client: BatchRpcClient,
         database: Box<dyn DatabaseClient>,
         storage: Box<dyn StorageClient>,
         lock: Box<dyn LockClient>,
@@ -208,6 +212,7 @@ impl Config {
             chain_details,
             madara_rpc_client,
             madara_feeder_gateway_client,
+            batch_rpc_client,
             database,
             lock,
             storage,
@@ -266,6 +271,7 @@ impl Config {
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let feeder_gateway_client = RestClient::new(params.madara_feeder_gateway_url.clone());
+        let batch_rpc_client = BatchRpcClient::with_defaults(params.madara_rpc_url.clone());
 
         let database = Self::build_database_client(&db).await?;
         let lock = Self::build_lock_client(&db).await?;
@@ -304,6 +310,7 @@ impl Config {
             chain_details,
             madara_rpc_client: Arc::new(rpc_client),
             madara_feeder_gateway_client: Arc::new(feeder_gateway_client),
+            batch_rpc_client,
             database,
             lock,
             storage,
@@ -494,6 +501,11 @@ impl Config {
     /// Returns the Madara feeder gateway client
     pub fn madara_feeder_gateway_client(&self) -> &Arc<RestClient> {
         &self.madara_feeder_gateway_client
+    }
+
+    /// Returns the batch RPC client for efficient batch queries
+    pub fn batch_rpc_client(&self) -> &BatchRpcClient {
+        &self.batch_rpc_client
     }
 
     /// Returns the server config

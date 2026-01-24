@@ -23,7 +23,6 @@ use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::{AtlanticBucketInfo, AtlanticClient, AtlanticJobConfig, AtlanticJobInfo};
-use crate::constants::ATLANTIC_FETCH_ARTIFACTS_BASE_URL;
 use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQuery, AtlanticQueryStep, AtlanticSharpProver};
 
 #[derive(Debug, Clone)]
@@ -40,6 +39,8 @@ pub struct AtlanticValidatedArgs {
     pub atlantic_cairo_vm: AtlanticCairoVm,
     pub atlantic_result: AtlanticQueryStep,
     pub atlantic_sharp_prover: AtlanticSharpProver,
+    /// Base URL for fetching artifacts (proofs, SNOS outputs, etc.) from the Atlantic service.
+    pub atlantic_artifacts_base_url: Url,
 }
 
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
@@ -310,8 +311,7 @@ impl ProverClient for AtlanticProverService {
     }
 
     /// Fetch artifacts from the Atlantic service.
-    /// It tries to fetch the artifact for the given task ID from
-    /// [ATLANTIC_FETCH_ARTIFACTS_BASE_URL] S3 bucket.
+    /// It tries to fetch the artifact for the given task ID from the configured artifacts base URL.
     /// The type of artifacts to be fetched is defined by the `file_name` parameter.
     ///
     /// Calls the `get_artifacts` method of `AtlanticClient` defined in `client.rs`
@@ -322,10 +322,8 @@ impl ProverClient for AtlanticProverService {
     /// # Returns
     /// The artifact as a byte array if the request is successful, otherwise an error is returned
     async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError> {
-        Ok(self
-            .atlantic_client
-            .get_artifacts(format!("{}/queries/{}/{}", ATLANTIC_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
-            .await?)
+        let base_url = self.atlantic_client.artifacts_base_url().as_str().trim_end_matches('/');
+        Ok(self.atlantic_client.get_artifacts(format!("{}/queries/{}/{}", base_url, task_id, file_name)).await?)
     }
 }
 

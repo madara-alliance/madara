@@ -1,3 +1,4 @@
+use crate::compression::batch_rpc::BatchRpcClient;
 use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
 use crate::compression::squash::squash;
 use crate::core::config::{Config, ConfigParam, StarknetVersion};
@@ -15,8 +16,7 @@ use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
 use orchestrator_prover_client_interface::Task;
-use starknet::providers::jsonrpc::HttpTransport;
-use starknet::providers::{JsonRpcClient, Provider};
+use starknet::providers::Provider;
 use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Update};
 use starknet_core::types::{BlockId, StateUpdate};
 use starknet_types_core::felt::Felt;
@@ -76,10 +76,10 @@ impl AggregatorStateHandler {
         // Doing this first since this is dependent on external RPC => Higher chances of failure
         // i.e. if this fails, we won't update anything in our state and prevent data inconsistency
         let compressed_state_update = compress_state_update(
-            self.config.madara_rpc_client(),
             &state.blob,
             state.batch.end_block,
             state.batch.starknet_version,
+            self.config.batch_rpc_client(),
         )
         .await?;
 
@@ -185,10 +185,10 @@ impl AggregatorHandler {
                 match current_state_update {
                     Update(state_update) => {
                         let compressed_state_update = compress_state_update(
-                            self.config.madara_rpc_client(),
                             &state_update,
                             block_num.saturating_sub(1),
                             current_block_starknet_version,
+                            self.config.batch_rpc_client(),
                         )
                         .await?;
                         let new_state = NonEmptyAggregatorState::new(
@@ -257,7 +257,7 @@ impl AggregatorHandler {
                         &block_weights,
                         block_version,
                         &self.batch_config,
-                        self.config.madara_rpc_client(),
+                        self.config.batch_rpc_client(),
                     )
                     .await?
                 {
@@ -270,10 +270,10 @@ impl AggregatorHandler {
                         state.close();
 
                         let blob_len = compress_state_update(
-                            self.config.madara_rpc_client(),
                             &state_update,
                             block_num.saturating_sub(1),
                             block_version,
+                            self.config.batch_rpc_client(),
                         )
                         .await?
                         .len();
@@ -453,7 +453,7 @@ impl NonEmptyAggregatorState {
         block_weights: &AggregatorBatchWeights,
         block_version: StarknetVersion,
         batch_limits: &AggregatorBatchConfig,
-        provider: &Arc<JsonRpcClient<HttpTransport>>,
+        batch_client: &BatchRpcClient,
     ) -> Result<Option<Self>, JobError> {
         // Perform synchronous checks first
         let check_result = self.check_block_sync(block_weights, block_version, batch_limits);
@@ -475,15 +475,15 @@ impl NonEmptyAggregatorState {
         let squashed_state_update = squash(
             vec![&self.blob, block_state_update],
             if self.batch.start_block == 0 { None } else { Some(self.batch.start_block - 1) },
-            provider,
+            batch_client,
         )
         .await?;
         // Compress the squashed state update
         let compressed_state_update = compress_state_update(
-            provider,
             &squashed_state_update,
             block_num.saturating_sub(1),
             self.batch.starknet_version,
+            batch_client,
         )
         .await?;
         let blob_len = compressed_state_update.len();
@@ -519,14 +519,14 @@ impl AggregatorHandler {
 
 /// Compress the state update and return the blob data (as vector of felts)
 async fn compress_state_update(
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
     blob: &StateUpdate,
     end_block: u64,
     madara_version: StarknetVersion,
+    batch_client: &BatchRpcClient,
 ) -> Result<Vec<Felt>, JobError> {
     // Perform stateful compression if needed
     let state_update = if madara_version >= StarknetVersion::V0_13_4 {
-        crate::compression::stateful::compress(blob, end_block, provider)
+        crate::compression::stateful::compress(blob, end_block, batch_client)
             .await
             .map_err(|err| JobError::Other(OtherError(err)))?
     } else {

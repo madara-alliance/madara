@@ -1,8 +1,8 @@
 use crate::core::config::Config;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus};
 use crate::types::constant::{
-    CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, ORCHESTRATOR_VERSION, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME,
-    SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
+    get_batch_artifact_file, get_batch_blob_dir, CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, ORCHESTRATOR_VERSION,
+    PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
 use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -59,24 +59,15 @@ impl JobTrigger for AggregatorJobTrigger {
                     batch_num: batch.index,
                     bucket_id: batch.bucket_id,
                     download_proof: if config.params.store_audit_artifacts {
-                        Some(format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME))
+                        Some(get_batch_artifact_file(batch.index, PROOF_FILE_NAME))
                     } else {
                         None
                     },
-                    blob_data_path: format!("{}/batch/{}", STORAGE_BLOB_DIR, batch.index),
-                    da_segment_path: format!(
-                        "{}/batch/{}/{}",
-                        STORAGE_ARTIFACTS_DIR, batch.index, DA_SEGMENT_FILE_NAME
-                    ),
-                    cairo_pie_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, CAIRO_PIE_FILE_NAME),
-                    snos_output_path: format!(
-                        "{}/batch/{}/{}",
-                        STORAGE_ARTIFACTS_DIR, batch.index, SNOS_OUTPUT_FILE_NAME
-                    ),
-                    program_output_path: format!(
-                        "{}/batch/{}/{}",
-                        STORAGE_ARTIFACTS_DIR, batch.index, PROGRAM_OUTPUT_FILE_NAME
-                    ),
+                    blob_data_path: get_batch_blob_dir(batch.index),
+                    da_segment_path: get_batch_artifact_file(batch.index, DA_SEGMENT_FILE_NAME),
+                    cairo_pie_path: get_batch_artifact_file(batch.index, CAIRO_PIE_FILE_NAME),
+                    snos_output_path: get_batch_artifact_file(batch.index, SNOS_OUTPUT_FILE_NAME),
+                    program_output_path: get_batch_artifact_file(batch.index, PROGRAM_OUTPUT_FILE_NAME),
                     ..AggregatorMetadata::default()
                 }),
             };

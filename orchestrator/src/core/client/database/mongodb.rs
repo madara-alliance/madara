@@ -691,6 +691,30 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
+    async fn get_jobs_without_storage_artifacts_tagged(
+        &self,
+        limit: Option<i64>,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+
+        // Query for completed StateTransition jobs where storage_artifacts_tagged_at is null or doesn't exist
+        let filter = doc! {
+            "job_type": bson::to_bson(&JobType::StateTransition)?,
+            "status": bson::to_bson(&JobStatus::Completed)?,
+            // This matches both null values AND missing fields
+            "metadata.specific.storage_artifacts_tagged_at": { "$eq": null }
+        };
+
+        let find_options = limit.map(|val| FindOptions::builder().limit(Some(val)).build());
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+        debug!(job_count = jobs.len(), "Retrieved jobs without storage artifacts tagged");
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_without_storage_artifacts_tagged")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(jobs)
+    }
+
     async fn get_latest_aggregator_batch(&self) -> Result<Option<AggregatorBatch>, DatabaseError> {
         let start = Instant::now();
         let options = FindOptions::builder().sort(doc! { "index": -1 }).limit(1).build();

@@ -99,6 +99,9 @@ impl TryFrom<RunCmd> for ProverConfig {
                     atlantic_sharp_prover: atlantic_args.atlantic_sharp_prover.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Atlantic sharp prover is required".to_string())
                     })?,
+                    atlantic_artifacts_base_url: atlantic_args.atlantic_artifacts_base_url.ok_or_else(|| {
+                        OrchestratorError::RunCommandError("Atlantic artifacts base URL is required".to_string())
+                    })?,
                 }))
             }
         }
