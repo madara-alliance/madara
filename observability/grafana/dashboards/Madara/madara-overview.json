@@ -5839,7 +5839,7 @@
           "id": "filterFieldsByName",
           "options": {
             "include": {
-              "pattern": "^(Time|$log_field)$"
+              "pattern": "^(__time|Time|$log_field)$"
             }
           }
         },
@@ -5852,6 +5852,14 @@
                 "destinationType": "number"
               }
             ]
+          }
+        },
+        {
+          "id": "renameByName",
+          "options": {
+            "renames": {
+              "__time": "Time"
+            }
           }
         },
         {
