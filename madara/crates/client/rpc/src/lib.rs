@@ -2,7 +2,7 @@
 //! interface for interacting with the Starknet node. This module implements the official Starknet
 //! JSON-RPC specification along with some Madara-specific extensions.
 //!
-//! Madara fully supports the Starknet JSON-RPC specification versions `v0.7.1`, `v0.8.1`, `v0.9.0`, and `v0.10.0`, with
+//! Madara fully supports the Starknet JSON-RPC specification versions `v0.7.1`, `v0.8.1`, `v0.9.0`, `v0.10.0`, and `v0.10.1`, with
 //! methods accessible through port **9944** by default (configurable via `--rpc-port`). The RPC
 //! server supports both HTTP and WebSocket connections on the same port.
 //!
@@ -15,6 +15,7 @@
 //! - Version 0.8.1: `http://localhost:9944/rpc/v0_8_1/`
 //! - Version 0.9.0: `http://localhost:9944/rpc/v0_9_0/`
 //! - Version 0.10.0: `http://localhost:9944/rpc/v0_10_0/`
+//! - Version 0.10.1: `http://localhost:9944/rpc/v0_10_1/`
 //!
 //! ## Available Endpoints
 //!
@@ -887,6 +888,11 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::user::v0_10_0::StarknetWriteRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_0::StarknetWsRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_10_0::StarknetTraceRpcApiV0_10_0Server::into_rpc(starknet.clone()))?;
+
+    rpc_api.merge(versions::user::v0_10_1::StarknetReadRpcApiV0_10_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_1::StarknetWriteRpcApiV0_10_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_1::StarknetWsRpcApiV0_10_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_10_1::StarknetTraceRpcApiV0_10_1Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }

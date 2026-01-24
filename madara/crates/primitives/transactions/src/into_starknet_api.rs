@@ -393,6 +393,7 @@ impl From<starknet_api::transaction::InvokeTransactionV3> for InvokeTransactionV
             account_deployment_data: value.account_deployment_data.0,
             nonce_data_availability_mode: value.nonce_data_availability_mode.into(),
             fee_data_availability_mode: value.fee_data_availability_mode.into(),
+            proof_facts: None,
         }
     }
 }
@@ -401,6 +402,13 @@ impl TryFrom<InvokeTransactionV3> for starknet_api::transaction::InvokeTransacti
     type Error = TransactionApiError;
 
     fn try_from(tx: InvokeTransactionV3) -> Result<Self, Self::Error> {
+        // TODO(blockifier-proof-facts): The Starkware sequencer main branch now includes
+        // `proof_facts: ProofFacts` in InvokeTransactionV3. Once the karnotxyz/sequencer fork
+        // is updated to include this field, we should:
+        // 1. Pass tx.proof_facts to blockifier instead of dropping it here
+        // 2. Update the From<starknet_api::...> impl above to read proof_facts from blockifier
+        // Ref: https://github.com/starkware-libs/sequencer/blob/main/crates/starknet_api/src/transaction.rs
+        // The field is: #[serde(default, skip_serializing_if = "ProofFacts::is_empty")]
         Ok(Self {
             resource_bounds: tx.resource_bounds.into(),
             tip: starknet_api::transaction::fields::Tip(tx.tip),
