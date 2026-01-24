@@ -294,14 +294,13 @@ impl BlockProductionMetrics {
         }
     }
 
-    pub fn record_execution_stats(&self, block_number: u64, stats: &ExecutionStats) {
-        let attributes = [KeyValue::new("block_number", block_number.to_string())];
-        self.batches_executed.add(stats.n_batches as u64, &attributes);
-        self.txs_added_to_block.add(stats.n_added_to_block as u64, &attributes);
-        self.txs_executed.add(stats.n_executed as u64, &attributes);
-        self.txs_reverted.add(stats.n_reverted as u64, &attributes);
-        self.txs_rejected.add(stats.n_rejected as u64, &attributes);
-        self.classes_declared.add(stats.declared_classes as u64, &attributes);
+    pub fn record_execution_stats(&self, stats: &ExecutionStats) {
+        self.batches_executed.add(stats.n_batches as u64, &[]);
+        self.txs_added_to_block.add(stats.n_added_to_block as u64, &[]);
+        self.txs_executed.add(stats.n_executed as u64, &[]);
+        self.txs_reverted.add(stats.n_reverted as u64, &[]);
+        self.txs_rejected.add(stats.n_rejected as u64, &[]);
+        self.classes_declared.add(stats.declared_classes as u64, &[]);
 
         // Safely convert u128 to u64 for metrics, logging if truncation occurs
         let gas_consumed_u64 = stats.l2_gas_consumed.try_into().unwrap_or_else(|_| {
@@ -312,6 +311,6 @@ impl BlockProductionMetrics {
             );
             u64::MAX
         });
-        self.l2_gas_consumed.add(gas_consumed_u64, &attributes);
+        self.l2_gas_consumed.add(gas_consumed_u64, &[]);
     }
 }

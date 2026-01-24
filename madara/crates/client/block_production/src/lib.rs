@@ -146,7 +146,6 @@ use mp_transactions::TransactionWithHash;
 use mp_utils::rayon::global_spawn_rayon_task;
 use mp_utils::service::ServiceContext;
 use mp_utils::AbortOnDrop;
-use opentelemetry::KeyValue;
 use std::collections::HashSet;
 use std::mem;
 use std::sync::Arc;
@@ -770,7 +769,7 @@ impl BlockProductionTask {
                 };
 
                 // Record batch execution stats metrics
-                self.metrics.record_execution_stats(state.block_number, &batch_execution_result.stats);
+                self.metrics.record_execution_stats(&batch_execution_result.stats);
 
                 state.append_batch(batch_execution_result).await?;
 
@@ -828,8 +827,6 @@ impl BlockProductionTask {
         let state_diff =
             mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
 
-        let block_number_attributes = [KeyValue::new("block_number", state.block_number.to_string())];
-
         // Capture state diff counts before moving state_diff
         let declared_classes_count = state_diff.declared_classes.len();
         let deployed_contracts_count = state_diff.deployed_contracts.len();
@@ -846,28 +843,22 @@ impl BlockProductionTask {
         let bouncer_state_diff_size = block_exec_summary.bouncer_weights.state_diff_size;
 
         // Record state diff data gauges before moving state_diff
-        self.metrics
-            .block_declared_classes_count
-            .record(declared_classes_count as u64, &block_number_attributes);
-        self.metrics
-            .block_deployed_contracts_count
-            .record(deployed_contracts_count as u64, &block_number_attributes);
-        self.metrics.block_storage_diffs_count.record(storage_diffs_count as u64, &block_number_attributes);
-        self.metrics.block_nonce_updates_count.record(nonce_updates_count as u64, &block_number_attributes);
-        self.metrics.block_state_diff_length.record(state_diff_len as u64, &block_number_attributes);
-        self.metrics.block_event_count.record(event_count, &block_number_attributes);
+        self.metrics.block_declared_classes_count.record(declared_classes_count as u64, &[]);
+        self.metrics.block_deployed_contracts_count.record(deployed_contracts_count as u64, &[]);
+        self.metrics.block_storage_diffs_count.record(storage_diffs_count as u64, &[]);
+        self.metrics.block_nonce_updates_count.record(nonce_updates_count as u64, &[]);
+        self.metrics.block_state_diff_length.record(state_diff_len as u64, &[]);
+        self.metrics.block_event_count.record(event_count, &[]);
 
         // Record bouncer weights gauges
-        self.metrics.block_bouncer_l1_gas.record(bouncer_l1_gas as u64, &block_number_attributes);
-        self.metrics.block_bouncer_sierra_gas.record(bouncer_sierra_gas, &block_number_attributes);
-        self.metrics.block_bouncer_n_events.record(bouncer_n_events as u64, &block_number_attributes);
-        self.metrics
-            .block_bouncer_message_segment_length
-            .record(bouncer_message_segment_length as u64, &block_number_attributes);
-        self.metrics.block_bouncer_state_diff_size.record(bouncer_state_diff_size as u64, &block_number_attributes);
+        self.metrics.block_bouncer_l1_gas.record(bouncer_l1_gas as u64, &[]);
+        self.metrics.block_bouncer_sierra_gas.record(bouncer_sierra_gas, &[]);
+        self.metrics.block_bouncer_n_events.record(bouncer_n_events as u64, &[]);
+        self.metrics.block_bouncer_message_segment_length.record(bouncer_message_segment_length as u64, &[]);
+        self.metrics.block_bouncer_state_diff_size.record(bouncer_state_diff_size as u64, &[]);
 
         // Record consumed L1 nonces count
-        self.metrics.block_consumed_l1_nonces_count.record(consumed_l1_nonces_count as u64, &block_number_attributes);
+        self.metrics.block_consumed_l1_nonces_count.record(consumed_l1_nonces_count as u64, &[]);
 
         let close_preconfirmed_start = Instant::now();
         let db_result = Self::close_preconfirmed_block_with_state_diff(
@@ -881,7 +872,7 @@ impl BlockProductionTask {
         .context("Closing block")?;
         let close_preconfirmed_duration = close_preconfirmed_start.elapsed();
         self.metrics.close_preconfirmed_duration.record(close_preconfirmed_duration.as_secs_f64(), &[]);
-        self.metrics.close_preconfirmed_last.record(close_preconfirmed_duration.as_secs_f64(), &block_number_attributes);
+        self.metrics.close_preconfirmed_last.record(close_preconfirmed_duration.as_secs_f64(), &[]);
 
         let time_to_close = start_time.elapsed();
         let block_production_time = state.block_start_time.elapsed();
@@ -929,22 +920,16 @@ impl BlockProductionTask {
 
         // Record timing metrics
         self.metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
-        self.metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &block_number_attributes);
+        self.metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &[]);
 
         // Record metrics
-        let attributes = [
-            KeyValue::new("block_number", state.block_number.to_string()),
-            KeyValue::new("transactions_added", n_txs.to_string()),
-            KeyValue::new("closing_time", time_to_close.as_secs_f32().to_string()),
-        ];
-
-        self.metrics.block_counter.add(1, &block_number_attributes);
-        self.metrics.block_gauge.record(state.block_number, &attributes);
-        self.metrics.transaction_counter.add(n_txs as u64, &block_number_attributes);
+        self.metrics.block_counter.add(1, &[]);
+        self.metrics.block_gauge.record(state.block_number, &[]);
+        self.metrics.transaction_counter.add(n_txs as u64, &[]);
         self.metrics.block_production_time.record(block_production_time.as_secs_f64(), &[]);
-        self.metrics.block_production_time_last.record(block_production_time.as_secs_f64(), &block_number_attributes);
+        self.metrics.block_production_time_last.record(block_production_time.as_secs_f64(), &[]);
         self.metrics.block_close_time.record(time_to_close.as_secs_f64(), &[]);
-        self.metrics.block_close_time_last.record(time_to_close.as_secs_f64(), &block_number_attributes);
+        self.metrics.block_close_time_last.record(time_to_close.as_secs_f64(), &[]);
 
         self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(state.block_number) });
         self.send_state_notification(BlockProductionStateNotification::ClosedBlock);

@@ -7,7 +7,6 @@ use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
 use bonsai_trie::id::BasicId;
 use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StorageEntry};
-use opentelemetry::KeyValue;
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, StarkHash};
@@ -64,9 +63,8 @@ pub fn contract_trie_root(
     contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
     timings.storage_commit = storage_commit_start.elapsed();
     let storage_commit_secs = timings.storage_commit.as_secs_f64();
-    let block_number_attributes = [KeyValue::new("block_number", block_number.to_string())];
     metrics().contract_storage_trie_commit_duration.record(storage_commit_secs, &[]);
-    metrics().contract_storage_trie_commit_last.record(storage_commit_secs, &block_number_attributes);
+    metrics().contract_storage_trie_commit_last.record(storage_commit_secs, &[]);
 
     for NonceUpdate { contract_address, nonce } in nonces {
         contract_leafs.entry(*contract_address).or_default().nonce = Some(*nonce);
@@ -106,7 +104,7 @@ pub fn contract_trie_root(
     timings.trie_commit = contract_commit_start.elapsed();
     let contract_commit_secs = timings.trie_commit.as_secs_f64();
     metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
-    metrics().contract_trie_commit_last.record(contract_commit_secs, &block_number_attributes);
+    metrics().contract_trie_commit_last.record(contract_commit_secs, &[]);
     let root_hash = contract_trie.root_hash(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("contract_trie committed");

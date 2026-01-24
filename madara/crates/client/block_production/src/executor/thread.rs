@@ -9,7 +9,6 @@ use mc_db::MadaraBackend;
 use mc_exec::metrics::{context_label, metrics as exec_metrics, tx_type_to_label};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter};
 use mp_convert::{Felt, ToFelt};
-use opentelemetry::KeyValue;
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
 use std::{
@@ -306,12 +305,8 @@ impl ExecutorThread {
                                 match execution_state.executor.finalize() {
                                     Ok(block_exec_summary) => {
                                         let finalize_secs = finalize_start.elapsed().as_secs_f64();
-                                        let attributes = [KeyValue::new(
-                                            "block_number",
-                                            execution_state.exec_ctx.block_number.to_string(),
-                                        )];
                                         self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
-                                        self.metrics.executor_finalize_last.record(finalize_secs, &attributes);
+                                        self.metrics.executor_finalize_last.record(finalize_secs, &[]);
 
                                         // Send EndFinalBlock message so main loop can close the block during shutdown
                                         if self
@@ -509,9 +504,8 @@ impl ExecutorThread {
                 let finalize_start = Instant::now();
                 let block_exec_summary = execution_state.executor.finalize()?;
                 let finalize_secs = finalize_start.elapsed().as_secs_f64();
-                let attributes = [KeyValue::new("block_number", execution_state.exec_ctx.block_number.to_string())];
                 self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
-                self.metrics.executor_finalize_last.record(finalize_secs, &attributes);
+                self.metrics.executor_finalize_last.record(finalize_secs, &[]);
 
                 if self
                     .replies_sender
