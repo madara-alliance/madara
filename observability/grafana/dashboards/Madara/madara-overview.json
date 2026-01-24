@@ -5848,6 +5848,14 @@
           "options": {
             "conversions": [
               {
+                "targetField": "Time",
+                "destinationType": "time"
+              },
+              {
+                "targetField": "__time",
+                "destinationType": "time"
+              },
+              {
                 "targetField": "$log_field",
                 "destinationType": "number"
               }
