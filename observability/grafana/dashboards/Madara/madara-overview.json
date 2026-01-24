@@ -5839,7 +5839,7 @@
           "id": "filterFieldsByName",
           "options": {
             "include": {
-              "pattern": "^$log_field$"
+              "pattern": "^(Time|$log_field)$"
             }
           }
         },
