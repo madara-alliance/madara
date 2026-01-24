@@ -5604,7 +5604,7 @@
             "uid": "${DS_LOKI}"
           },
           "editorMode": "code",
-          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | __error__=\"\"",
+          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -5814,7 +5814,7 @@
             "uid": "${DS_LOKI}"
           },
           "editorMode": "code",
-          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap $log_field",
+          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -5825,7 +5825,40 @@
         },
         "overrides": []
       },
-      "pluginVersion": 39
+      "pluginVersion": 39,
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line",
+            "format": "json",
+            "jsonPaths": []
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^$log_field$"
+            }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "$log_field",
+                "destinationType": "number"
+              }
+            ]
+          }
+        },
+        {
+          "id": "prepareTimeSeries",
+          "options": {}
+        }
+      ]
     }
   ],
   "refresh": "5s",
