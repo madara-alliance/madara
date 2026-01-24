@@ -35,6 +35,16 @@ We use a **transactional outbox** pattern with RocksDB as the durable queue to a
 
 **Decision**: start with outbox-only for correctness and simplicity; consider adding channel later if needed.
 
+### Design Decision: Outbox Write Timing
+- **Outbox-first (chosen)**:
+  - Pros: strict durability (accepted txs always persisted).
+  - Cons: small additional latency on acceptance; requires rollback on mempool insert failure.
+- **Mempool-first (deferred)**:
+  - Pros: slightly faster user response.
+  - Cons: possible data loss if outbox write fails; breaks strict durability.
+
+**Decision**: outbox write happens before mempool insertion with rollback on insertion failure.
+
 ### Design Decision: Outbox Location
 - **Same RocksDB (chosen)**:
   - Pros: simpler operations, shared WAL/backup, fewer configs.
