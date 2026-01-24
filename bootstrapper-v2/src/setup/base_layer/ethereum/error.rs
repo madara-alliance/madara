@@ -62,6 +62,15 @@ pub enum EthereumError {
 
     #[error("Other error: {0}")]
     Other(#[from] Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("L2 token polling timeout after {0} seconds")]
+    L2TokenPollingTimeout(u64),
+
+    #[error("Fee token mismatch: expected {expected}, got {actual}")]
+    FeeTokenMismatch { expected: String, actual: String },
+
+    #[error("Starknet Felt parse error: {0}")]
+    FeltParseError(String),
 }
 
 impl From<EthereumError> for BaseLayerError {

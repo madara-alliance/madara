@@ -2,6 +2,8 @@ use alloy::{primitives::Address, sol};
 use futures_util::StreamExt;
 pub use Factory::BaseLayerContracts;
 use Factory::{CoreContractInitData, FactoryInstance, ImplementationContracts};
+pub use Manager::ManagerInstance;
+pub use Starknet::StarknetInstance;
 
 use crate::setup::base_layer::{ethereum::error::EthereumError, BaseLayerError};
 
@@ -12,6 +14,22 @@ sol!(
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     Factory,
     "contracts/ethereum/out/Factory.sol/Factory.json"
+);
+
+// Manager contract for token enrollment
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    Manager,
+    "../build-artifacts/starkgate_latest/solidity/manager.json"
+);
+
+// CoreContract (Starknet) for config hash management
+sol!(
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    Starknet,
+    "../build-artifacts/cairo_lang/Starknet.json"
 );
 
 pub struct DeployedFactory<P> {

@@ -1,13 +1,14 @@
 {
   "addresses": {
-    "coreContract": "0x3b02ff1e626ed7a8fd6ec5299e2c54e1421b626b",
-    "ethTokenBridge": "0xd79ae87f2c003ec925fb7e9c11585709bfe41473",
-    "manager": "0xba12646cc07adbe43f8bd25d83fb628d29c8a762",
-    "registry": "0x7ab4c4804197531f7ed6a6bc0f0781f706ff7953",
-    "tokenBridge": "0xc8cb5439c767a63aca1c01862252b2f3495fdcfe"
+    "coreContract": "0x9bd03768a7dcc129555de410ff8e85528a4f88b5",
+    "ethTokenBridge": "0xf908e307066da7a10b7a0353200e9ae39351744f",
+    "l1Token": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+    "manager": "0x440c0fcdc317d69606eabc35c0f676d1a8251ee1",
+    "registry": "0x80e2e2367c5e9d070ae2d6d50bf0cdf6360a7151",
+    "tokenBridge": "0x0433d874a28147db0b330c000fcc50c0f0baf425"
   },
   "implementation_addresses": {
-    "baseLayerFactory": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+    "baseLayerFactory": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
     "coreContract": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
     "ethBridge": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
     "ethBridgeEIC": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",

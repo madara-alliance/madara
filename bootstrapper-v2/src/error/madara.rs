@@ -70,4 +70,7 @@ pub enum MadaraError {
 
     #[error("File error: {0}")]
     FileError(#[from] crate::utils::FileError),
+
+    #[error("L2 token polling timeout after {0} seconds")]
+    L2TokenPollingTimeout(u64),
 }

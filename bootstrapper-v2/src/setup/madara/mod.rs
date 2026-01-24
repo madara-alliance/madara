@@ -39,6 +39,8 @@ pub enum DeployedContract {
     L2EthToken,
     L2EthBridge,
     L2TokenBridge,
+    /// The L2 fee token deployed via token enrollment (polled from L2 token bridge)
+    L2FeeToken,
 }
 
 #[allow(dead_code)]
@@ -284,7 +286,7 @@ impl MadaraSetup {
     }
 
     /// Save the current class hashes and addresses to a JSON file
-    fn save_madara_addresses(&self, madara_addresses_path: &str) -> Result<(), MadaraError> {
+    pub fn save_madara_addresses(&self, madara_addresses_path: &str) -> Result<(), MadaraError> {
         let madara_addresses = serde_json::json!({
             "classes": {
                 "token_bridge": format!("0x{:x}", self.require_class_hash(&MadaraClass::TokenBridge)?),
@@ -299,6 +301,7 @@ impl MadaraSetup {
                 "l2_eth_token": format!("0x{:x}", self.addresses.get(&DeployedContract::L2EthToken).unwrap_or(&Felt::ZERO)),
                 "l2_eth_bridge": format!("0x{:x}", self.addresses.get(&DeployedContract::L2EthBridge).unwrap_or(&Felt::ZERO)),
                 "l2_token_bridge": format!("0x{:x}", self.addresses.get(&DeployedContract::L2TokenBridge).unwrap_or(&Felt::ZERO)),
+                "l2_fee_token": format!("0x{:x}", self.addresses.get(&DeployedContract::L2FeeToken).unwrap_or(&Felt::ZERO)),
             }
         });
 
@@ -308,5 +311,70 @@ impl MadaraSetup {
         log::info!("Madara addresses saved to: {}", madara_addresses_path);
 
         Ok(())
+    }
+
+    /// Polls the L2 token bridge to get the deployed L2 token address for an enrolled L1 token.
+    /// This method calls `get_l2_token(l1_token)` on the L2 TokenBridge contract
+    /// and polls until a non-zero result is returned or timeout is reached.
+    pub async fn get_enrolled_l2_token(
+        &self,
+        l1_token_address: &str,
+        l2_token_bridge_address: &str,
+        timeout_secs: u64,
+        poll_interval_ms: u64,
+    ) -> Result<Felt, MadaraError> {
+        // Parse the L1 token address to EthAddress, then convert to Felt
+        let l1_token_eth = EthAddress::from_hex(l1_token_address)?;
+        let l1_token_felt = Felt::from(l1_token_eth);
+
+        // Parse the L2 token bridge address to Felt
+        let l2_token_bridge =
+            Felt::from_hex(l2_token_bridge_address).map_err(|e| MadaraError::InvalidPrivateKeyFormat(e))?;
+
+        // Calculate the selector for get_l2_token function
+        let selector = get_selector_or_panic("get_l2_token");
+
+        let start_time = std::time::Instant::now();
+        let timeout_duration = std::time::Duration::from_secs(timeout_secs);
+        let poll_interval = std::time::Duration::from_millis(poll_interval_ms);
+
+        log::info!("Polling for L2 token on bridge {} for L1 token {}...", l2_token_bridge_address, l1_token_address);
+
+        loop {
+            // Check timeout
+            if start_time.elapsed() >= timeout_duration {
+                return Err(MadaraError::L2TokenPollingTimeout(timeout_secs));
+            }
+
+            // Call get_l2_token on the L2 TokenBridge
+            let call_result = self
+                .provider
+                .call(
+                    starknet::core::types::FunctionCall {
+                        contract_address: l2_token_bridge,
+                        entry_point_selector: selector,
+                        calldata: vec![l1_token_felt],
+                    },
+                    starknet::core::types::BlockId::Tag(starknet::core::types::BlockTag::PreConfirmed),
+                )
+                .await;
+
+            match call_result {
+                Ok(result) if !result.is_empty() && result[0] != Felt::ZERO => {
+                    let l2_token = result[0];
+                    log::info!("L2 token deployed at: {:#x}", l2_token);
+                    return Ok(l2_token);
+                }
+                Ok(_) => {
+                    log::debug!("L2 token not yet deployed, waiting...");
+                }
+                Err(e) => {
+                    log::debug!("Error polling for L2 token: {:?}, retrying...", e);
+                }
+            }
+
+            // Wait before next poll
+            tokio::time::sleep(poll_interval).await;
+        }
     }
 }

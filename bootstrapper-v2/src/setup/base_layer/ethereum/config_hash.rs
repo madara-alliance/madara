@@ -76,6 +76,12 @@ pub fn compute_public_keys_hash(da_public_keys: &Option<Vec<Felt>>) -> Felt {
 }
 
 impl ConfigHashParams {
+    /// Creates a new ConfigHashParams with an overridden fee token.
+    /// Useful when the deployed L2 fee token differs from the configured one.
+    pub fn with_fee_token(self, fee_token: Felt) -> Self {
+        Self { madara_fee_token: fee_token, ..self }
+    }
+
     /// Computes the OS config hash using Pedersen hash algorithm
     ///
     /// Formula:
@@ -148,10 +154,8 @@ mod tests {
         let params = ConfigHashParams {
             version: felt_from_hex(DEFAULT_CONFIG_HASH_VERSION).unwrap(),
             chain_id: Felt::from_hex("0x4d41444152415f4445564e4554").unwrap(), // MADARA_DEVNET
-            madara_fee_token: Felt::from_hex(
-                "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
-            )
-            .unwrap(),
+            madara_fee_token: Felt::from_hex("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d")
+                .unwrap(),
             da_public_keys: None,
         };
 
@@ -167,10 +171,8 @@ mod tests {
         let params = ConfigHashParams {
             version: felt_from_hex(DEFAULT_CONFIG_HASH_VERSION).unwrap(),
             chain_id: Felt::from_hex("0x4d41444152415f4445564e4554").unwrap(), // MADARA_DEVNET
-            madara_fee_token: Felt::from_hex(
-                "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
-            )
-            .unwrap(),
+            madara_fee_token: Felt::from_hex("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d")
+                .unwrap(),
             da_public_keys: Some(vec![
                 Felt::from_hex("0x0582ef3a536a8dc8e84ce3369c4fc4f3482bb2fdc9f2df8bd75a5ab9a6d4e63e").unwrap(),
                 Felt::from_hex("0x00960d67e261edb4e9490ccfe1192e1deca1346569576beb264e25441a38b306").unwrap(),

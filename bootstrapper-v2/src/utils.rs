@@ -233,3 +233,24 @@ pub async fn get_contracts_deployed_addresses(
 
     Ok(addresses)
 }
+
+/// Helper for reading deployed addresses from JSON output files
+pub struct DeployedAddresses {
+    data: serde_json::Value,
+}
+
+impl DeployedAddresses {
+    /// Load addresses from a JSON file
+    pub fn from_file(path: &str) -> Result<Self, FileError> {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| FileError::FailedCreatingParentDirectory(path.to_string(), e))?;
+        let data: serde_json::Value =
+            serde_json::from_str(&content).map_err(|e| FileError::FailedToWriteFile(IoError::other(e)))?;
+        Ok(Self { data })
+    }
+
+    /// Get a string value from the addresses section
+    pub fn get_address(&self, key: &str) -> Option<&str> {
+        self.data["addresses"][key].as_str()
+    }
+}

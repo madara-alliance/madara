@@ -1,3 +1,4 @@
+use crate::error::ConfigError;
 use crate::setup::base_layer::ethereum::config_hash::DEFAULT_CONFIG_HASH_VERSION;
 use crate::setup::base_layer::ethereum::factory::Factory;
 use crate::setup::base_layer::ethereum::implementation_contracts::ImplementationContract;
@@ -76,10 +77,31 @@ pub enum BaseLayerConfig {
         core_contract_init_data: Box<CoreContractInitDataPartial>,
         /// Configuration for computing the config hash dynamically
         config_hash_config: ConfigHashConfig,
+        /// Deploy mock contracts for testing/anvil (default: false)
+        #[serde(default)]
+        deploy_test_contracts: bool,
+        /// L1 token address (required if deploy_test_contracts is false)
+        l1_token_address: Option<String>,
     },
     Starknet {
         rpc_url: String,
     },
+}
+
+impl BaseLayerConfig {
+    /// Validates the configuration.
+    /// Returns an error if deploy_test_contracts is false and l1_token_address is not provided.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        match self {
+            BaseLayerConfig::Ethereum { deploy_test_contracts, l1_token_address, .. } => {
+                if !deploy_test_contracts && l1_token_address.is_none() {
+                    return Err(ConfigError::MissingL1TokenAddress);
+                }
+                Ok(())
+            }
+            BaseLayerConfig::Starknet { .. } => Ok(()),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,22 +114,29 @@ impl BaseConfigOuter {
         &self,
         private_key: String,
         addresses_output_path: &str,
-    ) -> Box<dyn BaseLayerSetupTrait> {
+    ) -> Result<Box<dyn BaseLayerSetupTrait>, ConfigError> {
+        // Validate the configuration before creating the setup
+        self.base_layer.validate()?;
+
         match &self.base_layer {
             BaseLayerConfig::Ethereum {
                 rpc_url,
                 implementation_addresses,
                 core_contract_init_data,
                 config_hash_config,
-            } => Box::new(EthereumSetup::new(
+                deploy_test_contracts,
+                l1_token_address,
+            } => Ok(Box::new(EthereumSetup::new(
                 rpc_url.clone(),
                 private_key,
                 implementation_addresses.clone(),
                 *core_contract_init_data.clone(),
                 config_hash_config.clone(),
                 addresses_output_path,
-            )),
-            BaseLayerConfig::Starknet { rpc_url } => Box::new(StarknetSetup::new(rpc_url.clone(), private_key)),
+                *deploy_test_contracts,
+                l1_token_address.clone(),
+            ))),
+            BaseLayerConfig::Starknet { rpc_url } => Ok(Box::new(StarknetSetup::new(rpc_url.clone(), private_key))),
         }
     }
 }
