@@ -1,21 +1,26 @@
 {
   "base_layer": {
     "layer": "ETHEREUM",
-    "rpc_url": "http://localhost:8545",
+    "rpc_url": "http://127.0.0.1:55398/",
     "implementation_addresses": {},
     "core_contract_init_data": {
       "programHash": "0x0207fde0facdcfcb085194635233fc46aa3dc8ca7182abf51079e31c88180905",
       "aggregatorProgramHash": "0x03c2bf03c21bd2794125c481d7e224fbd8793ac675d24cdc9d476761d0d4ccab",
-      "verifier": "0x7B21D0bcaE0cB872f74CB1E732a7a874A1601533",
-      "configHash": "0x032ee9a5311d00fb7ecb72de6eeeb0352349fa58766e387715342021ac546aca",
+      "verifier": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
       "state": {
         "globalRoot": "0x0",
         "blockNumber": "-1",
         "blockHash": "0x0"
       }
-    }
+    },
+   "config_hash_config": {
+      "madara_chain_id": "MADARA_DEVNET",
+      "madara_fee_token": "0x6930a088f86270360b2d5a663ff32fd08496a34876caada9b89b207f521da23",
+      "da_public_keys": []
+    },
+    "deploy_test_contracts": true
   },
   "madara": {
-    "rpc_url": "http://localhost:9944"
+    "rpc_url": "http://127.0.0.1:55399/"
   }
 }

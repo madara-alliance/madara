@@ -7,7 +7,11 @@ use std::path::Path;
 use tokio::fs;
 // Import all the services we've created
 pub use super::config::*;
-use crate::services::{constants::*, helpers::get_file_path};
+use crate::services::constants::{
+    ANVIL_DATABASE_FILE, DATA_DIR, LOCALSTACK_DATA_DIR, MADARA_DATABASE_DIR,
+    MOCK_VERIFIER_ADDRESS_FILE, ORCHESTRATOR_DATABASE_NAME, REPO_ROOT,
+};
+use crate::services::helpers::get_file_path;
 
 pub struct DatabaseManager {}
 
@@ -101,10 +105,27 @@ impl DatabaseManager {
         let mock_verifier_exists = data_dir.join(MOCK_VERIFIER_ADDRESS_FILE).exists();
         let orchestrator_dir_exists = data_dir.join(ORCHESTRATOR_DATABASE_NAME).exists();
 
-        if anvil_json_exists && madara_db_exists && mock_verifier_exists && orchestrator_dir_exists {
+        if anvil_json_exists && madara_db_exists && mock_verifier_exists && orchestrator_dir_exists
+        {
             Ok(())
         } else {
-            Err(SetupError::OtherError("Database files missing despite ReadyToUse status".to_string()))
+            let mut missing = Vec::new();
+            if !anvil_json_exists {
+                missing.push(ANVIL_DATABASE_FILE);
+            }
+            if !madara_db_exists {
+                missing.push(MADARA_DATABASE_DIR);
+            }
+            if !mock_verifier_exists {
+                missing.push(MOCK_VERIFIER_ADDRESS_FILE);
+            }
+            if !orchestrator_dir_exists {
+                missing.push(ORCHESTRATOR_DATABASE_NAME);
+            }
+            Err(SetupError::OtherError(format!(
+                "Database files missing despite ReadyToUse status: {:?}",
+                missing
+            )))
         }
     }
 }

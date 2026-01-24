@@ -20,22 +20,22 @@ use starknet::{
 };
 
 // Constants - Taken from: addresses.json, bootstrapper.json and output of bootstrapper
-pub const L2_ACCOUNT_ADDRESS: &str = "0x4fe5eea46caa0a1f344fafce82b39d66b552f00d3cd12e89073ef4b4ab37860";
+pub const L2_ACCOUNT_ADDRESS: &str = "0x4da71bd1d9153651a8e393bdbee29e2cafc9bade4cf17a5d56501ff764e4c78";
 pub const L2_ACCOUNT_PRIVATE_KEY: &str = "0xabcd"; // Hex Madara Account Private Key
 
-pub const L2_ERC20_TOKEN_ADDRESS: &str = "0x25205e11d1c0017f94a531a139b47137dae34ae0b9bed9e8fe698ace64f0609"; // Hex Madara ERC20 TOKEN Address
-pub const L2_ERC20_BRIDGE_ADDRESS: &str = "0x7e46129030dcff37062dd4353a738a7a5d5a88e8481bfa8b36a2ef5f8f7fa47"; // Hex Madara ERC20 BRIDGE Address
+pub const L2_ERC20_TOKEN_ADDRESS: &str = "0x6930a088f86270360b2d5a663ff32fd08496a34876caada9b89b207f521da23"; // Hex Madara ERC20 TOKEN Address
+pub const L2_ERC20_BRIDGE_ADDRESS: &str = "0x77621a6437d386ccc99e871e6e953847e01caead1b60841d72f0c30ce424ae7"; // Hex Madara ERC20 BRIDGE Address
 
-pub const L2_ETH_TOKEN_ADDRESS: &str = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"; // Hex Madara ETH TOKEN Address
-pub const L2_ETH_BRIDGE_ADDRESS: &str = "0x190f2407f7040ef9a60d4df4d2eace6089419aa9ec42cda229a82a29b2d5b3e"; // Hex Madara ETH BRIDGE Address
+pub const L2_ETH_TOKEN_ADDRESS: &str = "0x6c36803b310c8c4ba3cbdfd7830f2145ce9b8dfd2ddaaef3153948171f74f4e"; // Hex Madara ETH TOKEN Address
+pub const L2_ETH_BRIDGE_ADDRESS: &str = "0x3eedfae2c789e49571b63e59b2c5af675bad1e06e99df10f1de0e4f1f709430"; // Hex Madara ETH BRIDGE Address
 
 pub const L1_ACCOUNT_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"; // Hex L1 Account Address
 pub const L1_ACCOUNT_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // Hex L1 Account Private Key
 
-pub const L1_ERC20_BRIDGE_ADDRESS: &str = "0x59b670e9fa9d0a427751af201d676719a970857b"; // Hex L1 ERC20 BRIDGE Address
-pub const L1_ERC20_TOKEN_ADDRESS: &str = "0x4ed7c70f96b99c776995fb64377f0d4ab3b0e1c1";
+pub const L1_ERC20_BRIDGE_ADDRESS: &str = "0x0433d874a28147db0b330c000fcc50c0f0baf425"; // Hex L1 ERC20 BRIDGE Address
+pub const L1_ERC20_TOKEN_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 
-pub const L1_ETH_BRIDGE_ADDRESS: &str = "0x8a791620dd6260079bf849dc5567adc3f2fdc318"; // Hex L1 ETH BRIDGE Address
+pub const L1_ETH_BRIDGE_ADDRESS: &str = "0xf908e307066da7a10b7a0353200e9ae39351744f"; // Hex L1 ETH BRIDGE Address
 
 pub type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

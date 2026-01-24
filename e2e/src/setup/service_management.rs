@@ -10,7 +10,10 @@ use crate::services::bootstrapper_v2::{BootstrapperV2Error, BootstrapperV2Servic
 use crate::services::mock_verifier::MockVerifierDeployerService;
 
 pub use super::config::*;
-use crate::services::constants::*;
+use crate::services::constants::{
+    BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT, DATA_DIR,
+    ORCHESTRATOR_DATABASE_NAME,
+};
 use crate::services::localstack::LocalstackService;
 use crate::services::madara::{MadaraError, MadaraService};
 use crate::services::mongodb::MongoService;
@@ -179,12 +182,31 @@ impl ServiceManager {
 
             self.bootstrap_madara().await?;
 
-            // Get the block number for syncing
+            // Wait for blocks to be mined after bootstrap completes, then capture block number
+            // We wait for current + 2 to ensure:
+            // 1. Block containing bootstrap transactions is mined (current + 1)
+            // 2. One additional block after bootstrap is confirmed (current + 2)
             if let Some(madara) = &services.madara_service {
-                self.bootstrapped_madara_block_number = madara
+                // Step 1: Get current block number
+                let current_block = madara
                     .get_latest_block_number()
                     .await
-                    .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?;
+                    .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?
+                    .unwrap_or(0);
+
+                // Step 2: Calculate target (current + 2 to ensure one block AFTER bootstrap tx are mined)
+                let target_block = current_block + 2;
+                println!(
+                    "⏳ Waiting for block {} to be mined after L2 bootstrap (current: {})...",
+                    target_block, current_block
+                );
+
+                // Step 3: Wait for target block to be mined
+                madara.wait_for_block_mined(target_block).await?;
+
+                // Step 4: Store for Pathfinder sync
+                self.bootstrapped_madara_block_number = Some(current_block);
+                println!("✅ Block {} mined, proceeding to Pathfinder sync", target_block);
             }
 
             println!("✅ L2 Setup completed");
@@ -296,7 +318,7 @@ impl ServiceManager {
             Ok(())
         })
         .await
-        .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
+        .map_err(|_| SetupError::Timeout("Database restore timed out".to_string()))?
     }
 
     // Individual service startup methods
@@ -362,6 +384,9 @@ impl ServiceManager {
 
         println!("🥳 Base layer bootstrapper finished with {}", status);
 
+        // Log the deployed addresses
+        self.log_addresses_file(BOOTSTRAPPER_V2_BASE_ADDRESSES_OUTPUT, "Base layer")?;
+
         // Update madara config with the deployed core contract address
         self.update_madara_config_with_core_contract()?;
 
@@ -420,6 +445,10 @@ impl ServiceManager {
         let status = BootstrapperV2Service::run(bootstrapper_config).await?;
 
         println!("🥳 Madara bootstrapper finished with {}", status);
+
+        // Log the deployed addresses
+        self.log_addresses_file(BOOTSTRAPPER_V2_MADARA_ADDRESSES_OUTPUT, "Madara")?;
+
         Ok(())
     }
 
@@ -428,6 +457,22 @@ impl ServiceManager {
         let orchestrator_config = self.get_orchestrator_config_with_core_contract()?;
         let orchestrator_service = OrchestratorService::run(orchestrator_config).await?;
         services.orchestrator_service = Some(orchestrator_service);
+        Ok(())
+    }
+
+    /// Log the contents of an addresses file for debugging
+    fn log_addresses_file(&self, filename: &str, label: &str) -> Result<(), SetupError> {
+        use crate::services::helpers::get_file_path;
+
+        let addresses_path = get_file_path(&format!("{}/{}", DATA_DIR, filename));
+        match std::fs::read_to_string(&addresses_path) {
+            Ok(content) => {
+                println!("📋 {} addresses ({}):\n{}", label, filename, content);
+            }
+            Err(e) => {
+                println!("⚠️ Failed to read {} addresses file: {}", label, e);
+            }
+        }
         Ok(())
     }
 
@@ -456,6 +501,7 @@ impl ServiceManager {
         let orchestrator_config = self.config.get_orchestrator_run_config().clone()
             .builder()
             .env_var("MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS", core_contract_address)
+            .env_var("MADARA_ORCHESTRATOR_MAX_BATCH_SIZE", "1")
             .build();
 
         Ok(orchestrator_config)
