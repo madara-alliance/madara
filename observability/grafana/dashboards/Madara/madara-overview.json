@@ -5832,14 +5832,19 @@
           "options": {
             "source": "Line",
             "format": "json",
-            "jsonPaths": []
+            "jsonPaths": [
+              {
+                "alias": "timestamp",
+                "path": "timestamp"
+              }
+            ]
           }
         },
         {
           "id": "filterFieldsByName",
           "options": {
             "include": {
-              "pattern": "^(__time|Time|$log_field)$"
+              "pattern": "^(timestamp|Time|__time|$log_field)$"
             }
           }
         },
@@ -5847,6 +5852,10 @@
           "id": "convertFieldType",
           "options": {
             "conversions": [
+              {
+                "targetField": "timestamp",
+                "destinationType": "time"
+              },
               {
                 "targetField": "Time",
                 "destinationType": "time"
@@ -5866,7 +5875,8 @@
           "id": "renameByName",
           "options": {
             "renames": {
-              "__time": "Time"
+              "__time": "Time",
+              "timestamp": "Time"
             }
           }
         },
