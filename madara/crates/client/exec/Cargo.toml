@@ -21,6 +21,7 @@ mc-analytics = { workspace = true }
 mc-class-exec = { workspace = true }
 mc-db = { workspace = true }
 mc-rust-exec = { path = "../rust-exec", optional = true }
+once_cell = { version = "1.19", optional = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
@@ -68,4 +69,4 @@ serde_json = { workspace = true }
 
 [features]
 default = []
-rust-verification = ["mc-rust-exec"]
+rust-verification = ["mc-rust-exec", "once_cell"]

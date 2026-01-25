@@ -27,6 +27,9 @@ pub(crate) fn handle_sierra_class(
     info: &SierraClassInfo,
     config: Arc<config::NativeConfig>,
 ) -> Result<RunnableCompiledClass, ProgramError> {
+    // Time the FULL native flow including compilation (if needed)
+    let full_native_start = Instant::now();
+
     // Convert Felt to ClassHash at the entry point for type safety
     let class_hash_typed = ClassHash(*class_hash);
 
@@ -47,15 +50,36 @@ pub(crate) fn handle_sierra_class(
 
     // Check cache (memory then disk)
     if let Some(cached) = try_cache_lookup(&class_hash_typed, sierra, start, &config) {
+        let full_native_time = full_native_start.elapsed();
+        tracing::info!(
+            target: "madara_cairo_native",
+            "Native class available (cache hit): class_hash={:#x}, time_us={}, time_ms={:.3} [Note: actual execution may use VM if TrackedResource=CairoSteps]",
+            class_hash,
+            full_native_time.as_micros(),
+            full_native_time.as_micros() as f64 / 1000.0
+        );
         return Ok(cached);
     }
 
     // Handle compilation based on mode (blocking vs async)
-    if config.is_blocking_mode() {
+    let result = if config.is_blocking_mode() {
         handle_blocking_compilation(&class_hash_typed, sierra, &config, start)
     } else {
         handle_async_compilation(&class_hash_typed, sierra, compiled, info, &config)
-    }
+    };
+
+    let full_native_time = full_native_start.elapsed();
+    let mode = if config.is_blocking_mode() { "blocking" } else { "async" };
+    tracing::info!(
+        target: "madara_cairo_native",
+        "Native class available (compiled): class_hash={:#x}, time_us={}, time_ms={:.3}, mode={} [Note: actual execution may use VM if TrackedResource=CairoSteps]",
+        class_hash,
+        full_native_time.as_micros(),
+        full_native_time.as_micros() as f64 / 1000.0,
+        mode
+    );
+
+    result
 }
 
 /// Handles the case when native execution is disabled.

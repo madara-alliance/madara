@@ -17,3 +17,5 @@ mod interfaces {
     pub mod replaceable;
     pub mod roles;
 }
+
+mod modern_erc20;

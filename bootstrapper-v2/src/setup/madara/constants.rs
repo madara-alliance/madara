@@ -9,12 +9,12 @@ pub const BOOTSTRAP_ACCOUNT_CASM: &str =
 pub const BOOTSTRAP_PRIVATE_KEY: &str = "0x424f4f545354524150";
 
 // Token Bridge artifacts
-pub const TOKEN_BRIDGE_SIERRA: &str = "../build-artifacts/starkgate_latest/cairo/token_bridge.sierra.json";
-pub const TOKEN_BRIDGE_CASM: &str = "../build-artifacts/starkgate_latest/cairo/token_bridge.casm.json";
+pub const TOKEN_BRIDGE_SIERRA: &str = "../build-artifacts/starkgate_latest/token_bridge.sierra.json";
+pub const TOKEN_BRIDGE_CASM: &str = "../build-artifacts/starkgate_latest/token_bridge.casm.json";
 
-// ERC20 artifacts
-pub const ERC20_SIERRA: &str = "../build-artifacts/starkgate_latest/cairo/ERC20_070.sierra.json";
-pub const ERC20_CASM: &str = "../build-artifacts/starkgate_latest/cairo/ERC20_070.casm.json";
+// ERC20 artifacts (Modern Sierra 1.7.0 compatible)
+pub const ERC20_SIERRA: &str = "../build-artifacts/starkgate_latest/modern_erc20.sierra.json";
+pub const ERC20_CASM: &str = "../build-artifacts/starkgate_latest/modern_erc20.casm.json";
 
 // EIC artifacts
 pub const EIC_SIERRA: &str = "./contracts/madara/target/dev/madara_factory_contracts_EIC.contract_class.json";

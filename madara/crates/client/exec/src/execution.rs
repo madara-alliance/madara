@@ -16,6 +16,7 @@ use starknet_api::core::{ClassHash, ContractAddress, Nonce};
 use starknet_api::executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType};
 use starknet_api::transaction::fields::{GasVectorComputationMode, Tip};
 use starknet_api::transaction::{TransactionHash, TransactionVersion};
+use std::time::Instant;
 
 impl<D: MadaraStorageRead> ExecutionContext<D> {
     /// Execute transactions. The returned `ExecutionResult`s are the results of the `transactions_to_trace`. The results of `transactions_before` are discarded.
@@ -63,6 +64,12 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     |err| TxExecError { view: format!("{view}"), hash, index: executed_prev + index, err };
 
                 let mut transactional_state = TransactionalState::create_transactional(&mut self.state);
+
+                // ============================================================
+                // BLOCKIFIER (Cairo VM) EXECUTION - START TIMING
+                // ============================================================
+                let blockifier_start = Instant::now();
+
                 // NB: We use execute_raw because execute already does transaactional state.
                 let timer = TxExecutionTimer::new();
                 let mut execution_info =
@@ -76,6 +83,11 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     .map_err(TransactionExecutionError::StateError)
                     .map_err(make_reexec_error)?;
                 transactional_state.commit();
+
+                // ============================================================
+                // BLOCKIFIER (Cairo VM) EXECUTION - END TIMING
+                // ============================================================
+                let blockifier_duration = blockifier_start.elapsed();
 
                 let gas_vector_computation_mode = match tx {
                     Transaction::Account(tx) => tx.tx.create_tx_info(tx.execution_flags.only_query).gas_mode(),
@@ -92,16 +104,57 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     state_diff: state_diff.state_maps.into(),
                 };
 
-                // Rust verification (only for execute call info, not validate/fee transfer)
-                if let Some(execute_call_info) = &result.execution_info.execute_call_info {
-                    crate::rust_exec_integration::verify_transaction_execution(
-                        self.blockifier_state_adapter(),
-                        execute_call_info.call.storage_address.to_felt(),
-                        execute_call_info.call.class_hash.unwrap_or_default().to_felt(),
-                        execute_call_info.call.entry_point_selector.to_felt(),
-                        &execute_call_info.call.calldata.0,
-                        execute_call_info.call.caller_address.to_felt(),
-                        &result,
+                // Rust verification (check all calls including inner calls)
+                // Timing is done inside verify_call_tree around pure Rust execution only
+                let verification_result =
+                    if let Some(execute_call_info) = &result.execution_info.execute_call_info {
+                        crate::rust_exec_integration::verify_call_tree(
+                            self.blockifier_state_adapter(),
+                            execute_call_info,
+                            &result,
+                        )
+                    } else {
+                        crate::rust_exec_integration::CallTreeVerificationResult {
+                            any_executed: false,
+                            total_execution_duration: std::time::Duration::ZERO,
+                        }
+                    };
+
+                // Log timing comparison if Rust execution was performed
+                if verification_result.any_executed {
+                    let rust_duration = verification_result.total_execution_duration;
+                    let speedup = if rust_duration.as_nanos() > 0 {
+                        blockifier_duration.as_nanos() as f64 / rust_duration.as_nanos() as f64
+                    } else {
+                        f64::INFINITY
+                    };
+
+                    // Note: Can't easily determine actual execution mode (Native vs VM) at tx level
+                    // since different calls may use different modes based on TrackedResource.
+                    // Use "native enabled" to indicate config, not actual execution.
+                    let blockifier_mode = if self.is_cairo_native_enabled() {
+                        "native enabled, may fallback to VM"
+                    } else {
+                        "VM only"
+                    };
+
+                    tracing::info!(
+                        "⏱️  TIMING COMPARISON for tx {:#x}:",
+                        hash.to_felt()
+                    );
+                    tracing::info!(
+                        "   🐢 Blockifier ({}): {:?} (full tx: fees, validation, execution)",
+                        blockifier_mode,
+                        blockifier_duration
+                    );
+                    tracing::info!(
+                        "   🚀 Rust Execution:       {:?} (contract logic only, no fees)",
+                        rust_duration
+                    );
+                    tracing::info!(
+                        "   📊 Speedup: {:.2}x {} [Note: not apples-to-apples]",
+                        speedup,
+                        if speedup > 1.0 { "(Rust faster)" } else { "(Blockifier faster)" }
                     );
                 }
 

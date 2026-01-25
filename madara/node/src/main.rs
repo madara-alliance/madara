@@ -241,6 +241,11 @@ async fn main() -> anyhow::Result<()> {
     mc_class_exec::config::setup_and_log(&cairo_native_config)
         .map_err(|e| anyhow::anyhow!("Cairo Native configuration setup failed: {}", e))?;
 
+    // Initialize Rust execution verification (if enabled)
+    // This logs which contracts are configured for Rust verification
+    #[cfg(feature = "rust-verification")]
+    mc_exec::rust_exec_integration::init_rust_verification();
+
     // ===================================================================== //
     //                             SERVICES (SETUP)                          //
     // ===================================================================== //

@@ -31,6 +31,7 @@ pub mod to_blockifier;
 mod test_utils;
 
 // Re-export commonly used types
-pub use compilation::{init_compilation_semaphore, init_tokio_runtime_handle};
+pub use cache::cache_contains;
+pub use compilation::{compile_native_blocking, init_compilation_semaphore, init_tokio_runtime_handle};
 pub use config::{NativeCompilationMode, NativeConfig};
 pub use error::NativeCompilationError;

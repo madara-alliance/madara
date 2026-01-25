@@ -142,9 +142,9 @@ pub async fn declare_contract(
 
     let txn = account
         .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-        .l1_gas(0)
-        .l2_gas(0)
-        .l1_data_gas(0)
+        .l1_gas(5000000)
+        .l2_gas(5000000)
+        .l1_data_gas(5000)
         .send()
         .await?;
     wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await?;
@@ -156,7 +156,7 @@ pub async fn execute_v3(
     account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
     calls: &Vec<Call>,
 ) -> Result<InvokeTransactionResult, MadaraError> {
-    let txn_res = account.execute_v3(calls.clone()).l1_gas(0).l2_gas(0).l1_data_gas(0).send().await?;
+    let txn_res = account.execute_v3(calls.clone()).l1_gas(5000000).l2_gas(5000000).l1_data_gas(5000).send().await?;
 
     wait_for_transaction(
         account.provider(),

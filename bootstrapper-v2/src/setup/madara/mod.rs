@@ -139,12 +139,38 @@ impl MadaraSetup {
 
         let calldata = Vec::from([*universal_deployer_class, Felt::ZERO, Felt::ONE, Felt::ZERO]);
         let calls = vec![Call { to: account_address, selector: get_selector_or_panic("deploy_contract"), calldata }];
-        let res = execute_v3(account, &calls).await?;
 
-        let udc_address = get_contract_address_from_deploy_tx(account_provider, &res).await?;
+        let udc_address = match execute_v3(account, &calls).await {
+            Ok(res) => {
+                let addr = get_contract_address_from_deploy_tx(account_provider, &res).await?;
+                log::info!("Universal deployer deployed successfully at address: 0x{:x}", addr);
+                addr
+            }
+            Err(e) => {
+                let error_msg = format!("{:?}", e);
+                if error_msg.contains("contract already deployed") {
+                    // Extract address from error message
+                    if let Some(start) = error_msg.find("0x") {
+                        let hex_str = &error_msg[start..];
+                        if let Some(end) = hex_str.find(|c: char| !c.is_ascii_hexdigit() && c != 'x') {
+                            let addr_str = &hex_str[..end];
+                            let addr = Felt::from_hex(addr_str)
+                                .map_err(|_| MadaraError::FailedToWaitForTransaction("Failed to parse already-deployed contract address".to_string(), "deploy_universal_deployer".to_string()))?;
+                            log::info!("Universal deployer already deployed, reusing address: 0x{:x}", addr);
+                            addr
+                        } else {
+                            return Err(e);
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        };
 
         self.insert_address(DeployedContract::UniversalDeployer, udc_address);
-        log::info!("Universal deployer deployed successfully at address: 0x{:x}", udc_address);
 
         Ok(udc_address)
     }
@@ -205,13 +231,37 @@ impl MadaraSetup {
             calldata: madara_factory_calldata,
         }];
 
-        let madara_factory_res = execute_v3(account, &madara_factory_calls).await?;
+        let madara_factory_address = match execute_v3(account, &madara_factory_calls).await {
+            Ok(madara_factory_res) => {
+                let addr = get_contract_address_from_deploy_tx(account.provider(), &madara_factory_res).await?;
+                log::info!("MadaraFactory deployed successfully at address: 0x{:x}", addr);
+                addr
+            }
+            Err(e) => {
+                let error_msg = format!("{:?}", e);
+                if error_msg.contains("contract already deployed") {
+                    // Extract address from error message
+                    if let Some(start) = error_msg.find("0x") {
+                        let hex_str = &error_msg[start..];
+                        if let Some(end) = hex_str.find(|c: char| !c.is_ascii_hexdigit() && c != 'x') {
+                            let addr_str = &hex_str[..end];
+                            let addr = Felt::from_hex(addr_str)
+                                .map_err(|_| MadaraError::FailedToWaitForTransaction("Failed to parse already-deployed contract address".to_string(), "deploy_madara_factory".to_string()))?;
+                            log::info!("MadaraFactory already deployed, reusing address: 0x{:x}", addr);
+                            addr
+                        } else {
+                            return Err(e);
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                } else {
+                    return Err(e);
+                }
+            }
+        };
 
-        let madara_factory_address =
-            get_contract_address_from_deploy_tx(account.provider(), &madara_factory_res).await?;
         self.insert_address(DeployedContract::MadaraFactory, madara_factory_address);
-
-        log::info!("MadaraFactory deployed successfully at address: 0x{:x}", madara_factory_address);
 
         Ok(madara_factory_address)
     }

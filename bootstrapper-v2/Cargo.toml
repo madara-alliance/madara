@@ -11,6 +11,50 @@ license = "Apache-2.0"
 [[bin]]
 name = "bootstrapper-v2"
 
+[[bin]]
+name = "deploy-account"
+path = "src/bin/deploy_account.rs"
+
+[[bin]]
+name = "mint-eth"
+path = "src/bin/mint_eth.rs"
+
+[[bin]]
+name = "setup-and-mint"
+path = "src/bin/setup_and_mint.rs"
+
+[[bin]]
+name = "transfer-eth"
+path = "src/bin/transfer_eth.rs"
+
+[[bin]]
+name = "deploy-user-account"
+path = "src/bin/deploy_user_account.rs"
+
+[[bin]]
+name = "get-public-key"
+path = "src/bin/get_public_key.rs"
+
+[[bin]]
+name = "deploy-contract"
+path = "src/bin/deploy_contract.rs"
+
+[[bin]]
+name = "increment-counter"
+path = "src/bin/increment_counter.rs"
+
+[[bin]]
+name = "deploy-account-direct"
+path = "src/bin/deploy_account_direct.rs"
+
+[[bin]]
+name = "deploy-new-account"
+path = "src/bin/deploy_new_account.rs"
+
+[[bin]]
+name = "increment-from-account"
+path = "src/bin/increment_from_account.rs"
+
 [lib]
 name = "bootstrapper_v2"
 path = "src/lib.rs"
@@ -34,6 +78,7 @@ log = "0.4.27"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.135"
 starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
+rand = "0.8"
 strum = "0.27"
 strum_macros = "0.27"
 thiserror = "2.0.10"

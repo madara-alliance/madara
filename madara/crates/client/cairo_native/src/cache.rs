@@ -50,7 +50,7 @@ static NATIVE_CACHE: std::sync::LazyLock<DashMap<ClassHash, (NativeCompiledClass
     std::sync::LazyLock::new(DashMap::new);
 
 /// Check if a class hash exists in the memory cache.
-pub(crate) fn cache_contains(class_hash: &ClassHash) -> bool {
+pub fn cache_contains(class_hash: &ClassHash) -> bool {
     NATIVE_CACHE.contains_key(class_hash)
 }
 

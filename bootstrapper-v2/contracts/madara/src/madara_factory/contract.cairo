@@ -107,9 +107,7 @@ mod MadaraFactory {
 
         fn deploy_token_bridge(ref self: ContractState) -> ContractAddress {
             // Deploy Token Bridge
-            let provisional_gov_admin = starknet::get_contract_address();
             let mut calldata = ArrayTrait::new();
-            provisional_gov_admin.serialize(ref calldata);
             0.serialize(ref calldata); // upgrade_delay
 
             let (l2_token_bridge, _) = deploy_syscall(
@@ -127,12 +125,9 @@ mod MadaraFactory {
 
         fn deploy_eth_bridge(ref self: ContractState) -> ContractAddress {
             // Deploy l2 eth bridge
-            let provisional_gov_admin = starknet::get_contract_address();
-
             // Creating the calldata to be passed to
             // the constructor of the EthBridge contract
             let mut calldata = ArrayTrait::new();
-            provisional_gov_admin.serialize(ref calldata);
             0.serialize(ref calldata); // upgrade_delay
 
             let (l2_eth_bridge, _) = deploy_syscall(
@@ -153,17 +148,15 @@ mod MadaraFactory {
             ref self: ContractState, l2_eth_bridge: ContractAddress,
         ) -> ContractAddress {
 
-            // The Erc20 contract being deployed here is
-            // [this](https://github.com/starknet-io/starkgate-contracts/blob/45941888479663ac93e898cd7f8504fa9066c54c/src/openzeppelin/token/erc20_v070/erc20.cairo#L110)
-            // Deploy Eth Token
-            let initial_supply: u256 = 0;
+            // Deploy ERC20 with large initial supply for development
+            // Mint 1 billion ETH (1000000000 * 10^18) to the owner (bootstrap account)
+            let initial_supply: u256 = 1000000000000000000000000000; // 1 billion ETH
             let mut calldata = ArrayTrait::new();
             'Ether'.serialize(ref calldata); // name
             'ETH'.serialize(ref calldata); // symbol
             18.serialize(ref calldata); // decimals
-            initial_supply.serialize(ref calldata); // initial_supply
-
-            self.owner.read().serialize(ref calldata); // initial_supply_recipient
+            initial_supply.serialize(ref calldata); // initial_supply (u256)
+            self.owner.read().serialize(ref calldata); // recipient (bootstrap account)
             l2_eth_bridge.serialize(ref calldata); // permitted_minter
             self.owner.read().serialize(ref calldata); // provisional_governance_admin
             0.serialize(ref calldata); // upgrade_delay

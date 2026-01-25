@@ -1197,6 +1197,7 @@ dependencies = [
  "futures-util",
  "hex",
  "log",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "starknet-rust",

@@ -422,7 +422,7 @@ fn cache_compiled_native_class(
 /// and causes transaction failure (no VM fallback in blocking mode).
 ///
 /// Requires config to be passed as a parameter (no global config fallback).
-pub(crate) fn compile_native_blocking(
+pub fn compile_native_blocking(
     class_hash: ClassHash,
     sierra: &SierraConvertedClass,
     config: &config::NativeConfig,

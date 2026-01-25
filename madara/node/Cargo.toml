@@ -26,6 +26,7 @@ mc-block-production = { workspace = true }
 mc-class-exec = { workspace = true }
 mc-db = { workspace = true }
 mc-devnet = { workspace = true }
+mc-exec = { workspace = true }
 mc-gateway-client = { workspace = true }
 mc-gateway-server = { workspace = true }
 mc-mempool = { workspace = true }
@@ -91,7 +92,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 # Core
-mc-exec = { workspace = true }
 mc-e2e-tests = { workspace = true }
 # Primitives
 mp-bloom-filter = { workspace = true }
@@ -101,3 +101,7 @@ mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
+
+[features]
+default = []
+rust-verification = ["mc-exec/rust-verification"]

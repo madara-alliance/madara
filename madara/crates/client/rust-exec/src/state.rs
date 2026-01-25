@@ -19,6 +19,15 @@ pub enum StateError {
 
     #[error("Failed to read class hash for contract {contract:?}: {reason}")]
     ClassHashReadFailed { contract: ContractAddress, reason: String },
+
+    #[error("Invalid contract address: {0}")]
+    InvalidAddress(String),
+
+    #[error("Invalid storage key: {0}")]
+    InvalidStorageKey(String),
+
+    #[error("Backend error: {0}")]
+    BackendError(String),
 }
 
 /// Trait for reading blockchain state.

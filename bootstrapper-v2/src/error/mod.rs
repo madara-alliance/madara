@@ -2,7 +2,7 @@ pub mod madara;
 
 use thiserror::Error;
 
-use crate::setup::base_layer::BaseLayerError;
+// use crate::setup::base_layer::BaseLayerError;
 use crate::utils::FileError;
 
 /// Result type for bootstrapper operations
@@ -22,8 +22,8 @@ pub enum BootstrapperError {
     #[error("File error: {0}")]
     FileError(#[from] FileError),
 
-    #[error("Base layer init: {0}")]
-    BaseLayerError(#[from] BaseLayerError),
+    // #[error("Base layer init: {0}")]
+    // BaseLayerError(#[from] BaseLayerError),
 
     // Madara setup errors
     #[error("Madara setup error: {0}")]

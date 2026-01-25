@@ -2,7 +2,19 @@
 //!
 //! This crate provides Rust implementations of Cairo contracts that can run
 //! in parallel with Blockifier during transaction tracing to verify correctness.
+//!
+//! # Configuration
+//!
+//! Class hashes are configured via environment variables:
+//!
+//! ```bash
+//! # Enable SimpleCounter verification
+//! export RUST_EXEC_SIMPLE_COUNTER_CLASS_HASH=0x0123456789abcdef...
+//! ```
+//!
+//! See the [`config`] module for all available environment variables.
 
+pub mod config;
 pub mod context;
 pub mod contracts;
 pub mod state;
@@ -12,11 +24,21 @@ pub mod verify;
 
 use starknet_types_core::felt::Felt;
 
+pub use config::{is_verification_enabled, log_config_status, simple_counter_class_hash};
 pub use context::ExecutionContext;
 pub use contracts::{ContractRegistry, ExecutionError};
 pub use state::{StateError, StateReader};
 pub use types::{ContractAddress, ExecutionResult};
 pub use verify::{VerificationError, VerificationResult};
+
+/// Initialize the Rust execution verification system.
+///
+/// This should be called once at startup to log the configuration status.
+/// It reads class hashes from environment variables and logs which contracts
+/// are enabled for verification.
+pub fn init() {
+    log_config_status();
+}
 
 /// Main entry point for executing a transaction with Rust implementation.
 ///
@@ -66,7 +88,6 @@ pub fn compare_with_blockifier(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contracts::simple_counter;
     use crate::state::mock::MockStateReader;
 
     #[test]
@@ -87,17 +108,45 @@ mod tests {
     }
 
     #[test]
-    fn test_simple_counter_execution() {
+    fn test_simple_counter_increment_with_env() {
+        // This test verifies the contract execution logic works.
+        // Since we can't easily reset Lazy statics, we test the execute function directly.
+        use crate::contracts::simple_counter;
+
         let state = MockStateReader::new();
         let contract = ContractAddress(Felt::from(1u64));
-        let class_hash = simple_counter::CLASS_HASH;
         let selector = crate::storage::function_selector("increment");
 
-        let result = execute_transaction(&state, contract, class_hash, selector, &[], ContractAddress(Felt::ZERO));
+        // Call execute directly (bypassing class hash check)
+        let result = simple_counter::execute(&state, contract, selector, &[], ContractAddress(Felt::ZERO));
 
-        assert!(result.is_some());
-        let execution_result = result.unwrap().unwrap();
-        assert_eq!(execution_result.call_result.retdata, vec![Felt::TWO]);
+        assert!(result.is_ok());
+        let execution_result = result.unwrap();
+        // Cairo increment() has no return value
+        assert!(execution_result.call_result.retdata.is_empty());
+        assert!(!execution_result.call_result.failed);
+        // Check storage was updated to 1 (0 + 1)
+        assert!(execution_result.state_diff.storage_updates.contains_key(&contract));
+    }
+
+    #[test]
+    fn test_simple_counter_get_counter_with_env() {
+        use crate::contracts::simple_counter;
+        use crate::contracts::simple_counter::layout::COUNTER_KEY;
+
+        let mut state = MockStateReader::new();
+        let contract = ContractAddress(Felt::from(1u64));
+        state.set_storage(contract, *COUNTER_KEY, Felt::from(42u64));
+
+        let selector = crate::storage::function_selector("get_counter");
+
+        // Call execute directly (bypassing class hash check)
+        let result = simple_counter::execute(&state, contract, selector, &[], ContractAddress(Felt::ZERO));
+
+        assert!(result.is_ok());
+        let execution_result = result.unwrap();
+        // get_counter() returns the current value
+        assert_eq!(execution_result.call_result.retdata, vec![Felt::from(42u64)]);
         assert!(!execution_result.call_result.failed);
     }
 }

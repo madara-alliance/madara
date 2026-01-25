@@ -5,8 +5,6 @@ edition = "2021"
 description = "Rust native contract execution for verification during tracing"
 license = "MIT OR Apache-2.0"
 
-[workspace]
-
 [dependencies]
 # Starknet types - using explicit version matching workspace
 starknet-types-core = { version = "0.2.4", default-features = false, features = ["hash"] }

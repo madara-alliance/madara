@@ -1,0 +1,16 @@
+{
+  "addresses": {
+    "l2_eth_bridge": "0x49bf46b177e4bf922df2cf1c9975ef952bdf741253855a1a12e1c42b88ff472",
+    "l2_eth_token": "0x4defde0f0a7e7734ca8d3f2c9eb8bebf7cc21a23fae13d3e9b5d697f60465bc",
+    "l2_token_bridge": "0x4f39663eb0851af2b7abbd6fd53ae8b694d144707fb544ecf1a5228095e5aa5",
+    "madara_factory": "0x6914ef162166887d7d967c0fa6a57feee68162e111ed8ae2bc72b43d60eb6c1",
+    "universal_deployer": "0x50b90f8e476202b41e5d151b3691127b39acfc2a43ddcd6460bf725a2a1c659"
+  },
+  "classes": {
+    "eic": "0x59444efb15ccb5645a17e91d8c9b3f3a456a7ef8d584abd08dbf158a6105610",
+    "erc20": "0x72f69eca0f2c114a0125e85120697b37a3d71ce116ff54a6af84d956c37bfa4",
+    "madara_factory": "0xd5a93ec013be05c0fe3d5feaf21ddfe6268032056ff3c850d74a9cbafb93ae",
+    "token_bridge": "0x358663e6ed9d37efd33d4661e20b2bad143e0f92076b0c91fe65f31ccf55046",
+    "universal_deployer": "0x791b447aba88f6dc63a1522f971f19557503ac7111bb782196c26957628511b"
+  }
+}

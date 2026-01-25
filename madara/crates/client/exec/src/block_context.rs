@@ -52,6 +52,11 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         &self.state.state
     }
 
+    /// Check if Cairo Native execution is enabled.
+    pub fn is_cairo_native_enabled(&self) -> bool {
+        self.state.state.view.backend().cairo_native_config.is_enabled()
+    }
+
     pub fn into_transaction_validator(self) -> StatefulValidator<BlockifierStateAdapter<D>> {
         StatefulValidator::create(self.state, Arc::unwrap_or_clone(self.block_context))
     }

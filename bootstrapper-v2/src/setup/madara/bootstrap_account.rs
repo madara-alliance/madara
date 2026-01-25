@@ -9,7 +9,7 @@ use starknet::{
         BlockId, BlockTag, Felt,
     },
     providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider},
-    signers::{LocalWallet, SigningKey},
+    signers::{LocalWallet, SigningKey, Signer},
 };
 use std::sync::Arc;
 
@@ -77,9 +77,9 @@ impl<'a> BootstrapAccount<'a> {
         let declaration = self
             .account
             .declare_v3(Arc::new(flattened_class), compiled_class_hash)
-            .l1_gas(0)
-            .l2_gas(0)
-            .l1_data_gas(0)
+            .l1_gas(5000000)
+            .l2_gas(5000000)
+            .l1_data_gas(5000)
             .nonce(Felt::ZERO);
 
         let result = declaration.send().await?;
@@ -124,7 +124,53 @@ impl<'a> BootstrapAccount<'a> {
             OpenZeppelinAccountFactory::new(class_hash, self.account.chain_id(), &signer, self.provider).await?;
 
         // Deploy the account using the factory
-        let deploy_result = account_factory.deploy_v3(salt).l1_gas(0).l2_gas(0).l1_data_gas(0).send().await?;
+        // Set proper resource bounds (minimum required by Madara)
+        let deploy_result = match account_factory
+            .deploy_v3(salt)
+            .l1_gas(5000000)
+            .l2_gas(5000000)
+            .l1_data_gas(5000)
+            .send()
+            .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                // Check if the error is because the account is already deployed
+                let error_msg = format!("{:?}", e);
+                if error_msg.contains("contract already deployed") {
+                    log::info!("OpenZeppelin Account already deployed, reusing existing account.");
+
+                    // Calculate the deployed address using the factory's address computation
+                    // For OpenZeppelin accounts: hash(deployer_address, salt, class_hash, constructor_calldata_hash)
+                    // But we need to get it from somewhere. Let's try to parse from error or compute.
+                    // For now, we'll compute it using the standard formula
+                    use starknet::core::utils::get_contract_address;
+                    let public_key = signer.get_public_key().await?;
+                    let constructor_calldata = vec![public_key.scalar()];
+                    let deployed_address = get_contract_address(
+                        salt,
+                        class_hash,
+                        &constructor_calldata,
+                        Felt::ZERO, // deployer address for UDC is 0
+                    );
+
+                    let mut existing_account = SingleOwnerAccount::new(
+                        self.provider.clone(),
+                        signer,
+                        deployed_address,
+                        self.account.chain_id(),
+                        ExecutionEncoding::New,
+                    );
+
+                    existing_account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
+
+                    log::info!("Reusing account at address: {:#064x}", deployed_address);
+                    return Ok(existing_account);
+                } else {
+                    return Err(e.into());
+                }
+            }
+        };
 
         wait_for_transaction(self.provider, deploy_result.transaction_hash, "OpenZeppelin Account Deployment").await?;
         log::info!("OpenZeppelin Account deployment successful!");

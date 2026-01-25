@@ -14,7 +14,6 @@
     "rpc": false
   },
   "backend_params": {
-    "base_path": "../madara-db",
     "backup_dir": null,
     "restore_from_latest_backup": false,
     "no_save_preconfirmed": false,
@@ -80,7 +79,12 @@
   },
   "telemetry_params": {
     "telemetry": false,
-    "telemetry_endpoints": [["wss://starknodes.com/submit", 0]]
+    "telemetry_endpoints": [
+      [
+        "wss://starknodes.com/submit",
+        0
+      ]
+    ]
   },
   "gateway_params": {
     "feeder_gateway_enable": false,

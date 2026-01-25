@@ -224,6 +224,19 @@ build-madara:
 	@$(VENV_ACTIVATE) && cargo build --manifest-path madara/Cargo.toml  --bin madara --release
 	@echo -e "$(PASS)✅ Build complete!$(RESET)"
 
+.PHONY: run-madara-sequencer
+run-madara-sequencer: setup-cairo
+	@echo -e "$(DIM)Running Madara Sequencer with Cairo 0 environment...$(RESET)"
+	@$(VENV_ACTIVATE) && cargo run --manifest-path madara/Cargo.toml --bin madara --release --features rust-verification -- --sequencer
+	@echo -e "$(PASS)✅ Run complete!$(RESET)"
+
+.PHONY: run-madara-devnet
+run-madara-devnet: setup-cairo
+	@echo -e "$(DIM)Running Madara Sequencer with Cairo 0 environment...$(RESET)"
+	@$(VENV_ACTIVATE) && cargo run --manifest-path madara/Cargo.toml --bin madara --release --features rust-verification -- --devnet 
+	@echo -e "$(PASS)✅ Run complete!$(RESET)"
+
+
 .PHONY: build-orchestrator
 build-orchestrator: setup-cairo
 	@echo -e "$(DIM)Building Orchestrator with Cairo 0 environment...$(RESET)"
