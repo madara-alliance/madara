@@ -82,7 +82,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     Transaction::L1Handler(_) => GasVectorComputationMode::NoL2Gas,
                 };
 
-                Ok(ExecutionResult {
+                let result = ExecutionResult {
                     hash,
                     tx_type,
                     fee_type,
@@ -90,7 +90,22 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     execution_info,
                     gas_vector_computation_mode,
                     state_diff: state_diff.state_maps.into(),
-                })
+                };
+
+                // Rust verification (only for execute call info, not validate/fee transfer)
+                if let Some(execute_call_info) = &result.execution_info.execute_call_info {
+                    crate::rust_exec_integration::verify_transaction_execution(
+                        self.blockifier_state_adapter(),
+                        execute_call_info.call.storage_address.to_felt(),
+                        execute_call_info.call.class_hash.unwrap_or_default().to_felt(),
+                        execute_call_info.call.entry_point_selector.to_felt(),
+                        &execute_call_info.call.calldata.0,
+                        execute_call_info.call.caller_address.to_felt(),
+                        &result,
+                    );
+                }
+
+                Ok(result)
             })
             .collect::<Result<Vec<_>, _>>()
     }

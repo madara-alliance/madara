@@ -48,6 +48,10 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         &self.state.state.view
     }
 
+    pub fn blockifier_state_adapter(&self) -> &BlockifierStateAdapter<D> {
+        &self.state.state
+    }
+
     pub fn into_transaction_validator(self) -> StatefulValidator<BlockifierStateAdapter<D>> {
         StatefulValidator::create(self.state, Arc::unwrap_or_clone(self.block_context))
     }

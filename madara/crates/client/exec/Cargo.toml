@@ -20,6 +20,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 mc-analytics = { workspace = true }
 mc-class-exec = { workspace = true }
 mc-db = { workspace = true }
+mc-rust-exec = { path = "../rust-exec", optional = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
@@ -64,3 +65,7 @@ rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 serde_json = { workspace = true }
+
+[features]
+default = []
+rust-verification = ["mc-rust-exec"]

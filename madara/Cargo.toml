@@ -15,6 +15,7 @@ members = [
   "crates/client/mempool",
   "crates/client/submit_tx",
   "crates/client/block_production",
+  "crates/client/rust-exec",
   "crates/primitives/block",
   "crates/primitives/bloom_filter",
   "crates/primitives/convert",
@@ -110,6 +111,7 @@ mc-mempool = { path = "crates/client/mempool" }
 mc-block-production = { path = "crates/client/block_production" }
 mc-devnet = { path = "crates/client/devnet" }
 mc-submit-tx = { path = "crates/client/submit_tx" }
+mc-rust-exec = { path = "crates/client/rust-exec" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }

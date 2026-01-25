@@ -1,0 +1,32 @@
+[package]
+name = "mc-rust-exec"
+version = "0.1.0"
+edition = "2021"
+description = "Rust native contract execution for verification during tracing"
+license = "MIT OR Apache-2.0"
+
+[workspace]
+
+[dependencies]
+# Starknet types - using explicit version matching workspace
+starknet-types-core = { version = "0.2.4", default-features = false, features = ["hash"] }
+starknet-crypto = { package = "starknet-rust-crypto", version = "0.9.0-rc.0" }
+
+# Hashing
+sha3 = "0.10"
+
+# Collections
+indexmap = "2.0"
+once_cell = "1.19"
+
+# Logging
+tracing = { version = "0.1.40", default-features = false }
+
+# Error handling
+thiserror = "1.0"
+
+[dev-dependencies]
+rstest = "0.18"
+
+[features]
+default = []

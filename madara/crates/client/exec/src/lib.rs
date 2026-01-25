@@ -164,6 +164,7 @@ mod call;
 mod fee;
 mod layered_state_adapter;
 pub mod metrics;
+pub mod rust_exec_integration;
 pub mod trace;
 
 pub mod execution;
