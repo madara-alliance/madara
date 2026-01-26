@@ -545,7 +545,7 @@ impl MadaraBackend<RocksDBStorage> {
 
 #[cfg(any(test, feature = "testing"))]
 pub fn set_external_outbox_write_failpoint(enabled: bool) {
-    rocksdb::set_external_outbox_write_failpoint(enabled);
+    rocksdb::external_outbox::set_external_outbox_write_failpoint(enabled);
 }
 
 #[derive(Clone, Debug)]
@@ -913,7 +913,10 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
     }
-    pub fn get_external_outbox_transactions(&self, limit: usize) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
+    pub fn get_external_outbox_transactions(
+        &self,
+        limit: usize,
+    ) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_external_outbox_transactions(limit)
     }
     pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {

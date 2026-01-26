@@ -23,6 +23,7 @@ pub mod config;
 pub mod metrics;
 pub mod mongodb;
 pub mod service;
+pub mod test_utils;
 pub mod writer;
 
 pub use config::ExternalDbConfig;

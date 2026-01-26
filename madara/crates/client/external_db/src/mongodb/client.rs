@@ -17,10 +17,11 @@ impl MongoClient {
         let mut options = ClientOptions::parse(&config.mongodb_uri).await?;
         options.max_pool_size = Some(config.pool_size);
         options.min_pool_size = Some(1);
-        options.connect_timeout = Some(Duration::from_secs(10));
-        options.server_selection_timeout = Some(Duration::from_secs(10));
+        options.connect_timeout = Some(Duration::from_secs(config.connect_timeout_secs));
+        options.server_selection_timeout = Some(Duration::from_secs(config.server_selection_timeout_secs));
 
         let client = mongodb::Client::with_options(options)?;
+        // Ensure connection is usable at startup (not just for tests).
         client.database("admin").run_command(doc! { "ping": 1 }).await?;
 
         let db = client.database(&config.database_name);

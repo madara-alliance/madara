@@ -94,6 +94,8 @@ lazy_static = { workspace = true }
 mp-transactions = { workspace = true }
 rstest = { workspace = true }
 rand = { workspace = true }
+m-cairo-test-contracts = { workspace = true }
+starknet-core = { workspace = true }
 
 [features]
 default = []

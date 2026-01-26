@@ -145,7 +145,8 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     // Mempool
 
     fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_;
-    fn get_external_outbox_transactions(&self, limit: usize) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_;
+    fn get_external_outbox_transactions(&self, limit: usize)
+        -> impl Iterator<Item = Result<ValidatedTransaction>> + '_;
 }
 
 /// Trait abstracting over the storage interface.

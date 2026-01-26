@@ -16,19 +16,11 @@ use mongodb::{bson::doc, IndexModel};
 
 pub fn get_index_models() -> Vec<IndexModel> {
     vec![
-        IndexModel::builder()
-            .keys(doc! { "sender_address": 1, "arrived_at": -1 })
-            .build(),
+        IndexModel::builder().keys(doc! { "sender_address": 1, "arrived_at": -1 }).build(),
         IndexModel::builder().keys(doc! { "arrived_at": -1 }).build(),
-        IndexModel::builder()
-            .keys(doc! { "status": 1, "arrived_at": -1 })
-            .build(),
-        IndexModel::builder()
-            .keys(doc! { "tx_type": 1, "arrived_at": -1 })
-            .build(),
-        IndexModel::builder()
-            .keys(doc! { "sender_address": 1, "nonce": 1 })
-            .build(),
+        IndexModel::builder().keys(doc! { "status": 1, "arrived_at": -1 }).build(),
+        IndexModel::builder().keys(doc! { "tx_type": 1, "arrived_at": -1 }).build(),
+        IndexModel::builder().keys(doc! { "sender_address": 1, "nonce": 1 }).build(),
         IndexModel::builder().keys(doc! { "block_number": 1 }).build(),
     ]
 }

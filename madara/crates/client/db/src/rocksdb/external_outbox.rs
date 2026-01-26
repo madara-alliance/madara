@@ -16,16 +16,13 @@ pub const MEMPOOL_EXTERNAL_OUTBOX_COLUMN: Column = Column::new("mempool_external
 static FORCE_EXTERNAL_OUTBOX_WRITE_ERROR: AtomicBool = AtomicBool::new(false);
 
 #[cfg(any(test, feature = "testing"))]
-pub(super) fn set_external_outbox_write_failpoint(enabled: bool) {
+pub(crate) fn set_external_outbox_write_failpoint(enabled: bool) {
     FORCE_EXTERNAL_OUTBOX_WRITE_ERROR.store(enabled, Ordering::Relaxed);
 }
 
 impl RocksDBStorageInner {
     #[tracing::instrument(skip(self), fields(module = "ExternalOutboxDB"))]
-    pub(super) fn iter_external_outbox(
-        &self,
-        limit: usize,
-    ) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
+    pub(super) fn iter_external_outbox(&self, limit: usize) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         DBIterator::new_cf(
             &self.db,
             &self.get_column(MEMPOOL_EXTERNAL_OUTBOX_COLUMN),

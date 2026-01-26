@@ -35,7 +35,7 @@ mod classes;
 mod column;
 mod events;
 mod events_bloom_filter;
-mod external_outbox;
+pub(crate) mod external_outbox;
 mod iter_pinned;
 mod l1_to_l2_messages;
 mod mempool;
@@ -57,11 +57,6 @@ type DB = DBWithThreadMode<MultiThreaded>;
 pub use options::{DbWriteMode, RocksDBConfig, StatsLevel};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
-
-#[cfg(any(test, feature = "testing"))]
-pub(crate) fn set_external_outbox_write_failpoint(enabled: bool) {
-    external_outbox::set_external_outbox_write_failpoint(enabled);
-}
 
 fn bincode_opts() -> impl bincode::Options {
     bincode::DefaultOptions::new()
@@ -372,10 +367,11 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.inner.get_mempool_transactions().map(|res| res.context("Getting mempool transactions"))
     }
-    fn get_external_outbox_transactions(&self, limit: usize) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
-        self.inner
-            .iter_external_outbox(limit)
-            .map(|res| res.context("Getting external outbox transactions"))
+    fn get_external_outbox_transactions(
+        &self,
+        limit: usize,
+    ) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
+        self.inner.iter_external_outbox(limit).map(|res| res.context("Getting external outbox transactions"))
     }
 }
 

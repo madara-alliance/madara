@@ -2,20 +2,22 @@
 
 use crate::config::ExternalDbConfig;
 use crate::metrics::ExternalDbMetrics;
-use crate::mongodb::{indexes::get_index_models, MongoClient, MempoolTransactionDocument, ResourceBoundsDoc};
+use crate::mongodb::{indexes::get_index_models, MempoolTransactionDocument, MongoClient, ResourceBoundsDoc};
 use anyhow::Context;
 use mc_db::MadaraBackend;
+use mongodb::{bson, error::ErrorKind, options::InsertManyOptions};
 use mp_convert::FeltHexDisplay;
 use mp_transactions::{
-    validated::ValidatedTransaction, DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction,
-    Transaction,
+    validated::ValidatedTransaction, DeclareTransaction, DeployAccountTransaction, DeployTransaction,
+    InvokeTransaction, Transaction,
 };
 use mp_utils::service::ServiceContext;
-use mongodb::{bson, error::ErrorKind, options::InsertManyOptions};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const STATUS_PENDING: &str = "PENDING";
+// MongoDB duplicate key error code (E11000).
+const DUPLICATE_KEY_ERROR_CODE: i32 = 11000;
 
 #[async_trait::async_trait]
 trait ExternalDbSink: Send + Sync {
@@ -76,6 +78,8 @@ impl ExternalDbSink for MongoSink {
     }
 }
 
+/// Return number of duplicate errors when all write errors are duplicate-key violations.
+/// This treats duplicate inserts as a success path so the worker can safely delete from the outbox.
 fn classify_duplicate_only_error(err: &mongodb::error::Error) -> Option<usize> {
     let ErrorKind::InsertMany(failure) = &*err.kind else { return None };
     if failure.write_concern_error.is_some() {
@@ -88,7 +92,7 @@ fn classify_duplicate_only_error(err: &mongodb::error::Error) -> Option<usize> {
 
     let mut duplicates = 0usize;
     for write_error in write_errors {
-        if write_error.code == 11000 {
+        if write_error.code == DUPLICATE_KEY_ERROR_CODE {
             duplicates += 1;
         } else {
             return None;
@@ -199,19 +203,12 @@ impl<S: L1ConfirmationSource> RetentionScheduler<S> {
                 confirmation.block_number,
                 confirmation.tx_hashes.len()
             );
-            self.pending.push_back(PendingDeletion {
-                execute_at: now + self.delay,
-                tx_hashes: confirmation.tx_hashes,
-            });
+            self.pending.push_back(PendingDeletion { execute_at: now + self.delay, tx_hashes: confirmation.tx_hashes });
         }
 
         while matches!(self.pending.front(), Some(pending) if pending.execute_at <= now) {
             let pending = self.pending.pop_front().expect("checked");
-            let hashes = pending
-                .tx_hashes
-                .iter()
-                .map(|felt| format!("{}", felt.hex_display()))
-                .collect::<Vec<_>>();
+            let hashes = pending.tx_hashes.iter().map(|felt| format!("{}", felt.hex_display())).collect::<Vec<_>>();
             let deleted = sink.delete_by_hashes(hashes).await?;
             self.metrics.transactions_deleted.add(deleted as u64, &[]);
         }
@@ -443,7 +440,9 @@ impl ExternalDbWorker {
         let (tip, resource_bounds) = match &tx.transaction {
             Transaction::Invoke(InvokeTransaction::V3(tx)) => (Some(tx.tip), Some(tx.resource_bounds.clone())),
             Transaction::Declare(DeclareTransaction::V3(tx)) => (Some(tx.tip), Some(tx.resource_bounds.clone())),
-            Transaction::DeployAccount(DeployAccountTransaction::V3(tx)) => (Some(tx.tip), Some(tx.resource_bounds.clone())),
+            Transaction::DeployAccount(DeployAccountTransaction::V3(tx)) => {
+                (Some(tx.tip), Some(tx.resource_bounds.clone()))
+            }
             _ => (None, None),
         };
 
@@ -487,10 +486,11 @@ impl ExternalDbWorker {
             calldata: calldata_hex,
             class_hash: class_hash.map(|hash| format!("{}", hash.hex_display())),
             compiled_class_hash: compiled_class_hash.map(|hash| format!("{}", hash.hex_display())),
-            constructor_calldata: constructor_calldata.map(|items| items.iter().map(|felt| format!("{}", felt.hex_display())).collect()),
+            constructor_calldata: constructor_calldata
+                .map(|items| items.iter().map(|felt| format!("{}", felt.hex_display())).collect()),
             contract_address_salt: contract_address_salt.map(|salt| format!("{}", salt.hex_display())),
             entry_point_selector: entry_point_selector.map(|selector| format!("{}", selector.hex_display())),
-            paid_fee_on_l1: tx.paid_fee_on_l1.map(|fee| mp_convert::hex_serde::u128_to_hex_string(fee)),
+            paid_fee_on_l1: tx.paid_fee_on_l1.map(mp_convert::hex_serde::u128_to_hex_string),
             raw_transaction: bson::Binary { subtype: bson::spec::BinarySubtype::Generic, bytes: raw_bytes },
             chain_id: self.chain_id.clone(),
             status: STATUS_PENDING.to_string(),
@@ -502,13 +502,10 @@ impl ExternalDbWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mp_convert::Felt;
+    use crate::test_utils;
     use mp_chain_config::ChainConfig;
-    use starknet_api::{
-        core::ContractAddress,
-        executable_transaction::AccountTransaction,
-        transaction::{InvokeTransaction, InvokeTransactionV3, TransactionHash},
-    };
+    use mp_convert::Felt;
+    use mp_transactions::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction, Transaction};
     use std::sync::Mutex;
 
     struct FakeSink {
@@ -546,30 +543,12 @@ mod tests {
     }
 
     fn make_validated_tx(seed: u64) -> ValidatedTransaction {
-        let tx_hash = TransactionHash(seed.into());
-        let contract_address = Felt::from_hex_unchecked(
-            "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
-        );
-
-        ValidatedTransaction::from_starknet_api(
-            AccountTransaction::Invoke(starknet_api::executable_transaction::InvokeTransaction {
-                tx: InvokeTransaction::V3(InvokeTransactionV3 {
-                    sender_address: ContractAddress::try_from(contract_address).unwrap(),
-                    resource_bounds: Default::default(),
-                    tip: Default::default(),
-                    signature: Default::default(),
-                    nonce: Default::default(),
-                    calldata: Default::default(),
-                    nonce_data_availability_mode: Default::default(),
-                    fee_data_availability_mode: Default::default(),
-                    paymaster_data: Default::default(),
-                    account_deployment_data: Default::default(),
-                }),
-                tx_hash,
-            }),
-            mp_transactions::validated::TxTimestamp::now(),
+        let sender = test_utils::devnet_account_address();
+        test_utils::validated_transaction(
+            Transaction::Invoke(InvokeTransaction::V3(test_utils::invoke_v3(sender, Felt::from_hex_unchecked("0x1")))),
+            Felt::from_hex_unchecked(&format!("0x{seed:x}")),
+            sender,
             None,
-            true,
         )
     }
 
@@ -589,10 +568,7 @@ mod tests {
         let summary = worker.drain_outbox_once(&sink).await.unwrap();
 
         assert_eq!(summary.attempted, 2);
-        let remaining: Vec<_> = backend
-            .get_external_outbox_transactions(10)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
+        let remaining: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert!(remaining.is_empty());
         assert_eq!(sink.calls.lock().unwrap().len(), 1);
     }
@@ -614,10 +590,7 @@ mod tests {
 
         assert_eq!(summary.attempted, 2);
         assert_eq!(summary.duplicates, 1);
-        let remaining: Vec<_> = backend
-            .get_external_outbox_transactions(10)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
+        let remaining: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert!(remaining.is_empty());
     }
 
@@ -670,7 +643,11 @@ mod tests {
             block_number: 1,
             tx_hashes: vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")],
         }];
-        let mut scheduler = RetentionScheduler::new(FakeL1Source::new(vec![confirmations, Vec::new()]), Duration::from_secs(1), metrics);
+        let mut scheduler = RetentionScheduler::new(
+            FakeL1Source::new(vec![confirmations, Vec::new()]),
+            Duration::from_secs(1),
+            metrics,
+        );
 
         scheduler.tick(now, &sink).await.unwrap();
         assert!(sink.delete_calls.lock().unwrap().is_empty());
@@ -684,10 +661,51 @@ mod tests {
         let metrics = Arc::new(ExternalDbMetrics::register());
         let sink = FakeSink::new(Vec::new());
         let now = Instant::now();
-        let mut scheduler = RetentionScheduler::new(FakeL1Source::new(vec![Vec::new()]), Duration::from_secs(1), metrics);
+        let mut scheduler =
+            RetentionScheduler::new(FakeL1Source::new(vec![Vec::new()]), Duration::from_secs(1), metrics);
 
         scheduler.tick(now, &sink).await.unwrap();
         assert!(sink.delete_calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn convert_to_document_supports_multiple_tx_types() {
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        let metrics = Arc::new(ExternalDbMetrics::register());
+        let config = ExternalDbConfig::new("mongodb://localhost:27017".to_string());
+        let worker = ExternalDbWorker::new(config, backend, "MADARA_TEST".to_string(), metrics);
+
+        let sender = test_utils::devnet_account_address();
+        let (declare_tx, declared_class) = test_utils::declare_v3(sender, Felt::from_hex_unchecked("0x2"));
+        let cases = vec![
+            (
+                Transaction::Invoke(InvokeTransaction::V3(test_utils::invoke_v3(
+                    sender,
+                    Felt::from_hex_unchecked("0x1"),
+                ))),
+                "INVOKE",
+                "V3",
+            ),
+            (Transaction::Declare(DeclareTransaction::V3(declare_tx)), "DECLARE", "V3"),
+            (
+                Transaction::DeployAccount(DeployAccountTransaction::V3(test_utils::deploy_account_v3(
+                    Felt::from_hex_unchecked("0x3"),
+                ))),
+                "DEPLOY_ACCOUNT",
+                "V3",
+            ),
+            (Transaction::Deploy(test_utils::deploy_tx()), "DEPLOY", "V0"),
+            (Transaction::L1Handler(test_utils::l1_handler_tx()), "L1_HANDLER", "V0"),
+        ];
+
+        for (idx, (tx, tx_type, tx_version)) in cases.into_iter().enumerate() {
+            let hash = Felt::from_hex_unchecked(&format!("0x{:x}", idx + 1));
+            let declared = if matches!(tx, Transaction::Declare(_)) { Some(declared_class.clone()) } else { None };
+            let validated = test_utils::validated_transaction(tx, hash, sender, declared);
+            let doc = worker.convert_to_document(&validated).unwrap();
+            assert_eq!(doc.tx_type, tx_type);
+            assert_eq!(doc.tx_version, tx_version);
+        }
     }
 
     #[test]

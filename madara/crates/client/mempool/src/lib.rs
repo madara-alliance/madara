@@ -262,9 +262,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 Err(err) => {
                     tracing::error!("Could not write external outbox transaction: {err:#}");
                     if self.external_outbox.strict {
-                        return Err(MempoolInsertionError::Internal(anyhow::anyhow!(
-                            "outbox write failed: {err:#}"
-                        )));
+                        return Err(MempoolInsertionError::Internal(anyhow::anyhow!("outbox write failed: {err:#}")));
                     }
                 }
             }
@@ -522,7 +520,10 @@ pub(crate) mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
-    async fn mempool_accept_writes_outbox(#[future] backend: Arc<mc_db::MadaraBackend>, tx_account: ValidatedTransaction) {
+    async fn mempool_accept_writes_outbox(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
         let backend = backend.await;
         let config = MempoolConfig::default().with_external_outbox(ExternalOutboxConfig::enabled(true));
         let mempool = Mempool::new(backend.clone(), config);
@@ -531,10 +532,7 @@ pub(crate) mod tests {
         let result = mempool.accept_tx(tx_account).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let outbox: Vec<_> = backend
-            .get_external_outbox_transactions(10)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
+        let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert_eq!(outbox.len(), 1);
         assert_eq!(outbox[0], tx);
     }
@@ -554,10 +552,7 @@ pub(crate) mod tests {
         let result = mempool.accept_tx(tx_account).await;
         assert_matches::assert_matches!(result, Err(MempoolInsertionError::InnerMempool(_)));
 
-        let outbox: Vec<_> = backend
-            .get_external_outbox_transactions(10)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
+        let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert!(outbox.is_empty());
     }
 

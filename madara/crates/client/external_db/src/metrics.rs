@@ -55,10 +55,7 @@ impl ExternalDbMetrics {
                 .u64_counter("external_db_mongodb_write_errors")
                 .with_description("MongoDB connection/write errors")
                 .build(),
-            batch_size: meter
-                .u64_gauge("external_db_batch_size")
-                .with_description("Current batch size")
-                .build(),
+            batch_size: meter.u64_gauge("external_db_batch_size").with_description("Current batch size").build(),
             outbox_write_errors: meter
                 .u64_counter("external_db_outbox_write_errors")
                 .with_description("Outbox write errors")
