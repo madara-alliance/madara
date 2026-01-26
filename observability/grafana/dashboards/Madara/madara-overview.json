@@ -5780,14 +5780,15 @@
     {
       "id": 310,
       "type": "timeseries",
-      "title": "Close Block Metrics (Loki)",
+      "title": "Close Block Timing Breakdown (Loki)",
+      "description": "Per-block timing breakdown extracted from structured logs",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
       },
       "gridPos": {
         "h": 10,
-        "w": 24,
+        "w": 12,
         "x": 0,
         "y": 157
       },
@@ -5809,19 +5810,135 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\"",
-          "queryType": "range",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap close_block_total_ms [$__interval])",
+          "legendFormat": "Total Close Block",
           "refId": "A"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap merklization_ms [$__interval])",
+          "legendFormat": "Merklization",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap commitments_ms [$__interval])",
+          "legendFormat": "Commitments",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap db_write_ms [$__interval])",
+          "legendFormat": "DB Write",
+          "refId": "D"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap block_hash_ms [$__interval])",
+          "legendFormat": "Block Hash",
+          "refId": "E"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none"
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "pluginVersion": 39,
+      "transformations": []
+    },
+    {
+      "id": 311,
+      "type": "timeseries",
+      "title": "Block Execution Stats (Loki)",
+      "description": "Per-block execution statistics extracted from structured logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 157
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap tx_count [$__interval])",
+          "legendFormat": "Tx Count",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap event_count [$__interval])",
+          "legendFormat": "Event Count",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap txs_executed [$__interval])",
+          "legendFormat": "Txs Executed",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap txs_reverted [$__interval])",
+          "legendFormat": "Txs Reverted",
+          "refId": "D"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\", app=~\".+\"} |= \"close_block_complete\" | json | __error__=\"\" | unwrap state_diff_len [$__interval])",
+          "legendFormat": "State Diff Length",
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
         },
         "overrides": []
       },
