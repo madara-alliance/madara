@@ -54,6 +54,21 @@ pub fn supports_selector(selector: Felt) -> bool {
         || selector == set_counter_selector()
 }
 
+/// Get the human-readable function name for a selector.
+pub fn get_function_name(selector: Felt) -> Option<String> {
+    if selector == get_counter_selector() {
+        Some("get_counter".to_string())
+    } else if selector == increment_selector() {
+        Some("increment".to_string())
+    } else if selector == decrement_selector() {
+        Some("decrement".to_string())
+    } else if selector == set_counter_selector() {
+        Some("set_counter".to_string())
+    } else {
+        None
+    }
+}
+
 /// Execute a function on the SimpleCounter contract.
 ///
 /// Returns the execution result or an error.

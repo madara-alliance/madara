@@ -89,9 +89,9 @@ async fn main() -> Result<()> {
     } else {
         let declare_result = account
             .declare_v3(Arc::new(flattened), compiled_class_hash)
-            .l1_gas(500000000)
-            .l2_gas(500000000)
-            .l1_data_gas(500000)
+            .l1_gas(2000000000)
+            .l2_gas(2000000000)
+            .l1_data_gas(2000000)
             .send()
             .await?;
 
@@ -160,9 +160,9 @@ async fn main() -> Result<()> {
 
     let deploy_tx = account
         .execute_v3(calls)
-        .l1_gas(500000000)
-        .l2_gas(500000000)
-        .l1_data_gas(500000)
+        .l1_gas(2000000000)
+        .l2_gas(2000000000)
+        .l1_data_gas(2000000)
         .send()
         .await?;
 

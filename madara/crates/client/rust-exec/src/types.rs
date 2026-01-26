@@ -83,6 +83,26 @@ pub struct StateDiff {
     pub class_hash_to_compiled_class_hash: IndexMap<Felt, Felt>,
 }
 
+impl StateDiff {
+    /// Merge another StateDiff into this one.
+    /// Later writes override earlier writes for the same keys.
+    pub fn merge(&mut self, other: StateDiff) {
+        // Merge storage updates
+        for (contract, storage) in other.storage_updates {
+            self.storage_updates.entry(contract).or_default().extend(storage);
+        }
+
+        // Merge nonce updates (later nonces override)
+        self.address_to_nonce.extend(other.address_to_nonce);
+
+        // Merge class hash updates
+        self.address_to_class_hash.extend(other.address_to_class_hash);
+
+        // Merge compiled class hash mappings
+        self.class_hash_to_compiled_class_hash.extend(other.class_hash_to_compiled_class_hash);
+    }
+}
+
 /// Complete execution result
 #[derive(Debug, Clone)]
 pub struct ExecutionResult {

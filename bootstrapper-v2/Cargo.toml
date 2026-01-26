@@ -55,6 +55,10 @@ path = "src/bin/deploy_new_account.rs"
 name = "increment-from-account"
 path = "src/bin/increment_from_account.rs"
 
+[[bin]]
+name = "run-comprehensive-benchmarks"
+path = "src/bin/run_comprehensive_benchmarks.rs"
+
 [lib]
 name = "bootstrapper_v2"
 path = "src/lib.rs"

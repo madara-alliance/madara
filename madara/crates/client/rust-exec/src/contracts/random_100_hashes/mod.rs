@@ -44,6 +44,17 @@ pub fn supports_selector(selector: Felt) -> bool {
     selector == compute_100_hashes_selector() || selector == get_last_result_selector()
 }
 
+/// Get the human-readable function name for a selector.
+pub fn get_function_name(selector: Felt) -> Option<String> {
+    if selector == compute_100_hashes_selector() {
+        Some("compute_100_hashes".to_string())
+    } else if selector == get_last_result_selector() {
+        Some("get_last_result".to_string())
+    } else {
+        None
+    }
+}
+
 /// Execute a function on the Random100Hashes contract.
 ///
 /// Returns the execution result or an error.
@@ -66,9 +77,7 @@ pub fn execute<S: StateReader>(
         functions::execute_compute_100_hashes(state, contract, seed, &mut ctx)?;
     } else if selector == get_last_result_selector() {
         if !calldata.is_empty() {
-            return Err(ExecutionError::ExecutionFailed(
-                "get_last_result() takes no arguments".to_string(),
-            ));
+            return Err(ExecutionError::ExecutionFailed("get_last_result() takes no arguments".to_string()));
         }
         functions::execute_get_last_result(state, contract, &mut ctx)?;
     } else {
@@ -108,13 +117,7 @@ mod tests {
         let state = MockStateReader::new();
         let contract = ContractAddress(Felt::from(1u64));
 
-        let result = execute(
-            &state,
-            contract,
-            compute_100_hashes_selector(),
-            &[],
-            ContractAddress(Felt::ZERO),
-        );
+        let result = execute(&state, contract, compute_100_hashes_selector(), &[], ContractAddress(Felt::ZERO));
         assert!(matches!(result, Err(ExecutionError::ExecutionFailed(_))));
     }
 
@@ -124,14 +127,8 @@ mod tests {
         let contract = ContractAddress(Felt::from(1u64));
         let seed = Felt::from(12345u64);
 
-        let result = execute(
-            &state,
-            contract,
-            compute_100_hashes_selector(),
-            &[seed],
-            ContractAddress(Felt::ZERO),
-        )
-        .unwrap();
+        let result =
+            execute(&state, contract, compute_100_hashes_selector(), &[seed], ContractAddress(Felt::ZERO)).unwrap();
 
         // Should return exactly 1 value
         assert_eq!(result.call_result.retdata.len(), 1);

@@ -44,12 +44,25 @@ pub struct ExecutionContext {
 
     /// Estimated gas consumed
     gas_consumed: u64,
+
+    /// Block timestamp (for functions that need it)
+    block_timestamp: u64,
 }
 
 impl ExecutionContext {
     /// Create a new execution context.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a new execution context with block timestamp.
+    pub fn with_timestamp(block_timestamp: u64) -> Self {
+        Self { block_timestamp, ..Self::default() }
+    }
+
+    /// Get the block timestamp.
+    pub fn block_timestamp(&self) -> u64 {
+        self.block_timestamp
     }
 
     /// Read a storage value.
@@ -64,11 +77,19 @@ impl ExecutionContext {
     ) -> Result<Felt, StateError> {
         // Check if we've already written to this key
         if let Some(value) = self.storage_writes.get(&(contract, key)) {
+            tracing::info!(
+                "📖 storage_read: key={:#x} → returning from storage_writes={:#x} (NOT tracking in initial_reads)",
+                key.0, value
+            );
             return Ok(*value);
         }
 
         // Check if we've already read this key
         if let Some(value) = self.initial_reads.get(&(contract, key)) {
+            tracing::info!(
+                "📖 storage_read: key={:#x} → returning cached read={:#x}",
+                key.0, value
+            );
             return Ok(*value);
         }
 
@@ -77,6 +98,11 @@ impl ExecutionContext {
 
         // Cache the initial read
         self.initial_reads.insert((contract, key), value);
+
+        tracing::info!(
+            "📖 storage_read: key={:#x} → reading from state={:#x}, ADDED to initial_reads",
+            key.0, value
+        );
 
         // Estimate gas for storage read
         self.gas_consumed += 100;
@@ -141,18 +167,72 @@ impl ExecutionContext {
         self.failed
     }
 
+    /// Merge a state diff into this context.
+    /// This is used when executing nested calls that return their own state changes.
+    pub fn merge_state_diff(&mut self, state_diff: &StateDiff) {
+        // Merge storage updates
+        for (contract, updates) in &state_diff.storage_updates {
+            for (key, value) in updates {
+                self.storage_writes.insert((*contract, *key), *value);
+            }
+        }
+
+        // Merge nonce updates
+        for (address, nonce) in &state_diff.address_to_nonce {
+            self.nonce_updates.insert(*address, *nonce);
+        }
+    }
+
+    /// Merge events from a nested call.
+    pub fn merge_events(&mut self, events: Vec<Event>) {
+        for event in events {
+            self.events.push(Event {
+                order: self.event_counter,
+                keys: event.keys,
+                data: event.data,
+            });
+            self.event_counter += 1;
+        }
+    }
+
     /// Build the final state diff.
     ///
-    /// Only includes storage values that actually changed from their initial state.
+    /// Only includes storage values that actually changed OR non-zero initializations.
+    /// Matches Blockifier: writes of 0 to unread slots are excluded.
     pub fn build_state_diff(&self) -> StateDiff {
         let mut storage_updates: IndexMap<ContractAddress, IndexMap<StorageKey, Felt>> = IndexMap::new();
 
         for ((contract, key), new_value) in &self.storage_writes {
-            // Only include if value actually changed
-            let old_value = self.initial_reads.get(&(*contract, *key)).copied().unwrap_or(Felt::ZERO);
-
-            if old_value != *new_value {
-                storage_updates.entry(*contract).or_default().insert(*key, *new_value);
+            // Check if we read this slot before writing
+            if let Some(old_value) = self.initial_reads.get(&(*contract, *key)) {
+                // We read it first - only include if value changed
+                if old_value != new_value {
+                    tracing::info!(
+                        "✅ Including in diff (changed): contract={:#x} key={:#x} old={:#x} new={:#x}",
+                        contract.0, key.0, old_value, new_value
+                    );
+                    storage_updates.entry(*contract).or_default().insert(*key, *new_value);
+                } else {
+                    tracing::info!(
+                        "⏭️  Skipping (unchanged): contract={:#x} key={:#x} val={:#x}",
+                        contract.0, key.0, new_value
+                    );
+                }
+            } else {
+                // Never read before writing - only include if NON-ZERO
+                // (Blockifier excludes writes of 0 to unread slots)
+                if *new_value != Felt::ZERO {
+                    tracing::info!(
+                        "✅ Including in diff (unread non-zero): contract={:#x} key={:#x} val={:#x}",
+                        contract.0, key.0, new_value
+                    );
+                    storage_updates.entry(*contract).or_default().insert(*key, *new_value);
+                } else {
+                    tracing::info!(
+                        "⏭️  Skipping (unread zero): contract={:#x} key={:#x}",
+                        contract.0, key.0
+                    );
+                }
             }
         }
 
@@ -234,6 +314,37 @@ mod tests {
 
         let diff = ctx.build_state_diff();
         assert!(diff.storage_updates.is_empty());
+    }
+
+    #[test]
+    fn test_state_diff_excludes_unread_zero_writes() {
+        let state = MockStateReader::new();
+        let contract = ContractAddress(Felt::from(1u64));
+        let key = StorageKey(Felt::from(100u64));
+
+        let mut ctx = ExecutionContext::new();
+
+        // Write 0 without reading first - should NOT appear in diff (Blockifier behavior)
+        ctx.storage_write(contract, key, Felt::from(0u64));
+
+        let diff = ctx.build_state_diff();
+        assert!(diff.storage_updates.is_empty());
+    }
+
+    #[test]
+    fn test_state_diff_includes_unread_nonzero_writes() {
+        let state = MockStateReader::new();
+        let contract = ContractAddress(Felt::from(1u64));
+        let key = StorageKey(Felt::from(100u64));
+
+        let mut ctx = ExecutionContext::new();
+
+        // Write non-zero without reading first - SHOULD appear in diff
+        ctx.storage_write(contract, key, Felt::from(42u64));
+
+        let diff = ctx.build_state_diff();
+        assert_eq!(diff.storage_updates.len(), 1);
+        assert_eq!(*diff.storage_updates.get(&contract).unwrap().get(&key).unwrap(), Felt::from(42u64));
     }
 
     #[test]

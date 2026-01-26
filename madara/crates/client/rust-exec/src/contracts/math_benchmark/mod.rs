@@ -89,6 +89,39 @@ pub fn supports_selector(selector: Felt) -> bool {
         || selector == get_last_result_felt_selector()
 }
 
+/// Get the human-readable function name for a selector.
+pub fn get_function_name(selector: Felt) -> Option<String> {
+    if selector == benchmark_division_selector() {
+        Some("benchmark_division".to_string())
+    } else if selector == benchmark_multiplication_selector() {
+        Some("benchmark_multiplication".to_string())
+    } else if selector == benchmark_addition_selector() {
+        Some("benchmark_addition".to_string())
+    } else if selector == benchmark_subtraction_selector() {
+        Some("benchmark_subtraction".to_string())
+    } else if selector == benchmark_fee_calculation_selector() {
+        Some("benchmark_fee_calculation".to_string())
+    } else if selector == benchmark_signed_division_selector() {
+        Some("benchmark_signed_division".to_string())
+    } else if selector == benchmark_signed_multiplication_selector() {
+        Some("benchmark_signed_multiplication".to_string())
+    } else if selector == benchmark_events_selector() {
+        Some("benchmark_events".to_string())
+    } else if selector == benchmark_assertions_selector() {
+        Some("benchmark_assertions".to_string())
+    } else if selector == benchmark_full_trade_selector() {
+        Some("benchmark_full_trade".to_string())
+    } else if selector == get_last_result_u128_selector() {
+        Some("get_last_result_u128".to_string())
+    } else if selector == get_last_result_i128_selector() {
+        Some("get_last_result_i128".to_string())
+    } else if selector == get_last_result_felt_selector() {
+        Some("get_last_result_felt".to_string())
+    } else {
+        None
+    }
+}
+
 /// Execute a function on this contract.
 pub fn execute<S: StateReader>(
     state: &S,
@@ -159,13 +192,8 @@ fn parse_u128_from_calldata(calldata: &[Felt], index: usize) -> Result<u128, Exe
     let bytes = felt.to_bytes_be();
 
     // Check that the value fits in u128 (top 16 bytes should be zero)
-    for i in 0..16 {
-        if bytes[i] != 0 {
-            return Err(ExecutionError::ExecutionFailed(format!(
-                "Value too large for u128: {:#x}",
-                felt
-            )));
-        }
+    if bytes.iter().take(16).any(|&b| b != 0) {
+        return Err(ExecutionError::ExecutionFailed(format!("Value too large for u128: {:#x}", felt)));
     }
 
     // Extract lower 16 bytes as u128

@@ -6,8 +6,8 @@ gateway_url: "http://localhost:8080/gateway/"
 native_fee_token_address: "0x4defde0f0a7e7734ca8d3f2c9eb8bebf7cc21a23fae13d3e9b5d697f60465bc"
 parent_fee_token_address: "0x4defde0f0a7e7734ca8d3f2c9eb8bebf7cc21a23fae13d3e9b5d697f60465bc"
 latest_protocol_version: "0.14.1"
-block_time: "10s"
-pending_block_update_time: "2s"
+block_time: "1000s"
+pending_block_update_time: "100ms"
 execution_batch_size: 16
 bouncer_config:
   block_max_capacity:

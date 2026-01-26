@@ -6992,6 +6992,7 @@ name = "mc-rust-exec"
 version = "0.1.0"
 dependencies = [
  "indexmap 2.9.0",
+ "num-bigint",
  "once_cell",
  "rstest 0.18.2",
  "sha3",

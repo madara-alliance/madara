@@ -39,6 +39,21 @@ pub const ENV_RANDOM_100_HASHES_CLASS_HASH: &str = "RUST_EXEC_RANDOM_100_HASHES_
 /// Environment variable name for MathBenchmark class hash
 pub const ENV_MATH_BENCHMARK_CLASS_HASH: &str = "RUST_EXEC_MATH_BENCHMARK_CLASS_HASH";
 
+/// Environment variable name for Account class hash
+pub const ENV_ACCOUNT_CLASS_HASH: &str = "RUST_EXEC_ACCOUNT_CLASS_HASH";
+
+/// Environment variable name for ERC20 class hash
+pub const ENV_ERC20_CLASS_HASH: &str = "RUST_EXEC_ERC20_CLASS_HASH";
+
+/// Environment variable name for HeavyTradeSimulator class hash
+pub const ENV_HEAVY_TRADE_SIMULATOR_CLASS_HASH: &str = "RUST_EXEC_HEAVY_TRADE_SIMULATOR_CLASS_HASH";
+
+/// Environment variable name for StorageHeavy class hash
+pub const ENV_STORAGE_HEAVY_CLASS_HASH: &str = "RUST_EXEC_STORAGE_HEAVY_CLASS_HASH";
+
+/// Environment variable name for ComprehensiveBenchmark class hash
+pub const ENV_COMPREHENSIVE_BENCHMARK_CLASS_HASH: &str = "RUST_EXEC_COMPREHENSIVE_BENCHMARK_CLASS_HASH";
+
 /// Parsed class hash for SimpleCounter, read from environment at startup.
 ///
 /// If the environment variable is not set or invalid, this will be `None`
@@ -58,10 +73,7 @@ pub static SIMPLE_COUNTER_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
             // Parse the hex string (with or without 0x prefix)
             match parse_felt(trimmed) {
                 Ok(felt) => {
-                    tracing::info!(
-                        "Rust verification enabled for SimpleCounter with class hash: {:#x}",
-                        felt
-                    );
+                    tracing::info!("Rust verification enabled for SimpleCounter with class hash: {:#x}", felt);
                     Some(felt)
                 }
                 Err(e) => {
@@ -120,8 +132,8 @@ pub fn simple_counter_class_hash() -> Option<Felt> {
 }
 
 /// Parsed class hash for CounterWithEvent, read from environment at startup.
-pub static COUNTER_WITH_EVENT_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
-    match env::var(ENV_COUNTER_WITH_EVENT_CLASS_HASH) {
+pub static COUNTER_WITH_EVENT_CLASS_HASH: Lazy<Option<Felt>> =
+    Lazy::new(|| match env::var(ENV_COUNTER_WITH_EVENT_CLASS_HASH) {
         Ok(value) => {
             let trimmed = value.trim();
             if trimmed.is_empty() {
@@ -134,10 +146,7 @@ pub static COUNTER_WITH_EVENT_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
 
             match parse_felt(trimmed) {
                 Ok(felt) => {
-                    tracing::info!(
-                        "Rust verification enabled for CounterWithEvent with class hash: {:#x}",
-                        felt
-                    );
+                    tracing::info!("Rust verification enabled for CounterWithEvent with class hash: {:#x}", felt);
                     Some(felt)
                 }
                 Err(e) => {
@@ -165,8 +174,7 @@ pub static COUNTER_WITH_EVENT_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
             );
             None
         }
-    }
-});
+    });
 
 /// Get the configured class hash for CounterWithEvent.
 ///
@@ -176,8 +184,8 @@ pub fn counter_with_event_class_hash() -> Option<Felt> {
 }
 
 /// Parsed class hash for Random100Hashes, read from environment at startup.
-pub static RANDOM_100_HASHES_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
-    match env::var(ENV_RANDOM_100_HASHES_CLASS_HASH) {
+pub static RANDOM_100_HASHES_CLASS_HASH: Lazy<Option<Felt>> =
+    Lazy::new(|| match env::var(ENV_RANDOM_100_HASHES_CLASS_HASH) {
         Ok(value) => {
             let trimmed = value.trim();
             if trimmed.is_empty() {
@@ -190,10 +198,7 @@ pub static RANDOM_100_HASHES_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
 
             match parse_felt(trimmed) {
                 Ok(felt) => {
-                    tracing::info!(
-                        "Rust verification enabled for Random100Hashes with class hash: {:#x}",
-                        felt
-                    );
+                    tracing::info!("Rust verification enabled for Random100Hashes with class hash: {:#x}", felt);
                     Some(felt)
                 }
                 Err(e) => {
@@ -221,8 +226,7 @@ pub static RANDOM_100_HASHES_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
             );
             None
         }
-    }
-});
+    });
 
 /// Get the configured class hash for Random100Hashes.
 ///
@@ -232,8 +236,8 @@ pub fn random_100_hashes_class_hash() -> Option<Felt> {
 }
 
 /// Parsed class hash for MathBenchmark, read from environment at startup.
-pub static MATH_BENCHMARK_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
-    match env::var(ENV_MATH_BENCHMARK_CLASS_HASH) {
+pub static MATH_BENCHMARK_CLASS_HASH: Lazy<Option<Felt>> =
+    Lazy::new(|| match env::var(ENV_MATH_BENCHMARK_CLASS_HASH) {
         Ok(value) => {
             let trimmed = value.trim();
             if trimmed.is_empty() {
@@ -246,10 +250,7 @@ pub static MATH_BENCHMARK_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
 
             match parse_felt(trimmed) {
                 Ok(felt) => {
-                    tracing::info!(
-                        "Rust verification enabled for MathBenchmark with class hash: {:#x}",
-                        felt
-                    );
+                    tracing::info!("Rust verification enabled for MathBenchmark with class hash: {:#x}", felt);
                     Some(felt)
                 }
                 Err(e) => {
@@ -277,14 +278,262 @@ pub static MATH_BENCHMARK_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| {
             );
             None
         }
-    }
-});
+    });
 
 /// Get the configured class hash for MathBenchmark.
 ///
 /// Returns `None` if the environment variable is not set or invalid.
 pub fn math_benchmark_class_hash() -> Option<Felt> {
     *MATH_BENCHMARK_CLASS_HASH
+}
+
+/// Parsed class hash for Account contract, read from environment at startup.
+pub static ACCOUNT_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::var(ENV_ACCOUNT_CLASS_HASH) {
+    Ok(value) => {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            tracing::debug!(
+                "Environment variable {} is empty, Account Rust verification disabled",
+                ENV_ACCOUNT_CLASS_HASH
+            );
+            return None;
+        }
+
+        match parse_felt(trimmed) {
+            Ok(felt) => {
+                tracing::info!("Rust verification enabled for Account with class hash: {:#x}", felt);
+                Some(felt)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse {} value '{}': {}. Account Rust verification disabled.",
+                    ENV_ACCOUNT_CLASS_HASH,
+                    trimmed,
+                    e
+                );
+                None
+            }
+        }
+    }
+    Err(env::VarError::NotPresent) => {
+        tracing::debug!("Environment variable {} not set, Account Rust verification disabled", ENV_ACCOUNT_CLASS_HASH);
+        None
+    }
+    Err(env::VarError::NotUnicode(_)) => {
+        tracing::warn!(
+            "Environment variable {} contains invalid unicode, Account Rust verification disabled",
+            ENV_ACCOUNT_CLASS_HASH
+        );
+        None
+    }
+});
+
+/// Get the configured class hash for Account.
+///
+/// Returns `None` if the environment variable is not set or invalid.
+pub fn account_class_hash() -> Option<Felt> {
+    *ACCOUNT_CLASS_HASH
+}
+
+/// Parsed class hash for ERC20 contract, read from environment at startup.
+pub static ERC20_CLASS_HASH: Lazy<Option<Felt>> = Lazy::new(|| match env::var(ENV_ERC20_CLASS_HASH) {
+    Ok(value) => {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            tracing::debug!("Environment variable {} is empty, ERC20 Rust verification disabled", ENV_ERC20_CLASS_HASH);
+            return None;
+        }
+
+        match parse_felt(trimmed) {
+            Ok(felt) => {
+                tracing::info!("Rust verification enabled for ERC20 with class hash: {:#x}", felt);
+                Some(felt)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse {} value '{}': {}. ERC20 Rust verification disabled.",
+                    ENV_ERC20_CLASS_HASH,
+                    trimmed,
+                    e
+                );
+                None
+            }
+        }
+    }
+    Err(env::VarError::NotPresent) => {
+        tracing::debug!("Environment variable {} not set, ERC20 Rust verification disabled", ENV_ERC20_CLASS_HASH);
+        None
+    }
+    Err(env::VarError::NotUnicode(_)) => {
+        tracing::warn!(
+            "Environment variable {} contains invalid unicode, ERC20 Rust verification disabled",
+            ENV_ERC20_CLASS_HASH
+        );
+        None
+    }
+});
+
+/// Get the configured class hash for ERC20.
+///
+/// Returns `None` if the environment variable is not set or invalid.
+pub fn erc20_class_hash() -> Option<Felt> {
+    *ERC20_CLASS_HASH
+}
+
+/// Parsed class hash for HeavyTradeSimulator contract, read from environment at startup.
+pub static HEAVY_TRADE_SIMULATOR_CLASS_HASH: Lazy<Option<Felt>> =
+    Lazy::new(|| match env::var(ENV_HEAVY_TRADE_SIMULATOR_CLASS_HASH) {
+        Ok(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                tracing::debug!(
+                    "Environment variable {} is empty, HeavyTradeSimulator Rust verification disabled",
+                    ENV_HEAVY_TRADE_SIMULATOR_CLASS_HASH
+                );
+                return None;
+            }
+
+            match parse_felt(trimmed) {
+                Ok(felt) => {
+                    tracing::info!("Rust verification enabled for HeavyTradeSimulator with class hash: {:#x}", felt);
+                    Some(felt)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse {} value '{}': {}. HeavyTradeSimulator Rust verification disabled.",
+                        ENV_HEAVY_TRADE_SIMULATOR_CLASS_HASH,
+                        trimmed,
+                        e
+                    );
+                    None
+                }
+            }
+        }
+        Err(env::VarError::NotPresent) => {
+            tracing::debug!(
+                "Environment variable {} not set, HeavyTradeSimulator Rust verification disabled",
+                ENV_HEAVY_TRADE_SIMULATOR_CLASS_HASH
+            );
+            None
+        }
+        Err(env::VarError::NotUnicode(_)) => {
+            tracing::warn!(
+                "Environment variable {} contains invalid unicode, HeavyTradeSimulator Rust verification disabled",
+                ENV_HEAVY_TRADE_SIMULATOR_CLASS_HASH
+            );
+            None
+        }
+    });
+
+/// Get the configured class hash for HeavyTradeSimulator.
+///
+/// Returns `None` if the environment variable is not set or invalid.
+pub fn heavy_trade_simulator_class_hash() -> Option<Felt> {
+    *HEAVY_TRADE_SIMULATOR_CLASS_HASH
+}
+
+/// Parsed class hash for StorageHeavy contract, read from environment at startup.
+pub static STORAGE_HEAVY_CLASS_HASH: Lazy<Option<Felt>> =
+    Lazy::new(|| match env::var(ENV_STORAGE_HEAVY_CLASS_HASH) {
+        Ok(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                tracing::debug!(
+                    "Environment variable {} is empty, StorageHeavy Rust verification disabled",
+                    ENV_STORAGE_HEAVY_CLASS_HASH
+                );
+                return None;
+            }
+
+            match parse_felt(trimmed) {
+                Ok(felt) => {
+                    tracing::info!("Rust verification enabled for StorageHeavy with class hash: {:#x}", felt);
+                    Some(felt)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse {} value '{}': {}. StorageHeavy Rust verification disabled.",
+                        ENV_STORAGE_HEAVY_CLASS_HASH,
+                        trimmed,
+                        e
+                    );
+                    None
+                }
+            }
+        }
+        Err(env::VarError::NotPresent) => {
+            tracing::debug!(
+                "Environment variable {} not set, StorageHeavy Rust verification disabled",
+                ENV_STORAGE_HEAVY_CLASS_HASH
+            );
+            None
+        }
+        Err(env::VarError::NotUnicode(_)) => {
+            tracing::warn!(
+                "Environment variable {} contains invalid unicode, StorageHeavy Rust verification disabled",
+                ENV_STORAGE_HEAVY_CLASS_HASH
+            );
+            None
+        }
+    });
+
+/// Get the configured class hash for StorageHeavy.
+///
+/// Returns `None` if the environment variable is not set or invalid.
+pub fn storage_heavy_class_hash() -> Option<Felt> {
+    *STORAGE_HEAVY_CLASS_HASH
+}
+
+/// Parsed class hash for ComprehensiveBenchmark contract, read from environment at startup.
+pub static COMPREHENSIVE_BENCHMARK_CLASS_HASH: Lazy<Option<Felt>> =
+    Lazy::new(|| match env::var(ENV_COMPREHENSIVE_BENCHMARK_CLASS_HASH) {
+        Ok(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                tracing::debug!(
+                    "Environment variable {} is empty, ComprehensiveBenchmark Rust verification disabled",
+                    ENV_COMPREHENSIVE_BENCHMARK_CLASS_HASH
+                );
+                return None;
+            }
+
+            match parse_felt(trimmed) {
+                Ok(felt) => {
+                    tracing::info!("Rust verification enabled for ComprehensiveBenchmark with class hash: {:#x}", felt);
+                    Some(felt)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse {} value '{}': {}. ComprehensiveBenchmark Rust verification disabled.",
+                        ENV_COMPREHENSIVE_BENCHMARK_CLASS_HASH,
+                        trimmed,
+                        e
+                    );
+                    None
+                }
+            }
+        }
+        Err(env::VarError::NotPresent) => {
+            tracing::debug!(
+                "Environment variable {} not set, ComprehensiveBenchmark Rust verification disabled",
+                ENV_COMPREHENSIVE_BENCHMARK_CLASS_HASH
+            );
+            None
+        }
+        Err(env::VarError::NotUnicode(_)) => {
+            tracing::warn!(
+                "Environment variable {} contains invalid unicode, ComprehensiveBenchmark Rust verification disabled",
+                ENV_COMPREHENSIVE_BENCHMARK_CLASS_HASH
+            );
+            None
+        }
+    });
+
+/// Get the configured class hash for ComprehensiveBenchmark.
+///
+/// Returns `None` if the environment variable is not set or invalid.
+pub fn comprehensive_benchmark_class_hash() -> Option<Felt> {
+    *COMPREHENSIVE_BENCHMARK_CLASS_HASH
 }
 
 /// Check if Rust verification is enabled for any contracts.
@@ -295,6 +544,11 @@ pub fn is_verification_enabled() -> bool {
         || COUNTER_WITH_EVENT_CLASS_HASH.is_some()
         || RANDOM_100_HASHES_CLASS_HASH.is_some()
         || MATH_BENCHMARK_CLASS_HASH.is_some()
+        || ACCOUNT_CLASS_HASH.is_some()
+        || ERC20_CLASS_HASH.is_some()
+        || HEAVY_TRADE_SIMULATOR_CLASS_HASH.is_some()
+        || STORAGE_HEAVY_CLASS_HASH.is_some()
+        || COMPREHENSIVE_BENCHMARK_CLASS_HASH.is_some()
 }
 
 /// Log the current configuration status.
@@ -313,14 +567,34 @@ pub fn log_config_status() {
         if let Some(hash) = math_benchmark_class_hash() {
             tracing::info!("  - MathBenchmark: {:#x}", hash);
         }
+        if let Some(hash) = account_class_hash() {
+            tracing::info!("  - Account: {:#x}", hash);
+        }
+        if let Some(hash) = erc20_class_hash() {
+            tracing::info!("  - ERC20: {:#x}", hash);
+        }
+        if let Some(hash) = heavy_trade_simulator_class_hash() {
+            tracing::info!("  - HeavyTradeSimulator: {:#x}", hash);
+        }
+        if let Some(hash) = storage_heavy_class_hash() {
+            tracing::info!("  - StorageHeavy: {:#x}", hash);
+        }
+        if let Some(hash) = comprehensive_benchmark_class_hash() {
+            tracing::info!("  - ComprehensiveBenchmark: {:#x}", hash);
+        }
     } else {
         tracing::info!(
             "Rust execution verification is DISABLED (no class hashes configured). \
-             Set {}, {}, {}, or {} to enable.",
+             Set {}, {}, {}, {}, {}, {}, {}, {}, or {} to enable.",
             ENV_SIMPLE_COUNTER_CLASS_HASH,
             ENV_COUNTER_WITH_EVENT_CLASS_HASH,
             ENV_RANDOM_100_HASHES_CLASS_HASH,
-            ENV_MATH_BENCHMARK_CLASS_HASH
+            ENV_MATH_BENCHMARK_CLASS_HASH,
+            ENV_ACCOUNT_CLASS_HASH,
+            ENV_ERC20_CLASS_HASH,
+            ENV_HEAVY_TRADE_SIMULATOR_CLASS_HASH,
+            ENV_STORAGE_HEAVY_CLASS_HASH,
+            ENV_COMPREHENSIVE_BENCHMARK_CLASS_HASH
         );
     }
 }

@@ -94,10 +94,7 @@ mod tests {
         assert!(result.call_result.retdata.is_empty());
         assert!(result.call_result.events.is_empty());
         // Check storage was updated: 0 + 1 = 1
-        assert_eq!(
-            result.state_diff.storage_updates.get(&contract).unwrap().get(&*COUNTER_KEY).unwrap(),
-            &Felt::ONE
-        );
+        assert_eq!(result.state_diff.storage_updates.get(&contract).unwrap().get(&*COUNTER_KEY).unwrap(), &Felt::ONE);
     }
 
     #[test]

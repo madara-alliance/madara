@@ -107,13 +107,8 @@ mod tests {
         let result = ctx.build_result();
 
         // Should have stored the result
-        let stored_value = result
-            .state_diff
-            .storage_updates
-            .get(&contract)
-            .unwrap()
-            .get(&*LAST_HASH_RESULT_KEY)
-            .unwrap();
+        let stored_value =
+            result.state_diff.storage_updates.get(&contract).unwrap().get(&*LAST_HASH_RESULT_KEY).unwrap();
 
         // Stored value should match return value
         assert_eq!(*stored_value, result.call_result.retdata[0]);

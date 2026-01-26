@@ -17,17 +17,23 @@
 pub mod config;
 pub mod context;
 pub mod contracts;
+pub mod gas;
 pub mod state;
 pub mod storage;
+pub mod transaction;
 pub mod types;
 pub mod verify;
 
 use starknet_types_core::felt::Felt;
 
-pub use config::{is_verification_enabled, log_config_status, simple_counter_class_hash};
+pub use config::{
+    account_class_hash, erc20_class_hash, is_verification_enabled, log_config_status, simple_counter_class_hash,
+};
 pub use context::ExecutionContext;
 pub use contracts::{ContractRegistry, ExecutionError};
+pub use gas::{BlockContext, FeeType, GasCosts, GasTracker, GasVector, ResourceBounds};
 pub use state::{StateError, StateReader};
+pub use transaction::{InvokeTransaction, TransactionExecutionResult, TransactionExecutor};
 pub use types::{ContractAddress, ExecutionResult};
 pub use verify::{VerificationError, VerificationResult};
 
@@ -58,6 +64,22 @@ pub fn execute_transaction<S: StateReader>(
     calldata: &[Felt],
     caller: ContractAddress,
 ) -> Option<Result<ExecutionResult, ExecutionError>> {
+    execute_transaction_with_timestamp(state, contract_address, class_hash, entry_point_selector, calldata, caller, 0)
+}
+
+/// Execute a transaction with explicit block timestamp.
+///
+/// Same as `execute_transaction` but with a block timestamp for contracts
+/// that need to read/write timestamp-dependent storage.
+pub fn execute_transaction_with_timestamp<S: StateReader>(
+    state: &S,
+    contract_address: ContractAddress,
+    class_hash: Felt,
+    entry_point_selector: Felt,
+    calldata: &[Felt],
+    caller: ContractAddress,
+    block_timestamp: u64,
+) -> Option<Result<ExecutionResult, ExecutionError>> {
     // Check if this contract is supported
     if !ContractRegistry::supports_class_hash(class_hash) {
         return None;
@@ -69,7 +91,15 @@ pub fn execute_transaction<S: StateReader>(
     }
 
     // Execute the function
-    ContractRegistry::execute(state, contract_address, class_hash, entry_point_selector, calldata, caller)
+    ContractRegistry::execute_with_timestamp(
+        state,
+        contract_address,
+        class_hash,
+        entry_point_selector,
+        calldata,
+        caller,
+        block_timestamp,
+    )
 }
 
 /// Compare Rust execution result with Blockifier result.
@@ -83,6 +113,47 @@ pub fn compare_with_blockifier(
     blockifier_failed: bool,
 ) -> VerificationResult {
     verify::verify_execution(rust_result, blockifier_storage, blockifier_retdata, blockifier_events, blockifier_failed)
+}
+
+/// Comprehensive comparison including all state changes.
+///
+/// This checks storage, retdata, events, nonces, L2-to-L1 messages, class hashes, and compiled class hashes.
+pub fn compare_with_blockifier_comprehensive(
+    rust_result: &ExecutionResult,
+    blockifier_storage: &[(Felt, Vec<(Felt, Felt)>)],
+    blockifier_retdata: &[Felt],
+    blockifier_events: &[(Vec<Felt>, Vec<Felt>)],
+    blockifier_failed: bool,
+    blockifier_nonces: &[(Felt, Felt)],
+    blockifier_messages: &[(Felt, Vec<Felt>)],
+    blockifier_class_hashes: &[(Felt, Felt)],
+    blockifier_compiled_class_hashes: &[(Felt, Felt)],
+) -> VerificationResult {
+    verify::verify_execution_comprehensive(
+        rust_result,
+        blockifier_storage,
+        blockifier_retdata,
+        blockifier_events,
+        blockifier_failed,
+        blockifier_nonces,
+        blockifier_messages,
+        blockifier_class_hashes,
+        blockifier_compiled_class_hashes,
+    )
+}
+
+/// Get the human-readable name for a contract given its class hash.
+///
+/// Returns `None` if the class hash is not recognized.
+pub fn get_contract_name(class_hash: Felt) -> Option<String> {
+    ContractRegistry::get_contract_name(class_hash)
+}
+
+/// Get the human-readable name for a function given the class hash and selector.
+///
+/// Returns `None` if the function is not recognized.
+pub fn get_function_name(class_hash: Felt, selector: Felt) -> Option<String> {
+    ContractRegistry::get_function_name(class_hash, selector)
 }
 
 #[cfg(test)]

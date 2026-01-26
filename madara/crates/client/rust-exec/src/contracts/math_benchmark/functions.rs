@@ -22,10 +22,10 @@ const MULTIPLIER: u128 = 100_000_000;
 const MULTIPLIER_I128: i128 = 100_000_000;
 
 /// Realistic trading values
-const PRICE: u128 = 4_500_000_000_000;      // $45,000.00 (BTC price)
-const SIZE: u128 = 100_000_000;              // 1.0 units
-const FEE_RATE: u128 = 30_000;               // 0.03% (3 bps)
-const FUNDING_RATE: u128 = 100_000;          // 0.1%
+const PRICE: u128 = 4_500_000_000_000; // $45,000.00 (BTC price)
+const SIZE: u128 = 100_000_000; // 1.0 units
+const FEE_RATE: u128 = 30_000; // 0.03% (3 bps)
+const FUNDING_RATE: u128 = 100_000; // 0.1%
 const INITIAL_BALANCE: u128 = 10_000_000_000_000; // $100,000.00
 
 /// Signed versions for PnL calculations
@@ -81,8 +81,8 @@ pub fn execute_benchmark_division<S: StateReader>(
         // Simulate position value calculation: (price * size) / MULTIPLIER
         let price = PRICE + i;
         let notional = price * SIZE;
-        let value = notional / MULTIPLIER;  // Native CPU division!
-        result = result + value;
+        let value = notional / MULTIPLIER; // Native CPU division!
+        result += value;
     }
 
     // Store result
@@ -110,8 +110,8 @@ pub fn execute_benchmark_multiplication<S: StateReader>(
     for i in 0..iterations {
         // Simulate fee calculation: price * fee_rate
         let price = PRICE + i;
-        let fee_component = price * FEE_RATE;  // Native multiplication
-        result = result + fee_component;
+        let fee_component = price * FEE_RATE; // Native multiplication
+        result += fee_component;
     }
 
     ctx.storage_write(contract, *LAST_RESULT_U128_KEY, u128_to_felt(result));
@@ -135,7 +135,7 @@ pub fn execute_benchmark_addition<S: StateReader>(
 
     for i in 0..iterations {
         let deposit = SIZE + i;
-        result = result + deposit;  // Native addition
+        result += deposit; // Native addition
     }
 
     ctx.storage_write(contract, *LAST_RESULT_U128_KEY, u128_to_felt(result));
@@ -159,7 +159,7 @@ pub fn execute_benchmark_subtraction<S: StateReader>(
 
     for i in 0..iterations {
         let withdrawal = SIZE + (i % 100);
-        result = result - withdrawal;  // Native subtraction
+        result -= withdrawal; // Native subtraction
     }
 
     ctx.storage_write(contract, *LAST_RESULT_U128_KEY, u128_to_felt(result));
@@ -185,7 +185,7 @@ pub fn execute_benchmark_fee_calculation<S: StateReader>(
         let price = PRICE + i;
         let notional = (price * SIZE) / MULTIPLIER;
         let fee = (notional * FEE_RATE) / MULTIPLIER;
-        total_fees = total_fees + fee;
+        total_fees += fee;
     }
 
     ctx.storage_write(contract, *LAST_RESULT_U128_KEY, u128_to_felt(total_fees));
@@ -212,8 +212,8 @@ pub fn execute_benchmark_signed_division<S: StateReader>(
         let exit_price: i128 = PRICE_I128 + (i_i128 * 1000);
         let entry_price: i128 = PRICE_I128;
         let price_diff: i128 = exit_price - entry_price;
-        let pnl: i128 = (price_diff * SIZE_I128) / MULTIPLIER_I128;  // Native signed division!
-        result = result + pnl;
+        let pnl: i128 = (price_diff * SIZE_I128) / MULTIPLIER_I128; // Native signed division!
+        result += pnl;
     }
 
     let result_felt = i128_to_felt(result);
@@ -240,7 +240,7 @@ pub fn execute_benchmark_signed_multiplication<S: StateReader>(
         let i_i128 = i as i128;
         let position_value: i128 = PRICE_I128 + (i_i128 * 100);
         let funding: i128 = position_value * funding_rate_i128;
-        result = result + funding;
+        result += funding;
     }
 
     let result_felt = i128_to_felt(result);
@@ -266,10 +266,7 @@ pub fn execute_benchmark_events<S: StateReader>(
         // Emit IterationEvent per iteration
         // keys: [selector, iteration (indexed)]
         // data: [value]
-        ctx.emit_event(
-            vec![iteration_event_selector(), u128_to_felt(i)],
-            vec![u128_to_felt(i)],
-        );
+        ctx.emit_event(vec![iteration_event_selector(), u128_to_felt(i)], vec![u128_to_felt(i)]);
     }
 
     ctx.storage_write(contract, *EVENT_COUNT_KEY, u128_to_felt(iterations));
@@ -349,16 +346,12 @@ pub fn execute_benchmark_full_trade<S: StateReader>(
 
         // 3. Calculate PnL (subtraction)
         let pnl: i128 = position_value - entry_cost;
-        total_pnl = total_pnl + pnl;
+        total_pnl += pnl;
 
         // 4. Calculate fee (mul + div)
-        let notional_abs: u128 = if position_value >= 0 {
-            position_value as u128
-        } else {
-            (-position_value) as u128
-        };
+        let notional_abs: u128 = if position_value >= 0 { position_value as u128 } else { (-position_value) as u128 };
         let fee: u128 = (notional_abs * FEE_RATE) / MULTIPLIER;
-        total_fees = total_fees + fee;
+        total_fees += fee;
 
         // 5. Assertions (health checks)
         assert!(notional_abs > 0, "notional must be positive");
