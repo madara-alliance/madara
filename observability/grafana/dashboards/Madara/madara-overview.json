@@ -4669,7 +4669,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
           "legendFormat": "Close Block p50",
           "refId": "A"
         },
@@ -4678,7 +4678,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "quantile_over_time(0.95, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "quantile_over_time(0.95, {namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
           "legendFormat": "Close Block p95",
           "refId": "B"
         },
@@ -4687,7 +4687,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
           "legendFormat": "Close Block p99",
           "refId": "C"
         }
@@ -4781,7 +4781,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_production_ms [$__interval]) by ()",
+          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap block_production_ms [$__interval]) by ()",
           "legendFormat": "Block Production p50",
           "refId": "A"
         },
@@ -4790,7 +4790,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "quantile_over_time(0.95, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_production_ms [$__interval]) by ()",
+          "expr": "quantile_over_time(0.95, {namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap block_production_ms [$__interval]) by ()",
           "legendFormat": "Block Production p95",
           "refId": "B"
         },
@@ -4799,7 +4799,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_production_ms [$__interval]) by ()",
+          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap block_production_ms [$__interval]) by ()",
           "legendFormat": "Block Production p99",
           "refId": "C"
         }
@@ -5604,7 +5604,7 @@
             "uid": "${DS_LOKI}"
           },
           "editorMode": "code",
-          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json",
+          "expr": "{namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json",
           "queryType": "range",
           "refId": "A"
         }
@@ -5812,35 +5812,35 @@
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
           "legendFormat": "Total Close Block",
           "refId": "A"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap merklization_ms [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap merklization_ms [$__interval]) by ()",
           "legendFormat": "Merklization",
           "refId": "B"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap commitments_ms [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap commitments_ms [$__interval]) by ()",
           "legendFormat": "Commitments",
           "refId": "C"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap db_write_ms [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap db_write_ms [$__interval]) by ()",
           "legendFormat": "DB Write",
           "refId": "D"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_hash_ms [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap block_hash_ms [$__interval]) by ()",
           "legendFormat": "Block Hash",
           "refId": "E"
         }
@@ -5892,7 +5892,7 @@
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
           "legendFormat": "Close Block Total (p50)",
           "refId": "A"
         }
@@ -5947,35 +5947,35 @@
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap tx_count [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap tx_count [$__interval]) by ()",
           "legendFormat": "Tx Count",
           "refId": "A"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap event_count [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap event_count [$__interval]) by ()",
           "legendFormat": "Event Count",
           "refId": "B"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_executed [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap txs_executed [$__interval]) by ()",
           "legendFormat": "Txs Executed",
           "refId": "C"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_reverted [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap txs_reverted [$__interval]) by ()",
           "legendFormat": "Txs Reverted",
           "refId": "D"
         },
         {
           "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap state_diff_len [$__interval]) by ()",
+          "expr": "avg_over_time({namespace=~\"$namespace\", namespace=~\".+\"} |= \"close_block_complete\" | json | unwrap state_diff_len [$__interval]) by ()",
           "legendFormat": "State Diff Length",
           "refId": "E"
         }
