@@ -4781,7 +4781,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(block_production_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(block_production_time_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Block Production p50",
           "refId": "A"
         },
@@ -4790,7 +4790,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(block_production_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(block_production_time_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Block Production p95",
           "refId": "B"
         },
@@ -4799,7 +4799,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(block_production_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(block_production_time_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Block Production p99",
           "refId": "C"
         }
