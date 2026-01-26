@@ -4585,10 +4585,10 @@
     },
     {
       "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Total time to close a block (P50, P95, P99) computed from per-block logs.",
+      "description": "Total time to close a block (P50, P95, P99) from Prometheus histogram.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4636,7 +4636,7 @@
               }
             ]
           },
-          "unit": "ms"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -4666,28 +4666,28 @@
       "targets": [
         {
           "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(close_block_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Close Block p50",
           "refId": "A"
         },
         {
           "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "quantile_over_time(0.95, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(close_block_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Close Block p95",
           "refId": "B"
         },
         {
           "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(close_block_total_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Close Block p99",
           "refId": "C"
         }
@@ -4697,10 +4697,10 @@
     },
     {
       "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Full block production time from start to close (P50, P95, P99) computed from per-block logs.",
+      "description": "Full block production time from start to close (P50, P95, P99) from Prometheus histogram.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4748,7 +4748,7 @@
               }
             ]
           },
-          "unit": "ms"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -4778,28 +4778,28 @@
       "targets": [
         {
           "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_production_ms [$__interval]) by ()",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(block_production_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Block Production p50",
           "refId": "A"
         },
         {
           "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "quantile_over_time(0.95, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_production_ms [$__interval]) by ()",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(block_production_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Block Production p95",
           "refId": "B"
         },
         {
           "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_production_ms [$__interval]) by ()",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(block_production_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Block Production p99",
           "refId": "C"
         }
@@ -5869,7 +5869,7 @@
       },
       "gridPos": {
         "h": 10,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 177
       },
