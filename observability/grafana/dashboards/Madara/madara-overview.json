@@ -5545,239 +5545,6 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 146
-      },
-      "id": 309,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "block_number"
-          }
-        ]
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
-          "editorMode": "code",
-          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json",
-          "queryType": "range",
-          "refId": "A"
-        }
-      ],
-      "title": "Close Block Events (Loki)",
-      "transformations": [
-        {
-          "id": "extractFields",
-          "options": {
-            "format": "json",
-            "jsonPaths": [
-              {
-                "alias": "block_number",
-                "path": "block_number"
-              },
-              {
-                "alias": "tx_count",
-                "path": "tx_count"
-              },
-              {
-                "alias": "event_count",
-                "path": "event_count"
-              },
-              {
-                "alias": "close_block_total_ms",
-                "path": "close_block_total_ms"
-              },
-              {
-                "alias": "block_close_ms",
-                "path": "block_close_ms"
-              },
-              {
-                "alias": "close_preconfirmed_ms",
-                "path": "close_preconfirmed_ms"
-              },
-              {
-                "alias": "block_production_ms",
-                "path": "block_production_ms"
-              },
-              {
-                "alias": "get_full_block_ms",
-                "path": "get_full_block_ms"
-              },
-              {
-                "alias": "commitments_ms",
-                "path": "commitments_ms"
-              },
-              {
-                "alias": "merklization_ms",
-                "path": "merklization_ms"
-              },
-              {
-                "alias": "contract_trie_ms",
-                "path": "contract_trie_ms"
-              },
-              {
-                "alias": "class_trie_ms",
-                "path": "class_trie_ms"
-              },
-              {
-                "alias": "contract_storage_trie_commit_ms",
-                "path": "contract_storage_trie_commit_ms"
-              },
-              {
-                "alias": "contract_trie_commit_ms",
-                "path": "contract_trie_commit_ms"
-              },
-              {
-                "alias": "class_trie_commit_ms",
-                "path": "class_trie_commit_ms"
-              },
-              {
-                "alias": "block_hash_ms",
-                "path": "block_hash_ms"
-              },
-              {
-                "alias": "db_write_ms",
-                "path": "db_write_ms"
-              },
-              {
-                "alias": "state_diff_len",
-                "path": "state_diff_len"
-              },
-              {
-                "alias": "declared_classes",
-                "path": "declared_classes"
-              },
-              {
-                "alias": "deployed_contracts",
-                "path": "deployed_contracts"
-              },
-              {
-                "alias": "storage_diffs",
-                "path": "storage_diffs"
-              },
-              {
-                "alias": "nonce_updates",
-                "path": "nonce_updates"
-              },
-              {
-                "alias": "consumed_l1_nonces",
-                "path": "consumed_l1_nonces"
-              },
-              {
-                "alias": "bouncer_l1_gas",
-                "path": "bouncer_l1_gas"
-              },
-              {
-                "alias": "bouncer_sierra_gas",
-                "path": "bouncer_sierra_gas"
-              },
-              {
-                "alias": "bouncer_n_events",
-                "path": "bouncer_n_events"
-              },
-              {
-                "alias": "bouncer_message_segment_length",
-                "path": "bouncer_message_segment_length"
-              },
-              {
-                "alias": "bouncer_state_diff_size",
-                "path": "bouncer_state_diff_size"
-              },
-              {
-                "alias": "batches_executed",
-                "path": "batches_executed"
-              },
-              {
-                "alias": "txs_added_to_block",
-                "path": "txs_added_to_block"
-              },
-              {
-                "alias": "txs_executed",
-                "path": "txs_executed"
-              },
-              {
-                "alias": "txs_reverted",
-                "path": "txs_reverted"
-              },
-              {
-                "alias": "txs_rejected",
-                "path": "txs_rejected"
-              },
-              {
-                "alias": "classes_declared",
-                "path": "classes_declared"
-              },
-              {
-                "alias": "l2_gas_consumed",
-                "path": "l2_gas_consumed"
-              }
-            ],
-            "source": "Line"
-          }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Line": true,
-              "Time": false,
-              "id": true,
-              "labels": true,
-              "tsNs": true
-            },
-            "indexByName": {},
-            "renameByName": {}
-          }
-        }
-      ],
-      "type": "table"
-    },
-    {
       "id": 310,
       "type": "timeseries",
       "title": "Close Block Timing Breakdown (Loki)",
@@ -5843,6 +5610,55 @@
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_hash_ms [$__interval]) by ()",
           "legendFormat": "Block Hash",
           "refId": "E"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_preconfirmed_ms [$__interval]) by ()",
+          "legendFormat": "Close Preconfirmed",
+          "refId": "F"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap get_full_block_ms [$__interval]) by ()",
+          "legendFormat": "Get Full Block",
+          "refId": "G"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_ms [$__interval]) by ()",
+          "legendFormat": "Contract Trie",
+          "refId": "H"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_ms [$__interval]) by ()",
+          "legendFormat": "Class Trie",
+          "refId": "I"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_storage_trie_commit_ms [$__interval]) by ()",
+          "legendFormat": "Contract Storage Trie Commit",
+          "refId": "J"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_commit_ms [$__interval]) by ()",
+          "legendFormat": "Contract Trie Commit",
+          "refId": "K"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_commit_ms [$__interval]) by ()",
+          "legendFormat": "Class Trie Commit",
+          "refId": "L"
         }
       ],
       "fieldConfig": {
@@ -5980,6 +5796,55 @@
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap state_diff_len [$__interval]) by ()",
           "legendFormat": "State Diff Length",
           "refId": "E"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap batches_executed [$__interval]) by ()",
+          "legendFormat": "Batches Executed",
+          "refId": "F"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_added_to_block [$__interval]) by ()",
+          "legendFormat": "Txs Added to Block",
+          "refId": "G"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_rejected [$__interval]) by ()",
+          "legendFormat": "Txs Rejected",
+          "refId": "H"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap classes_declared [$__interval]) by ()",
+          "legendFormat": "Classes Declared",
+          "refId": "I"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap deployed_contracts [$__interval]) by ()",
+          "legendFormat": "Deployed Contracts",
+          "refId": "J"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap storage_diffs [$__interval]) by ()",
+          "legendFormat": "Storage Diffs",
+          "refId": "K"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap nonce_updates [$__interval]) by ()",
+          "legendFormat": "Nonce Updates",
+          "refId": "L"
         }
       ],
       "fieldConfig": {
@@ -5998,6 +5863,128 @@
       },
       "pluginVersion": 39,
       "transformations": []
+    },
+    {
+      "id": 313,
+      "type": "timeseries",
+      "title": "Bouncer Weights (Loki)",
+      "description": "Bouncer weights and gas consumption from structured logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 177
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": ["lastNotNull", "mean", "max"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap l2_gas_consumed [$__interval]) by ()",
+          "legendFormat": "L2 Gas Consumed",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_l1_gas [$__interval]) by ()",
+          "legendFormat": "Bouncer L1 Gas",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_sierra_gas [$__interval]) by ()",
+          "legendFormat": "Bouncer Sierra Gas",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_n_events [$__interval]) by ()",
+          "legendFormat": "Bouncer Events",
+          "refId": "D"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_message_segment_length [$__interval]) by ()",
+          "legendFormat": "Bouncer Msg Segment Len",
+          "refId": "E"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_state_diff_size [$__interval]) by ()",
+          "legendFormat": "Bouncer State Diff Size",
+          "refId": "F"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "pluginVersion": 39,
+      "transformations": []
+    },
+    {
+      "id": 314,
+      "type": "logs",
+      "title": "Close Block Logs",
+      "description": "Raw close_block_complete log entries",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 187
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "editorMode": "code",
+          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "5s",
