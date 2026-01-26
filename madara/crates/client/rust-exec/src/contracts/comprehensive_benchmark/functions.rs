@@ -726,14 +726,29 @@ pub fn execute_benchmark_struct_write<S: StateReader>(
     let base_key = map_address_key(*ACCOUNT_STATES_BASE, caller.0);
 
     for i in 0..iterations {
-        // Write struct fields (simplified - just balance field)
-        storage_write_matching_cairo(state, contract, ctx, StorageKey(base_key), Felt::from(i))?;
+        // Write ALL 4 struct fields (matching Cairo implementation)
+        // Cairo creates: AccountState { balance: i, position: i, realized_pnl: 0, margin_ratio: 15_000_000 }
+
+        // Field 0: balance
+        storage_write_matching_cairo(state, contract, ctx,
+            StorageKey(base_key), Felt::from(i))?;
+
+        // Field 1: position
+        storage_write_matching_cairo(state, contract, ctx,
+            StorageKey(base_key + Felt::ONE), Felt::from(i))?;
+
+        // Field 2: realized_pnl
+        storage_write_matching_cairo(state, contract, ctx,
+            StorageKey(base_key + Felt::TWO), Felt::ZERO)?;
+
+        // Field 3: margin_ratio (15,000,000 in Cairo)
+        storage_write_matching_cairo(state, contract, ctx,
+            StorageKey(base_key + Felt::THREE), Felt::from(15_000_000u128))?;
     }
 
     // Write result
     storage_write_matching_cairo(state, contract, ctx, StorageKey(*LAST_RESULT_U128_KEY), Felt::from(iterations))?;
 
-    // Update total operations
     // Emit event
     emit_benchmark_complete(ctx, "struct_write", iterations, iterations.into(), iterations);
 
@@ -1001,26 +1016,52 @@ pub fn execute_benchmark_heavy_transaction<S: StateReader>(
     for i in 0..iterations {
         // 12 map reads (complex state loading)
         let account_key = map_address_key(*ACCOUNT_STATES_BASE, caller.0);
-        let _balance = ctx.storage_read(state, contract, StorageKey(account_key))?
-            .to_biguint().try_into().unwrap_or(0u128);
+
+        // Read ALL 4 AccountState fields (Cairo reads entire struct)
+        let balance = ctx.storage_read(state, contract, StorageKey(account_key))?;
+        let position = ctx.storage_read(state, contract, StorageKey(account_key + Felt::ONE))?;
+        let realized_pnl = ctx.storage_read(state, contract, StorageKey(account_key + Felt::TWO))?;
+        let margin_ratio = ctx.storage_read(state, contract, StorageKey(account_key + Felt::THREE))?;
 
         let position_key = map_address_felt_key(*POSITIONS_BASE, caller.0, market_id);
-        let _entry_price = ctx.storage_read(state, contract, StorageKey(position_key))?
+
+        // Read ALL 3 PositionData fields (Cairo reads entire struct)
+        let pos_size = ctx.storage_read(state, contract, StorageKey(position_key))?;
+        let entry_price = ctx.storage_read(state, contract, StorageKey(position_key + Felt::ONE))?;
+        let last_funding_paid = ctx.storage_read(state, contract, StorageKey(position_key + Felt::TWO))?;
+
+        // Read 3 simple_map values (val1, val2, val3)
+        let val1 = ctx.storage_read(state, contract, StorageKey(map_u128_key(*SIMPLE_MAP_BASE, i % 20)))?
+            .to_biguint().try_into().unwrap_or(0u128);
+        let val2 = ctx.storage_read(state, contract, StorageKey(map_u128_key(*SIMPLE_MAP_BASE, (i + 1) % 20)))?
+            .to_biguint().try_into().unwrap_or(0u128);
+        let val3 = ctx.storage_read(state, contract, StorageKey(map_u128_key(*SIMPLE_MAP_BASE, (i + 2) % 20)))?
             .to_biguint().try_into().unwrap_or(0u128);
 
-        let mut total_value: u128 = 0;
-        for j in 0..6 {
-            let key = map_u128_key(*SIMPLE_MAP_BASE, (i + j) % 20);
-            let val = ctx.storage_read(state, contract, StorageKey(key))?
-                .to_biguint().try_into().unwrap_or(0u128);
-            total_value = total_value.wrapping_add(val);
-        }
+        // Read 3 nested_map values (val4, val5, val6)
+        let val4 = ctx.storage_read(state, contract,
+            StorageKey(nested_map_key(*NESTED_MAP_BASE, i % 5, (i / 5) % 5)))?
+            .to_biguint().try_into().unwrap_or(0u128);
+        let val5 = ctx.storage_read(state, contract,
+            StorageKey(nested_map_key(*NESTED_MAP_BASE, (i + 1) % 5, (i / 5) % 5)))?
+            .to_biguint().try_into().unwrap_or(0u128);
+        let val6 = ctx.storage_read(state, contract,
+            StorageKey(nested_map_key(*NESTED_MAP_BASE, (i + 2) % 5, (i / 5) % 5)))?
+            .to_biguint().try_into().unwrap_or(0u128);
 
         let referrer_key = map_address_key(*ACCOUNT_REFERRERS_BASE, caller.0);
         let referrer = ctx.storage_read(state, contract, StorageKey(referrer_key))?;
 
         let fee_key = map_address_key(*REFERRER_FEES_BASE, referrer);
         let _fee_config = ctx.storage_read(state, contract, StorageKey(fee_key))?
+            .to_biguint().try_into().unwrap_or(0u128);
+
+        // Read 2 address_map values (addr_val1, addr_val2)
+        let addr_val1 = ctx.storage_read(state, contract,
+            StorageKey(map_address_key(*ADDRESS_MAP_BASE, caller.0)))?
+            .to_biguint().try_into().unwrap_or(0u128);
+        let addr_val2 = ctx.storage_read(state, contract,
+            StorageKey(map_address_key(*ADDRESS_MAP_BASE, referrer)))?
             .to_biguint().try_into().unwrap_or(0u128);
 
         // 30 Pedersen hashes
@@ -1043,12 +1084,32 @@ pub fn execute_benchmark_heavy_transaction<S: StateReader>(
         let notional = (price.wrapping_mul(SIZE)) / MULTIPLIER;
         let fee = (notional.wrapping_mul(FEE_RATE)) / MULTIPLIER;
 
-        // 12 map writes (state updates)
-        storage_write_matching_cairo(state, contract, ctx, StorageKey(account_key), Felt::from(_balance))?;
-        storage_write_matching_cairo(state, contract, ctx, StorageKey(position_key), Felt::from(_entry_price))?;
+        // Calculate total_value from all read values (matching Cairo)
+        let total_value = val1.wrapping_add(val2).wrapping_add(val3)
+            .wrapping_add(val4).wrapping_add(val5).wrapping_add(val6)
+            .wrapping_add(addr_val1).wrapping_add(addr_val2);
 
-        for j in 0..5 {
+        // 12 map writes (state updates)
+        // AccountState struct: write back ALL 4 fields (Cairo reads entire struct and writes back)
+        storage_write_matching_cairo(state, contract, ctx, StorageKey(account_key), balance)?;  // balance
+        storage_write_matching_cairo(state, contract, ctx, StorageKey(account_key + Felt::ONE), position)?;  // position
+        storage_write_matching_cairo(state, contract, ctx, StorageKey(account_key + Felt::TWO), realized_pnl)?;  // realized_pnl
+        storage_write_matching_cairo(state, contract, ctx, StorageKey(account_key + Felt::THREE), margin_ratio)?;  // margin_ratio
+
+        // Position struct: write back ALL 3 fields (Cairo reads entire struct and writes back)
+        storage_write_matching_cairo(state, contract, ctx, StorageKey(position_key), pos_size)?;  // size
+        storage_write_matching_cairo(state, contract, ctx, StorageKey(position_key + Felt::ONE), entry_price)?;  // entry_price
+        storage_write_matching_cairo(state, contract, ctx, StorageKey(position_key + Felt::TWO), last_funding_paid)?;  // last_funding_paid
+
+        // Write to 3 simple_map entries (matching Cairo: i % 20, (i+1) % 20, (i+2) % 20)
+        for j in 0..3 {
             let key = map_u128_key(*SIMPLE_MAP_BASE, (i + j) % 20);
+            storage_write_matching_cairo(state, contract, ctx, StorageKey(key), Felt::from(total_value))?;
+        }
+
+        // Write to 3 nested_map entries (matching Cairo)
+        for j in 0..3 {
+            let key = nested_map_key(*NESTED_MAP_BASE, (i + j) % 5, (i / 5) % 5);
             storage_write_matching_cairo(state, contract, ctx, StorageKey(key), Felt::from(total_value))?;
         }
 
