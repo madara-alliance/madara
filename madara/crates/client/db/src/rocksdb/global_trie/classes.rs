@@ -149,7 +149,8 @@ mod tests {
         let block_number = 1;
 
         // Call the class_trie_root function with both declared and migrated classes
-        let (result, _timings) = class_trie_root(&backend.db, &declared_classes, &migrated_classes, block_number).unwrap();
+        let (result, _timings) =
+            class_trie_root(&backend.db, &declared_classes, &migrated_classes, block_number).unwrap();
 
         // The result should incorporate both declared and migrated classes.
         // The expected hash is computed by inserting both class leaf hashes into the trie.

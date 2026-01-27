@@ -209,7 +209,8 @@ impl Visit for CloseBlockEventVisitor {
             self.message = formatted.trim_matches('"').to_string();
         } else {
             let formatted = format!("{:?}", value);
-            self.fields.push((field.name().to_string(), serde_json::Value::String(formatted.trim_matches('"').to_string())));
+            self.fields
+                .push((field.name().to_string(), serde_json::Value::String(formatted.trim_matches('"').to_string())));
         }
     }
 }
@@ -584,8 +585,7 @@ impl CustomFormatter {
             json_obj.insert(key, value);
         }
 
-        let json_str = serde_json::to_string(&serde_json::Value::Object(json_obj))
-            .unwrap_or_else(|_| "{}".to_string());
+        let json_str = serde_json::to_string(&serde_json::Value::Object(json_obj)).unwrap_or_else(|_| "{}".to_string());
 
         writeln!(writer, "{}", json_str)
     }

@@ -63,10 +63,7 @@ pub fn apply_to_global_trie<'a>(
         tracing::debug!("applying state_diff block_n={block_n}");
         let block_start = Instant::now();
 
-        let (
-            (contract_result, contract_duration),
-            (class_result, class_duration),
-        ) = rayon::join(
+        let ((contract_result, contract_duration), (class_result, class_duration)) = rayon::join(
             || {
                 let start = Instant::now();
                 let result = contracts::contract_trie_root(

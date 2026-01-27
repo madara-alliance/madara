@@ -844,7 +844,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().db_write_block_parts_duration.record(write_secs, &[]);
         metrics().db_write_block_parts_last.record(write_secs, &[]);
 
-        Ok(AddFullBlockResult { new_state_root: global_state_root, commitments, block_hash, parent_block_hash, timings })
+        Ok(AddFullBlockResult {
+            new_state_root: global_state_root,
+            commitments,
+            block_hash,
+            parent_block_hash,
+            timings,
+        })
     }
 
     /// Lower level access to writing primitives. This is only used by the sync process, which
