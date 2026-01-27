@@ -19,23 +19,23 @@ testing = ["mc-db/testing"]
 
 [dependencies]
 # MongoDB driver
-mongodb = { workspace = true }
 bson = { workspace = true }
+mongodb = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true, features = ["sync", "time"] }
 
 # Serialization
+bincode.workspace = true
+m-cairo-test-contracts = { workspace = true }
+mp-class = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-bincode.workspace = true
-mp-class = { workspace = true }
-m-cairo-test-contracts = { workspace = true }
 starknet-core = { workspace = true }
 
 # Error handling
-thiserror.workspace = true
 anyhow.workspace = true
+thiserror.workspace = true
 
 # Logging
 tracing.workspace = true
@@ -44,10 +44,10 @@ tracing.workspace = true
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 
 # Internal crates
-mp-transactions = { workspace = true }
-mp-convert = { workspace = true }
-mp-utils = { workspace = true }
 mc-db = { workspace = true }
+mp-convert = { workspace = true }
+mp-transactions = { workspace = true }
+mp-utils = { workspace = true }
 starknet_api.workspace = true
 
 # Other
