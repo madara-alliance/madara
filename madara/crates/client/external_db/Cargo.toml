@@ -57,7 +57,12 @@ async-trait.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
+mc-devnet = { workspace = true }
+mc-exec = { workspace = true }
+blockifier = { workspace = true }
 mp-chain-config = { workspace = true }
+mp-rpc = { workspace = true }
+starknet-signers = { workspace = true }
 starknet_api = { workspace = true }
 testcontainers = { workspace = true }
 mp-block = { workspace = true }
