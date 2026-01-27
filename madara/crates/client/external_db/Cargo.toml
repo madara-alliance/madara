@@ -1,0 +1,70 @@
+[package]
+name = "mc-external-db"
+description = "External database integration for Madara mempool"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[features]
+testing = ["mc-db/testing"]
+
+[dependencies]
+# MongoDB driver
+mongodb = { workspace = true }
+bson = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["sync", "time"] }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+bincode.workspace = true
+mp-class = { workspace = true }
+m-cairo-test-contracts = { workspace = true }
+starknet-core = { workspace = true }
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Metrics
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+
+# Internal crates
+mp-transactions = { workspace = true }
+mp-convert = { workspace = true }
+mp-utils = { workspace = true }
+mc-db = { workspace = true }
+starknet_api.workspace = true
+
+# Other
+async-trait.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+rstest = { workspace = true }
+mc-db = { workspace = true, features = ["testing"] }
+mc-devnet = { workspace = true }
+mc-exec = { workspace = true }
+blockifier = { workspace = true }
+mp-chain-config = { workspace = true }
+mp-rpc = { workspace = true }
+starknet-signers = { workspace = true }
+starknet_api = { workspace = true }
+testcontainers = { workspace = true }
+mp-block = { workspace = true }
+mp-receipt = { workspace = true }
+base64 = { workspace = true }
