@@ -13,6 +13,7 @@ use starknet_types_core::felt::Felt;
 pub mod commitments;
 pub mod event_with_info;
 pub mod header;
+pub mod metrics;
 pub mod to_rpc;
 
 pub use event_with_info::EventWithInfo;

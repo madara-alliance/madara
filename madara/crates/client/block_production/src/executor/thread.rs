@@ -1,5 +1,6 @@
 //! Executor thread internal logic.
 
+use crate::metrics::BlockProductionMetrics;
 use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
 use blockifier::blockifier::transaction_executor::TransactionExecutor;
@@ -72,6 +73,7 @@ impl ExecutorThreadState {
 /// This thread becomes the blockifier executor scheduler thread (via TransactionExecutor), which will internally spawn worker threads.
 pub struct ExecutorThread {
     backend: Arc<MadaraBackend>,
+    metrics: Arc<BlockProductionMetrics>,
 
     incoming_batches: mpsc::Receiver<super::BatchToExecute>,
     replies_sender: mpsc::Sender<super::ExecutorMessage>,
@@ -97,9 +99,11 @@ impl ExecutorThread {
         incoming_batches: mpsc::Receiver<super::BatchToExecute>,
         replies_sender: mpsc::Sender<super::ExecutorMessage>,
         commands: mpsc::UnboundedReceiver<super::ExecutorCommand>,
+        metrics: Arc<BlockProductionMetrics>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             backend,
+            metrics,
             incoming_batches,
             replies_sender,
             commands,
@@ -297,8 +301,13 @@ impl ExecutorThread {
 
                                 // Finalize the block to get execution summary
                                 // This uses the executor's current state - no re-execution needed
+                                let finalize_start = Instant::now();
                                 match execution_state.executor.finalize() {
                                     Ok(block_exec_summary) => {
+                                        let finalize_secs = finalize_start.elapsed().as_secs_f64();
+                                        self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
+                                        self.metrics.executor_finalize_last.record(finalize_secs, &[]);
+
                                         // Send EndFinalBlock message so main loop can close the block during shutdown
                                         if self
                                             .replies_sender
@@ -492,7 +501,11 @@ impl ExecutorThread {
                     "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
                     execution_state.exec_ctx.block_number,
                 );
+                let finalize_start = Instant::now();
                 let block_exec_summary = execution_state.executor.finalize()?;
+                let finalize_secs = finalize_start.elapsed().as_secs_f64();
+                self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
+                self.metrics.executor_finalize_last.record(finalize_secs, &[]);
 
                 if self
                     .replies_sender

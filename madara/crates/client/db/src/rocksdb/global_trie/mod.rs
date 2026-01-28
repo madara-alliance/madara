@@ -1,3 +1,4 @@
+use crate::metrics::metrics;
 use crate::rocksdb::trie::WrappedBonsaiError;
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use mp_state_update::StateDiff;
@@ -5,9 +6,41 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
+use std::time::{Duration, Instant};
 
 mod classes;
 mod contracts;
+
+/// Timing information from contract trie operations
+#[derive(Debug, Clone, Default)]
+pub struct ContractTrieTimings {
+    /// Time to commit contract storage trie
+    pub storage_commit: Duration,
+    /// Time to commit contract trie
+    pub trie_commit: Duration,
+}
+
+/// Timing information from class trie operations
+#[derive(Debug, Clone, Default)]
+pub struct ClassTrieTimings {
+    /// Time to commit class trie
+    pub trie_commit: Duration,
+}
+
+/// Timing information from global trie merklization
+#[derive(Debug, Clone, Default)]
+pub struct MerklizationTimings {
+    /// Total time for merklization
+    pub total: Duration,
+    /// Time for contract trie root computation
+    pub contract_trie_root: Duration,
+    /// Time for class trie root computation
+    pub class_trie_root: Duration,
+    /// Sub-timings from contract trie
+    pub contract_trie: ContractTrieTimings,
+    /// Sub-timings from class trie
+    pub class_trie: ClassTrieTimings,
+}
 
 pub mod bonsai_identifier {
     pub const CONTRACT: &[u8] = b"0xcontract";
@@ -15,42 +48,75 @@ pub mod bonsai_identifier {
 }
 
 /// Update the global tries.
-/// Returns the new global state root. Multiple state diffs can be applied at once, only the latest state root will
-/// be returned.
+/// Returns the new global state root and timing information.
+/// Multiple state diffs can be applied at once, only the latest state root and timings will be returned.
 /// Errors if the batch is empty.
 pub fn apply_to_global_trie<'a>(
     backend: &RocksDBStorage,
     start_block_n: u64,
     state_diffs: impl IntoIterator<Item = &'a StateDiff>,
-) -> Result<Felt> {
+) -> Result<(Felt, MerklizationTimings)> {
     let mut state_root = None;
+    let mut timings = MerklizationTimings::default();
+
     for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
         tracing::debug!("applying state_diff block_n={block_n}");
+        let block_start = Instant::now();
 
-        let (contract_trie_root, class_trie_root) = rayon::join(
+        let ((contract_result, contract_duration), (class_result, class_duration)) = rayon::join(
             || {
-                contracts::contract_trie_root(
+                let start = Instant::now();
+                let result = contracts::contract_trie_root(
                     backend,
                     &state_diff.deployed_contracts,
                     &state_diff.replaced_classes,
                     &state_diff.nonces,
                     &state_diff.storage_diffs,
                     block_n,
-                )
+                );
+                (result, start.elapsed())
             },
             || {
-                classes::class_trie_root(
+                let start = Instant::now();
+                let result = classes::class_trie_root(
                     backend,
                     &state_diff.declared_classes,
                     &state_diff.migrated_compiled_classes,
                     block_n,
-                )
+                );
+                (result, start.elapsed())
             },
         );
 
-        state_root = Some(calculate_state_root(contract_trie_root?, class_trie_root?));
+        // Record individual trie durations (histogram + gauge)
+        let contract_secs = contract_duration.as_secs_f64();
+        let class_secs = class_duration.as_secs_f64();
+        metrics().contract_trie_root_duration.record(contract_secs, &[]);
+        metrics().contract_trie_root_last.record(contract_secs, &[]);
+        metrics().class_trie_root_duration.record(class_secs, &[]);
+        metrics().class_trie_root_last.record(class_secs, &[]);
+
+        // Extract root hashes and sub-timings
+        let (contract_trie_root, contract_trie_timings) = contract_result?;
+        let (class_trie_root, class_trie_timings) = class_result?;
+
+        state_root = Some(calculate_state_root(contract_trie_root, class_trie_root));
+
+        // Capture timings
+        timings.contract_trie_root = contract_duration;
+        timings.class_trie_root = class_duration;
+        timings.contract_trie = contract_trie_timings;
+        timings.class_trie = class_trie_timings;
+
+        // Record total merklization duration per block (histogram + gauge)
+        timings.total = block_start.elapsed();
+        let block_secs = timings.total.as_secs_f64();
+        metrics().apply_to_global_trie_duration.record(block_secs, &[]);
+        metrics().apply_to_global_trie_last.record(block_secs, &[]);
     }
-    state_root.context("Applying an empty batch to the global trie")
+
+    let root = state_root.context("Applying an empty batch to the global trie")?;
+    Ok((root, timings))
 }
 
 /// "STARKNET_STATE_V0"
