@@ -57,6 +57,24 @@ pub struct ExternalDbParams {
     pub external_db_retry_backoff_max_ms: u64,
 }
 
+impl Default for ExternalDbParams {
+    fn default() -> Self {
+        Self {
+            external_db_enabled: false,
+            external_db_mongodb_uri: None,
+            external_db_database: None,
+            external_db_collection: "mempool_transactions".to_string(),
+            external_db_batch_size: 100,
+            external_db_flush_interval_ms: 1000,
+            external_db_retention_secs: 86_400,
+            external_db_retention_tick_secs: 300,
+            external_db_strict_outbox: true,
+            external_db_retry_backoff_ms: 1000,
+            external_db_retry_backoff_max_ms: 60_000,
+        }
+    }
+}
+
 impl ExternalDbParams {
     /// Returns true if external DB is enabled and configured.
     pub fn is_enabled(&self) -> bool {

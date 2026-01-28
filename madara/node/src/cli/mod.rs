@@ -197,6 +197,7 @@ pub struct RunCmd {
 
     #[allow(missing_docs)]
     #[clap(flatten)]
+    #[serde(default)]
     pub external_db_params: ExternalDbParams,
 
     /// The node will run as a sequencer and produce its own state.

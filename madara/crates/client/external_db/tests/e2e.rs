@@ -185,7 +185,7 @@ fn execute_validated_transactions(
         match tx.clone().into_blockifier_for_sequencing() {
             Ok((blockifier_tx, _ts, _declared_class)) => {
                 let mut exec_results =
-                    executor.execute_txs(&[blockifier_tx.clone()], /* execution_deadline */ None);
+                    executor.execute_txs(std::slice::from_ref(&blockifier_tx), /* execution_deadline */ None);
                 let exec_result = exec_results.remove(0);
                 match exec_result {
                     Ok((exec_info, _state_maps)) => {
@@ -380,7 +380,7 @@ async fn e2e_mongo_roundtrip_execution_matches_direct() {
 
     let sierra_class: SierraClass = serde_json::from_slice(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
     let flattened_class: mp_class::FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
-    let hashes = mp_class::FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm_with_hashes().unwrap();
+    let hashes = flattened_class.clone().compile_to_casm_with_hashes().unwrap();
     let compiled_class_hash = hashes.blake_hash;
     let class_hash = sierra_class.class_hash().unwrap();
 
