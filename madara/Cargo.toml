@@ -4,6 +4,7 @@ members = [
   "crates/client/cairo_native",
   "crates/client/db",
   "crates/client/exec",
+  "crates/client/external_db",
   "crates/client/sync",
   "crates/client/settlement_client",
   "crates/client/rpc",
@@ -110,10 +111,14 @@ mc-mempool = { path = "crates/client/mempool" }
 mc-block-production = { path = "crates/client/block_production" }
 mc-devnet = { path = "crates/client/devnet" }
 mc-submit-tx = { path = "crates/client/submit_tx" }
+mc-external-db = { path = "crates/client/external_db" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }
 mc-e2e-tests = { path = "crates/tests" }
+
+# Testing
+testcontainers = "0.18.0"
 
 # Build
 build-version = { path = "../build-artifacts" }
@@ -271,6 +276,10 @@ dashmap = "6.1.0"
 
 # Orchestrator
 chrono = { version = "0.4", features = ["serde"] }
+
+# External DB
+mongodb = "3.1"
+bson = "2"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

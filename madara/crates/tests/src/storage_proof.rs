@@ -4,10 +4,17 @@ use rstest::rstest;
 fn normalize(json: &mut serde_json::Value) {
     match json {
         serde_json::Value::Array(arr) => {
+            arr.iter_mut().for_each(normalize);
             arr.sort_by_key(|k| k.to_string());
-            arr.iter_mut().for_each(normalize)
         }
-        serde_json::Value::Object(obj) => obj.values_mut().for_each(normalize),
+        serde_json::Value::Object(obj) => {
+            obj.values_mut().for_each(normalize);
+            let mut entries: Vec<(String, serde_json::Value)> = std::mem::take(obj).into_iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            for (k, v) in entries {
+                obj.insert(k, v);
+            }
+        }
         _ => {}
     }
 }
