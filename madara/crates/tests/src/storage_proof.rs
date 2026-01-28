@@ -9,7 +9,7 @@ fn normalize(json: &mut serde_json::Value) {
         }
         serde_json::Value::Object(obj) => {
             obj.values_mut().for_each(normalize);
-            let mut entries: Vec<(String, serde_json::Value)> = obj.drain().map(|(k, v)| (k, v)).collect();
+            let mut entries: Vec<(String, serde_json::Value)> = std::mem::take(obj).into_iter().collect();
             entries.sort_by(|(a, _), (b, _)| a.cmp(b));
             for (k, v) in entries {
                 obj.insert(k, v);
