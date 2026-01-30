@@ -18,6 +18,9 @@ targets = ["x86_64-unknown-linux-gnu"]
 [[bin]]
 name = "madara"
 
+[[bin]]
+name = "madara-trie-poc"
+
 [dependencies]
 
 # Madara
@@ -37,6 +40,7 @@ mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
+mp-state-update = { workspace = true }
 mp-oracle = { workspace = true }
 mp-rpc = { workspace = true }
 mp-transactions = { workspace = true }
@@ -66,6 +70,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml.workspace = true
 starknet-core.workspace = true
+starknet-types-core = { workspace = true, default-features = false, features = ["hash"] }
 starknet-providers.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
