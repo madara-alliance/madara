@@ -1,5 +1,6 @@
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::prelude::*;
+use crate::rocksdb::global_trie::MerklizationTimings;
 use blockifier::bouncer::BouncerWeights;
 use mp_block::{
     header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
@@ -183,12 +184,12 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn delete_external_outbox(&self, tx_hash: Felt) -> Result<()>;
 
     /// Write a state diff to the global tries.
-    /// Returns the new state root.
+    /// Returns the new state root and timing information.
     fn apply_to_global_trie<'a>(
         &self,
         start_block_n: u64,
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
-    ) -> Result<Felt>;
+    ) -> Result<(Felt, MerklizationTimings)>;
 
     fn flush(&self) -> Result<()>;
 

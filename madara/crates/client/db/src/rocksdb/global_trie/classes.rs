@@ -1,3 +1,5 @@
+use super::ClassTrieTimings;
+use crate::metrics::metrics;
 use crate::rocksdb::trie::WrappedBonsaiError;
 use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
@@ -8,6 +10,7 @@ use mp_state_update::{DeclaredClassItem, MigratedClassItem};
 use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Poseidon, StarkHash};
+use std::time::Instant;
 
 // "CONTRACT_CLASS_LEAF_V0"
 const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");
@@ -23,7 +26,8 @@ pub fn class_trie_root(
     declared_classes: &[DeclaredClassItem],
     migrated_classes: &[MigratedClassItem],
     block_number: u64,
-) -> Result<Felt> {
+) -> Result<(Felt, ClassTrieTimings)> {
+    let mut timings = ClassTrieTimings::default();
     let mut class_trie = backend.class_trie();
 
     // Process newly declared classes
@@ -58,13 +62,18 @@ pub fn class_trie_root(
     }
 
     tracing::trace!("class_trie committing");
+    let class_commit_start = Instant::now();
     class_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+    timings.trie_commit = class_commit_start.elapsed();
+    let class_commit_secs = timings.trie_commit.as_secs_f64();
+    metrics().class_trie_commit_duration.record(class_commit_secs, &[]);
+    metrics().class_trie_commit_last.record(class_commit_secs, &[]);
 
     let root_hash = class_trie.root_hash(super::bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("class_trie committed");
 
-    Ok(root_hash)
+    Ok((root_hash, timings))
 }
 
 #[cfg(test)]
@@ -106,7 +115,7 @@ mod tests {
         let block_number = 1;
 
         // Call the class_trie_root function with the test data
-        let result = class_trie_root(&backend.db, &declared_classes, &[], block_number).unwrap();
+        let (result, _timings) = class_trie_root(&backend.db, &declared_classes, &[], block_number).unwrap();
 
         // Assert that the resulting root hash matches the expected value
         assert_eq!(
@@ -140,7 +149,8 @@ mod tests {
         let block_number = 1;
 
         // Call the class_trie_root function with both declared and migrated classes
-        let result = class_trie_root(&backend.db, &declared_classes, &migrated_classes, block_number).unwrap();
+        let (result, _timings) =
+            class_trie_root(&backend.db, &declared_classes, &migrated_classes, block_number).unwrap();
 
         // The result should incorporate both declared and migrated classes.
         // The expected hash is computed by inserting both class leaf hashes into the trie.
