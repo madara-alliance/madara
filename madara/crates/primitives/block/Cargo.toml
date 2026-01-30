@@ -21,6 +21,7 @@ num-traits = { workspace = true }
 # Madara
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
+mc-analytics = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-convert = { workspace = true }
 mp-receipt = { workspace = true }

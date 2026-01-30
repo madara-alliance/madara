@@ -1,5 +1,6 @@
 #![cfg(test)]
 use super::*;
+use crate::metrics::BlockProductionMetrics;
 use crate::tests::{make_declare_tx, make_udc_call, DevnetSetup};
 use crate::{tests::devnet_setup, util::AdditionalTxInfo};
 use assert_matches::assert_matches;
@@ -70,7 +71,8 @@ async fn l1_handler_setup(
     let setup = devnet_setup.await;
 
     let (commands_sender, commands) = mpsc::unbounded_channel();
-    let mut handle = start_executor_thread(setup.backend.clone(), commands).unwrap();
+    let mut handle =
+        start_executor_thread(setup.backend.clone(), commands, Arc::new(BlockProductionMetrics::register())).unwrap();
 
     let (tx, additional_info) = make_tx(
         &setup.backend,
