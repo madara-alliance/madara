@@ -723,15 +723,6 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().get_full_block_with_classes_duration.record(fetch_secs, &[]);
         metrics().get_full_block_with_classes_last.record(fetch_secs, &[]);
 
-        let (mut block, classes) = if state_diff.is_some() {
-            // Optimized path: skip expensive get_normalized_state_diff()
-            // The caller provides a complete state_diff with all fields populated
-            view.get_full_block_without_state_diff()?
-        } else {
-            // Original path: compute full normalized state diff
-            view.get_full_block_with_classes()?
-        };
-
         if let Some(state_diff) = state_diff {
             block.state_diff = state_diff;
         }
