@@ -70,4 +70,12 @@ pub struct AtlanticCliArgs {
     /// The SHARP prover backend to use (stone or stwo).
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_SHARP_PROVER", long, default_value = "stone")]
     pub atlantic_sharp_prover: Option<AtlanticSharpProver>,
+
+    /// The base URL for fetching artifacts from the Atlantic service (e.g., proofs, SNOS outputs).
+    #[arg(
+        env = "MADARA_ORCHESTRATOR_ATLANTIC_ARTIFACTS_BASE_URL",
+        long,
+        default_value = "https://storage.googleapis.com/hero-atlantic-bucket"
+    )]
+    pub atlantic_artifacts_base_url: Option<Url>,
 }

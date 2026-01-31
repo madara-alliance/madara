@@ -181,7 +181,7 @@ impl ApplyStateSteps {
                 // latest_block is block_range.end (exclusive), so actual last processed block is latest_block - 1
                 // This ensures fallback DB queries in contract_state_leaf_hash fetch state at the correct block number
                 let trie_block_number = latest_block.saturating_sub(1);
-                let global_state_root =
+                let (global_state_root, _timings) =
                     backend.write_access().apply_to_global_trie(trie_block_number, [accumulated_state_diff].iter())?;
 
                 let block_number = &latest_block.checked_sub(1);

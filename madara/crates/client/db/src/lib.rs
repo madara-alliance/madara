@@ -136,6 +136,9 @@ use prelude::*;
 use starknet_types_core::felt::Felt;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+pub mod metrics;
+use metrics::metrics;
 pub mod migration;
 mod prelude;
 pub mod storage;
@@ -149,11 +152,38 @@ pub mod tests;
 pub mod view;
 
 use blockifier::bouncer::BouncerWeights;
+pub use rocksdb::global_trie::MerklizationTimings;
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
     MadaraStorageWrite, StorageTxIndex,
 };
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
+
+/// Timing information collected during the close_block DB operations.
+/// All durations are captured for structured logging.
+#[derive(Debug, Clone, Default)]
+pub struct CloseBlockTimings {
+    /// Time to fetch full block with classes
+    pub get_full_block_with_classes: Duration,
+    /// Time to compute block commitments
+    pub block_commitments_compute: Duration,
+    /// Total time for global trie merklization (apply_to_global_trie)
+    pub merklization: Duration,
+    /// Time to compute contract trie root (parallel with class trie)
+    pub contract_trie_root: Duration,
+    /// Time to compute class trie root (parallel with contract trie)
+    pub class_trie_root: Duration,
+    /// Time to commit contract storage trie
+    pub contract_storage_trie_commit: Duration,
+    /// Time to commit contract trie
+    pub contract_trie_commit: Duration,
+    /// Time to commit class trie
+    pub class_trie_commit: Duration,
+    /// Time to compute block hash
+    pub block_hash_compute: Duration,
+    /// Time to write block parts to database
+    pub db_write_block_parts: Duration,
+}
 
 /// Current chain tip.
 #[derive(Default, Clone)]
@@ -549,6 +579,8 @@ pub struct AddFullBlockResult {
     pub commitments: BlockCommitments,
     pub block_hash: Felt,
     pub parent_block_hash: Felt,
+    /// Timing information from the close_block DB operations.
+    pub timings: CloseBlockTimings,
 }
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
@@ -682,7 +714,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         pre_v0_13_2_hash_override: bool,
         state_diff: Option<StateDiff>,
     ) -> Result<AddFullBlockResult> {
-        let view = self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
+        let fetch_start = Instant::now();
+        let preconfirmed_view =
+            self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
+        let (mut block, classes) = preconfirmed_view.get_full_block_with_classes()?;
+        let fetch_duration = fetch_start.elapsed();
+        let fetch_secs = fetch_duration.as_secs_f64();
+        metrics().get_full_block_with_classes_duration.record(fetch_secs, &[]);
+        metrics().get_full_block_with_classes_last.record(fetch_secs, &[]);
 
         let (mut block, classes) = if state_diff.is_some() {
             // Optimized path: skip expensive get_normalized_state_diff()
@@ -699,7 +738,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         // Write the block & apply to global trie
 
-        let result = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;
+        let result = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override, fetch_duration)?;
 
         self.new_confirmed_block(block.header.block_number)?;
 
@@ -731,26 +770,35 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         pre_v0_13_2_hash_override: bool,
     ) -> Result<AddFullBlockResult> {
         let block_n = block.header.block_number;
-        let result = self.write_new_confirmed_inner(block, classes, pre_v0_13_2_hash_override)?;
+        // For add_full_block_with_classes, no get_full_block_with_classes is needed as block is already provided
+        let result = self.write_new_confirmed_inner(block, classes, pre_v0_13_2_hash_override, Duration::ZERO)?;
 
         self.new_confirmed_block(block_n)?;
         Ok(result)
     }
 
     /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
-    /// all the block parts. Returns the block hash.
+    /// all the block parts. Returns the block hash and timing information.
+    /// Note: The `get_full_block_with_classes` timing must be provided by the caller.
     fn write_new_confirmed_inner(
         &self,
         block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         pre_v0_13_2_hash_override: bool,
+        get_full_block_with_classes_duration: Duration,
     ) -> Result<AddFullBlockResult> {
+        let mut timings = CloseBlockTimings {
+            get_full_block_with_classes: get_full_block_with_classes_duration,
+            ..Default::default()
+        };
+
         let parent_block_hash = if let Some(last_block) = self.inner.block_view_on_last_confirmed() {
             last_block.get_block_info()?.block_hash
         } else {
             Felt::ZERO // genesis
         };
 
+        let commitments_start = Instant::now();
         let commitments = BlockCommitments::compute(
             &CommitmentComputationContext {
                 protocol_version: self.inner.chain_config.latest_protocol_version,
@@ -760,13 +808,31 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             &block.state_diff,
             &block.events,
         );
+        timings.block_commitments_compute = commitments_start.elapsed();
+        let commitments_secs = timings.block_commitments_compute.as_secs_f64();
+        metrics().block_commitments_compute_duration.record(commitments_secs, &[]);
+        metrics().block_commitments_compute_last.record(commitments_secs, &[]);
 
-        let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
+        let (global_state_root, merklization_timings) =
+            self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
+
+        // Copy merklization timings
+        timings.merklization = merklization_timings.total;
+        timings.contract_trie_root = merklization_timings.contract_trie_root;
+        timings.class_trie_root = merklization_timings.class_trie_root;
+        timings.contract_storage_trie_commit = merklization_timings.contract_trie.storage_commit;
+        timings.contract_trie_commit = merklization_timings.contract_trie.trie_commit;
+        timings.class_trie_commit = merklization_timings.class_trie.trie_commit;
 
         let header =
             block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
 
+        let hash_start = Instant::now();
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
+        timings.block_hash_compute = hash_start.elapsed();
+        let hash_secs = timings.block_hash_compute.as_secs_f64();
+        metrics().block_hash_compute_duration.record(hash_secs, &[]);
+        metrics().block_hash_compute_last.record(hash_secs, &[]);
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
@@ -779,13 +845,24 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         // Save the block.
 
+        let write_start = Instant::now();
         self.write_header(BlockHeaderWithSignatures { header, block_hash, consensus_signatures: vec![] })?;
         self.write_transactions(block.header.block_number, &block.transactions)?;
         self.write_state_diff(block.header.block_number, &block.state_diff)?;
         self.write_events(block.header.block_number, &block.events)?;
         self.write_classes(block.header.block_number, classes)?;
+        timings.db_write_block_parts = write_start.elapsed();
+        let write_secs = timings.db_write_block_parts.as_secs_f64();
+        metrics().db_write_block_parts_duration.record(write_secs, &[]);
+        metrics().db_write_block_parts_last.record(write_secs, &[]);
 
-        Ok(AddFullBlockResult { new_state_root: global_state_root, commitments, block_hash, parent_block_hash })
+        Ok(AddFullBlockResult {
+            new_state_root: global_state_root,
+            commitments,
+            block_hash,
+            parent_block_hash,
+            timings,
+        })
     }
 
     /// Lower level access to writing primitives. This is only used by the sync process, which
@@ -860,7 +937,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         &self,
         start_block_n: u64,
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
-    ) -> Result<Felt> {
+    ) -> Result<(Felt, rocksdb::global_trie::MerklizationTimings)> {
         self.inner.db.apply_to_global_trie(start_block_n, state_diffs)
     }
 

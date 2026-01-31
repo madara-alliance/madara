@@ -29,7 +29,10 @@ pub struct EthereumSettlementCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_ETHEREUM_FINALITY_RETRY_WAIT_IN_SECS", long, default_value = "60")]
     pub ethereum_finality_retry_wait_in_secs: Option<u64>,
 
-    #[arg(env = "MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR", long, default_value = "1.5")]
+    /// Maximum gas price multiplier for blob transaction retries.
+    /// Blob transactions require 100% (2x) price bump to replace stuck transactions.
+    /// With start=1.1x and 2.0x increment: 1.1 → 2.2 → fail. Max 2 attempts to avoid overpaying.
+    #[arg(env = "MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR", long, default_value = "2.5")]
     pub max_gas_price_mul_factor: f64,
 
     /// Disable PeerDAS (PeerDAS is a feature introduced in Fusaka upgrade which changes the way we settle on Ethereum).

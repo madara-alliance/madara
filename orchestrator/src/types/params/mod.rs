@@ -103,6 +103,8 @@ impl fmt::Display for AWSResourceIdentifier {
 #[derive(Debug, Clone)]
 pub struct StorageArgs {
     pub bucket_identifier: AWSResourceIdentifier,
+    /// Number of days before S3 automatically deletes objects tagged for expiration
+    pub storage_expiration_days: i32,
 }
 
 impl StorageArgs {
@@ -187,7 +189,10 @@ impl TryFrom<SetupCmd> for StorageArgs {
                 AWSResourceIdentifier::Name(name)
             });
 
-            Ok(Self { bucket_identifier: identifier })
+            Ok(Self {
+                bucket_identifier: identifier,
+                storage_expiration_days: setup_cmd.aws_s3_args.storage_expiration_days,
+            })
         } else {
             Err(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))
         }
@@ -209,7 +214,10 @@ impl TryFrom<RunCmd> for StorageArgs {
                 AWSResourceIdentifier::Name(name)
             });
 
-            Ok(Self { bucket_identifier: identifier })
+            Ok(Self {
+                bucket_identifier: identifier,
+                storage_expiration_days: run_cmd.aws_s3_args.storage_expiration_days,
+            })
         } else {
             Err(OrchestratorError::RunCommandError("Missing bucket name".to_string()))
         }
