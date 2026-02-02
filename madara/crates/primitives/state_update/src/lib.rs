@@ -342,13 +342,20 @@ impl StateDiff {
     /// `class_hash_to_compiled_class_hash`. This method separates them:
     /// - If the compiled_class_hash is in `migration_v2_hashes` → `migrated_compiled_classes`
     /// - Otherwise → `declared_classes`
+    ///
+    /// Blockifier also doesn't differentiate between deployed contracts and replaced classes.
+    /// The `deployed_contracts_set` parameter contains addresses of contracts that were newly
+    /// deployed in this block (computed during batch execution). Contracts in `address_to_class_hash`
+    /// that are NOT in this set are class replacements.
     pub fn from_blockifier(
         commitment_state_diff: blockifier::state::cached_state::CommitmentStateDiff,
         migration_v2_hashes: &std::collections::HashSet<Felt>,
+        deployed_contracts_set: &std::collections::HashSet<Felt>,
+        old_declared_contracts: Vec<Felt>,
     ) -> Self {
         let mut storage_diffs = Vec::new();
         let mut deployed_contracts = Vec::new();
-        let replaced_classes = Vec::new();
+        let mut replaced_classes = Vec::new();
         let mut declared_classes = Vec::new();
         let mut migrated_compiled_classes = Vec::new();
         let mut nonces = Vec::new();
@@ -363,10 +370,18 @@ impl StateDiff {
             }
         }
 
-        // Convert deployed contracts
+        // Convert deployed contracts vs replaced classes
+        // Contracts in deployed_contracts_set are newly deployed, others are class replacements
         for (address, class_hash) in commitment_state_diff.address_to_class_hash {
-            deployed_contracts
-                .push(DeployedContractItem { address: address.to_felt(), class_hash: class_hash.to_felt() });
+            let address_felt = address.to_felt();
+            let class_hash_felt = class_hash.to_felt();
+
+            if deployed_contracts_set.contains(&address_felt) {
+                deployed_contracts.push(DeployedContractItem { address: address_felt, class_hash: class_hash_felt });
+            } else {
+                replaced_classes
+                    .push(ReplacedClassItem { contract_address: address_felt, class_hash: class_hash_felt });
+            }
         }
 
         // Convert class declarations, separating migrated from newly declared
@@ -396,7 +411,7 @@ impl StateDiff {
 
         StateDiff {
             storage_diffs,
-            old_declared_contracts: Vec::new(),
+            old_declared_contracts,
             declared_classes,
             deployed_contracts,
             replaced_classes,
@@ -597,8 +612,9 @@ mod tests {
         migration_v2_hashes.insert(migrated_compiled_hash_v2.0);
         migration_v2_hashes.insert(another_migrated_compiled_hash_v2.0);
 
-        // Convert using from_blockifier
-        let state_diff = StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes);
+        // Convert using from_blockifier (empty deployed_contracts_set and old_declared_contracts for this test)
+        let state_diff =
+            StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes, &HashSet::new(), Vec::new());
 
         // Verify declared_classes contains only the non-migrated class
         assert_eq!(state_diff.declared_classes.len(), 1);
@@ -641,10 +657,134 @@ mod tests {
         // No migrations
         let migration_v2_hashes = HashSet::new();
 
-        let state_diff = StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes);
+        let state_diff =
+            StateDiff::from_blockifier(commitment_state_diff, &migration_v2_hashes, &HashSet::new(), Vec::new());
 
         // All classes should be in declared_classes
         assert_eq!(state_diff.declared_classes.len(), 2);
         assert!(state_diff.migrated_compiled_classes.is_empty());
+    }
+
+    #[test]
+    fn test_from_blockifier_populates_all_fields() {
+        let storage_address_one = ContractAddress::from(10u64);
+        let storage_address_two = ContractAddress::from(11u64);
+        let empty_storage_address = ContractAddress::from(12u64);
+
+        let mut storage_updates: IndexMap<ContractAddress, IndexMap<StorageKey, Felt>> = IndexMap::new();
+        let mut storage_entries_one = IndexMap::new();
+        storage_entries_one.insert(StorageKey::from(1u32), Felt::from(1000u64));
+        storage_entries_one.insert(StorageKey::from(2u32), Felt::from(2000u64));
+        storage_updates.insert(storage_address_one, storage_entries_one);
+
+        let mut storage_entries_two = IndexMap::new();
+        storage_entries_two.insert(StorageKey::from(3u32), Felt::from(3000u64));
+        storage_updates.insert(storage_address_two, storage_entries_two);
+
+        storage_updates.insert(empty_storage_address, IndexMap::new());
+
+        let deployed_address = ContractAddress::from(20u64);
+        let replaced_address = ContractAddress::from(21u64);
+        let deployed_class_hash = ClassHash(Felt::from(300u64));
+        let replaced_class_hash = ClassHash(Felt::from(301u64));
+
+        let mut address_to_class_hash = IndexMap::new();
+        address_to_class_hash.insert(deployed_address, deployed_class_hash);
+        address_to_class_hash.insert(replaced_address, replaced_class_hash);
+
+        let declared_class_hash = ClassHash(Felt::from(400u64));
+        let declared_compiled_hash = CompiledClassHash(Felt::from(401u64));
+        let migrated_class_hash = ClassHash(Felt::from(500u64));
+        let migrated_compiled_hash_v2 = CompiledClassHash(Felt::from(501u64));
+
+        let mut class_hash_to_compiled = IndexMap::new();
+        class_hash_to_compiled.insert(declared_class_hash, declared_compiled_hash);
+        class_hash_to_compiled.insert(migrated_class_hash, migrated_compiled_hash_v2);
+
+        let nonce_address_one = ContractAddress::from(30u64);
+        let nonce_address_two = ContractAddress::from(31u64);
+        let mut address_to_nonce = IndexMap::new();
+        address_to_nonce.insert(nonce_address_one, Nonce(Felt::from(600u64)));
+        address_to_nonce.insert(nonce_address_two, Nonce(Felt::from(601u64)));
+
+        let commitment_state_diff = CommitmentStateDiff {
+            address_to_class_hash,
+            address_to_nonce,
+            storage_updates,
+            class_hash_to_compiled_class_hash: class_hash_to_compiled,
+        };
+
+        let mut migration_v2_hashes = HashSet::new();
+        migration_v2_hashes.insert(migrated_compiled_hash_v2.0);
+
+        let mut deployed_contracts_set = HashSet::new();
+        deployed_contracts_set.insert(deployed_address.to_felt());
+
+        let old_declared_contracts = vec![Felt::from(700u64), Felt::from(701u64)];
+
+        let state_diff = StateDiff::from_blockifier(
+            commitment_state_diff,
+            &migration_v2_hashes,
+            &deployed_contracts_set,
+            old_declared_contracts.clone(),
+        );
+
+        assert_eq!(state_diff.storage_diffs.len(), 2);
+        assert_eq!(
+            state_diff.storage_diffs[0],
+            ContractStorageDiffItem {
+                address: storage_address_one.to_felt(),
+                storage_entries: vec![
+                    StorageEntry { key: StorageKey::from(1u32).to_felt(), value: Felt::from(1000u64) },
+                    StorageEntry { key: StorageKey::from(2u32).to_felt(), value: Felt::from(2000u64) },
+                ],
+            }
+        );
+        assert_eq!(
+            state_diff.storage_diffs[1],
+            ContractStorageDiffItem {
+                address: storage_address_two.to_felt(),
+                storage_entries: vec![StorageEntry {
+                    key: StorageKey::from(3u32).to_felt(),
+                    value: Felt::from(3000u64),
+                }],
+            }
+        );
+
+        assert_eq!(state_diff.old_declared_contracts, old_declared_contracts);
+
+        assert_eq!(
+            state_diff.declared_classes,
+            vec![DeclaredClassItem {
+                class_hash: declared_class_hash.0,
+                compiled_class_hash: declared_compiled_hash.0,
+            }]
+        );
+
+        assert_eq!(
+            state_diff.migrated_compiled_classes,
+            vec![MigratedClassItem {
+                class_hash: migrated_class_hash.0,
+                compiled_class_hash: migrated_compiled_hash_v2.0,
+            }]
+        );
+
+        assert_eq!(
+            state_diff.deployed_contracts,
+            vec![DeployedContractItem { address: deployed_address.to_felt(), class_hash: deployed_class_hash.0 }]
+        );
+
+        assert_eq!(
+            state_diff.replaced_classes,
+            vec![ReplacedClassItem { contract_address: replaced_address.to_felt(), class_hash: replaced_class_hash.0 }]
+        );
+
+        assert_eq!(
+            state_diff.nonces,
+            vec![
+                NonceUpdate { contract_address: nonce_address_one.to_felt(), nonce: Felt::from(600u64) },
+                NonceUpdate { contract_address: nonce_address_two.to_felt(), nonce: Felt::from(601u64) },
+            ]
+        );
     }
 }
