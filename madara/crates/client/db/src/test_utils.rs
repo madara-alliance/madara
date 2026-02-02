@@ -1,3 +1,5 @@
+#![cfg(any(test, feature = "testing"))]
+
 use mp_class::{CompiledSierra, ConvertedClass, FlattenedSierraClass, SierraClassInfo, SierraConvertedClass};
 use mp_convert::Felt;
 use mp_transactions::{
@@ -5,7 +7,6 @@ use mp_transactions::{
     DataAvailabilityMode, DeclareTransactionV3, DeployAccountTransactionV3, DeployTransaction, InvokeTransactionV3,
     L1HandlerTransaction, ResourceBounds, ResourceBoundsMapping, Transaction,
 };
-use serde_json;
 use starknet_core::types::contract::SierraClass;
 use std::sync::Arc;
 

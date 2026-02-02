@@ -148,6 +148,8 @@ pub mod preconfirmed;
 pub mod rocksdb;
 pub mod subscription;
 pub mod sync_status;
+#[cfg(any(test, feature = "testing"))]
+pub mod test_utils;
 pub mod tests;
 pub mod view;
 
@@ -575,9 +577,7 @@ impl MadaraBackend<RocksDBStorage> {
 }
 
 #[cfg(any(test, feature = "testing"))]
-pub fn set_external_outbox_write_failpoint(enabled: bool) {
-    rocksdb::external_outbox::set_external_outbox_write_failpoint(enabled);
-}
+pub use crate::rocksdb::external_outbox::set_external_outbox_write_failpoint;
 
 #[derive(Clone, Debug)]
 pub struct AddFullBlockResult {

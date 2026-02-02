@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::tests::test_utils;
+use crate::test_utils;
 use crate::MadaraBackend;
 use mp_chain_config::ChainConfig;
 use mp_convert::Felt;
@@ -125,6 +125,8 @@ async fn outbox_duplicate_write_appends_entry() {
     let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(outbox.len(), 2);
+    // Same tx hash should still produce distinct outbox IDs (uuid is part of the key).
+    assert_ne!(outbox[0].id.uuid, outbox[1].id.uuid);
     assert!(outbox.iter().any(|entry| entry.tx == tx));
     assert!(outbox.iter().any(|entry| entry.tx == updated));
 }

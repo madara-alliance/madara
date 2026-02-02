@@ -54,7 +54,7 @@ pub struct ExternalOutboxEntry {
 }
 
 #[cfg(any(test, feature = "testing"))]
-pub(crate) fn set_external_outbox_write_failpoint(enabled: bool) {
+pub fn set_external_outbox_write_failpoint(enabled: bool) {
     FORCE_EXTERNAL_OUTBOX_WRITE_ERROR.store(enabled, Ordering::Relaxed);
 }
 

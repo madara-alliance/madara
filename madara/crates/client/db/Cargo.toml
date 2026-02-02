@@ -56,6 +56,8 @@ rocksdb.workspace = true
 serde = { workspace = true }
 siphasher.workspace = true
 smallvec.workspace = true
+starknet-core = { workspace = true, optional = true }
+m-cairo-test-contracts = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
@@ -100,4 +102,4 @@ starknet-core = { workspace = true }
 
 [features]
 default = []
-testing = ["tempfile", "starknet_api/testing"]
+testing = ["tempfile", "starknet_api/testing", "starknet-core", "m-cairo-test-contracts"]

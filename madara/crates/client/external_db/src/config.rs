@@ -22,6 +22,10 @@ fn default_pool_size() -> u32 {
     10
 }
 
+fn default_min_pool_size() -> u32 {
+    1
+}
+
 fn default_connect_timeout_secs() -> u64 {
     10
 }
@@ -52,6 +56,7 @@ fn default_strict_outbox() -> bool {
 
 /// Configuration for external database integration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ExternalDbConfig {
     /// Enable external database storage
     pub enabled: bool,
@@ -80,6 +85,10 @@ pub struct ExternalDbConfig {
     /// Connection pool size
     #[serde(default = "default_pool_size")]
     pub pool_size: u32,
+
+    /// Minimum connection pool size
+    #[serde(default = "default_min_pool_size")]
+    pub min_pool_size: u32,
 
     /// MongoDB connect timeout in seconds
     #[serde(default = "default_connect_timeout_secs")]
@@ -120,6 +129,7 @@ impl Default for ExternalDbConfig {
             batch_size: default_batch_size(),
             flush_interval_ms: default_flush_interval_ms(),
             pool_size: default_pool_size(),
+            min_pool_size: default_min_pool_size(),
             connect_timeout_secs: default_connect_timeout_secs(),
             server_selection_timeout_secs: default_server_selection_timeout_secs(),
             retention_delay_secs: default_retention_delay_secs(),
@@ -168,6 +178,7 @@ mod tests {
         assert_eq!(config.batch_size, 100);
         assert_eq!(config.flush_interval_ms, 1000);
         assert_eq!(config.pool_size, 10);
+        assert_eq!(config.min_pool_size, 1);
         assert_eq!(config.connect_timeout_secs, 10);
         assert_eq!(config.server_selection_timeout_secs, 10);
         assert_eq!(config.retention_delay_secs, 86_400);

@@ -509,7 +509,7 @@ impl ExternalDbWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils;
+    use mc_db::test_utils;
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
     use mp_transactions::{DeclareTransaction, DeployAccountTransaction, InvokeTransaction, Transaction};

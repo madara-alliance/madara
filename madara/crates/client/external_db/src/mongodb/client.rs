@@ -16,12 +16,12 @@ impl MongoClient {
     pub async fn new(config: &ExternalDbConfig) -> Result<Self> {
         let mut options = ClientOptions::parse(&config.mongodb_uri).await?;
         options.max_pool_size = Some(config.pool_size);
-        options.min_pool_size = Some(1);
+        options.min_pool_size = Some(config.min_pool_size);
         options.connect_timeout = Some(Duration::from_secs(config.connect_timeout_secs));
         options.server_selection_timeout = Some(Duration::from_secs(config.server_selection_timeout_secs));
 
         let client = mongodb::Client::with_options(options)?;
-        // Ensure connection is usable at startup (not just for tests).
+        // Readiness check only; this does not create any databases or collections.
         client.database("admin").run_command(doc! { "ping": 1 }).await?;
 
         let db = client.database(&config.database_name);
