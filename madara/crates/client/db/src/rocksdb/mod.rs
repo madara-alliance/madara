@@ -369,7 +369,7 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_external_outbox_transactions(
         &self,
         limit: usize,
-    ) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
+    ) -> impl Iterator<Item = Result<external_outbox::ExternalOutboxEntry>> + '_ {
         self.inner.iter_external_outbox(limit).map(|res| res.context("Getting external outbox transactions"))
     }
 }
@@ -515,18 +515,18 @@ impl MadaraStorageWrite for RocksDBStorage {
             .write_mempool_transaction(tx)
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
     }
-    fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<()> {
+    fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<external_outbox::ExternalOutboxId> {
         let tx_hash = tx.hash;
         tracing::debug!("Writing external outbox transaction for tx_hash={tx_hash:#x}");
         self.inner
             .write_external_outbox(tx)
             .with_context(|| format!("Writing external outbox transaction for tx_hash={tx_hash:#x}"))
     }
-    fn delete_external_outbox(&self, tx_hash: Felt) -> Result<()> {
-        tracing::debug!("Removing external outbox transaction for tx_hash={tx_hash:#x}");
+    fn delete_external_outbox(&self, id: external_outbox::ExternalOutboxId) -> Result<()> {
+        tracing::debug!("Removing external outbox transaction arrived_at_ms={} uuid={:x?}", id.arrived_at_ms, id.uuid);
         self.inner
-            .delete_external_outbox(tx_hash)
-            .with_context(|| format!("Deleting external outbox transaction for tx_hash={tx_hash:#x}"))
+            .delete_external_outbox(id)
+            .with_context(|| format!("Deleting external outbox transaction arrived_at_ms={}", id.arrived_at_ms))
     }
 
     fn get_state_root_hash(&self) -> Result<Felt> {

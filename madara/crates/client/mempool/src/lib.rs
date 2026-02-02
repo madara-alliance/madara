@@ -255,10 +255,10 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     async fn add_tx(&self, tx: ValidatedTransaction, is_new_tx: bool) -> Result<(), MempoolInsertionError> {
         tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
 
-        let mut outbox_written = false;
+        let mut outbox_id = None;
         if is_new_tx && self.external_outbox.enabled {
             match self.backend.write_external_outbox(&tx) {
-                Ok(()) => outbox_written = true,
+                Ok(id) => outbox_id = Some(id),
                 Err(err) => {
                     tracing::error!("Could not write external outbox transaction: {err:#}");
                     if self.external_outbox.strict {
@@ -279,9 +279,11 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             (ret, lock.summary())
         };
 
-        if ret.is_err() && outbox_written {
-            if let Err(err) = self.backend.delete_external_outbox(tx.hash) {
-                tracing::warn!("Failed to roll back external outbox write: {err:#}");
+        if ret.is_err() {
+            if let Some(outbox_id) = outbox_id {
+                if let Err(err) = self.backend.delete_external_outbox(outbox_id) {
+                    tracing::warn!("Failed to roll back external outbox write: {err:#}");
+                }
             }
         }
 
@@ -534,7 +536,7 @@ pub(crate) mod tests {
 
         let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert_eq!(outbox.len(), 1);
-        assert_eq!(outbox[0], tx);
+        assert_eq!(outbox[0].tx, tx);
     }
 
     #[rstest::rstest]

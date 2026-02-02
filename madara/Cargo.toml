@@ -75,6 +75,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 rocksdb = "0.22"
 librocksdb-sys = "0.17.0"
+uuid = { version = "1.20.0", features = ["v4"] }
 bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "update-starknet-types-core", features = [
   "std",
 ] }

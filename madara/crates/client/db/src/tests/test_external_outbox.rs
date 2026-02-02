@@ -51,7 +51,7 @@ async fn outbox_write_read_roundtrip() {
 
     assert_eq!(outbox.len(), txs.len());
     for tx in txs {
-        assert!(outbox.iter().any(|stored| stored.hash == tx.hash && stored.transaction == tx.transaction));
+        assert!(outbox.iter().any(|stored| stored.tx.hash == tx.hash && stored.tx.transaction == tx.transaction));
     }
 }
 
@@ -68,8 +68,8 @@ async fn outbox_delete_removes_entry() {
         None,
     );
 
-    backend.write_external_outbox(&tx).unwrap();
-    backend.delete_external_outbox(tx.hash).unwrap();
+    let outbox_id = backend.write_external_outbox(&tx).unwrap();
+    backend.delete_external_outbox(outbox_id).unwrap();
 
     let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
 
@@ -102,7 +102,7 @@ async fn outbox_iter_bounded_batch() {
 }
 
 #[tokio::test]
-async fn outbox_duplicate_write_replaces_entry() {
+async fn outbox_duplicate_write_appends_entry() {
     let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
     let tx = test_utils::validated_transaction(
         Transaction::Invoke(InvokeTransaction::V3(test_utils::invoke_v3(
@@ -124,6 +124,7 @@ async fn outbox_duplicate_write_replaces_entry() {
 
     let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
 
-    assert_eq!(outbox.len(), 1);
-    assert_eq!(outbox[0], updated);
+    assert_eq!(outbox.len(), 2);
+    assert!(outbox.iter().any(|entry| entry.tx == tx));
+    assert!(outbox.iter().any(|entry| entry.tx == updated));
 }

@@ -16,8 +16,11 @@ pub struct ResourceBoundsDoc {
 /// MongoDB document for a mempool transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MempoolTransactionDocument {
-    /// Transaction hash (indexed, unique) - used as _id
+    /// Unique document id (UUID)
     #[serde(rename = "_id")]
+    pub id: bson::Binary,
+
+    /// Transaction hash (indexed, non-unique)
     pub tx_hash: String,
 
     /// Transaction type: "INVOKE", "DECLARE", "DEPLOY_ACCOUNT", "L1_HANDLER", "DEPLOY"

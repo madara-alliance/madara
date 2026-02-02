@@ -1,5 +1,6 @@
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::prelude::*;
+use crate::rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
 use crate::rocksdb::global_trie::MerklizationTimings;
 use blockifier::bouncer::BouncerWeights;
 use mp_block::{
@@ -146,8 +147,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     // Mempool
 
     fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_;
-    fn get_external_outbox_transactions(&self, limit: usize)
-        -> impl Iterator<Item = Result<ValidatedTransaction>> + '_;
+    fn get_external_outbox_transactions(&self, limit: usize) -> impl Iterator<Item = Result<ExternalOutboxEntry>> + '_;
 }
 
 /// Trait abstracting over the storage interface.
@@ -180,8 +180,8 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
-    fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<()>;
-    fn delete_external_outbox(&self, tx_hash: Felt) -> Result<()>;
+    fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId>;
+    fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()>;
 
     /// Write a state diff to the global tries.
     /// Returns the new state root and timing information.

@@ -228,7 +228,8 @@ async fn e2e_outbox_to_mongo_and_retention() {
     config.flush_interval_ms = 100;
     config.retention_delay_secs = 1;
     config.retention_tick_secs = 1;
-    let worker = ExternalDbWorker::new(config.clone(), backend.clone(), "MADARA_TEST".to_string(), metrics);
+    let chain_id = "MADARA_TEST";
+    let worker = ExternalDbWorker::new(config.clone(), backend.clone(), chain_id.to_string(), metrics);
 
     let sender = test_utils::devnet_account_address();
     let invoke_hash = Felt::from_hex_unchecked("0xabc");
@@ -277,7 +278,12 @@ async fn e2e_outbox_to_mongo_and_retention() {
     loop {
         let mut found = 0;
         for tx_id in &tx_ids {
-            if collection.find_one(mongodb::bson::doc! { "_id": tx_id }).await.unwrap().is_some() {
+            if collection
+                .find_one(mongodb::bson::doc! { "tx_hash": tx_id, "chain_id": chain_id })
+                .await
+                .unwrap()
+                .is_some()
+            {
                 found += 1;
             }
         }
@@ -336,7 +342,12 @@ async fn e2e_outbox_to_mongo_and_retention() {
     loop {
         let mut remaining = 0;
         for tx_id in &tx_ids {
-            if collection.find_one(mongodb::bson::doc! { "_id": tx_id }).await.unwrap().is_some() {
+            if collection
+                .find_one(mongodb::bson::doc! { "tx_hash": tx_id, "chain_id": chain_id })
+                .await
+                .unwrap()
+                .is_some()
+            {
                 remaining += 1;
             }
         }
@@ -515,12 +526,18 @@ async fn e2e_mongo_roundtrip_execution_matches_direct() {
     let collection =
         client.database(&config.database_name).collection::<MempoolTransactionDocument>(&config.collection_name);
     let tx_ids: Vec<String> = direct_txs.iter().map(|tx| format!("{}", tx.hash.hex_display())).collect();
+    let chain_id = "MADARA_TEST";
 
     let mut attempts = 0;
     loop {
         let mut found = 0;
         for tx_id in &tx_ids {
-            if collection.find_one(mongodb::bson::doc! { "_id": tx_id }).await.unwrap().is_some() {
+            if collection
+                .find_one(mongodb::bson::doc! { "tx_hash": tx_id, "chain_id": chain_id })
+                .await
+                .unwrap()
+                .is_some()
+            {
                 found += 1;
             }
         }
@@ -536,7 +553,8 @@ async fn e2e_mongo_roundtrip_execution_matches_direct() {
 
     let mut mongo_txs = Vec::with_capacity(direct_txs.len());
     for tx_id in &tx_ids {
-        let doc = collection.find_one(mongodb::bson::doc! { "_id": tx_id }).await.unwrap().unwrap();
+        let doc =
+            collection.find_one(mongodb::bson::doc! { "tx_hash": tx_id, "chain_id": chain_id }).await.unwrap().unwrap();
         let raw = doc.raw_transaction.bytes;
         let validated: ValidatedTransaction = bincode::deserialize(&raw).unwrap();
         mongo_txs.push(validated);

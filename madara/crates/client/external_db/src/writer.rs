@@ -14,6 +14,7 @@ use mp_transactions::{
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 
 const STATUS_PENDING: &str = "PENDING";
 // MongoDB duplicate key error code (E11000).
@@ -23,7 +24,7 @@ const DUPLICATE_KEY_ERROR_CODE: i32 = 11000;
 trait ExternalDbSink: Send + Sync {
     async fn ensure_indexes(&self) -> anyhow::Result<()>;
     async fn insert_many(&self, docs: Vec<MempoolTransactionDocument>) -> anyhow::Result<InsertManySummary>;
-    async fn delete_by_hashes(&self, hashes: Vec<String>) -> anyhow::Result<u64>;
+    async fn delete_by_hashes(&self, chain_id: &str, hashes: Vec<String>) -> anyhow::Result<u64>;
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -67,12 +68,12 @@ impl ExternalDbSink for MongoSink {
         }
     }
 
-    async fn delete_by_hashes(&self, hashes: Vec<String>) -> anyhow::Result<u64> {
+    async fn delete_by_hashes(&self, chain_id: &str, hashes: Vec<String>) -> anyhow::Result<u64> {
         if hashes.is_empty() {
             return Ok(0);
         }
 
-        let filter = bson::doc! { "_id": { "$in": hashes } };
+        let filter = bson::doc! { "tx_hash": { "$in": hashes }, "chain_id": chain_id };
         let result = self.collection.delete_many(filter).await?;
         Ok(result.deleted_count)
     }
@@ -185,11 +186,12 @@ struct RetentionScheduler<S: L1ConfirmationSource> {
     delay: Duration,
     pending: std::collections::VecDeque<PendingDeletion>,
     metrics: Arc<ExternalDbMetrics>,
+    chain_id: String,
 }
 
 impl<S: L1ConfirmationSource> RetentionScheduler<S> {
-    fn new(source: S, delay: Duration, metrics: Arc<ExternalDbMetrics>) -> Self {
-        Self { source, delay, pending: std::collections::VecDeque::new(), metrics }
+    fn new(source: S, delay: Duration, metrics: Arc<ExternalDbMetrics>, chain_id: String) -> Self {
+        Self { source, delay, pending: std::collections::VecDeque::new(), metrics, chain_id }
     }
 
     async fn tick(&mut self, now: Instant, sink: &dyn ExternalDbSink) -> anyhow::Result<()> {
@@ -209,7 +211,7 @@ impl<S: L1ConfirmationSource> RetentionScheduler<S> {
         while matches!(self.pending.front(), Some(pending) if pending.execute_at <= now) {
             let pending = self.pending.pop_front().expect("checked");
             let hashes = pending.tx_hashes.iter().map(|felt| format!("{}", felt.hex_display())).collect::<Vec<_>>();
-            let deleted = sink.delete_by_hashes(hashes).await?;
+            let deleted = sink.delete_by_hashes(&self.chain_id, hashes).await?;
             self.metrics.transactions_deleted.add(deleted as u64, &[]);
         }
 
@@ -254,6 +256,7 @@ impl ExternalDbWorker {
             BackendL1ConfirmationSource::new(self.backend.clone()),
             retention_delay,
             self.metrics.clone(),
+            self.chain_id.clone(),
         );
 
         let mut interval = tokio::time::interval(Duration::from_millis(self.config.flush_interval_ms));
@@ -308,18 +311,18 @@ impl ExternalDbWorker {
     }
 
     async fn drain_outbox_once(&self, sink: &dyn ExternalDbSink) -> anyhow::Result<DrainSummary> {
-        let mut txs = Vec::new();
+        let mut entries = Vec::new();
         for res in self.backend.get_external_outbox_transactions(self.config.batch_size) {
-            txs.push(res.context("Reading external outbox transaction")?);
+            entries.push(res.context("Reading external outbox transaction")?);
         }
 
-        if txs.is_empty() {
+        if entries.is_empty() {
             return Ok(DrainSummary::default());
         }
 
-        let mut documents = Vec::with_capacity(txs.len());
-        for tx in &txs {
-            documents.push(self.convert_to_document(tx)?);
+        let mut documents = Vec::with_capacity(entries.len());
+        for entry in &entries {
+            documents.push(self.convert_to_document(&entry.tx)?);
         }
 
         let start = Instant::now();
@@ -328,11 +331,11 @@ impl ExternalDbWorker {
         self.metrics.write_latency.record(elapsed.as_secs_f64(), &[]);
         self.metrics.transactions_written.add(result.inserted as u64, &[]);
 
-        for tx in &txs {
-            self.backend.delete_external_outbox(tx.hash).context("Deleting external outbox transaction")?;
+        for entry in &entries {
+            self.backend.delete_external_outbox(entry.id).context("Deleting external outbox transaction")?;
         }
 
-        Ok(DrainSummary { attempted: txs.len(), inserted: result.inserted, duplicates: result.duplicates })
+        Ok(DrainSummary { attempted: entries.len(), inserted: result.inserted, duplicates: result.duplicates })
     }
 
     async fn startup_sync(&self, sink: &dyn ExternalDbSink) -> anyhow::Result<usize> {
@@ -469,7 +472,11 @@ impl ExternalDbWorker {
 
         let raw_bytes = bincode::serialize(tx).context("Serializing raw transaction")?;
 
+        let id = Uuid::new_v4();
+        let id = bson::Binary { subtype: bson::spec::BinarySubtype::Uuid, bytes: id.as_bytes().to_vec() };
+
         Ok(MempoolTransactionDocument {
+            id,
             tx_hash: format!("{}", tx.hash.hex_display()),
             tx_type,
             tx_version,
@@ -511,7 +518,7 @@ mod tests {
     struct FakeSink {
         responses: Mutex<Vec<anyhow::Result<InsertManySummary>>>,
         calls: Mutex<Vec<Vec<MempoolTransactionDocument>>>,
-        delete_calls: Mutex<Vec<Vec<String>>>,
+        delete_calls: Mutex<Vec<(String, Vec<String>)>>,
     }
 
     impl FakeSink {
@@ -535,9 +542,9 @@ mod tests {
             self.responses.lock().unwrap().remove(0)
         }
 
-        async fn delete_by_hashes(&self, hashes: Vec<String>) -> anyhow::Result<u64> {
+        async fn delete_by_hashes(&self, chain_id: &str, hashes: Vec<String>) -> anyhow::Result<u64> {
             let deleted = hashes.len() as u64;
-            self.delete_calls.lock().unwrap().push(hashes);
+            self.delete_calls.lock().unwrap().push((chain_id.to_string(), hashes));
             Ok(deleted)
         }
     }
@@ -647,6 +654,7 @@ mod tests {
             FakeL1Source::new(vec![confirmations, Vec::new()]),
             Duration::from_secs(1),
             metrics,
+            "MADARA_TEST".to_string(),
         );
 
         scheduler.tick(now, &sink).await.unwrap();
@@ -661,8 +669,12 @@ mod tests {
         let metrics = Arc::new(ExternalDbMetrics::register());
         let sink = FakeSink::new(Vec::new());
         let now = Instant::now();
-        let mut scheduler =
-            RetentionScheduler::new(FakeL1Source::new(vec![Vec::new()]), Duration::from_secs(1), metrics);
+        let mut scheduler = RetentionScheduler::new(
+            FakeL1Source::new(vec![Vec::new()]),
+            Duration::from_secs(1),
+            metrics,
+            "MADARA_TEST".to_string(),
+        );
 
         scheduler.tick(now, &sink).await.unwrap();
         assert!(sink.delete_calls.lock().unwrap().is_empty());

@@ -49,6 +49,7 @@ mp-convert = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
 starknet_api.workspace = true
+uuid = { workspace = true }
 
 # Other
 async-trait.workspace = true

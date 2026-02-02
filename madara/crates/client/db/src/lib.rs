@@ -152,6 +152,7 @@ pub mod tests;
 pub mod view;
 
 use blockifier::bouncer::BouncerWeights;
+pub use rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
 pub use rocksdb::global_trie::MerklizationTimings;
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
@@ -989,7 +990,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_external_outbox_transactions(
         &self,
         limit: usize,
-    ) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
+    ) -> impl Iterator<Item = Result<ExternalOutboxEntry>> + '_ {
         self.db.get_external_outbox_transactions(limit)
     }
     pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
@@ -1025,11 +1026,11 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn write_saved_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         self.db.write_mempool_transaction(tx)
     }
-    pub fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<()> {
+    pub fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId> {
         self.db.write_external_outbox(tx)
     }
-    pub fn delete_external_outbox(&self, tx_hash: Felt) -> Result<()> {
-        self.db.delete_external_outbox(tx_hash)
+    pub fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()> {
+        self.db.delete_external_outbox(id)
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_latest_applied_trie_update(block_n)
