@@ -38,10 +38,17 @@ runs:
         python3 -m venv sequencer_venv
         source sequencer_venv/bin/activate
 
-        # Install Cairo dependencies from the single source of truth
-        echo "Installing Cairo dependencies from cairo_requirements.txt..."
+        # Extract sequencer tag from Cargo.toml to fetch the correct requirements
+        SEQUENCER_TAG=$(grep -A1 'git = "https://github.com/karnotxyz/sequencer"' Cargo.toml | grep -oE 'tag = "v[^"]+"' | head -1 | grep -oE 'v[^"]+')
+        echo "Detected sequencer tag: $SEQUENCER_TAG"
+
+        # Fetch requirements.txt dynamically from the sequencer repository
+        REQUIREMENTS_URL="https://raw.githubusercontent.com/karnotxyz/sequencer/${SEQUENCER_TAG}/scripts/requirements.txt"
+        echo "Fetching requirements from: $REQUIREMENTS_URL"
+
         pip install --upgrade pip
-        pip install -r cairo_requirements.txt
+        curl -fsSL "$REQUIREMENTS_URL" -o sequencer_requirements_fetched.txt
+        pip install -r sequencer_requirements_fetched.txt
 
         # Verify cairo-compile is available and get its version
         if command -v cairo-compile >/dev/null 2>&1; then
