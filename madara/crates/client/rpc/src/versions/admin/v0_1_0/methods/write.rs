@@ -87,6 +87,17 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?)
     }
 
+    /// Flush all mempool transactions for processing.
+    /// Mempool intake will pause again after the flush completes.
+    async fn flush_mempool(&self) -> RpcResult<()> {
+        Ok(self
+            .block_prod_handle
+            .as_ref()
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+            .flush_mempool()
+            .map_err(StarknetRpcApiError::from)?)
+    }
+
     /// Force revert chain to a previous block by hash.
     /// Only available when unsafe RPC methods are enabled.
     async fn revert_to(&self, block_hash: Felt) -> RpcResult<()> {

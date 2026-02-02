@@ -150,7 +150,7 @@ use std::collections::HashSet;
 use std::mem;
 use std::sync::Arc;
 use std::time::{Duration, Instant, UNIX_EPOCH};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 mod batcher;
 mod executor;
@@ -165,6 +165,13 @@ pub use handle::BlockProductionHandle;
 pub enum BlockProductionStateNotification {
     ClosedBlock,
     BatchExecuted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MempoolIntakeMode {
+    Running,
+    Paused,
+    FlushOnce,
 }
 
 #[derive(Debug)]
@@ -321,6 +328,8 @@ pub struct BlockProductionTask {
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
+    mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
+    mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     no_charge_fee: bool,
 }
 
@@ -329,6 +338,8 @@ impl BlockProductionTask {
     ///
     /// # Parameters
     ///
+    /// * `mempool_paused`: If true, block production will not pick transactions from the mempool
+    ///   until the admin flush endpoint is called.
     /// * `no_charge_fee`: Determines whether fees are charged during transaction execution.
     ///
     /// # TODO(mohit 18/11/2025): Update the code to use config same as pre-close
@@ -337,20 +348,31 @@ impl BlockProductionTask {
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
+        mempool_paused: bool,
         no_charge_fee: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
+        let initial_intake = if mempool_paused { MempoolIntakeMode::Paused } else { MempoolIntakeMode::Running };
+        let (mempool_intake_tx, mempool_intake_rx) = watch::channel(initial_intake);
         Self {
             backend: backend.clone(),
             mempool,
             current_state: None,
             metrics,
-            handle: BlockProductionHandle::new(backend, sender, bypass_input_sender, no_charge_fee),
+            handle: BlockProductionHandle::new(
+                backend,
+                sender,
+                bypass_input_sender,
+                mempool_intake_tx.clone(),
+                no_charge_fee,
+            ),
             state_notifications: None,
             executor_commands_recv: Some(recv),
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
+            mempool_intake_tx,
+            mempool_intake_rx,
             no_charge_fee,
         }
     }
@@ -988,6 +1010,8 @@ impl BlockProductionTask {
                 ctx,
                 batch_sender,
                 bypass_tx_input,
+                self.mempool_intake_rx.clone(),
+                self.mempool_intake_tx.clone(),
             )
             .run(),
         );
@@ -1114,6 +1138,7 @@ pub(crate) mod tests {
                 self.mempool.clone(),
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
+                false,
                 false, /* no_charge_fee = false */
             )
         }
@@ -1954,6 +1979,7 @@ pub(crate) mod tests {
             original_devnet_setup.mempool.clone(),
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
+            false,
             initial_no_charge_fee,
         );
 
@@ -1984,6 +2010,7 @@ pub(crate) mod tests {
             original_devnet_setup.mempool.clone(),
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
+            false,
             restart_no_charge_fee, // Current config: no_charge_fee = false
         );
 
