@@ -47,3 +47,12 @@ constraints that can cause replays to be rejected if the state has diverged.
   of acceptance on replay.
 - Ensure the chain state is reverted/consistent before replay when comparing
   global roots.
+
+## Mempool DB persistence vs external DB WAL
+
+- If mempool saving is enabled, transactions can be reloaded from the local
+  mempool DB on restart while also being replayed from the external DB WAL.
+  This can cause duplicate submission errors or unexpected ordering.
+- For WAL replay flows, prefer disabling mempool saving via
+  `--no-mempool-saving` (or `MADARA_NO_MEMPOOL_SAVING=1`) and document the
+  choice in your setup to avoid hidden conflicts.

@@ -1,8 +1,11 @@
+use bincode::Options;
 use blockifier::blockifier::transaction_executor::TransactionExecutor;
+use futures::TryStreamExt;
 use mc_db::MadaraBackend;
 use mc_devnet::{
     Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector, UDC_CONTRACT_ADDRESS,
 };
+use mc_e2e_tests::MadaraCmdBuilder;
 use mc_exec::{LayeredStateAdapter, MadaraBackendExecutionExt};
 use mc_external_db::{
     config::ExternalDbConfig, metrics::ExternalDbMetrics, mongodb::MempoolTransactionDocument, test_utils,
@@ -26,11 +29,18 @@ use mp_transactions::{
     L1HandlerTransaction, Transaction,
 };
 use mp_utils::service::ServiceContext;
+use starknet::accounts::{Account, ExecutionEncoding, SingleOwnerAccount};
+use starknet::signers::LocalWallet;
 use starknet_api::block::{BlockInfo, BlockNumber, BlockTimestamp};
 use starknet_api::core::ContractAddress;
 use starknet_core::types::contract::SierraClass;
+use starknet_core::types::{BlockId, BlockTag, Call as StarknetCall, MaybePreConfirmedStateUpdate};
 use starknet_core::utils::get_selector_from_name;
+use starknet_core::utils::starknet_keccak;
+use starknet_providers::Provider;
 use starknet_signers::SigningKey;
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use testcontainers::{core::IntoContainerPort, runners::AsyncRunner, ContainerAsync, GenericImage};
@@ -38,6 +48,66 @@ use tokio::sync::OnceCell;
 
 const DEVNET_STRK_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
+const DEVNET_ACCOUNT_ADDRESS: Felt =
+    Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d");
+const DEVNET_ACCOUNT_SECRET: Felt =
+    Felt::from_hex_unchecked("0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07");
+
+async fn wait_for_cond<F, R>(mut cond: impl FnMut() -> F, sleep_duration: Duration, max_attempts: u32) -> R
+where
+    F: std::future::Future<Output = Result<R, anyhow::Error>>,
+{
+    let start = std::time::Instant::now();
+    let mut attempt = 0;
+    loop {
+        let err = match cond().await {
+            Ok(r) => break r,
+            Err(err) => err,
+        };
+
+        attempt += 1;
+        if attempt >= max_attempts {
+            panic!("Condition not satisfied after {:?}: {err:#}", start.elapsed());
+        }
+
+        tokio::time::sleep(sleep_duration).await;
+    }
+}
+
+async fn admin_revert_to(admin_url: &str, block_hash: Felt) {
+    let client = reqwest::Client::new();
+    let response = client
+        .post(admin_url)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "madara_revertTo",
+            "params": [format!("0x{:x}", block_hash)],
+            "id": 1,
+        }))
+        .send()
+        .await
+        .unwrap();
+    let value = response.json::<serde_json::Value>().await.unwrap();
+    if value.get("error").is_some() {
+        panic!("admin revert failed: {value}");
+    }
+}
+
+async fn wait_for_tx_in_block<P: Provider + Sync>(provider: &P, tx_hash: Felt, timeout_attempts: u32) {
+    wait_for_cond(
+        || async {
+            let receipt = provider.get_transaction_receipt(tx_hash).await?;
+            if receipt.block.is_block() {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("tx not in block yet"))
+            }
+        },
+        Duration::from_millis(500),
+        timeout_attempts,
+    )
+    .await
+}
 
 fn make_validated_tx_with_hash(tx_hash: Felt, sender: Felt) -> ValidatedTransaction {
     test_utils::validated_transaction(
@@ -86,6 +156,10 @@ fn resource_bounds() -> ResourceBoundsMapping {
         l2_gas: ResourceBounds { max_amount: 6_000_000_000, max_price_per_unit: 100_000 },
         l1_data_gas: ResourceBounds { max_amount: 60_000, max_price_per_unit: 10_000 },
     }
+}
+
+fn test_devnet_path() -> String {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/test_devnet.yaml").to_string_lossy().into_owned()
 }
 
 fn sign_invoke_v3(backend: &Arc<MadaraBackend>, signer: &SigningKey, mut tx: InvokeTxnV3) -> BroadcastedInvokeTxn {
@@ -199,6 +273,24 @@ fn execute_validated_transactions(
     }
     let _ = executor.finalize();
     results
+}
+
+fn extract_new_root(update: MaybePreConfirmedStateUpdate) -> Felt {
+    match update {
+        MaybePreConfirmedStateUpdate::Update(update) => update.new_root,
+        MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
+            panic!("unexpected pre-confirmed state update when confirmed update was expected")
+        }
+    }
+}
+
+fn extract_block_hash(update: MaybePreConfirmedStateUpdate) -> Felt {
+    match update {
+        MaybePreConfirmedStateUpdate::Update(update) => update.block_hash,
+        MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
+            panic!("unexpected pre-confirmed state update when confirmed update was expected")
+        }
+    }
 }
 
 async fn mongo_fixture() -> &'static MongoFixture {
@@ -577,4 +669,196 @@ async fn e2e_mongo_roundtrip_execution_matches_direct() {
 
     ctx.cancel_global();
     let _ = handle.await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn e2e_devnet_replay_from_mongo_matches_root() {
+    let fixture = mongo_fixture().await;
+    let uri = fixture.uri.clone();
+
+    let db_suffix = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis();
+    let db_name = format!("madara_devnet_replay_{db_suffix}");
+
+    let test_devnet_path = test_devnet_path();
+    let args = [
+        "--devnet",
+        "--no-l1-sync",
+        "--l1-gas-price",
+        "0",
+        "--no-mempool-saving",
+        "--chain-config-path",
+        test_devnet_path.as_str(),
+        "--chain-config-override",
+        "block_time=2s",
+        "--rpc-admin",
+        "--rpc-unsafe",
+        "--gateway",
+        "--gateway-trusted-add-transaction-endpoint",
+    ];
+
+    let cmd_builder = MadaraCmdBuilder::new()
+        .env([
+            ("MADARA_EXTERNAL_DB_ENABLED", "true"),
+            ("MADARA_EXTERNAL_DB_MONGODB_URI", uri.as_str()),
+            ("MADARA_EXTERNAL_DB_DATABASE", db_name.as_str()),
+            ("MADARA_EXTERNAL_DB_COLLECTION", "mempool_transactions"),
+            ("MADARA_EXTERNAL_DB_BATCH_SIZE", "50"),
+            ("MADARA_EXTERNAL_DB_FLUSH_INTERVAL_MS", "100"),
+            ("MADARA_EXTERNAL_DB_STRICT_OUTBOX", "true"),
+        ])
+        .args(args)
+        .enable_gateway()
+        .label("external-db-devnet");
+
+    let mut madara = cmd_builder.clone().run();
+
+    madara.wait_for_ready().await;
+    madara.wait_for_sync_to(0).await;
+
+    let rpc = madara.json_rpc();
+    let chain_id = rpc.chain_id().await.unwrap();
+
+    let signer = LocalWallet::from_signing_key(SigningKey::from_secret_scalar(DEVNET_ACCOUNT_SECRET));
+    let mut account =
+        SingleOwnerAccount::new(rpc.clone(), signer, DEVNET_ACCOUNT_ADDRESS, chain_id, ExecutionEncoding::New);
+    account.set_block_id(BlockId::Tag(BlockTag::Latest));
+
+    let tx1 = account
+        .execute_v3(vec![StarknetCall {
+            to: DEVNET_STRK_CONTRACT_ADDRESS,
+            selector: starknet_keccak(b"transfer"),
+            calldata: vec![DEVNET_ACCOUNT_ADDRESS, 15.into(), Felt::ZERO],
+        }])
+        .send()
+        .await
+        .unwrap();
+    wait_for_tx_in_block(&rpc, tx1.transaction_hash, 60).await;
+
+    let tx2 = account
+        .execute_v3(vec![StarknetCall {
+            to: DEVNET_STRK_CONTRACT_ADDRESS,
+            selector: starknet_keccak(b"transfer"),
+            calldata: vec![DEVNET_ACCOUNT_ADDRESS, 40.into(), Felt::ZERO],
+        }])
+        .send()
+        .await
+        .unwrap();
+    wait_for_tx_in_block(&rpc, tx2.transaction_hash, 60).await;
+
+    let tx2_receipt = rpc.get_transaction_receipt(tx2.transaction_hash).await.unwrap();
+    let tx_block = tx2_receipt.block.block_number();
+
+    wait_for_cond(
+        || async {
+            let block = rpc.block_hash_and_number().await?;
+            if block.block_number >= 11 {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("chain not at 11 blocks yet"))
+            }
+        },
+        Duration::from_millis(500),
+        60,
+    )
+    .await;
+
+    let target_block = tx_block;
+    let target_root = extract_new_root(rpc.get_state_update(BlockId::Number(target_block)).await.unwrap());
+
+    let client = mongodb::Client::with_uri_str(&uri).await.unwrap();
+    let collection = client.database(&db_name).collection::<MempoolTransactionDocument>("mempool_transactions");
+
+    let tx_ids = vec![format!("0x{:x}", tx1.transaction_hash), format!("0x{:x}", tx2.transaction_hash)];
+    wait_for_cond(
+        || async {
+            let count = collection.count_documents(mongodb::bson::doc! { "tx_hash": { "$in": &tx_ids } }).await?;
+            if count >= tx_ids.len() as u64 {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("mongo not updated yet"))
+            }
+        },
+        Duration::from_millis(200),
+        50,
+    )
+    .await;
+
+    let admin_url = format!("{}rpc/v0.1.0/", madara.rpc_admin_url());
+    let genesis_hash = extract_block_hash(rpc.get_state_update(BlockId::Number(0)).await.unwrap());
+    admin_revert_to(&admin_url, genesis_hash).await;
+
+    wait_for_cond(
+        || async {
+            let block = rpc.block_hash_and_number().await?;
+            if block.block_number == 0 {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("chain not reverted yet"))
+            }
+        },
+        Duration::from_millis(500),
+        30,
+    )
+    .await;
+
+    // Restart after revert to avoid stale in-memory state in Madara (known issue after reorg).
+    madara.stop();
+    let mut madara = cmd_builder.clone().run();
+    madara.wait_for_ready().await;
+    madara.wait_for_sync_to(0).await;
+
+    let rpc = madara.json_rpc();
+
+    let mut cursor = collection
+        .find(mongodb::bson::doc! {})
+        .sort(mongodb::bson::doc! { "block_number": 1, "arrived_at": 1, "_id": 1 })
+        .await
+        .unwrap();
+    let mut replayed = 0usize;
+    let mut seen_hashes = HashSet::new();
+    while let Some(doc) = cursor.try_next().await.unwrap() {
+        if !seen_hashes.insert(doc.tx_hash.clone()) {
+            continue;
+        }
+        let raw = doc.raw_transaction.bytes;
+        let validated: ValidatedTransaction = bincode::deserialize(&raw).unwrap();
+        let bytes = bincode::options().serialize(&validated).unwrap();
+        let response = madara
+            .gateway_root_post("madara/trusted_add_validated_transaction")
+            .await
+            .body(bytes)
+            .header("Content-Type", "application/octet-stream")
+            .send()
+            .await
+            .unwrap();
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            if body.contains("DuplicateTransaction")
+                || body.contains("TransactionAlreadyExists")
+                || body.contains("already in the mempool")
+            {
+                continue;
+            }
+            panic!("replay request failed: {}", body);
+        }
+        replayed += 1;
+    }
+    assert!(replayed >= 2, "expected at least 2 replayed transactions, got {replayed}");
+
+    wait_for_cond(
+        || async {
+            let block = rpc.block_hash_and_number().await?;
+            if block.block_number >= target_block {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("chain not caught up yet"))
+            }
+        },
+        Duration::from_millis(500),
+        80,
+    )
+    .await;
+
+    let replay_root = extract_new_root(rpc.get_state_update(BlockId::Number(target_block)).await.unwrap());
+    assert_eq!(replay_root, target_root);
 }
