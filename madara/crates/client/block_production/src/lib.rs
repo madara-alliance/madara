@@ -698,6 +698,12 @@ impl BlockProductionTask {
             .filter_map(|tx| tx.transaction.transaction.as_l1_handler().map(|l1_tx| l1_tx.nonce))
             .collect();
 
+        // Get old_declared_contracts (Cairo 0 legacy classes) - lightweight, no DB queries
+        let old_declared_contracts = preconfirmed_view.get_old_declared_contracts();
+
+        // Get deployed contracts set from per-tx state diffs - lightweight, no DB queries
+        let deployed_contracts_set = preconfirmed_view.get_deployed_contracts_set();
+
         // Build set of v2 hashes for SNIP-34 migrated classes
         let migration_v2_hashes: std::collections::HashSet<Felt> = block_exec_summary
             .compiled_class_hashes_for_migration
@@ -705,9 +711,13 @@ impl BlockProductionTask {
             .map(|(v2_hash, _v1_hash)| v2_hash.0)
             .collect();
 
-        // Convert state_diff, separating declared classes from migrated classes
-        let state_diff =
-            mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
+        // Convert state_diff with all necessary information
+        let state_diff = mp_state_update::StateDiff::from_blockifier(
+            block_exec_summary.state_diff,
+            &migration_v2_hashes,
+            &deployed_contracts_set,
+            old_declared_contracts,
+        );
 
         let _db_result = Self::close_preconfirmed_block_with_state_diff(
             self.backend.clone(),
@@ -812,6 +822,7 @@ impl BlockProductionTask {
         tracing::debug!("Close and save block block_n={}", state.block_number);
         let start_time = Instant::now();
 
+        // Get preconfirmed block view for transaction count and old_declared_contracts
         let preconfirmed_view = self.backend.block_view_on_preconfirmed().context("No current pre-confirmed block")?;
         let n_txs = preconfirmed_view.num_executed_transactions();
         let event_count = preconfirmed_view
@@ -819,6 +830,7 @@ impl BlockProductionTask {
             .executed_transactions()
             .map(|tx| tx.transaction.receipt.events().len() as u64)
             .sum::<u64>();
+        let old_declared_contracts = preconfirmed_view.get_old_declared_contracts();
 
         // Build set of v2 hashes for SNIP-34 migrated classes.
         // These are classes that were USED (not declared) in this block and need their
@@ -829,9 +841,16 @@ impl BlockProductionTask {
             .map(|(v2_hash, _v1_hash)| v2_hash.0)
             .collect();
 
-        // Convert state_diff, separating declared classes from migrated classes
-        let state_diff =
-            mp_state_update::StateDiff::from_blockifier(block_exec_summary.state_diff, &migration_v2_hashes);
+        // Convert state_diff with all necessary information:
+        // - migration_v2_hashes: to separate declared vs migrated classes
+        // - deployed_contracts: to differentiate deployed vs replaced contracts (computed during batch execution)
+        // - old_declared_contracts: Cairo 0 legacy class declarations
+        let state_diff = mp_state_update::StateDiff::from_blockifier(
+            block_exec_summary.state_diff,
+            &migration_v2_hashes,
+            &state.deployed_contracts,
+            old_declared_contracts,
+        );
 
         // Capture state diff counts before moving state_diff
         let declared_classes_count = state_diff.declared_classes.len();

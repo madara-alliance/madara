@@ -710,6 +710,11 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     }
 
     /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
+    ///
+    /// When `state_diff` is provided, this function uses an optimized path that skips the expensive
+    /// `get_normalized_state_diff()` computation (which queries the DB for every storage entry).
+    /// The provided `state_diff` should already contain all necessary fields including
+    /// `old_declared_contracts`, `deployed_contracts`, and `replaced_classes`.
     pub fn close_preconfirmed(
         &self,
         pre_v0_13_2_hash_override: bool,
@@ -724,9 +729,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().get_full_block_with_classes_duration.record(fetch_secs, &[]);
         metrics().get_full_block_with_classes_last.record(fetch_secs, &[]);
 
-        if let Some(mut state_diff) = state_diff {
-            state_diff.old_declared_contracts =
-                std::mem::replace(&mut block.state_diff.old_declared_contracts, state_diff.old_declared_contracts);
+        if let Some(state_diff) = state_diff {
             block.state_diff = state_diff;
         }
 
