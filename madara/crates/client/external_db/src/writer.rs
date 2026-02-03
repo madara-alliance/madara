@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 const STATUS_PENDING: &str = "PENDING";
 // MongoDB duplicate key error code (E11000).
+// Docs: https://www.mongodb.com/docs/manual/reference/error-codes/
 const DUPLICATE_KEY_ERROR_CODE: i32 = 11000;
 
 #[async_trait::async_trait]
@@ -156,6 +157,8 @@ impl L1ConfirmationSource for BackendL1ConfirmationSource {
         let latest = self.backend.latest_l1_confirmed_block_n();
         let Some(latest) = latest else { return Ok(Vec::new()) };
 
+        // We emit all newly confirmed blocks and apply the configured retention delay
+        // in RetentionScheduler. This avoids relying on a block-time estimate.
         let start = self.last_confirmed.map(|n| n + 1).unwrap_or(0);
         if start > latest {
             return Ok(Vec::new());
@@ -291,6 +294,7 @@ impl ExternalDbWorker {
                             }
                         }
                         Err(err) => {
+                            // External DB is optional for availability; on failure we backoff and retry.
                             self.metrics.mongodb_write_errors.add(1, &[]);
                             self.metrics.retry_count.add(1, &[]);
                             let delay = retry_backoff.next_delay();
@@ -351,121 +355,17 @@ impl ExternalDbWorker {
     }
 
     fn convert_to_document(&self, tx: &ValidatedTransaction) -> anyhow::Result<MempoolTransactionDocument> {
-        let tx_type = match &tx.transaction {
-            Transaction::Invoke(_) => "INVOKE",
-            Transaction::Declare(_) => "DECLARE",
-            Transaction::DeployAccount(_) => "DEPLOY_ACCOUNT",
-            Transaction::L1Handler(_) => "L1_HANDLER",
-            Transaction::Deploy(_) => "DEPLOY",
-        }
-        .to_string();
-
-        let version = tx.transaction.version();
-        let tx_version = if version == starknet_api::transaction::TransactionVersion::ZERO {
-            "V0"
-        } else if version == starknet_api::transaction::TransactionVersion::ONE {
-            "V1"
-        } else if version == starknet_api::transaction::TransactionVersion::TWO {
-            "V2"
-        } else if version == starknet_api::transaction::TransactionVersion::THREE {
-            "V3"
-        } else {
-            "UNKNOWN"
-        }
-        .to_string();
-
-        let sender_address = match &tx.transaction {
-            Transaction::Invoke(t) => t.sender_address(),
-            Transaction::Declare(t) => t.sender_address(),
-            Transaction::DeployAccount(t) => t.sender_address(),
-            Transaction::L1Handler(t) => &t.contract_address,
-            Transaction::Deploy(_) => &tx.contract_address,
-        };
-
-        let signature = match &tx.transaction {
-            Transaction::Invoke(t) => t.signature(),
-            Transaction::Declare(t) => t.signature(),
-            Transaction::DeployAccount(t) => t.signature(),
-            Transaction::L1Handler(_) | Transaction::Deploy(_) => &[],
-        };
-
-        let calldata = match &tx.transaction {
-            Transaction::Invoke(t) => Some(t.calldata().to_vec()),
-            Transaction::DeployAccount(t) => Some(t.calldata().to_vec()),
-            Transaction::L1Handler(t) => Some(t.calldata.as_ref().clone()),
-            _ => None,
-        };
-
-        let class_hash = match &tx.transaction {
-            Transaction::Declare(t) => Some(*t.class_hash()),
-            Transaction::DeployAccount(t) => Some(match t {
-                DeployAccountTransaction::V1(tx) => tx.class_hash,
-                DeployAccountTransaction::V3(tx) => tx.class_hash,
-            }),
-            Transaction::Deploy(DeployTransaction { class_hash, .. }) => Some(*class_hash),
-            _ => None,
-        };
-
-        let compiled_class_hash = match &tx.transaction {
-            Transaction::Declare(DeclareTransaction::V2(tx)) => Some(tx.compiled_class_hash),
-            Transaction::Declare(DeclareTransaction::V3(tx)) => Some(tx.compiled_class_hash),
-            _ => None,
-        };
-
-        let constructor_calldata = match &tx.transaction {
-            Transaction::DeployAccount(t) => Some(t.calldata().to_vec()),
-            Transaction::Deploy(DeployTransaction { constructor_calldata, .. }) => Some(constructor_calldata.clone()),
-            _ => None,
-        };
-
-        let contract_address_salt = match &tx.transaction {
-            Transaction::DeployAccount(DeployAccountTransaction::V1(tx)) => Some(tx.contract_address_salt),
-            Transaction::DeployAccount(DeployAccountTransaction::V3(tx)) => Some(tx.contract_address_salt),
-            Transaction::Deploy(DeployTransaction { contract_address_salt, .. }) => Some(*contract_address_salt),
-            _ => None,
-        };
-
-        let entry_point_selector = match &tx.transaction {
-            Transaction::L1Handler(t) => Some(t.entry_point_selector),
-            _ => None,
-        };
-
-        let max_fee = match &tx.transaction {
-            Transaction::Invoke(InvokeTransaction::V0(tx)) => Some(tx.max_fee),
-            Transaction::Invoke(InvokeTransaction::V1(tx)) => Some(tx.max_fee),
-            Transaction::Declare(DeclareTransaction::V0(tx)) => Some(tx.max_fee),
-            Transaction::Declare(DeclareTransaction::V1(tx)) => Some(tx.max_fee),
-            Transaction::Declare(DeclareTransaction::V2(tx)) => Some(tx.max_fee),
-            Transaction::DeployAccount(DeployAccountTransaction::V1(tx)) => Some(tx.max_fee),
-            _ => None,
-        };
-
-        let (tip, resource_bounds) = match &tx.transaction {
-            Transaction::Invoke(InvokeTransaction::V3(tx)) => (Some(tx.tip), Some(tx.resource_bounds.clone())),
-            Transaction::Declare(DeclareTransaction::V3(tx)) => (Some(tx.tip), Some(tx.resource_bounds.clone())),
-            Transaction::DeployAccount(DeployAccountTransaction::V3(tx)) => {
-                (Some(tx.tip), Some(tx.resource_bounds.clone()))
-            }
-            _ => (None, None),
-        };
-
-        let resource_bounds_doc = resource_bounds.map(|bounds| {
-            let (l1_data_gas_max_amount, l1_data_gas_max_price) = match bounds.l1_data_gas {
-                Some(l1_data) => (
-                    Some(l1_data.max_amount),
-                    Some(mp_convert::hex_serde::u128_to_hex_string(l1_data.max_price_per_unit)),
-                ),
-                None => (None, None),
-            };
-            ResourceBoundsDoc {
-                l1_gas_max_amount: bounds.l1_gas.max_amount,
-                l1_gas_max_price: mp_convert::hex_serde::u128_to_hex_string(bounds.l1_gas.max_price_per_unit),
-                l2_gas_max_amount: bounds.l2_gas.max_amount,
-                l2_gas_max_price: mp_convert::hex_serde::u128_to_hex_string(bounds.l2_gas.max_price_per_unit),
-                l1_data_gas_max_amount,
-                l1_data_gas_max_price,
-            }
-        });
+        let (tx_type, tx_version) = tx_type_and_version(tx);
+        let sender_address = tx_sender_address(tx);
+        let signature = tx_signature(tx);
+        let calldata = tx_calldata(tx);
+        let class_hash = tx_class_hash(tx);
+        let compiled_class_hash = tx_compiled_class_hash(tx);
+        let constructor_calldata = tx_constructor_calldata(tx);
+        let contract_address_salt = tx_contract_address_salt(tx);
+        let entry_point_selector = tx_entry_point_selector(tx);
+        let max_fee = tx_max_fee_hex(tx);
+        let (tip, resource_bounds_doc) = tx_resource_bounds_doc(tx);
 
         let signature_hex = signature.iter().map(|felt| format!("{}", felt.hex_display())).collect::<Vec<_>>();
         let calldata_hex = calldata.map(|items| items.iter().map(|felt| format!("{}", felt.hex_display())).collect());
@@ -486,7 +386,7 @@ impl ExternalDbWorker {
             block_number: None,
             arrived_at: bson::DateTime::from_millis(tx.arrived_at.0 as i64),
             inserted_at: bson::DateTime::now(),
-            max_fee: max_fee.map(|fee| format!("{}", fee.hex_display())),
+            max_fee,
             tip,
             resource_bounds: resource_bounds_doc,
             signature: signature_hex,
@@ -504,6 +404,147 @@ impl ExternalDbWorker {
             charge_fee: tx.charge_fee,
         })
     }
+}
+
+fn tx_type_and_version(tx: &ValidatedTransaction) -> (String, String) {
+    let tx_type = match &tx.transaction {
+        Transaction::Invoke(_) => "INVOKE",
+        Transaction::Declare(_) => "DECLARE",
+        Transaction::DeployAccount(_) => "DEPLOY_ACCOUNT",
+        Transaction::L1Handler(_) => "L1_HANDLER",
+        Transaction::Deploy(_) => "DEPLOY",
+    }
+    .to_string();
+
+    let version = tx.transaction.version();
+    let tx_version = if version == starknet_api::transaction::TransactionVersion::ZERO {
+        "V0"
+    } else if version == starknet_api::transaction::TransactionVersion::ONE {
+        "V1"
+    } else if version == starknet_api::transaction::TransactionVersion::TWO {
+        "V2"
+    } else if version == starknet_api::transaction::TransactionVersion::THREE {
+        "V3"
+    } else {
+        "UNKNOWN"
+    }
+    .to_string();
+
+    (tx_type, tx_version)
+}
+
+fn tx_sender_address(tx: &ValidatedTransaction) -> &mp_convert::Felt {
+    match &tx.transaction {
+        Transaction::Invoke(t) => t.sender_address(),
+        Transaction::Declare(t) => t.sender_address(),
+        Transaction::DeployAccount(t) => t.sender_address(),
+        Transaction::L1Handler(t) => &t.contract_address,
+        Transaction::Deploy(_) => &tx.contract_address,
+    }
+}
+
+fn tx_signature(tx: &ValidatedTransaction) -> &[mp_convert::Felt] {
+    match &tx.transaction {
+        Transaction::Invoke(t) => t.signature(),
+        Transaction::Declare(t) => t.signature(),
+        Transaction::DeployAccount(t) => t.signature(),
+        Transaction::L1Handler(_) | Transaction::Deploy(_) => &[],
+    }
+}
+
+fn tx_calldata(tx: &ValidatedTransaction) -> Option<Vec<mp_convert::Felt>> {
+    match &tx.transaction {
+        Transaction::Invoke(t) => Some(t.calldata().to_vec()),
+        Transaction::DeployAccount(t) => Some(t.calldata().to_vec()),
+        Transaction::L1Handler(t) => Some(t.calldata.as_ref().clone()),
+        _ => None,
+    }
+}
+
+fn tx_class_hash(tx: &ValidatedTransaction) -> Option<mp_convert::Felt> {
+    match &tx.transaction {
+        Transaction::Declare(t) => Some(*t.class_hash()),
+        Transaction::DeployAccount(t) => Some(match t {
+            DeployAccountTransaction::V1(tx) => tx.class_hash,
+            DeployAccountTransaction::V3(tx) => tx.class_hash,
+        }),
+        Transaction::Deploy(DeployTransaction { class_hash, .. }) => Some(*class_hash),
+        _ => None,
+    }
+}
+
+fn tx_compiled_class_hash(tx: &ValidatedTransaction) -> Option<mp_convert::Felt> {
+    match &tx.transaction {
+        Transaction::Declare(DeclareTransaction::V2(tx)) => Some(tx.compiled_class_hash),
+        Transaction::Declare(DeclareTransaction::V3(tx)) => Some(tx.compiled_class_hash),
+        _ => None,
+    }
+}
+
+fn tx_constructor_calldata(tx: &ValidatedTransaction) -> Option<Vec<mp_convert::Felt>> {
+    match &tx.transaction {
+        Transaction::DeployAccount(t) => Some(t.calldata().to_vec()),
+        Transaction::Deploy(DeployTransaction { constructor_calldata, .. }) => Some(constructor_calldata.clone()),
+        _ => None,
+    }
+}
+
+fn tx_contract_address_salt(tx: &ValidatedTransaction) -> Option<mp_convert::Felt> {
+    match &tx.transaction {
+        Transaction::DeployAccount(DeployAccountTransaction::V1(tx)) => Some(tx.contract_address_salt),
+        Transaction::DeployAccount(DeployAccountTransaction::V3(tx)) => Some(tx.contract_address_salt),
+        Transaction::Deploy(DeployTransaction { contract_address_salt, .. }) => Some(*contract_address_salt),
+        _ => None,
+    }
+}
+
+fn tx_entry_point_selector(tx: &ValidatedTransaction) -> Option<mp_convert::Felt> {
+    match &tx.transaction {
+        Transaction::L1Handler(t) => Some(t.entry_point_selector),
+        _ => None,
+    }
+}
+
+fn tx_max_fee_hex(tx: &ValidatedTransaction) -> Option<String> {
+    match &tx.transaction {
+        Transaction::Invoke(InvokeTransaction::V0(tx)) => Some(format!("{}", tx.max_fee.hex_display())),
+        Transaction::Invoke(InvokeTransaction::V1(tx)) => Some(format!("{}", tx.max_fee.hex_display())),
+        Transaction::Declare(DeclareTransaction::V0(tx)) => Some(format!("{}", tx.max_fee.hex_display())),
+        Transaction::Declare(DeclareTransaction::V1(tx)) => Some(format!("{}", tx.max_fee.hex_display())),
+        Transaction::Declare(DeclareTransaction::V2(tx)) => Some(format!("{}", tx.max_fee.hex_display())),
+        Transaction::DeployAccount(DeployAccountTransaction::V1(tx)) => Some(format!("{}", tx.max_fee.hex_display())),
+        _ => None,
+    }
+}
+
+fn tx_resource_bounds_doc(tx: &ValidatedTransaction) -> (Option<u64>, Option<ResourceBoundsDoc>) {
+    let (tip, resource_bounds) = match &tx.transaction {
+        Transaction::Invoke(InvokeTransaction::V3(tx)) => (Some(tx.tip), Some(tx.resource_bounds.clone())),
+        Transaction::Declare(DeclareTransaction::V3(tx)) => (Some(tx.tip), Some(tx.resource_bounds.clone())),
+        Transaction::DeployAccount(DeployAccountTransaction::V3(tx)) => {
+            (Some(tx.tip), Some(tx.resource_bounds.clone()))
+        }
+        _ => (None, None),
+    };
+
+    let resource_bounds_doc = resource_bounds.map(|bounds| {
+        let (l1_data_gas_max_amount, l1_data_gas_max_price) = match bounds.l1_data_gas {
+            Some(l1_data) => {
+                (Some(l1_data.max_amount), Some(mp_convert::hex_serde::u128_to_hex_string(l1_data.max_price_per_unit)))
+            }
+            None => (None, None),
+        };
+        ResourceBoundsDoc {
+            l1_gas_max_amount: bounds.l1_gas.max_amount,
+            l1_gas_max_price: mp_convert::hex_serde::u128_to_hex_string(bounds.l1_gas.max_price_per_unit),
+            l2_gas_max_amount: bounds.l2_gas.max_amount,
+            l2_gas_max_price: mp_convert::hex_serde::u128_to_hex_string(bounds.l2_gas.max_price_per_unit),
+            l1_data_gas_max_amount,
+            l1_data_gas_max_price,
+        }
+    });
+
+    (tip, resource_bounds_doc)
 }
 
 #[cfg(test)]
@@ -566,15 +607,49 @@ mod tests {
         let config = ExternalDbConfig::new("mongodb://localhost:27017".to_string());
         let worker = ExternalDbWorker::new(config, backend.clone(), "MADARA_TEST".to_string(), metrics);
 
-        let tx1 = make_validated_tx(1);
-        let tx2 = make_validated_tx(2);
-        backend.write_external_outbox(&tx1).unwrap();
-        backend.write_external_outbox(&tx2).unwrap();
+        // Cover multiple transaction types to ensure the drain path handles all of them.
+        let sender = test_utils::devnet_account_address();
+        let (declare_tx, declared_class) = test_utils::declare_v3(sender, Felt::from_hex_unchecked("0x2"));
+        let txs = vec![
+            test_utils::validated_transaction(
+                Transaction::Invoke(InvokeTransaction::V3(test_utils::invoke_v3(
+                    sender,
+                    Felt::from_hex_unchecked("0x1"),
+                ))),
+                Felt::from_hex_unchecked("0x1"),
+                sender,
+                None,
+            ),
+            test_utils::validated_transaction(
+                Transaction::Declare(DeclareTransaction::V3(declare_tx)),
+                Felt::from_hex_unchecked("0x2"),
+                sender,
+                Some(declared_class),
+            ),
+            test_utils::validated_transaction(
+                Transaction::DeployAccount(DeployAccountTransaction::V3(test_utils::deploy_account_v3(
+                    Felt::from_hex_unchecked("0x3"),
+                ))),
+                Felt::from_hex_unchecked("0x3"),
+                sender,
+                None,
+            ),
+            test_utils::validated_transaction(
+                Transaction::Deploy(test_utils::deploy_tx()),
+                Felt::from_hex_unchecked("0x4"),
+                sender,
+                None,
+            ),
+            test_utils::validated_l1_handler(Felt::from_hex_unchecked("0x5")),
+        ];
+        for tx in &txs {
+            backend.write_external_outbox(tx).unwrap();
+        }
 
-        let sink = FakeSink::new(vec![Ok(InsertManySummary { inserted: 2, duplicates: 0 })]);
+        let sink = FakeSink::new(vec![Ok(InsertManySummary { inserted: txs.len(), duplicates: 0 })]);
         let summary = worker.drain_outbox_once(&sink).await.unwrap();
 
-        assert_eq!(summary.attempted, 2);
+        assert_eq!(summary.attempted, txs.len());
         let remaining: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert!(remaining.is_empty());
         assert_eq!(sink.calls.lock().unwrap().len(), 1);
@@ -599,6 +674,24 @@ mod tests {
         assert_eq!(summary.duplicates, 1);
         let remaining: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert!(remaining.is_empty());
+    }
+
+    #[tokio::test]
+    async fn drain_error_keeps_outbox_entries() {
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        let metrics = Arc::new(ExternalDbMetrics::register());
+        let config = ExternalDbConfig::new("mongodb://localhost:27017".to_string());
+        let worker = ExternalDbWorker::new(config, backend.clone(), "MADARA_TEST".to_string(), metrics);
+
+        let tx = make_validated_tx(7);
+        backend.write_external_outbox(&tx).unwrap();
+
+        let sink = FakeSink::new(vec![Err(anyhow::anyhow!("mongo down"))]);
+        let err = worker.drain_outbox_once(&sink).await.unwrap_err();
+        assert!(err.to_string().contains("mongo down"));
+
+        let remaining: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
+        assert_eq!(remaining.len(), 1);
     }
 
     #[tokio::test]
