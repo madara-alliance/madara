@@ -48,6 +48,7 @@ impl Snapshots {
     /// Returns the number of historical snapshots currently stored.
     /// This is primarily useful for testing snapshot limit behavior.
     #[cfg(any(test, feature = "testing"))]
+    #[allow(dead_code)] // Only used by tests; feature-gated builds enable it but don't call it.
     pub fn historical_count(&self) -> usize {
         self.inner.read().expect("Poisoned lock").historical.len()
     }
