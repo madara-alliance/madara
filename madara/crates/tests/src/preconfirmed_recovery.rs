@@ -1,5 +1,5 @@
 use crate::{
-    devnet::{ACCOUNT_ADDRESS, ACCOUNT_SECRET, ACCOUNT_SECRETS, ACCOUNTS, ERC20_STRK_CONTRACT_ADDRESS},
+    devnet::{ACCOUNTS, ACCOUNT_ADDRESS, ACCOUNT_SECRET, ACCOUNT_SECRETS, ERC20_STRK_CONTRACT_ADDRESS},
     wait_for_cond, MadaraCmd, MadaraCmdBuilder,
 };
 use anyhow::{bail, ensure};
@@ -11,8 +11,8 @@ use starknet_core::types::{
 };
 use starknet_core::utils::starknet_keccak;
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider};
-use std::time::Duration;
 use std::convert::TryFrom;
+use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ShutdownKind {
@@ -111,11 +111,7 @@ async fn submit_success_and_revert_txs(node: &MadaraCmd) -> (Felt, Felt) {
 }
 
 async fn fetch_gas_prices(node: &MadaraCmd) -> (u128, u128, u128) {
-    let block = node
-        .json_rpc()
-        .get_block_with_tx_hashes(BlockId::Tag(BlockTag::Latest))
-        .await
-        .unwrap();
+    let block = node.json_rpc().get_block_with_tx_hashes(BlockId::Tag(BlockTag::Latest)).await.unwrap();
 
     let l1_price = u128::try_from(block.l1_gas_price().price_in_fri).expect("l1 gas price should fit u128");
     let l2_price = u128::try_from(block.l2_gas_price().price_in_fri).expect("l2 gas price should fit u128");
@@ -304,10 +300,7 @@ async fn preconfirmed_recovery_executed(
 // no mempool persistence (MADARA_NO_SAVE_PRECONFIRMED ignored), ungraceful → behaviour: mempool not persisted -> Expected: txs missing after restart
 #[case::e10_ungraceful(true, ShutdownKind::Ungraceful)]
 #[tokio::test]
-async fn preconfirmed_recovery_mempool(
-    #[case] no_mempool_saving: bool,
-    #[case] shutdown_kind: ShutdownKind,
-) {
+async fn preconfirmed_recovery_mempool(#[case] no_mempool_saving: bool, #[case] shutdown_kind: ShutdownKind) {
     let args = devnet_args("5min", true);
     // No preconfirmed block exists in this test, so MADARA_NO_SAVE_PRECONFIRMED is fixed to false.
     let builder = MadaraCmdBuilder::new().args(args).env(env_pairs(no_mempool_saving, false));
