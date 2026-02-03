@@ -30,10 +30,12 @@ impl MongoClient {
         Ok(Self { client, collection })
     }
 
+    /// Returns the typed collection used for mempool transaction documents.
     pub fn collection(&self) -> &mongodb::Collection<MempoolTransactionDocument> {
         &self.collection
     }
 
+    /// Returns the underlying MongoDB client.
     pub fn client(&self) -> &mongodb::Client {
         &self.client
     }

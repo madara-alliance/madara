@@ -80,8 +80,7 @@ impl ExternalDbSink for MongoSink {
     }
 }
 
-/// Return number of duplicate errors when all write errors are duplicate-key violations.
-/// This treats duplicate inserts as a success path so the worker can safely delete from the outbox.
+/// Count duplicate-key errors when all write errors are duplicates (safe to delete outbox).
 fn classify_duplicate_only_error(err: &mongodb::error::Error) -> Option<usize> {
     let ErrorKind::InsertMany(failure) = &*err.kind else { return None };
     if failure.write_concern_error.is_some() {
@@ -111,10 +110,12 @@ struct RetryBackoff {
 }
 
 impl RetryBackoff {
+    /// Create exponential backoff with a base delay and max cap.
     fn new(base: Duration, max: Duration) -> Self {
         Self { base, max, current: None }
     }
 
+    /// Next delay with exponential growth (capped).
     fn next_delay(&mut self) -> Duration {
         let next = match self.current {
             None => self.base,
@@ -124,6 +125,7 @@ impl RetryBackoff {
         next
     }
 
+    /// Reset the backoff after a successful write.
     fn reset(&mut self) {
         self.current = None;
     }
@@ -140,12 +142,14 @@ trait L1ConfirmationSource: Send + Sync {
     async fn poll_confirmations(&mut self) -> anyhow::Result<Vec<L1Confirmation>>;
 }
 
+/// L1 confirmation source backed by the local database.
 struct BackendL1ConfirmationSource {
     backend: Arc<MadaraBackend>,
     last_confirmed: Option<u64>,
 }
 
 impl BackendL1ConfirmationSource {
+    /// Create a confirmation source for the given backend.
     fn new(backend: Arc<MadaraBackend>) -> Self {
         Self { backend, last_confirmed: None }
     }
@@ -153,6 +157,7 @@ impl BackendL1ConfirmationSource {
 
 #[async_trait::async_trait]
 impl L1ConfirmationSource for BackendL1ConfirmationSource {
+    /// Return new confirmed blocks since the last poll.
     async fn poll_confirmations(&mut self) -> anyhow::Result<Vec<L1Confirmation>> {
         let latest = self.backend.latest_l1_confirmed_block_n();
         let Some(latest) = latest else { return Ok(Vec::new()) };
@@ -184,6 +189,7 @@ struct PendingDeletion {
     tx_hashes: Vec<mp_convert::Felt>,
 }
 
+/// Schedules deletes once blocks are confirmed on L1 plus a delay.
 struct RetentionScheduler<S: L1ConfirmationSource> {
     source: S,
     delay: Duration,
@@ -193,10 +199,12 @@ struct RetentionScheduler<S: L1ConfirmationSource> {
 }
 
 impl<S: L1ConfirmationSource> RetentionScheduler<S> {
+    /// Create a retention scheduler with the chosen delay.
     fn new(source: S, delay: Duration, metrics: Arc<ExternalDbMetrics>, chain_id: String) -> Self {
         Self { source, delay, pending: std::collections::VecDeque::new(), metrics, chain_id }
     }
 
+    /// Move newly confirmed blocks into a delayed delete queue and execute due deletions.
     async fn tick(&mut self, now: Instant, sink: &dyn ExternalDbSink) -> anyhow::Result<()> {
         let confirmations = self.source.poll_confirmations().await?;
         for confirmation in confirmations {
@@ -314,6 +322,7 @@ impl ExternalDbWorker {
         Ok(())
     }
 
+    /// Drain one outbox batch, write to Mongo, then delete local entries.
     async fn drain_outbox_once(&self, sink: &dyn ExternalDbSink) -> anyhow::Result<DrainSummary> {
         let mut entries = Vec::new();
         for res in self.backend.get_external_outbox_transactions(self.config.batch_size) {
@@ -342,6 +351,7 @@ impl ExternalDbWorker {
         Ok(DrainSummary { attempted: entries.len(), inserted: result.inserted, duplicates: result.duplicates })
     }
 
+    /// Flush all existing outbox entries on startup before normal processing.
     async fn startup_sync(&self, sink: &dyn ExternalDbSink) -> anyhow::Result<usize> {
         let mut total = 0;
         loop {
@@ -354,6 +364,7 @@ impl ExternalDbWorker {
         Ok(total)
     }
 
+    /// Convert a validated tx into the MongoDB document format.
     fn convert_to_document(&self, tx: &ValidatedTransaction) -> anyhow::Result<MempoolTransactionDocument> {
         let (tx_type, tx_version) = tx_type_and_version(tx);
         let sender_address = tx_sender_address(tx);
@@ -406,6 +417,7 @@ impl ExternalDbWorker {
     }
 }
 
+/// Extract type + version labels for the document.
 fn tx_type_and_version(tx: &ValidatedTransaction) -> (String, String) {
     let tx_type = match &tx.transaction {
         Transaction::Invoke(_) => "INVOKE",
@@ -433,6 +445,7 @@ fn tx_type_and_version(tx: &ValidatedTransaction) -> (String, String) {
     (tx_type, tx_version)
 }
 
+/// Choose the canonical sender address for each transaction kind.
 fn tx_sender_address(tx: &ValidatedTransaction) -> &mp_convert::Felt {
     match &tx.transaction {
         Transaction::Invoke(t) => t.sender_address(),
@@ -443,6 +456,7 @@ fn tx_sender_address(tx: &ValidatedTransaction) -> &mp_convert::Felt {
     }
 }
 
+/// Return the signature list (empty for txs without signatures).
 fn tx_signature(tx: &ValidatedTransaction) -> &[mp_convert::Felt] {
     match &tx.transaction {
         Transaction::Invoke(t) => t.signature(),
@@ -452,6 +466,7 @@ fn tx_signature(tx: &ValidatedTransaction) -> &[mp_convert::Felt] {
     }
 }
 
+/// Return calldata when present for the transaction type.
 fn tx_calldata(tx: &ValidatedTransaction) -> Option<Vec<mp_convert::Felt>> {
     match &tx.transaction {
         Transaction::Invoke(t) => Some(t.calldata().to_vec()),
@@ -461,6 +476,7 @@ fn tx_calldata(tx: &ValidatedTransaction) -> Option<Vec<mp_convert::Felt>> {
     }
 }
 
+/// Return the class hash for txs that carry one.
 fn tx_class_hash(tx: &ValidatedTransaction) -> Option<mp_convert::Felt> {
     match &tx.transaction {
         Transaction::Declare(t) => Some(*t.class_hash()),
@@ -473,6 +489,7 @@ fn tx_class_hash(tx: &ValidatedTransaction) -> Option<mp_convert::Felt> {
     }
 }
 
+/// Return the compiled class hash for declare v2/v3.
 fn tx_compiled_class_hash(tx: &ValidatedTransaction) -> Option<mp_convert::Felt> {
     match &tx.transaction {
         Transaction::Declare(DeclareTransaction::V2(tx)) => Some(tx.compiled_class_hash),
@@ -481,6 +498,7 @@ fn tx_compiled_class_hash(tx: &ValidatedTransaction) -> Option<mp_convert::Felt>
     }
 }
 
+/// Return constructor calldata for deploy/deploy_account.
 fn tx_constructor_calldata(tx: &ValidatedTransaction) -> Option<Vec<mp_convert::Felt>> {
     match &tx.transaction {
         Transaction::DeployAccount(t) => Some(t.calldata().to_vec()),
@@ -489,6 +507,7 @@ fn tx_constructor_calldata(tx: &ValidatedTransaction) -> Option<Vec<mp_convert::
     }
 }
 
+/// Return the contract address salt for deploy/deploy_account.
 fn tx_contract_address_salt(tx: &ValidatedTransaction) -> Option<mp_convert::Felt> {
     match &tx.transaction {
         Transaction::DeployAccount(DeployAccountTransaction::V1(tx)) => Some(tx.contract_address_salt),
@@ -498,6 +517,7 @@ fn tx_contract_address_salt(tx: &ValidatedTransaction) -> Option<mp_convert::Fel
     }
 }
 
+/// Return the entry point selector for L1 handler txs.
 fn tx_entry_point_selector(tx: &ValidatedTransaction) -> Option<mp_convert::Felt> {
     match &tx.transaction {
         Transaction::L1Handler(t) => Some(t.entry_point_selector),
@@ -505,6 +525,7 @@ fn tx_entry_point_selector(tx: &ValidatedTransaction) -> Option<mp_convert::Felt
     }
 }
 
+/// Return the max_fee as a hex string for legacy txs.
 fn tx_max_fee_hex(tx: &ValidatedTransaction) -> Option<String> {
     match &tx.transaction {
         Transaction::Invoke(InvokeTransaction::V0(tx)) => Some(format!("{}", tx.max_fee.hex_display())),
@@ -517,6 +538,7 @@ fn tx_max_fee_hex(tx: &ValidatedTransaction) -> Option<String> {
     }
 }
 
+/// Return tip + resource bounds for v3 txs.
 fn tx_resource_bounds_doc(tx: &ValidatedTransaction) -> (Option<u64>, Option<ResourceBoundsDoc>) {
     let (tip, resource_bounds) = match &tx.transaction {
         Transaction::Invoke(InvokeTransaction::V3(tx)) => (Some(tx.tip), Some(tx.resource_bounds.clone())),
@@ -600,6 +622,7 @@ mod tests {
         )
     }
 
+    /// Drain writes all tx types, then clears the outbox batch.
     #[tokio::test]
     async fn drain_outbox_inserts_to_mongo() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
@@ -655,6 +678,7 @@ mod tests {
         assert_eq!(sink.calls.lock().unwrap().len(), 1);
     }
 
+    /// Duplicate insert error should be treated as success and still clear outbox.
     #[tokio::test]
     async fn drain_handles_duplicate_key() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
@@ -676,6 +700,7 @@ mod tests {
         assert!(remaining.is_empty());
     }
 
+    /// Write errors must not delete outbox entries (safe retry).
     #[tokio::test]
     async fn drain_error_keeps_outbox_entries() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
@@ -694,6 +719,7 @@ mod tests {
         assert_eq!(remaining.len(), 1);
     }
 
+    /// Startup sync should drain all existing entries in batches.
     #[tokio::test]
     async fn startup_sync_drains_existing_outbox() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
@@ -734,6 +760,7 @@ mod tests {
         }
     }
 
+    /// Retention deletes happen only after the configured delay.
     #[tokio::test]
     async fn retention_deletes_after_delay() {
         let metrics = Arc::new(ExternalDbMetrics::register());
@@ -757,6 +784,7 @@ mod tests {
         assert_eq!(sink.delete_calls.lock().unwrap().len(), 1);
     }
 
+    /// Retention should be a no-op when there are no confirmations.
     #[tokio::test]
     async fn retention_noop_without_confirmations() {
         let metrics = Arc::new(ExternalDbMetrics::register());
@@ -773,6 +801,7 @@ mod tests {
         assert!(sink.delete_calls.lock().unwrap().is_empty());
     }
 
+    /// Document conversion should recognize all transaction types.
     #[test]
     fn convert_to_document_supports_multiple_tx_types() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
@@ -813,6 +842,7 @@ mod tests {
         }
     }
 
+    /// Backoff should grow to cap and reset after success.
     #[test]
     fn retry_backoff_on_failure_caps() {
         let mut backoff = RetryBackoff::new(Duration::from_millis(100), Duration::from_millis(400));

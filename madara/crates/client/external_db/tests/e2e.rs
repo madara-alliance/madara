@@ -44,6 +44,7 @@ macro_rules! with_devnet_fees {
     };
 }
 
+/// Poll a condition until success or timeout.
 async fn wait_for_cond<F, R>(mut cond: impl FnMut() -> F, sleep_duration: Duration, max_attempts: u32) -> R
 where
     F: std::future::Future<Output = Result<R, anyhow::Error>>,
@@ -65,6 +66,7 @@ where
     }
 }
 
+/// Call admin RPC to revert the chain to a given block hash.
 async fn admin_revert_to(admin_url: &str, block_hash: Felt) {
     let client = reqwest::Client::new();
     let response = client
@@ -84,6 +86,7 @@ async fn admin_revert_to(admin_url: &str, block_hash: Felt) {
     }
 }
 
+/// Wait until a transaction is included in a block.
 async fn wait_for_tx_in_block<P: Provider + Sync>(provider: &P, tx_hash: Felt, timeout_attempts: u32) {
     wait_for_cond(
         || async {
@@ -100,6 +103,7 @@ async fn wait_for_tx_in_block<P: Provider + Sync>(provider: &P, tx_hash: Felt, t
     .await
 }
 
+/// Build a devnet STRK transfer call.
 fn make_transfer_call(to: Felt, amount: u64) -> StarknetCall {
     StarknetCall {
         to: DEVNET_STRK_CONTRACT_ADDRESS,
@@ -108,6 +112,7 @@ fn make_transfer_call(to: Felt, amount: u64) -> StarknetCall {
     }
 }
 
+/// Wait for MongoDB to accept connections.
 async fn wait_for_mongo_ready(uri: &str) {
     let mut attempts = 0;
     loop {
@@ -131,10 +136,12 @@ struct MongoFixture {
 
 static MONGO_FIXTURE: OnceCell<MongoFixture> = OnceCell::const_new();
 
+/// Resolve the devnet chain config path used in tests.
 fn test_devnet_path() -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/test_devnet.yaml").to_string_lossy().into_owned()
 }
 
+/// Extract the new root from a confirmed update.
 fn extract_new_root(update: MaybePreConfirmedStateUpdate) -> Felt {
     match update {
         MaybePreConfirmedStateUpdate::Update(update) => update.new_root,
@@ -144,6 +151,7 @@ fn extract_new_root(update: MaybePreConfirmedStateUpdate) -> Felt {
     }
 }
 
+/// Extract the block hash from a confirmed update.
 fn extract_block_hash(update: MaybePreConfirmedStateUpdate) -> Felt {
     match update {
         MaybePreConfirmedStateUpdate::Update(update) => update.block_hash,
@@ -153,6 +161,7 @@ fn extract_block_hash(update: MaybePreConfirmedStateUpdate) -> Felt {
     }
 }
 
+/// Create a singleton MongoDB test container.
 async fn mongo_fixture() -> &'static MongoFixture {
     MONGO_FIXTURE
         .get_or_init(|| async {
@@ -166,6 +175,15 @@ async fn mongo_fixture() -> &'static MongoFixture {
         .await
 }
 
+/// E2E: devnet + Mongo WAL replay should reproduce the same state root.
+///
+/// Flow:
+/// 1) Start devnet with external DB enabled and fast block time.
+/// 2) Submit multiple tx types (invoke, declare, deploy_account) to generate WAL entries.
+/// 3) Wait for inclusion and record the state root at the last tx block.
+/// 4) Revert to genesis, restart node (clears in-memory state).
+/// 5) Replay WAL in arrival order and wait for inclusion.
+/// 6) Assert replayed root == original root.
 #[tokio::test(flavor = "multi_thread")]
 async fn e2e_devnet_replay_from_mongo_matches_root() {
     // Spin up MongoDB for the external DB WAL.
@@ -175,7 +193,7 @@ async fn e2e_devnet_replay_from_mongo_matches_root() {
     let db_suffix = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis();
     let db_name = format!("madara_devnet_replay_{db_suffix}");
 
-    // Start a devnet node with external DB enabled and fast block time.
+    // Start a devnet node with external DB enabled and a fast block time to reach 11+ blocks quickly.
     let test_devnet_path = test_devnet_path();
     let args = [
         "--devnet",
@@ -278,7 +296,7 @@ async fn e2e_devnet_replay_from_mongo_matches_root() {
     let invoke_receipt = rpc.get_transaction_receipt(invoke_tx.transaction_hash).await.unwrap();
     let tx_block = invoke_receipt.block.block_number();
 
-    // Ensure we have at least 11 blocks to exercise block production timing.
+    // Ensure we have at least 11 blocks to exercise block production timing (no admin close).
     wait_for_cond(
         || async {
             let block = rpc.block_hash_and_number().await?;

@@ -16,6 +16,7 @@
 
 use mongodb::{bson::doc, IndexModel};
 
+/// Build the default index set for the mempool transactions collection.
 pub fn get_index_models() -> Vec<IndexModel> {
     vec![
         IndexModel::builder().keys(doc! { "sender_address": 1, "arrived_at": -1 }).build(),

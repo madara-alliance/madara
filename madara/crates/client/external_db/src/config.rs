@@ -55,6 +55,9 @@ fn default_strict_outbox() -> bool {
 }
 
 /// Configuration for external database integration.
+///
+/// These settings control MongoDB connectivity, batching, retention timing,
+/// and retry behavior for the outbox worker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExternalDbConfig {
