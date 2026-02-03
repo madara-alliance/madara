@@ -3,7 +3,7 @@ use crate::types::constant::{BLOB_DATA_FILE_NAME, ORCHESTRATOR_VERSION};
 use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::Layer;
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
@@ -72,7 +72,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::DataSubmission)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
-                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                    MetricsRecorder::record_failed_job_operation(1.0, &attributes);
                     return Err(e.into());
                 }
             }

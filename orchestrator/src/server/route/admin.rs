@@ -14,7 +14,7 @@ use super::super::service::admin::{AdminService, BulkJobResult};
 use super::super::types::{ApiResponse, JobRouteResult};
 use crate::core::config::Config;
 use crate::types::jobs::types::JobType;
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 
 /// Query parameters for filtering jobs by types
 #[derive(Debug, Deserialize)]
@@ -75,13 +75,13 @@ where
         Ok(result) => {
             info!(success = result.success_count, failed = result.failed_count, job_types = ?filter.job_type, "Admin: Completed {}", op.name);
 
-            ORCHESTRATOR_METRICS.successful_job_operations.add(
+            MetricsRecorder::record_successful_job_operation(
                 result.success_count as f64,
                 &[KeyValue::new("operation_type", op.metric_key), KeyValue::new("admin", "true")],
             );
 
             if result.failed_count > 0 {
-                ORCHESTRATOR_METRICS.failed_job_operations.add(
+                MetricsRecorder::record_failed_job_operation(
                     result.failed_count as f64,
                     &[KeyValue::new("operation_type", op.metric_key), KeyValue::new("admin", "true")],
                 );
@@ -99,9 +99,10 @@ where
         }
         Err(e) => {
             error!(error = %e, job_types = ?filter.job_type, "Admin: Failed {}", op.name);
-            ORCHESTRATOR_METRICS
-                .failed_job_operations
-                .add(1.0, &[KeyValue::new("operation_type", op.metric_key), KeyValue::new("admin", "true")]);
+            MetricsRecorder::record_failed_job_operation(
+                1.0,
+                &[KeyValue::new("operation_type", op.metric_key), KeyValue::new("admin", "true")],
+            );
             Err(JobRouteError::ProcessingError(e.to_string()))
         }
     }

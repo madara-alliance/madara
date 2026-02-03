@@ -11,7 +11,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::params::database::DatabaseArgs;
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 use futures::TryStreamExt;
@@ -319,7 +319,7 @@ impl MongoDbClient {
         debug!("Fetched data from collection");
         let attributes = [KeyValue::new("db_operation_name", "find")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(vec_items)
     }
 
@@ -363,7 +363,7 @@ impl MongoDbClient {
 
         let duration = start.elapsed();
         let attrs = [KeyValue::new("db_operation_name", "execute_pipeline")];
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attrs);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attrs);
 
         Ok(vec_items)
     }
@@ -413,7 +413,7 @@ impl DatabaseClient for MongoDbClient {
             debug!(duration = %duration.as_millis(), "Job created in MongoDB successfully");
 
             let attributes = [KeyValue::new("db_operation_name", "create_job")];
-            ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+            MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
             Ok(job)
         } else {
             Err(DatabaseError::ItemAlreadyExists(format!(
@@ -431,7 +431,7 @@ impl DatabaseClient for MongoDbClient {
         debug!("Fetched job by ID");
         let attributes = [KeyValue::new("db_operation_name", "get_job_by_id")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
@@ -449,7 +449,7 @@ impl DatabaseClient for MongoDbClient {
         debug!("Fetched job by internal ID and type");
         let attributes = [KeyValue::new("db_operation_name", "get_job_by_internal_id_and_type")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
@@ -491,7 +491,7 @@ impl DatabaseClient for MongoDbClient {
                 debug!("Job updated successfully");
                 let attributes = [KeyValue::new("db_operation_name", "update_job")];
                 let duration = start.elapsed();
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
                 Ok(job)
             }
             None => {
@@ -540,7 +540,7 @@ impl DatabaseClient for MongoDbClient {
 
         let result = vec_to_single_result(results, "get_latest_job_by_type")?;
 
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(result)
     }
 
@@ -624,7 +624,7 @@ impl DatabaseClient for MongoDbClient {
         debug!(job_count = result.len(), "Retrieved jobs without successor");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_without_successor")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(result)
     }
@@ -650,7 +650,7 @@ impl DatabaseClient for MongoDbClient {
         debug!("Fetched jobs after internal ID by job type");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_after_internal_id_by_job_type")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(jobs)
     }
 
@@ -687,7 +687,7 @@ impl DatabaseClient for MongoDbClient {
         debug!(job_count = jobs.len(), "Retrieved jobs by type and statuses");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_types_and_status")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(jobs)
     }
 
@@ -711,7 +711,7 @@ impl DatabaseClient for MongoDbClient {
         debug!(job_count = jobs.len(), "Retrieved jobs without storage artifacts tagged");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_without_storage_artifacts_tagged")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(jobs)
     }
 
@@ -726,7 +726,7 @@ impl DatabaseClient for MongoDbClient {
 
         let attributes = [KeyValue::new("db_operation_name", "get_latest_aggregator_batch")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(batch)
     }
@@ -751,7 +751,7 @@ impl DatabaseClient for MongoDbClient {
 
         let attributes = [KeyValue::new("db_operation_name", "get_oldest_aggregator_batch")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(batch)
     }
@@ -767,7 +767,7 @@ impl DatabaseClient for MongoDbClient {
 
         let attributes = [KeyValue::new("db_operation_name", "get_latest_snos_batch")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(batch)
     }
@@ -784,7 +784,7 @@ impl DatabaseClient for MongoDbClient {
         debug!(batch_count = batches.len(), category = "db_call", "Retrieved SNOS batches by indices");
         let attributes = [KeyValue::new("db_operation_name", "get_snos_batches_by_indices")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(batches)
     }
 
@@ -824,7 +824,7 @@ impl DatabaseClient for MongoDbClient {
         debug!(batch_count = batches.len(), category = "db_call", "Retrieved aggregator batches by indexes");
         let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batches_by_indexes")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(batches)
     }
 
@@ -912,7 +912,7 @@ impl DatabaseClient for MongoDbClient {
                 // Update done
                 let attributes = [KeyValue::new("db_operation_name", "update_aggregator_batch")];
                 let duration = start.elapsed();
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
                 Ok(updated_batch)
             }
             None => {
@@ -938,7 +938,7 @@ impl DatabaseClient for MongoDbClient {
                 // Update done
                 let attributes = [KeyValue::new("db_operation_name", "update_snos_batch")];
                 let duration = start.elapsed();
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
                 Ok(updated_batch)
             }
             None => {
@@ -962,7 +962,7 @@ impl DatabaseClient for MongoDbClient {
                 debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
 
                 let attributes = [KeyValue::new("db_operation_name", "create_batch")];
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
                 Ok(batch)
             }
             Err(err) => {
@@ -1041,7 +1041,7 @@ impl DatabaseClient for MongoDbClient {
             Some(updated_batch) => {
                 let attributes = [KeyValue::new("db_operation_name", "update_or_create_snos_batch")];
                 let duration = start.elapsed();
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
                 Ok(updated_batch)
             }
             None => {
@@ -1067,7 +1067,7 @@ impl DatabaseClient for MongoDbClient {
         debug!("Retrieved aggregator batch by block number");
         let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batch_for_block")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(batch)
     }
@@ -1108,7 +1108,7 @@ impl DatabaseClient for MongoDbClient {
         let result = vec_to_single_result(results, "get_start_snos_batch_for_aggregator")?;
 
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(result)
     }
 
@@ -1135,7 +1135,7 @@ impl DatabaseClient for MongoDbClient {
         debug!("Retrieved aggregator batches by status");
         let attributes = [KeyValue::new("db_operation_name", "get_aggregator_batches_by_status")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(batches)
     }
@@ -1168,7 +1168,7 @@ impl DatabaseClient for MongoDbClient {
         );
         let attributes = [KeyValue::new("db_operation_name", "get_snos_batches_by_status")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(batches)
     }
@@ -1255,7 +1255,7 @@ impl DatabaseClient for MongoDbClient {
 
         let attributes = [KeyValue::new("db_operation_name", "get_snos_batches_without_jobs")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(result)
     }
@@ -1292,7 +1292,7 @@ impl DatabaseClient for MongoDbClient {
 
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_between_internal_ids")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(jobs)
     }
@@ -1338,7 +1338,7 @@ impl DatabaseClient for MongoDbClient {
 
         let result = vec_to_single_result(results, "get_oldest_job_by_type_excluding_statuses")?;
 
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(result)
     }
 
@@ -1395,7 +1395,7 @@ impl DatabaseClient for MongoDbClient {
         debug!(count = results.len(), "Fetched jobs by block number");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_block_number")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(results)
     }
@@ -1413,7 +1413,7 @@ impl DatabaseClient for MongoDbClient {
 
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_status")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
 
         Ok(jobs)
     }
@@ -1447,7 +1447,7 @@ impl DatabaseClient for MongoDbClient {
 
         let attributes = [KeyValue::new("db_operation_name", "get_snos_batches_by_aggregator_index")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(batches)
     }
 
@@ -1460,7 +1460,7 @@ impl DatabaseClient for MongoDbClient {
 
         let attributes = [KeyValue::new("db_operation_name", "health_check")];
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_db_call(duration.as_secs_f64(), &attributes);
         Ok(())
     }
 }
