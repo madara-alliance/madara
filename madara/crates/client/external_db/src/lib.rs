@@ -25,7 +25,7 @@
 //! them asynchronously into MongoDB. This avoids dual-write loss while keeping
 //! the mempool path fast.
 //!
-//! ```
+//! ```text
 //!      +---------------------------+
 //!      | 1) tx accepted by mempool |
 //!      +-------------+-------------+

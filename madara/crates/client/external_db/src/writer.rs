@@ -145,13 +145,16 @@ trait L1ConfirmationSource: Send + Sync {
 /// L1 confirmation source backed by the local database.
 struct BackendL1ConfirmationSource {
     backend: Arc<MadaraBackend>,
-    last_confirmed: Option<u64>,
+    last_deleted: Option<u64>,
+    retention_delay: Duration,
+    block_time: Duration,
 }
 
 impl BackendL1ConfirmationSource {
     /// Create a confirmation source for the given backend.
-    fn new(backend: Arc<MadaraBackend>) -> Self {
-        Self { backend, last_confirmed: None }
+    fn new(backend: Arc<MadaraBackend>, retention_delay: Duration) -> Self {
+        let block_time = backend.chain_config().block_time;
+        Self { backend, last_deleted: None, retention_delay, block_time }
     }
 }
 
@@ -162,15 +165,24 @@ impl L1ConfirmationSource for BackendL1ConfirmationSource {
         let latest = self.backend.latest_l1_confirmed_block_n();
         let Some(latest) = latest else { return Ok(Vec::new()) };
 
-        // We emit all newly confirmed blocks and apply the configured retention delay
-        // in RetentionScheduler. This avoids relying on a block-time estimate.
-        let start = self.last_confirmed.map(|n| n + 1).unwrap_or(0);
-        if start > latest {
+        // Filter to blocks that are old enough to delete, using the configured retention delay
+        // and the chain's block_time as an estimate of block cadence.
+        let block_time_ms = self.block_time.as_millis().max(1) as u64;
+        let delay_ms = self.retention_delay.as_millis() as u64;
+        let retention_blocks = if delay_ms == 0 { 0 } else { delay_ms.div_ceil(block_time_ms) };
+
+        if latest < retention_blocks {
+            return Ok(Vec::new());
+        }
+        let eligible_latest = latest.saturating_sub(retention_blocks);
+
+        let start = self.last_deleted.map(|n| n + 1).unwrap_or(0);
+        if start > eligible_latest {
             return Ok(Vec::new());
         }
 
         let mut confirmations = Vec::new();
-        for block_number in start..=latest {
+        for block_number in start..=eligible_latest {
             let Some(view) = self.backend.block_view_on_confirmed(block_number) else {
                 continue;
             };
@@ -178,34 +190,26 @@ impl L1ConfirmationSource for BackendL1ConfirmationSource {
             confirmations.push(L1Confirmation { block_number, tx_hashes: info.tx_hashes });
         }
 
-        self.last_confirmed = Some(latest);
+        self.last_deleted = Some(eligible_latest);
         Ok(confirmations)
     }
 }
 
-#[derive(Debug, Clone)]
-struct PendingDeletion {
-    execute_at: Instant,
-    tx_hashes: Vec<mp_convert::Felt>,
-}
-
-/// Schedules deletes once blocks are confirmed on L1 plus a delay.
+/// Deletes entries once blocks are confirmed on L1 and past the retention window.
 struct RetentionScheduler<S: L1ConfirmationSource> {
     source: S,
-    delay: Duration,
-    pending: std::collections::VecDeque<PendingDeletion>,
     metrics: Arc<ExternalDbMetrics>,
     chain_id: String,
 }
 
 impl<S: L1ConfirmationSource> RetentionScheduler<S> {
-    /// Create a retention scheduler with the chosen delay.
-    fn new(source: S, delay: Duration, metrics: Arc<ExternalDbMetrics>, chain_id: String) -> Self {
-        Self { source, delay, pending: std::collections::VecDeque::new(), metrics, chain_id }
+    /// Create a retention scheduler using the supplied confirmation source.
+    fn new(source: S, metrics: Arc<ExternalDbMetrics>, chain_id: String) -> Self {
+        Self { source, metrics, chain_id }
     }
 
-    /// Move newly confirmed blocks into a delayed delete queue and execute due deletions.
-    async fn tick(&mut self, now: Instant, sink: &dyn ExternalDbSink) -> anyhow::Result<()> {
+    /// Delete entries for any confirmed blocks past the retention window.
+    async fn tick(&mut self, sink: &dyn ExternalDbSink) -> anyhow::Result<()> {
         let confirmations = self.source.poll_confirmations().await?;
         for confirmation in confirmations {
             if confirmation.tx_hashes.is_empty() {
@@ -216,12 +220,8 @@ impl<S: L1ConfirmationSource> RetentionScheduler<S> {
                 confirmation.block_number,
                 confirmation.tx_hashes.len()
             );
-            self.pending.push_back(PendingDeletion { execute_at: now + self.delay, tx_hashes: confirmation.tx_hashes });
-        }
-
-        while matches!(self.pending.front(), Some(pending) if pending.execute_at <= now) {
-            let pending = self.pending.pop_front().expect("checked");
-            let hashes = pending.tx_hashes.iter().map(|felt| format!("{}", felt.hex_display())).collect::<Vec<_>>();
+            let hashes =
+                confirmation.tx_hashes.iter().map(|felt| format!("{}", felt.hex_display())).collect::<Vec<_>>();
             let deleted = sink.delete_by_hashes(&self.chain_id, hashes).await?;
             self.metrics.transactions_deleted.add(deleted as u64, &[]);
         }
@@ -262,10 +262,11 @@ impl ExternalDbWorker {
         sink.ensure_indexes().await.context("Ensuring external DB indexes")?;
         self.startup_sync(&sink).await.context("External DB startup sync")?;
 
-        let retention_delay = Duration::from_secs(self.config.retention_delay_secs);
         let mut retention = RetentionScheduler::new(
-            BackendL1ConfirmationSource::new(self.backend.clone()),
-            retention_delay,
+            BackendL1ConfirmationSource::new(
+                self.backend.clone(),
+                Duration::from_secs(self.config.retention_delay_secs),
+            ),
             self.metrics.clone(),
             self.chain_id.clone(),
         );
@@ -312,7 +313,7 @@ impl ExternalDbWorker {
                     }
                 }
                 _ = retention_interval.tick() => {
-                    if let Err(err) = retention.tick(Instant::now(), &sink).await {
+                    if let Err(err) = retention.tick(&sink).await {
                         tracing::warn!("External DB retention tick failed: {err:#}");
                     }
                 }
@@ -760,27 +761,22 @@ mod tests {
         }
     }
 
-    /// Retention deletes happen only after the configured delay.
+    /// Retention deletes happen when the confirmation source releases blocks.
     #[tokio::test]
-    async fn retention_deletes_after_delay() {
+    async fn retention_deletes_when_source_releases() {
         let metrics = Arc::new(ExternalDbMetrics::register());
         let sink = FakeSink::new(Vec::new());
-        let now = Instant::now();
         let confirmations = vec![L1Confirmation {
             block_number: 1,
             tx_hashes: vec![Felt::from_hex_unchecked("0x1"), Felt::from_hex_unchecked("0x2")],
         }];
         let mut scheduler = RetentionScheduler::new(
             FakeL1Source::new(vec![confirmations, Vec::new()]),
-            Duration::from_secs(1),
             metrics,
             "MADARA_TEST".to_string(),
         );
 
-        scheduler.tick(now, &sink).await.unwrap();
-        assert!(sink.delete_calls.lock().unwrap().is_empty());
-
-        scheduler.tick(now + Duration::from_secs(2), &sink).await.unwrap();
+        scheduler.tick(&sink).await.unwrap();
         assert_eq!(sink.delete_calls.lock().unwrap().len(), 1);
     }
 
@@ -789,15 +785,10 @@ mod tests {
     async fn retention_noop_without_confirmations() {
         let metrics = Arc::new(ExternalDbMetrics::register());
         let sink = FakeSink::new(Vec::new());
-        let now = Instant::now();
-        let mut scheduler = RetentionScheduler::new(
-            FakeL1Source::new(vec![Vec::new()]),
-            Duration::from_secs(1),
-            metrics,
-            "MADARA_TEST".to_string(),
-        );
+        let mut scheduler =
+            RetentionScheduler::new(FakeL1Source::new(vec![Vec::new()]), metrics, "MADARA_TEST".to_string());
 
-        scheduler.tick(now, &sink).await.unwrap();
+        scheduler.tick(&sink).await.unwrap();
         assert!(sink.delete_calls.lock().unwrap().is_empty());
     }
 
