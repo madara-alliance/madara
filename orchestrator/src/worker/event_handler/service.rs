@@ -119,33 +119,8 @@ impl JobHandlerService {
 
         let duration = start.elapsed();
 
-        // For Aggregator and StateUpdate jobs, fetch the actual block numbers from the batch
-        let block_number = match job_type {
-            JobType::StateTransition => {
-                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
-                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => internal_id as f64,
-                }
-            }
-            JobType::Aggregator => {
-                // Fetch the batch from the database
-                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
-                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => internal_id as f64,
-                }
-            }
-            JobType::SnosRun => {
-                // Fetch the batch from the database
-                match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
-                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => internal_id as f64,
-                }
-            }
-            _ => internal_id as f64,
-        };
-
-        MetricsRecorder::record_block_gauge(block_number, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
+        Self::register_block_gauge(job_type, internal_id, &attributes, &config).await?;
         Ok(())
     }
 
@@ -433,7 +408,7 @@ impl JobHandlerService {
         let duration = start.elapsed();
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
-        Self::register_block_gauge(job.job_type, job.internal_id, external_id.into(), &attributes, &config).await?;
+        Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
 
         Ok(())
     }
@@ -702,7 +677,7 @@ impl JobHandlerService {
         let duration = start.elapsed();
         MetricsRecorder::record_successful_job_operation(1.0, &attributes);
         MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
-        Self::register_block_gauge(job.job_type, job.internal_id, job.external_id, &attributes, &config).await?;
+        Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
         Ok(())
     }
 
@@ -834,35 +809,54 @@ impl JobHandlerService {
     async fn register_block_gauge(
         job_type: JobType,
         internal_id: u64,
-        external_id: ExternalId,
         attributes: &[KeyValue],
         config: &Arc<Config>,
     ) -> Result<(), JobError> {
         let block_number = match job_type {
-            JobType::StateTransition => match external_id {
-                ExternalId::String(ref value) => match parse_string::<f64>(value) {
-                    Ok(parsed) => parsed,
-                    Err(e) => {
-                        warn!(
+            JobType::Aggregator | JobType::StateTransition => {
+                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    Ok(_) => {
+                        error!(
                             job_type = ?job_type,
                             internal_id = %internal_id,
-                            external_id = %value,
-                            error = ?e,
-                            "Failed to parse external_id for block gauge, falling back to internal_id"
+                            "No aggregator batch found for block gauge, falling back to internal_id"
                         );
                         internal_id as f64
                     }
-                },
-                ExternalId::Number(value) => value as f64,
-            },
-            JobType::Aggregator => match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
-                Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                _ => internal_id as f64,
-            },
-            JobType::SnosRun => match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
-                Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                _ => internal_id as f64,
-            },
+                    Err(e) => {
+                        error!(
+                            job_type = ?job_type,
+                            internal_id = %internal_id,
+                            error = ?e,
+                            "Failed to fetch aggregator batch for block gauge, falling back to internal_id"
+                        );
+                        internal_id as f64
+                    }
+                }
+            }
+            JobType::SnosRun | JobType::ProofCreation => {
+                match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    Ok(_) => {
+                        error!(
+                            job_type = ?job_type,
+                            internal_id = %internal_id,
+                            "No SNOS batch found for block gauge, falling back to internal_id"
+                        );
+                        internal_id as f64
+                    }
+                    Err(e) => {
+                        error!(
+                            job_type = ?job_type,
+                            internal_id = %internal_id,
+                            error = ?e,
+                            "Failed to fetch SNOS batch for block gauge, falling back to internal_id"
+                        );
+                        internal_id as f64
+                    }
+                }
+            }
             _ => internal_id as f64,
         };
 
