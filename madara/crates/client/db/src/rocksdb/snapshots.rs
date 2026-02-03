@@ -45,14 +45,6 @@ impl Snapshots {
         }
     }
 
-    /// Returns the number of historical snapshots currently stored.
-    /// This is primarily useful for testing snapshot limit behavior.
-    #[cfg(any(test, feature = "testing"))]
-    #[allow(dead_code)] // Only used by tests; feature-gated builds enable it but don't call it.
-    pub fn historical_count(&self) -> usize {
-        self.inner.read().expect("Poisoned lock").historical.len()
-    }
-
     /// Called when a new block has been added in the database. This will make a snapshot
     /// on top of the new block, and it will store that snapshot in the snapshot history every
     /// `snapshot_interval` blocks.
@@ -132,7 +124,11 @@ mod tests {
         }
 
         // No historical snapshots should be created when max_kept_snapshots is 0
-        assert_eq!(snapshots.historical_count(), 0, "No historical snapshots should exist when max_kept_snapshots=0");
+        assert_eq!(
+            snapshots.inner.read().expect("Poisoned lock").historical.len(),
+            0,
+            "No historical snapshots should exist when max_kept_snapshots=0"
+        );
 
         // get_closest should still return the head snapshot
         let (block_n, _snapshot) = snapshots.get_closest(10);
@@ -154,7 +150,11 @@ mod tests {
         }
 
         // Should have exactly 3 snapshots (the limit)
-        assert_eq!(snapshots.historical_count(), 3, "Should have exactly max_kept_snapshots historical snapshots");
+        assert_eq!(
+            snapshots.inner.read().expect("Poisoned lock").historical.len(),
+            3,
+            "Should have exactly max_kept_snapshots historical snapshots"
+        );
 
         // The oldest snapshots (0, 5) should have been removed, keeping 10, 15, 20
         let (block_n, _) = snapshots.get_closest(0);
@@ -186,7 +186,11 @@ mod tests {
         }
 
         // Should have 10 snapshots (one every 5 blocks from 0 to 45)
-        assert_eq!(snapshots.historical_count(), 10, "All snapshots should be retained when max_kept_snapshots=None");
+        assert_eq!(
+            snapshots.inner.read().expect("Poisoned lock").historical.len(),
+            10,
+            "All snapshots should be retained when max_kept_snapshots=None"
+        );
 
         // All snapshots should be accessible
         for expected_block in (0..50).step_by(5) {
@@ -209,7 +213,11 @@ mod tests {
         }
 
         // Should have 4 snapshots (at 0, 10, 20, 30)
-        assert_eq!(snapshots.historical_count(), 4, "Snapshots should only be created at interval boundaries");
+        assert_eq!(
+            snapshots.inner.read().expect("Poisoned lock").historical.len(),
+            4,
+            "Snapshots should only be created at interval boundaries"
+        );
 
         // Verify snapshots at exact intervals
         let (block_n, _) = snapshots.get_closest(0);
