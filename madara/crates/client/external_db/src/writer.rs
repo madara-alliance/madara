@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 const STATUS_PENDING: &str = "PENDING";
 // MongoDB duplicate key error code (E11000).
-// Docs: https://www.mongodb.com/docs/manual/reference/error-codes/
+// Docs: https://www.mongodb.com/docs/manual/reference/error-codes/#mongodb-error-11000
 const DUPLICATE_KEY_ERROR_CODE: i32 = 11000;
 
 #[async_trait::async_trait]
