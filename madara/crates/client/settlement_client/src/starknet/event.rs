@@ -160,6 +160,7 @@ mod starknet_event_stream_tests {
     use super::*;
     use assert_matches::assert_matches;
     use futures::StreamExt;
+    use httpmock::prelude::HttpMockRequest;
     use httpmock::prelude::*;
     use httpmock::Mock;
     use rstest::*;
@@ -233,6 +234,16 @@ mod starknet_event_stream_tests {
                 }));
             })
         }
+    }
+
+    fn is_get_events_no_page2(req: &HttpMockRequest) -> bool {
+        let body = req.body.as_ref().map(|b| std::str::from_utf8(b).unwrap_or_default()).unwrap_or("");
+        body.contains("starknet_getEvents") && !body.contains("\"continuation_token\":\"page2\"")
+    }
+
+    fn is_get_events_token_page2(req: &HttpMockRequest) -> bool {
+        let body = req.body.as_ref().map(|b| std::str::from_utf8(b).unwrap_or_default()).unwrap_or("");
+        body.contains("starknet_getEvents") && body.contains("\"continuation_token\":\"page2\"")
     }
 
     #[fixture]
@@ -310,30 +321,35 @@ mod starknet_event_stream_tests {
     #[tokio::test]
     #[rstest]
     async fn test_multiple_pages(mock_server: MockStarknetServer) {
-        let mut events_mock = mock_server.mock_get_events(vec![test_event(1, 150); 100], None);
-        let mut block_n_mock = mock_server.mock_block_number(101);
+        let _block_n_mock = mock_server.mock_block_number(101);
+        let _events_page_1 = mock_server.server.mock(|when, then| {
+            when.method(POST).path("/").header("Content-Type", "application/json").matches(is_get_events_no_page2);
+
+            then.status(200).json_body(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "events": vec![test_event(1, 150); 100],
+                    "continuation_token": "page2"
+                }
+            }));
+        });
+        let _events_page_2 = mock_server.server.mock(|when, then| {
+            when.method(POST).path("/").header("Content-Type", "application/json").matches(is_get_events_token_page2);
+
+            then.status(200).json_body(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "events": vec![test_event(1, 150); 100],
+                    "continuation_token": null
+                }
+            }));
+        });
 
         let mut stream = Box::pin(create_stream(&mock_server));
 
-        for _ in 0..100 {
-            assert_matches!(stream.next().await, Some(Ok(event_data)) => {
-                assert_eq!(event_data.l1_block_number, 150);
-                assert_eq!(event_data.message.tx.calldata.len(), 3);
-            })
-        }
-        // should not find any more events
-        assert_matches!(
-            stream.next().timeout(Duration::from_secs(3)).await,
-            Err(_),
-            "Expected waiting after processing all events"
-        );
-
-        events_mock.delete();
-        block_n_mock.delete();
-        mock_server.mock_get_events(vec![test_event(1, 150); 100], None);
-        mock_server.mock_block_number(254);
-
-        for _ in 0..100 {
+        for _ in 0..200 {
             assert_matches!(stream.next().await, Some(Ok(event_data)) => {
                 assert_eq!(event_data.l1_block_number, 150);
                 assert_eq!(event_data.message.tx.calldata.len(), 3);
