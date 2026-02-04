@@ -175,6 +175,11 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.proof_generation_time.record(duration_seconds, &attributes);
     }
 
+    pub fn record_snos_job_processing_time(duration_seconds: f64) {
+        let attributes = [KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun))];
+        ORCHESTRATOR_METRICS.snos_job_processing_time.record(duration_seconds, &attributes);
+    }
+
     /// Record settlement time
     pub fn record_settlement_time(job_type: &JobType, duration_seconds: f64) {
         let attributes =

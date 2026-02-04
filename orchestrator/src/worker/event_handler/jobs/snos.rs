@@ -9,6 +9,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::{get_fact_info, get_fact_l2, get_program_output};
 use async_trait::async_trait;
@@ -30,7 +31,7 @@ use starknet_core::types::Felt;
 use url::Url;
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tempfile::NamedTempFile;
 use tracing::{debug, error, info, warn};
 
@@ -90,6 +91,7 @@ impl JobHandlerTrait for SnosJobHandler {
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id;
         info!(log_type = "starting", job_id = %job.id, " {:?} job {} processing started", JobType::SnosRun, internal_id);
+        let start_time = Instant::now();
 
         // Get SNOS metadata
         let snos_metadata: SnosMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
@@ -177,6 +179,7 @@ impl JobHandlerTrait for SnosJobHandler {
         // Store the Cairo Pie path
         self.store(internal_id, config.storage(), &snos_metadata, cairo_pie, os_output, program_output).await?;
 
+        MetricsRecorder::record_snos_job_processing_time(start_time.elapsed().as_secs_f64());
         info!(log_type = "completed", job_id = %job.id, "{:?} job {} processed successfully", JobType::SnosRun, internal_id);
 
         Ok(snos_metadata.snos_batch_index.to_string())

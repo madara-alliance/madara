@@ -31,6 +31,7 @@ pub struct OrchestratorMetrics {
     // Latency Metrics
     pub job_e2e_latency: Gauge<f64>,
     pub proof_generation_time: Gauge<f64>,
+    pub snos_job_processing_time: Histogram<f64>,
     pub settlement_time: Gauge<f64>,
     // Throughput Metrics
     pub jobs_per_minute: Gauge<f64>,
@@ -180,6 +181,13 @@ impl Metrics for OrchestratorMetrics {
             &orchestrator_meter,
             "proof_generation_time".to_string(),
             "Time to generate proofs".to_string(),
+            "s".to_string(),
+        );
+
+        let snos_job_processing_time = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "snos_job_processing_time".to_string(),
+            "Time to process SNOS jobs".to_string(),
             "s".to_string(),
         );
 
@@ -342,6 +350,7 @@ impl Metrics for OrchestratorMetrics {
             job_abandoned_count,
             job_e2e_latency,
             proof_generation_time,
+            snos_job_processing_time,
             settlement_time,
             jobs_per_minute,
             blocks_per_hour,
