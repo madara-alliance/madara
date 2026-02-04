@@ -13,7 +13,7 @@ use super::super::types::{
     ApiResponse, JobId, JobRouteResult, JobStatusQuery, JobStatusResponse, JobStatusResponseItem, PriorityQuery,
 };
 use crate::core::config::Config;
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::service::JobService;
 
@@ -50,7 +50,7 @@ async fn handle_process_job_request(
         Ok(_) => {
             let queue_type = if query.priority { "PRIORITY" } else { "normal" };
             info!("Job queued for {} processing successfully", queue_type);
-            ORCHESTRATOR_METRICS.successful_job_operations.add(
+            MetricsRecorder::record_successful_job_operation(
                 1.0,
                 &[
                     KeyValue::new("operation_type", "queue_process"),
@@ -65,7 +65,7 @@ async fn handle_process_job_request(
         }
         Err(e) => {
             error!(error = %e, "Failed to queue job for processing");
-            ORCHESTRATOR_METRICS.failed_job_operations.add(
+            MetricsRecorder::record_failed_job_operation(
                 1.0,
                 &[
                     KeyValue::new("operation_type", "queue_process"),
@@ -110,7 +110,7 @@ async fn handle_verify_job_request(
         Ok(_) => {
             let queue_type = if query.priority { "PRIORITY" } else { "normal" };
             info!("Job queued for {} verification successfully", queue_type);
-            ORCHESTRATOR_METRICS.successful_job_operations.add(
+            MetricsRecorder::record_successful_job_operation(
                 1.0,
                 &[
                     KeyValue::new("operation_type", "queue_verify"),
@@ -125,7 +125,7 @@ async fn handle_verify_job_request(
         }
         Err(e) => {
             error!(error = %e, "Failed to queue job for verification");
-            ORCHESTRATOR_METRICS.failed_job_operations.add(
+            MetricsRecorder::record_failed_job_operation(
                 1.0,
                 &[
                     KeyValue::new("operation_type", "queue_verify"),
@@ -169,7 +169,7 @@ async fn handle_retry_job_request(
         Ok(_) => {
             let queue_type = if query.priority { "PRIORITY" } else { "normal" };
             info!("Job queued for {} retry successfully", queue_type);
-            ORCHESTRATOR_METRICS.successful_job_operations.add(
+            MetricsRecorder::record_successful_job_operation(
                 1.0,
                 &[
                     KeyValue::new("operation_type", "process_job"),
@@ -183,7 +183,7 @@ async fn handle_retry_job_request(
         }
         Err(e) => {
             error!(error = %e, "Failed to retry job");
-            ORCHESTRATOR_METRICS.failed_job_operations.add(
+            MetricsRecorder::record_failed_job_operation(
                 1.0,
                 &[
                     KeyValue::new("operation_type", "process_job"),

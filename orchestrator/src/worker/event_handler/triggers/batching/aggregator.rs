@@ -6,6 +6,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, AggregatorBatchWeights};
 use crate::types::constant::ORCHESTRATOR_VERSION;
+use crate::types::jobs::types::JobType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::batching::aggregator::AggregatorState::{Empty, NonEmpty};
 use crate::worker::event_handler::triggers::batching::utils::{get_block_builtin_weights, get_block_version};
@@ -336,6 +337,7 @@ impl AggregatorHandler {
         // Record batch creation time with starknet_version in metrics
         let duration = start_time.elapsed();
         let attributes = [
+            KeyValue::new("operation_job_type", format!("{:?}", JobType::Aggregator)),
             KeyValue::new("batch_index", index.to_string()),
             KeyValue::new("start_block", start_block.to_string()),
             KeyValue::new("bucket_id", bucket_id.to_string()),
@@ -345,7 +347,7 @@ impl AggregatorHandler {
 
         // Update batching rate (batches per hour)
         // This is a simple counter that will be used to calculate rate in Grafana
-        ORCHESTRATOR_METRICS.batching_rate.record(1.0, &attributes);
+        ORCHESTRATOR_METRICS.batch_creation_rate.add(1.0, &attributes);
 
         debug!(
             index = %index,

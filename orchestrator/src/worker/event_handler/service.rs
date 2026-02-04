@@ -18,7 +18,6 @@ use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
 use crate::types::queue::QueueNameForJobType;
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::utils::metrics_recorder::MetricsRecorder;
 #[double]
 use crate::worker::event_handler::factory::factory;
@@ -99,12 +98,7 @@ impl JobHandlerService {
         MetricsRecorder::record_job_created(&job_item);
 
         // Update job status tracking metrics
-        ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            internal_id,
-            &job_type,
-            &JobStatus::Created,
-            &job_item.id.to_string(),
-        );
+        MetricsRecorder::record_job_status(&job_item, &JobStatus::Created);
 
         JobService::add_job_to_process_queue(job_item.id, &job_type, config.clone()).await?;
 
@@ -125,34 +119,8 @@ impl JobHandlerService {
 
         let duration = start.elapsed();
 
-        // For Aggregator and StateUpdate jobs, fetch the actual block numbers from the batch
-        let block_number = match job_type {
-            JobType::StateTransition => {
-                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
-                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => internal_id as f64,
-                }
-            }
-            JobType::Aggregator => {
-                // Fetch the batch from the database
-                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
-                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => internal_id as f64,
-                }
-            }
-            JobType::SnosRun => {
-                // Fetch the batch from the database
-                match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
-                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    _ => internal_id as f64,
-                }
-            }
-            _ => internal_id as f64,
-        };
-
-        ORCHESTRATOR_METRICS.block_gauge.record(block_number, &attributes);
-        ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
-        ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
+        MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
+        Self::register_block_gauge(job_type, internal_id, &attributes, &config).await?;
         Ok(())
     }
 
@@ -200,10 +168,6 @@ impl JobHandlerService {
             block_no = %internal_id,
             "General process job started for block"
         );
-
-        // Calculate and record queue wait time
-        let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
-        MetricsRecorder::record_job_processing_started(&job, queue_wait_time);
 
         debug!(job_id = ?id, status = ?job.status, "Current job status");
         match job.status {
@@ -299,6 +263,10 @@ impl JobHandlerService {
             }
         }
 
+        // Calculate and record queue wait time after confirming we will process the job
+        let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
+        MetricsRecorder::record_job_processing_started(&job, queue_wait_time);
+
         let job_handler = factory::get_job_handler(&job.job_type).await;
 
         // Check if dependencies are ready before processing
@@ -318,14 +286,7 @@ impl JobHandlerService {
         job.metadata.common.process_started_at = Some(Utc::now());
 
         // Record state transition
-        ORCHESTRATOR_METRICS.job_state_transitions.add(
-            1.0,
-            &[
-                KeyValue::new("from_state", job.status.to_string()),
-                KeyValue::new("to_state", JobStatus::LockedForProcessing.to_string()),
-                KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
-            ],
-        );
+        MetricsRecorder::record_job_state_transition(job.status.clone(), JobStatus::LockedForProcessing, &job.job_type);
         let mut job = config
             .database()
             .update_job(
@@ -348,12 +309,7 @@ impl JobHandlerService {
         );
 
         // Update job status tracking metrics for LockedForProcessing
-        ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            job.internal_id,
-            &job.job_type,
-            &JobStatus::LockedForProcessing,
-            &job.id.to_string(),
-        );
+        MetricsRecorder::record_job_status(&job, &JobStatus::LockedForProcessing);
 
         // Increment process attempt counter
         job.metadata.common.process_attempt_no += 1;
@@ -418,12 +374,10 @@ impl JobHandlerService {
         );
 
         // Update job status tracking metrics for PendingVerification
-        ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-            job.internal_id,
-            &job.job_type,
-            &JobStatus::PendingVerification,
-            &job.id.to_string(),
-        );
+        MetricsRecorder::record_job_status(&job, &JobStatus::PendingVerification);
+
+        // Record transition metrics for entering verification
+        MetricsRecorder::record_verification_started(&job);
 
         // Add to the verification queue
         JobService::add_job_to_verify_queue(
@@ -452,9 +406,9 @@ impl JobHandlerService {
         );
 
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
-        ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
-        Self::register_block_gauge(job.job_type, job.internal_id, external_id.into(), &attributes)?;
+        MetricsRecorder::record_successful_job_operation(1.0, &attributes);
+        MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
+        Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
 
         Ok(())
     }
@@ -518,9 +472,6 @@ impl JobHandlerService {
         // Increment verification attempt counter
         job.metadata.common.verification_attempt_no += 1;
 
-        // Record verification started
-        MetricsRecorder::record_verification_started(&job);
-
         let mut job = config
             .database()
             .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
@@ -545,10 +496,7 @@ impl JobHandlerService {
                 // Calculate verification time if processing completion timestamp exists
                 if let Some(verification_time) = job.metadata.common.verification_started_at {
                     let time_taken = (Utc::now() - verification_time).num_milliseconds();
-                    ORCHESTRATOR_METRICS.verification_time.record(
-                        time_taken as f64,
-                        &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))],
-                    );
+                    MetricsRecorder::record_verification_time(&job.job_type, time_taken as f64);
                 } else {
                     warn!("Failed to calculate verification time: Missing processing completion timestamp");
                 }
@@ -587,12 +535,7 @@ impl JobHandlerService {
                 );
 
                 // Update job status tracking metrics for Completed
-                ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
-                    job.internal_id,
-                    &job.job_type,
-                    &JobStatus::Completed,
-                    &job.id.to_string(),
-                );
+                MetricsRecorder::record_job_status(&job, &JobStatus::Completed);
 
                 operation_job_status = Some(JobStatus::Completed);
             }
@@ -630,6 +573,12 @@ impl JobHandlerService {
                             error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationFailed");
                             e
                         })?;
+
+                    MetricsRecorder::record_job_state_transition(
+                        JobStatus::PendingVerification,
+                        JobStatus::VerificationFailed,
+                        &job.job_type,
+                    );
                     JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
                 } else {
                     warn!(job_id = ?id, "Max process attempts reached. Job will not be retried");
@@ -637,6 +586,11 @@ impl JobHandlerService {
                     // Record job abandoned after max retries
                     let retry_count = job.metadata.common.process_attempt_no;
                     MetricsRecorder::record_job_abandoned(&job, retry_count as i32);
+                    MetricsRecorder::record_job_state_transition(
+                        JobStatus::PendingVerification,
+                        JobStatus::Failed,
+                        &job.job_type,
+                    );
                     return JobService::move_job_to_failed(
                         &job,
                         config.clone(),
@@ -664,6 +618,12 @@ impl JobHandlerService {
                             JobError::from(e)
                         })?;
                     operation_job_status = Some(JobStatus::VerificationTimeout);
+
+                    MetricsRecorder::record_job_state_transition(
+                        JobStatus::PendingVerification,
+                        JobStatus::VerificationTimeout,
+                        &job.job_type,
+                    );
 
                     // Send SNS alert for verification timeout
                     let alert_message = format!(
@@ -715,9 +675,9 @@ impl JobHandlerService {
 
         debug!(log_type = "completed", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job completed for block");
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
-        ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
-        Self::register_block_gauge(job.job_type, job.internal_id, job.external_id, &attributes)?;
+        MetricsRecorder::record_successful_job_operation(1.0, &attributes);
+        MetricsRecorder::record_job_response_time(duration.as_secs_f64(), &attributes);
+        Self::register_block_gauge(job.job_type, job.internal_id, &attributes, &config).await?;
         Ok(())
     }
 
@@ -846,23 +806,61 @@ impl JobHandlerService {
         Ok(())
     }
 
-    fn register_block_gauge(
+    async fn register_block_gauge(
         job_type: JobType,
         internal_id: u64,
-        external_id: ExternalId,
         attributes: &[KeyValue],
+        config: &Arc<Config>,
     ) -> Result<(), JobError> {
-        let block_number = if let JobType::StateTransition = job_type {
-            parse_string(
-                external_id
-                    .unwrap_string()
-                    .map_err(|e| JobError::Other(OtherError::from(format!("Could not parse string: {e}"))))?,
-            )?
-        } else {
-            internal_id as f64
+        let block_number = match job_type {
+            JobType::Aggregator | JobType::StateTransition => {
+                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    Ok(_) => {
+                        error!(
+                            job_type = ?job_type,
+                            internal_id = %internal_id,
+                            "No aggregator batch found for block gauge, falling back to internal_id"
+                        );
+                        internal_id as f64
+                    }
+                    Err(e) => {
+                        error!(
+                            job_type = ?job_type,
+                            internal_id = %internal_id,
+                            error = ?e,
+                            "Failed to fetch aggregator batch for block gauge, falling back to internal_id"
+                        );
+                        internal_id as f64
+                    }
+                }
+            }
+            JobType::SnosRun | JobType::ProofCreation => {
+                match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    Ok(_) => {
+                        error!(
+                            job_type = ?job_type,
+                            internal_id = %internal_id,
+                            "No SNOS batch found for block gauge, falling back to internal_id"
+                        );
+                        internal_id as f64
+                    }
+                    Err(e) => {
+                        error!(
+                            job_type = ?job_type,
+                            internal_id = %internal_id,
+                            error = ?e,
+                            "Failed to fetch SNOS batch for block gauge, falling back to internal_id"
+                        );
+                        internal_id as f64
+                    }
+                }
+            }
+            _ => internal_id as f64,
         };
 
-        ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
+        MetricsRecorder::record_block_gauge(block_number, attributes);
         Ok(())
     }
 

@@ -6,7 +6,7 @@ use crate::types::constant::{
 };
 use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
@@ -89,7 +89,7 @@ impl JobTrigger for AggregatorJobTrigger {
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::Aggregator)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
-                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                    MetricsRecorder::record_failed_job_operation(1.0, &attributes);
                     return Err(e.into());
                 }
             }

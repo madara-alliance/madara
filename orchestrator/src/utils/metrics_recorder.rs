@@ -15,7 +15,6 @@ impl MetricsRecorder {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             KeyValue::new("operation_type", "create_job"),
-            KeyValue::new("service_name", "${namespace}"),
         ];
 
         // Record that a job entered the queue
@@ -23,6 +22,52 @@ impl MetricsRecorder {
 
         // TODO: Query DB to get current queue depth for this job type
         // This would require async context - implement in service layer
+    }
+
+    pub fn record_successful_job_operation(count: f64, attributes: &[KeyValue]) {
+        ORCHESTRATOR_METRICS.successful_job_operations.add(count, attributes);
+    }
+
+    pub fn record_failed_job_operation(count: f64, attributes: &[KeyValue]) {
+        ORCHESTRATOR_METRICS.failed_job_operations.add(count, attributes);
+    }
+
+    pub fn record_job_response_time(duration_seconds: f64, attributes: &[KeyValue]) {
+        ORCHESTRATOR_METRICS.jobs_response_time.record(duration_seconds, attributes);
+    }
+
+    pub fn record_verification_time(job_type: &JobType, duration_ms: f64) {
+        ORCHESTRATOR_METRICS
+            .verification_time
+            .record(duration_ms, &[KeyValue::new("operation_job_type", format!("{:?}", job_type))]);
+    }
+
+    pub fn record_block_gauge(block_number: f64, attributes: &[KeyValue]) {
+        ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
+    }
+
+    pub fn record_job_state_transition(from_state: JobStatus, to_state: JobStatus, job_type: &JobType) {
+        ORCHESTRATOR_METRICS.job_state_transitions.add(
+            1.0,
+            &[
+                KeyValue::new("from_state", from_state.to_string()),
+                KeyValue::new("to_state", to_state.to_string()),
+                KeyValue::new("operation_job_type", format!("{:?}", job_type)),
+            ],
+        );
+    }
+
+    pub fn record_job_status(job: &JobItem, status: &JobStatus) {
+        ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
+            job.internal_id,
+            &job.job_type,
+            status,
+            &job.id.to_string(),
+        );
+    }
+
+    pub fn record_db_call(duration_seconds: f64, attributes: &[KeyValue]) {
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration_seconds, attributes);
     }
 
     /// Record metrics when a job starts processing
@@ -35,14 +80,6 @@ impl MetricsRecorder {
 
         // Record queue wait time
         ORCHESTRATOR_METRICS.job_queue_wait_time.record(queue_wait_time_seconds, &attributes);
-
-        // Record state transition
-        let transition_attrs = [
-            KeyValue::new("from_state", JobStatus::Created.to_string()),
-            KeyValue::new("to_state", JobStatus::LockedForProcessing.to_string()),
-            KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
-        ];
-        ORCHESTRATOR_METRICS.job_state_transitions.add(1.0, &transition_attrs);
     }
 
     /// Record metrics when a job is retried
@@ -58,13 +95,11 @@ impl MetricsRecorder {
 
     /// Record metrics when job verification starts
     pub fn record_verification_started(job: &JobItem) {
-        // Record state transition
-        let transition_attrs = [
-            KeyValue::new("from_state", JobStatus::LockedForProcessing.to_string()),
-            KeyValue::new("to_state", JobStatus::PendingVerification.to_string()),
-            KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
-        ];
-        ORCHESTRATOR_METRICS.job_state_transitions.add(1.0, &transition_attrs);
+        Self::record_job_state_transition(
+            JobStatus::LockedForProcessing,
+            JobStatus::PendingVerification,
+            &job.job_type,
+        );
     }
 
     /// Record metrics when a job completes successfully
@@ -79,15 +114,10 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.job_e2e_latency.record(e2e_duration_seconds, &attributes);
 
         // Record successful completion
-        ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
+        Self::record_successful_job_operation(1.0, &attributes);
 
         // Record state transition
-        let transition_attrs = [
-            KeyValue::new("from_state", JobStatus::PendingVerification.to_string()),
-            KeyValue::new("to_state", JobStatus::Completed.to_string()),
-            KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
-        ];
-        ORCHESTRATOR_METRICS.job_state_transitions.add(1.0, &transition_attrs);
+        Self::record_job_state_transition(JobStatus::PendingVerification, JobStatus::Completed, &job.job_type);
     }
 
     /// Record metrics when a job fails
@@ -100,6 +130,10 @@ impl MetricsRecorder {
 
         ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.failed_jobs.add(1.0, &attributes);
+    }
+
+    pub fn record_failed_job_total(job_type: &JobType, count: f64) {
+        ORCHESTRATOR_METRICS.failed_jobs.add(count, &[KeyValue::new("operation_job_type", format!("{:?}", job_type))]);
     }
 
     /// Record metrics when a job times out
@@ -139,6 +173,11 @@ impl MetricsRecorder {
         let attributes = [KeyValue::new("proof_type", proof_type.to_string())];
 
         ORCHESTRATOR_METRICS.proof_generation_time.record(duration_seconds, &attributes);
+    }
+
+    pub fn record_snos_job_processing_time(duration_seconds: f64) {
+        let attributes = [KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun))];
+        ORCHESTRATOR_METRICS.snos_job_processing_time.record(duration_seconds, &attributes);
     }
 
     /// Record settlement time

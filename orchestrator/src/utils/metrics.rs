@@ -3,8 +3,10 @@ use crate::utils::job_status_metrics::JobStatusTracker;
 use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::global;
-use opentelemetry::metrics::{Counter, Gauge};
-use orchestrator_utils::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
+use opentelemetry::metrics::{Counter, Gauge, Histogram};
+use orchestrator_utils::metrics::lib::{
+    register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument, Metrics,
+};
 use orchestrator_utils::register_metric;
 
 register_metric!(ORCHESTRATOR_METRICS, OrchestratorMetrics);
@@ -29,6 +31,7 @@ pub struct OrchestratorMetrics {
     // Latency Metrics
     pub job_e2e_latency: Gauge<f64>,
     pub proof_generation_time: Gauge<f64>,
+    pub snos_job_processing_time: Histogram<f64>,
     pub settlement_time: Gauge<f64>,
     // Throughput Metrics
     pub jobs_per_minute: Gauge<f64>,
@@ -42,8 +45,8 @@ pub struct OrchestratorMetrics {
     // SLA Metrics
     pub sla_breach_count: Counter<f64>,
     pub job_age_p99: Gauge<f64>,
-    pub batching_rate: Gauge<f64>,
-    pub batch_creation_time: Gauge<f64>,
+    pub batch_creation_rate: Counter<f64>,
+    pub batch_creation_time: Histogram<f64>,
     // Job Status Tracking
     pub job_status_tracker: JobStatusTracker,
     // Atlantic Service Metrics
@@ -181,6 +184,13 @@ impl Metrics for OrchestratorMetrics {
             "s".to_string(),
         );
 
+        let snos_job_processing_time = register_histogram_metric_instrument(
+            &orchestrator_meter,
+            "snos_job_processing_time".to_string(),
+            "Time to process SNOS jobs".to_string(),
+            "s".to_string(),
+        );
+
         let settlement_time = register_gauge_metric_instrument(
             &orchestrator_meter,
             "settlement_time".to_string(),
@@ -249,17 +259,17 @@ impl Metrics for OrchestratorMetrics {
         );
 
         // Batching Metrics
-        let batching_rate = register_gauge_metric_instrument(
+        let batch_creation_rate = register_counter_metric_instrument(
             &orchestrator_meter,
-            "batching_rate".to_string(),
-            "Number of batches created per hour".to_string(),
-            "batches/hour".to_string(),
+            "batch_creation_rate".to_string(),
+            "Total number of batches created".to_string(),
+            "1".to_string(),
         );
 
-        let batch_creation_time = register_gauge_metric_instrument(
+        let batch_creation_time = register_histogram_metric_instrument(
             &orchestrator_meter,
             "batch_creation_time".to_string(),
-            "Average time to create a batch".to_string(),
+            "Time to create a batch".to_string(),
             "s".to_string(),
         );
 
@@ -340,6 +350,7 @@ impl Metrics for OrchestratorMetrics {
             job_abandoned_count,
             job_e2e_latency,
             proof_generation_time,
+            snos_job_processing_time,
             settlement_time,
             jobs_per_minute,
             blocks_per_hour,
@@ -349,7 +360,7 @@ impl Metrics for OrchestratorMetrics {
             active_jobs_count,
             sla_breach_count,
             job_age_p99,
-            batching_rate,
+            batch_creation_rate,
             batch_creation_time,
             job_status_tracker,
             atlantic_api_call_duration,
