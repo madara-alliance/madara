@@ -8,8 +8,6 @@ use rocksdb::{IteratorMode, ReadOptions};
 
 /// <txn_hash 32 bytes> => bincode(txn)
 pub const MEMPOOL_TRANSACTIONS_COLUMN: Column = Column::new("mempool_transactions").set_point_lookup();
-/// <outbox_key bytes> => bincode(outbox entry)
-pub const MEMPOOL_EXTERNAL_OUTBOX_COLUMN: Column = Column::new("mempool_external_outbox").set_point_lookup();
 
 impl RocksDBStorageInner {
     #[tracing::instrument(skip(self), fields(module = "MempoolDB"))]
