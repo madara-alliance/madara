@@ -145,6 +145,7 @@ pub mod storage;
 
 pub mod gas;
 pub mod preconfirmed;
+pub mod read_hook;
 pub mod rocksdb;
 pub mod subscription;
 pub mod sync_status;

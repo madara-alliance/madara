@@ -210,6 +210,35 @@ impl RocksDBStorage {
         })
     }
 
+    pub fn open_read_only(path: &Path, config: RocksDBConfig) -> Result<Self> {
+        let opts = rocksdb_global_options(&config)?;
+        tracing::debug!("Opening db read-only at {:?}", path.display());
+        let db = DB::open_cf_descriptors_read_only(
+            &opts,
+            path,
+            ALL_COLUMNS.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name, col.rocksdb_options(&config))),
+            /* error_if_log_file_exist */ false,
+        )?;
+
+        let writeopts = config.write_mode.to_write_options();
+        tracing::info!("📝 Database write mode: {}", config.write_mode);
+        let inner = Arc::new(RocksDBStorageInner { writeopts, db, config: config.clone() });
+
+        let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
+            StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
+            StoredChainTipWithoutContent::Preconfirmed(header) => header.block_number.checked_sub(1),
+        });
+
+        let snapshot = Snapshots::new(inner.clone(), head_block_n, config.max_kept_snapshots, config.snapshot_interval);
+
+        Ok(Self {
+            inner,
+            snapshots: snapshot.into(),
+            metrics: DbMetrics::register().context("Registering database metrics")?,
+            backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
+        })
+    }
+
     /// Flush all pending writes to disk. This is important when WAL is disabled.
     /// Should be called before shutdown to ensure data persistence.
     pub fn flush(&self) -> Result<()> {

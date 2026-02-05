@@ -1,0 +1,25 @@
+[package]
+name = "parallel-merklelization"
+description = "Baseline runner for parallel merklelization POC"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+mc-db = { workspace = true }
+mp-convert = { workspace = true }
+mp-state-update = { workspace = true }
+starknet-core = { workspace = true }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+url.workspace = true
+rayon.workspace = true
+rocksdb.workspace = true
+reqwest.workspace = true

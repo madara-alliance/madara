@@ -1,5 +1,6 @@
 use crate::{
     prelude::*,
+    read_hook::{maybe_override, record_read, ReadOp, ReadSource},
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE},
 };
 use mp_convert::Felt;
@@ -111,23 +112,47 @@ impl RocksDBStorageInner {
 
     #[tracing::instrument(skip(self))]
     pub(super) fn get_storage_at(&self, block_n: u64, contract_address: &Felt, key: &Felt) -> Result<Option<Felt>> {
-        let block_n = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
-        let prefix = make_storage_column_key(contract_address, key, block_n);
-        self.db_history_kv_resolve(&prefix, CONTRACT_STORAGE_COLUMN)
+        let op = ReadOp::GetStorageAt { block_n, contract_address: *contract_address, key: *key };
+        if let Some(override_value) = maybe_override(&op) {
+            record_read(op, override_value, ReadSource::Override);
+            return Ok(override_value);
+        }
+
+        let block_n_u32 = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
+        let prefix = make_storage_column_key(contract_address, key, block_n_u32);
+        let result = self.db_history_kv_resolve(&prefix, CONTRACT_STORAGE_COLUMN)?;
+        record_read(op, result, ReadSource::Db);
+        Ok(result)
     }
 
     #[tracing::instrument(skip(self))]
     pub(super) fn get_contract_nonce_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
-        let block_n = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
-        let prefix = make_contract_column_key(contract_address, block_n);
-        self.db_history_kv_resolve(&prefix, CONTRACT_NONCE_COLUMN)
+        let op = ReadOp::GetContractNonceAt { block_n, contract_address: *contract_address };
+        if let Some(override_value) = maybe_override(&op) {
+            record_read(op, override_value, ReadSource::Override);
+            return Ok(override_value);
+        }
+
+        let block_n_u32 = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
+        let prefix = make_contract_column_key(contract_address, block_n_u32);
+        let result = self.db_history_kv_resolve(&prefix, CONTRACT_NONCE_COLUMN)?;
+        record_read(op, result, ReadSource::Db);
+        Ok(result)
     }
 
     #[tracing::instrument(skip(self))]
     pub(super) fn get_contract_class_hash_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
-        let block_n = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
-        let prefix = make_contract_column_key(contract_address, block_n);
-        self.db_history_kv_resolve(&prefix, CONTRACT_CLASS_HASH_COLUMN)
+        let op = ReadOp::GetContractClassHashAt { block_n, contract_address: *contract_address };
+        if let Some(override_value) = maybe_override(&op) {
+            record_read(op, override_value, ReadSource::Override);
+            return Ok(override_value);
+        }
+
+        let block_n_u32 = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
+        let prefix = make_contract_column_key(contract_address, block_n_u32);
+        let result = self.db_history_kv_resolve(&prefix, CONTRACT_CLASS_HASH_COLUMN)?;
+        record_read(op, result, ReadSource::Db);
+        Ok(result)
     }
 
     #[tracing::instrument(skip(self))]

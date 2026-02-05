@@ -29,6 +29,7 @@ members = [
   "crates/proc-macros",
   "crates/tests",
   "crates/cairo-test-contracts",
+  "crates/tools/parallel-merklelization",
 ]
 resolver = "2"
 
