@@ -64,6 +64,7 @@ impl From<TestTx> for ValidatedTransaction {
                         account_deployment_data: Default::default(),
                         nonce_data_availability_mode: Default::default(),
                         fee_data_availability_mode: Default::default(),
+                        proof_facts: None,
                     })
                 } else {
                     mp_transactions::InvokeTransaction::V1(mp_transactions::InvokeTransactionV1 {

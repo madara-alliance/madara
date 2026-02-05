@@ -178,19 +178,31 @@ impl EventBloomSearcher {
     ///
     /// # Arguments
     ///
-    /// * `from_address` - Optional Felt value to match against event from_address
+    /// * `from_addresses` - Optional slice of Felt values to match against event from_address.
+    ///   If multiple addresses are provided, they are combined with OR semantics (match any).
+    ///   Empty slice is treated as "match all" (no address filter).
     /// * `keys` - Optional array of key arrays. Each inner array represents a set of alternatives
     ///   (OR semantics), while the outer array elements are combined with AND semantics.
     ///
     /// # Returns
     ///
     /// A new EventBloomSearcher configured with the specified patterns
-    pub fn new(from_address: Option<&Felt>, keys: Option<&[Vec<Felt>]>) -> Self {
+    pub fn new(from_addresses: Option<&[Felt]>, keys: Option<&[Vec<Felt>]>) -> Self {
         let mut patterns = Vec::new();
 
-        if let Some(from_address) = from_address {
-            let from_address_key = create_bloom_key(0, from_address);
-            patterns.push(vec![PreCalculatedHashes::new::<BloomHasher, _>(HASH_COUNT, &from_address_key)]);
+        // Handle multiple addresses with OR semantics
+        // Empty slice means "match all" so we don't add any pattern
+        if let Some(addresses) = from_addresses {
+            if !addresses.is_empty() {
+                let address_patterns: Vec<_> = addresses
+                    .iter()
+                    .map(|addr| {
+                        let key = create_bloom_key(0, addr);
+                        PreCalculatedHashes::new::<BloomHasher, _>(HASH_COUNT, &key)
+                    })
+                    .collect();
+                patterns.push(address_patterns);
+            }
         }
 
         if let Some(keys) = keys {
@@ -280,7 +292,7 @@ mod tests {
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
         // Only empty arrays should work
-        let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![], vec![]]));
+        let searcher = EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![], vec![]]));
         assert!(searcher.search(&reader), "Search with only empty arrays should work");
     }
 
@@ -302,7 +314,8 @@ mod tests {
         let serialized = serde_json::to_string(&writer).unwrap();
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
-        let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![Felt::from(2)], vec![Felt::from(3)]]));
+        let searcher =
+            EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![Felt::from(2)], vec![Felt::from(3)]]));
         assert!(searcher.search(&reader));
     }
 
@@ -313,11 +326,11 @@ mod tests {
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
         // Should match either key
-        let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![], vec![Felt::from(3)]]));
+        let searcher = EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![], vec![Felt::from(3)]]));
         assert!(searcher.search(&reader));
 
         let searcher =
-            EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![], vec![Felt::from(3), Felt::from(4)]]));
+            EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![], vec![Felt::from(3), Felt::from(4)]]));
         assert!(searcher.search(&reader));
     }
 
@@ -328,7 +341,7 @@ mod tests {
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
         let searcher = EventBloomSearcher::new(
-            Some(&Felt::from(1)),
+            Some(&[Felt::from(1)]),
             Some(&[vec![Felt::from(4)]]), // Non-existent key
         );
         assert!(!searcher.search(&reader));
@@ -352,7 +365,8 @@ mod tests {
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
         // Should match only when all patterns match
-        let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![Felt::from(2)], vec![Felt::from(3)]]));
+        let searcher =
+            EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![Felt::from(2)], vec![Felt::from(3)]]));
         assert!(searcher.search(&reader));
     }
 
@@ -362,7 +376,7 @@ mod tests {
         let serialized = serde_json::to_string(&writer).unwrap();
         let reader: EventBloomReader = serde_json::from_str(&serialized).unwrap();
 
-        let searcher = EventBloomSearcher::new(Some(&Felt::from(1)), Some(&[vec![Felt::from(5)]]));
+        let searcher = EventBloomSearcher::new(Some(&[Felt::from(1)]), Some(&[vec![Felt::from(5)]]));
         assert!(!searcher.search(&reader));
     }
 
@@ -395,7 +409,7 @@ mod tests {
                 .unwrap();
 
             let test_felt = Felt::from(max_felt.to_bytes_be()[0] as u64 + 1000);
-            let searcher = EventBloomSearcher::new(Some(&test_felt), None);
+            let searcher = EventBloomSearcher::new(Some(&[test_felt]), None);
 
             // The false positive rate should be relatively low
             // Note: This is a probabilistic test and might occasionally fail
@@ -436,7 +450,7 @@ mod tests {
         for i in 0..num_tests {
             let test_value = Felt::from(max_existing + 1000 + i as u64);
             if !existing_values.contains(&test_value) {
-                let searcher = EventBloomSearcher::new(Some(&test_value), None);
+                let searcher = EventBloomSearcher::new(Some(&[test_value]), None);
                 if searcher.search(reader) {
                     false_positives += 1;
                 }

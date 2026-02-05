@@ -742,6 +742,7 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
     perform_test(&setup, &setup.json_rpc(), Felt::TWO).await;
 }
 
+#[ignore = "Expected to fail until starknet-rust supports v0.10.1 simulate response shape (initial_reads)"]
 #[tokio::test]
 #[rstest]
 #[case::full_node_rpc_native(FullNodeAndSequencer, false, true)]

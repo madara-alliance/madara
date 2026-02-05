@@ -10,20 +10,24 @@ use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use starknet_api::core::ChainId;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct EventFilter {
     pub start_block: u64,
     pub start_event_index: usize,
     pub end_block: u64,
-    pub from_address: Option<Felt>,
+    /// Filter by from_addresses. Empty set means match all addresses (no filter).
+    /// For RPC v0.10.1+, this supports multiple addresses with OR semantics.
+    pub from_addresses: HashSet<Felt>,
     pub keys_pattern: Option<Vec<Vec<Felt>>>,
     pub max_events: usize,
 }
 
 impl EventFilter {
     pub fn matches(&self, event: &Event) -> bool {
-        self.from_address.as_ref().is_none_or(|from_address| from_address == &event.from_address) &&
+        // Empty set means no address filter (match all addresses)
+        (self.from_addresses.is_empty() || self.from_addresses.contains(&event.from_address)) &&
         // Check if the number of keys in the event matches the number of provided key patterns.
         self.keys_pattern.as_ref().is_none_or(|keys_pattern| {
             keys_pattern.len() <= event.keys.len() &&

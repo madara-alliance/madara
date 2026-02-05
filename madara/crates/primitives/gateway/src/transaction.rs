@@ -273,6 +273,9 @@ pub struct InvokeTransactionV3 {
     pub transaction_hash: Felt,
     pub calldata: Calldata,
     pub account_deployment_data: Vec<Felt>,
+    /// Proof facts for RPC v0.10.1+ (optional, backward compatible with older gateway responses)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof_facts: Option<Vec<Felt>>,
 }
 
 impl InvokeTransactionV3 {
@@ -289,6 +292,7 @@ impl InvokeTransactionV3 {
             transaction_hash: hash,
             calldata: transaction.calldata,
             account_deployment_data: transaction.account_deployment_data,
+            proof_facts: transaction.proof_facts,
         }
     }
 }
@@ -306,6 +310,7 @@ impl From<InvokeTransactionV3> for mp_transactions::InvokeTransactionV3 {
             account_deployment_data: tx.account_deployment_data,
             nonce_data_availability_mode: tx.nonce_data_availability_mode,
             fee_data_availability_mode: tx.fee_data_availability_mode,
+            proof_facts: tx.proof_facts,
         }
     }
 }
@@ -754,5 +759,124 @@ impl From<DeployAccountTransactionV3> for mp_transactions::DeployAccountTransact
             nonce_data_availability_mode: tx.nonce_data_availability_mode,
             fee_data_availability_mode: tx.fee_data_availability_mode,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starknet_types_core::felt::Felt;
+
+    // Real Felt values from Starknet (ETH and STRK token addresses)
+    const PROOF_FACT_ETH: &str = "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+
+    #[test]
+    fn test_invoke_v3_with_proof_facts_deserializes() {
+        // DataAvailabilityMode serializes as u8 (0 = L1, 1 = L2)
+        // ResourceBoundsMapping uses SCREAMING_SNAKE_CASE for field names
+        let json = r#"{
+            "nonce": "0x0",
+            "nonce_data_availability_mode": 0,
+            "fee_data_availability_mode": 0,
+            "resource_bounds": {
+                "L1_GAS": {"max_amount": "0x0", "max_price_per_unit": "0x0"},
+                "L2_GAS": {"max_amount": "0x0", "max_price_per_unit": "0x0"},
+                "L1_DATA_GAS": {"max_amount": "0x0", "max_price_per_unit": "0x0"}
+            },
+            "tip": "0x0",
+            "paymaster_data": [],
+            "sender_address": "0x1",
+            "signature": ["0x2"],
+            "transaction_hash": "0x3",
+            "calldata": ["0x4"],
+            "account_deployment_data": [],
+            "proof_facts": ["0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"]
+        }"#;
+
+        let tx: InvokeTransactionV3 = serde_json::from_str(json).unwrap();
+        assert!(tx.proof_facts.is_some());
+        let proof_facts = tx.proof_facts.unwrap();
+        assert_eq!(proof_facts.len(), 1);
+        assert_eq!(proof_facts[0], Felt::from_hex(PROOF_FACT_ETH).unwrap());
+    }
+
+    #[test]
+    fn test_invoke_v3_without_proof_facts_backward_compat() {
+        // Old gateway responses without proof_facts should still work
+        let json = r#"{
+            "nonce": "0x0",
+            "nonce_data_availability_mode": 0,
+            "fee_data_availability_mode": 0,
+            "resource_bounds": {
+                "L1_GAS": {"max_amount": "0x0", "max_price_per_unit": "0x0"},
+                "L2_GAS": {"max_amount": "0x0", "max_price_per_unit": "0x0"},
+                "L1_DATA_GAS": {"max_amount": "0x0", "max_price_per_unit": "0x0"}
+            },
+            "tip": "0x0",
+            "paymaster_data": [],
+            "sender_address": "0x1",
+            "signature": ["0x2"],
+            "transaction_hash": "0x3",
+            "calldata": ["0x4"],
+            "account_deployment_data": []
+        }"#;
+
+        let tx: InvokeTransactionV3 = serde_json::from_str(json).unwrap();
+        assert!(tx.proof_facts.is_none());
+    }
+
+    #[test]
+    fn test_invoke_v3_with_empty_proof_facts() {
+        let json = r#"{
+            "nonce": "0x0",
+            "nonce_data_availability_mode": 0,
+            "fee_data_availability_mode": 0,
+            "resource_bounds": {
+                "L1_GAS": {"max_amount": "0x0", "max_price_per_unit": "0x0"},
+                "L2_GAS": {"max_amount": "0x0", "max_price_per_unit": "0x0"},
+                "L1_DATA_GAS": {"max_amount": "0x0", "max_price_per_unit": "0x0"}
+            },
+            "tip": "0x0",
+            "paymaster_data": [],
+            "sender_address": "0x1",
+            "signature": ["0x2"],
+            "transaction_hash": "0x3",
+            "calldata": ["0x4"],
+            "account_deployment_data": [],
+            "proof_facts": []
+        }"#;
+
+        let tx: InvokeTransactionV3 = serde_json::from_str(json).unwrap();
+        // Empty array deserializes as Some([])
+        assert!(tx.proof_facts.is_some());
+        assert!(tx.proof_facts.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_gateway_to_primitive_preserves_proof_facts() {
+        let gateway_tx = InvokeTransactionV3 {
+            nonce: Felt::ZERO,
+            nonce_data_availability_mode: DataAvailabilityMode::L1,
+            fee_data_availability_mode: DataAvailabilityMode::L1,
+            resource_bounds: ResourceBoundsMapping {
+                l1_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                l2_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
+                l1_data_gas: Some(ResourceBounds { max_amount: 0, max_price_per_unit: 0 }),
+            },
+            tip: 0,
+            paymaster_data: vec![],
+            sender_address: Felt::ONE,
+            signature: vec![Felt::TWO].into(),
+            transaction_hash: Felt::THREE,
+            calldata: vec![Felt::from(4u64)].into(),
+            account_deployment_data: vec![],
+            proof_facts: Some(vec![Felt::from_hex(PROOF_FACT_ETH).unwrap()]),
+        };
+
+        let primitive: mp_transactions::InvokeTransactionV3 = gateway_tx.into();
+
+        // Conversion should preserve proof_facts
+        assert!(primitive.proof_facts.is_some());
+        assert_eq!(primitive.proof_facts.unwrap()[0], Felt::from_hex(PROOF_FACT_ETH).unwrap());
     }
 }

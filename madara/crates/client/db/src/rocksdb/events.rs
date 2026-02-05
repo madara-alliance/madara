@@ -59,7 +59,10 @@ impl RocksDBStorageInner {
     /// - The returned events are collected across multiple blocks within the specified range.
     #[tracing::instrument(skip(self))]
     pub(super) fn get_filtered_events(&self, filter: EventFilter) -> Result<Vec<EventWithInfo>> {
-        let key_filter = EventBloomSearcher::new(filter.from_address.as_ref(), filter.keys_pattern.as_deref());
+        // Convert HashSet to Vec for bloom filter search
+        let from_addresses_vec: Vec<_> = filter.from_addresses.iter().copied().collect();
+        let from_addresses_opt = if from_addresses_vec.is_empty() { None } else { Some(from_addresses_vec.as_slice()) };
+        let key_filter = EventBloomSearcher::new(from_addresses_opt, filter.keys_pattern.as_deref());
         let mut events_infos = Vec::new();
         let mut current_block = filter.start_block;
 

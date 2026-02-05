@@ -130,12 +130,14 @@ starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
 
 starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
+  "serde",
 ] }
-blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1", features = [
   "node_api",
   "cairo_native",
+  "reexecution",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0" }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.1" }
 cairo-lang-starknet-classes = "2.12.3"
 cairo-lang-utils = "2.12.3"
 cairo-vm = "2.5.0"
