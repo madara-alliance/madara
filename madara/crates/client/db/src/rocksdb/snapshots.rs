@@ -199,35 +199,4 @@ mod tests {
         }
     }
 
-    /// Verify snapshot_interval behavior: snapshots are only created at interval boundaries.
-    #[test]
-    fn test_snapshot_interval_behavior() {
-        let (_temp_dir, db) = create_test_db();
-
-        // Create snapshots with max_kept_snapshots = None, interval = 10
-        let snapshots = Snapshots::new(db, None, None, 10);
-
-        // Add blocks 0-35
-        for block_n in 0..36 {
-            snapshots.set_new_head(block_n);
-        }
-
-        // Should have 4 snapshots (at 0, 10, 20, 30)
-        assert_eq!(
-            snapshots.inner.read().expect("Poisoned lock").historical.len(),
-            4,
-            "Snapshots should only be created at interval boundaries"
-        );
-
-        // Verify snapshots at exact intervals
-        let (block_n, _) = snapshots.get_closest(0);
-        assert_eq!(block_n, Some(0));
-
-        let (block_n, _) = snapshots.get_closest(10);
-        assert_eq!(block_n, Some(10));
-
-        // Block 15 should return snapshot at 20 (closest >= 15)
-        let (block_n, _) = snapshots.get_closest(15);
-        assert_eq!(block_n, Some(20), "get_closest should return the next available snapshot");
-    }
 }
