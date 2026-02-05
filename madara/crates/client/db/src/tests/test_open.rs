@@ -1,5 +1,8 @@
 #![cfg(test)]
-use crate::{rocksdb::RocksDBConfig, MadaraBackend, MadaraBackendConfig};
+use crate::{
+    rocksdb::{ContractCacheConfig, RocksDBConfig},
+    MadaraBackend, MadaraBackendConfig,
+};
 use mc_class_exec::config::NativeConfig;
 use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
 use mp_chain_config::ChainConfig;
@@ -53,6 +56,7 @@ async fn test_open_different_chain_id() {
             chain_config,
             MadaraBackendConfig::default(),
             RocksDBConfig::default(),
+            ContractCacheConfig::default(),
             cairo_native_config,
         )
         .unwrap();
@@ -64,6 +68,7 @@ async fn test_open_different_chain_id() {
         chain_config,
         MadaraBackendConfig::default(),
         RocksDBConfig::default(),
+        ContractCacheConfig::default(),
         cairo_native_config,
     )
     .is_err());

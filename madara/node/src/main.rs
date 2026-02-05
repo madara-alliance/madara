@@ -263,11 +263,21 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("💾  Preconfirmed blocks will be saved to database");
     }
 
+    let cache_config = run_cmd.backend_params.contract_cache_config();
+    if cache_config.enabled {
+        tracing::info!(
+            "📦 Contract cache enabled: {} contracts, max {}MiB",
+            cache_config.cached_contract_addresses.len(),
+            run_cmd.backend_params.contract_cache_max_memory_mib
+        );
+    }
+
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
         chain_config.clone(),
         run_cmd.backend_params.backend_config(),
         run_cmd.backend_params.rocksdb_config(),
+        cache_config,
         cairo_native_config_arc.clone(),
     )
     .context("Starting madara backend")?;

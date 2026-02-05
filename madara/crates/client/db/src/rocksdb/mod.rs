@@ -32,6 +32,7 @@ mod backup;
 mod blocks;
 mod classes;
 mod column;
+pub mod contract_cache;
 mod events;
 mod events_bloom_filter;
 mod iter_pinned;
@@ -52,6 +53,7 @@ pub mod global_trie;
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
 
+pub use contract_cache::{ContractCache, ContractCacheConfig};
 pub use options::{DbWriteMode, RocksDBConfig, StatsLevel};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
@@ -179,10 +181,11 @@ pub struct RocksDBStorage {
     backup: BackupManager,
     snapshots: Arc<Snapshots>,
     metrics: DbMetrics,
+    contract_cache: Option<Arc<ContractCache>>,
 }
 
 impl RocksDBStorage {
-    pub fn open(path: &Path, config: RocksDBConfig) -> Result<Self> {
+    pub fn open(path: &Path, config: RocksDBConfig, cache_config: ContractCacheConfig) -> Result<Self> {
         let opts = rocksdb_global_options(&config)?;
         tracing::debug!("Opening db at {:?}", path.display());
         let db = DB::open_cf_descriptors(
@@ -202,11 +205,15 @@ impl RocksDBStorage {
 
         let snapshot = Snapshots::new(inner.clone(), head_block_n, config.max_kept_snapshots, config.snapshot_interval);
 
+        // Initialize contract cache if enabled
+        let contract_cache = if cache_config.enabled { Some(Arc::new(ContractCache::new(cache_config))) } else { None };
+
         Ok(Self {
             inner,
             snapshots: snapshot.into(),
             metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
+            contract_cache,
         })
     }
 
@@ -275,19 +282,65 @@ impl MadaraStorageRead for RocksDBStorage {
     // State
 
     fn get_storage_at(&self, block_n: u64, contract_address: &Felt, key: &Felt) -> Result<Option<Felt>> {
-        self.inner.get_storage_at(block_n, contract_address, key).with_context(|| {
+        // Check cache first
+        if let Some(cache) = &self.contract_cache {
+            if let Some(value) = cache.get_storage(block_n, contract_address, key) {
+                return Ok(Some(value));
+            }
+        }
+
+        // Cache miss - query RocksDB
+        let result = self.inner.get_storage_at(block_n, contract_address, key).with_context(|| {
             format!("Getting storage value for block_n={block_n} contract_address={contract_address:#x} key={key:#x}")
-        })
+        })?;
+
+        // Populate cache on miss (for configured contracts)
+        if let (Some(cache), Some(value)) = (&self.contract_cache, &result) {
+            cache.put_storage(block_n, contract_address, key, *value);
+        }
+
+        Ok(result)
     }
     fn get_contract_nonce_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
-        self.inner
+        // Check cache first
+        if let Some(cache) = &self.contract_cache {
+            if let Some(nonce) = cache.get_nonce(block_n, contract_address) {
+                return Ok(Some(nonce));
+            }
+        }
+
+        // Cache miss - query RocksDB
+        let result = self
+            .inner
             .get_contract_nonce_at(block_n, contract_address)
-            .with_context(|| format!("Getting nonce for block_n={block_n} contract_address={contract_address:#x}"))
+            .with_context(|| format!("Getting nonce for block_n={block_n} contract_address={contract_address:#x}"))?;
+
+        // Populate cache on miss
+        if let (Some(cache), Some(nonce)) = (&self.contract_cache, &result) {
+            cache.put_nonce(block_n, contract_address, *nonce);
+        }
+
+        Ok(result)
     }
     fn get_contract_class_hash_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
-        self.inner
-            .get_contract_class_hash_at(block_n, contract_address)
-            .with_context(|| format!("Getting class_hash for block_n={block_n} contract_address={contract_address:#x}"))
+        // Check cache first
+        if let Some(cache) = &self.contract_cache {
+            if let Some(class_hash) = cache.get_class_hash(block_n, contract_address) {
+                return Ok(Some(class_hash));
+            }
+        }
+
+        // Cache miss - query RocksDB
+        let result = self.inner.get_contract_class_hash_at(block_n, contract_address).with_context(|| {
+            format!("Getting class_hash for block_n={block_n} contract_address={contract_address:#x}")
+        })?;
+
+        // Populate cache on miss
+        if let (Some(cache), Some(class_hash)) = (&self.contract_cache, &result) {
+            cache.put_class_hash(block_n, contract_address, *class_hash);
+        }
+
+        Ok(result)
     }
     fn is_contract_deployed_at(&self, block_n: u64, contract_address: &Felt) -> Result<bool> {
         self.inner.is_contract_deployed_at(block_n, contract_address).with_context(|| {
@@ -298,12 +351,46 @@ impl MadaraStorageRead for RocksDBStorage {
     // Classes
 
     fn get_class(&self, class_hash: &Felt) -> Result<Option<ClassInfoWithBlockN>> {
-        self.inner.get_class(class_hash).with_context(|| format!("Getting class info for class_hash={class_hash:#x}"))
+        // Check cache first
+        if let Some(cache) = &self.contract_cache {
+            if let Some(info) = cache.get_class_info(class_hash) {
+                return Ok(Some(info));
+            }
+        }
+
+        // Cache miss - query RocksDB
+        let result = self
+            .inner
+            .get_class(class_hash)
+            .with_context(|| format!("Getting class info for class_hash={class_hash:#x}"))?;
+
+        // Populate cache on miss (only for classes belonging to cached contracts)
+        if let (Some(cache), Some(info)) = (&self.contract_cache, &result) {
+            cache.put_class_info(class_hash, info.clone());
+        }
+
+        Ok(result)
     }
     fn get_class_compiled(&self, compiled_class_hash: &Felt) -> Result<Option<CompiledSierraWithBlockN>> {
-        self.inner
+        // Check cache first
+        if let Some(cache) = &self.contract_cache {
+            if let Some(compiled) = cache.get_compiled_class(compiled_class_hash) {
+                return Ok(Some(compiled));
+            }
+        }
+
+        // Cache miss - query RocksDB
+        let result = self
+            .inner
             .get_class_compiled(compiled_class_hash)
-            .with_context(|| format!("Getting class compiled for compiled_class_hash={compiled_class_hash:#x}"))
+            .with_context(|| format!("Getting class compiled for compiled_class_hash={compiled_class_hash:#x}"))?;
+
+        // Populate cache on miss
+        if let (Some(cache), Some(compiled)) = (&self.contract_cache, &result) {
+            cache.put_compiled_class(compiled_class_hash, compiled.clone());
+        }
+
+        Ok(result)
     }
 
     // Events
@@ -406,7 +493,14 @@ impl MadaraStorageWrite for RocksDBStorage {
             .with_context(|| format!("Storing state diff for block_n={block_n}"))?;
         self.inner
             .state_apply_state_diff(block_n, value)
-            .with_context(|| format!("Applying state from state diff for block_n={block_n}"))
+            .with_context(|| format!("Applying state from state diff for block_n={block_n}"))?;
+
+        // Update cache after successful write
+        if let Some(cache) = &self.contract_cache {
+            cache.apply_state_diff(block_n, value);
+        }
+
+        Ok(())
     }
 
     fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()> {
@@ -428,7 +522,14 @@ impl MadaraStorageWrite for RocksDBStorage {
 
     fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
         tracing::debug!("Writing classes {block_n}");
-        self.inner.store_classes(block_n, converted_classes)
+        self.inner.store_classes(block_n, converted_classes)?;
+
+        // Update cache after successful write
+        if let Some(cache) = &self.contract_cache {
+            cache.apply_classes(block_n, converted_classes);
+        }
+
+        Ok(())
     }
 
     fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()> {
@@ -680,6 +781,13 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::info!("🎓 REORG: Starting class database revert...");
         self.inner.class_db_revert(&state_diffs).context("Reverting class database")?;
         tracing::info!("✅ REORG: Class database reverted successfully");
+
+        // Invalidate contract cache after reorg
+        if let Some(cache) = &self.contract_cache {
+            tracing::info!("🗑️ REORG: Invalidating contract cache from block_n={}", target_block_n + 1);
+            cache.invalidate_from_block(target_block_n + 1);
+            tracing::info!("✅ REORG: Contract cache invalidated successfully");
+        }
 
         tracing::info!("🔗 REORG: Updating chain tip to block_n={}", target_block_n);
         let new_tip = StorageChainTip::Confirmed(target_block_n);
