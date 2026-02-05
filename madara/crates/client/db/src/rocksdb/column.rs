@@ -31,6 +31,7 @@ pub const ALL_COLUMNS: &[Column] = &[
     super::meta::PRECONFIRMED_COLUMN,
     super::l1_to_l2_messages::L1_TO_L2_PENDING_MESSAGE_BY_NONCE,
     super::l1_to_l2_messages::L1_TO_L2_TXN_HASH_BY_NONCE,
+    super::l1_to_l2_messages::L1_TO_L2_PAID_FEE_BY_NONCE,
     super::mempool::MEMPOOL_TRANSACTIONS_COLUMN,
     super::trie::BONSAI_CONTRACT_FLAT_COLUMN,
     super::trie::BONSAI_CONTRACT_TRIE_COLUMN,
