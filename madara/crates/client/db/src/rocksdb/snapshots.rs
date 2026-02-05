@@ -198,5 +198,4 @@ mod tests {
             assert_eq!(block_n, Some(expected_block), "Snapshot at block {} should exist", expected_block);
         }
     }
-
 }
