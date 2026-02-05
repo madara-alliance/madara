@@ -11,7 +11,7 @@
 //!
 //! The Madara node follows the [Starknet RPC specs] as well as the [Starknet P2P specs] in the
 //! implementations of its various components. Where seems fit, some extensions might be added to
-//! the specs, in particular in regards to any potential admin or privileged endpoints which might
+//! the specs, in particular in regard to any potential admin or privileged endpoints which might
 //! prove to be useful in prod.
 //!
 //! # Core Crates
@@ -38,7 +38,7 @@
 //! # Primitives Crates
 //! > `mp-*`
 //!
-//! Crates which are responsible for modelling the data in use by the node. These mostly don't
+//! Crates which are responsible for modeling the data in use by the node. These mostly don't
 //! contain any business logic (though some helper functions might be included) and instead focus on
 //! data types as well as serialization and deserialization. These crates answer the question of
 //! _what_ data the node transforms.
@@ -177,7 +177,7 @@ async fn main() -> anyhow::Result<()> {
     // Setting up analytics
     let mut service_analytics = AnalyticsService::new(run_cmd.analytics_params.as_analytics_config())
         .context("Initializing analytics service")?;
-    service_analytics.setup().context("Setting-up analystics service")?;
+    service_analytics.setup().context("Setting-up analytics service")?;
 
     // If it's a sequencer or a devnet we set the mandatory chain config. If it's a full node we set the chain config from the network or the custom chain config.
     let chain_config = if run_cmd.is_sequencer() {

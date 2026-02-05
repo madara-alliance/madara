@@ -380,7 +380,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Writing transactions {block_n}");
         // Save l1 core contract nonce to tx mapping.
         self.inner
-            .messages_to_l2_write_trasactions(
+            .messages_to_l2_write_transactions(
                 txs.iter().filter_map(|v| v.transaction.as_l1_handler().zip(v.receipt.as_l1_handler())),
             )
             .with_context(|| format!("Updating L1 state when storing transactions for block_n={block_n}"))?;

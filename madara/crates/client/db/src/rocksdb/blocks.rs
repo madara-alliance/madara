@@ -395,11 +395,11 @@ impl RocksDBStorageInner {
                 );
             }
 
-            // TODO: No sure how to implement the same for the L2 Network
-            // self.message_to_l2_remove_txns(
-            //     transactions.iter().filter_map(|v| v.transaction.as_l1_handler()).map(|tx| tx.nonce),
-            //     &mut batch,
-            // )?;
+            // Restore L1->L2 messages to pending and remove their consumed mapping.
+            self.messages_to_l2_restore_pending(
+                transactions.iter().filter_map(|v| v.transaction.as_l1_handler()),
+                &mut batch,
+            )?;
 
             tracing::debug!(
                 "📦 REORG [block_db_revert]: Removing {} transactions from block {}",
