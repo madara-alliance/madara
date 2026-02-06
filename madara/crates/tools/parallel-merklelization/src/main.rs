@@ -1057,20 +1057,22 @@ fn compress_state_diff_sync(
 }
 
 fn compress_state_diff_no_db(raw_state_diff: StateDiff) -> StateDiff {
-    let mut storage_diffs: Vec<ContractStorageDiffItem> = Vec::new();
-    for contract_diff in raw_state_diff.storage_diffs {
-        let ContractStorageDiffItem { address, storage_entries } = contract_diff;
-        let filtered_entries: Vec<StorageEntry> =
-            storage_entries.into_iter().filter(|entry| entry.value != Felt::ZERO).collect();
-        if !filtered_entries.is_empty() {
-            storage_diffs.push(ContractStorageDiffItem { address, storage_entries: filtered_entries });
-        }
-    }
+    // Without a DB view of the pre-range state we cannot safely elide zero-valued updates.
+    // A zero can represent a meaningful deletion (pre != 0, post == 0), so keep them for correctness.
+    let StateDiff {
+        storage_diffs,
+        deployed_contracts,
+        declared_classes,
+        old_declared_contracts,
+        nonces,
+        replaced_classes,
+        migrated_compiled_classes,
+    } = raw_state_diff;
 
     let mut deployed_contracts_map: HashMap<Felt, Felt> =
-        raw_state_diff.deployed_contracts.into_iter().map(|item| (item.address, item.class_hash)).collect();
+        deployed_contracts.into_iter().map(|item| (item.address, item.class_hash)).collect();
     let mut replaced_classes_map: HashMap<Felt, Felt> =
-        raw_state_diff.replaced_classes.into_iter().map(|item| (item.contract_address, item.class_hash)).collect();
+        replaced_classes.into_iter().map(|item| (item.contract_address, item.class_hash)).collect();
 
     replaced_classes_map.retain(|contract_address, class_hash| {
         match deployed_contracts_map.get_mut(contract_address) {
@@ -1095,11 +1097,11 @@ fn compress_state_diff_no_db(raw_state_diff: StateDiff) -> StateDiff {
     let mut compressed = StateDiff {
         storage_diffs,
         deployed_contracts,
-        declared_classes: raw_state_diff.declared_classes,
-        old_declared_contracts: raw_state_diff.old_declared_contracts,
-        nonces: raw_state_diff.nonces,
+        declared_classes,
+        old_declared_contracts,
+        nonces,
         replaced_classes,
-        migrated_compiled_classes: raw_state_diff.migrated_compiled_classes,
+        migrated_compiled_classes,
     };
 
     compressed.sort();
