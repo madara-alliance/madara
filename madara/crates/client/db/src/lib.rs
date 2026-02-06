@@ -427,21 +427,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         Ok(())
     }
 
-    pub fn get_custom_header(&self) -> Option<CustomHeader> {
-        self.get_custom_header_with_clear(false)
-    }
-
-    pub fn get_custom_header_with_clear(&self, clear: bool) -> Option<CustomHeader> {
-        let mut guard = self.custom_header.lock().expect("Poisoned lock");
-        let result = guard.clone();
-
-        if clear {
-            *guard = None;
-        }
-
-        result
-    }
-
     pub fn set_custom_header(&self, custom_header: CustomHeader) {
         let mut guard = self.custom_header.lock().expect("Poisoned lock");
         *guard = Some(custom_header);
@@ -614,6 +599,21 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Get the runtime execution configuration from the database.
     pub fn get_runtime_exec_config(&self) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>> {
         self.db.get_runtime_exec_config(&self.chain_config)
+    }
+
+    pub fn get_custom_header(&self) -> Option<CustomHeader> {
+        self.get_custom_header_with_clear(false)
+    }
+
+    pub fn get_custom_header_with_clear(&self, clear: bool) -> Option<CustomHeader> {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        let result = guard.clone();
+
+        if clear {
+            *guard = None;
+        }
+
+        result
     }
 }
 

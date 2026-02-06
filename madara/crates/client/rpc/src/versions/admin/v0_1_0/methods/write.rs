@@ -11,7 +11,7 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-
+use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, ServiceId, SERVICE_GRACE_PERIOD};
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
@@ -126,7 +126,60 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             }
         }
 
+        // Check if block production is currently running (sequencer mode)
+        let bp_was_running =
+            matches!(self.ctx.service_status(MadaraServiceId::BlockProduction), MadaraServiceStatus::On);
+
+        // If running, shut down block production cleanly before reorg
+        if bp_was_running {
+            tracing::info!("🔌 Stopping block production service for reorg...");
+
+            // Subscribe BEFORE calling service_remove to not miss the broadcast
+            let mut ctx = self.ctx.clone();
+            // Prime the subscription by calling it once (this sets up the receiver)
+            let _ = tokio::time::timeout(std::time::Duration::from_millis(1), ctx.service_subscribe()).await;
+
+            self.ctx.service_remove(MadaraServiceId::BlockProduction);
+
+            // Wait for block production service to actually stop
+            let shutdown_result = tokio::time::timeout(SERVICE_GRACE_PERIOD, async {
+                loop {
+                    // Check if already stopped
+                    if self.ctx.service_status(MadaraServiceId::BlockProduction) == MadaraServiceStatus::Off {
+                        break;
+                    }
+                    match ctx.service_subscribe().await {
+                        Some(transport)
+                            if transport.svc_id == MadaraServiceId::BlockProduction.svc_id()
+                                && transport.status == MadaraServiceStatus::Off =>
+                        {
+                            break;
+                        }
+                        None => {
+                            // Context was cancelled, service should be stopping
+                            break;
+                        }
+                        _ => continue,
+                    }
+                }
+            })
+            .await;
+
+            if shutdown_result.is_err() {
+                return Err(StarknetRpcApiError::ErrUnexpectedError {
+                    error: "Timeout waiting for block production service to stop".to_string().into(),
+                }
+                .into());
+            }
+
+            tracing::info!("✅ Block production service stopped");
+        }
+
+        // Perform the blockchain reorg
+        tracing::info!("🔄 Reverting blockchain to block {}", target_block_n);
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
+
+        // Update chain tip cache
         let fresh_chain_tip = self
             .backend
             .db
@@ -135,6 +188,18 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
         self.backend.chain_tip.send_replace(backend_chain_tip);
+        tracing::info!("✅ Blockchain reverted successfully");
+
+        // Note: We intentionally do NOT restart block production here.
+        // The RPC layer holds a BlockProductionHandle with channels connected to the old task.
+        // Restarting would create new channels, leaving the RPC with stale handles.
+        // A node restart is required to resume block production after a revert.
+        if bp_was_running {
+            tracing::warn!(
+                "⚠️  Block production was stopped for revert. A node restart is required to resume block production."
+            );
+        }
+
         Ok(())
     }
 
