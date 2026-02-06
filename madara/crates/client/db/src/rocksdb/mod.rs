@@ -290,16 +290,12 @@ impl MadaraStorageRead for RocksDBStorage {
         }
 
         // Cache miss - query RocksDB
-        let result = self.inner.get_storage_at(block_n, contract_address, key).with_context(|| {
+        // Note: We intentionally do NOT populate the cache on read misses.
+        // The cache is only populated via apply_state_diff() when writing blocks.
+        // This prevents stale historical reads from overwriting newer cached values.
+        self.inner.get_storage_at(block_n, contract_address, key).with_context(|| {
             format!("Getting storage value for block_n={block_n} contract_address={contract_address:#x} key={key:#x}")
-        })?;
-
-        // Populate cache on miss (for configured contracts)
-        if let (Some(cache), Some(value)) = (&self.contract_cache, &result) {
-            cache.put_storage(block_n, contract_address, key, *value);
-        }
-
-        Ok(result)
+        })
     }
     fn get_contract_nonce_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
         // Check cache first
@@ -310,17 +306,10 @@ impl MadaraStorageRead for RocksDBStorage {
         }
 
         // Cache miss - query RocksDB
-        let result = self
-            .inner
+        // Note: We intentionally do NOT populate the cache on read misses.
+        self.inner
             .get_contract_nonce_at(block_n, contract_address)
-            .with_context(|| format!("Getting nonce for block_n={block_n} contract_address={contract_address:#x}"))?;
-
-        // Populate cache on miss
-        if let (Some(cache), Some(nonce)) = (&self.contract_cache, &result) {
-            cache.put_nonce(block_n, contract_address, *nonce);
-        }
-
-        Ok(result)
+            .with_context(|| format!("Getting nonce for block_n={block_n} contract_address={contract_address:#x}"))
     }
     fn get_contract_class_hash_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
         // Check cache first
@@ -331,16 +320,10 @@ impl MadaraStorageRead for RocksDBStorage {
         }
 
         // Cache miss - query RocksDB
-        let result = self.inner.get_contract_class_hash_at(block_n, contract_address).with_context(|| {
+        // Note: We intentionally do NOT populate the cache on read misses.
+        self.inner.get_contract_class_hash_at(block_n, contract_address).with_context(|| {
             format!("Getting class_hash for block_n={block_n} contract_address={contract_address:#x}")
-        })?;
-
-        // Populate cache on miss
-        if let (Some(cache), Some(class_hash)) = (&self.contract_cache, &result) {
-            cache.put_class_hash(block_n, contract_address, *class_hash);
-        }
-
-        Ok(result)
+        })
     }
     fn is_contract_deployed_at(&self, block_n: u64, contract_address: &Felt) -> Result<bool> {
         self.inner.is_contract_deployed_at(block_n, contract_address).with_context(|| {
@@ -359,17 +342,10 @@ impl MadaraStorageRead for RocksDBStorage {
         }
 
         // Cache miss - query RocksDB
-        let result = self
-            .inner
+        // Note: We intentionally do NOT populate the cache on read misses.
+        self.inner
             .get_class(class_hash)
-            .with_context(|| format!("Getting class info for class_hash={class_hash:#x}"))?;
-
-        // Populate cache on miss (only for classes belonging to cached contracts)
-        if let (Some(cache), Some(info)) = (&self.contract_cache, &result) {
-            cache.put_class_info(class_hash, info.clone());
-        }
-
-        Ok(result)
+            .with_context(|| format!("Getting class info for class_hash={class_hash:#x}"))
     }
     fn get_class_compiled(&self, compiled_class_hash: &Felt) -> Result<Option<CompiledSierraWithBlockN>> {
         // Check cache first
@@ -380,17 +356,10 @@ impl MadaraStorageRead for RocksDBStorage {
         }
 
         // Cache miss - query RocksDB
-        let result = self
-            .inner
+        // Note: We intentionally do NOT populate the cache on read misses.
+        self.inner
             .get_class_compiled(compiled_class_hash)
-            .with_context(|| format!("Getting class compiled for compiled_class_hash={compiled_class_hash:#x}"))?;
-
-        // Populate cache on miss
-        if let (Some(cache), Some(compiled)) = (&self.contract_cache, &result) {
-            cache.put_compiled_class(compiled_class_hash, compiled.clone());
-        }
-
-        Ok(result)
+            .with_context(|| format!("Getting class compiled for compiled_class_hash={compiled_class_hash:#x}"))
     }
 
     // Events

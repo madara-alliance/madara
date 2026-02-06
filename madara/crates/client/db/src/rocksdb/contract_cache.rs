@@ -235,6 +235,10 @@ impl ContractCache {
     /// Put a storage value into the cache.
     ///
     /// Only caches if the contract is in the configured set.
+    ///
+    /// **WARNING**: This should only be called from `apply_state_diff()`, never from read paths.
+    /// Calling this from read miss handlers can corrupt the cache by overwriting newer entries
+    /// with older values, leading to incorrect state being returned for later blocks.
     pub fn put_storage(&self, block_n: u64, contract_address: &Felt, key: &Felt, value: Felt) {
         if !self.should_cache_contract(contract_address) {
             return;
@@ -274,6 +278,8 @@ impl ContractCache {
     }
 
     /// Put a nonce into the cache.
+    ///
+    /// **WARNING**: This should only be called from `apply_state_diff()`, never from read paths.
     pub fn put_nonce(&self, block_n: u64, contract_address: &Felt, nonce: Felt) {
         if !self.should_cache_contract(contract_address) {
             return;
@@ -320,6 +326,8 @@ impl ContractCache {
     /// Put a class hash into the cache.
     ///
     /// Also registers the class_hash for automatic class caching.
+    ///
+    /// **WARNING**: This should only be called from `apply_state_diff()`, never from read paths.
     pub fn put_class_hash(&self, block_n: u64, contract_address: &Felt, class_hash: Felt) {
         if !self.should_cache_contract(contract_address) {
             return;
@@ -950,5 +958,47 @@ mod tests {
         assert_eq!(cache.storage_entry_count(), 2);
         assert_eq!(cache.nonce_entry_count(), 1);
         assert_eq!(cache.class_hash_entry_count(), 1);
+    }
+
+    /// Regression test: Demonstrates why we must NOT populate cache on read misses.
+    ///
+    /// Bug scenario:
+    /// 1. Block 101 changes key K from 5 to 10 → apply_state_diff caches (K, 10, block_n=101)
+    /// 2. Historical query at block 100 → cache miss (100 < 101), DB returns 5
+    /// 3. If we call put_storage(100, K, 5), it OVERWRITES cache to (K, 5, block_n=100)
+    /// 4. Query at block 101 → cache has block_n=100, 101 >= 100 → returns 5 (WRONG!)
+    ///
+    /// The fix: Only populate cache via apply_state_diff, never on read misses.
+    #[test]
+    fn test_read_miss_should_not_overwrite_newer_entry() {
+        let addr = make_felt(1);
+        let config = make_config_with_contracts(vec![addr]);
+        let cache = ContractCache::new(config);
+
+        let key = make_felt(10);
+
+        // Simulate block 101 changing value from 5 to 10 via state diff
+        let state_diff = StateDiff {
+            storage_diffs: vec![ContractStorageDiffItem {
+                address: addr,
+                storage_entries: vec![StorageEntry { key, value: make_felt(10) }],
+            }],
+            ..Default::default()
+        };
+        cache.apply_state_diff(101, &state_diff);
+
+        // Verify block 101 returns correct value
+        assert_eq!(cache.get_storage(101, &addr, &key), Some(make_felt(10)));
+
+        // Historical query at block 100 should miss (as expected)
+        assert!(cache.get_storage(100, &addr, &key).is_none());
+
+        // BUG SCENARIO: If read path called put_storage, it would corrupt the cache:
+        // cache.put_storage(100, &addr, &key, make_felt(5));  // DON'T DO THIS!
+
+        // The cache entry should still be valid for block 101
+        // (This would fail if put_storage was called above)
+        assert_eq!(cache.get_storage(101, &addr, &key), Some(make_felt(10)));
+        assert_eq!(cache.get_storage(102, &addr, &key), Some(make_felt(10)));
     }
 }
