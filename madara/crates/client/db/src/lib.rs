@@ -148,10 +148,13 @@ pub mod preconfirmed;
 pub mod rocksdb;
 pub mod subscription;
 pub mod sync_status;
+#[cfg(any(test, feature = "testing"))]
+pub mod test_utils;
 pub mod tests;
 pub mod view;
 
 use blockifier::bouncer::BouncerWeights;
+pub use rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
 pub use rocksdb::global_trie::MerklizationTimings;
 pub use rocksdb::{ContractCache, ContractCacheConfig};
 pub use storage::{
@@ -578,6 +581,9 @@ impl MadaraBackend<RocksDBStorage> {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
+pub use crate::rocksdb::external_outbox::set_external_outbox_write_failpoint;
+
 #[derive(Clone, Debug)]
 pub struct AddFullBlockResult {
     pub new_state_root: Felt,
@@ -989,6 +995,12 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
     }
+    pub fn get_external_outbox_transactions(
+        &self,
+        limit: usize,
+    ) -> impl Iterator<Item = Result<ExternalOutboxEntry>> + '_ {
+        self.db.get_external_outbox_transactions(limit)
+    }
     pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
         self.db.get_devnet_predeployed_keys()
     }
@@ -1021,6 +1033,12 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_saved_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         self.db.write_mempool_transaction(tx)
+    }
+    pub fn write_external_outbox(&self, tx: &ValidatedTransaction) -> Result<ExternalOutboxId> {
+        self.db.write_external_outbox(tx)
+    }
+    pub fn delete_external_outbox(&self, id: ExternalOutboxId) -> Result<()> {
+        self.db.delete_external_outbox(id)
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_latest_applied_trie_update(block_n)
