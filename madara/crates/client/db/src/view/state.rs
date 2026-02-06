@@ -10,7 +10,7 @@ use std::cmp;
 pub enum MadaraStateView<D: MadaraStorageRead = RocksDBStorage> {
     /// Pre-genesis empty state. No blocks will be visible, and every query will resolve as not found.
     Empty(Arc<MadaraBackend<D>>),
-    /// Queries will be resolfed on top of the given block: its state will be visible, but no later state will.
+    /// Queries will be resolved on top of the given block: its state will be visible, but no later state will.
     OnBlock(MadaraBlockView<D>),
 }
 

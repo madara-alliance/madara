@@ -2,7 +2,7 @@
 //! Integration tests for the database migration system.
 
 use crate::migration::{MigrationRunner, MigrationStatus, DB_VERSION_FILE};
-use crate::rocksdb::RocksDBConfig;
+use crate::rocksdb::{ContractCacheConfig, RocksDBConfig};
 use crate::MadaraBackend;
 use mc_class_exec::config::NativeConfig;
 use mp_chain_config::ChainConfig;
@@ -34,6 +34,7 @@ async fn test_fresh_database_creates_version_file() {
         chain_config,
         Default::default(),
         RocksDBConfig::default(),
+        ContractCacheConfig::default(),
         native_config,
     )
     .expect("Should open fresh database");
@@ -60,6 +61,7 @@ async fn test_full_database_lifecycle() {
             chain_config.clone(),
             Default::default(),
             RocksDBConfig::default(),
+            ContractCacheConfig::default(),
             native_config.clone(),
         )
         .expect("Fresh open should succeed");
@@ -76,6 +78,7 @@ async fn test_full_database_lifecycle() {
             chain_config.clone(),
             Default::default(),
             RocksDBConfig::default(),
+            ContractCacheConfig::default(),
             native_config.clone(),
         )
         .expect("Reopen should succeed");
@@ -98,6 +101,7 @@ async fn test_same_version_opens_without_migration() {
             chain_config.clone(),
             Default::default(),
             RocksDBConfig::default(),
+            ContractCacheConfig::default(),
             native_config.clone(),
         )
         .unwrap();
@@ -165,6 +169,7 @@ async fn test_invalid_version_file_blocks_open() {
         chain_config,
         Default::default(),
         RocksDBConfig::default(),
+        ContractCacheConfig::default(),
         native_config,
     );
 

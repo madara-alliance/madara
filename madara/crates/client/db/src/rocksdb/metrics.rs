@@ -19,6 +19,16 @@
 //! | `db_pending_compaction_bytes` | > 4 GiB | > 6 GiB |
 //! | `db_level_files_count` | L0: >= 15 | L0: >= 20 |
 //! | `db_num_immutable_memtables` | >= 3 | >= 4 |
+//!
+//! ## Contract Cache Metrics
+//!
+//! Metrics for monitoring the contract-specific cache:
+//! - `contract_cache_hits`: Number of cache hits
+//! - `contract_cache_misses`: Number of cache misses
+//! - `contract_cache_evictions`: Number of LRU evictions
+//! - `contract_cache_memory_bytes`: Current memory usage
+//! - `contract_cache_storage_entries`: Number of cached storage entries
+//! - `contract_cache_class_entries`: Number of cached class entries
 
 use crate::rocksdb::column::ALL_COLUMNS;
 use crate::rocksdb::RocksDBStorage;
@@ -48,6 +58,14 @@ pub struct DbMetrics {
 
     // LSM tree level metrics
     pub level_files_count: Gauge<u64>,
+
+    // Contract cache metrics
+    pub contract_cache_hits: Gauge<u64>,
+    pub contract_cache_misses: Gauge<u64>,
+    pub contract_cache_evictions: Gauge<u64>,
+    pub contract_cache_memory_bytes: Gauge<u64>,
+    pub contract_cache_storage_entries: Gauge<u64>,
+    pub contract_cache_class_entries: Gauge<u64>,
 }
 
 impl DbMetrics {
@@ -157,6 +175,52 @@ impl DbMetrics {
             "".to_string(),
         );
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // CONTRACT CACHE METRICS
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        let contract_cache_hits = register_gauge_metric_instrument(
+            &meter,
+            "contract_cache_hits".to_string(),
+            "Number of contract cache hits".to_string(),
+            "".to_string(),
+        );
+
+        let contract_cache_misses = register_gauge_metric_instrument(
+            &meter,
+            "contract_cache_misses".to_string(),
+            "Number of contract cache misses".to_string(),
+            "".to_string(),
+        );
+
+        let contract_cache_evictions = register_gauge_metric_instrument(
+            &meter,
+            "contract_cache_evictions".to_string(),
+            "Number of contract cache LRU evictions".to_string(),
+            "".to_string(),
+        );
+
+        let contract_cache_memory_bytes = register_gauge_metric_instrument(
+            &meter,
+            "contract_cache_memory_bytes".to_string(),
+            "Current contract cache memory usage in bytes".to_string(),
+            "".to_string(),
+        );
+
+        let contract_cache_storage_entries = register_gauge_metric_instrument(
+            &meter,
+            "contract_cache_storage_entries".to_string(),
+            "Number of cached storage entries".to_string(),
+            "".to_string(),
+        );
+
+        let contract_cache_class_entries = register_gauge_metric_instrument(
+            &meter,
+            "contract_cache_class_entries".to_string(),
+            "Number of cached class entries".to_string(),
+            "".to_string(),
+        );
+
         Ok(Self {
             db_size,
             column_sizes,
@@ -169,6 +233,12 @@ impl DbMetrics {
             level_files_count,
             num_immutable_memtables,
             memtable_size_bytes,
+            contract_cache_hits,
+            contract_cache_misses,
+            contract_cache_evictions,
+            contract_cache_memory_bytes,
+            contract_cache_storage_entries,
+            contract_cache_class_entries,
         })
     }
 
@@ -253,6 +323,20 @@ impl DbMetrics {
 
         // Record aggregated per-CF metrics
         self.pending_compaction_bytes.record(total_pending_compaction, &[]);
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // CONTRACT CACHE METRICS
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        if let Some(cache) = &db.contract_cache {
+            self.contract_cache_hits.record(cache.hits(), &[]);
+            self.contract_cache_misses.record(cache.misses(), &[]);
+            self.contract_cache_evictions.record(cache.evictions(), &[]);
+            self.contract_cache_memory_bytes.record(cache.memory_bytes() as u64, &[]);
+            self.contract_cache_storage_entries.record(cache.storage_entry_count() as u64, &[]);
+            self.contract_cache_class_entries
+                .record((cache.class_info_entry_count() + cache.compiled_class_entry_count()) as u64, &[]);
+        }
 
         Ok(storage_size)
     }

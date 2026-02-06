@@ -1,6 +1,7 @@
-use mc_db::rocksdb::{DbWriteMode, RocksDBConfig};
+use mc_db::rocksdb::{ContractCacheConfig, DbWriteMode, RocksDBConfig};
 use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
+use starknet_core::types::Felt;
 use std::path::PathBuf;
 
 #[allow(non_upper_case_globals)]
@@ -186,6 +187,29 @@ pub struct BackendParams {
     /// with higher write traffic.
     #[clap(env = "MADARA_DB_HARD_PENDING_COMPACTION_GIB", long, default_value_t = 12)]
     pub db_hard_pending_compaction_gib: usize,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CONTRACT CACHE SETTINGS
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Enable contract-specific caching to reduce RocksDB I/O.
+    /// When enabled, only explicitly configured contract addresses will have their state cached.
+    /// Classes used by cached contracts are automatically cached as well.
+    #[clap(env = "MADARA_CONTRACT_CACHE_ENABLED", long)]
+    #[serde(default)]
+    pub contract_cache_enabled: bool,
+
+    /// Maximum memory (MiB) for the contract cache. Default: 256.
+    /// The cache will use LRU eviction when this limit is reached.
+    #[clap(env = "MADARA_CONTRACT_CACHE_MAX_MEMORY_MIB", long, default_value_t = 256)]
+    pub contract_cache_max_memory_mib: usize,
+
+    /// Contract addresses to cache (comma-separated hex strings).
+    /// Example: 0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7,0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d
+    /// Only these contracts will have their storage, nonces, and class hashes cached.
+    /// Classes used by these contracts are automatically cached.
+    #[clap(env = "MADARA_CONTRACT_CACHE_ADDRESSES", long, value_delimiter = ',')]
+    #[serde(default)]
+    pub contract_cache_addresses: Vec<String>,
 }
 
 impl BackendParams {
@@ -218,6 +242,30 @@ impl BackendParams {
             level_zero_stop_writes_trigger: self.db_l0_stop_trigger,
             soft_pending_compaction_bytes_limit: self.db_soft_pending_compaction_gib * GiB,
             hard_pending_compaction_bytes_limit: self.db_hard_pending_compaction_gib * GiB,
+        }
+    }
+
+    /// Build the contract cache configuration from CLI parameters.
+    pub fn contract_cache_config(&self) -> ContractCacheConfig {
+        if !self.contract_cache_enabled {
+            return ContractCacheConfig::default();
+        }
+
+        let cached_contract_addresses = self
+            .contract_cache_addresses
+            .iter()
+            .filter_map(|s| {
+                // Parse hex string to Felt, stripping optional 0x prefix
+                let s = s.trim();
+                let s = s.strip_prefix("0x").unwrap_or(s);
+                Felt::from_hex(s).ok()
+            })
+            .collect();
+
+        ContractCacheConfig {
+            enabled: true,
+            cached_contract_addresses,
+            max_memory_bytes: self.contract_cache_max_memory_mib * MiB,
         }
     }
 }

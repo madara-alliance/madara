@@ -153,6 +153,7 @@ pub mod view;
 
 use blockifier::bouncer::BouncerWeights;
 pub use rocksdb::global_trie::MerklizationTimings;
+pub use rocksdb::{ContractCache, ContractCacheConfig};
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
     MadaraStorageWrite, StorageTxIndex,
@@ -463,7 +464,8 @@ impl MadaraBackend<RocksDBStorage> {
             .try_init();
 
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
-        let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).unwrap();
+        // For tests, use default (disabled) cache config
+        let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default(), Default::default()).unwrap();
         // For tests, use default (disabled) Cairo Native config (no native execution)
         // Initialize compilation semaphore for tests (required even if native execution is disabled)
         let builder = mc_class_exec::config::NativeConfig::builder();
@@ -495,6 +497,7 @@ impl MadaraBackend<RocksDBStorage> {
         chain_config: Arc<ChainConfig>,
         config: MadaraBackendConfig,
         rocksdb_config: RocksDBConfig,
+        cache_config: rocksdb::ContractCacheConfig,
         cairo_native_config: Arc<NativeConfig>,
     ) -> Result<Arc<Self>> {
         use crate::migration::{MigrationRunner, MigrationStatus};
@@ -520,17 +523,18 @@ impl MadaraBackend<RocksDBStorage> {
         let status = migration_runner.check_status().context("Checking migration status")?;
 
         // Handle migration status and open the database
+        // Clone cache_config since it may be used multiple times
         let db_path = base_path.join("db");
         let db = match &status {
             MigrationStatus::FreshDatabase => {
                 tracing::info!("📦 Creating new database at version {}", required_version);
                 // Write the version file for fresh database
                 migration_runner.initialize_fresh_database().context("Initializing fresh database")?;
-                RocksDBStorage::open(&db_path, rocksdb_config).context("Opening RocksDB storage")?
+                RocksDBStorage::open(&db_path, rocksdb_config, cache_config).context("Opening RocksDB storage")?
             }
             MigrationStatus::NoMigrationNeeded => {
                 tracing::debug!("✅ Database version {} matches binary, no migration needed", required_version);
-                RocksDBStorage::open(&db_path, rocksdb_config).context("Opening RocksDB storage")?
+                RocksDBStorage::open(&db_path, rocksdb_config, cache_config).context("Opening RocksDB storage")?
             }
             MigrationStatus::MigrationRequired { current_version, target_version, migration_count } => {
                 tracing::info!(
@@ -542,8 +546,9 @@ impl MadaraBackend<RocksDBStorage> {
                 tracing::info!("⚠️  This is a one-time operation that may take several minutes...");
 
                 // Open the database for migration and reuse it after
-                let db =
-                    RocksDBStorage::open(&db_path, rocksdb_config).context("Opening RocksDB storage for migration")?;
+                // Use disabled cache during migration for safety
+                let db = RocksDBStorage::open(&db_path, rocksdb_config, cache_config)
+                    .context("Opening RocksDB storage for migration")?;
 
                 // Run migrations
                 migration_runner.run_migrations_with_storage(&db).context("Running database migrations")?;
