@@ -1,13 +1,13 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use mc_db::rocksdb::{RocksDBConfig, RocksDBStorage};
 use mc_db::storage::StorageChainTip;
 use mc_db::{MadaraStorageRead, MadaraStorageWrite};
 use mp_convert::Felt;
-use starknet_core::types::{BlockId, MaybePreConfirmedBlockWithTxHashes};
-use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider};
+use reqwest::blocking::Client as BlockingClient;
+use serde::de::DeserializeOwned;
+use starknet_core::types::MaybePreConfirmedBlockWithTxHashes;
 use std::path::{Path, PathBuf};
-use url::Url;
 
 #[derive(Debug, Parser)]
 #[command(name = "db-root", about = "Read current state root from a Madara DB")]
@@ -33,6 +33,62 @@ fn format_felt(value: Felt) -> String {
     format!("0x{:x}", value)
 }
 
+fn block_id(block_n: u64) -> serde_json::Value {
+    serde_json::json!({ "block_number": block_n })
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RpcError {
+    code: i64,
+    message: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RpcResponse<T> {
+    result: Option<T>,
+    error: Option<RpcError>,
+}
+
+fn rpc_call<T: DeserializeOwned>(client: &BlockingClient, rpc_url: &str, method: &str, params: serde_json::Value) -> Result<T> {
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+        "id": 1
+    });
+
+    let response = client
+        .post(rpc_url)
+        .json(&request)
+        .send()
+        .with_context(|| format!("RPC {method} request failed"))?
+        .json::<RpcResponse<T>>()
+        .with_context(|| format!("RPC {method} response parse failed"))?;
+
+    if let Some(err) = response.error {
+        return Err(anyhow!("RPC {method} error {}: {}", err.code, err.message));
+    }
+
+    response.result.ok_or_else(|| anyhow!("RPC {method} missing result"))
+}
+
+fn fetch_rpc_root(client: &BlockingClient, rpc_url: &str, block_n: u64) -> Result<Felt> {
+    let block = rpc_call::<MaybePreConfirmedBlockWithTxHashes>(
+        client,
+        rpc_url,
+        "starknet_getBlockWithTxHashes",
+        serde_json::json!([block_id(block_n)]),
+    )
+    .with_context(|| format!("RPC getBlockWithTxHashes failed for block {}", block_n))?;
+
+    match block {
+        MaybePreConfirmedBlockWithTxHashes::Block(block) => Ok(block.new_root),
+        MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => {
+            bail!("RPC returned pre-confirmed block for number {}", block_n)
+        }
+    }
+}
+
 fn summarize_chain_tip(tip: StorageChainTip) -> String {
     match tip {
         StorageChainTip::Empty => "empty".to_string(),
@@ -41,8 +97,7 @@ fn summarize_chain_tip(tip: StorageChainTip) -> String {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -68,18 +123,8 @@ async fn main() -> Result<()> {
     println!("state_root={}", format_felt(state_root));
 
     if let Some(rpc_url) = args.rpc_url {
-        let url = Url::parse(&rpc_url).context("Parsing RPC URL")?;
-        let client = JsonRpcClient::new(HttpTransport::new(url));
-        let block = client
-            .get_block_with_tx_hashes(BlockId::Number(latest_applied))
-            .await
-            .with_context(|| format!("RPC getBlockWithTxHashes failed for block {latest_applied}"))?;
-        let rpc_root = match block {
-            MaybePreConfirmedBlockWithTxHashes::Block(block) => block.new_root,
-            MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => {
-                bail!("RPC returned pre-confirmed block for number {latest_applied}")
-            }
-        };
+        let client = BlockingClient::new();
+        let rpc_root = fetch_rpc_root(&client, &rpc_url, latest_applied)?;
         println!("rpc_root={}", format_felt(rpc_root));
         if rpc_root != state_root {
             bail!(

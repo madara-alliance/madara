@@ -24,6 +24,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 use std::time::Instant;
 use std::{collections::HashMap, io::BufRead};
 use tracing::{info, warn};
@@ -70,6 +71,9 @@ struct Args {
     /// Apply state diffs to non-bonsai columns on the target DB before merklization.
     #[arg(long)]
     apply_state_diff_columns: bool,
+    /// Skip end-block root validation against RPC. Useful for benchmarks where validation is run separately.
+    #[arg(long)]
+    skip_rpc_root_check: bool,
     #[arg(long)]
     force: bool,
 }
@@ -351,7 +355,17 @@ struct RunSummary {
     end_block: u64,
     total_blocks: u64,
     end_block_state_root: Felt,
-    rpc_end_block_state_root: Felt,
+    rpc_end_block_state_root: Option<Felt>,
+    /// Total wall-clock time for the whole run (including setup and validation).
+    wall_clock_total_ms: u64,
+    /// Wall-clock time spent in the "compute" phase (squash + apply + local writes), excluding RPC root validation.
+    wall_clock_compute_ms: u64,
+    /// Wall-clock time spent validating end-root via RPC (0 if skipped).
+    rpc_root_check_ms: u64,
+    /// Sum of `MerklizationTimings.total` across all applies in this run.
+    merklization_total_ms: u64,
+    /// Time spent building a squashed diff (0 if not squashing).
+    squash_total_ms: u64,
     read_stats: ReadStats,
     rpc_read_fallback_count: u64,
     rpc_read_fallback_total_ms: u64,
@@ -375,6 +389,7 @@ struct ReadStats {
 fn main() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
 
+    let wall_clock_start = Instant::now();
     let args = Args::parse();
     let db_path = resolve_db_path(&args.db_path)?;
     let source_db_path = resolve_db_path(args.source_db_path.as_deref().unwrap_or(&args.db_path))?;
@@ -440,9 +455,14 @@ fn main() -> Result<()> {
         bail!("apply-state-diff-columns is not supported with --squash-range");
     }
 
+    let compute_start = Instant::now();
+    let mut squash_total = Duration::ZERO;
+    let mut merklization_total = Duration::ZERO;
+
     let squashed_diff = if args.squash_range {
+        let squash_start = Instant::now();
         let pre_range = args.pre_range_block.or_else(|| start_block.checked_sub(1));
-        match args.state_diff_source {
+        let diff = match args.state_diff_source {
             StateDiffSource::Db => Some(build_squashed_diff_db(&source_storage, start_block, end_block, pre_range)?),
             StateDiffSource::Rpc => Some(build_squashed_diff_rpc(
                 &rpc_client,
@@ -452,7 +472,9 @@ fn main() -> Result<()> {
                 end_block,
                 pre_range,
             )?),
-        }
+        };
+        squash_total = squash_start.elapsed();
+        diff
     } else {
         None
     };
@@ -489,7 +511,8 @@ fn main() -> Result<()> {
     let mut last_root: Option<Felt> = None;
     if let Some(state_diff) = squashed_diff {
         set_context_block(Some(end_block));
-        let (state_root, _timings) = apply_state_in_rayon(&rayon_pool, &target_storage, end_block, &state_diff)?;
+        let (state_root, timings) = apply_state_in_rayon(&rayon_pool, &target_storage, end_block, &state_diff)?;
+        merklization_total += timings.total;
         last_root = Some(state_root);
         let record = RootRecord { block_number: end_block, state_root };
         serde_json::to_writer(&mut roots_writer, &record)?;
@@ -509,7 +532,8 @@ fn main() -> Result<()> {
                 target_storage.write_state_diff(block_n, &state_diff)?;
             }
 
-            let (state_root, _timings) = apply_state_in_rayon(&rayon_pool, &target_storage, block_n, &state_diff)?;
+            let (state_root, timings) = apply_state_in_rayon(&rayon_pool, &target_storage, block_n, &state_diff)?;
+            merklization_total += timings.total;
             last_root = Some(state_root);
 
             let record = RootRecord { block_number: block_n, state_root };
@@ -536,10 +560,20 @@ fn main() -> Result<()> {
         bail!("No blocks were processed; end root unavailable");
     };
 
-    let rpc_end_root = fetch_rpc_root(&rpc_client, &rpc_url, end_block)?;
-    if rpc_end_root != end_root {
-        bail!("End block root mismatch at {}: db={}, rpc={}", end_block, end_root, rpc_end_root);
-    }
+    let compute_elapsed = compute_start.elapsed();
+
+    let (rpc_end_root, rpc_root_check_ms) = if args.skip_rpc_root_check {
+        (None, 0u64)
+    } else {
+        let start = Instant::now();
+        let rpc_end_root = fetch_rpc_root(&rpc_client, &rpc_url, end_block)?;
+        let elapsed = start.elapsed();
+        let ms = elapsed.as_millis() as u64;
+        if rpc_end_root != end_root {
+            bail!("End block root mismatch at {}: db={}, rpc={}", end_block, end_root, rpc_end_root);
+        }
+        (Some(rpc_end_root), ms)
+    };
 
     if args.require_read_map && !args.rpc_read_fallback && recorder.stats().override_misses > 0 {
         bail!("Read map misses detected: {} missing lookups", recorder.stats().override_misses);
@@ -559,6 +593,11 @@ fn main() -> Result<()> {
         total_blocks: end_block - start_block + 1,
         end_block_state_root: end_root,
         rpc_end_block_state_root: rpc_end_root,
+        wall_clock_total_ms: wall_clock_start.elapsed().as_millis() as u64,
+        wall_clock_compute_ms: compute_elapsed.as_millis() as u64,
+        rpc_root_check_ms,
+        merklization_total_ms: merklization_total.as_millis() as u64,
+        squash_total_ms: squash_total.as_millis() as u64,
         read_stats: recorder.stats(),
         rpc_read_fallback_count: rpc_stats.read_fallback_count.load(Ordering::Relaxed),
         rpc_read_fallback_total_ms: rpc_stats.read_fallback_total_ms.load(Ordering::Relaxed),
