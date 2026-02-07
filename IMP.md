@@ -258,6 +258,23 @@ Note:
 - The measured overall wall-clock is inflated because we spawn 10 separate processes (2 runs per copy), and each run re-opens DBs.
 - A real orchestrator/microservice would keep each copy's DB open and execute multiple applies in-process, pushing wall time closer to the critical-path compute time.
 
+## Important Benchmarking Pitfall: Process Model (Warm vs Cold Caches)
+When comparing `per_block` (sequential) vs `squash_range` (parallel schedule), we must ensure the *process model* is comparable:
+- The default seq bench runs **one long-lived process** applying many blocks.
+- The default par schedule runs **one process per segment** (DB is re-opened per segment).
+
+This can bias `merklization_ms` because RocksDB block cache / memtables and bonsai internal working sets can be warm in the long-lived seq process but cold in the per-segment par processes.
+
+Sanity experiment (SSH):
+- Warm seq (single process, 100 blocks): `merklization_ms ~ 0.205*key_total + 1.48`
+- Par schedule (one process per segment, 100 applies): `merklization_ms ~ 0.362*key_total + 1.92`
+- Cold seq (one process per block, 50 blocks): `merklization_ms ~ 1.01*key_total - 22.8`
+- Par schedule on same 50-block window: `merklization_ms ~ 0.96*key_total - 23.7`
+
+Takeaway:
+- The large “par slope > seq slope” effect is largely a **warm vs cold cache** artifact of how we ran the benchmark, not necessarily inherent extra trie work.
+- For a realistic microservice, each worker should keep its DB handle open and run multiple segments in-process.
+
 ### Removing Contention (Same Work, Run Copies in Isolation)
 If we run each copy's segments without concurrency (no CPU/I/O contention) and then take the max per-copy merkle time
 (this approximates "dedicated resources per copy" or an orchestrator controlling threads), we get:
