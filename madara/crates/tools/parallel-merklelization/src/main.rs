@@ -124,6 +124,9 @@ struct Args {
     /// Defaults to `db.latest_applied_trie_update + 1` when reusing a DB, otherwise `1`.
     #[arg(long, value_name = "BLOCK", requires = "synthetic")]
     synthetic_start_block: Option<u64>,
+    /// How to satisfy nonce/class-hash reads during synthetic applies.
+    #[arg(long, value_enum, default_value_t = SyntheticReadMode::OverrideFixed, requires = "synthetic")]
+    synthetic_read_mode: SyntheticReadMode,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Eq)]
@@ -140,6 +143,14 @@ enum SyntheticKeyPattern {
     CommonPrefix,
     /// Sequential keys: 1,2,3,... (masked to 251 bits). Good for deterministic debugging.
     Sequential,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Eq)]
+enum SyntheticReadMode {
+    /// Override nonce/class-hash reads with fixed values (required for bonsai-only DBs).
+    OverrideFixed,
+    /// Do not install a read hook. Reads go to the DB (requires a full DB with non-bonsai columns).
+    Db,
 }
 
 #[derive(Default)]
@@ -437,7 +448,7 @@ struct RunSummary {
     read_map_path: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 struct ReadStats {
     total: u64,
     storage_at: u64,
@@ -1593,6 +1604,7 @@ struct SyntheticRunSummary {
     synthetic_fixed_shape: bool,
     synthetic_reuse_db: bool,
     synthetic_start_block: u64,
+    synthetic_read_mode: String,
     warmup_iters: u64,
     iters: u64,
     /// Total wall-clock time for the run (including warmup + setup).
@@ -1849,17 +1861,27 @@ fn run_synthetic(args: &Args, wall_clock_start: Instant) -> Result<()> {
         storage_keys_by_contract.push(keys);
     }
 
-    // Override maps for nonce/class-hash reads (kept constant).
-    let mut nonce_by_contract: HashMap<Felt, Felt> = HashMap::new();
-    let mut class_hash_by_contract: HashMap<Felt, Felt> = HashMap::new();
-    for addr in contract_addrs.iter().chain(deployed_addrs.iter()).chain(nonce_only_addrs.iter()) {
-        nonce_by_contract.insert(*addr, Felt::ZERO);
-        class_hash_by_contract.insert(*addr, Felt::from_hex_unchecked("0x1"));
-    }
+    let hook = match args.synthetic_read_mode {
+        SyntheticReadMode::OverrideFixed => {
+            // Override maps for nonce/class-hash reads (kept constant).
+            let mut nonce_by_contract: HashMap<Felt, Felt> = HashMap::new();
+            let mut class_hash_by_contract: HashMap<Felt, Felt> = HashMap::new();
+            for addr in contract_addrs.iter().chain(deployed_addrs.iter()).chain(nonce_only_addrs.iter()) {
+                nonce_by_contract.insert(*addr, Felt::ZERO);
+                class_hash_by_contract.insert(*addr, Felt::from_hex_unchecked("0x1"));
+            }
 
-    let hook =
-        Arc::new(SyntheticReadHook::new(&calls_path, nonce_by_contract, class_hash_by_contract, HashMap::new())?);
-    set_read_hook(hook.clone())?;
+            let hook = Arc::new(SyntheticReadHook::new(
+                &calls_path,
+                nonce_by_contract,
+                class_hash_by_contract,
+                HashMap::new(),
+            )?);
+            set_read_hook(hook.clone())?;
+            Some(hook)
+        }
+        SyntheticReadMode::Db => None,
+    };
 
     let mut applies_writer = BufWriter::new(File::create(&applies_path)?);
     let mut merklization_total = Duration::ZERO;
@@ -1918,10 +1940,10 @@ fn run_synthetic(args: &Args, wall_clock_start: Instant) -> Result<()> {
 
         state_diff.sort();
 
-        let stats_before = hook.stats();
+        let stats_before = hook.as_ref().map(|h| h.stats()).unwrap_or_default();
         let bonsai_before = if args.bonsai_db_ops_metrics { Some(bonsai_db_ops_snapshot()) } else { None };
         let (_state_root, timings) = apply_state_in_rayon(&rayon_pool, &target_storage, block_n, &state_diff)?;
-        let stats_after = hook.stats();
+        let stats_after = hook.as_ref().map(|h| h.stats()).unwrap_or_default();
         let bonsai_after = if args.bonsai_db_ops_metrics { Some(bonsai_db_ops_snapshot()) } else { None };
         let bonsai_delta = match (bonsai_after, bonsai_before) {
             (Some(after), Some(before)) => Some(bonsai_db_ops_delta(after, before)),
@@ -2004,6 +2026,7 @@ fn run_synthetic(args: &Args, wall_clock_start: Instant) -> Result<()> {
         synthetic_fixed_shape: args.synthetic_fixed_shape,
         synthetic_reuse_db: args.synthetic_reuse_db,
         synthetic_start_block: start_block,
+        synthetic_read_mode: format!("{:?}", args.synthetic_read_mode),
         warmup_iters: args.synthetic_warmup_iters,
         iters: args.synthetic_iters,
         wall_clock_total_ms: wall_clock_start.elapsed().as_millis() as u64,
