@@ -37,8 +37,10 @@ struct Args {
     db_path: PathBuf,
     #[arg(long, env = "PARALLEL_MERKLELIZATION_SOURCE_DB_PATH", value_name = "PATH")]
     source_db_path: Option<PathBuf>,
+    /// RPC URL for root validation and/or RPC-based state diffs / read fallback.
+    /// Required unless running `--synthetic`.
     #[arg(long, env = "PARALLEL_MERKLELIZATION_RPC_URL", value_name = "URL")]
-    rpc_url: String,
+    rpc_url: Option<String>,
     #[arg(long, value_name = "BLOCK")]
     start_block: Option<u64>,
     #[arg(long, value_name = "BLOCK", conflicts_with = "block_count")]
@@ -80,12 +82,64 @@ struct Args {
     bonsai_db_ops_metrics: bool,
     #[arg(long)]
     force: bool,
+
+    /// Run a synthetic merkleization micro-benchmark (no RPC, no state diffs from DB).
+    /// Useful to validate timing equations with controlled edge cases.
+    #[arg(long)]
+    synthetic: bool,
+
+    /// Number of contracts with storage diffs.
+    #[arg(long, value_name = "N", default_value_t = 1, requires = "synthetic")]
+    synthetic_contracts: u64,
+    /// Storage keys updated per contract.
+    #[arg(long, value_name = "N", default_value_t = 30, requires = "synthetic")]
+    synthetic_storage_keys_per_contract: u64,
+    /// Number of deployed contracts included in the state diff.
+    #[arg(long, value_name = "N", default_value_t = 0, requires = "synthetic")]
+    synthetic_deployed_contracts: u64,
+    /// Extra contracts to touch via nonce updates only (no storage diffs).
+    /// This is useful to keep `touched_contracts` in the same range as mainnet diffs while holding storage keys constant.
+    #[arg(long, value_name = "N", default_value_t = 0, requires = "synthetic")]
+    synthetic_nonce_only_contracts: u64,
+    /// Warmup iterations (not recorded) to stabilize caches for warm-worker timings.
+    #[arg(long, value_name = "N", default_value_t = 50, requires = "synthetic")]
+    synthetic_warmup_iters: u64,
+    /// Recorded iterations.
+    #[arg(long, value_name = "N", default_value_t = 200, requires = "synthetic")]
+    synthetic_iters: u64,
+    /// RNG seed for deterministic synthetic workloads.
+    #[arg(long, value_name = "SEED", default_value_t = 1, requires = "synthetic")]
+    synthetic_seed: u64,
+    /// Storage key generation pattern.
+    #[arg(long, value_enum, default_value_t = SyntheticKeyPattern::Random, requires = "synthetic")]
+    synthetic_key_pattern: SyntheticKeyPattern,
+    /// Reuse the same contract addresses + storage keys across iterations (only values change).
+    #[arg(long, requires = "synthetic")]
+    synthetic_fixed_shape: bool,
+    /// Reuse an existing RocksDB at `--db-path` instead of creating a fresh empty DB.
+    /// This is required if you want synthetic timings comparable to a large production trie.
+    #[arg(long, requires = "synthetic")]
+    synthetic_reuse_db: bool,
+    /// First block number to write as `latest_applied_trie_update` for synthetic applies.
+    /// Defaults to `db.latest_applied_trie_update + 1` when reusing a DB, otherwise `1`.
+    #[arg(long, value_name = "BLOCK", requires = "synthetic")]
+    synthetic_start_block: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Eq)]
 enum StateDiffSource {
     Db,
     Rpc,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Eq)]
+enum SyntheticKeyPattern {
+    /// Fully random 251-bit Felts (per key slot) for the synthetic contract storage keys.
+    Random,
+    /// Keys share a common prefix (high bytes) but differ in the suffix; this tends to increase shared trie ancestry.
+    CommonPrefix,
+    /// Sequential keys: 1,2,3,... (masked to 251 bits). Good for deterministic debugging.
+    Sequential,
 }
 
 #[derive(Default)]
@@ -574,13 +628,19 @@ fn main() -> Result<()> {
     let wall_clock_start = Instant::now();
     let args = Args::parse();
     bonsai_db_ops_set_enabled(args.bonsai_db_ops_metrics);
-    let db_path = resolve_db_path(&args.db_path)?;
-    let source_db_path = resolve_db_path(args.source_db_path.as_deref().unwrap_or(&args.db_path))?;
-    let rpc_url = args.rpc_url.clone();
-    let rpc_stats = Arc::new(RpcStats::default());
-    let rpc_client = BlockingClient::new();
 
     prepare_output_dir(&args.out_dir, args.force)?;
+
+    if args.synthetic {
+        return run_synthetic(&args, wall_clock_start);
+    }
+
+    let db_path = resolve_db_path(&args.db_path)?;
+    let source_db_path = resolve_db_path(args.source_db_path.as_deref().unwrap_or(&args.db_path))?;
+    let rpc_url =
+        args.rpc_url.clone().ok_or_else(|| anyhow!("--rpc-url is required unless running with --synthetic"))?;
+    let rpc_stats = Arc::new(RpcStats::default());
+    let rpc_client = BlockingClient::new();
 
     let target_storage = RocksDBStorage::open(&db_path, RocksDBConfig::default())
         .with_context(|| format!("Opening RocksDB at {}", db_path.display()))?;
@@ -651,7 +711,7 @@ fn main() -> Result<()> {
             StateDiffSource::Rpc => Some(build_squashed_diff_rpc(
                 &rpc_client,
                 rpc_stats.clone(),
-                &args.rpc_url,
+                &rpc_url,
                 start_block,
                 end_block,
                 pre_range,
@@ -695,7 +755,7 @@ fn main() -> Result<()> {
 
     let read_map_writer = args.read_map_out.as_ref().map(|_| Arc::new(ReadMapWriter::new()));
     let rpc_fallback =
-        if args.rpc_read_fallback { Some(RpcReadFallback::new(&args.rpc_url, rpc_stats.clone())?) } else { None };
+        if args.rpc_read_fallback { Some(RpcReadFallback::new(&rpc_url, rpc_stats.clone())?) } else { None };
 
     let recorder = Arc::new(JsonlReadRecorder::new(&calls_path, read_map, read_map_writer.clone(), rpc_fallback)?);
     set_read_hook(recorder.clone())?;
@@ -771,7 +831,7 @@ fn main() -> Result<()> {
                 StateDiffSource::Db => source_storage
                     .get_block_state_diff(block_n)?
                     .with_context(|| format!("Missing state diff for block {}", block_n))?,
-                StateDiffSource::Rpc => fetch_state_diff_rpc(&rpc_client, rpc_stats.clone(), &args.rpc_url, block_n)?,
+                StateDiffSource::Rpc => fetch_state_diff_rpc(&rpc_client, rpc_stats.clone(), &rpc_url, block_n)?,
             };
 
             if args.apply_state_diff_columns {
@@ -1484,4 +1544,486 @@ fn build_override_map(
     }
 
     Ok(entries)
+}
+
+// ================================================================================================
+// Synthetic micro-benchmark
+// ================================================================================================
+
+/// Coefficients for the single-block warm-worker estimator captured in IMP.md.
+/// Used only for validating the model on synthetic workloads.
+const EQ_INTERCEPT: f64 = -2.9902135658816897;
+const EQ_UNIQUE_STORAGE_KEYS: f64 = 0.057034857128496035;
+const EQ_TOUCHED_CONTRACTS: f64 = 1.92242587519791;
+const EQ_DEPLOYED_CONTRACTS: f64 = 12.900142243220861;
+
+fn eq_predict_ms(unique_storage_keys: u64, touched_contracts: u64, deployed_contracts: u64) -> f64 {
+    let raw = EQ_INTERCEPT
+        + EQ_UNIQUE_STORAGE_KEYS * (unique_storage_keys as f64)
+        + EQ_TOUCHED_CONTRACTS * (touched_contracts as f64)
+        + EQ_DEPLOYED_CONTRACTS * (deployed_contracts as f64);
+    raw.max(0.0)
+}
+
+#[derive(Serialize)]
+struct SyntheticApplyRecord {
+    apply_index: u64,
+    block_n: u64,
+    touched_contracts: u64,
+    unique_storage_keys: u64,
+    deployed_contracts: u64,
+    merklization_ms: u64,
+    contract_storage_commit_ms: u64,
+    contract_trie_commit_ms: u64,
+    predicted_merklization_ms: f64,
+    prediction_error_ms: f64,
+    read_stats_delta: ReadStats,
+    bonsai_db_ops_delta: Option<BonsaiDbOpsDelta>,
+}
+
+#[derive(Serialize)]
+struct SyntheticRunSummary {
+    db_path: String,
+    out_dir: String,
+    synthetic_contracts: u64,
+    synthetic_storage_keys_per_contract: u64,
+    synthetic_deployed_contracts: u64,
+    synthetic_nonce_only_contracts: u64,
+    synthetic_key_pattern: String,
+    synthetic_fixed_shape: bool,
+    synthetic_reuse_db: bool,
+    synthetic_start_block: u64,
+    warmup_iters: u64,
+    iters: u64,
+    /// Total wall-clock time for the run (including warmup + setup).
+    wall_clock_total_ms: u64,
+    /// Sum of per-apply merkle timings across recorded iterations (warmup excluded).
+    merklization_total_ms: u64,
+    /// Prediction error stats over recorded iterations.
+    pred_mae_ms: f64,
+    pred_rmse_ms: f64,
+    pred_err_min_ms: f64,
+    pred_err_p50_ms: f64,
+    pred_err_p90_ms: f64,
+    pred_err_max_ms: f64,
+    calls_path: String,
+    applies_path: String,
+}
+
+#[derive(Clone, Copy)]
+struct XorShift64 {
+    state: u64,
+}
+
+impl XorShift64 {
+    fn new(seed: u64) -> Self {
+        Self { state: if seed == 0 { 0x9e3779b97f4a7c15 } else { seed } }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.state = x;
+        x
+    }
+
+    fn fill_bytes(&mut self, out: &mut [u8]) {
+        let mut i = 0usize;
+        while i < out.len() {
+            let v = self.next_u64().to_be_bytes();
+            let n = (out.len() - i).min(8);
+            out[i..i + n].copy_from_slice(&v[..n]);
+            i += n;
+        }
+    }
+
+    fn next_felt251(&mut self) -> Felt {
+        let mut bytes = [0u8; 32];
+        self.fill_bytes(&mut bytes);
+        // Ensure value < 2^251 < Starknet modulus.
+        bytes[0] &= 0b0000_0111;
+        Felt::from_bytes_be(&bytes)
+    }
+}
+
+struct SyntheticReadHook {
+    writer: Mutex<BufWriter<File>>,
+    counters: ReadCounters,
+    nonce_by_contract: HashMap<Felt, Felt>,
+    class_hash_by_contract: HashMap<Felt, Felt>,
+    storage_by_key: HashMap<(Felt, Felt), Felt>,
+}
+
+impl SyntheticReadHook {
+    fn new(
+        path: &Path,
+        nonce_by_contract: HashMap<Felt, Felt>,
+        class_hash_by_contract: HashMap<Felt, Felt>,
+        storage_by_key: HashMap<(Felt, Felt), Felt>,
+    ) -> Result<Self> {
+        let file = File::create(path).with_context(|| format!("Creating read log at {}", path.display()))?;
+        Ok(Self {
+            writer: Mutex::new(BufWriter::new(file)),
+            counters: ReadCounters::default(),
+            nonce_by_contract,
+            class_hash_by_contract,
+            storage_by_key,
+        })
+    }
+
+    fn stats(&self) -> ReadStats {
+        ReadStats {
+            total: self.counters.total.load(Ordering::Relaxed),
+            storage_at: self.counters.storage_at.load(Ordering::Relaxed),
+            nonce_at: self.counters.nonce_at.load(Ordering::Relaxed),
+            class_hash_at: self.counters.class_hash_at.load(Ordering::Relaxed),
+            override_hits: self.counters.override_hits.load(Ordering::Relaxed),
+            override_misses: self.counters.override_misses.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl ReadHook for SyntheticReadHook {
+    fn override_read(&self, op: &ReadOp) -> Option<Option<Felt>> {
+        match op {
+            ReadOp::GetStorageAt { contract_address, key, .. } => {
+                if let Some(v) = self.storage_by_key.get(&(*contract_address, *key)) {
+                    self.counters.override_hits.fetch_add(1, Ordering::Relaxed);
+                    Some(Some(*v))
+                } else {
+                    self.counters.override_misses.fetch_add(1, Ordering::Relaxed);
+                    // Avoid DB fallback in synthetic mode.
+                    Some(Some(Felt::ZERO))
+                }
+            }
+            ReadOp::GetContractNonceAt { contract_address, .. } => {
+                if let Some(v) = self.nonce_by_contract.get(contract_address) {
+                    self.counters.override_hits.fetch_add(1, Ordering::Relaxed);
+                    Some(Some(*v))
+                } else {
+                    self.counters.override_misses.fetch_add(1, Ordering::Relaxed);
+                    Some(Some(Felt::ZERO))
+                }
+            }
+            ReadOp::GetContractClassHashAt { contract_address, .. } => {
+                if let Some(v) = self.class_hash_by_contract.get(contract_address) {
+                    self.counters.override_hits.fetch_add(1, Ordering::Relaxed);
+                    Some(Some(*v))
+                } else {
+                    self.counters.override_misses.fetch_add(1, Ordering::Relaxed);
+                    Some(Some(Felt::ZERO))
+                }
+            }
+        }
+    }
+
+    fn on_read(&self, event: ReadEvent) {
+        self.counters.total.fetch_add(1, Ordering::Relaxed);
+        match event.op {
+            ReadOp::GetStorageAt { .. } => {
+                self.counters.storage_at.fetch_add(1, Ordering::Relaxed);
+            }
+            ReadOp::GetContractNonceAt { .. } => {
+                self.counters.nonce_at.fetch_add(1, Ordering::Relaxed);
+            }
+            ReadOp::GetContractClassHashAt { .. } => {
+                self.counters.class_hash_at.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        let mut guard = self.writer.lock().expect("read log lock poisoned");
+        if let Err(err) = serde_json::to_writer(&mut *guard, &event) {
+            panic!("Failed to write read event JSON: {err}");
+        }
+        if let Err(err) = guard.write_all(b"\n") {
+            panic!("Failed to write read event newline: {err}");
+        }
+    }
+}
+
+fn run_synthetic(args: &Args, wall_clock_start: Instant) -> Result<()> {
+    let db_path = resolve_db_path(&args.db_path)?;
+
+    if !args.synthetic_reuse_db {
+        // Fresh synthetic DB: require an empty directory (or --force to wipe it).
+        if db_path.exists() {
+            let has_entries = fs::read_dir(&db_path).map(|mut it| it.next().is_some()).unwrap_or(false);
+            if has_entries {
+                if args.force {
+                    fs::remove_dir_all(&db_path)
+                        .with_context(|| format!("Removing synthetic db dir {}", db_path.display()))?;
+                } else {
+                    bail!(
+                        "Synthetic db path {} is not empty; pass --force to delete it (or pass --synthetic-reuse-db)",
+                        db_path.display()
+                    );
+                }
+            }
+        }
+        fs::create_dir_all(&db_path).with_context(|| format!("Creating synthetic db dir {}", db_path.display()))?;
+    } else if !db_path.join("CURRENT").exists() {
+        bail!("--synthetic-reuse-db requires a RocksDB directory (missing CURRENT): {}", db_path.display());
+    }
+
+    let target_storage = RocksDBStorage::open(&db_path, RocksDBConfig::default())
+        .with_context(|| format!("Opening RocksDB at {}", db_path.display()))?;
+    let rayon_pool = rayon::ThreadPoolBuilder::new().build().context("Building rayon thread pool")?;
+
+    let calls_path = args.out_dir.join("calls.jsonl");
+    let applies_path = args.out_dir.join("applies.jsonl");
+    let summary_path = args.out_dir.join("run.json");
+
+    let mut rng = XorShift64::new(args.synthetic_seed);
+    let contracts_n = args.synthetic_contracts as usize;
+    let keys_per_contract_n = args.synthetic_storage_keys_per_contract as usize;
+    let deploy_n = args.synthetic_deployed_contracts as usize;
+    let nonce_only_n = args.synthetic_nonce_only_contracts as usize;
+
+    // Fixed shape inputs (addresses + keys) so that per-apply variance is dominated by the updates, not by trie growth.
+    let mut contract_addrs: Vec<Felt> = Vec::with_capacity(contracts_n);
+    for _ in 0..contracts_n {
+        contract_addrs.push(rng.next_felt251());
+    }
+    let mut deployed_addrs: Vec<Felt> = Vec::with_capacity(deploy_n);
+    for _ in 0..deploy_n {
+        deployed_addrs.push(rng.next_felt251());
+    }
+    let mut nonce_only_addrs: Vec<Felt> = Vec::with_capacity(nonce_only_n);
+    for _ in 0..nonce_only_n {
+        nonce_only_addrs.push(rng.next_felt251());
+    }
+
+    // Ensure deployed addrs don't overlap contract addrs.
+    let mut used: std::collections::HashSet<Felt> = contract_addrs.iter().copied().collect();
+    for addr in &mut deployed_addrs {
+        while used.contains(addr) {
+            *addr = rng.next_felt251();
+        }
+        used.insert(*addr);
+    }
+    for addr in &mut nonce_only_addrs {
+        while used.contains(addr) {
+            *addr = rng.next_felt251();
+        }
+        used.insert(*addr);
+    }
+
+    let mut storage_keys_by_contract: Vec<Vec<Felt>> = Vec::with_capacity(contracts_n);
+    for _ in 0..contracts_n {
+        let mut keys: Vec<Felt> = Vec::with_capacity(keys_per_contract_n);
+        match args.synthetic_key_pattern {
+            SyntheticKeyPattern::Random => {
+                for _ in 0..keys_per_contract_n {
+                    keys.push(rng.next_felt251());
+                }
+            }
+            SyntheticKeyPattern::CommonPrefix => {
+                let mut base = [0u8; 32];
+                rng.fill_bytes(&mut base);
+                base[0] &= 0b0000_0111;
+                // Keep first 24 bytes fixed; vary last 8 bytes.
+                for ki in 0..keys_per_contract_n {
+                    let mut b = base;
+                    b[24..].copy_from_slice(&(ki as u64).to_be_bytes());
+                    keys.push(Felt::from_bytes_be(&b));
+                }
+            }
+            SyntheticKeyPattern::Sequential => {
+                for ki in 0..keys_per_contract_n {
+                    let mut b = [0u8; 32];
+                    b[24..].copy_from_slice(&((1 + ki) as u64).to_be_bytes());
+                    b[0] &= 0b0000_0111;
+                    keys.push(Felt::from_bytes_be(&b));
+                }
+            }
+        }
+        keys.sort();
+        keys.dedup();
+        while keys.len() < keys_per_contract_n {
+            keys.push(rng.next_felt251());
+            keys.sort();
+            keys.dedup();
+        }
+        storage_keys_by_contract.push(keys);
+    }
+
+    // Override maps for nonce/class-hash reads (kept constant).
+    let mut nonce_by_contract: HashMap<Felt, Felt> = HashMap::new();
+    let mut class_hash_by_contract: HashMap<Felt, Felt> = HashMap::new();
+    for addr in contract_addrs.iter().chain(deployed_addrs.iter()).chain(nonce_only_addrs.iter()) {
+        nonce_by_contract.insert(*addr, Felt::ZERO);
+        class_hash_by_contract.insert(*addr, Felt::from_hex_unchecked("0x1"));
+    }
+
+    let hook =
+        Arc::new(SyntheticReadHook::new(&calls_path, nonce_by_contract, class_hash_by_contract, HashMap::new())?);
+    set_read_hook(hook.clone())?;
+
+    let mut applies_writer = BufWriter::new(File::create(&applies_path)?);
+    let mut merklization_total = Duration::ZERO;
+    let mut pred_errs: Vec<f64> = Vec::new();
+
+    let start_block = match args.synthetic_start_block {
+        Some(n) => n,
+        None if args.synthetic_reuse_db => {
+            target_storage.get_latest_applied_trie_update()?.unwrap_or(0).saturating_add(1)
+        }
+        None => 1,
+    };
+
+    let total_iters = args.synthetic_warmup_iters + args.synthetic_iters;
+    for i in 0..total_iters {
+        let block_n = start_block + i;
+        set_context_block(Some(block_n));
+
+        let mut state_diff = StateDiff {
+            storage_diffs: Vec::with_capacity(contracts_n),
+            deployed_contracts: Vec::with_capacity(deploy_n),
+            declared_classes: Vec::new(),
+            old_declared_contracts: Vec::new(),
+            nonces: Vec::new(),
+            replaced_classes: Vec::new(),
+            migrated_compiled_classes: Vec::new(),
+        };
+
+        for (addr, keys) in contract_addrs.iter().zip(storage_keys_by_contract.iter()) {
+            let mut storage_entries: Vec<StorageEntry> = Vec::with_capacity(keys_per_contract_n);
+            for key in keys {
+                let mut value = rng.next_felt251();
+                if value == Felt::ZERO {
+                    value = Felt::from_hex_unchecked("0x1");
+                }
+                storage_entries.push(StorageEntry { key: *key, value });
+            }
+            state_diff.storage_diffs.push(ContractStorageDiffItem { address: *addr, storage_entries });
+        }
+
+        for addr in &deployed_addrs {
+            state_diff
+                .deployed_contracts
+                .push(DeployedContractItem { address: *addr, class_hash: Felt::from_hex_unchecked("0x1") });
+        }
+
+        for (idx, addr) in nonce_only_addrs.iter().enumerate() {
+            // Vary the nonce per block so the leaf hash is not constant.
+            let mut b = [0u8; 32];
+            let v = ((block_n as u64) << 32) | (idx as u64);
+            b[24..].copy_from_slice(&v.to_be_bytes());
+            b[0] &= 0b0000_0111;
+            let nonce = Felt::from_bytes_be(&b);
+            state_diff.nonces.push(NonceUpdate { contract_address: *addr, nonce });
+        }
+
+        state_diff.sort();
+
+        let stats_before = hook.stats();
+        let bonsai_before = if args.bonsai_db_ops_metrics { Some(bonsai_db_ops_snapshot()) } else { None };
+        let (_state_root, timings) = apply_state_in_rayon(&rayon_pool, &target_storage, block_n, &state_diff)?;
+        let stats_after = hook.stats();
+        let bonsai_after = if args.bonsai_db_ops_metrics { Some(bonsai_db_ops_snapshot()) } else { None };
+        let bonsai_delta = match (bonsai_after, bonsai_before) {
+            (Some(after), Some(before)) => Some(bonsai_db_ops_delta(after, before)),
+            _ => None,
+        };
+
+        if i >= args.synthetic_warmup_iters {
+            merklization_total += timings.total;
+            let diff_stats = state_diff_stats(&state_diff);
+            let pred = eq_predict_ms(
+                diff_stats.unique_storage_keys,
+                diff_stats.touched_contracts,
+                diff_stats.deployed_contracts,
+            );
+            let measured = timings.total.as_millis() as f64;
+            let err = measured - pred;
+            pred_errs.push(err);
+
+            let record = SyntheticApplyRecord {
+                apply_index: i - args.synthetic_warmup_iters,
+                block_n,
+                touched_contracts: diff_stats.touched_contracts,
+                unique_storage_keys: diff_stats.unique_storage_keys,
+                deployed_contracts: diff_stats.deployed_contracts,
+                merklization_ms: timings.total.as_millis() as u64,
+                contract_storage_commit_ms: timings.contract_trie.storage_commit.as_millis() as u64,
+                contract_trie_commit_ms: timings.contract_trie.trie_commit.as_millis() as u64,
+                predicted_merklization_ms: pred,
+                prediction_error_ms: err,
+                read_stats_delta: read_stats_delta(stats_after, stats_before),
+                bonsai_db_ops_delta: bonsai_delta,
+            };
+            serde_json::to_writer(&mut applies_writer, &record)?;
+            applies_writer.write_all(b"\n")?;
+        }
+
+        if !args.synthetic_fixed_shape {
+            // Keep addresses fixed but randomize keys to probe a wider variety of trie shapes.
+            if args.synthetic_key_pattern == SyntheticKeyPattern::Random {
+                for keys in &mut storage_keys_by_contract {
+                    for k in keys.iter_mut() {
+                        *k = rng.next_felt251();
+                    }
+                    keys.sort();
+                    keys.dedup();
+                    while keys.len() < keys_per_contract_n {
+                        keys.push(rng.next_felt251());
+                        keys.sort();
+                        keys.dedup();
+                    }
+                }
+            }
+        }
+    }
+
+    applies_writer.flush()?;
+    clear_read_hook();
+    set_context_block(None);
+
+    pred_errs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mae = pred_errs.iter().map(|e| e.abs()).sum::<f64>() / (pred_errs.len().max(1) as f64);
+    let rmse = (pred_errs.iter().map(|e| e * e).sum::<f64>() / (pred_errs.len().max(1) as f64)).sqrt();
+    let p50 = if pred_errs.is_empty() { 0.0 } else { pred_errs[pred_errs.len() / 2] };
+    let p90 = if pred_errs.is_empty() {
+        0.0
+    } else {
+        pred_errs[((pred_errs.len() as f64) * 0.9).floor().min((pred_errs.len() - 1) as f64) as usize]
+    };
+    let min = pred_errs.first().copied().unwrap_or(0.0);
+    let max = pred_errs.last().copied().unwrap_or(0.0);
+
+    let summary = SyntheticRunSummary {
+        db_path: db_path.display().to_string(),
+        out_dir: args.out_dir.display().to_string(),
+        synthetic_contracts: args.synthetic_contracts,
+        synthetic_storage_keys_per_contract: args.synthetic_storage_keys_per_contract,
+        synthetic_deployed_contracts: args.synthetic_deployed_contracts,
+        synthetic_nonce_only_contracts: args.synthetic_nonce_only_contracts,
+        synthetic_key_pattern: format!("{:?}", args.synthetic_key_pattern),
+        synthetic_fixed_shape: args.synthetic_fixed_shape,
+        synthetic_reuse_db: args.synthetic_reuse_db,
+        synthetic_start_block: start_block,
+        warmup_iters: args.synthetic_warmup_iters,
+        iters: args.synthetic_iters,
+        wall_clock_total_ms: wall_clock_start.elapsed().as_millis() as u64,
+        merklization_total_ms: merklization_total.as_millis() as u64,
+        pred_mae_ms: mae,
+        pred_rmse_ms: rmse,
+        pred_err_min_ms: min,
+        pred_err_p50_ms: p50,
+        pred_err_p90_ms: p90,
+        pred_err_max_ms: max,
+        calls_path: calls_path.display().to_string(),
+        applies_path: applies_path.display().to_string(),
+    };
+
+    let summary_file = File::create(&summary_path)?;
+    serde_json::to_writer_pretty(summary_file, &summary)?;
+
+    info!(
+        "Synthetic run complete: merklization_total_ms={} pred_mae_ms={:.3} pred_rmse_ms={:.3}",
+        summary.merklization_total_ms, summary.pred_mae_ms, summary.pred_rmse_ms
+    );
+    Ok(())
 }

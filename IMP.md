@@ -342,6 +342,28 @@ Release-only multivariate fits:
 - Sequential: `merklization_ms ~= 0.0268*unique_storage_keys + 2.566*touched_contracts - 5.255` (`R^2=0.831`)
 - Parallel: `merklization_ms ~= 0.0693*unique_storage_keys + 4.249*touched_contracts - 0.0306*block_count - 9.912` (`R^2=0.959`)
 
+### Practical Single-Block Estimator (Warm Worker)
+Assumptions:
+- **Release build**, and a **long-lived worker** (DB handle stays open; RocksDB caches/memtables are warm).
+- **Single-block apply** (`block_count=1`).
+- Read-map is complete (`--require-read-map`) so there is no RPC read-fallback on the critical path.
+- RPC validation time is excluded (we are modeling `merklization_ms` only).
+
+Derived from: `/Users/mohit/Desktop/karnot/madara2/tmp/bench_bonsai_ops_608897_608996_1770464272/records.csv` (`kind=seq`, 10 repeats per block).
+
+Estimator:
+- `merklization_ms ~= max(0, -3.0 + 0.057*unique_storage_keys + 1.92*touched_contracts + 12.9*deployed_contracts)`
+- Rough mental model: `~ max(0, -3 + 0.06*unique_storage_keys + 2*touched_contracts + 13*deployed_contracts)` (ms).
+
+How to compute inputs from a state diff:
+- `unique_storage_keys`: number of distinct `(contract_address, storage_key)` updates in `storage_diffs`.
+- `touched_contracts`: number of distinct contracts touched by storage updates, nonce updates, deployments, or class replacements.
+- `deployed_contracts`: `len(deployed_contracts)`.
+
+Sanity checks (measured vs predicted):
+- Block `608950` had `(unique_storage_keys=30, touched_contracts=5, deployed_contracts=0)`, predicted `~8.33 ms`, measured `8–9 ms`.
+- Block `608910` had `(unique_storage_keys=52, touched_contracts=10, deployed_contracts=1)`, predicted `~32.10 ms`, measured `31–33 ms`.
+
 Pitfall:
 - Comparing `per_block` vs `squash_range` with `block_count=1` is not evidence about squashing/parallel behavior.
   Both modes apply a single block's diff, so they are expected to match; this only sanity-checks instrumentation.
