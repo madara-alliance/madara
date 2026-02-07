@@ -364,6 +364,22 @@ Sanity checks (measured vs predicted):
 - Block `608950` had `(unique_storage_keys=30, touched_contracts=5, deployed_contracts=0)`, predicted `~8.33 ms`, measured `8–9 ms`.
 - Block `608910` had `(unique_storage_keys=52, touched_contracts=10, deployed_contracts=1)`, predicted `~32.10 ms`, measured `31–33 ms`.
 
+### Synthetic Edge-Case Validation Caveats
+We added a `--synthetic` mode to `parallel-merklelization` to generate controlled diffs (1 contract many keys, 2 contracts, deploy-only, etc).
+Key finding: **the estimator coefficients are not portable to arbitrary synthetic workloads** unless the synthetic diff resembles real chain diffs.
+
+Observed issues:
+- Running synthetic diffs on a fresh empty DB yields sub-ms merkleization (often `0–5 ms`) because tries are tiny and many operations are cache-friendly.
+- Even when reusing a large production DB (`--synthetic-reuse-db`), using **random new contract addresses** tends to be *faster* than real blocks with the same `(unique_storage_keys, touched_contracts)` because:
+  - many non-bonsai reads return `None` (cheap) or are bypassed when using overrides,
+  - storage tries for new addresses may be sparse or structurally different from “hot” existing contracts,
+  - `touched_contracts` conflates multiple sources of work (storage leaf vs nonce-only leaf vs deploy leaf).
+- The `deployed_contracts` coefficient is **not robust** because it was fit from a very small number of deploy events in the training window.
+
+Implication:
+- The estimator is useful as a **within-distribution predictor** (same chain, same workload family), not a universal compute model.
+- For stronger validation, synthetic tests should be built from **real contract addresses + keys** sampled from real state diffs (RPC/DB), then truncated/reshaped to the desired edge-case.
+
 Pitfall:
 - Comparing `per_block` vs `squash_range` with `block_count=1` is not evidence about squashing/parallel behavior.
   Both modes apply a single block's diff, so they are expected to match; this only sanity-checks instrumentation.
