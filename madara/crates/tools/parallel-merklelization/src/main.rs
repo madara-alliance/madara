@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use mc_db::read_hook::{clear_read_hook, set_context_block, set_read_hook, ReadEvent, ReadHook, ReadOp};
+use mc_db::rocksdb::trie::{bonsai_db_ops_set_enabled, bonsai_db_ops_snapshot, BonsaiDbOpsSnapshot, BONSAI_CF_NAMES};
 use mc_db::rocksdb::{RocksDBConfig, RocksDBStorage};
 use mc_db::storage::StorageChainTip;
 use mc_db::{MadaraStorageRead, MadaraStorageWrite};
@@ -74,6 +75,9 @@ struct Args {
     /// Skip end-block root validation against RPC. Useful for benchmarks where validation is run separately.
     #[arg(long)]
     skip_rpc_root_check: bool,
+    /// Record per-apply Bonsai DB operation counters (get/insert/remove/etc) from the Bonsai RocksDB wrapper.
+    #[arg(long)]
+    bonsai_db_ops_metrics: bool,
     #[arg(long)]
     force: bool,
 }
@@ -371,8 +375,11 @@ struct RunSummary {
     rpc_read_fallback_total_ms: u64,
     rpc_state_diff_count: u64,
     rpc_state_diff_total_ms: u64,
+    bonsai_db_ops_metrics_enabled: bool,
+    bonsai_cf_names: Vec<String>,
     calls_path: String,
     roots_path: String,
+    applies_path: String,
     read_map_path: Option<String>,
 }
 
@@ -386,11 +393,187 @@ struct ReadStats {
     override_misses: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct RpcSnapshot {
+    read_fallback_count: u64,
+    read_fallback_total_ms: u64,
+    state_diff_count: u64,
+    state_diff_total_ms: u64,
+}
+
+impl RpcSnapshot {
+    fn capture(stats: &RpcStats) -> Self {
+        Self {
+            read_fallback_count: stats.read_fallback_count.load(Ordering::Relaxed),
+            read_fallback_total_ms: stats.read_fallback_total_ms.load(Ordering::Relaxed),
+            state_diff_count: stats.state_diff_count.load(Ordering::Relaxed),
+            state_diff_total_ms: stats.state_diff_total_ms.load(Ordering::Relaxed),
+        }
+    }
+}
+
+fn read_stats_delta(after: ReadStats, before: ReadStats) -> ReadStats {
+    ReadStats {
+        total: after.total.saturating_sub(before.total),
+        storage_at: after.storage_at.saturating_sub(before.storage_at),
+        nonce_at: after.nonce_at.saturating_sub(before.nonce_at),
+        class_hash_at: after.class_hash_at.saturating_sub(before.class_hash_at),
+        override_hits: after.override_hits.saturating_sub(before.override_hits),
+        override_misses: after.override_misses.saturating_sub(before.override_misses),
+    }
+}
+
+#[derive(Debug, Default)]
+struct StateDiffStats {
+    touched_contracts: u64,
+    storage_diffs_contracts: u64,
+    storage_entries: u64,
+    unique_storage_keys: u64,
+    max_storage_entries_per_contract: u64,
+    nonce_updates: u64,
+    deployed_contracts: u64,
+    replaced_classes: u64,
+    declared_classes: u64,
+    migrated_compiled_classes: u64,
+    deprecated_declared_classes: u64,
+}
+
+fn state_diff_stats(diff: &StateDiff) -> StateDiffStats {
+    let mut touched: std::collections::HashSet<Felt> = std::collections::HashSet::new();
+    let mut unique_storage: std::collections::HashSet<(Felt, Felt)> = std::collections::HashSet::new();
+
+    let mut storage_entries: u64 = 0;
+    let mut max_per_contract: u64 = 0;
+    for contract_diff in &diff.storage_diffs {
+        touched.insert(contract_diff.address);
+        let per_contract = contract_diff.storage_entries.len() as u64;
+        storage_entries += per_contract;
+        max_per_contract = max_per_contract.max(per_contract);
+        for entry in &contract_diff.storage_entries {
+            unique_storage.insert((contract_diff.address, entry.key));
+        }
+    }
+
+    for n in &diff.nonces {
+        touched.insert(n.contract_address);
+    }
+    for d in &diff.deployed_contracts {
+        touched.insert(d.address);
+    }
+    for r in &diff.replaced_classes {
+        touched.insert(r.contract_address);
+    }
+
+    StateDiffStats {
+        touched_contracts: touched.len() as u64,
+        storage_diffs_contracts: diff.storage_diffs.len() as u64,
+        storage_entries,
+        unique_storage_keys: unique_storage.len() as u64,
+        max_storage_entries_per_contract: max_per_contract,
+        nonce_updates: diff.nonces.len() as u64,
+        deployed_contracts: diff.deployed_contracts.len() as u64,
+        replaced_classes: diff.replaced_classes.len() as u64,
+        declared_classes: diff.declared_classes.len() as u64,
+        migrated_compiled_classes: diff.migrated_compiled_classes.len() as u64,
+        deprecated_declared_classes: diff.old_declared_contracts.len() as u64,
+    }
+}
+
+#[derive(Serialize)]
+struct ApplyRecord {
+    apply_index: u64,
+    apply_mode: String,
+    start_block: u64,
+    end_block: u64,
+    block_count: u64,
+    touched_contracts: u64,
+    storage_diffs_contracts: u64,
+    storage_entries: u64,
+    unique_storage_keys: u64,
+    max_storage_entries_per_contract: u64,
+    nonce_updates: u64,
+    deployed_contracts: u64,
+    replaced_classes: u64,
+    declared_classes: u64,
+    migrated_compiled_classes: u64,
+    deprecated_declared_classes: u64,
+    apply_wall_clock_ms: u64,
+    merklization_ms: u64,
+    contract_trie_root_ms: u64,
+    class_trie_root_ms: u64,
+    contract_storage_commit_ms: u64,
+    contract_trie_commit_ms: u64,
+    class_trie_commit_ms: u64,
+    read_stats_delta: ReadStats,
+    rpc_read_fallback_count_delta: u64,
+    rpc_read_fallback_total_ms_delta: u64,
+    rpc_state_diff_count_delta: u64,
+    rpc_state_diff_total_ms_delta: u64,
+    bonsai_db_ops_delta: Option<BonsaiDbOpsDelta>,
+}
+
+#[derive(Serialize, Default, Clone)]
+struct BonsaiDbOpsDelta {
+    get_calls: [u64; 9],
+    get_value_bytes: [u64; 9],
+    insert_calls: [u64; 9],
+    insert_old_value_present: [u64; 9],
+    insert_old_value_bytes: [u64; 9],
+    remove_calls: [u64; 9],
+    remove_old_value_present: [u64; 9],
+    remove_old_value_bytes: [u64; 9],
+    contains_calls: [u64; 9],
+    contains_hits: [u64; 9],
+    iter_calls: [u64; 9],
+    iter_keys: [u64; 9],
+    iter_key_bytes: [u64; 9],
+    iter_value_bytes: [u64; 9],
+    write_batch_calls: u64,
+    get_key_bytes: [u64; 9],
+    insert_key_bytes: [u64; 9],
+    insert_value_bytes: [u64; 9],
+    remove_key_bytes: [u64; 9],
+    contains_key_bytes: [u64; 9],
+}
+
+fn bonsai_db_ops_delta(after: BonsaiDbOpsSnapshot, before: BonsaiDbOpsSnapshot) -> BonsaiDbOpsDelta {
+    fn sub_arr(a: [u64; 9], b: [u64; 9]) -> [u64; 9] {
+        let mut out = [0u64; 9];
+        for i in 0..9 {
+            out[i] = a[i].saturating_sub(b[i]);
+        }
+        out
+    }
+    BonsaiDbOpsDelta {
+        get_calls: sub_arr(after.get_calls, before.get_calls),
+        get_value_bytes: sub_arr(after.get_value_bytes, before.get_value_bytes),
+        insert_calls: sub_arr(after.insert_calls, before.insert_calls),
+        insert_old_value_present: sub_arr(after.insert_old_value_present, before.insert_old_value_present),
+        insert_old_value_bytes: sub_arr(after.insert_old_value_bytes, before.insert_old_value_bytes),
+        remove_calls: sub_arr(after.remove_calls, before.remove_calls),
+        remove_old_value_present: sub_arr(after.remove_old_value_present, before.remove_old_value_present),
+        remove_old_value_bytes: sub_arr(after.remove_old_value_bytes, before.remove_old_value_bytes),
+        contains_calls: sub_arr(after.contains_calls, before.contains_calls),
+        contains_hits: sub_arr(after.contains_hits, before.contains_hits),
+        iter_calls: sub_arr(after.iter_calls, before.iter_calls),
+        iter_keys: sub_arr(after.iter_keys, before.iter_keys),
+        iter_key_bytes: sub_arr(after.iter_key_bytes, before.iter_key_bytes),
+        iter_value_bytes: sub_arr(after.iter_value_bytes, before.iter_value_bytes),
+        write_batch_calls: after.write_batch_calls.saturating_sub(before.write_batch_calls),
+        get_key_bytes: sub_arr(after.get_key_bytes, before.get_key_bytes),
+        insert_key_bytes: sub_arr(after.insert_key_bytes, before.insert_key_bytes),
+        insert_value_bytes: sub_arr(after.insert_value_bytes, before.insert_value_bytes),
+        remove_key_bytes: sub_arr(after.remove_key_bytes, before.remove_key_bytes),
+        contains_key_bytes: sub_arr(after.contains_key_bytes, before.contains_key_bytes),
+    }
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
 
     let wall_clock_start = Instant::now();
     let args = Args::parse();
+    bonsai_db_ops_set_enabled(args.bonsai_db_ops_metrics);
     let db_path = resolve_db_path(&args.db_path)?;
     let source_db_path = resolve_db_path(args.source_db_path.as_deref().unwrap_or(&args.db_path))?;
     let rpc_url = args.rpc_url.clone();
@@ -449,6 +632,7 @@ fn main() -> Result<()> {
 
     let calls_path = args.out_dir.join("calls.jsonl");
     let roots_path = args.out_dir.join("roots.jsonl");
+    let applies_path = args.out_dir.join("applies.jsonl");
     let summary_path = args.out_dir.join("run.json");
 
     if args.squash_range && args.apply_state_diff_columns {
@@ -479,19 +663,29 @@ fn main() -> Result<()> {
         None
     };
 
-    let generated_read_map =
-        if args.squash_range && args.read_map.is_none() && args.state_diff_source == StateDiffSource::Db {
-            let diff = squashed_diff.as_ref().expect("squashed diff computed");
-            Some(build_override_map(diff, &source_storage, end_block)?)
-        } else {
-            None
-        };
-
-    let read_map = match (&args.read_map, generated_read_map) {
-        (Some(path), _) => Some(ReadMap::load(path)?),
-        (None, Some(entries)) => Some(ReadMap::from_entries(entries)),
-        (None, None) => None,
+    let mut read_map = match &args.read_map {
+        Some(path) => Some(ReadMap::load(path)?),
+        None => None,
     };
+
+    // For squashed applies, Bonsai may need nonce/class-hash reads at `end_block` for any leaf contract
+    // touched anywhere in the squashed range. Baseline per-block read logs can miss these, so we
+    // always prefill an end-block override map when we have DB access to the source.
+    if args.squash_range && args.state_diff_source == StateDiffSource::Db {
+        let diff = squashed_diff.as_ref().expect("squashed diff computed");
+        let entries = build_override_map(diff, &source_storage, end_block)?;
+        match &read_map {
+            Some(map) => {
+                for (key, value) in entries {
+                    let mut guard = map.entries.write().expect("read map lock poisoned");
+                    guard.entry(key).or_insert(value);
+                }
+            }
+            None => {
+                read_map = Some(ReadMap::from_entries(entries));
+            }
+        }
+    }
 
     let read_map = if args.rpc_read_fallback && read_map.is_none() {
         Some(ReadMap::from_entries(HashMap::new()))
@@ -507,13 +701,65 @@ fn main() -> Result<()> {
     set_read_hook(recorder.clone())?;
 
     let mut roots_writer = BufWriter::new(File::create(&roots_path)?);
+    let mut applies_writer = BufWriter::new(File::create(&applies_path)?);
 
     let mut last_root: Option<Felt> = None;
+    let mut apply_index: u64 = 0;
     if let Some(state_diff) = squashed_diff {
         set_context_block(Some(end_block));
+        let stats_before = recorder.stats();
+        let rpc_before = RpcSnapshot::capture(&rpc_stats);
+        let bonsai_before = if args.bonsai_db_ops_metrics { Some(bonsai_db_ops_snapshot()) } else { None };
+        let apply_start = Instant::now();
         let (state_root, timings) = apply_state_in_rayon(&rayon_pool, &target_storage, end_block, &state_diff)?;
+        let apply_elapsed = apply_start.elapsed();
+        let stats_after = recorder.stats();
+        let rpc_after = RpcSnapshot::capture(&rpc_stats);
+        let bonsai_after = if args.bonsai_db_ops_metrics { Some(bonsai_db_ops_snapshot()) } else { None };
+        let bonsai_delta = match (bonsai_after, bonsai_before) {
+            (Some(after), Some(before)) => Some(bonsai_db_ops_delta(after, before)),
+            _ => None,
+        };
         merklization_total += timings.total;
         last_root = Some(state_root);
+
+        let diff_stats = state_diff_stats(&state_diff);
+        let record = ApplyRecord {
+            apply_index,
+            apply_mode: "squash_range".to_string(),
+            start_block,
+            end_block,
+            block_count: end_block - start_block + 1,
+            touched_contracts: diff_stats.touched_contracts,
+            storage_diffs_contracts: diff_stats.storage_diffs_contracts,
+            storage_entries: diff_stats.storage_entries,
+            unique_storage_keys: diff_stats.unique_storage_keys,
+            max_storage_entries_per_contract: diff_stats.max_storage_entries_per_contract,
+            nonce_updates: diff_stats.nonce_updates,
+            deployed_contracts: diff_stats.deployed_contracts,
+            replaced_classes: diff_stats.replaced_classes,
+            declared_classes: diff_stats.declared_classes,
+            migrated_compiled_classes: diff_stats.migrated_compiled_classes,
+            deprecated_declared_classes: diff_stats.deprecated_declared_classes,
+            apply_wall_clock_ms: apply_elapsed.as_millis() as u64,
+            merklization_ms: timings.total.as_millis() as u64,
+            contract_trie_root_ms: timings.contract_trie_root.as_millis() as u64,
+            class_trie_root_ms: timings.class_trie_root.as_millis() as u64,
+            contract_storage_commit_ms: timings.contract_trie.storage_commit.as_millis() as u64,
+            contract_trie_commit_ms: timings.contract_trie.trie_commit.as_millis() as u64,
+            class_trie_commit_ms: timings.class_trie.trie_commit.as_millis() as u64,
+            read_stats_delta: read_stats_delta(stats_after, stats_before),
+            rpc_read_fallback_count_delta: rpc_after.read_fallback_count.saturating_sub(rpc_before.read_fallback_count),
+            rpc_read_fallback_total_ms_delta: rpc_after
+                .read_fallback_total_ms
+                .saturating_sub(rpc_before.read_fallback_total_ms),
+            rpc_state_diff_count_delta: rpc_after.state_diff_count.saturating_sub(rpc_before.state_diff_count),
+            rpc_state_diff_total_ms_delta: rpc_after.state_diff_total_ms.saturating_sub(rpc_before.state_diff_total_ms),
+            bonsai_db_ops_delta: bonsai_delta,
+        };
+        serde_json::to_writer(&mut applies_writer, &record)?;
+        applies_writer.write_all(b"\n")?;
+
         let record = RootRecord { block_number: end_block, state_root };
         serde_json::to_writer(&mut roots_writer, &record)?;
         roots_writer.write_all(b"\n")?;
@@ -532,9 +778,63 @@ fn main() -> Result<()> {
                 target_storage.write_state_diff(block_n, &state_diff)?;
             }
 
+            let stats_before = recorder.stats();
+            let rpc_before = RpcSnapshot::capture(&rpc_stats);
+            let bonsai_before = if args.bonsai_db_ops_metrics { Some(bonsai_db_ops_snapshot()) } else { None };
+            let apply_start = Instant::now();
             let (state_root, timings) = apply_state_in_rayon(&rayon_pool, &target_storage, block_n, &state_diff)?;
+            let apply_elapsed = apply_start.elapsed();
+            let stats_after = recorder.stats();
+            let rpc_after = RpcSnapshot::capture(&rpc_stats);
+            let bonsai_after = if args.bonsai_db_ops_metrics { Some(bonsai_db_ops_snapshot()) } else { None };
+            let bonsai_delta = match (bonsai_after, bonsai_before) {
+                (Some(after), Some(before)) => Some(bonsai_db_ops_delta(after, before)),
+                _ => None,
+            };
             merklization_total += timings.total;
             last_root = Some(state_root);
+
+            let diff_stats = state_diff_stats(&state_diff);
+            let record = ApplyRecord {
+                apply_index,
+                apply_mode: "per_block".to_string(),
+                start_block: block_n,
+                end_block: block_n,
+                block_count: 1,
+                touched_contracts: diff_stats.touched_contracts,
+                storage_diffs_contracts: diff_stats.storage_diffs_contracts,
+                storage_entries: diff_stats.storage_entries,
+                unique_storage_keys: diff_stats.unique_storage_keys,
+                max_storage_entries_per_contract: diff_stats.max_storage_entries_per_contract,
+                nonce_updates: diff_stats.nonce_updates,
+                deployed_contracts: diff_stats.deployed_contracts,
+                replaced_classes: diff_stats.replaced_classes,
+                declared_classes: diff_stats.declared_classes,
+                migrated_compiled_classes: diff_stats.migrated_compiled_classes,
+                deprecated_declared_classes: diff_stats.deprecated_declared_classes,
+                apply_wall_clock_ms: apply_elapsed.as_millis() as u64,
+                merklization_ms: timings.total.as_millis() as u64,
+                contract_trie_root_ms: timings.contract_trie_root.as_millis() as u64,
+                class_trie_root_ms: timings.class_trie_root.as_millis() as u64,
+                contract_storage_commit_ms: timings.contract_trie.storage_commit.as_millis() as u64,
+                contract_trie_commit_ms: timings.contract_trie.trie_commit.as_millis() as u64,
+                class_trie_commit_ms: timings.class_trie.trie_commit.as_millis() as u64,
+                read_stats_delta: read_stats_delta(stats_after, stats_before),
+                rpc_read_fallback_count_delta: rpc_after
+                    .read_fallback_count
+                    .saturating_sub(rpc_before.read_fallback_count),
+                rpc_read_fallback_total_ms_delta: rpc_after
+                    .read_fallback_total_ms
+                    .saturating_sub(rpc_before.read_fallback_total_ms),
+                rpc_state_diff_count_delta: rpc_after.state_diff_count.saturating_sub(rpc_before.state_diff_count),
+                rpc_state_diff_total_ms_delta: rpc_after
+                    .state_diff_total_ms
+                    .saturating_sub(rpc_before.state_diff_total_ms),
+                bonsai_db_ops_delta: bonsai_delta,
+            };
+            serde_json::to_writer(&mut applies_writer, &record)?;
+            applies_writer.write_all(b"\n")?;
+            apply_index += 1;
 
             let record = RootRecord { block_number: block_n, state_root };
             serde_json::to_writer(&mut roots_writer, &record)?;
@@ -543,6 +843,7 @@ fn main() -> Result<()> {
     }
 
     roots_writer.flush()?;
+    applies_writer.flush()?;
     recorder.flush()?;
     clear_read_hook();
     set_context_block(None);
@@ -603,8 +904,11 @@ fn main() -> Result<()> {
         rpc_read_fallback_total_ms: rpc_stats.read_fallback_total_ms.load(Ordering::Relaxed),
         rpc_state_diff_count: rpc_stats.state_diff_count.load(Ordering::Relaxed),
         rpc_state_diff_total_ms: rpc_stats.state_diff_total_ms.load(Ordering::Relaxed),
+        bonsai_db_ops_metrics_enabled: args.bonsai_db_ops_metrics,
+        bonsai_cf_names: BONSAI_CF_NAMES.iter().map(|name| (*name).to_string()).collect(),
         calls_path: calls_path.display().to_string(),
         roots_path: roots_path.display().to_string(),
+        applies_path: applies_path.display().to_string(),
         read_map_path: args.read_map_out.as_ref().map(|p| p.display().to_string()),
     };
 

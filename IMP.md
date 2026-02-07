@@ -123,3 +123,208 @@ Results:
 - Wall clock:
   - `copy4 elapsed=0:03.69`
   - `copy5 elapsed=0:02.32`
+
+### Benchmark: Baseline Sequential vs 2-Copy Parallel (608692..608701)
+Artifact dir (SSH): `/mnt/benchmark_io1/bench_poc_608692_608701_1770374113`
+
+Start state:
+- Baseline full DB, copy4 bonsai-only, copy5 bonsai-only were all at `x=608691` before starting.
+
+Baseline (full DB) sequential apply `608692..608701`:
+- `wall_clock_total_ms=3087`, `rpc_root_check_ms=131`, `total_minus_root_check_ms=2956`
+- `merklization_total_ms=876`
+- `rpc_state_diff_total_ms=1879` (10 diffs)
+- End root matches RPC: `0x1b6fab3172e4c11bdca853f3205968c7ff767453d94e1702a5ee5f4a9573503`
+- Read-map output: `read_map_608692_608701.jsonl` (146 entries)
+
+Parallel 2-copy alternating-root schedule (each segment validates end root vs RPC):
+- copy4 segments: `608692..608692`, `608693..608694`, `608695..608696`, `608697..608698`, `608699..608700`
+- copy5 segments: `608692..608693`, `608694..608695`, `608696..608697`, `608698..608699`, `608700..608701`
+- This produces all 10 roots `608692..608701` (copy4 does even blocks, copy5 does odd blocks).
+
+Per-copy totals (sum over segments):
+- copy4:
+  - `wall_clock_total_ms=6900`, `rpc_root_check_ms=664`, `total_minus_root_check_ms=6236`
+  - `merklization_total_ms=2195`, `squash_total_ms=2860`
+  - `rpc_state_diff_total_ms=3380` (9 diffs), `rpc_read_fallback_total_ms=4545` (14 calls, can sum > wall clock due to concurrency)
+- copy5:
+  - `wall_clock_total_ms=6981`, `rpc_root_check_ms=675`, `total_minus_root_check_ms=6306`
+  - `merklization_total_ms=2224`, `squash_total_ms=3426`
+  - `rpc_state_diff_total_ms=3423` (10 diffs), `rpc_read_fallback_total_ms=1962` (6 calls, can sum > wall clock due to concurrency)
+
+Service wall time estimate (excluding RPC root validation):
+- `~max(copy4.total_minus_root_check_ms, copy5.total_minus_root_check_ms)=6306 ms` to produce roots for `608692..608701`.
+
+## SSH Benchmark: 5 Bonsai Copies (608702..608886)
+DBs (SSH, io1): `baseline_full_db` (full), `madara_bonsai_copy{4,5,6,7,8}` (bonsai-only).
+
+Schedule (5 copies): same as Phase-5 schedule but anchored at `start_block` (copy i first runs `start..start+i`, then advances in 5-block squashed segments until `end_block`).
+
+Metric used for comparisons:
+- Baseline sequential: `wall_clock_total_ms - rpc_root_check_ms`
+- Parallel service: `max_over_copies(sum_over_segments(wall_clock_total_ms - rpc_root_check_ms))`
+- RPC timing fields are the tool's summed per-request durations and can exceed wall-clock due to concurrency.
+
+### Results
+All runs validated end-root vs RPC for every segment (0 mismatches).
+
+`608702..608711` (10 blocks):
+- Baseline: `2399 ms` (~240 ms/block)
+- Parallel service: `4962 ms` (~496 ms/block)  (parallel wall: `5582 ms`)
+- Slowdown: `2.07x`
+- RPC read fallback (critical copy): `12 calls`
+
+`608712..608736` (25 blocks):
+- Baseline: `4179 ms` (~167 ms/block)
+- Parallel service: `6530 ms` (~261 ms/block)  (parallel wall: `7737 ms`)
+- Slowdown: `1.56x`
+- RPC read fallback: `0 calls` (all copies)
+
+`608737..608786` (50 blocks):
+- Baseline: `8045 ms` (~161 ms/block)
+- Parallel service: `15081 ms` (~302 ms/block) (parallel wall: `17292 ms`)
+- Slowdown: `1.87x`
+- RPC read fallback (critical copy): `22 calls`
+
+`608787..608886` (100 blocks):
+- Baseline: `21330 ms` (~213 ms/block)
+- Parallel service: `41983 ms` (~420 ms/block) (parallel wall: `46287 ms`)
+- Slowdown: `1.97x`
+- RPC read fallback (critical copy): `119 calls`
+
+## Hard-Data Instrumentation: Per-Apply Stats (2026-02-06)
+### Added `applies.jsonl`
+Tool: `/Users/mohit/Desktop/karnot/madara2/madara/crates/tools/parallel-merklelization`
+
+Each run now writes:
+- `applies.jsonl`: one JSON record per apply (per-block or squashed-range), including:
+  - state-diff size stats (touched contracts, storage entries, etc.)
+  - merkleization timings (total + breakdown)
+  - per-apply read-hook deltas (nonce/class/storage reads and override hits/misses)
+- `run.json` includes `applies_path`.
+
+### Key Local Finding: Squashing Reduces Work (Blocks 21..30 on DEVNET)
+Setup:
+- All DBs started from the same trie state at block `20` with root:
+  - `0x1825a080369eb1d6b79db4e9a3ce7933c014f8b052803cf0f95df1db23fefe0`
+- Baseline sequential applied `21..30` per-block on a full DB.
+- Parallel run used 5 bonsai-only DBs, each applying a *single* squashed range:
+  - copy0: `21..26`
+  - copy1: `21..27`
+  - copy2: `21..28`
+  - copy3: `21..29`
+  - copy4: `21..30`
+
+Correctness:
+- Each parallel copy end-root matched the baseline root for its end block.
+- `override_misses=0` on all squashed runs (nonce/class-hash reads served by overrides).
+
+Work/Time Comparison (baseline `21..30` vs squashed `21..30` on copy4):
+- Baseline per-block totals (sum over 10 applies):
+  - `touched_contracts_sum=32`
+  - `storage_entries_sum=92`
+  - `read_events_total=64` (32 nonce + 32 class-hash)
+  - `merklization_total_ms=867` (per-block sum, equivalent to pure merkle time)
+- Squashed range `21..30` (single apply):
+  - `touched_contracts=8`
+  - `storage_entries=79`
+  - `read_events_total=16` (8 nonce + 8 class-hash)
+  - `merklization_total_ms=635`
+
+Conclusion:
+- On this dataset, squashing reduced repeated contract-leaf work by ~4x and reduced pure merkle time by ~26%.
+- This supports the intuition that batching can reduce redundant ancestor hashing.
+
+### Important Follow-Up: Producing *All* Per-Block Roots Requires Multiple Rounds
+The single-apply squash above only produces the end-block root (e.g. `21..30 -> root(30)`).
+If the service needs roots for every block `21..30`, the parallel schedule must include multiple applies per copy.
+
+Example 5-copy, 2-round schedule that produces *all* roots `21..30`:
+- Copy0: `21..21` then `22..26` (roots: 21, 26)
+- Copy1: `21..22` then `23..27` (roots: 22, 27)
+- Copy2: `21..23` then `24..28` (roots: 23, 28)
+- Copy3: `21..24` then `25..29` (roots: 24, 29)
+- Copy4: `21..25` then `26..30` (roots: 25, 30)
+
+Local benchmark (fresh copies at state 20), correctness checked against baseline roots:
+- Sequential baseline (full DB, per-block `21..30`):
+  - `wall_clock_total_ms=1070`, `wall_clock_compute_ms=964`, `merklization_total_ms=935`
+- Parallel schedule (5 copies, 2 applies per copy):
+  - Overall wall-clock (start -> all applies finished): `2632 ms`
+  - Critical-path compute (max over copies of seg1+seg2 compute): `1161 ms`
+  - Critical-path pure merkle (max over copies of seg1+seg2 merkle): `1130 ms`
+
+Note:
+- The measured overall wall-clock is inflated because we spawn 10 separate processes (2 runs per copy), and each run re-opens DBs.
+- A real orchestrator/microservice would keep each copy's DB open and execute multiple applies in-process, pushing wall time closer to the critical-path compute time.
+
+### Removing Contention (Same Work, Run Copies in Isolation)
+If we run each copy's segments without concurrency (no CPU/I/O contention) and then take the max per-copy merkle time
+(this approximates "dedicated resources per copy" or an orchestrator controlling threads), we get:
+- Sequential baseline merkle (full DB, per-block `21..30`): `673 ms`
+- Parallel critical-path merkle (5 copies, 2-round schedule): `424 ms`
+
+Interpretation:
+- The earlier "parallel merkle is slower" result was dominated by oversubscription (multiple multithreaded processes at once).
+- Under no contention, the critical-path merkle time is lower than sequential as expected.
+
+## Keys vs Merkleization Time (SSH, Pure Merkle, No RPC Fallback) (2026-02-07)
+### Dataset
+Block window:
+- `608897..608996` (100 blocks)
+
+Environment assumptions:
+- All runs used `--require-read-map` with a global read-map (so `rpc_read_fallback_count=0`).
+- We did not include RPC validation time in `merklization_ms` (it measures Bonsai commit time only).
+
+Artifacts:
+- CSV: `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449/records.csv` (600 rows)
+- Plots:
+  - `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449/plots/key_total_vs_merkle_ms.png`
+  - `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449/plots/storage_keys_vs_storage_commit_ms.png`
+  - `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449/plots/touched_contracts_vs_contract_trie_commit_ms.png`
+  - `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449/plots/merkle_ms_per_key_by_block_count.png`
+
+How we defined "keys" in this dataset:
+- `key_total = touched_contracts + unique_storage_keys + class_updates_total`
+- In this window `class_updates_total` was always `0`, so `key_total ~= touched_contracts + unique_storage_keys`.
+
+### Simple Fit (per apply)
+Linear regression `merklization_ms ~ key_total`:
+- Sequential (per-block applies): `merklization_ms = 2.2593*key_total + 33.07` (`R^2=0.790`, `n=300`)
+- Parallel schedule (mostly 5-block squashed applies): `merklization_ms = 2.3501*key_total + 50.42` (`R^2=0.777`, `n=300`)
+
+### Better Model (what actually explains variance)
+Multivariate least-squares fit:
+- Sequential: `merklization_ms ~= 0.7383*unique_storage_keys + 21.7591*touched_contracts - 21.72` (`R^2=0.969`)
+- Parallel: `merklization_ms ~= 0.4665*unique_storage_keys + 27.0630*touched_contracts - 0.91*block_count - 21.66` (`R^2=0.975`)
+
+Interpretation:
+- `touched_contracts` has a large fixed cost component (contract-leaf work).
+- `unique_storage_keys` drives storage-commit work roughly linearly.
+- `block_count` provides some amortization (small in this dataset because it is usually `5`).
+
+### Note: Debug vs Release Builds Matter a Lot
+The original `bench_keys_time_...` iters `1..3` were produced with a slower build (effectively debug-like timings).
+When we rebuilt and ran later iterations with a `--release` binary (iters `4..8`), absolute timings dropped by ~10x,
+but the *shape* of the relationship stayed the same.
+
+Release-only artifacts (iters `4..8`):
+- CSV: `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449_release_iters4_8/records.csv`
+- Plots:
+  - `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449_release_iters4_8/plots/key_total_vs_merkle_ms.png`
+  - `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449_release_iters4_8/plots/storage_keys_vs_storage_commit_ms.png`
+  - `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449_release_iters4_8/plots/touched_contracts_vs_contract_trie_commit_ms.png`
+  - `/Users/mohit/Desktop/karnot/madara2/tmp/bench_keys_time_608897_608996_1770451449_release_iters4_8/plots/merkle_ms_per_key_by_block_count.png`
+
+Release-only fits (per apply):
+- Sequential (per-block applies): `merklization_ms = 0.2105*key_total + 1.36` (`R^2=0.602`, `n=500`)
+- Parallel schedule (mostly 5-block squashed applies): `merklization_ms = 0.3655*key_total + 1.95` (`R^2=0.760`, `n=500`)
+
+Release-only multivariate fits:
+- Sequential: `merklization_ms ~= 0.0268*unique_storage_keys + 2.566*touched_contracts - 5.255` (`R^2=0.831`)
+- Parallel: `merklization_ms ~= 0.0693*unique_storage_keys + 4.249*touched_contracts - 0.0306*block_count - 9.912` (`R^2=0.959`)
+
+Pitfall:
+- Comparing `per_block` vs `squash_range` with `block_count=1` is not evidence about squashing/parallel behavior.
+  Both modes apply a single block's diff, so they are expected to match; this only sanity-checks instrumentation.

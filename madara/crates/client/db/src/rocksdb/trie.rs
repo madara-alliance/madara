@@ -9,7 +9,9 @@ use rocksdb::{Direction, IteratorMode};
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::LazyLock;
 
 pub const BONSAI_CONTRACT_FLAT_COLUMN: Column = Column::new("bonsai_contract_flat").set_point_lookup();
 pub const BONSAI_CONTRACT_TRIE_COLUMN: Column = Column::new("bonsai_contract_trie").set_point_lookup();
@@ -20,6 +22,144 @@ pub const BONSAI_CONTRACT_STORAGE_LOG_COLUMN: Column = Column::new("bonsai_contr
 pub const BONSAI_CLASS_FLAT_COLUMN: Column = Column::new("bonsai_class_flat").set_point_lookup();
 pub const BONSAI_CLASS_TRIE_COLUMN: Column = Column::new("bonsai_class_trie").set_point_lookup();
 pub const BONSAI_CLASS_LOG_COLUMN: Column = Column::new("bonsai_class_log");
+
+/// Fixed ordering used by `bonsai_db_ops_snapshot()` for per-CF counters.
+pub const BONSAI_CF_NAMES: [&str; 9] = [
+    "bonsai_contract_flat",
+    "bonsai_contract_trie",
+    "bonsai_contract_log",
+    "bonsai_contract_storage_flat",
+    "bonsai_contract_storage_trie",
+    "bonsai_contract_storage_log",
+    "bonsai_class_flat",
+    "bonsai_class_trie",
+    "bonsai_class_log",
+];
+
+fn bonsai_cf_index(name: &str) -> Option<usize> {
+    match name {
+        "bonsai_contract_flat" => Some(0),
+        "bonsai_contract_trie" => Some(1),
+        "bonsai_contract_log" => Some(2),
+        "bonsai_contract_storage_flat" => Some(3),
+        "bonsai_contract_storage_trie" => Some(4),
+        "bonsai_contract_storage_log" => Some(5),
+        "bonsai_class_flat" => Some(6),
+        "bonsai_class_trie" => Some(7),
+        "bonsai_class_log" => Some(8),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BonsaiDbOpsSnapshot {
+    pub enabled: bool,
+    pub get_calls: [u64; 9],
+    pub get_value_bytes: [u64; 9],
+    pub insert_calls: [u64; 9],
+    pub insert_old_value_present: [u64; 9],
+    pub insert_old_value_bytes: [u64; 9],
+    pub remove_calls: [u64; 9],
+    pub remove_old_value_present: [u64; 9],
+    pub remove_old_value_bytes: [u64; 9],
+    pub contains_calls: [u64; 9],
+    pub contains_hits: [u64; 9],
+    pub iter_calls: [u64; 9],
+    pub iter_keys: [u64; 9],
+    pub iter_key_bytes: [u64; 9],
+    pub iter_value_bytes: [u64; 9],
+    pub write_batch_calls: u64,
+    pub get_key_bytes: [u64; 9],
+    pub insert_key_bytes: [u64; 9],
+    pub insert_value_bytes: [u64; 9],
+    pub remove_key_bytes: [u64; 9],
+    pub contains_key_bytes: [u64; 9],
+}
+
+struct BonsaiDbOpsCounters {
+    enabled: AtomicBool,
+    get_calls: [AtomicU64; 9],
+    get_value_bytes: [AtomicU64; 9],
+    insert_calls: [AtomicU64; 9],
+    insert_old_value_present: [AtomicU64; 9],
+    insert_old_value_bytes: [AtomicU64; 9],
+    remove_calls: [AtomicU64; 9],
+    remove_old_value_present: [AtomicU64; 9],
+    remove_old_value_bytes: [AtomicU64; 9],
+    contains_calls: [AtomicU64; 9],
+    contains_hits: [AtomicU64; 9],
+    iter_calls: [AtomicU64; 9],
+    iter_keys: [AtomicU64; 9],
+    iter_key_bytes: [AtomicU64; 9],
+    iter_value_bytes: [AtomicU64; 9],
+    write_batch_calls: AtomicU64,
+    get_key_bytes: [AtomicU64; 9],
+    insert_key_bytes: [AtomicU64; 9],
+    insert_value_bytes: [AtomicU64; 9],
+    remove_key_bytes: [AtomicU64; 9],
+    contains_key_bytes: [AtomicU64; 9],
+}
+
+impl BonsaiDbOpsCounters {
+    fn new() -> Self {
+        Self {
+            enabled: AtomicBool::new(false),
+            get_calls: std::array::from_fn(|_| AtomicU64::new(0)),
+            get_value_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+            insert_calls: std::array::from_fn(|_| AtomicU64::new(0)),
+            insert_old_value_present: std::array::from_fn(|_| AtomicU64::new(0)),
+            insert_old_value_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+            remove_calls: std::array::from_fn(|_| AtomicU64::new(0)),
+            remove_old_value_present: std::array::from_fn(|_| AtomicU64::new(0)),
+            remove_old_value_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+            contains_calls: std::array::from_fn(|_| AtomicU64::new(0)),
+            contains_hits: std::array::from_fn(|_| AtomicU64::new(0)),
+            iter_calls: std::array::from_fn(|_| AtomicU64::new(0)),
+            iter_keys: std::array::from_fn(|_| AtomicU64::new(0)),
+            iter_key_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+            iter_value_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+            write_batch_calls: AtomicU64::new(0),
+            get_key_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+            insert_key_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+            insert_value_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+            remove_key_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+            contains_key_bytes: std::array::from_fn(|_| AtomicU64::new(0)),
+        }
+    }
+}
+
+static BONSAI_DB_OPS: LazyLock<BonsaiDbOpsCounters> = LazyLock::new(BonsaiDbOpsCounters::new);
+
+pub fn bonsai_db_ops_set_enabled(enabled: bool) {
+    BONSAI_DB_OPS.enabled.store(enabled, Ordering::Relaxed);
+}
+
+pub fn bonsai_db_ops_snapshot() -> BonsaiDbOpsSnapshot {
+    let enabled = BONSAI_DB_OPS.enabled.load(Ordering::Relaxed);
+    BonsaiDbOpsSnapshot {
+        enabled,
+        get_calls: BONSAI_DB_OPS.get_calls.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        get_value_bytes: BONSAI_DB_OPS.get_value_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        insert_calls: BONSAI_DB_OPS.insert_calls.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        insert_old_value_present: BONSAI_DB_OPS.insert_old_value_present.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        insert_old_value_bytes: BONSAI_DB_OPS.insert_old_value_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        remove_calls: BONSAI_DB_OPS.remove_calls.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        remove_old_value_present: BONSAI_DB_OPS.remove_old_value_present.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        remove_old_value_bytes: BONSAI_DB_OPS.remove_old_value_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        contains_calls: BONSAI_DB_OPS.contains_calls.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        contains_hits: BONSAI_DB_OPS.contains_hits.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        iter_calls: BONSAI_DB_OPS.iter_calls.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        iter_keys: BONSAI_DB_OPS.iter_keys.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        iter_key_bytes: BONSAI_DB_OPS.iter_key_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        iter_value_bytes: BONSAI_DB_OPS.iter_value_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        write_batch_calls: BONSAI_DB_OPS.write_batch_calls.load(Ordering::Relaxed),
+        get_key_bytes: BONSAI_DB_OPS.get_key_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        insert_key_bytes: BONSAI_DB_OPS.insert_key_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        insert_value_bytes: BONSAI_DB_OPS.insert_value_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        remove_key_bytes: BONSAI_DB_OPS.remove_key_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+        contains_key_bytes: BONSAI_DB_OPS.contains_key_bytes.each_ref().map(|v| v.load(Ordering::Relaxed)),
+    }
+}
 
 pub type GlobalTrie<H> = BonsaiStorage<BasicId, BonsaiDB, H>;
 
@@ -119,8 +259,23 @@ impl BonsaiDatabase for BonsaiDB {
     #[tracing::instrument(skip(self, key))]
     fn get(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, Self::DatabaseError> {
         tracing::trace!("Getting from RocksDB: {:?}", key);
+        let idx = if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            bonsai_cf_index(self.column_mapping.map(key).rocksdb_name)
+        } else {
+            None
+        };
+        if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            if let Some(idx) = idx {
+                BONSAI_DB_OPS.get_calls[idx].fetch_add(1, Ordering::Relaxed);
+                BONSAI_DB_OPS.get_key_bytes[idx].fetch_add(key.as_slice().len() as u64, Ordering::Relaxed);
+            }
+        }
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
-        Ok(self.backend.db.get_cf(&handle, key.as_slice())?.map(Into::into))
+        let value = self.backend.db.get_cf(&handle, key.as_slice())?;
+        if let (Some(idx), Some(value)) = (idx, value.as_ref()) {
+            BONSAI_DB_OPS.get_value_bytes[idx].fetch_add(value.len() as u64, Ordering::Relaxed);
+        }
+        Ok(value.map(Into::into))
     }
 
     #[tracing::instrument(skip(self, prefix))]
@@ -128,10 +283,14 @@ impl BonsaiDatabase for BonsaiDB {
         tracing::trace!("Getting by prefix from RocksDB: {:?}", prefix);
         let handle = self.backend.get_column(self.column_mapping.map(prefix).clone());
         let iter = self.backend.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
-        Ok(iter
+        let mut iter_key_bytes: u64 = 0;
+        let mut iter_value_bytes: u64 = 0;
+        let out: Vec<_> = iter
             .map_while(|kv| {
                 if let Ok((key, value)) = kv {
                     if key.starts_with(prefix.as_slice()) {
+                        iter_key_bytes += key.len() as u64;
+                        iter_value_bytes += value.len() as u64;
                         // nb: to_vec on a Box<[u8]> is a noop conversion
                         Some((key.to_vec().into(), value.to_vec().into()))
                     } else {
@@ -141,14 +300,40 @@ impl BonsaiDatabase for BonsaiDB {
                     None
                 }
             })
-            .collect())
+            .collect();
+
+        if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            if let Some(idx) = bonsai_cf_index(self.column_mapping.map(prefix).rocksdb_name) {
+                BONSAI_DB_OPS.iter_calls[idx].fetch_add(1, Ordering::Relaxed);
+                BONSAI_DB_OPS.iter_keys[idx].fetch_add(out.len() as u64, Ordering::Relaxed);
+                BONSAI_DB_OPS.iter_key_bytes[idx].fetch_add(iter_key_bytes, Ordering::Relaxed);
+                BONSAI_DB_OPS.iter_value_bytes[idx].fetch_add(iter_value_bytes, Ordering::Relaxed);
+            }
+        }
+
+        Ok(out)
     }
 
     #[tracing::instrument(skip(self, key))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         tracing::trace!("Checking if RocksDB contains: {:?}", key);
+        let idx = if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            bonsai_cf_index(self.column_mapping.map(key).rocksdb_name)
+        } else {
+            None
+        };
+        if let Some(idx) = idx {
+            BONSAI_DB_OPS.contains_calls[idx].fetch_add(1, Ordering::Relaxed);
+            BONSAI_DB_OPS.contains_key_bytes[idx].fetch_add(key.as_slice().len() as u64, Ordering::Relaxed);
+        }
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
-        Ok(self.backend.db.get_cf(&handle, key.as_slice()).map(|value| value.is_some())?)
+        let exists = self.backend.db.get_cf(&handle, key.as_slice())?.is_some();
+        if exists {
+            if let Some(idx) = idx {
+                BONSAI_DB_OPS.contains_hits[idx].fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        Ok(exists)
     }
 
     #[tracing::instrument(skip(self, key, value, batch))]
@@ -159,9 +344,27 @@ impl BonsaiDatabase for BonsaiDB {
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         tracing::trace!("Inserting into RocksDB: {:?} {:?}", key, value);
+        let idx = if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            bonsai_cf_index(self.column_mapping.map(key).rocksdb_name)
+        } else {
+            None
+        };
+        if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            if let Some(idx) = idx {
+                BONSAI_DB_OPS.insert_calls[idx].fetch_add(1, Ordering::Relaxed);
+                BONSAI_DB_OPS.insert_key_bytes[idx].fetch_add(key.as_slice().len() as u64, Ordering::Relaxed);
+                BONSAI_DB_OPS.insert_value_bytes[idx]
+                    .fetch_add(value.len().try_into().unwrap_or(u64::MAX), Ordering::Relaxed);
+            }
+        }
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
 
         let old_value = self.backend.db.get_cf(&handle, key.as_slice())?;
+        if let (Some(idx), Some(old)) = (idx, old_value.as_ref()) {
+            BONSAI_DB_OPS.insert_old_value_present[idx].fetch_add(1, Ordering::Relaxed);
+            BONSAI_DB_OPS.insert_old_value_bytes[idx]
+                .fetch_add(old.len().try_into().unwrap_or(u64::MAX), Ordering::Relaxed);
+        }
         if let Some(batch) = batch {
             batch.put_cf(&handle, key.as_slice(), value);
         } else {
@@ -177,8 +380,24 @@ impl BonsaiDatabase for BonsaiDB {
         batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         tracing::trace!("Removing from RocksDB: {:?}", key);
+        let idx = if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            bonsai_cf_index(self.column_mapping.map(key).rocksdb_name)
+        } else {
+            None
+        };
+        if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            if let Some(idx) = idx {
+                BONSAI_DB_OPS.remove_calls[idx].fetch_add(1, Ordering::Relaxed);
+                BONSAI_DB_OPS.remove_key_bytes[idx].fetch_add(key.as_slice().len() as u64, Ordering::Relaxed);
+            }
+        }
         let handle = self.backend.get_column(self.column_mapping.map(key).clone());
         let old_value = self.backend.db.get_cf(&handle, key.as_slice())?;
+        if let (Some(idx), Some(old)) = (idx, old_value.as_ref()) {
+            BONSAI_DB_OPS.remove_old_value_present[idx].fetch_add(1, Ordering::Relaxed);
+            BONSAI_DB_OPS.remove_old_value_bytes[idx]
+                .fetch_add(old.len().try_into().unwrap_or(u64::MAX), Ordering::Relaxed);
+        }
         if let Some(batch) = batch {
             batch.delete_cf(&handle, key.as_slice());
         } else {
@@ -193,15 +412,24 @@ impl BonsaiDatabase for BonsaiDB {
         let handle = self.backend.get_column(self.column_mapping.map(prefix).clone());
         let iter = self.backend.db.iterator_cf(&handle, IteratorMode::From(prefix.as_slice(), Direction::Forward));
         let mut batch = self.create_batch();
+        let mut removed: u64 = 0;
         for kv in iter {
             if let Ok((key, _)) = kv {
                 if key.starts_with(prefix.as_slice()) {
                     batch.delete_cf(&handle, &key);
+                    removed += 1;
                 } else {
                     break;
                 }
             } else {
                 break;
+            }
+        }
+        if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            if let Some(idx) = bonsai_cf_index(self.column_mapping.map(prefix).rocksdb_name) {
+                BONSAI_DB_OPS.iter_calls[idx].fetch_add(1, Ordering::Relaxed);
+                BONSAI_DB_OPS.iter_keys[idx].fetch_add(removed, Ordering::Relaxed);
+                BONSAI_DB_OPS.remove_calls[idx].fetch_add(removed, Ordering::Relaxed);
             }
         }
         drop(handle);
@@ -211,6 +439,9 @@ impl BonsaiDatabase for BonsaiDB {
 
     #[tracing::instrument(skip(self, batch))]
     fn write_batch(&mut self, batch: Self::Batch) -> Result<(), Self::DatabaseError> {
+        if BONSAI_DB_OPS.enabled.load(Ordering::Relaxed) {
+            BONSAI_DB_OPS.write_batch_calls.fetch_add(1, Ordering::Relaxed);
+        }
         Ok(self.backend.db.write_opt(batch, &self.backend.writeopts)?)
     }
 }

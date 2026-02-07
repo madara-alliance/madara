@@ -49,7 +49,12 @@ struct RpcResponse<T> {
     error: Option<RpcError>,
 }
 
-fn rpc_call<T: DeserializeOwned>(client: &BlockingClient, rpc_url: &str, method: &str, params: serde_json::Value) -> Result<T> {
+fn rpc_call<T: DeserializeOwned>(
+    client: &BlockingClient,
+    rpc_url: &str,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<T> {
     let request = serde_json::json!({
         "jsonrpc": "2.0",
         "method": method,
@@ -98,9 +103,7 @@ fn summarize_chain_tip(tip: StorageChainTip) -> String {
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
 
     let args = Args::parse();
     let db_path = resolve_db_path(&args.db_path)?;
@@ -127,12 +130,7 @@ fn main() -> Result<()> {
         let rpc_root = fetch_rpc_root(&client, &rpc_url, latest_applied)?;
         println!("rpc_root={}", format_felt(rpc_root));
         if rpc_root != state_root {
-            bail!(
-                "Root mismatch at {}: db={}, rpc={}",
-                latest_applied,
-                format_felt(state_root),
-                format_felt(rpc_root)
-            );
+            bail!("Root mismatch at {}: db={}, rpc={}", latest_applied, format_felt(state_root), format_felt(rpc_root));
         }
         println!("root_check=OK");
     }
