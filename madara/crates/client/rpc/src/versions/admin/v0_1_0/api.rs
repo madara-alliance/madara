@@ -60,6 +60,11 @@ pub trait MadaraWriteRpcApi {
     #[method(name = "closeBlock")]
     async fn close_block(&self) -> RpcResult<()>;
 
+    /// Flush all mempool transactions for processing.
+    /// Mempool intake will pause again after the flush completes.
+    #[method(name = "flushMempool")]
+    async fn flush_mempool(&self) -> RpcResult<()>;
+
     /// Revert the blockchain to a specific block hash.
     #[method(name = "revertTo")]
     async fn revert_to(&self, block_hash: Felt) -> RpcResult<()>;

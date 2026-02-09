@@ -1,4 +1,6 @@
 use crate::executor::{self, ExecutorCommand, ExecutorCommandError};
+use crate::MempoolIntakeMode;
+use anyhow::Context;
 use async_trait::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{
@@ -14,6 +16,7 @@ use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
+use tokio::sync::watch;
 
 struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
@@ -38,6 +41,7 @@ pub struct BlockProductionHandle {
     /// Commands to executor task.
     executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
     bypass_input: mpsc::Sender<ValidatedTransaction>,
+    mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
 }
@@ -47,11 +51,13 @@ impl BlockProductionHandle {
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
+        mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
         no_charge_fee: bool,
     ) -> Self {
         Self {
             executor_commands,
             bypass_input: bypass_input.clone(),
+            mempool_intake_tx,
             tx_converter: TransactionValidator::new(
                 Arc::new(BypassInput(bypass_input)),
                 backend,
@@ -68,6 +74,13 @@ impl BlockProductionHandle {
             .send(ExecutorCommand::CloseBlock(sender))
             .map_err(|_| ExecutorCommandError::ChannelClosed)?;
         recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
+    }
+
+    pub fn flush_mempool(&self) -> anyhow::Result<()> {
+        self.mempool_intake_tx
+            .send(MempoolIntakeMode::FlushOnce)
+            .context("Mempool intake channel closed")?;
+        Ok(())
     }
 
     /// Send a transaction through the bypass channel to bypass mempool and validation.
