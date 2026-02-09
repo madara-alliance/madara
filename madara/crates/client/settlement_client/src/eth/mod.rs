@@ -666,7 +666,9 @@ mod l1_messaging_tests {
 
         // Set canceled status and fire event
         let _ = contract.setIsCanceled(false).send().await.expect("Should successfully set canceled status to false");
-        let _ = contract.fireEvent().send().await.expect("Should successfully fire messaging event");
+        let fire_tx = contract.fireEvent().send().await.expect("Should successfully fire messaging event");
+        let l1_tx_hash_u256: U256 = (*fire_tx.tx_hash()).into();
+        let l1_tx_hash = mp_convert::L1TransactionHash(l1_tx_hash_u256.to_be_bytes::<32>());
 
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -705,6 +707,13 @@ mod l1_messaging_tests {
         assert_ne!(last_block, 0);
         // TODO: Assert that the transaction has been executed successfully
         assert!(db.get_pending_message_to_l2(0).unwrap().is_some());
+
+        // Assert that L1 tx hash indexing metadata was persisted (used by `starknet_getMessagesStatus`).
+        assert_eq!(db.get_l1_txn_hash_by_nonce(handler_tx.tx.nonce).unwrap(), Some(l1_tx_hash));
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(handler_tx.tx.nonce, None)]
+        );
 
         // Explicitly cancel the listen task, else it would be running in the background
         worker_handle.abort();

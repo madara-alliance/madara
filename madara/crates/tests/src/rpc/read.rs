@@ -180,6 +180,61 @@ mod test_rpc_read_calls {
         );
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_messages_status_accepts_short_and_odd_hex_params() {
+        let madara = get_madara().await;
+
+        let client = reqwest::Client::new();
+        for (id, hash) in [(0, "0x1"), (1, "0xabc")] {
+            let res = client
+                .post(madara.rpc_url.clone().unwrap())
+                .json(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "starknet_getMessagesStatus",
+                    "params": { "transaction_hash": hash },
+                    "id": id,
+                }))
+                .send()
+                .await
+                .unwrap();
+
+            let body = res.json::<serde_json::Value>().await.unwrap();
+
+            // The node doesn't know this tx hash, but parsing should succeed.
+            assert_eq!(body["id"], serde_json::json!(id));
+            assert_eq!(body["error"]["code"], serde_json::json!(29));
+            assert_eq!(body["error"]["message"], serde_json::json!("Transaction hash not found"));
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_messages_status_rejects_invalid_l1_tx_hash_format() {
+        let madara = get_madara().await;
+
+        let client = reqwest::Client::new();
+        for (id, hash) in [(0, "1"), (1, "0x")] {
+            let res = client
+                .post(madara.rpc_url.clone().unwrap())
+                .json(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "starknet_getMessagesStatus",
+                    "params": { "transaction_hash": hash },
+                    "id": id,
+                }))
+                .send()
+                .await
+                .unwrap();
+
+            let body = res.json::<serde_json::Value>().await.unwrap();
+
+            assert_eq!(body["id"], serde_json::json!(id));
+            assert_eq!(body["error"]["code"], serde_json::json!(-32602));
+            assert_eq!(body["error"]["message"], serde_json::json!("Invalid params"));
+        }
+    }
+
     /// Fetches a block with its transactions and receipts.
     ///
     /// Example curl command:

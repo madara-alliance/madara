@@ -753,11 +753,23 @@ mod starknet_client_messaging_test {
         };
 
         // Firing the event
-        fire_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
+        let l1_tx_hash_felt =
+            fire_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
         tokio::time::sleep(Duration::from_secs(10)).await;
 
         // Assert that the event is well stored in db
-        assert!(fixture.db_service.get_pending_message_to_l2(0)?.is_some());
+        let pending = fixture.db_service.get_pending_message_to_l2(0)?.expect("message should be stored as pending");
+
+        let nonce = pending.tx.nonce;
+        let l1_tx_hash = mp_convert::L1TransactionHash(l1_tx_hash_felt.to_bytes_be());
+
+        assert_eq!(fixture.db_service.get_l1_txn_hash_by_nonce(nonce)?, Some(l1_tx_hash));
+        let msgs =
+            fixture.db_service.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash)?.expect("l1 tx hash should be known");
+        assert!(
+            msgs.iter().any(|(n, maybe)| *n == nonce && maybe.is_none()),
+            "expected (nonce, None) marker entry for the fired message"
+        );
 
         // Cancelling worker
         worker_handle.abort();

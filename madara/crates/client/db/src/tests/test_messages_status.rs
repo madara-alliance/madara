@@ -1,8 +1,11 @@
 #![cfg(test)]
 
 use crate::MadaraBackend;
+use mp_block::{FullBlockWithoutCommitments, TransactionWithReceipt};
 use mp_chain_config::ChainConfig;
 use mp_convert::{Felt, L1TransactionHash};
+use mp_receipt::{ExecutionResult, L1HandlerTransactionReceipt, TransactionReceipt};
+use mp_transactions::L1HandlerTransaction;
 
 #[test]
 fn l1_to_l2_messages_by_l1_tx_hash_roundtrip_and_ordering() {
@@ -49,4 +52,33 @@ fn l1_to_l2_l1_tx_hash_by_nonce_roundtrip() {
     let l1_tx_hash = L1TransactionHash([0x22; 32]);
     db.write_l1_txn_hash_by_nonce(42, &l1_tx_hash).unwrap();
     assert_eq!(db.get_l1_txn_hash_by_nonce(42).unwrap(), Some(l1_tx_hash));
+}
+
+#[test]
+fn l1_to_l2_secondary_index_is_filled_on_block_write_when_mapping_exists() {
+    let db = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+
+    let nonce = 7u64;
+    let l1_tx_hash = L1TransactionHash([0x33; 32]);
+    db.write_l1_txn_hash_by_nonce(nonce, &l1_tx_hash).unwrap();
+    assert!(db.insert_message_to_l2_seen_marker(&l1_tx_hash, nonce).unwrap());
+
+    let l2_tx_hash = Felt::from_hex("0x123").unwrap();
+    let tx = L1HandlerTransaction { nonce, ..Default::default() };
+    let receipt = TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+        transaction_hash: l2_tx_hash,
+        execution_result: ExecutionResult::Succeeded,
+        ..Default::default()
+    });
+    let block = FullBlockWithoutCommitments {
+        header: Default::default(),
+        state_diff: Default::default(),
+        transactions: vec![TransactionWithReceipt { transaction: tx.into(), receipt }],
+        events: Default::default(),
+    };
+
+    db.write_access().add_full_block_with_classes(&block, &[], true).unwrap();
+
+    let msgs = db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap();
+    assert_eq!(msgs, vec![(nonce, Some(l2_tx_hash))]);
 }
