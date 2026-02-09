@@ -1,8 +1,10 @@
 use crate::{
     prelude::*,
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
+    storage::L1ToL2MessagesByL1TxHash,
 };
 use mp_convert::Felt;
+use mp_convert::L1TransactionHash;
 use mp_receipt::L1HandlerTransactionReceipt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use rocksdb::ReadOptions;
@@ -12,6 +14,16 @@ pub const L1_TO_L2_PENDING_MESSAGE_BY_NONCE: Column =
     Column::new("l1_to_l2_pending_message_by_nonce").set_point_lookup();
 /// <core_contract_nonce 8 bytes> => txn hash
 pub const L1_TO_L2_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_txn_hash_by_nonce").set_point_lookup();
+
+/// <l1_tx_hash 32 bytes> + <core_contract_nonce 8 bytes> => <l2_tx_hash 32 bytes> | empty
+///
+/// This is the secondary index used by `starknet_getMessagesStatus` to avoid O(N) scans at RPC time.
+/// - Key prefix: 32 bytes of `l1_tx_hash` allows prefix iteration for all messages sent by the same L1 tx.
+/// - Value:
+///   - empty => "seen/received marker" (message emitted on L1, but no consumed L1-handler tx known yet)
+///   - 32 bytes => consumed L1-handler L2 transaction hash (felt bytes)
+pub const L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE: Column =
+    Column::new("l1_to_l2_l2_txn_hash_by_l1_txn_hash_and_nonce").with_prefix_extractor_len(32);
 
 impl RocksDBStorageInner {
     /// Also removed the given txns from the pending column.
@@ -31,6 +43,85 @@ impl RocksDBStorageInner {
 
         self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
+    }
+
+    fn message_to_l2_by_l1_tx_key(l1_tx_hash: &L1TransactionHash, core_contract_nonce: u64) -> [u8; 40] {
+        let mut key = [0u8; 40];
+        key[..32].copy_from_slice(&l1_tx_hash.0);
+        key[32..].copy_from_slice(&core_contract_nonce.to_be_bytes());
+        key
+    }
+
+    /// Ensure the `(l1_tx_hash, nonce)` key exists, without overwriting a non-empty value.
+    pub(super) fn ensure_message_to_l2_seen_on_l1(
+        &self,
+        l1_tx_hash: &L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<()> {
+        let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        let key = Self::message_to_l2_by_l1_tx_key(l1_tx_hash, core_contract_nonce);
+        if let Some(existing) = self.db.get_pinned_cf(&cf, key)? {
+            if !existing.is_empty() {
+                // Don't clobber a filled value with an empty marker.
+                return Ok(());
+            }
+        }
+        self.db.put_cf_opt(&cf, key, [], &self.writeopts)?;
+        Ok(())
+    }
+
+    /// Write/update the consumed L1-handler L2 transaction hash for `(l1_tx_hash, nonce)`.
+    pub(super) fn write_message_to_l2_consumed_txn_hash(
+        &self,
+        l1_tx_hash: &L1TransactionHash,
+        core_contract_nonce: u64,
+        l2_tx_hash: &Felt,
+    ) -> Result<()> {
+        let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        let key = Self::message_to_l2_by_l1_tx_key(l1_tx_hash, core_contract_nonce);
+        self.db.put_cf_opt(&cf, key, l2_tx_hash.to_bytes_be(), &self.writeopts)?;
+        Ok(())
+    }
+
+    /// Get all messages (nonces) for a given L1 tx, in L1 sending order (nonce order).
+    ///
+    /// Returns:
+    /// - `Ok(None)` if the L1 tx hash is unknown to the node.
+    /// - `Ok(Some(vec))` for known hashes (values may be `None` for not-yet-consumed messages).
+    pub(super) fn get_messages_to_l2_by_l1_tx_hash(
+        &self,
+        l1_tx_hash: &L1TransactionHash,
+    ) -> Result<Option<L1ToL2MessagesByL1TxHash>> {
+        let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        let prefix = l1_tx_hash.0.as_slice();
+
+        // We use RocksDB's standard iterator here (owned key/value) since we need to stop once
+        // the prefix no longer matches.
+        let iter = self.db.iterator_cf(&cf, rocksdb::IteratorMode::From(prefix, rocksdb::Direction::Forward));
+
+        let mut out = Vec::new();
+        for kv in iter {
+            let (key, val) = kv?;
+            if !key.starts_with(prefix) {
+                break;
+            }
+            if key.len() != 40 {
+                bail!("Invalid l1->l2 message key length: expected 40, got {}", key.len());
+            }
+            let nonce = u64::from_be_bytes(key[32..40].try_into().expect("slice len checked"));
+            let l2_hash = match val.len() {
+                0 => None,
+                32 => Some(Felt::from_bytes_be(val[..].try_into().expect("slice len checked"))),
+                n => bail!("Invalid l1->l2 message value length: expected 0 or 32, got {n}"),
+            };
+            out.push((nonce, l2_hash));
+        }
+
+        if out.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(out))
+        }
     }
 
     /// If the message is already pending, this will overwrite it.

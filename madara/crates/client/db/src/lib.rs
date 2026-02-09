@@ -981,6 +981,12 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
     }
+    pub fn get_messages_to_l2_by_l1_tx_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<Option<crate::storage::L1ToL2MessagesByL1TxHash>> {
+        self.db.get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
+    }
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
     }
@@ -1007,6 +1013,21 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
         self.db.remove_pending_message_to_l2(core_contract_nonce)
+    }
+    pub fn ensure_message_to_l2_seen_on_l1(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<()> {
+        self.db.ensure_message_to_l2_seen_on_l1(l1_tx_hash, core_contract_nonce)
+    }
+    pub fn write_message_to_l2_consumed_txn_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+        l2_tx_hash: &Felt,
+    ) -> Result<()> {
+        self.db.write_message_to_l2_consumed_txn_hash(l1_tx_hash, core_contract_nonce, l2_tx_hash)
     }
     pub fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()> {
         self.db.write_devnet_predeployed_keys(devnet_keys)

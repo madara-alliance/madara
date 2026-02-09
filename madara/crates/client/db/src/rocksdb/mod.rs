@@ -359,6 +359,14 @@ impl MadaraStorageRead for RocksDBStorage {
             .get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
             .with_context(|| format!("Getting next pending message to l2 with nonce={core_contract_nonce}"))
     }
+    fn get_messages_to_l2_by_l1_tx_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<Option<crate::storage::L1ToL2MessagesByL1TxHash>> {
+        self.inner
+            .get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
+            .with_context(|| format!("Getting messages to l2 by l1_tx_hash_bytes={:?}", l1_tx_hash.0))
+    }
 
     // Mempool
 
@@ -466,6 +474,41 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .remove_pending_message_to_l2(core_contract_nonce)
             .with_context(|| format!("Removing pending message to l2 nonce={core_contract_nonce}"))
+    }
+    fn ensure_message_to_l2_seen_on_l1(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<()> {
+        tracing::debug!(
+            "Ensure l1->l2 message seen on l1 l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+            l1_tx_hash.0
+        );
+        self.inner.ensure_message_to_l2_seen_on_l1(l1_tx_hash, core_contract_nonce).with_context(|| {
+            format!(
+                "Ensuring l1->l2 message seen on l1 l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+                l1_tx_hash.0
+            )
+        })
+    }
+    fn write_message_to_l2_consumed_txn_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+        l2_tx_hash: &Felt,
+    ) -> Result<()> {
+        tracing::debug!(
+            "Write consumed l1->l2 message l1_tx_hash_bytes={:?} nonce={core_contract_nonce} l2_tx_hash={l2_tx_hash:#x}",
+            l1_tx_hash.0
+        );
+        self.inner.write_message_to_l2_consumed_txn_hash(l1_tx_hash, core_contract_nonce, l2_tx_hash).with_context(
+            || {
+                format!(
+                    "Writing consumed l1->l2 message l1_tx_hash_bytes={:?} nonce={core_contract_nonce} l2_tx_hash={l2_tx_hash:#x}",
+                    l1_tx_hash.0
+                )
+            },
+        )
     }
 
     fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()> {

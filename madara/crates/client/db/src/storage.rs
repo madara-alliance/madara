@@ -34,6 +34,9 @@ impl EventFilter {
     }
 }
 
+/// The list of (core contract nonce, consumed L2 tx hash if known) for all messages sent by an L1 transaction.
+pub type L1ToL2MessagesByL1TxHash = Vec<(u64, Option<Felt>)>;
+
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct StorageTxIndex {
     pub block_number: u64,
@@ -142,6 +145,10 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>>;
     fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>>;
     fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>>;
+    fn get_messages_to_l2_by_l1_tx_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<Option<L1ToL2MessagesByL1TxHash>>;
 
     // Mempool
 
@@ -169,6 +176,17 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()>;
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()>;
     fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()>;
+    fn ensure_message_to_l2_seen_on_l1(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<()>;
+    fn write_message_to_l2_consumed_txn_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+        l2_tx_hash: &Felt,
+    ) -> Result<()>;
 
     fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()>;
     fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()>;
