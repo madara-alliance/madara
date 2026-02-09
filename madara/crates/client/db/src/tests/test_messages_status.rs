@@ -17,8 +17,8 @@ fn l1_to_l2_messages_by_l1_tx_hash_roundtrip_and_ordering() {
     assert!(db.get_messages_to_l2_by_l1_tx_hash(&unknown).unwrap().is_none());
 
     // Write out-of-order "seen markers" (empty values).
-    db.ensure_message_to_l2_sent_by_l1_tx(&l1_tx_hash, 10).unwrap();
-    db.ensure_message_to_l2_sent_by_l1_tx(&l1_tx_hash, 9).unwrap();
+    assert!(db.insert_message_to_l2_seen_marker(&l1_tx_hash, 10).unwrap());
+    assert!(db.insert_message_to_l2_seen_marker(&l1_tx_hash, 9).unwrap());
 
     let msgs = db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap();
     assert_eq!(msgs.len(), 2);
@@ -35,7 +35,7 @@ fn l1_to_l2_messages_by_l1_tx_hash_roundtrip_and_ordering() {
     assert_eq!(msgs[1], (10, Some(l2_tx_hash)));
 
     // Ensure does not clobber a filled value.
-    db.ensure_message_to_l2_sent_by_l1_tx(&l1_tx_hash, 10).unwrap();
+    assert!(!db.insert_message_to_l2_seen_marker(&l1_tx_hash, 10).unwrap());
     let msgs = db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap();
     assert_eq!(msgs[1], (10, Some(l2_tx_hash)));
 }

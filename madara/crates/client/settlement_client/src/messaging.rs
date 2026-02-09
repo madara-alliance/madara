@@ -245,19 +245,8 @@ async fn process_finalized_events(
             .write_l1_txn_hash_by_nonce(nonce, &l1_tx_hash)
             .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store l1_tx_hash by nonce: {}", e)))?;
         backend
-            .ensure_message_to_l2_sent_by_l1_tx(&l1_tx_hash, nonce)
+            .insert_message_to_l2_seen_marker(&l1_tx_hash, nonce)
             .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store l1->l2 sent marker: {}", e)))?;
-
-        // Repair-fill: if the message has already been consumed on L2 (e.g. node replay window),
-        // fill the consumed L2 tx hash immediately.
-        if let Some(l2_tx_hash) = backend
-            .get_l1_handler_txn_hash_by_nonce(nonce)
-            .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to check consumed l2 tx hash: {}", e)))?
-        {
-            backend.write_message_to_l2_consumed_txn_hash(&l1_tx_hash, nonce, &l2_tx_hash).map_err(|e| {
-                SettlementClientError::DatabaseError(format!("Failed to fill consumed l2 tx hash: {}", e))
-            })?;
-        }
 
         let is_valid = check_message_to_l2_validity(settlement_client, backend, &event.message).await.map_err(|e| {
             SettlementClientError::InvalidResponse(format!(
@@ -486,52 +475,6 @@ mod messaging_module_tests {
         );
 
         // Clean up: cancel context and abort task
-        ctx_clone.cancel_global();
-        sync_handle.abort();
-
-        Ok(())
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_sync_repair_fills_consumed_txn_hash(
-        #[future] setup_messaging_tests: MessagingTestRunner,
-    ) -> anyhow::Result<()> {
-        let MessagingTestRunner { mut client, db, ctx } = setup_messaging_tests.await;
-
-        let mock_event = create_mock_event(100, 1);
-        let notify = Arc::new(Notify::new());
-
-        db.write_l1_messaging_sync_tip(Some(99))?;
-
-        // Simulate that the message is already consumed on L2 (nonce -> l2 tx hash exists).
-        let consumed_l2_hash = Felt::from_hex("0xabc").unwrap();
-        db.write_l1_handler_txn_hash_by_nonce(mock_event.message.tx.nonce, &consumed_l2_hash)?;
-
-        let events = vec![mock_event.clone()];
-        client.expect_messages_to_l2_stream().returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
-        client.expect_get_latest_block_number().returning(|| Ok(200));
-        client.expect_get_client_type().returning(|| ClientType::Eth);
-
-        let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
-
-        let ctx_clone = ctx.clone();
-        let db_backend_clone = db.clone();
-
-        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
-
-        tokio::time::sleep(Duration::from_millis(500)).await;
-
-        // Since it was already consumed, it should not be written as pending.
-        assert!(db.get_pending_message_to_l2(mock_event.message.tx.nonce).unwrap().is_none());
-
-        let l1_tx_hash = mp_convert::L1TransactionHash(mock_event.l1_transaction_hash.to_be_bytes::<32>());
-        assert_eq!(db.get_l1_txn_hash_by_nonce(mock_event.message.tx.nonce).unwrap(), Some(l1_tx_hash));
-        assert_eq!(
-            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
-            vec![(mock_event.message.tx.nonce, Some(consumed_l2_hash))]
-        );
-
         ctx_clone.cancel_global();
         sync_handle.abort();
 

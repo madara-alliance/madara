@@ -1,7 +1,7 @@
 use crate::{
     prelude::*,
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
-    storage::L1ToL2MessagesByL1TxHash,
+    storage::{L1ToL2MessageIndexEntry, L1ToL2MessagesByL1TxHash},
 };
 use mp_convert::Felt;
 use mp_convert::L1TransactionHash;
@@ -66,22 +66,40 @@ impl RocksDBStorageInner {
         key
     }
 
-    /// Ensure the `(l1_tx_hash, nonce)` key exists, without overwriting a non-empty value.
-    pub(super) fn ensure_message_to_l2_sent_by_l1_tx(
+    pub(super) fn get_message_to_l2_index_entry(
         &self,
         l1_tx_hash: &L1TransactionHash,
         core_contract_nonce: u64,
-    ) -> Result<()> {
+    ) -> Result<Option<L1ToL2MessageIndexEntry>> {
         let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
         let key = Self::message_to_l2_by_l1_tx_key(l1_tx_hash, core_contract_nonce);
-        if let Some(existing) = self.db.get_pinned_cf(&cf, key)? {
-            if !existing.is_empty() {
-                // Don't clobber a filled value with an empty marker.
-                return Ok(());
-            }
+        let Some(existing) = self.db.get_pinned_cf(&cf, key)? else { return Ok(None) };
+        Ok(Some(match existing.len() {
+            0 => L1ToL2MessageIndexEntry::Seen,
+            32 => L1ToL2MessageIndexEntry::Consumed(Felt::from_bytes_be(
+                existing[..].try_into().expect("slice len checked"),
+            )),
+            n => bail!("Invalid l1->l2 message value length: expected 0 or 32, got {n}"),
+        }))
+    }
+
+    /// Insert the `(l1_tx_hash, nonce)` key with an empty marker value, if it is missing.
+    ///
+    /// Returns:
+    /// - `Ok(true)` if the marker was inserted.
+    /// - `Ok(false)` if the key already existed (empty marker or consumed tx hash).
+    pub(super) fn insert_message_to_l2_seen_marker(
+        &self,
+        l1_tx_hash: &L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<bool> {
+        let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        let key = Self::message_to_l2_by_l1_tx_key(l1_tx_hash, core_contract_nonce);
+        if self.db.get_pinned_cf(&cf, key)?.is_some() {
+            return Ok(false);
         }
         self.db.put_cf_opt(&cf, key, [], &self.writeopts)?;
-        Ok(())
+        Ok(true)
     }
 
     /// Write/update the consumed L1-handler L2 transaction hash for `(l1_tx_hash, nonce)`.

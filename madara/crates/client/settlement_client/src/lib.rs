@@ -107,10 +107,15 @@
 //! once consumed.
 //!
 //! ```no_run
+//! # use futures::StreamExt;
+//! # use mc_settlement_client::SettlementClient;
+//! # let settlement_client: &dyn SettlementClient = todo!();
+//! # let _ = async {
 //! let mut consumer = settlement_client.create_message_to_l2_consumer();
-//! while let Some(Ok(message)) = consumer.next().await {
+//! while let Some(Ok(_message)) = consumer.next().await {
 //!     // Include message in block
 //! }
+//! # };
 //! ```
 //!
 //! ## State Updates via L1HeadReceiver
@@ -119,10 +124,15 @@
 //! can subscribe to track the L1 head without polling.
 //!
 //! ```no_run
+//! # use mc_settlement_client::state_update::L1HeadReceiver;
+//! # let mut l1_head_receiver: L1HeadReceiver = todo!();
+//! # let _ = async {
 //! // Get the current L1 head state
-//! let current_state = l1_head_receiver.borrow();
-//! if let Some(state) = current_state.as_ref() {
-//!     println!("Current L1 block: {:?}", state.block_number);
+//! {
+//!     let current_state = l1_head_receiver.borrow();
+//!     if let Some(state) = current_state.as_ref() {
+//!         println!("Current L1 block: {:?}", state.block_number);
+//!     }
 //! }
 //!
 //! // Wait for state updates
@@ -134,6 +144,7 @@
 //!                  state.block_number, state.global_root);
 //!     }
 //! }
+//! # };
 //! ```
 //!
 //! ## Direct Provider Access

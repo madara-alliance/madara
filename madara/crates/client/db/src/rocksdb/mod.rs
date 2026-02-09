@@ -372,6 +372,18 @@ impl MadaraStorageRead for RocksDBStorage {
             .get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
             .with_context(|| format!("Getting messages to l2 by l1_tx_hash_bytes={:?}", l1_tx_hash.0))
     }
+    fn get_message_to_l2_index_entry(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<Option<crate::storage::L1ToL2MessageIndexEntry>> {
+        self.inner.get_message_to_l2_index_entry(l1_tx_hash, core_contract_nonce).with_context(|| {
+            format!(
+                "Getting l1->l2 message index entry l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+                l1_tx_hash.0
+            )
+        })
+    }
 
     // Mempool
 
@@ -496,18 +508,18 @@ impl MadaraStorageWrite for RocksDBStorage {
             )
         })
     }
-    fn ensure_message_to_l2_sent_by_l1_tx(
+    fn insert_message_to_l2_seen_marker(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
         core_contract_nonce: u64,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         tracing::debug!(
-            "Ensure l1->l2 message sent by l1 tx l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+            "Insert l1->l2 message seen marker l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
             l1_tx_hash.0
         );
-        self.inner.ensure_message_to_l2_sent_by_l1_tx(l1_tx_hash, core_contract_nonce).with_context(|| {
+        self.inner.insert_message_to_l2_seen_marker(l1_tx_hash, core_contract_nonce).with_context(|| {
             format!(
-                "Ensuring l1->l2 message sent by l1 tx l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+                "Inserting l1->l2 message seen marker l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
                 l1_tx_hash.0
             )
         })

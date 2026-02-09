@@ -990,6 +990,13 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     ) -> Result<Option<crate::storage::L1ToL2MessagesByL1TxHash>> {
         self.db.get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
     }
+    pub fn get_message_to_l2_index_entry(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<Option<crate::storage::L1ToL2MessageIndexEntry>> {
+        self.db.get_message_to_l2_index_entry(l1_tx_hash, core_contract_nonce)
+    }
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
     }
@@ -1024,12 +1031,12 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     ) -> Result<()> {
         self.db.write_l1_txn_hash_by_nonce(core_contract_nonce, l1_tx_hash)
     }
-    pub fn ensure_message_to_l2_sent_by_l1_tx(
+    pub fn insert_message_to_l2_seen_marker(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
         core_contract_nonce: u64,
-    ) -> Result<()> {
-        self.db.ensure_message_to_l2_sent_by_l1_tx(l1_tx_hash, core_contract_nonce)
+    ) -> Result<bool> {
+        self.db.insert_message_to_l2_seen_marker(l1_tx_hash, core_contract_nonce)
     }
     pub fn write_message_to_l2_consumed_txn_hash(
         &self,
