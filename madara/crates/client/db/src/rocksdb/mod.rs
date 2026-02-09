@@ -354,6 +354,11 @@ impl MadaraStorageRead for RocksDBStorage {
             .get_next_pending_message_to_l2(start_nonce)
             .with_context(|| format!("Getting next pending message to l2 with start_nonce={start_nonce}"))
     }
+    fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>> {
+        self.inner
+            .get_l1_txn_hash_by_nonce(core_contract_nonce)
+            .with_context(|| format!("Getting l1 txn hash by nonce={core_contract_nonce}"))
+    }
     fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.inner
             .get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
@@ -474,6 +479,22 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .remove_pending_message_to_l2(core_contract_nonce)
             .with_context(|| format!("Removing pending message to l2 nonce={core_contract_nonce}"))
+    }
+    fn write_l1_txn_hash_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<()> {
+        tracing::debug!(
+            "Write l1 txn hash by nonce core_contract_nonce={core_contract_nonce} l1_tx_hash_bytes={:?}",
+            l1_tx_hash.0
+        );
+        self.inner.write_l1_txn_hash_by_nonce(core_contract_nonce, l1_tx_hash).with_context(|| {
+            format!(
+                "Writing l1 txn hash by nonce core_contract_nonce={core_contract_nonce} l1_tx_hash_bytes={:?}",
+                l1_tx_hash.0
+            )
+        })
     }
     fn ensure_message_to_l2_seen_on_l1(
         &self,

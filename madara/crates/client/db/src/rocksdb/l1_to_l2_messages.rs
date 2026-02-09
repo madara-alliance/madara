@@ -12,6 +12,8 @@ use rocksdb::ReadOptions;
 /// <core_contract_nonce 8 bytes> => bincode(pending message)
 pub const L1_TO_L2_PENDING_MESSAGE_BY_NONCE: Column =
     Column::new("l1_to_l2_pending_message_by_nonce").set_point_lookup();
+/// <core_contract_nonce 8 bytes> => <l1_tx_hash 32 bytes>
+pub const L1_TO_L2_L1_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_l1_txn_hash_by_nonce").set_point_lookup();
 /// <core_contract_nonce 8 bytes> => txn hash
 pub const L1_TO_L2_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_txn_hash_by_nonce").set_point_lookup();
 
@@ -33,12 +35,24 @@ impl RocksDBStorageInner {
     ) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
         let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
+        let l1_tx_hash_by_nonce_cf = self.get_column(L1_TO_L2_L1_TXN_HASH_BY_NONCE);
         let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
+        let by_l1_tx_hash_cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
 
         for (txn, receipt) in txs {
             let key = txn.nonce.to_be_bytes();
             batch.delete_cf(&pending_cf, key);
             batch.put_cf(&on_l2_cf, key, receipt.transaction_hash.to_bytes_be());
+
+            // If the L1 tx hash mapping exists, fill the secondary index too.
+            if let Some(l1_tx_hash_bytes) = self.db.get_pinned_cf(&l1_tx_hash_by_nonce_cf, key)? {
+                if l1_tx_hash_bytes.len() != 32 {
+                    bail!("Invalid l1->l2 nonce->l1_tx_hash value length: expected 32, got {}", l1_tx_hash_bytes.len());
+                }
+                let l1_tx_hash = L1TransactionHash(l1_tx_hash_bytes.as_ref().try_into().expect("slice len checked"));
+                let by_l1_key = Self::message_to_l2_by_l1_tx_key(&l1_tx_hash, txn.nonce);
+                batch.put_cf(&by_l1_tx_hash_cf, by_l1_key, receipt.transaction_hash.to_bytes_be());
+            }
         }
 
         self.db.write_opt(batch, &self.writeopts)?;
@@ -122,6 +136,25 @@ impl RocksDBStorageInner {
         } else {
             Ok(Some(out))
         }
+    }
+
+    pub(super) fn write_l1_txn_hash_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        l1_tx_hash: &L1TransactionHash,
+    ) -> Result<()> {
+        let cf = self.get_column(L1_TO_L2_L1_TXN_HASH_BY_NONCE);
+        self.db.put_cf_opt(&cf, core_contract_nonce.to_be_bytes(), l1_tx_hash.0, &self.writeopts)?;
+        Ok(())
+    }
+
+    pub(super) fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<L1TransactionHash>> {
+        let cf = self.get_column(L1_TO_L2_L1_TXN_HASH_BY_NONCE);
+        let Some(res) = self.db.get_pinned_cf(&cf, core_contract_nonce.to_be_bytes())? else { return Ok(None) };
+        if res.len() != 32 {
+            bail!("Invalid l1->l2 nonce->l1_tx_hash value length: expected 32, got {}", res.len());
+        }
+        Ok(Some(L1TransactionHash(res.as_ref().try_into().expect("slice len checked"))))
     }
 
     /// If the message is already pending, this will overwrite it.

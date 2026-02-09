@@ -978,6 +978,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
         self.db.get_next_pending_message_to_l2(start_nonce)
     }
+    pub fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>> {
+        self.db.get_l1_txn_hash_by_nonce(core_contract_nonce)
+    }
     pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
     }
@@ -1013,6 +1016,13 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
         self.db.remove_pending_message_to_l2(core_contract_nonce)
+    }
+    pub fn write_l1_txn_hash_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<()> {
+        self.db.write_l1_txn_hash_by_nonce(core_contract_nonce, l1_tx_hash)
     }
     pub fn ensure_message_to_l2_seen_on_l1(
         &self,

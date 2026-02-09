@@ -144,6 +144,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
     fn get_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>>;
     fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>>;
+    fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>>;
     fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>>;
     fn get_messages_to_l2_by_l1_tx_hash(
         &self,
@@ -176,6 +177,11 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()>;
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()>;
     fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()>;
+    fn write_l1_txn_hash_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<()>;
     fn ensure_message_to_l2_seen_on_l1(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,

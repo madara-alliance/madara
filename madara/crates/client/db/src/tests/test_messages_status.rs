@@ -39,3 +39,14 @@ fn l1_to_l2_messages_by_l1_tx_hash_roundtrip_and_ordering() {
     let msgs = db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap();
     assert_eq!(msgs[1], (10, Some(l2_tx_hash)));
 }
+
+#[test]
+fn l1_to_l2_l1_tx_hash_by_nonce_roundtrip() {
+    let db = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+
+    assert!(db.get_l1_txn_hash_by_nonce(42).unwrap().is_none());
+
+    let l1_tx_hash = L1TransactionHash([0x22; 32]);
+    db.write_l1_txn_hash_by_nonce(42, &l1_tx_hash).unwrap();
+    assert_eq!(db.get_l1_txn_hash_by_nonce(42).unwrap(), Some(l1_tx_hash));
+}

@@ -30,6 +30,7 @@ pub const ALL_COLUMNS: &[Column] = &[
     super::meta::META_COLUMN,
     super::meta::PRECONFIRMED_COLUMN,
     super::l1_to_l2_messages::L1_TO_L2_PENDING_MESSAGE_BY_NONCE,
+    super::l1_to_l2_messages::L1_TO_L2_L1_TXN_HASH_BY_NONCE,
     super::l1_to_l2_messages::L1_TO_L2_TXN_HASH_BY_NONCE,
     super::l1_to_l2_messages::L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE,
     super::mempool::MEMPOOL_TRANSACTIONS_COLUMN,
