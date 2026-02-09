@@ -496,18 +496,18 @@ impl MadaraStorageWrite for RocksDBStorage {
             )
         })
     }
-    fn ensure_message_to_l2_seen_on_l1(
+    fn ensure_message_to_l2_sent_by_l1_tx(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
         core_contract_nonce: u64,
     ) -> Result<()> {
         tracing::debug!(
-            "Ensure l1->l2 message seen on l1 l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+            "Ensure l1->l2 message sent by l1 tx l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
             l1_tx_hash.0
         );
-        self.inner.ensure_message_to_l2_seen_on_l1(l1_tx_hash, core_contract_nonce).with_context(|| {
+        self.inner.ensure_message_to_l2_sent_by_l1_tx(l1_tx_hash, core_contract_nonce).with_context(|| {
             format!(
-                "Ensuring l1->l2 message seen on l1 l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
+                "Ensuring l1->l2 message sent by l1 tx l1_tx_hash_bytes={:?} nonce={core_contract_nonce}",
                 l1_tx_hash.0
             )
         })

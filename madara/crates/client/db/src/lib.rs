@@ -1024,12 +1024,12 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     ) -> Result<()> {
         self.db.write_l1_txn_hash_by_nonce(core_contract_nonce, l1_tx_hash)
     }
-    pub fn ensure_message_to_l2_seen_on_l1(
+    pub fn ensure_message_to_l2_sent_by_l1_tx(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
         core_contract_nonce: u64,
     ) -> Result<()> {
-        self.db.ensure_message_to_l2_seen_on_l1(l1_tx_hash, core_contract_nonce)
+        self.db.ensure_message_to_l2_sent_by_l1_tx(l1_tx_hash, core_contract_nonce)
     }
     pub fn write_message_to_l2_consumed_txn_hash(
         &self,

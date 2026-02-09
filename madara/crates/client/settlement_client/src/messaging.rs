@@ -245,8 +245,8 @@ async fn process_finalized_events(
             .write_l1_txn_hash_by_nonce(nonce, &l1_tx_hash)
             .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store l1_tx_hash by nonce: {}", e)))?;
         backend
-            .ensure_message_to_l2_seen_on_l1(&l1_tx_hash, nonce)
-            .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store l1->l2 seen marker: {}", e)))?;
+            .ensure_message_to_l2_sent_by_l1_tx(&l1_tx_hash, nonce)
+            .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store l1->l2 sent marker: {}", e)))?;
 
         // Repair-fill: if the message has already been consumed on L2 (e.g. node replay window),
         // fill the consumed L2 tx hash immediately.

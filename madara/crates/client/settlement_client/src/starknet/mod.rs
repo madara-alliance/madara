@@ -511,7 +511,6 @@ pub mod starknet_client_tests {
 
     #[rstest]
     #[tokio::test]
-    #[ignore = "requires local Starknet test context (COVERAGE_BIN, devnet)"]
     async fn fail_create_new_client_contract_does_not_exists(
         #[future] test_fixture: StarknetClientTextFixture,
     ) -> anyhow::Result<()> {
@@ -529,7 +528,6 @@ pub mod starknet_client_tests {
 
     #[rstest]
     #[tokio::test]
-    #[ignore = "requires local Starknet test context (COVERAGE_BIN, devnet)"]
     async fn create_new_client_contract_exists_starknet_client(
         #[future] test_fixture: StarknetClientTextFixture,
     ) -> anyhow::Result<()> {
@@ -543,7 +541,6 @@ pub mod starknet_client_tests {
     // data taken from: https://sepolia.voyager.online/event/667945_6_3
     #[rstest]
     #[tokio::test]
-    #[ignore = "requires local Starknet test context (COVERAGE_BIN, devnet)"]
     async fn test_get_messaging_hash(#[future] test_fixture: StarknetClientTextFixture) -> anyhow::Result<()> {
         let fixture = test_fixture.await;
         let event = L1HandlerTransactionWithFee::new(
@@ -599,7 +596,6 @@ pub mod starknet_client_tests {
 
     #[rstest]
     #[tokio::test]
-    #[ignore = "requires local Starknet test context (COVERAGE_BIN, devnet)"]
     async fn get_last_event_block_number_works_starknet_client(
         #[future] test_fixture: StarknetClientTextFixture,
     ) -> anyhow::Result<()> {
@@ -638,7 +634,6 @@ pub mod starknet_client_tests {
 
     #[rstest]
     #[tokio::test]
-    #[ignore = "requires local Starknet test context (COVERAGE_BIN, devnet)"]
     async fn get_current_core_contract_state_works_starknet_client(
         #[future] test_fixture: StarknetClientTextFixture,
     ) -> anyhow::Result<()> {
@@ -740,7 +735,6 @@ mod starknet_client_messaging_test {
 
     #[rstest]
     #[tokio::test]
-    #[ignore = "requires local Starknet test context (COVERAGE_BIN, devnet)"]
     async fn e2e_test_basic_workflow_starknet(#[future] test_fixture: StarknetClientTextFixture) -> anyhow::Result<()> {
         let fixture = test_fixture.await;
 
@@ -773,7 +767,6 @@ mod starknet_client_messaging_test {
 
     #[rstest]
     #[tokio::test]
-    #[ignore = "requires local Starknet test context (COVERAGE_BIN, devnet)"]
     async fn e2e_test_message_canceled_starknet(
         #[future] test_fixture: StarknetClientTextFixture,
     ) -> anyhow::Result<()> {
@@ -816,7 +809,6 @@ mod starknet_client_event_subscription_test {
     use std::sync::Arc;
 
     #[tokio::test]
-    #[ignore = "requires local Starknet test context (COVERAGE_BIN, devnet)"]
     async fn listen_and_update_state_when_event_fired_starknet_client() -> anyhow::Result<()> {
         let context = get_test_context().await;
 

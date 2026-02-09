@@ -93,7 +93,7 @@ mod tests {
     fn get_messages_status_empty_when_only_seen_marker() {
         let starknet = starknet();
         let l1 = mp_convert::L1TransactionHash(l1_hash_bytes(1));
-        starknet.backend.ensure_message_to_l2_seen_on_l1(&l1, 7).unwrap();
+        starknet.backend.ensure_message_to_l2_sent_by_l1_tx(&l1, 7).unwrap();
 
         let res = get_messages_status(&starknet, L1TxnHash(l1.0)).unwrap();
         assert!(res.is_empty());
@@ -106,7 +106,7 @@ mod tests {
         let l2_tx_hash = starknet_types_core::felt::Felt::from_hex_unchecked("0x123");
 
         // Insert the message index entry.
-        starknet.backend.ensure_message_to_l2_seen_on_l1(&l1, 7).unwrap();
+        starknet.backend.ensure_message_to_l2_sent_by_l1_tx(&l1, 7).unwrap();
         starknet.backend.write_message_to_l2_consumed_txn_hash(&l1, 7, &l2_tx_hash).unwrap();
 
         // Store an L1 handler tx with a reverted receipt.

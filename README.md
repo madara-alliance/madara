@@ -374,8 +374,6 @@ Here is a list of all the supported methods with their current status:
 | ✅     | `starknet_getMessagesStatus` (v0.9.0, v0.10.0) |
 | 🚧     | `starknet_getStorageProof` (v0.8.0)        |
 
-Note: `starknet_getMessagesStatus` is implemented only for RPC versions `v0.9.0` and `v0.10.0` (it is intentionally not supported for `v0.8.1`).
-
 </details>
 
 <details>

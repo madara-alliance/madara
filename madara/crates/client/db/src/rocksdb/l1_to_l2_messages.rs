@@ -67,7 +67,7 @@ impl RocksDBStorageInner {
     }
 
     /// Ensure the `(l1_tx_hash, nonce)` key exists, without overwriting a non-empty value.
-    pub(super) fn ensure_message_to_l2_seen_on_l1(
+    pub(super) fn ensure_message_to_l2_sent_by_l1_tx(
         &self,
         l1_tx_hash: &L1TransactionHash,
         core_contract_nonce: u64,

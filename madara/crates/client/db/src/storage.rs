@@ -182,7 +182,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
         core_contract_nonce: u64,
         l1_tx_hash: &mp_convert::L1TransactionHash,
     ) -> Result<()>;
-    fn ensure_message_to_l2_seen_on_l1(
+    fn ensure_message_to_l2_sent_by_l1_tx(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
         core_contract_nonce: u64,

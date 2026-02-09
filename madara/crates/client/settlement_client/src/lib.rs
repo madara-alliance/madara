@@ -106,7 +106,7 @@
 //! production. Messages are validated before delivery and removed from the pending queue
 //! once consumed.
 //!
-//! ```rust,ignore
+//! ```no_run
 //! let mut consumer = settlement_client.create_message_to_l2_consumer();
 //! while let Some(Ok(message)) = consumer.next().await {
 //!     // Include message in block
@@ -118,7 +118,7 @@
 //! The `L1HeadReceiver` watch channel broadcasts the latest L1-confirmed state. Components
 //! can subscribe to track the L1 head without polling.
 //!
-//! ```rust,ignore
+//! ```no_run
 //! // Get the current L1 head state
 //! let current_state = l1_head_receiver.borrow();
 //! if let Some(state) = current_state.as_ref() {
