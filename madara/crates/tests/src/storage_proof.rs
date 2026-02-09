@@ -1,6 +1,10 @@
 use crate::{MadaraCmd, MadaraCmdBuilder};
 use rstest::rstest;
 
+/// Canonicalize JSON ordering for stable snapshot assertions.
+///
+/// Some RPC responses contain arrays/objects where element order is not guaranteed. We
+/// recursively sort arrays and object keys so `assert_eq!` comparisons are deterministic.
 fn normalize(json: &mut serde_json::Value) {
     match json {
         serde_json::Value::Array(arr) => {

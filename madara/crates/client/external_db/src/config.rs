@@ -1,4 +1,9 @@
 //! Configuration structures for external database integration.
+//!
+//! This module defines the service-level configuration used by `mc-external-db`.
+//! CLI parsing lives in the node crate and maps user-provided args/env vars into
+//! [`ExternalDbConfig`]. Keeping the config here avoids coupling tests and other
+//! callers to the CLI layer.
 
 use serde::{Deserialize, Serialize};
 

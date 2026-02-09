@@ -118,7 +118,7 @@ use figment::{
 use http::{HeaderName, HeaderValue};
 use mc_analytics::AnalyticsService;
 use mc_db::MadaraBackend;
-use mc_external_db::{ExternalDbConfig, ExternalDbService};
+use mc_external_db::ExternalDbService;
 use mc_gateway_client::GatewayProvider;
 use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_submit_tx::{SubmitTransaction, TransactionValidator};
@@ -365,30 +365,12 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.validator_params.no_charge_fee,
     )?;
 
-    let service_external_db = if run_cmd.external_db_params.is_enabled() {
-        let mut config = ExternalDbConfig::new(
-            run_cmd
-                .external_db_params
-                .external_db_mongodb_uri
-                .clone()
-                .expect("external_db_mongodb_uri is checked by is_enabled"),
-        );
-        if let Some(db_name) = &run_cmd.external_db_params.external_db_database {
-            config.database_name = db_name.clone();
-        }
-        config.collection_name = run_cmd.external_db_params.external_db_collection.clone();
-        config.batch_size = run_cmd.external_db_params.external_db_batch_size;
-        config.flush_interval_ms = run_cmd.external_db_params.external_db_flush_interval_ms;
-        config.retention_delay_secs = run_cmd.external_db_params.external_db_retention_secs;
-        config.retention_tick_secs = run_cmd.external_db_params.external_db_retention_tick_secs;
-        config.strict_outbox = run_cmd.external_db_params.external_db_strict_outbox;
-        config.retry_backoff_ms = run_cmd.external_db_params.external_db_retry_backoff_ms;
-        config.retry_backoff_max_ms = run_cmd.external_db_params.external_db_retry_backoff_max_ms;
-
-        Some(ExternalDbService::new(config, chain_config.chain_id.to_string(), backend.clone())?)
-    } else {
-        None
-    };
+    let service_external_db = run_cmd
+        .external_db_params
+        .to_config()
+        .map(|config| ExternalDbService::new(config, chain_config.chain_id.to_string(), backend.clone()))
+        .transpose()?;
+    let external_db_configured = service_external_db.is_some();
 
     // Add transaction provider
 
@@ -503,7 +485,10 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::Telemetry);
     }
 
-    if run_cmd.external_db_params.is_enabled() && !warp_update_receiver {
+    if external_db_configured && !warp_update_receiver {
+        // Warp-update receiver mode does not accept txs into the mempool, so running the
+        // outbox worker would be confusing at best and harmful at worst (it is tied to
+        // mempool tx acceptance and retention).
         app.activate(MadaraServiceId::ExternalDb);
     }
 

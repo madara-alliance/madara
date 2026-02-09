@@ -10,7 +10,7 @@
 //! - `{ "status": 1, "arrived_at": -1 }` - For status queries (future use)
 //! - `{ "tx_type": 1, "arrived_at": -1 }` - For transaction type queries
 //! - `{ "sender_address": 1, "nonce": 1 }` - For sender + nonce queries (replay)
-//! - `{ "tx_hash": 1 }` - For tx hash lookups (non-unique)
+//! - `{ "tx_hash": 1 }` - For tx hash lookups (duplicates allowed: at-least-once writes and replay)
 //! - `{ "chain_id": 1, "tx_hash": 1 }` - For retention deletions by chain + tx hash
 //! - `{ "block_number": 1 }` - For retention queries by block number
 

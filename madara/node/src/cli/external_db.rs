@@ -1,4 +1,5 @@
 use clap::Args;
+use mc_external_db::ExternalDbConfig;
 use serde::{Deserialize, Serialize};
 
 /// Parameters used to configure external database storage for mempool transactions.
@@ -79,5 +80,35 @@ impl ExternalDbParams {
     /// Returns true if external DB is enabled and configured.
     pub fn is_enabled(&self) -> bool {
         self.external_db_enabled && self.external_db_mongodb_uri.is_some()
+    }
+
+    /// Convert CLI parameters into an [`ExternalDbConfig`].
+    ///
+    /// Returns `None` when external DB storage is disabled or missing required fields.
+    /// Keeping this mapping in the CLI layer keeps `main.rs` small and avoids coupling
+    /// the service config type to clap/CLI structures.
+    pub fn to_config(&self) -> Option<ExternalDbConfig> {
+        if !self.is_enabled() {
+            return None;
+        }
+
+        let mut config = ExternalDbConfig::new(
+            self.external_db_mongodb_uri.clone().expect("external_db_mongodb_uri is checked by is_enabled"),
+        );
+
+        if let Some(db_name) = &self.external_db_database {
+            config.database_name = db_name.clone();
+        }
+
+        config.collection_name = self.external_db_collection.clone();
+        config.batch_size = self.external_db_batch_size;
+        config.flush_interval_ms = self.external_db_flush_interval_ms;
+        config.retention_delay_secs = self.external_db_retention_secs;
+        config.retention_tick_secs = self.external_db_retention_tick_secs;
+        config.strict_outbox = self.external_db_strict_outbox;
+        config.retry_backoff_ms = self.external_db_retry_backoff_ms;
+        config.retry_backoff_max_ms = self.external_db_retry_backoff_max_ms;
+
+        Some(config)
     }
 }

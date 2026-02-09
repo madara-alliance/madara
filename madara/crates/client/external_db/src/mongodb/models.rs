@@ -1,4 +1,16 @@
 //! MongoDB document models for mempool transactions.
+//!
+//! Design goals:
+//! - Store a stable, query-friendly schema (sender/nonce/type/arrival time, etc.).
+//! - Keep the full transaction payload available for deterministic replay
+//!   (`raw_transaction` as bincode).
+//!
+//! We intentionally do not try to persist `starknet_api::transaction::*` directly as MongoDB
+//! documents. That would tightly couple our database schema to upstream Rust types/serde and
+//! does not remove the need for query-friendly scalar fields.
+//!
+//! Writes are **at-least-once**: retries and restarts may insert the same transaction multiple
+//! times. `_id` (UUID) is the unique document key; `tx_hash` is indexed but **not unique**.
 
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +32,10 @@ pub struct MempoolTransactionDocument {
     #[serde(rename = "_id")]
     pub id: bson::Binary,
 
-    /// Transaction hash (indexed, non-unique)
+    /// Transaction hash (indexed).
+    ///
+    /// Not unique: duplicates are allowed due to at-least-once persistence (retries/restarts)
+    /// and replay flows. Use `_id` (UUID) for uniqueness.
     pub tx_hash: String,
 
     /// Transaction type: "INVOKE", "DECLARE", "DEPLOY_ACCOUNT", "L1_HANDLER", "DEPLOY"

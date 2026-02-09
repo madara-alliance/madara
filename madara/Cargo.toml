@@ -119,6 +119,8 @@ m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }
 mc-e2e-tests = { path = "crates/tests" }
 
 # Testing
+# Used by `mc-external-db` e2e tests to run MongoDB via Docker.
+# Only crates that opt-in with `workspace = true` pull this dependency.
 testcontainers = "0.18.0"
 
 # Build

@@ -1,6 +1,11 @@
 //! Cache management for Cairo Native compiled classes
 //!
 //! This module handles both in-memory and disk-based caching of compiled native classes.
+//!
+//! Key behaviors:
+//! - Memory cache lookups are bounded by `memory_cache_timeout` to avoid blocking validation.
+//! - Disk cache loads (`.so`) are bounded by `disk_cache_load_timeout` to avoid hanging on slow I/O/dynamic linking.
+//! - Timeouts are treated as cache misses (fall back to VM / recompilation) and recorded in metrics.
 
 use blockifier::execution::contract_class::RunnableCompiledClass;
 use cairo_native::executor::AotContractExecutor;
