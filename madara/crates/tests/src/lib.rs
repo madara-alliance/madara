@@ -248,6 +248,7 @@ pub struct MadaraCmd {
     process: Option<Child>,
     ready: bool,
     rpc_url: Option<Url>,
+    rpc_admin_url: Option<Url>,
     gateway_root_url: Option<Url>,
     tempdir: Arc<TempDir>,
     label: String,
@@ -279,6 +280,9 @@ impl MadaraCmd {
 
     pub fn rpc_url(&self) -> String {
         format!("{}", self.rpc_url.as_ref().unwrap())
+    }
+    pub fn rpc_admin_url(&self) -> String {
+        format!("{}", self.rpc_admin_url.as_ref().unwrap())
     }
     pub fn gateway_url(&self) -> String {
         format!("{}gateway", self.gateway_root_url.as_ref().unwrap())
@@ -363,7 +367,7 @@ impl MadaraCmd {
         let _ = child.wait();
     }
 
-    pub fn hook_stdout_and_wait_for_ports(&mut self, rpc: bool, gateway: bool) {
+    pub fn hook_stdout_and_wait_for_ports(&mut self, rpc: bool, gateway: bool, rpc_admin: bool) {
         let stdout =
             self.process.as_mut().unwrap().stdout.take().expect("Could not capture stdout from Madara process");
         let pid = self.process.as_ref().unwrap().id();
@@ -375,6 +379,7 @@ impl MadaraCmd {
 
         thread::spawn(move || {
             let mut rpc_port = None;
+            let mut rpc_admin_port = None;
             let mut gateway_port = None;
 
             for line in reader.lines().map_while(Result::ok) {
@@ -392,33 +397,43 @@ impl MadaraCmd {
                 }
 
                 rpc_port = rpc_port.or_else(|| get_port(&line, "Running JSON-RPC server at "));
+                rpc_admin_port = rpc_admin_port.or_else(|| get_port(&line, "Running JSON-RPC (Admin) server at "));
                 gateway_port = gateway_port.or_else(|| get_port(&line, "Gateway endpoint started at "));
 
-                if (!rpc && rpc_port.is_some()) || (!gateway && gateway_port.is_some()) {
+                if (!rpc && rpc_port.is_some())
+                    || (!gateway && gateway_port.is_some())
+                    || (!rpc_admin && rpc_admin_port.is_some())
+                {
                     panic!(
-                        "Inconsistent returned ports: expected rpc_enabled={rpc}, gateway_enabled={gateway}, \
-                        got rpc_port={rpc_port:?}, gateway_port={gateway_port:?}"
+                        "Inconsistent returned ports: expected rpc_enabled={rpc}, gateway_enabled={gateway}, rpc_admin_enabled={rpc_admin}, \
+                        got rpc_port={rpc_port:?}, rpc_admin_port={rpc_admin_port:?}, gateway_port={gateway_port:?}"
                     )
                 }
 
-                if (rpc == rpc_port.is_some()) && (gateway == gateway_port.is_some()) {
-                    let _ = tx.send((rpc_port, gateway_port));
+                if (rpc == rpc_port.is_some())
+                    && (gateway == gateway_port.is_some())
+                    && (rpc_admin == rpc_admin_port.is_some())
+                {
+                    let _ = tx.send((rpc_port, rpc_admin_port, gateway_port));
                 }
                 println!("{stdout_prefix} {line}");
             }
         });
 
-        let timeout = Duration::from_secs(30);
+        let timeout = Duration::from_secs(90);
         let start = Instant::now();
 
         while start.elapsed() < timeout {
             match rx.try_recv() {
-                Ok((rpc_port, gateway_port)) => {
+                Ok((rpc_port, rpc_admin_port, gateway_port)) => {
                     let rpc_url = rpc_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
+                    let rpc_admin_url =
+                        rpc_admin_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
                     let gateway_root_url =
                         gateway_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
 
                     self.rpc_url = rpc_url;
+                    self.rpc_admin_url = rpc_admin_url;
                     self.gateway_root_url = gateway_root_url;
                     return;
                 }
@@ -498,8 +513,9 @@ impl MadaraCmdBuilder {
     /// Also waits for the ports to be assigned.
     pub fn run(self) -> MadaraCmd {
         let (rpc, gateway) = (self.rpc_enabled, self.gateway_enabled);
+        let rpc_admin = self.args.iter().any(|arg| arg == "--rpc-admin");
         let mut cmd = self.run_no_wait();
-        cmd.hook_stdout_and_wait_for_ports(rpc, gateway);
+        cmd.hook_stdout_and_wait_for_ports(rpc, gateway, rpc_admin);
         cmd
     }
 
@@ -553,6 +569,7 @@ impl MadaraCmdBuilder {
             process: Some(process),
             ready: false,
             rpc_url: None,
+            rpc_admin_url: None,
             gateway_root_url: None,
             label: self.label,
             tempdir: self.tempdir,

@@ -50,12 +50,14 @@ futures = { workspace = true }
 itertools.workspace = true
 libc.workspace = true
 librocksdb-sys = { workspace = true }
+m-cairo-test-contracts = { workspace = true, optional = true }
 num-traits = { workspace = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
 serde = { workspace = true }
 siphasher.workspace = true
 smallvec.workspace = true
+starknet-core = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
@@ -84,6 +86,7 @@ tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
+uuid = { workspace = true }
 
 
 [dev-dependencies]
@@ -94,7 +97,14 @@ lazy_static = { workspace = true }
 mp-transactions = { workspace = true }
 rstest = { workspace = true }
 rand = { workspace = true }
+m-cairo-test-contracts = { workspace = true }
+starknet-core = { workspace = true }
 
 [features]
 default = []
-testing = ["tempfile", "starknet_api/testing"]
+testing = [
+  "tempfile",
+  "starknet_api/testing",
+  "starknet-core",
+  "m-cairo-test-contracts",
+]

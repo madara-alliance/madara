@@ -1,6 +1,6 @@
 use crate::cli::RunCmd;
 use mc_db::MadaraBackend;
-use mc_mempool::{Mempool, MempoolConfig};
+use mc_mempool::{ExternalOutboxConfig, Mempool, MempoolConfig};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::sync::Arc;
 
@@ -10,10 +10,15 @@ pub struct MempoolService {
 
 impl MempoolService {
     pub fn new(run_cmd: &RunCmd, backend: Arc<MadaraBackend>) -> Self {
+        let external_outbox = if run_cmd.external_db_params.is_enabled() {
+            ExternalOutboxConfig::enabled(run_cmd.external_db_params.external_db_strict_outbox)
+        } else {
+            ExternalOutboxConfig::default()
+        };
         Self {
             mempool: Arc::new(Mempool::new(
                 Arc::clone(&backend),
-                MempoolConfig { save_to_db: !run_cmd.validator_params.no_mempool_saving },
+                MempoolConfig { save_to_db: !run_cmd.validator_params.no_mempool_saving, external_outbox },
             )),
         }
     }
