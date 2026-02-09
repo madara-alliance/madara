@@ -35,7 +35,9 @@ mod read_cache_kind {
     pub const STORAGE: &str = "storage";
     pub const NONCE: &str = "nonce";
     pub const CLASS_HASH: &str = "class_hash";
+    pub const COMPILED_CLASS: &str = "compiled_class";
     pub const COMPILED_CLASS_HASH: &str = "compiled_class_hash";
+    pub const COMPILED_CLASS_HASH_V2: &str = "compiled_class_hash_v2";
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -43,11 +45,13 @@ enum CacheKey {
     Storage(ContractAddress, StorageKey),
     Nonce(ContractAddress),
     ClassHash(ContractAddress),
+    CompiledClass(ClassHash),
     CompiledClassHash(ClassHash),
+    CompiledClassHashV2(ClassHash),
 }
 
-#[derive(Debug, Clone, Copy)]
-struct CacheEntry<T: Copy> {
+#[derive(Debug, Clone)]
+struct CacheEntry<T: Clone> {
     value: T,
     seq: u64,
     size: usize,
@@ -64,7 +68,10 @@ struct ExecutionReadCacheInner {
     storage: HashMap<(ContractAddress, StorageKey), CacheEntry<Felt>>,
     nonces: HashMap<ContractAddress, CacheEntry<Nonce>>,
     class_hashes: HashMap<ContractAddress, CacheEntry<ClassHash>>,
+    cached_class_hashes: HashSet<ClassHash>,
+    compiled_classes: HashMap<ClassHash, CacheEntry<RunnableCompiledClass>>,
     compiled_class_hashes: HashMap<ClassHash, CacheEntry<CompiledClassHash>>,
+    compiled_class_hashes_v2: HashMap<ClassHash, CacheEntry<CompiledClassHash>>,
     order: VecDeque<CacheQueueEntry>,
     current_bytes: usize,
     next_seq: u64,
@@ -117,24 +124,121 @@ impl ExecutionReadCache {
         self.all_contracts || self.contracts.contains(&contract_address)
     }
 
+    fn should_cache_class_hash(&self, class_hash: ClassHash) -> bool {
+        if self.all_contracts {
+            return true;
+        }
+        let guard = self.inner.read().expect("Poisoned execution read cache lock");
+        guard.cached_class_hashes.contains(&class_hash)
+    }
+
     fn get_storage(&self, contract_address: ContractAddress, key: StorageKey) -> Option<Felt> {
         let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.storage.get(&(contract_address, key)).map(|entry| entry.value)
+        guard.storage.get(&(contract_address, key)).map(|entry| entry.value.clone())
     }
 
     fn get_nonce(&self, contract_address: ContractAddress) -> Option<Nonce> {
         let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.nonces.get(&contract_address).map(|entry| entry.value)
+        guard.nonces.get(&contract_address).map(|entry| entry.value.clone())
     }
 
     fn get_class_hash(&self, contract_address: ContractAddress) -> Option<ClassHash> {
         let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.class_hashes.get(&contract_address).map(|entry| entry.value)
+        guard.class_hashes.get(&contract_address).map(|entry| entry.value.clone())
+    }
+
+    fn get_compiled_class(&self, class_hash: ClassHash) -> Option<RunnableCompiledClass> {
+        let guard = self.inner.read().expect("Poisoned execution read cache lock");
+        guard.compiled_classes.get(&class_hash).map(|entry| entry.value.clone())
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> Option<CompiledClassHash> {
         let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.compiled_class_hashes.get(&class_hash).map(|entry| entry.value)
+        guard.compiled_class_hashes.get(&class_hash).map(|entry| entry.value.clone())
+    }
+
+    fn get_compiled_class_hash_v2(&self, class_hash: ClassHash) -> Option<CompiledClassHash> {
+        let guard = self.inner.read().expect("Poisoned execution read cache lock");
+        guard.compiled_class_hashes_v2.get(&class_hash).map(|entry| entry.value.clone())
+    }
+
+    fn insert_storage_value(&self, contract_address: ContractAddress, key: StorageKey, value: Felt) {
+        if !self.is_contract_enabled(contract_address) {
+            return;
+        }
+        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
+        guard.insert_storage(contract_address, key, value);
+        let evicted = guard.evict_if_needed(self.max_bytes);
+        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        if evicted > 0 {
+            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
+        }
+    }
+
+    fn insert_nonce_value(&self, contract_address: ContractAddress, value: Nonce) {
+        if !self.is_contract_enabled(contract_address) {
+            return;
+        }
+        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
+        guard.insert_nonce(contract_address, value);
+        let evicted = guard.evict_if_needed(self.max_bytes);
+        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        if evicted > 0 {
+            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
+        }
+    }
+
+    fn insert_class_hash_value(&self, contract_address: ContractAddress, value: ClassHash) {
+        if !self.is_contract_enabled(contract_address) {
+            return;
+        }
+        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
+        guard.insert_class_hash(contract_address, value);
+        guard.cached_class_hashes.insert(value);
+        let evicted = guard.evict_if_needed(self.max_bytes);
+        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        if evicted > 0 {
+            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
+        }
+    }
+
+    fn insert_compiled_class_value(&self, class_hash: ClassHash, value: RunnableCompiledClass) {
+        if !self.should_cache_class_hash(class_hash) {
+            return;
+        }
+        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
+        guard.insert_compiled_class(class_hash, value);
+        let evicted = guard.evict_if_needed(self.max_bytes);
+        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        if evicted > 0 {
+            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
+        }
+    }
+
+    fn insert_compiled_class_hash_value(&self, class_hash: ClassHash, value: CompiledClassHash) {
+        if !self.should_cache_class_hash(class_hash) {
+            return;
+        }
+        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
+        guard.insert_compiled_class_hash(class_hash, value);
+        let evicted = guard.evict_if_needed(self.max_bytes);
+        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        if evicted > 0 {
+            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
+        }
+    }
+
+    fn insert_compiled_class_hash_v2_value(&self, class_hash: ClassHash, value: CompiledClassHash) {
+        if !self.should_cache_class_hash(class_hash) {
+            return;
+        }
+        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
+        guard.insert_compiled_class_hash_v2(class_hash, value);
+        let evicted = guard.evict_if_needed(self.max_bytes);
+        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        if evicted > 0 {
+            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
+        }
     }
 
     fn apply_state_diff(&self, state_diff: &StateMaps) {
@@ -146,6 +250,7 @@ impl ExecutionReadCache {
             if self.is_contract_enabled(*contract_address) {
                 guard.insert_class_hash(*contract_address, *class_hash);
                 allowed_class_hashes.insert(*class_hash);
+                guard.cached_class_hashes.insert(*class_hash);
             }
         }
 
@@ -223,6 +328,19 @@ impl ExecutionReadCacheInner {
         self.order.push_back(CacheQueueEntry { key: CacheKey::ClassHash(contract_address), seq });
     }
 
+    fn insert_compiled_class(&mut self, class_hash: ClassHash, value: RunnableCompiledClass) {
+        const COMPILED_CLASS_ENTRY_SIZE: usize = 64 * 1024;
+        let entry_size = COMPILED_CLASS_ENTRY_SIZE;
+        let seq = self.next_seq();
+        if let Some(existing) =
+            self.compiled_classes.insert(class_hash, CacheEntry { value, seq, size: entry_size })
+        {
+            self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+        }
+        self.current_bytes = self.current_bytes.saturating_add(entry_size);
+        self.order.push_back(CacheQueueEntry { key: CacheKey::CompiledClass(class_hash), seq });
+    }
+
     fn insert_compiled_class_hash(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
         let entry_size = size_of::<CacheEntry<CompiledClassHash>>() + size_of::<ClassHash>();
         let seq = self.next_seq();
@@ -234,6 +352,19 @@ impl ExecutionReadCacheInner {
         }
         self.current_bytes = self.current_bytes.saturating_add(entry_size);
         self.order.push_back(CacheQueueEntry { key: CacheKey::CompiledClassHash(class_hash), seq });
+    }
+
+    fn insert_compiled_class_hash_v2(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
+        let entry_size = size_of::<CacheEntry<CompiledClassHash>>() + size_of::<ClassHash>();
+        let seq = self.next_seq();
+        if let Some(existing) = self
+            .compiled_class_hashes_v2
+            .insert(class_hash, CacheEntry { value, seq, size: entry_size })
+        {
+            self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+        }
+        self.current_bytes = self.current_bytes.saturating_add(entry_size);
+        self.order.push_back(CacheQueueEntry { key: CacheKey::CompiledClassHashV2(class_hash), seq });
     }
 
     fn evict_if_needed(&mut self, max_bytes: usize) -> usize {
@@ -276,10 +407,28 @@ impl ExecutionReadCacheInner {
                     }
                 }
             }
+            CacheKey::CompiledClass(class_hash) => {
+                if let Some(existing) = self.compiled_classes.get(&class_hash) {
+                    if existing.seq == entry.seq {
+                        let existing = self.compiled_classes.remove(&class_hash).expect("entry exists");
+                        self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+                        return true;
+                    }
+                }
+            }
             CacheKey::CompiledClassHash(class_hash) => {
                 if let Some(existing) = self.compiled_class_hashes.get(&class_hash) {
                     if existing.seq == entry.seq {
                         let existing = self.compiled_class_hashes.remove(&class_hash).expect("entry exists");
+                        self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+                        return true;
+                    }
+                }
+            }
+            CacheKey::CompiledClassHashV2(class_hash) => {
+                if let Some(existing) = self.compiled_class_hashes_v2.get(&class_hash) {
+                    if existing.seq == entry.seq {
+                        let existing = self.compiled_class_hashes_v2.remove(&class_hash).expect("entry exists");
                         self.current_bytes = self.current_bytes.saturating_sub(existing.size);
                         return true;
                     }
@@ -405,7 +554,11 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
                 exec_metrics().record_read_cache_miss(read_cache_kind::STORAGE);
             }
         }
-        self.inner.get_storage_at(contract_address, key)
+        let value = self.inner.get_storage_at(contract_address, key)?;
+        if let Some(read_cache) = &self.read_cache {
+            read_cache.insert_storage_value(contract_address, key, value);
+        }
+        Ok(value)
     }
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
         if let Some(el) = self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.nonces.get(&contract_address))
@@ -421,7 +574,11 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
                 exec_metrics().record_read_cache_miss(read_cache_kind::NONCE);
             }
         }
-        self.inner.get_nonce_at(contract_address)
+        let value = self.inner.get_nonce_at(contract_address)?;
+        if let Some(read_cache) = &self.read_cache {
+            read_cache.insert_nonce_value(contract_address, value);
+        }
+        Ok(value)
     }
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         if let Some(el) =
@@ -438,7 +595,11 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
                 exec_metrics().record_read_cache_miss(read_cache_kind::CLASS_HASH);
             }
         }
-        self.inner.get_class_hash_at(contract_address)
+        let value = self.inner.get_class_hash_at(contract_address)?;
+        if let Some(read_cache) = &self.read_cache {
+            read_cache.insert_class_hash_value(contract_address, value);
+        }
+        Ok(value)
     }
     fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
         if let Some(el) = self.cached_states_by_block_n.iter().find_map(|s| s.classes.get(&class_hash)) {
@@ -454,18 +615,19 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
             return Ok(*el);
         }
         if let Some(read_cache) = &self.read_cache {
-            if read_cache.all_contracts {
+            if read_cache.should_cache_class_hash(class_hash) {
                 if let Some(value) = read_cache.get_compiled_class_hash(class_hash) {
                     exec_metrics().record_read_cache_hit(read_cache_kind::COMPILED_CLASS_HASH);
                     return Ok(value);
                 }
                 exec_metrics().record_read_cache_miss(read_cache_kind::COMPILED_CLASS_HASH);
-            } else if let Some(value) = read_cache.get_compiled_class_hash(class_hash) {
-                exec_metrics().record_read_cache_hit(read_cache_kind::COMPILED_CLASS_HASH);
-                return Ok(value);
             }
         }
-        self.inner.get_compiled_class_hash(class_hash)
+        let value = self.inner.get_compiled_class_hash(class_hash)?;
+        if let Some(read_cache) = &self.read_cache {
+            read_cache.insert_compiled_class_hash_value(class_hash, value);
+        }
+        Ok(value)
     }
 
     fn get_compiled_class_hash_v2(
@@ -473,10 +635,20 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
         class_hash: ClassHash,
         compiled_class: &RunnableCompiledClass,
     ) -> StateResult<CompiledClassHash> {
-        // First, delegate to the inner adapter which checks DB
-        // If the inner has the v2 hash, use it
-        // Otherwise, compute on-the-fly (inner adapter handles this)
-        self.inner.get_compiled_class_hash_v2(class_hash, compiled_class)
+        if let Some(read_cache) = &self.read_cache {
+            if read_cache.should_cache_class_hash(class_hash) {
+                if let Some(value) = read_cache.get_compiled_class_hash_v2(class_hash) {
+                    exec_metrics().record_read_cache_hit(read_cache_kind::COMPILED_CLASS_HASH_V2);
+                    return Ok(value);
+                }
+                exec_metrics().record_read_cache_miss(read_cache_kind::COMPILED_CLASS_HASH_V2);
+            }
+        }
+        let value = self.inner.get_compiled_class_hash_v2(class_hash, compiled_class)?;
+        if let Some(read_cache) = &self.read_cache {
+            read_cache.insert_compiled_class_hash_v2_value(class_hash, value);
+        }
+        Ok(value)
     }
 }
 
