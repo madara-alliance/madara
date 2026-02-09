@@ -254,7 +254,8 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_update_works() {
-        let eth_client = create_ethereum_client(get_anvil_url());
+        let Some(anvil_url) = get_anvil_url() else { return };
+        let eth_client = create_ethereum_client(anvil_url);
         let gas_price_provider_config = GasPriceProviderConfigBuilder::default()
             .with_fix_strk_per_eth(1.0)
             .with_poll_interval(Duration::from_millis(500))
@@ -271,7 +272,8 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_update_when_gas_price_fix_works() {
-        let eth_client = create_ethereum_client(get_anvil_url());
+        let Some(anvil_url) = get_anvil_url() else { return };
+        let eth_client = create_ethereum_client(anvil_url);
         let gas_price_provider_config = GasPriceProviderConfigBuilder::default()
             .with_fix_gas_price(20)
             .with_fix_strk_per_eth(1.0)
@@ -289,7 +291,8 @@ mod eth_client_gas_price_worker_test {
 
     #[tokio::test]
     async fn gas_price_update_when_data_gas_price_fix_works() {
-        let eth_client = create_ethereum_client(get_anvil_url());
+        let Some(anvil_url) = get_anvil_url() else { return };
+        let eth_client = create_ethereum_client(anvil_url);
         let gas_price_provider_config = GasPriceProviderConfigBuilder::default()
             .with_fix_data_gas_price(20)
             .with_fix_strk_per_eth(1.0)
