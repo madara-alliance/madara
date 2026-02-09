@@ -118,6 +118,7 @@ use crate::rocksdb::RocksDBConfig;
 use crate::rocksdb::RocksDBStorage;
 use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
+use starknet_api::core::ContractAddress;
 use crate::sync_status::SyncStatusCell;
 use mc_class_exec::config::NativeConfig;
 use mp_block::commitments::BlockCommitments;
@@ -320,6 +321,24 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ExecutionReadCacheConfig {
+    /// Enable the execution read cache. Default: false.
+    pub enabled: bool,
+    /// Cache all contracts (ignore allowlist).
+    pub all_contracts: bool,
+    /// Allowlist of contracts to cache when `all_contracts` is false.
+    pub contracts: Vec<ContractAddress>,
+    /// Maximum cache size in bytes.
+    pub max_memory_bytes: usize,
+}
+
+impl Default for ExecutionReadCacheConfig {
+    fn default() -> Self {
+        Self { enabled: false, all_contracts: false, contracts: Vec::new(), max_memory_bytes: 0 }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct MadaraBackendConfig {
     pub flush_every_n_blocks: Option<u64>,
@@ -330,6 +349,8 @@ pub struct MadaraBackendConfig {
     /// WARNING: Without backup, there's no recovery if migration fails.
     /// Only use if you have external snapshots/backups.
     pub skip_migration_backup: bool,
+    /// Execution-time read cache for hot contract state.
+    pub execution_read_cache: ExecutionReadCacheConfig,
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
@@ -457,6 +478,11 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 impl MadaraBackend<RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<Self> {
+        Self::open_for_testing_with_config(chain_config, Default::default())
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn open_for_testing_with_config(chain_config: Arc<ChainConfig>, config: MadaraBackendConfig) -> Arc<Self> {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
@@ -471,7 +497,7 @@ impl MadaraBackend<RocksDBStorage> {
         mc_class_exec::init_compilation_semaphore(max_concurrent);
         let test_config = builder.build();
         let cairo_native_config = Arc::new(test_config);
-        let mut backend = Self::new_and_init(db, chain_config, Default::default(), cairo_native_config).unwrap();
+        let mut backend = Self::new_and_init(db, chain_config, config, cairo_native_config).unwrap();
         backend._temp_dir = Some(temp_dir);
         Arc::new(backend)
     }
@@ -609,6 +635,10 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     pub fn chain_config(&self) -> &Arc<ChainConfig> {
         &self.chain_config
+    }
+
+    pub fn execution_read_cache_config(&self) -> &ExecutionReadCacheConfig {
+        &self.config.execution_read_cache
     }
 
     /// Get the runtime execution configuration from the database.

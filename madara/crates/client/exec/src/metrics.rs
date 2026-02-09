@@ -3,8 +3,10 @@
 //! This module provides execution time tracking for individual transactions.
 //! Metrics are exported via OpenTelemetry (OTEL) for integration with Prometheus/OTLP.
 
-use mc_analytics::register_histogram_metric_instrument;
-use opentelemetry::metrics::Histogram;
+use mc_analytics::{
+    register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument,
+};
+use opentelemetry::metrics::{Counter, Gauge, Histogram};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 use starknet_api::executable_transaction::TransactionType;
 use std::time::Instant;
@@ -40,6 +42,12 @@ pub fn tx_type_to_label(tx_type: TransactionType) -> &'static str {
 pub struct ExecutionMetrics {
     /// Histogram tracking per-transaction execution time in milliseconds.
     tx_execution_time_histogram: Histogram<f64>,
+    /// Cache hits for execution read cache.
+    read_cache_hits_counter: Counter<u64>,
+    /// Cache misses for execution read cache.
+    read_cache_misses_counter: Counter<u64>,
+    /// Current read cache size in bytes.
+    read_cache_size_bytes: Gauge<u64>,
 }
 
 impl ExecutionMetrics {
@@ -58,7 +66,28 @@ impl ExecutionMetrics {
             "ms".to_string(),
         );
 
-        Self { tx_execution_time_histogram }
+        let read_cache_hits_counter = register_counter_metric_instrument(
+            &meter,
+            "exec_read_cache_hits_total".to_string(),
+            "Execution read cache hits".to_string(),
+            "hit".to_string(),
+        );
+
+        let read_cache_misses_counter = register_counter_metric_instrument(
+            &meter,
+            "exec_read_cache_misses_total".to_string(),
+            "Execution read cache misses".to_string(),
+            "miss".to_string(),
+        );
+
+        let read_cache_size_bytes = register_gauge_metric_instrument(
+            &meter,
+            "exec_read_cache_size_bytes".to_string(),
+            "Execution read cache size in bytes".to_string(),
+            "bytes".to_string(),
+        );
+
+        Self { tx_execution_time_histogram, read_cache_hits_counter, read_cache_misses_counter, read_cache_size_bytes }
     }
 
     /// Record transaction execution time with type and context labels.
@@ -67,6 +96,18 @@ impl ExecutionMetrics {
             duration_ms,
             &[KeyValue::new("tx_type", tx_type.to_string()), KeyValue::new("context", context.to_string())],
         );
+    }
+
+    pub fn record_read_cache_hit(&self, kind: &str) {
+        self.read_cache_hits_counter.add(1, &[KeyValue::new("kind", kind.to_string())]);
+    }
+
+    pub fn record_read_cache_miss(&self, kind: &str) {
+        self.read_cache_misses_counter.add(1, &[KeyValue::new("kind", kind.to_string())]);
+    }
+
+    pub fn record_read_cache_size_bytes(&self, size_bytes: u64) {
+        self.read_cache_size_bytes.record(size_bytes, &[]);
     }
 }
 

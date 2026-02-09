@@ -1,6 +1,7 @@
 use mc_db::rocksdb::{DbWriteMode, RocksDBConfig};
 use mc_db::MadaraBackendConfig;
 use serde::{Deserialize, Serialize};
+use starknet_api::core::ContractAddress;
 use std::path::PathBuf;
 
 #[allow(non_upper_case_globals)]
@@ -186,6 +187,33 @@ pub struct BackendParams {
     /// with higher write traffic.
     #[clap(env = "MADARA_DB_HARD_PENDING_COMPACTION_GIB", long, default_value_t = 12)]
     pub db_hard_pending_compaction_gib: usize,
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EXECUTION READ CACHE SETTINGS
+    // ═══════════════════════════════════════════════════════════════════════════
+    /// Enable execution-time read cache for hot contract state. Default: false.
+    #[clap(env = "MADARA_EXEC_READ_CACHE_ENABLED", long)]
+    #[serde(default)]
+    pub exec_read_cache_enabled: bool,
+
+    /// Cache all contracts (ignore allowlist).
+    #[clap(env = "MADARA_EXEC_READ_CACHE_ALL_CONTRACTS", long)]
+    #[serde(default)]
+    pub exec_read_cache_all_contracts: bool,
+
+    /// Comma-separated list of contract addresses to cache (hex).
+    #[clap(
+        env = "MADARA_EXEC_READ_CACHE_CONTRACTS",
+        long,
+        use_value_delimiter = true,
+        value_delimiter = ','
+    )]
+    #[serde(default)]
+    pub exec_read_cache_contracts: Vec<ContractAddress>,
+
+    /// Maximum size of the execution read cache (MiB).
+    #[clap(env = "MADARA_EXEC_READ_CACHE_MAX_MEMORY_MIB", long, default_value_t = 64)]
+    pub exec_read_cache_max_memory_mib: usize,
 }
 
 impl BackendParams {
@@ -195,6 +223,12 @@ impl BackendParams {
             save_preconfirmed: !self.no_save_preconfirmed,
             unsafe_starting_block: self.unsafe_starting_block,
             skip_migration_backup: self.skip_migration_backup,
+            execution_read_cache: mc_db::ExecutionReadCacheConfig {
+                enabled: self.exec_read_cache_enabled,
+                all_contracts: self.exec_read_cache_all_contracts,
+                contracts: self.exec_read_cache_contracts.clone(),
+                max_memory_bytes: self.exec_read_cache_max_memory_mib * MiB,
+            },
         }
     }
     pub fn rocksdb_config(&self) -> RocksDBConfig {
