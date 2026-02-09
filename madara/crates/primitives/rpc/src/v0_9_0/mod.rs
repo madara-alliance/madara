@@ -7,6 +7,8 @@ pub use self::starknet_api_openrpc::*;
 pub use self::starknet_trace_api_openrpc::*;
 pub use self::starknet_ws_api::*;
 
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub enum BlockId {
     /// The tag of the block.
@@ -129,4 +131,150 @@ fn block_id_to_l1_accepted() {
     let block_id = BlockId::Tag(BlockTag::L1Accepted);
     let s = serde_json::to_string(&block_id).unwrap();
     assert_eq!(s, "\"l1_accepted\"");
+}
+
+/// The hash of an Ethereum transaction.
+///
+/// Spec: `L1_TXN_HASH` is `NUM_AS_HEX` (`^0x[a-fA-F0-9]+$`). We accept 1..=64 hex digits
+/// after the `0x` prefix and left-pad to 32 bytes. We always serialize to a 32-byte
+/// canonical form (`0x` + 64 lowercase hex digits).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct L1TxnHash(pub [u8; 32]);
+
+impl Serialize for L1TxnHash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = String::with_capacity(2 + 64);
+        s.push_str("0x");
+        for b in self.0 {
+            use core::fmt::Write as _;
+            write!(&mut s, "{:02x}", b).expect("writing into String cannot fail");
+        }
+        serializer.serialize_str(&s)
+    }
+}
+
+impl<'de> Deserialize<'de> for L1TxnHash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = L1TxnHash;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("a 0x-prefixed hex string with 1 to 64 hex digits")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let Some(hex) = v.strip_prefix("0x") else {
+                    return Err(E::custom("expected a 0x-prefixed hex string"));
+                };
+                if hex.is_empty() {
+                    return Err(E::custom("expected at least 1 hex digit after 0x"));
+                }
+                if hex.len() > 64 {
+                    return Err(E::custom("expected at most 64 hex digits after 0x"));
+                }
+
+                fn hex_val(b: u8) -> Option<u8> {
+                    match b {
+                        b'0'..=b'9' => Some(b - b'0'),
+                        b'a'..=b'f' => Some(b - b'a' + 10),
+                        b'A'..=b'F' => Some(b - b'A' + 10),
+                        _ => None,
+                    }
+                }
+
+                let bytes = hex.as_bytes();
+                let mut out = [0u8; 32];
+                let mut out_i: isize = 31;
+                let mut j = bytes.len();
+                while j > 0 {
+                    if out_i < 0 {
+                        return Err(E::custom("hex string too long for 32 bytes"));
+                    }
+                    let low = hex_val(bytes[j - 1]).ok_or_else(|| E::custom("invalid hex digit"))?;
+                    j -= 1;
+                    let high = if j > 0 {
+                        let h = hex_val(bytes[j - 1]).ok_or_else(|| E::custom("invalid hex digit"))?;
+                        j -= 1;
+                        h
+                    } else {
+                        0
+                    };
+                    out[out_i as usize] = (high << 4) | low;
+                    out_i -= 1;
+                }
+
+                Ok(L1TxnHash(out))
+            }
+        }
+
+        deserializer.deserialize_str(Visitor)
+    }
+}
+
+/// Parameters for `starknet_getMessagesStatus` (v0.9.0+).
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct GetMessagesStatusParams {
+    /// The hash of the L1 transaction that sent L1->L2 messages.
+    pub transaction_hash: L1TxnHash,
+}
+
+/// An item in the result array for `starknet_getMessagesStatus`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct MessageStatus {
+    pub transaction_hash: TxnHash,
+    pub finality_status: TxnFinalityStatus,
+    pub execution_status: TxnExecutionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
+}
+
+#[cfg(test)]
+mod get_messages_status_tests {
+    use super::*;
+
+    #[test]
+    fn l1_txn_hash_accepts_short_hex_and_left_pads() {
+        let h: L1TxnHash = serde_json::from_str("\"0x1\"").unwrap();
+        let mut expected = [0u8; 32];
+        expected[31] = 1;
+        assert_eq!(h, L1TxnHash(expected));
+        assert_eq!(
+            serde_json::to_string(&h).unwrap(),
+            "\"0x0000000000000000000000000000000000000000000000000000000000000001\""
+        );
+    }
+
+    #[test]
+    fn l1_txn_hash_accepts_odd_nibbles() {
+        let h: L1TxnHash = serde_json::from_str("\"0xabc\"").unwrap();
+        let mut expected = [0u8; 32];
+        expected[30] = 0x0a;
+        expected[31] = 0xbc;
+        assert_eq!(h, L1TxnHash(expected));
+    }
+
+    #[test]
+    fn l1_txn_hash_rejects_missing_prefix() {
+        let err = serde_json::from_str::<L1TxnHash>("\"123\"").unwrap_err();
+        assert!(err.to_string().contains("0x-prefixed"));
+    }
+
+    #[test]
+    fn l1_txn_hash_rejects_too_long() {
+        // 65 hex digits after 0x
+        let s = format!("\"0x{}\"", "1".repeat(65));
+        let err = serde_json::from_str::<L1TxnHash>(&s).unwrap_err();
+        assert!(err.to_string().contains("at most 64"));
+    }
 }
