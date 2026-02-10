@@ -35,7 +35,6 @@ mod read_cache_kind {
     pub const STORAGE: &str = "storage";
     pub const NONCE: &str = "nonce";
     pub const CLASS_HASH: &str = "class_hash";
-    pub const COMPILED_CLASS: &str = "compiled_class";
     pub const COMPILED_CLASS_HASH: &str = "compiled_class_hash";
     pub const COMPILED_CLASS_HASH_V2: &str = "compiled_class_hash_v2";
 }
@@ -45,7 +44,6 @@ enum CacheKey {
     Storage(ContractAddress, StorageKey),
     Nonce(ContractAddress),
     ClassHash(ContractAddress),
-    CompiledClass(ClassHash),
     CompiledClassHash(ClassHash),
     CompiledClassHashV2(ClassHash),
 }
@@ -69,7 +67,6 @@ struct ExecutionReadCacheInner {
     nonces: HashMap<ContractAddress, CacheEntry<Nonce>>,
     class_hashes: HashMap<ContractAddress, CacheEntry<ClassHash>>,
     cached_class_hashes: HashSet<ClassHash>,
-    compiled_classes: HashMap<ClassHash, CacheEntry<RunnableCompiledClass>>,
     compiled_class_hashes: HashMap<ClassHash, CacheEntry<CompiledClassHash>>,
     compiled_class_hashes_v2: HashMap<ClassHash, CacheEntry<CompiledClassHash>>,
     order: VecDeque<CacheQueueEntry>,
@@ -134,32 +131,27 @@ impl ExecutionReadCache {
 
     fn get_storage(&self, contract_address: ContractAddress, key: StorageKey) -> Option<Felt> {
         let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.storage.get(&(contract_address, key)).map(|entry| entry.value.clone())
+        guard.storage.get(&(contract_address, key)).map(|entry| entry.value)
     }
 
     fn get_nonce(&self, contract_address: ContractAddress) -> Option<Nonce> {
         let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.nonces.get(&contract_address).map(|entry| entry.value.clone())
+        guard.nonces.get(&contract_address).map(|entry| entry.value)
     }
 
     fn get_class_hash(&self, contract_address: ContractAddress) -> Option<ClassHash> {
         let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.class_hashes.get(&contract_address).map(|entry| entry.value.clone())
-    }
-
-    fn get_compiled_class(&self, class_hash: ClassHash) -> Option<RunnableCompiledClass> {
-        let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.compiled_classes.get(&class_hash).map(|entry| entry.value.clone())
+        guard.class_hashes.get(&contract_address).map(|entry| entry.value)
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> Option<CompiledClassHash> {
         let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.compiled_class_hashes.get(&class_hash).map(|entry| entry.value.clone())
+        guard.compiled_class_hashes.get(&class_hash).map(|entry| entry.value)
     }
 
     fn get_compiled_class_hash_v2(&self, class_hash: ClassHash) -> Option<CompiledClassHash> {
         let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.compiled_class_hashes_v2.get(&class_hash).map(|entry| entry.value.clone())
+        guard.compiled_class_hashes_v2.get(&class_hash).map(|entry| entry.value)
     }
 
     fn insert_storage_value(&self, contract_address: ContractAddress, key: StorageKey, value: Felt) {
@@ -168,11 +160,7 @@ impl ExecutionReadCache {
         }
         let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
         guard.insert_storage(contract_address, key, value);
-        let evicted = guard.evict_if_needed(self.max_bytes);
         exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
-        if evicted > 0 {
-            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
-        }
     }
 
     fn insert_nonce_value(&self, contract_address: ContractAddress, value: Nonce) {
@@ -181,11 +169,7 @@ impl ExecutionReadCache {
         }
         let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
         guard.insert_nonce(contract_address, value);
-        let evicted = guard.evict_if_needed(self.max_bytes);
         exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
-        if evicted > 0 {
-            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
-        }
     }
 
     fn insert_class_hash_value(&self, contract_address: ContractAddress, value: ClassHash) {
@@ -195,24 +179,7 @@ impl ExecutionReadCache {
         let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
         guard.insert_class_hash(contract_address, value);
         guard.cached_class_hashes.insert(value);
-        let evicted = guard.evict_if_needed(self.max_bytes);
         exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
-        if evicted > 0 {
-            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
-        }
-    }
-
-    fn insert_compiled_class_value(&self, class_hash: ClassHash, value: RunnableCompiledClass) {
-        if !self.should_cache_class_hash(class_hash) {
-            return;
-        }
-        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
-        guard.insert_compiled_class(class_hash, value);
-        let evicted = guard.evict_if_needed(self.max_bytes);
-        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
-        if evicted > 0 {
-            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
-        }
     }
 
     fn insert_compiled_class_hash_value(&self, class_hash: ClassHash, value: CompiledClassHash) {
@@ -221,11 +188,7 @@ impl ExecutionReadCache {
         }
         let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
         guard.insert_compiled_class_hash(class_hash, value);
-        let evicted = guard.evict_if_needed(self.max_bytes);
         exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
-        if evicted > 0 {
-            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
-        }
     }
 
     fn insert_compiled_class_hash_v2_value(&self, class_hash: ClassHash, value: CompiledClassHash) {
@@ -234,11 +197,7 @@ impl ExecutionReadCache {
         }
         let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
         guard.insert_compiled_class_hash_v2(class_hash, value);
-        let evicted = guard.evict_if_needed(self.max_bytes);
         exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
-        if evicted > 0 {
-            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
-        }
     }
 
     fn apply_state_diff(&self, state_diff: &StateMaps) {
@@ -278,6 +237,11 @@ impl ExecutionReadCache {
             }
         }
 
+        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+    }
+
+    fn evict_if_needed(&self) {
+        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
         let evicted = guard.evict_if_needed(self.max_bytes);
         exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
         if evicted > 0 {
@@ -287,6 +251,12 @@ impl ExecutionReadCache {
 }
 
 impl ExecutionReadCacheInner {
+    const STORAGE_ENTRY_SIZE: usize = size_of::<CacheEntry<Felt>>() + size_of::<(ContractAddress, StorageKey)>();
+    const NONCE_ENTRY_SIZE: usize = size_of::<CacheEntry<Nonce>>() + size_of::<ContractAddress>();
+    const CLASS_HASH_ENTRY_SIZE: usize = size_of::<CacheEntry<ClassHash>>() + size_of::<ContractAddress>();
+    const COMPILED_CLASS_HASH_ENTRY_SIZE: usize =
+        size_of::<CacheEntry<CompiledClassHash>>() + size_of::<ClassHash>();
+
     fn next_seq(&mut self) -> u64 {
         let seq = self.next_seq;
         self.next_seq = self.next_seq.wrapping_add(1);
@@ -294,7 +264,7 @@ impl ExecutionReadCacheInner {
     }
 
     fn insert_storage(&mut self, contract_address: ContractAddress, key: StorageKey, value: Felt) {
-        let entry_size = size_of::<CacheEntry<Felt>>() + size_of::<(ContractAddress, StorageKey)>();
+        let entry_size = Self::STORAGE_ENTRY_SIZE;
         let seq = self.next_seq();
         if let Some(existing) = self.storage.insert(
             (contract_address, key),
@@ -307,7 +277,7 @@ impl ExecutionReadCacheInner {
     }
 
     fn insert_nonce(&mut self, contract_address: ContractAddress, value: Nonce) {
-        let entry_size = size_of::<CacheEntry<Nonce>>() + size_of::<ContractAddress>();
+        let entry_size = Self::NONCE_ENTRY_SIZE;
         let seq = self.next_seq();
         if let Some(existing) = self.nonces.insert(contract_address, CacheEntry { value, seq, size: entry_size }) {
             self.current_bytes = self.current_bytes.saturating_sub(existing.size);
@@ -317,7 +287,7 @@ impl ExecutionReadCacheInner {
     }
 
     fn insert_class_hash(&mut self, contract_address: ContractAddress, value: ClassHash) {
-        let entry_size = size_of::<CacheEntry<ClassHash>>() + size_of::<ContractAddress>();
+        let entry_size = Self::CLASS_HASH_ENTRY_SIZE;
         let seq = self.next_seq();
         if let Some(existing) =
             self.class_hashes.insert(contract_address, CacheEntry { value, seq, size: entry_size })
@@ -328,21 +298,8 @@ impl ExecutionReadCacheInner {
         self.order.push_back(CacheQueueEntry { key: CacheKey::ClassHash(contract_address), seq });
     }
 
-    fn insert_compiled_class(&mut self, class_hash: ClassHash, value: RunnableCompiledClass) {
-        const COMPILED_CLASS_ENTRY_SIZE: usize = 64 * 1024;
-        let entry_size = COMPILED_CLASS_ENTRY_SIZE;
-        let seq = self.next_seq();
-        if let Some(existing) =
-            self.compiled_classes.insert(class_hash, CacheEntry { value, seq, size: entry_size })
-        {
-            self.current_bytes = self.current_bytes.saturating_sub(existing.size);
-        }
-        self.current_bytes = self.current_bytes.saturating_add(entry_size);
-        self.order.push_back(CacheQueueEntry { key: CacheKey::CompiledClass(class_hash), seq });
-    }
-
     fn insert_compiled_class_hash(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
-        let entry_size = size_of::<CacheEntry<CompiledClassHash>>() + size_of::<ClassHash>();
+        let entry_size = Self::COMPILED_CLASS_HASH_ENTRY_SIZE;
         let seq = self.next_seq();
         if let Some(existing) = self
             .compiled_class_hashes
@@ -355,7 +312,7 @@ impl ExecutionReadCacheInner {
     }
 
     fn insert_compiled_class_hash_v2(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
-        let entry_size = size_of::<CacheEntry<CompiledClassHash>>() + size_of::<ClassHash>();
+        let entry_size = Self::COMPILED_CLASS_HASH_ENTRY_SIZE;
         let seq = self.next_seq();
         if let Some(existing) = self
             .compiled_class_hashes_v2
@@ -402,15 +359,6 @@ impl ExecutionReadCacheInner {
                 if let Some(existing) = self.class_hashes.get(&contract_address) {
                     if existing.seq == entry.seq {
                         let existing = self.class_hashes.remove(&contract_address).expect("entry exists");
-                        self.current_bytes = self.current_bytes.saturating_sub(existing.size);
-                        return true;
-                    }
-                }
-            }
-            CacheKey::CompiledClass(class_hash) => {
-                if let Some(existing) = self.compiled_classes.get(&class_hash) {
-                    if existing.seq == entry.seq {
-                        let existing = self.compiled_classes.remove(&class_hash).expect("entry exists");
                         self.current_bytes = self.current_bytes.saturating_sub(existing.size);
                         return true;
                     }
@@ -488,6 +436,12 @@ impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
         self.inner.block_number.checked_sub(1)
     }
 
+    pub fn evict_read_cache_if_needed(&self) {
+        if let Some(read_cache) = &self.read_cache {
+            read_cache.evict_if_needed();
+        }
+    }
+
     fn remove_cache_before_including(&mut self, block_n: Option<u64>) {
         if let Some(block_n) = block_n {
             while self.cached_states_by_block_n.back().is_some_and(|cache| cache.block_n <= block_n) {
@@ -522,6 +476,7 @@ impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
 
         // Update the inner state adaptor to update its block_n to the next one.
         self.inner = BlockifierStateAdapter::new(new_view, block_n + 1);
+        self.evict_read_cache_if_needed();
 
         Ok(())
     }

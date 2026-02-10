@@ -324,7 +324,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ExecutionReadCacheConfig {
     /// Enable the execution read cache. Default: false.
     pub enabled: bool,
@@ -334,12 +334,6 @@ pub struct ExecutionReadCacheConfig {
     pub contracts: Vec<ContractAddress>,
     /// Maximum cache size in bytes.
     pub max_memory_bytes: usize,
-}
-
-impl Default for ExecutionReadCacheConfig {
-    fn default() -> Self {
-        Self { enabled: false, all_contracts: false, contracts: Vec::new(), max_memory_bytes: 0 }
-    }
 }
 
 #[derive(Debug, Default)]
