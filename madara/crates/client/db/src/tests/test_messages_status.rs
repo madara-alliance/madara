@@ -7,6 +7,11 @@ use mp_convert::{Felt, L1TransactionHash};
 use mp_receipt::{ExecutionResult, L1HandlerTransactionReceipt, TransactionReceipt};
 use mp_transactions::L1HandlerTransaction;
 
+/// Verifies the secondary index used by `starknet_getMessagesStatus`:
+/// - Unknown L1 tx hash returns `None`
+/// - Keys are iterated in nonce order (L1 sending order)
+/// - Empty marker values are returned as `None`
+/// - Filled values are returned as `Some(l2_tx_hash)` and are not clobbered by later marker inserts
 #[test]
 fn l1_to_l2_messages_by_l1_tx_hash_roundtrip_and_ordering() {
     let db = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
@@ -43,6 +48,7 @@ fn l1_to_l2_messages_by_l1_tx_hash_roundtrip_and_ordering() {
     assert_eq!(msgs[1], (10, Some(l2_tx_hash)));
 }
 
+/// Verifies the `nonce -> l1_tx_hash` mapping roundtrip.
 #[test]
 fn l1_to_l2_l1_tx_hash_by_nonce_roundtrip() {
     let db = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
@@ -54,6 +60,8 @@ fn l1_to_l2_l1_tx_hash_by_nonce_roundtrip() {
     assert_eq!(db.get_l1_txn_hash_by_nonce(42).unwrap(), Some(l1_tx_hash));
 }
 
+/// Verifies that writing an L1-handler transaction into a block fills the `(l1_tx_hash||nonce) -> l2_tx_hash` index
+/// when the `nonce -> l1_tx_hash` mapping already exists.
 #[test]
 fn l1_to_l2_secondary_index_is_filled_on_block_write_when_mapping_exists() {
     let db = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());

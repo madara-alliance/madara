@@ -3,7 +3,7 @@ use crate::Starknet;
 use mp_receipt::ExecutionResult;
 use mp_rpc::v0_9_0::{L1TxnHash, MessageStatus, TxnExecutionStatus, TxnFinalityStatus};
 
-/// `starknet_getMessagesStatus` (v0.9.0+).
+/// `starknet_getMessagesStatus`.
 pub fn get_messages_status(starknet: &Starknet, transaction_hash: L1TxnHash) -> StarknetRpcResult<Vec<MessageStatus>> {
     let l1_tx_hash = mp_convert::L1TransactionHash(transaction_hash.0);
 
@@ -14,13 +14,12 @@ pub fn get_messages_status(starknet: &Starknet, transaction_hash: L1TxnHash) -> 
     let view = starknet.backend.view_on_latest();
 
     let mut out = Vec::new();
-    for (_nonce, maybe_l2_tx_hash) in messages {
+    for (_core_contract_nonce, maybe_l2_tx_hash) in messages {
         let Some(l2_tx_hash) = maybe_l2_tx_hash else {
             continue;
         };
 
         let Some(res) = view.find_transaction_by_hash(&l2_tx_hash)? else {
-            // This can happen after reorgs or partial data; omit rather than lying.
             continue;
         };
 
@@ -128,5 +127,50 @@ mod tests {
         assert_eq!(res[0].transaction_hash, l2_tx_hash);
         assert_eq!(res[0].execution_status, TxnExecutionStatus::Reverted);
         assert_eq!(res[0].failure_reason.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn get_messages_status_returns_multiple_consumed_messages() {
+        let starknet = starknet();
+        let l1 = mp_convert::L1TransactionHash(l1_hash_bytes(1));
+        let l2_tx_hash_1 = starknet_types_core::felt::Felt::from_hex_unchecked("0x123");
+        let l2_tx_hash_2 = starknet_types_core::felt::Felt::from_hex_unchecked("0x456");
+
+        // Insert the message index entries.
+        assert!(starknet.backend.insert_message_to_l2_seen_marker(&l1, 7).unwrap());
+        assert!(starknet.backend.insert_message_to_l2_seen_marker(&l1, 8).unwrap());
+        starknet.backend.write_message_to_l2_consumed_txn_hash(&l1, 7, &l2_tx_hash_1).unwrap();
+        starknet.backend.write_message_to_l2_consumed_txn_hash(&l1, 8, &l2_tx_hash_2).unwrap();
+
+        // Store two L1 handler transactions in the same block.
+        let tx_1 = mp_transactions::L1HandlerTransaction { nonce: 7, ..Default::default() };
+        let tx_2 = mp_transactions::L1HandlerTransaction { nonce: 8, ..Default::default() };
+        let receipt_1 = mp_receipt::TransactionReceipt::L1Handler(mp_receipt::L1HandlerTransactionReceipt {
+            transaction_hash: l2_tx_hash_1,
+            execution_result: mp_receipt::ExecutionResult::Succeeded,
+            ..Default::default()
+        });
+        let receipt_2 = mp_receipt::TransactionReceipt::L1Handler(mp_receipt::L1HandlerTransactionReceipt {
+            transaction_hash: l2_tx_hash_2,
+            execution_result: mp_receipt::ExecutionResult::Succeeded,
+            ..Default::default()
+        });
+        let block = mp_block::FullBlockWithoutCommitments {
+            header: Default::default(),
+            state_diff: Default::default(),
+            transactions: vec![
+                mp_block::TransactionWithReceipt { transaction: tx_1.into(), receipt: receipt_1 },
+                mp_block::TransactionWithReceipt { transaction: tx_2.into(), receipt: receipt_2 },
+            ],
+            events: Default::default(),
+        };
+
+        let backend = std::sync::Arc::clone(&starknet.backend);
+        backend.write_access().add_full_block_with_classes(&block, &[], true).unwrap();
+
+        let res = get_messages_status(&starknet, L1TxnHash(l1.0)).unwrap();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].transaction_hash, l2_tx_hash_1);
+        assert_eq!(res[1].transaction_hash, l2_tx_hash_2);
     }
 }

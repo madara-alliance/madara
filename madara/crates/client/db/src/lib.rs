@@ -978,18 +978,24 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
         self.db.get_next_pending_message_to_l2(start_nonce)
     }
+    /// Returns the L1 transaction hash which emitted the L1->L2 message for the given core contract nonce, if known.
+    ///
+    /// This is written by the settlement client during L1 messaging sync and is later used to answer
+    /// `starknet_getMessagesStatus` without making L1 requests at RPC time.
     pub fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>> {
         self.db.get_l1_txn_hash_by_nonce(core_contract_nonce)
     }
     pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
     }
+    /// Returns all messages sent by a given L1 transaction, as `(nonce, consumed_l2_tx_hash_if_known)`.
     pub fn get_messages_to_l2_by_l1_tx_hash(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
     ) -> Result<Option<crate::storage::L1ToL2MessagesByL1TxHash>> {
         self.db.get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
     }
+    /// Returns the status entry for a specific `(l1_tx_hash, nonce)` message index key.
     pub fn get_message_to_l2_index_entry(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
@@ -1024,6 +1030,7 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
         self.db.remove_pending_message_to_l2(core_contract_nonce)
     }
+    /// Stores the L1 transaction hash which emitted the L1->L2 message identified by `core_contract_nonce`.
     pub fn write_l1_txn_hash_by_nonce(
         &self,
         core_contract_nonce: u64,
@@ -1031,6 +1038,9 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     ) -> Result<()> {
         self.db.write_l1_txn_hash_by_nonce(core_contract_nonce, l1_tx_hash)
     }
+    /// Inserts a "seen on L1" marker for the `(l1_tx_hash, nonce)` pair, if the key is missing.
+    ///
+    /// This is idempotent and will not overwrite an already-consumed entry.
     pub fn insert_message_to_l2_seen_marker(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
@@ -1038,6 +1048,7 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     ) -> Result<bool> {
         self.db.insert_message_to_l2_seen_marker(l1_tx_hash, core_contract_nonce)
     }
+    /// Writes the consumed L2 transaction hash for the `(l1_tx_hash, nonce)` pair.
     pub fn write_message_to_l2_consumed_txn_hash(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,

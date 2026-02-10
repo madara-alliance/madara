@@ -184,7 +184,12 @@ impl<'de> Deserialize<'de> for L1TxnHash {
                     return Err(E::custom("expected at most 64 hex digits after 0x"));
                 }
 
-                fn hex_val(b: u8) -> Option<u8> {
+                // Parse a 32-byte big-endian hash from a 0x-prefixed hex string.
+                //
+                // - We accept 1..=64 hex digits (spec: NUM_AS_HEX), and left-pad with zeros.
+                // - Odd-length inputs are allowed: the first nibble is treated as the low nibble
+                //   of a byte (e.g. `0xabc` => ... 0x0a 0xbc).
+                fn hex_nibble_value(b: u8) -> Option<u8> {
                     match b {
                         b'0'..=b'9' => Some(b - b'0'),
                         b'a'..=b'f' => Some(b - b'a' + 10),
@@ -193,25 +198,34 @@ impl<'de> Deserialize<'de> for L1TxnHash {
                     }
                 }
 
-                let bytes = hex.as_bytes();
+                let hex_bytes = hex.as_bytes();
                 let mut out = [0u8; 32];
-                let mut out_i: isize = 31;
-                let mut j = bytes.len();
-                while j > 0 {
-                    if out_i < 0 {
+                let mut out_index = out.len();
+                let mut hex_pos = hex_bytes.len();
+
+                // Read from the end (least significant digits) and fill the output from the end.
+                while hex_pos > 0 {
+                    if out_index == 0 {
                         return Err(E::custom("hex string too long for 32 bytes"));
                     }
-                    let low = hex_val(bytes[j - 1]).ok_or_else(|| E::custom("invalid hex digit"))?;
-                    j -= 1;
-                    let high = if j > 0 {
-                        let h = hex_val(bytes[j - 1]).ok_or_else(|| E::custom("invalid hex digit"))?;
-                        j -= 1;
-                        h
+
+                    // Always read the low nibble.
+                    let low_nibble =
+                        hex_nibble_value(hex_bytes[hex_pos - 1]).ok_or_else(|| E::custom("invalid hex digit"))?;
+                    hex_pos -= 1;
+
+                    // Read the high nibble if present (otherwise treat as 0 for odd-length inputs).
+                    let high_nibble = if hex_pos > 0 {
+                        let v =
+                            hex_nibble_value(hex_bytes[hex_pos - 1]).ok_or_else(|| E::custom("invalid hex digit"))?;
+                        hex_pos -= 1;
+                        v
                     } else {
                         0
                     };
-                    out[out_i as usize] = (high << 4) | low;
-                    out_i -= 1;
+
+                    out_index -= 1;
+                    out[out_index] = (high_nibble << 4) | low_nibble;
                 }
 
                 Ok(L1TxnHash(out))

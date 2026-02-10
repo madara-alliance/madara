@@ -28,7 +28,6 @@
 //! The [`MadaraCmdBuilder`] provides the main interface for configuring test nodes:
 //!
 //! ```no_run
-//! # use mc_e2e_tests::MadaraCmdBuilder;
 //! let builder = MadaraCmdBuilder::new()
 //!     .args(["--full", "--network", "sepolia"])
 //!     .env([("MADARA_RPC_PORT", "9944")])
@@ -117,25 +116,15 @@
 //! The [`wait_for_cond`] utility enables testing asynchronous blockchain operations:
 //!
 //! ```no_run
-//! # use mc_e2e_tests::{MadaraCmdBuilder, wait_for_cond};
-//! # use std::time::Duration;
-//! # use starknet_core::types::Felt;
-//! # use starknet_providers::Provider;
-//! # async fn example() -> anyhow::Result<()> {
-//! # let mut node = MadaraCmdBuilder::new().args(["--devnet", "--no-l1-sync"]).run();
-//! # node.wait_for_ready().await;
-//! # let tx_hash = Felt::ZERO;
 //! wait_for_cond(
 //!     || async {
 //!         let receipt = node.json_rpc().get_transaction_receipt(tx_hash).await?;
 //!         assert!(receipt.block.is_block());
-//!         anyhow::Ok(())
+//!         Ok(())
 //!     },
 //!     Duration::from_millis(500),  // poll interval
 //!     60,                           // max attempts
 //! ).await;
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! ## Test Accounts
@@ -143,7 +132,7 @@
 //! Devnet mode provides pre-funded accounts with known private keys:
 //!
 //! ```no_run
-//! use mc_e2e_tests::{ACCOUNTS, ACCOUNT_SECRETS};
+//! use mc_e2e_tests::devnet::{ACCOUNTS, ACCOUNT_SECRETS};
 //!
 //! let account_address = ACCOUNTS[0];
 //! let private_key = ACCOUNT_SECRETS[0];
@@ -160,32 +149,23 @@
 //! 5. **Cleanup**: Automatic via [`Drop`] implementations
 //!
 //! ```no_run
-//! # use mc_e2e_tests::{MadaraCmdBuilder, wait_for_cond};
-//! # use std::time::Duration;
-//! # use starknet_core::types::Felt;
-//! # use starknet_providers::Provider;
-//! # async fn test_transaction() -> anyhow::Result<()> {
-//! // Setup
-//! let mut node = MadaraCmdBuilder::new().args(["--devnet"]).run();
-//! node.wait_for_ready().await;
+//! #[tokio::test]
+//! async fn test_transaction() {
+//!     // Setup
+//!     let mut node = MadaraCmdBuilder::new()
+//!         .args(["--devnet"])
+//!         .run();
+//!     node.wait_for_ready().await;
 //!
-//! // Execute: submit a transaction (omitted)
-//! let tx_hash = Felt::ZERO;
+//!     // Execute
+//!     let account = /* ... */;
+//!     let tx_hash = account.execute_v3(/* ... */).send().await.unwrap();
 //!
-//! // Assert
-//! wait_for_cond(
-//!     || async {
-//!         let _receipt = node.json_rpc().get_transaction_receipt(tx_hash).await?;
-//!         anyhow::Ok(())
-//!     },
-//!     Duration::from_millis(500),
-//!     60,
-//! )
-//! .await;
+//!     // Assert
+//!     wait_for_cond(/* check receipt */).await;
 //!
-//! // Cleanup happens automatically
-//! # Ok(())
-//! # }
+//!     // Cleanup happens automatically
+//! }
 //! ```
 //!
 //! # Database Management
@@ -210,7 +190,9 @@
 //! [`Drop`]: std::ops::Drop
 #![allow(clippy::print_stdout)]
 
+#[cfg(test)]
 mod devnet_accounts;
+#[cfg(test)]
 pub use devnet_accounts::{ACCOUNTS, ACCOUNT_SECRETS};
 
 #[cfg(test)]
@@ -245,7 +227,7 @@ use std::{
 };
 use tempfile::TempDir;
 
-pub async fn wait_for_cond<F: Future<Output = Result<R, anyhow::Error>>, R>(
+async fn wait_for_cond<F: Future<Output = Result<R, anyhow::Error>>, R>(
     mut cond: impl FnMut() -> F,
     sleep_duration: Duration,
     max_attempts: u32,

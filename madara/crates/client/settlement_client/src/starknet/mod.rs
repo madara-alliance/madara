@@ -699,9 +699,12 @@ mod starknet_client_messaging_test {
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use mc_db::MadaraBackend;
+    use mp_block::{FullBlockWithoutCommitments, TransactionWithReceipt};
     use mp_chain_config::ChainConfig;
+    use mp_receipt::{ExecutionResult, L1HandlerTransactionReceipt, TransactionReceipt};
     use mp_utils::service::ServiceContext;
     use rstest::{fixture, rstest};
+    use starknet_types_core::felt::Felt;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -735,6 +738,13 @@ mod starknet_client_messaging_test {
 
     #[rstest]
     #[tokio::test]
+    /// End-to-end test for Starknet-settlement-provider L1->L2 messaging metadata.
+    ///
+    /// Desired results:
+    /// - After emitting the messaging event, the sync worker persists a pending message and writes the
+    ///   `getMessagesStatus` indices (`nonce -> l1_tx_hash` and `l1_tx_hash||nonce -> marker`).
+    /// - After simulating L2 execution (writing a consumed L1-handler receipt), the pending entry is removed and the
+    ///   `l1_tx_hash||nonce` entry is filled with the consumed L2 transaction hash.
     async fn e2e_test_basic_workflow_starknet(#[future] test_fixture: StarknetClientTextFixture) -> anyhow::Result<()> {
         let fixture = test_fixture.await;
 
@@ -757,7 +767,9 @@ mod starknet_client_messaging_test {
             fire_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
         tokio::time::sleep(Duration::from_secs(10)).await;
 
-        // Assert that the event is well stored in db
+        // Assert that the event is well stored in db:
+        // - pending message is persisted
+        // - `getMessagesStatus` indices are written (seen marker)
         let pending = fixture.db_service.get_pending_message_to_l2(0)?.expect("message should be stored as pending");
 
         let nonce = pending.tx.nonce;
@@ -769,6 +781,41 @@ mod starknet_client_messaging_test {
         assert!(
             msgs.iter().any(|(n, maybe)| *n == nonce && maybe.is_none()),
             "expected (nonce, None) marker entry for the fired message"
+        );
+
+        // Simulate L2 execution by writing a block containing the consumed L1-handler transaction.
+        // This should remove the pending entry and fill `l1_tx_hash||nonce -> l2_tx_hash`.
+        let l2_tx_hash = Felt::from_hex_unchecked("0x123");
+        let receipt = TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+            transaction_hash: l2_tx_hash,
+            execution_result: ExecutionResult::Succeeded,
+            ..Default::default()
+        });
+        let block = FullBlockWithoutCommitments {
+            header: Default::default(),
+            state_diff: Default::default(),
+            transactions: vec![TransactionWithReceipt { transaction: pending.tx.clone().into(), receipt }],
+            events: Default::default(),
+        };
+        fixture.db_service.write_access().add_full_block_with_classes(&block, &[], true)?;
+
+        assert!(
+            fixture.db_service.get_pending_message_to_l2(nonce)?.is_none(),
+            "pending message should be removed once consumed"
+        );
+        assert_eq!(
+            fixture.db_service.get_l1_handler_txn_hash_by_nonce(nonce)?,
+            Some(l2_tx_hash),
+            "nonce->l2_tx_hash mapping should be written once the message is executed on L2"
+        );
+        assert!(
+            fixture
+                .db_service
+                .get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash)?
+                .expect("l1 tx hash should still be known")
+                .iter()
+                .any(|(n, maybe)| *n == nonce && *maybe == Some(l2_tx_hash)),
+            "secondary index should be filled once the message is executed on L2"
         );
 
         // Cancelling worker

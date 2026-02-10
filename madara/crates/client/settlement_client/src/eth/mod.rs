@@ -504,7 +504,9 @@ mod l1_messaging_tests {
         transports::http::{Client, Http},
     };
     use mc_db::MadaraBackend;
+    use mp_block::{FullBlockWithoutCommitments, TransactionWithReceipt};
     use mp_chain_config::ChainConfig;
+    use mp_receipt::{ExecutionResult, L1HandlerTransactionReceipt, TransactionReceipt};
     use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
     use mp_utils::service::ServiceContext;
     use rstest::*;
@@ -640,16 +642,15 @@ mod l1_messaging_tests {
 
     /// Test the basic workflow of l1 -> l2 messaging
     ///
-    /// This test performs the following steps:
-    /// 1. Sets up test environemment
-    /// 2. Starts worker
-    /// 3. Fires a Message event from the dummy contract
-    /// 4. Waits for event to be processed
-    /// 5. Assert that the worker handle the event with correct data
-    /// 6. Assert that the hash computed by the worker is correct
-    /// 7. TODO : Assert that the tx is succesfully submited
-    /// 8. Assert that the event is successfully pushed to the db
-    /// 9. TODO : Assert that the tx was correctly executed
+    /// This test exercises the full "seen -> executed" lifecycle for L1->L2 messaging metadata:
+    /// 1. Emit an L1 `LogMessageToL2` event on anvil (L1 side).
+    /// 2. Run the messaging sync worker and assert the message is stored as pending (L2 side).
+    /// 3. Assert DB indices used by `starknet_getMessagesStatus` are written:
+    ///    - `nonce -> l1_tx_hash`
+    ///    - `l1_tx_hash||nonce -> <empty marker>`
+    /// 4. Simulate L2 execution by writing a block with a consumed L1-handler receipt and assert:
+    ///    - pending entry is removed
+    ///    - `l1_tx_hash||nonce -> l2_tx_hash` is filled
     #[rstest]
     #[traced_test]
     #[tokio::test]
@@ -713,6 +714,38 @@ mod l1_messaging_tests {
         assert_eq!(
             db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
             vec![(handler_tx.tx.nonce, None)]
+        );
+
+        // Simulate L2 execution: when block production consumes the message, it writes an L1-handler
+        // transaction + receipt. This should fill `l1_tx_hash||nonce -> l2_tx_hash` and remove the
+        // pending message entry.
+        let l2_tx_hash = Felt::from_hex_unchecked("0x123");
+        let receipt = TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+            transaction_hash: l2_tx_hash,
+            execution_result: ExecutionResult::Succeeded,
+            ..Default::default()
+        });
+        let block = FullBlockWithoutCommitments {
+            header: Default::default(),
+            state_diff: Default::default(),
+            transactions: vec![TransactionWithReceipt { transaction: handler_tx.tx.clone().into(), receipt }],
+            events: Default::default(),
+        };
+        db.write_access().add_full_block_with_classes(&block, &[], true).unwrap();
+
+        assert!(
+            db.get_pending_message_to_l2(handler_tx.tx.nonce).unwrap().is_none(),
+            "pending message should be removed once consumed"
+        );
+        assert_eq!(
+            db.get_l1_handler_txn_hash_by_nonce(handler_tx.tx.nonce).unwrap(),
+            Some(l2_tx_hash),
+            "nonce->l2_tx_hash mapping should be written once the message is executed on L2"
+        );
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(handler_tx.tx.nonce, Some(l2_tx_hash))],
+            "secondary index should be filled once the message is executed on L2"
         );
 
         // Explicitly cancel the listen task, else it would be running in the background

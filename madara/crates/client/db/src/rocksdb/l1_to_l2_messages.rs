@@ -35,27 +35,35 @@ impl RocksDBStorageInner {
     ) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
         let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
-        let l1_tx_hash_by_nonce_cf = self.get_column(L1_TO_L2_L1_TXN_HASH_BY_NONCE);
         let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
-        let by_l1_tx_hash_cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
 
         for (txn, receipt) in txs {
-            let key = txn.nonce.to_be_bytes();
-            batch.delete_cf(&pending_cf, key);
-            batch.put_cf(&on_l2_cf, key, receipt.transaction_hash.to_bytes_be());
-
-            // If the L1 tx hash mapping exists, fill the secondary index too.
-            if let Some(l1_tx_hash_bytes) = self.db.get_pinned_cf(&l1_tx_hash_by_nonce_cf, key)? {
-                if l1_tx_hash_bytes.len() != 32 {
-                    bail!("Invalid l1->l2 nonce->l1_tx_hash value length: expected 32, got {}", l1_tx_hash_bytes.len());
-                }
-                let l1_tx_hash = L1TransactionHash(l1_tx_hash_bytes.as_ref().try_into().expect("slice len checked"));
-                let by_l1_key = Self::message_to_l2_by_l1_tx_key(&l1_tx_hash, txn.nonce);
-                batch.put_cf(&by_l1_tx_hash_cf, by_l1_key, receipt.transaction_hash.to_bytes_be());
-            }
+            self.add_message_to_l2_consumed_transaction_ops(&mut batch, &pending_cf, &on_l2_cf, txn, receipt)?;
         }
 
         self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
+    }
+
+    fn add_message_to_l2_consumed_transaction_ops(
+        &self,
+        batch: &mut WriteBatchWithTransaction,
+        pending_cf: &Arc<rocksdb::BoundColumnFamily<'_>>,
+        on_l2_cf: &Arc<rocksdb::BoundColumnFamily<'_>>,
+        txn: &L1HandlerTransaction,
+        receipt: &L1HandlerTransactionReceipt,
+    ) -> Result<()> {
+        let nonce_key = txn.nonce.to_be_bytes();
+
+        batch.delete_cf(pending_cf, nonce_key);
+        batch.put_cf(on_l2_cf, nonce_key, receipt.transaction_hash.to_bytes_be());
+
+        if let Some(l1_tx_hash) = self.get_l1_txn_hash_by_nonce(txn.nonce)? {
+            let by_l1_tx_hash_cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+            let by_l1_key = Self::message_to_l2_by_l1_tx_key(&l1_tx_hash, txn.nonce);
+            batch.put_cf(&by_l1_tx_hash_cf, by_l1_key, receipt.transaction_hash.to_bytes_be());
+        }
+
         Ok(())
     }
 
