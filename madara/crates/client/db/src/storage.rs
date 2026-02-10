@@ -148,6 +148,11 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
     fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_;
     fn get_external_outbox_transactions(&self, limit: usize) -> impl Iterator<Item = Result<ExternalOutboxEntry>> + '_;
+    /// Return an approximate count of entries in the external outbox.
+    ///
+    /// This uses RocksDB internal properties and is intended for observability (metrics),
+    /// not for correctness-critical logic.
+    fn get_external_outbox_size_estimate(&self) -> Result<u64>;
 }
 
 /// Trait abstracting over the storage interface.

@@ -148,13 +148,14 @@ struct BackendL1ConfirmationSource {
     last_deleted: Option<u64>,
     retention_delay: Duration,
     block_time: Duration,
+    metrics: Arc<ExternalDbMetrics>,
 }
 
 impl BackendL1ConfirmationSource {
     /// Create a confirmation source for the given backend.
-    fn new(backend: Arc<MadaraBackend>, retention_delay: Duration) -> Self {
+    fn new(backend: Arc<MadaraBackend>, retention_delay: Duration, metrics: Arc<ExternalDbMetrics>) -> Self {
         let block_time = backend.chain_config().block_time;
-        Self { backend, last_deleted: None, retention_delay, block_time }
+        Self { backend, last_deleted: None, retention_delay, block_time, metrics }
     }
 }
 
@@ -163,7 +164,13 @@ impl L1ConfirmationSource for BackendL1ConfirmationSource {
     /// Return new confirmed blocks since the last poll.
     async fn poll_confirmations(&mut self) -> anyhow::Result<Vec<L1Confirmation>> {
         let latest = self.backend.latest_l1_confirmed_block_n();
-        let Some(latest) = latest else { return Ok(Vec::new()) };
+        let Some(latest) = latest else {
+            // No L1 confirmation info yet.
+            self.metrics.retention_latest_confirmed_block.record(0, &[]);
+            self.metrics.retention_eligible_latest_block.record(0, &[]);
+            self.metrics.retention_lag_blocks.record(0, &[]);
+            return Ok(Vec::new());
+        };
 
         // Filter to blocks that are old enough to delete, using the configured retention delay
         // and the chain's block_time as an estimate of block cadence.
@@ -172,11 +179,19 @@ impl L1ConfirmationSource for BackendL1ConfirmationSource {
         let retention_blocks = if delay_ms == 0 { 0 } else { delay_ms.div_ceil(block_time_ms) };
 
         if latest < retention_blocks {
+            self.metrics.retention_latest_confirmed_block.record(latest, &[]);
+            self.metrics.retention_eligible_latest_block.record(0, &[]);
+            self.metrics.retention_lag_blocks.record(0, &[]);
             return Ok(Vec::new());
         }
         let eligible_latest = latest.saturating_sub(retention_blocks);
 
         let start = self.last_deleted.map(|n| n + 1).unwrap_or(0);
+        let lag_blocks = if start > eligible_latest { 0 } else { eligible_latest - start + 1 };
+        self.metrics.retention_latest_confirmed_block.record(latest, &[]);
+        self.metrics.retention_eligible_latest_block.record(eligible_latest, &[]);
+        self.metrics.retention_lag_blocks.record(lag_blocks, &[]);
+
         if start > eligible_latest {
             return Ok(Vec::new());
         }
@@ -257,15 +272,30 @@ impl ExternalDbWorker {
             self.config.collection_name
         );
 
-        let mongo = MongoClient::new(&self.config).await.context("Connecting to MongoDB")?;
+        self.metrics.batch_size.record(self.config.batch_size as u64, &[]);
+        self.metrics.retry_backoff_seconds.record(0.0, &[]);
+
+        let mongo = MongoClient::new(&self.config).await;
+        let mongo = match mongo {
+            Ok(mongo) => mongo,
+            Err(err) => {
+                self.metrics.mongodb_write_errors.add(1, &[]);
+                return Err(err).context("Connecting to MongoDB");
+            }
+        };
         let sink = MongoSink { collection: mongo.collection().clone() };
-        sink.ensure_indexes().await.context("Ensuring external DB indexes")?;
-        self.startup_sync(&sink).await.context("External DB startup sync")?;
+        if let Err(err) = sink.ensure_indexes().await {
+            self.metrics.mongodb_write_errors.add(1, &[]);
+            return Err(err).context("Ensuring external DB indexes");
+        }
+        let drained = self.startup_sync(&sink).await.context("External DB startup sync")?;
+        self.metrics.startup_sync_drained.add(drained as u64, &[]);
 
         let mut retention = RetentionScheduler::new(
             BackendL1ConfirmationSource::new(
                 self.backend.clone(),
                 Duration::from_secs(self.config.retention_delay_secs),
+                self.metrics.clone(),
             ),
             self.metrics.clone(),
             self.chain_id.clone(),
@@ -289,6 +319,11 @@ impl ExternalDbWorker {
                     break;
                 }
                 _ = interval.tick() => {
+                    // Record outbox backlog even when we're in backoff so operators can see pressure.
+                    if let Ok(size) = self.backend.get_external_outbox_size_estimate() {
+                        self.metrics.outbox_size.record(size, &[]);
+                    }
+
                     if let Some(next_retry_at) = retry_at {
                         if Instant::now() < next_retry_at {
                             continue;
@@ -300,20 +335,22 @@ impl ExternalDbWorker {
                             if summary.attempted > 0 {
                                 retry_backoff.reset();
                                 retry_at = None;
+                                self.metrics.retry_backoff_seconds.record(0.0, &[]);
                             }
                         }
                         Err(err) => {
                             // External DB is optional for availability; on failure we backoff and retry.
-                            self.metrics.mongodb_write_errors.add(1, &[]);
                             self.metrics.retry_count.add(1, &[]);
                             let delay = retry_backoff.next_delay();
                             retry_at = Some(Instant::now() + delay);
+                            self.metrics.retry_backoff_seconds.record(delay.as_secs_f64(), &[]);
                             tracing::warn!("External DB batch write failed: {err:#}");
                         }
                     }
                 }
                 _ = retention_interval.tick() => {
                     if let Err(err) = retention.tick(&sink).await {
+                        self.metrics.retention_tick_errors.add(1, &[]);
                         tracing::warn!("External DB retention tick failed: {err:#}");
                     }
                 }
@@ -327,26 +364,50 @@ impl ExternalDbWorker {
     async fn drain_outbox_once(&self, sink: &dyn ExternalDbSink) -> anyhow::Result<DrainSummary> {
         let mut entries = Vec::new();
         for res in self.backend.get_external_outbox_transactions(self.config.batch_size) {
-            entries.push(res.context("Reading external outbox transaction")?);
+            match res {
+                Ok(entry) => entries.push(entry),
+                Err(err) => {
+                    self.metrics.outbox_read_errors.add(1, &[]);
+                    return Err(err).context("Reading external outbox transaction");
+                }
+            }
         }
 
         if entries.is_empty() {
             return Ok(DrainSummary::default());
         }
 
+        self.metrics.transactions_attempted.add(entries.len() as u64, &[]);
+
         let mut documents = Vec::with_capacity(entries.len());
         for entry in &entries {
-            documents.push(self.convert_to_document(&entry.tx)?);
+            match self.convert_to_document(&entry.tx) {
+                Ok(doc) => documents.push(doc),
+                Err(err) => {
+                    self.metrics.document_convert_errors.add(1, &[]);
+                    return Err(err).context("Converting validated tx to MongoDB document");
+                }
+            }
         }
 
         let start = Instant::now();
-        let result = sink.insert_many(documents).await?;
+        let result = match sink.insert_many(documents).await {
+            Ok(result) => result,
+            Err(err) => {
+                self.metrics.mongodb_write_errors.add(1, &[]);
+                return Err(err).context("Mongo insert_many");
+            }
+        };
         let elapsed = start.elapsed();
         self.metrics.write_latency.record(elapsed.as_secs_f64(), &[]);
         self.metrics.transactions_written.add(result.inserted as u64, &[]);
+        self.metrics.transactions_duplicates.add(result.duplicates as u64, &[]);
 
         for entry in &entries {
-            self.backend.delete_external_outbox(entry.id).context("Deleting external outbox transaction")?;
+            if let Err(err) = self.backend.delete_external_outbox(entry.id) {
+                self.metrics.outbox_delete_errors.add(1, &[]);
+                return Err(err).context("Deleting external outbox transaction");
+            }
         }
 
         Ok(DrainSummary { attempted: entries.len(), inserted: result.inserted, duplicates: result.duplicates })
@@ -714,7 +775,10 @@ mod tests {
 
         let sink = FakeSink::new(vec![Err(anyhow::anyhow!("mongo down"))]);
         let err = worker.drain_outbox_once(&sink).await.unwrap_err();
-        assert!(err.to_string().contains("mongo down"));
+        // `anyhow::Error`'s `Display` prints the outermost context; use the full chain to assert the root cause.
+        let err_chain = format!("{err:#}");
+        assert!(err_chain.contains("Mongo insert_many"));
+        assert!(err_chain.contains("mongo down"));
 
         let remaining: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
         assert_eq!(remaining.len(), 1);

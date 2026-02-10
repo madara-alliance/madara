@@ -372,6 +372,10 @@ impl MadaraStorageRead for RocksDBStorage {
     ) -> impl Iterator<Item = Result<external_outbox::ExternalOutboxEntry>> + '_ {
         self.inner.iter_external_outbox(limit).map(|res| res.context("Getting external outbox transactions"))
     }
+
+    fn get_external_outbox_size_estimate(&self) -> Result<u64> {
+        self.inner.external_outbox_size_estimate().context("Getting external outbox size estimate")
+    }
 }
 
 impl MadaraStorageWrite for RocksDBStorage {

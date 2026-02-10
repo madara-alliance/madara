@@ -92,10 +92,12 @@
 //! holds the lock, preventing new transactions from being added. Use sparingly to avoid deadlocks.
 //!
 //! ```no_run
+//! # async fn example(mempool: &mc_mempool::Mempool) {
 //! let consumer = mempool.get_consumer().await;
 //! for tx in consumer {
 //!     // Process transaction
 //! }
+//! # }
 //! ```
 //!
 //! ## Notifications via tx_sender
@@ -121,7 +123,7 @@
 use anyhow::Context;
 use dashmap::DashMap;
 use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
-use metrics::MempoolMetrics;
+use metrics::{ExternalDbOutboxMetrics, MempoolMetrics};
 use mp_transactions::validated::{TxTimestamp, ValidatedToBlockifierTxError, ValidatedTransaction};
 use mp_utils::service::ServiceContext;
 use notify::MempoolInnerWithNotify;
@@ -202,6 +204,7 @@ pub struct Mempool<D: MadaraStorageRead = RocksDBStorage> {
     backend: Arc<MadaraBackend<D>>,
     inner: MempoolInnerWithNotify,
     metrics: MempoolMetrics,
+    external_db_outbox_metrics: ExternalDbOutboxMetrics,
     config: MempoolConfig,
     external_outbox: ExternalOutboxConfig,
     ttl: Option<Duration>,
@@ -220,6 +223,7 @@ impl<D: MadaraStorageRead> Mempool<D> {
             external_outbox: config.external_outbox,
             config,
             metrics: MempoolMetrics::register(),
+            external_db_outbox_metrics: ExternalDbOutboxMetrics::register(),
             watch_transaction_status: Default::default(),
             preconfirmed_transactions_statuses: Default::default(),
         }
@@ -258,10 +262,15 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         let mut outbox_id = None;
         if is_new_tx && self.external_outbox.enabled {
             match self.backend.write_external_outbox(&tx) {
-                Ok(id) => outbox_id = Some(id),
+                Ok(id) => {
+                    outbox_id = Some(id);
+                    self.external_db_outbox_metrics.outbox_writes.add(1, &[]);
+                }
                 Err(err) => {
                     tracing::error!("Could not write external outbox transaction: {err:#}");
+                    self.external_db_outbox_metrics.outbox_write_errors.add(1, &[]);
                     if self.external_outbox.strict {
+                        self.external_db_outbox_metrics.outbox_strict_rejections.add(1, &[]);
                         return Err(MempoolInsertionError::Internal(anyhow::anyhow!("outbox write failed: {err:#}")));
                     }
                 }
@@ -283,6 +292,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             if let Some(outbox_id) = outbox_id {
                 if let Err(err) = self.backend.delete_external_outbox(outbox_id) {
                     tracing::warn!("Failed to roll back external outbox write: {err:#}");
+                    self.external_db_outbox_metrics.outbox_rollback_delete_errors.add(1, &[]);
                 }
             }
         }

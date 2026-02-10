@@ -95,4 +95,12 @@ impl RocksDBStorageInner {
         self.db.delete_cf_opt(&col, id.to_key_bytes(), &self.writeopts)?;
         Ok(())
     }
+
+    /// Return an approximate count of entries in the external outbox.
+    ///
+    /// Uses RocksDB's `estimate-num-keys` property for the outbox column family.
+    pub(super) fn external_outbox_size_estimate(&self) -> Result<u64> {
+        let col = self.get_column(MEMPOOL_EXTERNAL_OUTBOX_COLUMN);
+        Ok(self.db.property_int_value_cf(&col, "rocksdb.estimate-num-keys")?.unwrap_or(0))
+    }
 }

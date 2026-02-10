@@ -996,6 +996,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     ) -> impl Iterator<Item = Result<ExternalOutboxEntry>> + '_ {
         self.db.get_external_outbox_transactions(limit)
     }
+    pub fn get_external_outbox_size_estimate(&self) -> Result<u64> {
+        self.db.get_external_outbox_size_estimate()
+    }
     pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
         self.db.get_devnet_predeployed_keys()
     }
