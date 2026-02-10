@@ -482,6 +482,9 @@ impl ExecutorThread {
                 execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_bouncer_weights()
             );
             tracing::debug!("Block now full: {:?}", block_full);
+            if let Some(block_state) = execution_state.executor.block_state.as_mut() {
+                block_state.state.evict_read_cache_if_needed();
+            }
 
             let exec_result = super::BatchExecutionResult { executed_txs, blockifier_results, stats };
             if exec_result.stats.n_executed > 0
