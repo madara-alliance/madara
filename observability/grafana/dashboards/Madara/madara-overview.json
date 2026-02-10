@@ -5571,84 +5571,120 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
           "legendFormat": "Total Close Block",
           "refId": "A"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap merklization_ms [$__interval]) by ()",
           "legendFormat": "Merklization",
           "refId": "B"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap commitments_ms [$__interval]) by ()",
           "legendFormat": "Commitments",
           "refId": "C"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap db_write_ms [$__interval]) by ()",
           "legendFormat": "DB Write",
           "refId": "D"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_hash_ms [$__interval]) by ()",
           "legendFormat": "Block Hash",
           "refId": "E"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_preconfirmed_ms [$__interval]) by ()",
           "legendFormat": "Close Preconfirmed",
           "refId": "F"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap get_full_block_ms [$__interval]) by ()",
           "legendFormat": "Get Full Block",
           "refId": "G"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_ms [$__interval]) by ()",
           "legendFormat": "Contract Trie",
           "refId": "H"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_ms [$__interval]) by ()",
           "legendFormat": "Class Trie",
           "refId": "I"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_storage_trie_commit_ms [$__interval]) by ()",
           "legendFormat": "Contract Storage Trie Commit",
           "refId": "J"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_commit_ms [$__interval]) by ()",
           "legendFormat": "Contract Trie Commit",
           "refId": "K"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_commit_ms [$__interval]) by ()",
           "legendFormat": "Class Trie Commit",
@@ -5692,7 +5728,11 @@
           "showLegend": true,
           "displayMode": "table",
           "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
         },
         "tooltip": {
           "mode": "multi",
@@ -5701,7 +5741,10 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
           "legendFormat": "Close Block Total (p50)",
@@ -5757,84 +5800,120 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap tx_count [$__interval]) by ()",
           "legendFormat": "Tx Count",
           "refId": "A"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap event_count [$__interval]) by ()",
           "legendFormat": "Event Count",
           "refId": "B"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_executed [$__interval]) by ()",
           "legendFormat": "Txs Executed",
           "refId": "C"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_reverted [$__interval]) by ()",
           "legendFormat": "Txs Reverted",
           "refId": "D"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap state_diff_len [$__interval]) by ()",
           "legendFormat": "State Diff Length",
           "refId": "E"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap batches_executed [$__interval]) by ()",
           "legendFormat": "Batches Executed",
           "refId": "F"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_added_to_block [$__interval]) by ()",
           "legendFormat": "Txs Added to Block",
           "refId": "G"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_rejected [$__interval]) by ()",
           "legendFormat": "Txs Rejected",
           "refId": "H"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap classes_declared [$__interval]) by ()",
           "legendFormat": "Classes Declared",
           "refId": "I"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap deployed_contracts [$__interval]) by ()",
           "legendFormat": "Deployed Contracts",
           "refId": "J"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap storage_diffs [$__interval]) by ()",
           "legendFormat": "Storage Diffs",
           "refId": "K"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap nonce_updates [$__interval]) by ()",
           "legendFormat": "Nonce Updates",
@@ -5878,7 +5957,11 @@
           "showLegend": true,
           "displayMode": "table",
           "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
         },
         "tooltip": {
           "mode": "multi",
@@ -5887,42 +5970,60 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap l2_gas_consumed [$__interval]) by ()",
           "legendFormat": "L2 Gas Consumed",
           "refId": "A"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_l1_gas [$__interval]) by ()",
           "legendFormat": "Bouncer L1 Gas",
           "refId": "B"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_sierra_gas [$__interval]) by ()",
           "legendFormat": "Bouncer Sierra Gas",
           "refId": "C"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_n_events [$__interval]) by ()",
           "legendFormat": "Bouncer Events",
           "refId": "D"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_message_segment_length [$__interval]) by ()",
           "legendFormat": "Bouncer Msg Segment Len",
           "refId": "E"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_state_diff_size [$__interval]) by ()",
           "legendFormat": "Bouncer State Diff Size",
@@ -5945,6 +6046,212 @@
       },
       "pluginVersion": 39,
       "transformations": []
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 187
+      },
+      "id": 314,
+      "panels": [],
+      "title": "Execution Read Cache",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 188
+      },
+      "id": 315,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(exec_read_cache_size_bytes{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Cache Size",
+          "refId": "A"
+        }
+      ],
+      "title": "Exec Read Cache Size",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 6,
+        "y": 188
+      },
+      "id": 316,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (kind) (rate(exec_read_cache_hits_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "hits {{kind}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (kind) (rate(exec_read_cache_misses_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "misses {{kind}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Exec Read Cache Hits/Misses (rate)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 188
+      },
+      "id": 317,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(exec_read_cache_hits_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) / (sum(rate(exec_read_cache_hits_hit_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) + sum(rate(exec_read_cache_misses_miss_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) + 0.001)",
+          "legendFormat": "Hit Ratio",
+          "refId": "A"
+        }
+      ],
+      "title": "Exec Read Cache Hit Ratio",
+      "type": "stat"
     }
   ],
   "refresh": "5s",
