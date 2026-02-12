@@ -244,12 +244,6 @@ mod tests {
     use std::collections::HashSet;
     use std::time::Instant;
 
-    /// Lossy conversion used only in tests where all generated felts originate from `u64`.
-    fn felt_to_u64_truncated(f: &Felt) -> u64 {
-        let bytes = f.to_bytes_be();
-        u64::from_be_bytes(bytes[24..32].try_into().expect("slice has length 8"))
-    }
-
     /// Creates a test event with the specified from_address and keys
     fn create_test_event(from: u64, keys: Vec<u64>) -> Event {
         Event { from_address: Felt::from(from), keys: keys.into_iter().map(Felt::from).collect(), data: vec![] }
@@ -400,7 +394,7 @@ mod tests {
                 .max()
                 .unwrap();
 
-            let test_felt = Felt::from(felt_to_u64_truncated(&max_felt) + 1000);
+            let test_felt = Felt::from(max_felt.to_bytes_be()[0] as u64 + 1000);
             let searcher = EventBloomSearcher::new(Some(&test_felt), None);
 
             // The false positive rate should be relatively low
@@ -414,18 +408,18 @@ mod tests {
 
     // Enhanced strategy for generating larger event sets
     fn large_events_strategy() -> impl Strategy<Value = Vec<Event>> {
-        // Generate between 100 and 1000 events.
-        // Keep the strategy deterministic: do not use `rand::random` inside proptest strategies.
-        (100usize..1000usize).prop_flat_map(|size| {
-            prop::collection::vec((any::<u64>(), 1usize..=10usize), size).prop_map(|items| {
-                items
-                    .into_iter()
-                    .map(|(from, num_keys)| {
-                        let keys = (0..num_keys).map(|i| from.wrapping_add(i as u64)).collect();
-                        create_test_event(from, keys)
-                    })
-                    .collect::<Vec<_>>()
-            })
+        // Generate between 100 and 1000 events
+        let range = 100..1000usize;
+        range.prop_flat_map(|size| {
+            prop::collection::vec(
+                (0..u64::MAX).prop_map(|from| {
+                    // Generate 1 to 10 keys for each event
+                    let num_keys = rand::random::<usize>() % 10 + 1;
+                    let keys = (0..num_keys).map(|i| from + i as u64).collect();
+                    create_test_event(from, keys)
+                }),
+                size,
+            )
         })
     }
 
@@ -436,7 +430,7 @@ mod tests {
         num_tests: usize,
     ) -> f64 {
         let mut false_positives = 0;
-        let max_existing = existing_values.iter().map(felt_to_u64_truncated).max().unwrap_or(0);
+        let max_existing = existing_values.iter().max().map(|f| f.to_bytes_be()[0] as u64).unwrap_or(0);
 
         // Generate test values that don't exist in our set
         for i in 0..num_tests {
@@ -482,9 +476,9 @@ mod tests {
                 );
 
                 // The expected false positive rate should be around 0.01 (1%)
-                // We allow some variance (probabilistic test) but keep it under 3% to avoid flakiness.
+                // We allow some variance but keep it under 2%
                 prop_assert!(
-                    false_positive_rate <= 0.03,
+                    false_positive_rate <= 0.02,
                     "False positive rate too high: {}",
                     false_positive_rate
                 );

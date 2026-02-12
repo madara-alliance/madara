@@ -25,6 +25,11 @@ pub struct ExternalDbMetrics {
     /// MongoDB connection/write errors
     pub mongodb_write_errors: Counter<u64>,
 
+    /// MongoDB availability gauge (1 = last Mongo operation succeeded, 0 = last Mongo operation failed).
+    ///
+    /// This is intended for alerting (for example, "Mongo is down") without needing to infer from retry counters.
+    pub mongodb_up: Gauge<u64>,
+
     /// Outbox read errors (deserialization / RocksDB iterator failures).
     pub outbox_read_errors: Counter<u64>,
 
@@ -45,9 +50,6 @@ pub struct ExternalDbMetrics {
 
     /// Retry attempts due to MongoDB failures
     pub retry_count: Counter<u64>,
-
-    /// Current retry backoff delay (seconds). 0 means not backing off.
-    pub retry_backoff_seconds: Gauge<f64>,
 
     /// Retention tick errors (L1 confirmation polling / Mongo deletions).
     pub retention_tick_errors: Counter<u64>,
@@ -100,6 +102,10 @@ impl ExternalDbMetrics {
                 .u64_counter("external_db_mongodb_write_errors")
                 .with_description("MongoDB connection/write errors")
                 .build(),
+            mongodb_up: meter
+                .u64_gauge("external_db_mongodb_up")
+                .with_description("MongoDB availability gauge (1 = up, 0 = down)")
+                .build(),
             outbox_read_errors: meter
                 .u64_counter("external_db_outbox_read_errors")
                 .with_description("Outbox read errors (deserialization / RocksDB iterator failures)")
@@ -121,10 +127,6 @@ impl ExternalDbMetrics {
             retry_count: meter
                 .u64_counter("external_db_retry_count")
                 .with_description("Retry attempts due to MongoDB failures")
-                .build(),
-            retry_backoff_seconds: meter
-                .f64_gauge("external_db_retry_backoff_seconds")
-                .with_description("Current retry backoff delay in seconds")
                 .build(),
             retention_tick_errors: meter
                 .u64_counter("external_db_retention_tick_errors")

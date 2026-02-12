@@ -237,8 +237,18 @@ impl<S: L1ConfirmationSource> RetentionScheduler<S> {
             );
             let hashes =
                 confirmation.tx_hashes.iter().map(|felt| format!("{}", felt.hex_display())).collect::<Vec<_>>();
-            let deleted = sink.delete_by_hashes(&self.chain_id, hashes).await?;
-            self.metrics.transactions_deleted.add(deleted as u64, &[]);
+            match sink.delete_by_hashes(&self.chain_id, hashes).await {
+                Ok(deleted) => {
+                    self.metrics.mongodb_up.record(1, &[]);
+                    self.metrics.transactions_deleted.add(deleted, &[]);
+                }
+                Err(err) => {
+                    // This is a Mongo operation; mark Mongo as down and count it as a Mongo error for alerting.
+                    self.metrics.mongodb_write_errors.add(1, &[]);
+                    self.metrics.mongodb_up.record(0, &[]);
+                    return Err(err).context("Mongo delete_many");
+                }
+            }
         }
 
         Ok(())
@@ -273,19 +283,24 @@ impl ExternalDbWorker {
         );
 
         self.metrics.batch_size.record(self.config.batch_size as u64, &[]);
-        self.metrics.retry_backoff_seconds.record(0.0, &[]);
+        self.metrics.mongodb_up.record(0, &[]);
 
         let mongo = MongoClient::new(&self.config).await;
         let mongo = match mongo {
-            Ok(mongo) => mongo,
+            Ok(mongo) => {
+                self.metrics.mongodb_up.record(1, &[]);
+                mongo
+            }
             Err(err) => {
                 self.metrics.mongodb_write_errors.add(1, &[]);
+                self.metrics.mongodb_up.record(0, &[]);
                 return Err(err).context("Connecting to MongoDB");
             }
         };
         let sink = MongoSink { collection: mongo.collection().clone() };
         if let Err(err) = sink.ensure_indexes().await {
             self.metrics.mongodb_write_errors.add(1, &[]);
+            self.metrics.mongodb_up.record(0, &[]);
             return Err(err).context("Ensuring external DB indexes");
         }
         let drained = self.startup_sync(&sink).await.context("External DB startup sync")?;
@@ -335,7 +350,6 @@ impl ExternalDbWorker {
                             if summary.attempted > 0 {
                                 retry_backoff.reset();
                                 retry_at = None;
-                                self.metrics.retry_backoff_seconds.record(0.0, &[]);
                             }
                         }
                         Err(err) => {
@@ -343,7 +357,6 @@ impl ExternalDbWorker {
                             self.metrics.retry_count.add(1, &[]);
                             let delay = retry_backoff.next_delay();
                             retry_at = Some(Instant::now() + delay);
-                            self.metrics.retry_backoff_seconds.record(delay.as_secs_f64(), &[]);
                             tracing::warn!("External DB batch write failed: {err:#}");
                         }
                     }
@@ -395,10 +408,12 @@ impl ExternalDbWorker {
             Ok(result) => result,
             Err(err) => {
                 self.metrics.mongodb_write_errors.add(1, &[]);
+                self.metrics.mongodb_up.record(0, &[]);
                 return Err(err).context("Mongo insert_many");
             }
         };
         let elapsed = start.elapsed();
+        self.metrics.mongodb_up.record(1, &[]);
         self.metrics.write_latency.record(elapsed.as_secs_f64(), &[]);
         self.metrics.transactions_written.add(result.inserted as u64, &[]);
         self.metrics.transactions_duplicates.add(result.duplicates as u64, &[]);

@@ -6208,8 +6208,8 @@
     {
       "id": 405,
       "type": "stat",
-      "title": "Retry Backoff (s)",
-      "description": "Current external-db worker retry backoff delay (0 means not backing off)",
+      "title": "MongoDB Up",
+      "description": "MongoDB availability gauge (1 = up, 0 = down). Reflects the last MongoDB operation in the external-db pipeline.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -6230,12 +6230,16 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#FF9830",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "#56A64B",
+                "value": 1
               }
             ]
           },
-          "unit": "s"
+          "unit": "none"
         },
         "overrides": []
       },
@@ -6259,8 +6263,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "max(external_db_retry_backoff_seconds{namespace=~\"$namespace\", pod=~\"$pod\"})",
-          "legendFormat": "Backoff (s)",
+          "expr": "max(external_db_mongodb_up{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "MongoDB up",
           "refId": "A"
         }
       ],
