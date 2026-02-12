@@ -195,6 +195,8 @@ mod devnet;
 #[cfg(test)]
 mod gateway;
 #[cfg(test)]
+mod preconfirmed_recovery;
+#[cfg(test)]
 mod rpc;
 #[cfg(test)]
 mod storage_proof;
