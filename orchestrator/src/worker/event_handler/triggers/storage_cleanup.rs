@@ -2,7 +2,7 @@ use crate::core::client::lock::LockValue;
 use crate::core::client::storage::StorageError;
 use crate::core::config::Config;
 use crate::types::constant::{
-    get_batch_artifacts_dir, get_batch_blob_dir, get_batch_state_update_file, get_snos_legacy_dir,
+    get_batch_artifacts_dir, get_batch_blob_dir, get_batch_state_update_file, get_snos_batch_dir,
     STORAGE_CLEANUP_LOCK_DURATION, STORAGE_CLEANUP_MAX_JOBS_PER_RUN, STORAGE_CLEANUP_WORKER_KEY,
     STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE,
 };
@@ -11,6 +11,7 @@ use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, StateUpdate
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use chrono::Utc;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -132,12 +133,17 @@ impl StorageCleanupTrigger {
         Ok(())
     }
 
-    /// Collect artifact paths from: artifacts/, blob/, snos legacy dirs + state_update file
+    /// Collect artifact paths from:
+    /// - batch artifacts dir
+    /// - batch blob dir
+    /// - SNOS batch dirs (for L3 or when SNOS batch index == state transition id)
+    /// - SNOS batch dirs for all SNOS batches inside the aggregator batch
+    /// - state update file
     async fn collect_artifact_paths(&self, config: &Arc<Config>, job_id: u64) -> Vec<String> {
-        let mut paths = Vec::new();
+        let mut paths = BTreeSet::new();
 
         // List files from each artifact directory
-        let dirs = [get_batch_artifacts_dir(job_id), get_batch_blob_dir(job_id), get_snos_legacy_dir(job_id)];
+        let dirs = [get_batch_artifacts_dir(job_id), get_batch_blob_dir(job_id), get_snos_batch_dir(job_id)];
         for dir in &dirs {
             match config.storage().list_files_in_dir(dir).await {
                 Ok(files) => {
@@ -148,9 +154,40 @@ impl StorageCleanupTrigger {
             }
         }
 
+        // Include SNOS batch dirs for all SNOS batches in this aggregator batch
+        match config.database().get_snos_batches_by_aggregator_index(job_id).await {
+            Ok(snos_batches) => {
+                for snos_batch in snos_batches {
+                    let snos_dir = get_snos_batch_dir(snos_batch.index);
+                    match config.storage().list_files_in_dir(&snos_dir).await {
+                        Ok(files) => {
+                            debug!(
+                                job_id = %job_id,
+                                snos_batch_index = %snos_batch.index,
+                                dir = %snos_dir,
+                                count = files.len(),
+                                "Found SNOS batch files"
+                            );
+                            paths.extend(files);
+                        }
+                        Err(e) => debug!(
+                            job_id = %job_id,
+                            snos_batch_index = %snos_batch.index,
+                            dir = %snos_dir,
+                            error = %e,
+                            "SNOS batch dir not found or error"
+                        ),
+                    }
+                }
+            }
+            Err(e) => {
+                debug!(job_id = %job_id, error = %e, "Failed to fetch SNOS batches for aggregator batch");
+            }
+        }
+
         // Add state update file (single file, always included)
-        paths.push(get_batch_state_update_file(job_id));
-        paths
+        paths.insert(get_batch_state_update_file(job_id));
+        paths.into_iter().collect()
     }
 
     /// Tag artifacts for expiration. Returns (tagged_count, all_succeeded).

@@ -2,53 +2,16 @@ use lazy_static::lazy_static;
 use num_bigint::{BigUint, ToBigUint};
 use std::str::FromStr;
 
-pub const BLOB_DATA_FILE_NAME: &str = "blob_data.txt";
-pub const SNOS_OUTPUT_FILE_NAME: &str = "snos_output.json";
-pub const PROGRAM_OUTPUT_FILE_NAME: &str = "program_output.txt";
-pub const CAIRO_PIE_FILE_NAME: &str = "cairo_pie.zip";
-pub const PROOF_FILE_NAME: &str = "proof.json";
-pub const PROOF_PART2_FILE_NAME: &str = "proof_part2.json";
-pub const ON_CHAIN_DATA_FILE_NAME: &str = "onchain_data.json";
-pub const DA_SEGMENT_FILE_NAME: &str = "da_blob.json";
-
-pub const STORAGE_STATE_UPDATE_DIR: &str = "state_update";
-pub const STORAGE_BLOB_DIR: &str = "blob";
-pub const STORAGE_ARTIFACTS_DIR: &str = "artifacts";
-pub const STORAGE_BATCH_SUBDIR: &str = "batch";
-
-// Storage path helpers
-pub fn get_batch_artifacts_dir(batch_index: u64) -> String {
-    format!("{}/{}/{}", STORAGE_ARTIFACTS_DIR, STORAGE_BATCH_SUBDIR, batch_index)
-}
-
-pub fn get_batch_artifact_file(batch_index: u64, filename: &str) -> String {
-    format!("{}/{}", get_batch_artifacts_dir(batch_index), filename)
-}
-
-pub fn get_batch_blob_dir(batch_index: u64) -> String {
-    format!("{}/{}/{}", STORAGE_BLOB_DIR, STORAGE_BATCH_SUBDIR, batch_index)
-}
-
-pub fn get_batch_blob_file(batch_index: u64, blob_index: u64) -> String {
-    format!("{}/{}.txt", get_batch_blob_dir(batch_index), blob_index)
-}
-
-pub fn get_batch_state_update_file(batch_index: u64) -> String {
-    format!("{}/{}/{}.json", STORAGE_STATE_UPDATE_DIR, STORAGE_BATCH_SUBDIR, batch_index)
-}
-
-/// Legacy SNOS directory at root level for backwards compatibility
-pub fn get_snos_legacy_dir(job_id: u64) -> String {
-    format!("{}", job_id)
-}
-
-// Storage cleanup constants
-pub const STORAGE_EXPIRATION_TAG_KEY: &str = "expire-after-settlement";
-pub const STORAGE_EXPIRATION_TAG_VALUE: &str = "true";
-pub const STORAGE_LIFECYCLE_RULE_ID: &str = "expire-settled-artifacts";
-pub const STORAGE_CLEANUP_WORKER_KEY: &str = "StorageCleanupWorker";
-pub const STORAGE_CLEANUP_MAX_JOBS_PER_RUN: usize = 200;
-pub const STORAGE_CLEANUP_LOCK_DURATION: u64 = 300; // 5 minutes
+// Storage constants and path helpers live in core client storage.
+// Re-exported here for backward compatibility across the codebase.
+pub use crate::core::client::storage::constants::{
+    get_batch_artifact_file, get_batch_artifacts_dir, get_batch_blob_dir, get_batch_blob_file,
+    get_batch_state_update_file, get_snos_batch_dir, BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME,
+    ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, PROOF_PART2_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+    STORAGE_ARTIFACTS_DIR, STORAGE_BATCH_SUBDIR, STORAGE_BLOB_DIR, STORAGE_CLEANUP_LOCK_DURATION,
+    STORAGE_CLEANUP_MAX_JOBS_PER_RUN, STORAGE_CLEANUP_WORKER_KEY, STORAGE_EXPIRATION_TAG_KEY,
+    STORAGE_EXPIRATION_TAG_VALUE, STORAGE_LIFECYCLE_RULE_ID, STORAGE_STATE_UPDATE_DIR,
+};
 pub const BLOB_LEN: usize = 4096;
 pub const MAX_BLOBS: usize = 6; // TODO: This should be configurable via ENV or config file
 pub const MAX_BLOB_SIZE: usize = BLOB_LEN * MAX_BLOBS; // This represents the maximum size of data that you can use in a single transaction

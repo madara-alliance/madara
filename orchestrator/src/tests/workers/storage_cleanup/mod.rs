@@ -11,9 +11,10 @@ use crate::core::client::lock::error::LockError;
 use crate::core::client::lock::{LockResult, MockLockClient};
 use crate::core::client::storage::MockStorageClient;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::tests::utils::build_snos_batch;
 use crate::tests::workers::utils::get_job_by_mock_id_vector;
 use crate::types::constant::{
-    get_batch_artifact_file, get_batch_blob_file, get_batch_state_update_file, get_snos_legacy_dir,
+    get_batch_artifact_file, get_batch_blob_file, get_batch_state_update_file, get_snos_batch_dir,
     STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE,
 };
 use crate::types::jobs::job_item::JobItem;
@@ -137,6 +138,7 @@ async fn test_process_completed_jobs_skips_partial_tagging() -> Result<(), Box<d
     let valid_job = valid_jobs.into_iter().next().expect("Should have created one job");
 
     database.expect_get_jobs_without_storage_artifacts_tagged().returning(move |_| Ok(vec![valid_job.clone()]));
+    database.expect_get_snos_batches_by_aggregator_index().returning(|_| Ok(vec![]));
     storage.expect_list_files_in_dir().returning(|_| Ok(vec!["file1.json".to_string()]));
     storage.expect_tag_object().returning(|_, _| {
         Err(crate::core::client::storage::StorageError::ObjectStreamError("Connection timeout".to_string()))
@@ -172,18 +174,25 @@ async fn test_storage_cleanup_happy_path_integration() -> Result<(), Box<dyn Err
 
     let config = &services.config;
     let job_id: u64 = 99999;
+    let snos_batch_id: u64 = 10000;
     let test_data = Bytes::from(r#"{"test": "happy_path_integration"}"#);
 
     // Step 1: Create artifacts in S3
     let artifact_file = get_batch_artifact_file(job_id, "proof.json");
     let blob_file = get_batch_blob_file(job_id, 0);
-    let snos_file = format!("{}/snos_output.json", get_snos_legacy_dir(job_id));
+    let snos_file = format!("{}/snos_output.json", get_snos_batch_dir(job_id));
+    let snos_batch_file = format!("{}/cairo_pie.zip", get_snos_batch_dir(snos_batch_id));
     let state_update_file = get_batch_state_update_file(job_id);
 
     config.storage().put_data(test_data.clone(), &artifact_file).await?;
     config.storage().put_data(test_data.clone(), &blob_file).await?;
     config.storage().put_data(test_data.clone(), &snos_file).await?;
+    config.storage().put_data(test_data.clone(), &snos_batch_file).await?;
     config.storage().put_data(test_data.clone(), &state_update_file).await?;
+
+    // Step 1b: Create SNOS batch linked to this aggregator batch
+    let snos_batch = build_snos_batch(snos_batch_id, Some(job_id), snos_batch_id);
+    config.database().create_snos_batch(snos_batch).await?;
 
     // Step 2: Create completed StateTransition job in MongoDB
     let job = JobItem {
@@ -225,6 +234,13 @@ async fn test_storage_cleanup_happy_path_integration() -> Result<(), Box<dyn Err
         artifact_tags.iter().any(|(k, v)| k == STORAGE_EXPIRATION_TAG_KEY && v == STORAGE_EXPIRATION_TAG_VALUE),
         "Artifact should have expiration tag: {:?}",
         artifact_tags
+    );
+
+    let snos_batch_tags = get_object_tags(&services.provider_config, &bucket_name, &snos_batch_file).await?;
+    assert!(
+        snos_batch_tags.iter().any(|(k, v)| k == STORAGE_EXPIRATION_TAG_KEY && v == STORAGE_EXPIRATION_TAG_VALUE),
+        "SNOS batch file should have expiration tag: {:?}",
+        snos_batch_tags
     );
 
     // Step 5: Verify job is no longer in untagged list
