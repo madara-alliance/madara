@@ -8,11 +8,14 @@
 //!   - `artifacts/batch/<batch_index>/...`
 //!   - `blob/batch/<batch_index>/<blob_index>.txt`
 //!   - `state_update/batch/<batch_index>.json`
-//! - SNOS batch artifacts (root-level per batch index):
-//!   - `<snos_batch_index>/cairo_pie.zip`
-//!   - `<snos_batch_index>/snos_output.json`
-//!   - `<snos_batch_index>/program_output.txt`
-//!   - `<snos_batch_index>/onchain_data.json`
+//! - Root-level batch artifacts (SNOS + L3):
+//!   - `<batch_or_block>/cairo_pie.zip`
+//!   - `<batch_or_block>/snos_output.json`
+//!   - `<batch_or_block>/program_output.txt`
+//!   - `<batch_or_block>/onchain_data.json` (configured, not currently written)
+//!   - `<block_no>/blob_data.txt` (L3 DA)
+//!   - `<block_no>/proof.json` (L3 proof download)
+//!   - `<block_no>/proof_part2.json` (L3 proof registration download)
 
 /// Blob data file name (DA payload).
 pub const BLOB_DATA_FILE_NAME: &str = "blob_data.txt";
