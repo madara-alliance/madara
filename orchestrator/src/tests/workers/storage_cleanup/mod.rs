@@ -239,10 +239,7 @@ async fn test_storage_cleanup_happy_path_integration_l2() -> Result<(), Box<dyn 
 
     // Verify job is in untagged list
     let untagged_jobs = config.database().get_jobs_without_storage_artifacts_tagged(Some(100)).await?;
-    assert!(
-        untagged_jobs.iter().any(|j| j.internal_id == agg_batch_id),
-        "Job should be in untagged list"
-    );
+    assert!(untagged_jobs.iter().any(|j| j.internal_id == agg_batch_id), "Job should be in untagged list");
 
     // Step 3: Run StorageCleanupTrigger
     let result = StorageCleanupTrigger.run_worker(config.clone()).await;
@@ -256,10 +253,7 @@ async fn test_storage_cleanup_happy_path_integration_l2() -> Result<(), Box<dyn 
 
     // Step 5: Verify job is no longer in untagged list
     let untagged_jobs_after = config.database().get_jobs_without_storage_artifacts_tagged(Some(100)).await?;
-    assert!(
-        !untagged_jobs_after.iter().any(|j| j.internal_id == agg_batch_id),
-        "Job should be marked as tagged"
-    );
+    assert!(!untagged_jobs_after.iter().any(|j| j.internal_id == agg_batch_id), "Job should be marked as tagged");
 
     Ok(())
 }
@@ -330,10 +324,7 @@ async fn test_storage_cleanup_happy_path_integration_l3() -> Result<(), Box<dyn 
 
     // Step 5: Verify job is no longer in untagged list
     let untagged_jobs_after = config.database().get_jobs_without_storage_artifacts_tagged(Some(100)).await?;
-    assert!(
-        !untagged_jobs_after.iter().any(|j| j.internal_id == block_no),
-        "Job should be marked as tagged"
-    );
+    assert!(!untagged_jobs_after.iter().any(|j| j.internal_id == block_no), "Job should be marked as tagged");
 
     Ok(())
 }
