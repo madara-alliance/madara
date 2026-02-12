@@ -180,12 +180,12 @@ mod test_rpc_read_calls {
         );
     }
 
-    #[rstest]
-    #[tokio::test]
     /// Validates that `starknet_getMessagesStatus` accepts spec-compliant `L1_TXN_HASH` inputs
     /// (short / odd-length hex) and reaches the method implementation (i.e. parsing succeeds).
     ///
     /// Desired result: the call fails with `TXN_HASH_NOT_FOUND` (code 29) rather than `Invalid params`.
+    #[rstest]
+    #[tokio::test]
     async fn test_get_messages_status_accepts_short_and_odd_hex_params() {
         let madara = get_madara().await;
 
@@ -212,11 +212,11 @@ mod test_rpc_read_calls {
         }
     }
 
-    #[rstest]
-    #[tokio::test]
     /// Validates that `starknet_getMessagesStatus` rejects invalid `L1_TXN_HASH` formats at the RPC layer.
     ///
     /// Desired result: the call fails with JSON-RPC `Invalid params` (-32602).
+    #[rstest]
+    #[tokio::test]
     async fn test_get_messages_status_rejects_invalid_l1_tx_hash_format() {
         let madara = get_madara().await;
 
@@ -242,7 +242,6 @@ mod test_rpc_read_calls {
         }
     }
 
-    #[tokio::test]
     /// End-to-end lifecycle test for `starknet_getMessagesStatus` (DB-backed implementation).
     ///
     /// Desired results:
@@ -250,6 +249,7 @@ mod test_rpc_read_calls {
     /// 2. Once a consumed L1-handler tx is written for the same nonce, the RPC returns its status with:
     ///    - `finality_status = ACCEPTED_ON_L2`
     ///    - `execution_status = SUCCEEDED`
+    #[tokio::test]
     async fn test_get_messages_status_seen_then_executed_e2e() -> anyhow::Result<()> {
         use mc_class_exec::config::NativeConfig;
         use mc_db::{MadaraBackend, MadaraBackendConfig};
