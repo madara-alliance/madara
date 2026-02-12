@@ -228,7 +228,8 @@ fn shutdown(node: &mut MadaraCmd, kind: ShutdownKind) {
 #[case::e00_ungraceful(false, false, ShutdownKind::Ungraceful)]
 // no mempool persistence + persist preconfirmed, ungraceful → behaviour: preconfirmed persisted & re-executed on startup -> Expected: txs re-executed after restart and confirmed + no "Could not add txns from mempool log"
 #[case::e10_ungraceful(true, false, ShutdownKind::Ungraceful)]
-// persist mempool + no preconfirmed persistence, ungraceful → behaviour: preconfirmed lost, mempool should restore -> Expected: txs Received or AcceptedOnL2 after restart
+// persist mempool + no preconfirmed persistence, ungraceful → behaviour: preconfirmed lost, mempool should restore.
+// We expect Received, but check for AcceptedOnL2 too since txs can be re-executed quickly on restart.
 #[case::e01_ungraceful(false, true, ShutdownKind::Ungraceful)]
 // no mempool persistence + no preconfirmed persistence, ungraceful → behaviour: preconfirmed lost, mempool not persisted -> Expected: txs missing after restart
 #[case::e11_ungraceful(true, true, ShutdownKind::Ungraceful)]
