@@ -26,7 +26,7 @@ use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, FlushOptions, MultiThreaded, WriteOptions};
-use std::{fmt, path::Path, sync::Arc};
+use std::{collections::HashSet, fmt, path::Path, sync::Arc};
 
 mod backup;
 mod blocks;
@@ -155,10 +155,11 @@ impl RocksDBStorageInner {
                     .collect::<Result<_>>()?;
 
                 self.events_remove_block(block_n, &mut batch)?;
-                self.message_to_l2_remove_txns(
-                    transactions.iter().filter_map(|v| v.transaction.as_l1_handler()).map(|tx| tx.nonce),
-                    &mut batch,
-                )?;
+                let l1_handler_nonces: Vec<u64> =
+                    transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
+                self.message_to_l2_remove_txns(l1_handler_nonces.iter().copied(), &mut batch)?;
+                self.message_to_l2_remove_pending(l1_handler_nonces.iter().copied(), &mut batch)?;
+                self.message_to_l2_remove_source_l1_block_by_nonces(l1_handler_nonces.iter().copied(), &mut batch)?;
 
                 self.blocks_remove_block(&block_info, &mut batch)?;
             }
@@ -359,6 +360,11 @@ impl MadaraStorageRead for RocksDBStorage {
             .get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
             .with_context(|| format!("Getting next pending message to l2 with nonce={core_contract_nonce}"))
     }
+    fn get_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
+        self.inner
+            .get_l1_message_source_l1_block_by_nonce(core_contract_nonce)
+            .with_context(|| format!("Getting l1 source block by nonce={core_contract_nonce}"))
+    }
 
     // Mempool
 
@@ -452,6 +458,14 @@ impl MadaraStorageWrite for RocksDBStorage {
         );
         self.inner.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash).with_context(|| {
             format!("Writing l1 handler txn hash by nonce nonce={core_contract_nonce} txn_hash={txn_hash:#x}")
+        })
+    }
+    fn write_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
+        tracing::debug!(
+            "Write l1 message source block by nonce core_contract_nonce={core_contract_nonce}, l1_block_n={l1_block_n}"
+        );
+        self.inner.write_l1_message_source_l1_block_by_nonce(core_contract_nonce, l1_block_n).with_context(|| {
+            format!("Writing l1 message source block by nonce nonce={core_contract_nonce} l1_block_n={l1_block_n}")
         })
     }
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
@@ -583,7 +597,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     /// * This is a destructive operation - all blocks after the target block are permanently removed.
     /// * The function is atomic - if any step fails, the database may be in an inconsistent state.
     /// ```
-    fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
+    fn revert_to(&self, new_tip_block_hash: &Felt, l1_messages_rewind_hint: Option<u64>) -> Result<(u64, Felt)> {
         tracing::info!("Reverting blockchain to block_hash={new_tip_block_hash:#x}");
 
         let target_block_n = self
@@ -620,6 +634,58 @@ impl MadaraStorageWrite for RocksDBStorage {
         if target_block_n > current_tip {
             anyhow::bail!("Cannot revert to block_n={target_block_n} which is > current tip={current_tip}");
         }
+
+        // Preflight L1 messaging rewind before any destructive write.
+        let reverted_l1_handler_nonces = self
+            .inner
+            .collect_reverted_l1_handler_nonces(target_block_n, current_tip)
+            .context("Collecting reverted L1 handler nonces")?;
+
+        let reverted_l1_handler_nonces: HashSet<u64> = reverted_l1_handler_nonces.into_iter().collect();
+        let mut min_source_l1_block: Option<u64> = None;
+        let mut missing_source_block_nonces = Vec::new();
+
+        for nonce in reverted_l1_handler_nonces.iter().copied() {
+            match self
+                .inner
+                .get_l1_message_source_l1_block_by_nonce(nonce)
+                .with_context(|| format!("Fetching L1 source block for reverted nonce={nonce}"))?
+            {
+                Some(l1_block_n) => {
+                    min_source_l1_block = Some(match min_source_l1_block {
+                        Some(current_min) => current_min.min(l1_block_n),
+                        None => l1_block_n,
+                    });
+                }
+                None => missing_source_block_nonces.push(nonce),
+            }
+        }
+        missing_source_block_nonces.sort_unstable();
+
+        if !missing_source_block_nonces.is_empty() && l1_messages_rewind_hint.is_none() {
+            let sample: Vec<u64> = missing_source_block_nonces.iter().copied().take(8).collect();
+            anyhow::bail!(
+                "Cannot revert: missing L1 source block mapping for {} reverted L1-handler nonce(s) (sample={sample:?}). \
+                 Retry with l1_messages_rewind_hint to force a safe rewind point.",
+                missing_source_block_nonces.len()
+            );
+        }
+
+        let rewind_from_l1_block = match (min_source_l1_block, l1_messages_rewind_hint) {
+            (Some(db_min), Some(hint)) => Some(db_min.min(hint)),
+            (Some(db_min), None) => Some(db_min),
+            (None, Some(hint)) => Some(hint),
+            (None, None) => None,
+        };
+        let l1_messaging_sync_tip_after_revert = rewind_from_l1_block.map(|b| b.saturating_sub(1));
+
+        tracing::info!(
+            "🔁 REORG preflight: reverted_l1_handler_nonces={}, min_source_l1_block={:?}, hint={:?}, next_l1_sync_tip={:?}",
+            reverted_l1_handler_nonces.len(),
+            min_source_l1_block,
+            l1_messages_rewind_hint,
+            l1_messaging_sync_tip_after_revert
+        );
 
         tracing::info!(
             "🔄 REORG: Starting blockchain reorganization from block_n={current_tip} to block_n={target_block_n}",
@@ -694,6 +760,18 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.write_latest_applied_trie_update(&Some(target_block_n))
             .context("Resetting latest_applied_trie_update after reorg")?;
         tracing::info!("✅ REORG: latest_applied_trie_update reset successfully");
+
+        if let Some(l1_sync_tip) = l1_messaging_sync_tip_after_revert {
+            tracing::info!(
+                "🔁 REORG: Rewinding L1 messaging sync tip to block_n={l1_sync_tip} (from source block {:?})",
+                rewind_from_l1_block
+            );
+            self.write_l1_messaging_sync_tip(Some(l1_sync_tip))
+                .context("Rewinding l1 messaging sync tip after reorg")?;
+            tracing::info!("✅ REORG: L1 messaging sync tip rewound successfully");
+        } else {
+            tracing::info!("🔁 REORG: No L1 messaging rewind needed");
+        }
 
         tracing::info!("💾 REORG: Flushing database to persist changes...");
         self.flush().context("Flushing database after reorg")?;

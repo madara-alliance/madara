@@ -333,7 +333,10 @@ impl PipelineSteps for GatewaySyncSteps {
                                         } else {
                                             // Normal reorg - found common ancestor
                                             tracing::info!("🔄 Triggering reorg to common ancestor hash={:#x}", common_ancestor_hash);
-                                            self._backend.revert_to(&common_ancestor_hash)?;
+                                            // Gateway-synced historical blocks do not always have per-nonce
+                                            // L1 source block metadata. Use a conservative rewind hint so
+                                            // automatic reorg remains available.
+                                            self._backend.revert_to(&common_ancestor_hash, Some(0))?;
 
                                             self._backend.db.flush()?;
 

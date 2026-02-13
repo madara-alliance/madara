@@ -39,7 +39,7 @@ impl ReorgTestContext {
     }
 
     fn revert_to(&self, block_hash: &mp_convert::Felt) -> anyhow::Result<(u64, mp_convert::Felt)> {
-        let result = self.backend.revert_to(block_hash)?;
+        let result = self.backend.revert_to(block_hash, Some(0))?;
 
         let fresh_chain_tip = self.backend.db.get_chain_tip().context("Getting fresh chain tip after reorg")?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);

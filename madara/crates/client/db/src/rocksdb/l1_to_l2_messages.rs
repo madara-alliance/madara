@@ -12,6 +12,9 @@ pub const L1_TO_L2_PENDING_MESSAGE_BY_NONCE: Column =
     Column::new("l1_to_l2_pending_message_by_nonce").set_point_lookup();
 /// <core_contract_nonce 8 bytes> => txn hash
 pub const L1_TO_L2_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_txn_hash_by_nonce").set_point_lookup();
+/// <core_contract_nonce 8 bytes> => l1 block number (u64 be)
+pub const L1_TO_L2_SOURCE_L1_BLOCK_BY_NONCE: Column =
+    Column::new("l1_to_l2_source_l1_block_by_nonce").set_point_lookup();
 
 impl RocksDBStorageInner {
     /// Also removed the given txns from the pending column.
@@ -82,6 +85,24 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    pub(super) fn get_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
+        let source_cf = self.get_column(L1_TO_L2_SOURCE_L1_BLOCK_BY_NONCE);
+        let Some(res) = self.db.get_pinned_cf(&source_cf, core_contract_nonce.to_be_bytes())? else {
+            return Ok(None);
+        };
+        Ok(Some(u64::from_be_bytes(res[..].try_into().context("Deserializing l1 source block from DB")?)))
+    }
+
+    pub(super) fn write_l1_message_source_l1_block_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        l1_block_n: u64,
+    ) -> Result<()> {
+        let source_cf = self.get_column(L1_TO_L2_SOURCE_L1_BLOCK_BY_NONCE);
+        self.db.put_cf_opt(&source_cf, core_contract_nonce.to_be_bytes(), l1_block_n.to_be_bytes(), &self.writeopts)?;
+        Ok(())
+    }
+
     pub(super) fn message_to_l2_remove_txns(
         &self,
         core_contract_nonces: impl IntoIterator<Item = u64>,
@@ -90,6 +111,30 @@ impl RocksDBStorageInner {
         let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
         for core_contract_nonce in core_contract_nonces {
             batch.delete_cf(&on_l2_cf, core_contract_nonce.to_be_bytes());
+        }
+        Ok(())
+    }
+
+    pub(super) fn message_to_l2_remove_pending(
+        &self,
+        core_contract_nonces: impl IntoIterator<Item = u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
+        for core_contract_nonce in core_contract_nonces {
+            batch.delete_cf(&pending_cf, core_contract_nonce.to_be_bytes());
+        }
+        Ok(())
+    }
+
+    pub(super) fn message_to_l2_remove_source_l1_block_by_nonces(
+        &self,
+        core_contract_nonces: impl IntoIterator<Item = u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let source_cf = self.get_column(L1_TO_L2_SOURCE_L1_BLOCK_BY_NONCE);
+        for core_contract_nonce in core_contract_nonces {
+            batch.delete_cf(&source_cf, core_contract_nonce.to_be_bytes());
         }
         Ok(())
     }

@@ -1002,6 +1002,9 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         self.db.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash)
     }
+    pub fn write_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
+        self.db.write_l1_message_source_l1_block_by_nonce(core_contract_nonce, l1_block_n)
+    }
     pub fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
         self.db.write_pending_message_to_l2(msg)
     }
@@ -1025,7 +1028,7 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
 
     /// Revert the blockchain to a specific block hash.
-    pub fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
-        self.db.revert_to(new_tip_block_hash)
+    pub fn revert_to(&self, new_tip_block_hash: &Felt, l1_messages_rewind_hint: Option<u64>) -> Result<(u64, Felt)> {
+        self.db.revert_to(new_tip_block_hash, l1_messages_rewind_hint)
     }
 }

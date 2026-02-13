@@ -73,8 +73,11 @@ pub trait MadaraWriteRpcApi {
     /// an in-process stop of other services (so they ack as "actually down")
     /// before mutating the DB state, and then exits the process so Kubernetes
     /// (or another supervisor) can restart cleanly.
+    ///
+    /// `l1_messages_rewind_hint` can be provided to force a conservative L1
+    /// message sync rewind point if some historical nonce metadata is missing.
     #[method(name = "revertToAndShutdown")]
-    async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()>;
+    async fn revert_to_and_shutdown(&self, block_hash: Felt, l1_messages_rewind_hint: Option<u64>) -> RpcResult<()>;
 
     /// Submit a L1 message into the bypass input stream
     #[method(name = "addL1HandlerMessage")]

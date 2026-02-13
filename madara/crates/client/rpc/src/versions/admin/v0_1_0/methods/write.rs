@@ -93,7 +93,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Force revert chain to a previous block by hash.
     /// Only available when unsafe RPC methods are enabled.
     /// Coordinated revert: stop all other services, wait for ack, revert DB, then exit.
-    async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()> {
+    async fn revert_to_and_shutdown(&self, block_hash: Felt, l1_messages_rewind_hint: Option<u64>) -> RpcResult<()> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
@@ -212,11 +212,12 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         // 3) Revert DB state, then refresh backend chain tip broadcast.
         tracing::info!(
             target: "rpc::admin",
-            "revertToAndShutdown: reverting chain to block_hash={:#x} (block_number={})",
+            "revertToAndShutdown: reverting chain to block_hash={:#x} (block_number={}, l1_messages_rewind_hint={:?})",
             block_hash,
-            target_block_n
+            target_block_n,
+            l1_messages_rewind_hint
         );
-        self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
+        self.backend.revert_to(&block_hash, l1_messages_rewind_hint).map_err(StarknetRpcApiError::from)?;
 
         let fresh_chain_tip = self
             .backend
