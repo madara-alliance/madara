@@ -9,13 +9,14 @@
 //!   - `blob/batch/<batch_index>/<blob_index>.txt`
 //!   - `state_update/batch/<batch_index>.json`
 //! - Root-level batch artifacts (SNOS + L3):
-//!   - `<batch_or_block>/cairo_pie.zip`
-//!   - `<batch_or_block>/snos_output.json`
-//!   - `<batch_or_block>/program_output.txt`
-//!   - `<batch_or_block>/onchain_data.json` (configured, not currently written)
-//!   - `<block_no>/blob_data.txt` (L3 DA)
-//!   - `<block_no>/proof.json` (L3 proof download)
-//!   - `<block_no>/proof_part2.json` (L3 proof registration download)
+//!   - `<snos_batch_id>/cairo_pie.zip`
+//!   - `<snos_batch_id>/snos_output.json`
+//!   - `<snos_batch_id>/program_output.txt`
+//!   - `<snos_batch_id>/onchain_data.json` (configured, not currently written)
+//!   - `<snos_batch_id>/blob_data.txt` (L3 DA)
+//!   - `<snos_batch_id>/proof.json` (L3 proof download)
+//!   - `<snos_batch_id>/proof_part2.json` (L3 proof registration download)
+//!   - Note: L3 currently assumes `snos_batch_id == block_no` in state-update lookups.
 
 /// Blob data file name (DA payload).
 pub const BLOB_DATA_FILE_NAME: &str = "blob_data.txt";
