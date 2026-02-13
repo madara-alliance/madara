@@ -1708,17 +1708,17 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (operation_job_type, le))",
+          "expr": "histogram_quantile(0.99, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (operation_job_type, le)) >= 0",
           "legendFormat": "p99 - {{operation_job_type}}",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (operation_job_type, le))",
+          "expr": "histogram_quantile(0.95, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (operation_job_type, le)) >= 0",
           "legendFormat": "p95 - {{operation_job_type}}",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.50, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (operation_job_type, le))",
+          "expr": "histogram_quantile(0.50, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (operation_job_type, le)) >= 0",
           "legendFormat": "p50 - {{operation_job_type}}",
           "refId": "C"
         }
@@ -1879,7 +1879,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "avg by(operation_job_type) (rate(batch_creation_time_seconds_sum{service_name=\"${namespace}\"}[$__rate_interval]) / rate(batch_creation_time_seconds_count{service_name=\"${namespace}\"}[$__rate_interval]))",
+          "expr": "avg by(operation_job_type) (rate(batch_creation_time_seconds_sum{service_name=\"${namespace}\"}[$__rate_interval]) / (rate(batch_creation_time_seconds_count{service_name=\"${namespace}\"}[$__rate_interval]) > 0))",
           "legendFormat": "{{operation_job_type}}",
           "refId": "A"
         }
@@ -2088,7 +2088,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "max(histogram_quantile(1.0, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (le)))",
+          "expr": "max(histogram_quantile(1.0, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (le)) >= 0)",
           "legendFormat": "Max Time",
           "refId": "A"
         }
