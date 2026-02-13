@@ -544,35 +544,6 @@ mod tests {
     use starknet_providers::Url;
     use starknet_providers::{Provider, SequencerGatewayProvider};
     use starknet_types_core::felt::Felt;
-    use std::time::Duration;
-
-    async fn get_class_with_retries(
-        provider: &SequencerGatewayProvider,
-        class_hash: Felt,
-    ) -> Result<ContractClass, starknet_providers::ProviderError> {
-        const MAX_ATTEMPTS: usize = 6;
-
-        for attempt in 0..MAX_ATTEMPTS {
-            match provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await {
-                Ok(class) => return Ok(class.into()),
-                Err(err) if attempt + 1 < MAX_ATTEMPTS => {
-                    // Keep this test resilient to transient Sepolia gateway throttling.
-                    let backoff = 200 * (1u64 << attempt);
-                    eprintln!(
-                        "get_class failed on attempt {}/{} with {:?}, retrying in {}ms",
-                        attempt + 1,
-                        MAX_ATTEMPTS,
-                        err,
-                        backoff
-                    );
-                    tokio::time::sleep(Duration::from_millis(backoff)).await;
-                }
-                Err(err) => return Err(err),
-            }
-        }
-
-        unreachable!("loop returns on success or final error")
-    }
 
     #[tokio::test]
     async fn test_compressed_legacy_class_to_blockifier() {
@@ -660,16 +631,11 @@ mod tests {
         let class_hash = Felt::from_hex_unchecked(class_hash_hex);
         let expected_blake_hash = Felt::from_hex_unchecked(expected_blake_hash_hex);
 
-        let class: ContractClass = match get_class_with_retries(&provider, class_hash).await {
-            Ok(class) => class,
-            Err(err) if format!("{err:?}").contains("RateLimited") => {
-                // This test validates hash compatibility, not gateway availability.
-                // Treat persistent throttling as inconclusive instead of hard-failing CI.
-                eprintln!("Skipping BLAKE hash assertion due to persistent Sepolia rate limiting: {err:?}");
-                return;
-            }
-            Err(err) => panic!("Failed to fetch class from Sepolia: {err:?}"),
-        };
+        let class: ContractClass = provider
+            .get_class(BlockId::Tag(BlockTag::Latest), class_hash)
+            .await
+            .expect("Failed to fetch class from Sepolia")
+            .into();
 
         if let ContractClass::Sierra(sierra) = class {
             // Compile to CASM and get Poseidon hash
