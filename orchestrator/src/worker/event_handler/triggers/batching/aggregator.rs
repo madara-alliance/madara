@@ -339,15 +339,13 @@ impl AggregatorHandler {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", JobType::Aggregator)),
             KeyValue::new("batch_index", index.to_string()),
-            KeyValue::new("start_block", start_block.to_string()),
-            KeyValue::new("bucket_id", bucket_id.to_string()),
             KeyValue::new("starknet_version", starknet_version.to_string()),
         ];
         ORCHESTRATOR_METRICS.batch_creation_time.record(duration.as_secs_f64(), &attributes);
 
-        // Update batching rate (batches per hour)
-        // This is a simple counter that will be used to calculate rate in Grafana
-        ORCHESTRATOR_METRICS.batch_creation_rate.add(1.0, &attributes);
+        // Increment total batches created.
+        // "Batching rate" is derived in PromQL/Grafana from this counter.
+        ORCHESTRATOR_METRICS.batch_creation_total.add(1.0, &attributes);
 
         debug!(
             index = %index,

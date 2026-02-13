@@ -32,7 +32,7 @@ use crate::worker::event_handler::triggers::storage_cleanup::StorageCleanupTrigg
 use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
-use crate::worker::utils::conversion::parse_string;
+use orchestrator_utils::layer::Layer;
 use tracing::{debug, error, info, warn, Span};
 
 pub struct JobHandlerService;
@@ -812,56 +812,66 @@ impl JobHandlerService {
         attributes: &[KeyValue],
         config: &Arc<Config>,
     ) -> Result<(), JobError> {
-        let block_number = match job_type {
-            JobType::Aggregator | JobType::StateTransition => {
-                match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
-                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    Ok(_) => {
-                        error!(
-                            job_type = ?job_type,
-                            internal_id = %internal_id,
-                            "No aggregator batch found for block gauge, falling back to internal_id"
-                        );
-                        internal_id as f64
-                    }
-                    Err(e) => {
-                        error!(
-                            job_type = ?job_type,
-                            internal_id = %internal_id,
-                            error = ?e,
-                            "Failed to fetch aggregator batch for block gauge, falling back to internal_id"
-                        );
-                        internal_id as f64
-                    }
-                }
-            }
+        let block_number = match &job_type {
+            JobType::Aggregator => Self::resolve_aggregator_end_block(&job_type, internal_id, config).await,
+            JobType::StateTransition => match config.layer() {
+                Layer::L2 => Self::resolve_aggregator_end_block(&job_type, internal_id, config).await,
+                Layer::L3 => internal_id as f64,
+            },
             JobType::SnosRun | JobType::ProofCreation => {
-                match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
-                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
-                    Ok(_) => {
-                        error!(
-                            job_type = ?job_type,
-                            internal_id = %internal_id,
-                            "No SNOS batch found for block gauge, falling back to internal_id"
-                        );
-                        internal_id as f64
-                    }
-                    Err(e) => {
-                        error!(
-                            job_type = ?job_type,
-                            internal_id = %internal_id,
-                            error = ?e,
-                            "Failed to fetch SNOS batch for block gauge, falling back to internal_id"
-                        );
-                        internal_id as f64
-                    }
-                }
+                Self::resolve_snos_end_block(&job_type, internal_id, config).await
             }
             _ => internal_id as f64,
         };
 
         MetricsRecorder::record_block_gauge(block_number, attributes);
         Ok(())
+    }
+
+    async fn resolve_aggregator_end_block(job_type: &JobType, internal_id: u64, config: &Arc<Config>) -> f64 {
+        match config.database().get_aggregator_batches_by_indexes(vec![internal_id]).await {
+            Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+            Ok(_) => {
+                warn!(
+                    job_type = ?job_type,
+                    internal_id = %internal_id,
+                    "No aggregator batch found for block gauge, falling back to internal_id"
+                );
+                internal_id as f64
+            }
+            Err(e) => {
+                error!(
+                    job_type = ?job_type,
+                    internal_id = %internal_id,
+                    error = ?e,
+                    "Failed to fetch aggregator batch for block gauge, falling back to internal_id"
+                );
+                internal_id as f64
+            }
+        }
+    }
+
+    async fn resolve_snos_end_block(job_type: &JobType, internal_id: u64, config: &Arc<Config>) -> f64 {
+        match config.database().get_snos_batches_by_indices(vec![internal_id]).await {
+            Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+            Ok(_) => {
+                warn!(
+                    job_type = ?job_type,
+                    internal_id = %internal_id,
+                    "No SNOS batch found for block gauge, falling back to internal_id"
+                );
+                internal_id as f64
+            }
+            Err(e) => {
+                error!(
+                    job_type = ?job_type,
+                    internal_id = %internal_id,
+                    error = ?e,
+                    "Failed to fetch SNOS batch for block gauge, falling back to internal_id"
+                );
+                internal_id as f64
+            }
+        }
     }
 
     /// Resets job state to allow retry when the message comes back from the queue.

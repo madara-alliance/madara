@@ -45,7 +45,7 @@ pub struct OrchestratorMetrics {
     // SLA Metrics
     pub sla_breach_count: Counter<f64>,
     pub job_age_p99: Gauge<f64>,
-    pub batch_creation_rate: Counter<f64>,
+    pub batch_creation_total: Counter<f64>,
     pub batch_creation_time: Histogram<f64>,
     // Job Status Tracking
     pub job_status_tracker: JobStatusTracker,
@@ -259,9 +259,9 @@ impl Metrics for OrchestratorMetrics {
         );
 
         // Batching Metrics
-        let batch_creation_rate = register_counter_metric_instrument(
+        let batch_creation_total = register_counter_metric_instrument(
             &orchestrator_meter,
-            "batch_creation_rate".to_string(),
+            "batch_creation".to_string(),
             "Total number of batches created".to_string(),
             "1".to_string(),
         );
@@ -360,7 +360,7 @@ impl Metrics for OrchestratorMetrics {
             active_jobs_count,
             sla_breach_count,
             job_age_p99,
-            batch_creation_rate,
+            batch_creation_total,
             batch_creation_time,
             job_status_tracker,
             atlantic_api_call_duration,

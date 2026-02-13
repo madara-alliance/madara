@@ -1811,7 +1811,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "sum by(operation_job_type) (rate(batch_creation_rate_total{service_name=\"${namespace}\"}[$__rate_interval])) * 60",
+          "expr": "sum by(operation_job_type) (rate(batch_creation_total{service_name=\"${namespace}\"}[$__rate_interval])) * 60",
           "legendFormat": "{{operation_job_type}}",
           "refId": "A"
         }
@@ -1947,7 +1947,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "sum(increase(batch_creation_rate_total{service_name=\"${namespace}\"}[1h]))",
+          "expr": "sum(increase(batch_creation_total{service_name=\"${namespace}\"}[1h]))",
           "legendFormat": "Total Batches",
           "refId": "A"
         }
