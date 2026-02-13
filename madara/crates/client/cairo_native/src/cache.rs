@@ -309,7 +309,7 @@ pub(crate) fn try_get_from_memory_cache(
     let thread_handle = thread::spawn(move || {
         let start = Instant::now();
 
-        if let Some(cached_entry) = NATIVE_CACHE.get(&class_hash_for_log) {
+        let result = if let Some(cached_entry) = NATIVE_CACHE.get(&class_hash_for_log) {
             // Retrieve the cached class (Arc clone is cheap - just increments reference count, doesn't copy data)
             let cached_class = cached_entry.value().0.clone();
             drop(cached_entry); // Release shard lock before expensive operations below
@@ -343,15 +343,7 @@ pub(crate) fn try_get_from_memory_cache(
                 cache_size = cache_size,
                 "memory_hit"
             );
-
-            #[cfg(test)]
-            {
-                let delay = test_memory_cache_send_delay();
-                if !delay.is_zero() {
-                    std::thread::sleep(delay);
-                }
-            }
-            let _ = tx.send(Some(runnable));
+            Some(runnable)
         } else {
             // Memory cache miss - log it
             let lookup_elapsed = start.elapsed();
@@ -365,15 +357,17 @@ pub(crate) fn try_get_from_memory_cache(
                 cache_size = cache_size,
                 "memory_cache_miss"
             );
-            #[cfg(test)]
-            {
-                let delay = test_memory_cache_send_delay();
-                if !delay.is_zero() {
-                    std::thread::sleep(delay);
-                }
+            None
+        };
+
+        #[cfg(test)]
+        {
+            let delay = test_memory_cache_send_delay();
+            if !delay.is_zero() {
+                std::thread::sleep(delay);
             }
-            let _ = tx.send(None);
         }
+        let _ = tx.send(result);
     });
 
     let exec_config = config
