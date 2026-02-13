@@ -11,6 +11,9 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERIOD};
+use std::time::Duration;
+use tokio::time::Instant;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -89,7 +92,8 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
     /// Force revert chain to a previous block by hash.
     /// Only available when unsafe RPC methods are enabled.
-    async fn revert_to(&self, block_hash: Felt) -> RpcResult<()> {
+    /// Coordinated revert: stop all other services, wait for ack, revert DB, then exit.
+    async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
@@ -98,7 +102,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
-        // Get the block number for the target hash
+        // Validate revert target and snap sync constraints early (before shutdown).
         let target_block_n = self
             .backend
             .db
@@ -109,7 +113,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                 error: format!("Block with hash {:#x} not found", block_hash).into(),
             })?;
 
-        // Check if snap sync was used and if target block is before snap sync range
         if let Some(snap_sync_latest_block) = self
             .backend
             .get_snap_sync_latest_block()
@@ -121,12 +124,100 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                     error: format!(
                         "Cannot revert to block {} because snap sync was used up to block {}. Trie data is only available from block {} onwards.",
                         target_block_n, snap_sync_latest_block, snap_sync_latest_block
-                    ).into()
-                }.into());
+                    )
+                    .into(),
+                }
+                .into());
             }
         }
 
+        // 1) Initiate shutdown of all services except Admin RPC.
+        let stop_svcs: [MadaraServiceId; 7] = [
+            MadaraServiceId::Database,
+            MadaraServiceId::L1Sync,
+            MadaraServiceId::L2Sync,
+            MadaraServiceId::BlockProduction,
+            MadaraServiceId::RpcUser,
+            MadaraServiceId::Gateway,
+            // MadaraServiceId::Telemetry,
+            // MadaraServiceId::Analytics,
+            MadaraServiceId::Mempool,
+        ];
+
+        tracing::info!(
+            target: "rpc::admin",
+            "revertToAndShutdown: requesting shutdown for services (excluding rpc_admin): {:?}",
+            stop_svcs.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        );
+
+        for svc in &stop_svcs {
+            let prev = self.ctx.service_remove(*svc);
+            tracing::info!(
+                target: "rpc::admin",
+                "revertToAndShutdown: shutdown requested for service={} (was_requested={})",
+                svc,
+                prev
+            );
+        }
+
+        // 2) Wait until all services are *actually* down.
+        let timeout = SERVICE_GRACE_PERIOD + Duration::from_secs(5);
+        let deadline = Instant::now() + timeout;
+        let mut last_log = Instant::now();
+        let log_interval = Duration::from_secs(1);
+
+        loop {
+            let mut still_up: Vec<MadaraServiceId> = Vec::new();
+            for svc in &stop_svcs {
+                if self.ctx.service_status_actual(*svc) == MadaraServiceStatus::On {
+                    still_up.push(*svc);
+                }
+            }
+
+            if still_up.is_empty() {
+                break;
+            }
+
+            if Instant::now() >= deadline {
+                tracing::error!(
+                    target: "rpc::admin",
+                    "revertToAndShutdown: timed out waiting for services to stop; still_up={:?}",
+                    still_up.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+                );
+                return Err(StarknetRpcApiError::ErrUnexpectedError {
+                    error: format!(
+                        "Timed out waiting for services to stop (timeout {:?}). Still up: {:?}",
+                        timeout,
+                        still_up.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+                    )
+                    .into(),
+                }
+                .into());
+            }
+
+            if Instant::now().duration_since(last_log) >= log_interval {
+                tracing::info!(
+                    target: "rpc::admin",
+                    "revertToAndShutdown: waiting for services to stop... still_up={:?}",
+                    still_up.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+                );
+                last_log = Instant::now();
+            }
+
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+
+        tracing::info!(target: "rpc::admin", "revertToAndShutdown: all non-admin services are down; proceeding with revert");
+
+        // 3) Revert DB state, then refresh backend chain tip broadcast.
+        tracing::info!(
+            target: "rpc::admin",
+            "revertToAndShutdown: reverting chain to block_hash={:#x} (block_number={})",
+            block_hash,
+            target_block_n
+        );
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
+
         let fresh_chain_tip = self
             .backend
             .db
@@ -135,6 +226,16 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .map_err(StarknetRpcApiError::from)?;
         let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
         self.backend.chain_tip.send_replace(backend_chain_tip);
+
+        tracing::info!(target: "rpc::admin", "revertToAndShutdown: revert complete; triggering node shutdown");
+
+        // Shut down the process after responding, so the client gets an ACK.
+        let ctx = self.ctx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            ctx.cancel_global();
+        });
+
         Ok(())
     }
 

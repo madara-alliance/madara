@@ -457,7 +457,7 @@ impl From<PowerOfTwo> for MadaraServiceId {
 }
 
 // A boolean status enum, for clarity's sake
-#[derive(PartialEq, Eq, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Copy, Default, Debug, Serialize, Deserialize)]
 pub enum MadaraServiceStatus {
     On,
     #[default]
@@ -645,7 +645,14 @@ impl MadaraServiceMask {
 pub struct ServiceContext {
     token_global: tokio_util::sync::CancellationToken,
     token_local: Option<tokio_util::sync::CancellationToken>,
-    services: Arc<MadaraServiceMask>,
+    /// Services which are *requested* to be running. This is the authoritative
+    /// mask for cancellation and service start/stop requests.
+    services_requested: Arc<MadaraServiceMask>,
+    /// Services which are *actually* running (as observed by the ServiceMonitor).
+    ///
+    /// This is useful for coordinating workflows which need acknowledgements
+    /// that a service has fully stopped/started (e.g. admin-driven reorgs).
+    services_actual: Arc<MadaraServiceMask>,
     service_update_sender: Arc<tokio::sync::broadcast::Sender<ServiceTransport>>,
     service_update_receiver: Option<tokio::sync::broadcast::Receiver<ServiceTransport>>,
     id: PowerOfTwo,
@@ -656,7 +663,8 @@ impl Clone for ServiceContext {
         Self {
             token_global: self.token_global.clone(),
             token_local: self.token_local.clone(),
-            services: Arc::clone(&self.services),
+            services_requested: Arc::clone(&self.services_requested),
+            services_actual: Arc::clone(&self.services_actual),
             service_update_sender: Arc::clone(&self.service_update_sender),
             service_update_receiver: None,
             id: self.id,
@@ -669,7 +677,8 @@ impl Default for ServiceContext {
         Self {
             token_global: tokio_util::sync::CancellationToken::new(),
             token_local: None,
-            services: Arc::new(MadaraServiceMask::default()),
+            services_requested: Arc::new(MadaraServiceMask::default()),
+            services_actual: Arc::new(MadaraServiceMask::default()),
             service_update_sender: Arc::new(tokio::sync::broadcast::channel(SERVICE_COUNT_MAX).0),
             service_update_receiver: None,
             id: MadaraServiceId::Monitor.svc_id(),
@@ -685,13 +694,23 @@ impl ServiceContext {
 
     #[cfg(feature = "testing")]
     pub fn new_for_testing() -> Self {
-        Self { services: Arc::new(MadaraServiceMask::new_for_testing()), ..Default::default() }
+        // Keep requested/actual in sync for tests unless explicitly overridden.
+        let mask = Arc::new(MadaraServiceMask::new_for_testing());
+        Self { services_requested: Arc::clone(&mask), services_actual: mask, ..Default::default() }
     }
 
     /// Creates a new [Default] [ServiceContext] with the state of its services
     /// set to the specified value.
-    pub fn new_with_services(services: Arc<MadaraServiceMask>) -> Self {
-        Self { services, ..Default::default() }
+    pub fn new_with_services(services_requested: Arc<MadaraServiceMask>) -> Self {
+        Self { services_requested, ..Default::default() }
+    }
+
+    /// Sets the actual service mask used for service status acknowledgements.
+    ///
+    /// The [ServiceMonitor] should set this to its shared `status_actual` mask.
+    pub fn with_services_actual(mut self, services_actual: Arc<MadaraServiceMask>) -> Self {
+        self.services_actual = services_actual;
+        self
     }
 
     /// Stops all services under the same global context scope.
@@ -796,7 +815,7 @@ impl ServiceContext {
     pub fn is_cancelled(&self) -> bool {
         self.token_global.is_cancelled()
             || self.token_local.as_ref().map(|t| t.is_cancelled()).unwrap_or(false)
-            || self.services.status(self.id) == MadaraServiceStatus::Off
+            || self.services_requested.status(self.id) == MadaraServiceStatus::Off
     }
 
     /// Runs a [Future] until the [Service] associated to this [ServiceContext]
@@ -856,7 +875,20 @@ impl ServiceContext {
     /// Atomically checks if a [Service] is running.
     #[inline(always)]
     pub fn service_status(&self, svc: impl ServiceId) -> MadaraServiceStatus {
-        self.services.status(svc)
+        self.services_requested.status(svc)
+    }
+
+    /// Atomically checks the *requested* status of a [Service].
+    #[inline(always)]
+    pub fn service_status_requested(&self, svc: impl ServiceId) -> MadaraServiceStatus {
+        self.services_requested.status(svc)
+    }
+
+    /// Atomically checks the *actual* status of a [Service], as observed by
+    /// the [ServiceMonitor].
+    #[inline(always)]
+    pub fn service_status_actual(&self, svc: impl ServiceId) -> MadaraServiceStatus {
+        self.services_actual.status(svc)
     }
 
     /// Atomically marks a [Service] as active.
@@ -869,7 +901,7 @@ impl ServiceContext {
     #[inline(always)]
     pub fn service_add(&self, id: impl ServiceId) -> MadaraServiceStatus {
         let svc_id = id.svc_id();
-        let res = self.services.activate(id);
+        let res = self.services_requested.activate(id);
 
         // TODO: make an internal server error out of this
         let _ = self.service_update_sender.send(ServiceTransport { svc_id, status: MadaraServiceStatus::On });
@@ -887,7 +919,7 @@ impl ServiceContext {
     #[inline(always)]
     pub fn service_remove(&self, id: impl ServiceId) -> MadaraServiceStatus {
         let svc_id = id.svc_id();
-        let res = self.services.deactivate(id);
+        let res = self.services_requested.deactivate(id);
         let _ = self.service_update_sender.send(ServiceTransport { svc_id, status: MadaraServiceStatus::Off });
 
         res
@@ -931,7 +963,20 @@ impl ServiceContext {
     /// or [ServiceContext::service_add]
     #[inline(always)]
     pub fn status(&self) -> MadaraServiceStatus {
-        self.services.status(self.id)
+        self.services_requested.status(self.id)
+    }
+
+    /// Returns the *requested* status of the service associated to this context.
+    #[inline(always)]
+    pub fn status_requested(&self) -> MadaraServiceStatus {
+        self.services_requested.status(self.id)
+    }
+
+    /// Returns the *actual* status of the service associated to this context,
+    /// as observed by the [ServiceMonitor].
+    #[inline(always)]
+    pub fn status_actual(&self) -> MadaraServiceStatus {
+        self.services_actual.status(self.id)
     }
 }
 
@@ -1253,7 +1298,8 @@ impl ServiceMonitor {
     /// are running (otherwise the node would shutdown).
     #[tracing::instrument(skip(self), fields(module = "Service"))]
     pub async fn start(mut self) -> anyhow::Result<()> {
-        let mut ctx = ServiceContext::new_with_services(Arc::clone(&self.status_request));
+        let mut ctx = ServiceContext::new_with_services(Arc::clone(&self.status_request))
+            .with_services_actual(Arc::clone(&self.status_actual));
 
         // start only the initially active services
         for svc in self.services.iter_mut() {
