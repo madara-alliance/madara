@@ -251,7 +251,7 @@ impl Default for RocksDBConfig {
             memtable_other_budget_bytes: 128 * MiB,
             memtable_prefix_bloom_filter_ratio: 0.0,
             max_saved_trie_logs: None,
-            max_kept_snapshots: None,
+            max_kept_snapshots: Some(0),
             snapshot_interval: 5,
             backup_dir: None,
             restore_from_latest_backup: false,
