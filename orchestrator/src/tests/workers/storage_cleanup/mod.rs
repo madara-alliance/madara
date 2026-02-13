@@ -159,6 +159,63 @@ async fn test_process_completed_jobs_skips_partial_tagging() -> Result<(), Box<d
     Ok(())
 }
 
+/// Test: DB failure while fetching SNOS batches should skip tagging and not mark job as tagged
+#[rstest]
+#[tokio::test]
+async fn test_process_completed_jobs_skips_on_snos_batch_lookup_failure() -> Result<(), Box<dyn Error>> {
+    let mut database = MockDatabaseClient::new();
+    let mut storage = MockStorageClient::new();
+    let mut lock = MockLockClient::new();
+
+    lock.expect_acquire_lock().returning(|_, _, _, _| Ok(LockResult::Acquired));
+    lock.expect_release_lock().returning(|_, _| Ok(LockResult::Released));
+
+    let job_id: u64 = 42;
+    let job = JobItem {
+        id: uuid::Uuid::new_v4(),
+        internal_id: job_id,
+        job_type: JobType::StateTransition,
+        status: JobStatus::Completed,
+        external_id: crate::types::jobs::external_id::ExternalId::Number(job_id as usize),
+        metadata: JobMetadata {
+            common: CommonMetadata::default(),
+            specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                snos_output_path: None,
+                program_output_path: None,
+                blob_data_path: None,
+                da_segment_path: None,
+                tx_hash: Some("0x123".to_string()),
+                context: SettlementContext::Batch(SettlementContextData { to_settle: job_id, last_failed: None }),
+                storage_artifacts_tagged_at: None,
+            }),
+        },
+        version: 0,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    database.expect_get_jobs_without_storage_artifacts_tagged().returning(move |_| Ok(vec![job.clone()]));
+    database
+        .expect_get_snos_batches_by_aggregator_index()
+        .returning(|_| Err(DatabaseError::KeyNotFound("db error".to_string())));
+
+    // Storage listing can still be called before DB error
+    storage.expect_list_files_in_dir().returning(|_| Ok(vec![]));
+    storage.expect_tag_object().never();
+    database.expect_update_job().never();
+
+    let services = TestConfigBuilder::new()
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
+        .configure_lock_client(lock.into())
+        .build()
+        .await;
+
+    let result = StorageCleanupTrigger.run_worker(services.config).await;
+    assert!(result.is_ok(), "Worker should continue even when SNOS batch lookup fails");
+    Ok(())
+}
+
 // =============================================================================
 // Integration Tests with LocalStack + MongoDB
 // =============================================================================

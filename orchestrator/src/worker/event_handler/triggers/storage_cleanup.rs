@@ -90,7 +90,13 @@ impl StorageCleanupTrigger {
                 }
             };
 
-            let paths_to_tag = self.collect_artifact_paths(config, job_id, &state_metadata).await;
+            let paths_to_tag = match self.collect_artifact_paths(config, job_id, &state_metadata).await {
+                Ok(paths) => paths,
+                Err(e) => {
+                    error!(job_id = %job_id, error = %e, "Failed to collect artifacts for cleanup");
+                    continue;
+                }
+            };
 
             if paths_to_tag.is_empty() {
                 debug!(job_id = %job_id, "No artifacts found in storage, marking job as tagged");
@@ -144,7 +150,7 @@ impl StorageCleanupTrigger {
         config: &Arc<Config>,
         job_id: u64,
         state_metadata: &StateUpdateMetadata,
-    ) -> Vec<String> {
+    ) -> color_eyre::Result<Vec<String>> {
         let mut paths = BTreeSet::new();
 
         // List files from each artifact directory
@@ -167,40 +173,34 @@ impl StorageCleanupTrigger {
 
         if matches!(state_metadata.context, SettlementContext::Batch(_)) {
             // Include SNOS batch dirs for all SNOS batches in this aggregator batch
-            match config.database().get_snos_batches_by_aggregator_index(job_id).await {
-                Ok(snos_batches) => {
-                    for snos_batch in snos_batches {
-                        let snos_dir = get_snos_batch_dir(snos_batch.index);
-                        match config.storage().list_files_in_dir(&snos_dir).await {
-                            Ok(files) => {
-                                debug!(
-                                    job_id = %job_id,
-                                    snos_batch_index = %snos_batch.index,
-                                    dir = %snos_dir,
-                                    count = files.len(),
-                                    "Found SNOS batch files"
-                                );
-                                paths.extend(files);
-                            }
-                            Err(e) => debug!(
-                                job_id = %job_id,
-                                snos_batch_index = %snos_batch.index,
-                                dir = %snos_dir,
-                                error = %e,
-                                "SNOS batch dir not found or error"
-                            ),
-                        }
+            let snos_batches = config.database().get_snos_batches_by_aggregator_index(job_id).await?;
+            for snos_batch in snos_batches {
+                let snos_dir = get_snos_batch_dir(snos_batch.index);
+                match config.storage().list_files_in_dir(&snos_dir).await {
+                    Ok(files) => {
+                        debug!(
+                            job_id = %job_id,
+                            snos_batch_index = %snos_batch.index,
+                            dir = %snos_dir,
+                            count = files.len(),
+                            "Found SNOS batch files"
+                        );
+                        paths.extend(files);
                     }
-                }
-                Err(e) => {
-                    debug!(job_id = %job_id, error = %e, "Failed to fetch SNOS batches for aggregator batch");
+                    Err(e) => debug!(
+                        job_id = %job_id,
+                        snos_batch_index = %snos_batch.index,
+                        dir = %snos_dir,
+                        error = %e,
+                        "SNOS batch dir not found or error"
+                    ),
                 }
             }
         }
 
         // Add state update file (single file, always included)
         paths.insert(get_batch_state_update_file(job_id));
-        paths.into_iter().collect()
+        Ok(paths.into_iter().collect())
     }
 
     /// Tag artifacts for expiration. Returns (tagged_count, all_succeeded).
