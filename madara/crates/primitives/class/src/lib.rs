@@ -18,6 +18,7 @@ use compile::ClassCompilationError;
 use starknet_types_core::felt::Felt;
 use std::{collections::HashMap, fmt, sync::Arc};
 
+pub mod casm_fetch;
 pub mod class_hash;
 pub mod class_update;
 pub mod compile;
