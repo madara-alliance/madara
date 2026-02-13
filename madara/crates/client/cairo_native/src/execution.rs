@@ -472,6 +472,18 @@ mod tests {
         }
     }
 
+    // Wait until a counter reaches an expected value, to avoid racey assertions on background worker updates.
+    fn wait_for_counter_value(counter: &std::sync::atomic::AtomicU64, expected: u64, timeout: Duration) -> bool {
+        let start = std::time::Instant::now();
+        while start.elapsed() < timeout {
+            if counter.load(std::sync::atomic::Ordering::Relaxed) == expected {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        counter.load(std::sync::atomic::Ordering::Relaxed) == expected
+    }
+
     // Helper function to poll for compilation completion with timeout (async version)
     // Returns true if compilation completed and class is cached, false if timeout
     async fn wait_for_compilation_completion_async(class_hash: &ClassHash, timeout_secs: u64) -> bool {
@@ -997,6 +1009,13 @@ mod tests {
 
         // Verify it was loaded into memory cache after disk hit
         assert!(cache::cache_contains(&class_hash), "Should be loaded into memory cache after disk hit");
+
+        // The timeout path returns before the memory-cache worker thread necessarily updates miss metrics.
+        // Wait briefly so assertions are deterministic under CI scheduling variance.
+        assert!(
+            wait_for_counter_value(&test_counters::CACHE_MEMORY_MISS, 1, Duration::from_millis(100)),
+            "CACHE_MEMORY_MISS should reach 1 after timeout path"
+        );
 
         // Metrics assertions - memory timeout, disk hit, no compilation
         assert_counters!(
