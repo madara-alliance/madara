@@ -89,6 +89,14 @@ impl ApplyStateSteps {
         let current_first_block = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
         let latest_block = block_range.end;
 
+        tracing::debug!(
+            "🌳 [State] sync_snap called: block_range={:?}, current_first_block={}, latest_block={}, target={:?}",
+            block_range,
+            current_first_block,
+            latest_block,
+            target_block
+        );
+
         // Accumulate state diffs
         {
             let already_imported_count = current_first_block.saturating_sub(block_range.start);
@@ -106,11 +114,28 @@ impl ApplyStateSteps {
         let should_apply = target_block.map(|t| latest_block >= t).unwrap_or(false)
             || latest_block >= (current_first_block + APPLY_STATE_SNAP_BATCH_SIZE);
 
+        tracing::debug!(
+            "🌳 [State] should_apply={} (threshold={}, accumulated={})",
+            should_apply,
+            current_first_block + APPLY_STATE_SNAP_BATCH_SIZE,
+            latest_block.saturating_sub(current_first_block)
+        );
+
         if should_apply {
+            tracing::info!(
+                "🌳 [State] Starting snap sync flush: blocks {}..{} ({} blocks accumulated)",
+                current_first_block,
+                latest_block,
+                latest_block.saturating_sub(current_first_block)
+            );
+            let flush_start = std::time::Instant::now();
+
             self.clone()
                 .apply_accumulated_diffs(current_first_block, latest_block)
                 .await
                 .with_context(|| format!("Applying snap sync trie for block_range={block_range:?}"))?;
+
+            tracing::info!("🌳 [State] Snap sync flush completed in {:?}", flush_start.elapsed());
         }
 
         Ok(ApplyOutcome::Success(()))
@@ -158,7 +183,14 @@ impl ApplyStateSteps {
         current_first_block: u64,
         latest_block: u64,
     ) -> anyhow::Result<()> {
+        tracing::debug!(
+            "🌳 [State] apply_accumulated_diffs: preparing state diff for blocks {}..{}",
+            current_first_block,
+            latest_block
+        );
+
         // Lock to read and prepare state_diff
+        let prepare_start = std::time::Instant::now();
         let state_diff = {
             let state_diff_map = self.state_diff_map.lock().await;
             let mut state_diff = state_diff_map.to_raw_state_diff();
@@ -166,23 +198,45 @@ impl ApplyStateSteps {
             state_diff
         };
 
+        let storage_diffs_count = state_diff.storage_diffs.len();
+        let deployed_count = state_diff.deployed_contracts.len();
+        let declared_count = state_diff.declared_classes.len();
+        tracing::debug!(
+            "🌳 [State] Raw state diff prepared in {:?}: {} storage diffs, {} deployed, {} declared",
+            prepare_start.elapsed(),
+            storage_diffs_count,
+            deployed_count,
+            declared_count
+        );
+
         let pre_range_block_check =
             if current_first_block == 0 { None } else { Some(current_first_block.saturating_sub(1)) };
 
+        tracing::debug!("🌳 [State] Starting compress_state_diff (this may take a while due to DB lookups)...");
+        let compress_start = std::time::Instant::now();
         let accumulated_state_diff =
             compress_state_diff(state_diff, pre_range_block_check, self.backend.clone()).await?;
+        tracing::info!("🌳 [State] compress_state_diff completed in {:?}", compress_start.elapsed());
 
         // Move the trie computation to rayon pool
         let backend = self.backend.clone();
 
+        tracing::debug!("🌳 [State] Starting apply_to_global_trie via rayon pool (waiting for rayon thread)...");
+        let trie_start = std::time::Instant::now();
+
         self.importer
             .run_in_rayon_pool_global(move |_| {
+                tracing::debug!("🌳 [State] Rayon thread acquired, computing global trie...");
+                let compute_start = std::time::Instant::now();
+
                 // TODO(heemankv, 19-11-25): Consider using RangeInclusive instead of Range to avoid confusion
                 // latest_block is block_range.end (exclusive), so actual last processed block is latest_block - 1
                 // This ensures fallback DB queries in contract_state_leaf_hash fetch state at the correct block number
                 let trie_block_number = latest_block.saturating_sub(1);
                 let (global_state_root, _timings) =
                     backend.write_access().apply_to_global_trie(trie_block_number, [accumulated_state_diff].iter())?;
+
+                tracing::debug!("🌳 [State] Global trie computation completed in {:?}", compute_start.elapsed());
 
                 let block_number = &latest_block.checked_sub(1);
                 backend.write_latest_applied_trie_update(block_number)?;
@@ -196,6 +250,11 @@ impl ApplyStateSteps {
                 Ok::<(), anyhow::Error>(())
             })
             .await?;
+
+        tracing::debug!(
+            "🌳 [State] apply_to_global_trie total time (including rayon wait): {:?}",
+            trie_start.elapsed()
+        );
 
         // Clear the in-memory state_diff_map
         let mut state_diff_map = self.state_diff_map.lock().await;

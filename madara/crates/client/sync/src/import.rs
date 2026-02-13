@@ -150,6 +150,23 @@ pub struct BlockImporterCtx {
     backend: Arc<MadaraBackend>,
     config: BlockValidationConfig,
 }
+
+/// Internal result type for the two-phase compilation approach.
+/// This allows us to defer remote CASM fetching to a sequential phase,
+/// avoiding blocking rayon threads with HTTP requests.
+enum CompileResult {
+    /// Class needs remote CASM fetch - compilation failed locally
+    NeedsRemoteFetch {
+        class_hash: Felt,
+        sierra: SierraClassInfo,
+        uses_blake: bool,
+        gateway_hash: Felt,
+        compile_error: ClassCompilationError,
+    },
+    /// Fatal error that should stop processing
+    Error(BlockImportError),
+}
+
 impl BlockImporterCtx {
     // HEADERS
 
@@ -300,6 +317,10 @@ impl BlockImporterCtx {
     // CLASSES
 
     /// Called in a rayon-pool context.
+    ///
+    /// This function uses a two-phase approach to avoid blocking rayon threads with HTTP requests:
+    /// 1. Phase 1 (parallel): Try to compile all classes, collect those that need remote CASM fetch
+    /// 2. Phase 2 (sequential): Fetch CASM for failed classes one at a time to avoid starving rayon pool
     pub fn verify_compile_classes(
         &self,
         block_n: Option<u64>,
@@ -312,59 +333,180 @@ impl BlockImporterCtx {
                 expected: check_against.len() as _,
             });
         }
-        let classes = declared_classes
+
+        let total_classes = declared_classes.len();
+        tracing::debug!(
+            "📦 [Phase 1] Starting parallel compilation of {} classes for block {:?}",
+            total_classes,
+            block_n
+        );
+        let phase1_start = std::time::Instant::now();
+
+        // Phase 1: Try to compile all classes in parallel, collect results
+        let results: Vec<_> = declared_classes
             .into_par_iter()
-            .map(|class| self.verify_compile_class(block_n, class, check_against))
-            .collect::<Result<_, _>>()?;
+            .map(|class| self.try_compile_class(block_n, class, check_against))
+            .collect();
+
+        let phase1_duration = phase1_start.elapsed();
+        let needs_fetch_count =
+            results.iter().filter(|r| matches!(r, Err(CompileResult::NeedsRemoteFetch { .. }))).count();
+        let success_count = results.iter().filter(|r| r.is_ok()).count();
+        let error_count = results.iter().filter(|r| matches!(r, Err(CompileResult::Error(_)))).count();
+
+        tracing::debug!(
+            "📦 [Phase 1] Completed in {:?}: {} succeeded, {} need remote fetch, {} errors",
+            phase1_duration,
+            success_count,
+            needs_fetch_count,
+            error_count
+        );
+
+        // Phase 2: Process results - for classes that need remote fetch, do it sequentially
+        // to avoid blocking multiple rayon threads with HTTP requests
+        let mut classes = Vec::with_capacity(results.len());
+        let mut fetch_index = 0;
+
+        if needs_fetch_count > 0 {
+            tracing::info!(
+                "🌐 [Phase 2] Starting SEQUENTIAL remote CASM fetch for {} classes (avoiding rayon pool starvation)",
+                needs_fetch_count
+            );
+        }
+
+        let phase2_start = std::time::Instant::now();
+
+        for result in results {
+            match result {
+                Ok(converted) => classes.push(converted),
+                Err(CompileResult::NeedsRemoteFetch {
+                    class_hash,
+                    sierra,
+                    uses_blake,
+                    gateway_hash,
+                    compile_error,
+                }) => {
+                    fetch_index += 1;
+                    // Fetch CASM sequentially (not in parallel) to avoid blocking rayon pool
+                    tracing::warn!(
+                        "🌐 [{}/{}] Local compilation failed for class {:#x}: {}. Fetching from remote RPC...",
+                        fetch_index,
+                        needs_fetch_count,
+                        class_hash,
+                        compile_error
+                    );
+
+                    let fetch_start = std::time::Instant::now();
+                    match mp_class::casm_fetch::fetch_compiled_casm(&class_hash) {
+                        Ok(fetched_casm) => {
+                            tracing::info!(
+                                "🌐 [{}/{}] Successfully fetched CASM for class {:#x} in {:?}",
+                                fetch_index,
+                                needs_fetch_count,
+                                class_hash,
+                                fetch_start.elapsed()
+                            );
+
+                            let (stored_poseidon, stored_blake) =
+                                if uses_blake { (None, Some(gateway_hash)) } else { (Some(gateway_hash), None) };
+
+                            classes.push(ConvertedClass::Sierra(SierraConvertedClass {
+                                class_hash,
+                                info: SierraClassInfo {
+                                    contract_class: sierra.contract_class,
+                                    compiled_class_hash: stored_poseidon,
+                                    compiled_class_hash_v2: stored_blake,
+                                },
+                                compiled: Arc::new((&fetched_casm).try_into().map_err(|e| {
+                                    BlockImportError::CompilationClassError {
+                                        class_hash,
+                                        error: ClassCompilationError::ParsingProgramJsonFailed(e),
+                                    }
+                                })?),
+                            }));
+                        }
+                        Err(fetch_error) => {
+                            tracing::error!(
+                                "🌐 [{}/{}] Failed to fetch CASM for class {:#x} after {:?}: {}",
+                                fetch_index,
+                                needs_fetch_count,
+                                class_hash,
+                                fetch_start.elapsed(),
+                                fetch_error
+                            );
+                            return Err(BlockImportError::CompilationClassError { class_hash, error: compile_error });
+                        }
+                    }
+                }
+                Err(CompileResult::Error(e)) => return Err(e),
+            }
+        }
+
+        if needs_fetch_count > 0 {
+            tracing::info!(
+                "🌐 [Phase 2] Completed {} remote fetches in {:?}",
+                needs_fetch_count,
+                phase2_start.elapsed()
+            );
+        }
+
+        tracing::debug!(
+            "📦 verify_compile_classes complete for block {:?}: {} classes processed",
+            block_n,
+            classes.len()
+        );
+
         Ok(classes)
     }
 
     /// Called in a rayon-pool context.
-    fn verify_compile_class(
+    /// Returns Ok(ConvertedClass) on success, or Err(CompileResult) if compilation fails or needs remote fetch.
+    fn try_compile_class(
         &self,
         block_n: Option<u64>,
         class: ClassInfoWithHash,
         check_against: &HashMap<Felt, DeclaredClassCompiledClass>,
-    ) -> Result<ConvertedClass, BlockImportError> {
+    ) -> Result<ConvertedClass, CompileResult> {
         let class_hash = class.class_hash;
 
-        let check_against = *check_against.get(&class_hash).ok_or(BlockImportError::UnexpectedClass { class_hash })?;
+        let check_against = *check_against
+            .get(&class_hash)
+            .ok_or_else(|| CompileResult::Error(BlockImportError::UnexpectedClass { class_hash }))?;
 
         match class.class_info {
             ClassInfo::Sierra(sierra) => {
                 tracing::trace!("Converting class with hash {:#x}", class_hash);
 
                 let DeclaredClassCompiledClass::Sierra(expected_compiled_hash) = check_against else {
-                    return Err(BlockImportError::ClassType {
+                    return Err(CompileResult::Error(BlockImportError::ClassType {
                         class_hash,
                         got: ClassType::Legacy,
                         expected: ClassType::Sierra,
-                    });
+                    }));
                 };
 
                 // Get the gateway-provided hash (canonical for this temp ClassInfo)
                 let gateway_hash = sierra.compiled_class_hash.ok_or_else(|| {
-                    BlockImportError::Internal(anyhow::anyhow!(
+                    CompileResult::Error(BlockImportError::Internal(anyhow::anyhow!(
                         "Sierra class from gateway should have compiled_class_hash"
-                    ))
+                    )))
                 })?;
 
                 if !self.config.no_check && gateway_hash != expected_compiled_hash {
-                    return Err(BlockImportError::CompiledClassHash {
+                    return Err(CompileResult::Error(BlockImportError::CompiledClassHash {
                         class_hash,
                         got: gateway_hash,
                         expected: expected_compiled_hash,
-                    });
+                    }));
                 }
 
                 // Verify class hash
                 if !self.config.no_check && !self.config.trust_class_hashes {
-                    let expected = sierra
-                        .contract_class
-                        .compute_class_hash()
-                        .map_err(|error| BlockImportError::ComputeClassHash { class_hash, error })?;
+                    let expected = sierra.contract_class.compute_class_hash().map_err(|error| {
+                        CompileResult::Error(BlockImportError::ComputeClassHash { class_hash, error })
+                    })?;
                     if !self.config.no_check && class_hash != expected {
-                        return Err(BlockImportError::ClassHash { got: class_hash, expected });
+                        return Err(CompileResult::Error(BlockImportError::ClassHash { got: class_hash, expected }));
                     }
                 }
 
@@ -375,61 +517,70 @@ impl BlockImporterCtx {
                     .unwrap_or(false);
 
                 // Compile and get both Poseidon and BLAKE hashes
-                let hashes = sierra
-                    .contract_class
-                    .compile_to_casm_with_hashes()
-                    .map_err(|e| BlockImportError::CompilationClassError { class_hash, error: e })?;
+                let compile_result = sierra.contract_class.compile_to_casm_with_hashes();
 
-                // Verify compiled class hash based on protocol version
-                // For v0.14.1+: gateway provides BLAKE hash
-                // For pre-v0.14.1: gateway provides Poseidon hash
-                let expected_hash = if uses_blake { hashes.blake_hash } else { hashes.poseidon_hash };
-                if !self.config.no_check && expected_hash != gateway_hash {
-                    return Err(BlockImportError::CompiledClassHash {
-                        class_hash,
-                        got: gateway_hash,
-                        expected: expected_hash,
-                    });
-                }
-
-                // Store:
-                // - For v0.14.1+: compiled_class_hash = None, compiled_class_hash_v2 = BLAKE
-                // - For pre-v0.14.1: compiled_class_hash = Poseidon, compiled_class_hash_v2 = None
-                let (stored_poseidon, stored_blake) =
-                    if uses_blake { (None, Some(hashes.blake_hash)) } else { (Some(hashes.poseidon_hash), None) };
-
-                Ok(ConvertedClass::Sierra(SierraConvertedClass {
-                    class_hash,
-                    info: SierraClassInfo {
-                        contract_class: sierra.contract_class,
-                        compiled_class_hash: stored_poseidon,
-                        compiled_class_hash_v2: stored_blake,
-                    },
-                    compiled: Arc::new((&hashes.casm_class).try_into().map_err(|e| {
-                        BlockImportError::CompilationClassError {
-                            class_hash,
-                            error: ClassCompilationError::ParsingProgramJsonFailed(e),
+                match compile_result {
+                    Ok(hashes) => {
+                        // Verify compiled class hash based on protocol version
+                        let expected_hash = if uses_blake { hashes.blake_hash } else { hashes.poseidon_hash };
+                        if !self.config.no_check && expected_hash != gateway_hash {
+                            return Err(CompileResult::Error(BlockImportError::CompiledClassHash {
+                                class_hash,
+                                got: gateway_hash,
+                                expected: expected_hash,
+                            }));
                         }
-                    })?),
-                }))
+
+                        let (stored_poseidon, stored_blake) = if uses_blake {
+                            (None, Some(hashes.blake_hash))
+                        } else {
+                            (Some(hashes.poseidon_hash), None)
+                        };
+
+                        Ok(ConvertedClass::Sierra(SierraConvertedClass {
+                            class_hash,
+                            info: SierraClassInfo {
+                                contract_class: sierra.contract_class,
+                                compiled_class_hash: stored_poseidon,
+                                compiled_class_hash_v2: stored_blake,
+                            },
+                            compiled: Arc::new((&hashes.casm_class).try_into().map_err(|e| {
+                                CompileResult::Error(BlockImportError::CompilationClassError {
+                                    class_hash,
+                                    error: ClassCompilationError::ParsingProgramJsonFailed(e),
+                                })
+                            })?),
+                        }))
+                    }
+                    Err(compile_error) => {
+                        // Compilation failed - signal that we need remote fetch
+                        // Don't do HTTP here to avoid blocking rayon threads
+                        Err(CompileResult::NeedsRemoteFetch {
+                            class_hash,
+                            sierra,
+                            uses_blake,
+                            gateway_hash,
+                            compile_error,
+                        })
+                    }
+                }
             }
             ClassInfo::Legacy(legacy) => {
                 tracing::trace!("Converting legacy class with hash {:#x}", class_hash);
 
                 if !self.config.no_check && check_against != DeclaredClassCompiledClass::Legacy {
-                    return Err(BlockImportError::ClassType {
+                    return Err(CompileResult::Error(BlockImportError::ClassType {
                         class_hash,
                         got: ClassType::Sierra,
                         expected: ClassType::Legacy,
-                    });
+                    }));
                 }
 
                 // Verify class hash
                 if !self.config.trust_class_hashes {
-                    let mut expected = legacy
-                        .contract_class
-                        .compute_class_hash()
-                        .map_err(|e| BlockImportError::ComputeClassHash { class_hash, error: e })?;
+                    let mut expected = legacy.contract_class.compute_class_hash().map_err(|e| {
+                        CompileResult::Error(BlockImportError::ComputeClassHash { class_hash, error: e })
+                    })?;
 
                     if let Some(block_n) = block_n {
                         if self.backend.chain_config().chain_id == ChainId::Mainnet {
@@ -441,7 +592,7 @@ impl BlockImporterCtx {
                     }
 
                     if !self.config.no_check && class_hash != expected {
-                        return Err(BlockImportError::ClassHash { got: class_hash, expected });
+                        return Err(CompileResult::Error(BlockImportError::ClassHash { got: class_hash, expected }));
                     }
                 }
 
