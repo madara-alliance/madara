@@ -15,6 +15,18 @@ use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERI
 use std::time::Duration;
 use tokio::time::Instant;
 
+fn services_to_stop_for_revert() -> [MadaraServiceId; 7] {
+    [
+        MadaraServiceId::Database,
+        MadaraServiceId::L1Sync,
+        MadaraServiceId::L2Sync,
+        MadaraServiceId::BlockProduction,
+        MadaraServiceId::RpcUser,
+        MadaraServiceId::Gateway,
+        MadaraServiceId::Mempool,
+    ]
+}
+
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
@@ -132,17 +144,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         // 1) Initiate shutdown of all services except Admin RPC.
-        let stop_svcs: [MadaraServiceId; 7] = [
-            MadaraServiceId::Database,
-            MadaraServiceId::L1Sync,
-            MadaraServiceId::L2Sync,
-            MadaraServiceId::BlockProduction,
-            MadaraServiceId::RpcUser,
-            MadaraServiceId::Gateway,
-            // MadaraServiceId::Telemetry,
-            // MadaraServiceId::Analytics,
-            MadaraServiceId::Mempool,
-        ];
+        let stop_svcs = services_to_stop_for_revert();
 
         tracing::info!(
             target: "rpc::admin",
@@ -264,5 +266,121 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         self.backend.set_custom_header(custom_block_headers);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::services_to_stop_for_revert;
+    use crate::{
+        test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet,
+    };
+    use mc_db::MadaraBackend;
+    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
+    use mp_chain_config::ChainConfig;
+    use mp_convert::Felt;
+    use mp_receipt::{L1HandlerTransactionReceipt, TransactionReceipt};
+    use mp_transactions::{L1HandlerTransaction, Transaction};
+    use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    fn make_starknet(backend: Arc<MadaraBackend>, ctx: ServiceContext) -> Starknet {
+        let mut rpc = Starknet::new(backend, Arc::new(TestTransactionProvider), Default::default(), None, ctx);
+        rpc.set_rpc_unsafe_enabled(true);
+        rpc
+    }
+
+    fn add_block(backend: &Arc<MadaraBackend>, block_number: u64, transactions: Vec<TransactionWithReceipt>) -> Felt {
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number, ..Default::default() },
+                    state_diff: Default::default(),
+                    transactions,
+                    events: vec![],
+                },
+                &[],
+                false,
+            )
+            .expect("Adding block should succeed")
+            .block_hash
+    }
+
+    fn l1_handler_tx_with_receipt(nonce: u64, tx_hash: Felt) -> TransactionWithReceipt {
+        TransactionWithReceipt {
+            transaction: Transaction::L1Handler(L1HandlerTransaction { nonce, ..Default::default() }),
+            receipt: TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+                transaction_hash: tx_hash,
+                ..Default::default()
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn revert_waits_for_actual_service_shutdown_before_reverting_and_cancels_node() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+
+        let block_0_hash = add_block(&backend, 0, vec![]);
+        add_block(&backend, 1, vec![]);
+
+        let requested = Arc::new(MadaraServiceMask::default());
+        for svc in services_to_stop_for_revert() {
+            requested.activate(svc);
+        }
+        let actual = Arc::new(MadaraServiceMask::default());
+        actual.activate(mp_utils::service::MadaraServiceId::L2Sync);
+
+        let ctx = ServiceContext::new_with_services(Arc::clone(&requested)).with_services_actual(Arc::clone(&actual));
+        let rpc = make_starknet(backend.clone(), ctx.clone());
+
+        let mut cancel_wait_ctx = ctx.clone();
+        let wait_cancelled = tokio::spawn(async move { cancel_wait_ctx.cancelled().await });
+
+        let rpc_task = tokio::spawn(async move { rpc.revert_to_and_shutdown(block_0_hash, Some(0)).await });
+
+        // While one service is still reported as "actually up", revert must not proceed.
+        tokio::time::sleep(Duration::from_millis(350)).await;
+        assert_eq!(backend.latest_confirmed_block_n(), Some(1));
+        for svc in services_to_stop_for_revert() {
+            assert_eq!(ctx.service_status_requested(svc), MadaraServiceStatus::Off);
+        }
+
+        actual.deactivate(mp_utils::service::MadaraServiceId::L2Sync);
+
+        rpc_task.await.expect("rpc task should complete").expect("revert should succeed");
+        assert_eq!(backend.latest_confirmed_block_n(), Some(0));
+
+        tokio::time::timeout(Duration::from_secs(2), wait_cancelled)
+            .await
+            .expect("node cancellation should be triggered")
+            .expect("cancel waiter task should not panic");
+    }
+
+    #[tokio::test]
+    async fn revert_requires_hint_when_source_mapping_missing_but_succeeds_with_hint() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+
+        let block_0_hash = add_block(&backend, 0, vec![]);
+        let reverted_nonce = 7u64;
+        add_block(&backend, 1, vec![l1_handler_tx_with_receipt(reverted_nonce, Felt::from(700u64))]);
+
+        let rpc = make_starknet(backend.clone(), ServiceContext::default());
+
+        // Missing nonce->l1_block metadata and no hint should fail fast without mutating the chain.
+        let err = rpc
+            .revert_to_and_shutdown(block_0_hash, None)
+            .await
+            .expect_err("revert should fail without hint when source metadata is missing");
+        assert_ne!(err.code(), 0);
+        assert_eq!(backend.latest_confirmed_block_n(), Some(1));
+        assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_some());
+
+        // Providing a hint should allow a safe conservative revert.
+        rpc.revert_to_and_shutdown(block_0_hash, Some(55)).await.expect("revert should succeed with hint");
+        assert_eq!(backend.latest_confirmed_block_n(), Some(0));
+        assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(54));
+        assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     }
 }

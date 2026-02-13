@@ -981,6 +981,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
     }
+    pub fn get_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
+        self.db.get_l1_message_source_l1_block_by_nonce(core_contract_nonce)
+    }
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
     }
