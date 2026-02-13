@@ -275,12 +275,12 @@ mod tests {
     use crate::{
         test_utils::TestTransactionProvider, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet,
     };
-    use mc_db::MadaraBackend;
-    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
+    use mc_db::{
+        test_utils::{add_test_block, l1_handler_tx_with_receipt},
+        MadaraBackend,
+    };
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
-    use mp_receipt::{L1HandlerTransactionReceipt, TransactionReceipt};
-    use mp_transactions::{L1HandlerTransaction, Transaction};
     use mp_utils::service::{MadaraServiceMask, MadaraServiceStatus, ServiceContext};
     use std::sync::Arc;
     use std::time::Duration;
@@ -291,39 +291,12 @@ mod tests {
         rpc
     }
 
-    fn add_block(backend: &Arc<MadaraBackend>, block_number: u64, transactions: Vec<TransactionWithReceipt>) -> Felt {
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader { block_number, ..Default::default() },
-                    state_diff: Default::default(),
-                    transactions,
-                    events: vec![],
-                },
-                &[],
-                false,
-            )
-            .expect("Adding block should succeed")
-            .block_hash
-    }
-
-    fn l1_handler_tx_with_receipt(nonce: u64, tx_hash: Felt) -> TransactionWithReceipt {
-        TransactionWithReceipt {
-            transaction: Transaction::L1Handler(L1HandlerTransaction { nonce, ..Default::default() }),
-            receipt: TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
-                transaction_hash: tx_hash,
-                ..Default::default()
-            }),
-        }
-    }
-
     #[tokio::test]
     async fn revert_waits_for_actual_service_shutdown_before_reverting_and_cancels_node() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
 
-        let block_0_hash = add_block(&backend, 0, vec![]);
-        add_block(&backend, 1, vec![]);
+        let block_0_hash = add_test_block(&backend, 0, vec![]);
+        add_test_block(&backend, 1, vec![]);
 
         let requested = Arc::new(MadaraServiceMask::default());
         for svc in services_to_stop_for_revert() {
@@ -362,9 +335,9 @@ mod tests {
     async fn revert_requires_hint_when_source_mapping_missing_but_succeeds_with_hint() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
 
-        let block_0_hash = add_block(&backend, 0, vec![]);
+        let block_0_hash = add_test_block(&backend, 0, vec![]);
         let reverted_nonce = 7u64;
-        add_block(&backend, 1, vec![l1_handler_tx_with_receipt(reverted_nonce, Felt::from(700u64))]);
+        add_test_block(&backend, 1, vec![l1_handler_tx_with_receipt(reverted_nonce, Felt::from(700u64))]);
 
         let rpc = make_starknet(backend.clone(), ServiceContext::default());
 
