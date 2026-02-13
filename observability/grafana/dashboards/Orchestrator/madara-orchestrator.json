@@ -2180,7 +2180,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "avg by (operation_job_type) (rate(snos_job_processing_time_seconds_sum{operation_job_type=\"SnosRun\", service_name=\"${namespace}\"}[$__rate_interval]) / rate(snos_job_processing_time_seconds_count{operation_job_type=\"SnosRun\", service_name=\"${namespace}\"}[$__rate_interval]))",
+          "expr": "avg by (operation_job_type) (rate(snos_job_processing_time_seconds_sum{operation_job_type=\"SnosRun\", service_name=\"${namespace}\"}[$__rate_interval]) / (rate(snos_job_processing_time_seconds_count{operation_job_type=\"SnosRun\", service_name=\"${namespace}\"}[$__rate_interval]) > 0))",
           "legendFormat": "{{operation_job_type}}",
           "refId": "A"
         }
