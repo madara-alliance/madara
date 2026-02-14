@@ -202,12 +202,7 @@ pub struct BackendParams {
     pub exec_read_cache_all_contracts: bool,
 
     /// Comma-separated list of contract addresses to cache (hex).
-    #[clap(
-        env = "MADARA_EXEC_READ_CACHE_CONTRACTS",
-        long,
-        use_value_delimiter = true,
-        value_delimiter = ','
-    )]
+    #[clap(env = "MADARA_EXEC_READ_CACHE_CONTRACTS", long, use_value_delimiter = true, value_delimiter = ',')]
     #[serde(default)]
     pub exec_read_cache_contracts: Vec<ContractAddress>,
 
