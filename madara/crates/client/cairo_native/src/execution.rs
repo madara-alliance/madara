@@ -998,6 +998,10 @@ mod tests {
         // Verify it was loaded into memory cache after disk hit
         assert!(cache::cache_contains(&class_hash), "Should be loaded into memory cache after disk hit");
 
+        // Timeout can return before the background memory-cache worker updates miss metrics.
+        // Sleep briefly so metric assertions observe the completed worker path.
+        std::thread::sleep(Duration::from_secs(1));
+
         // Metrics assertions - memory timeout, disk hit, no compilation
         assert_counters!(
             CACHE_HITS_MEMORY: 0,

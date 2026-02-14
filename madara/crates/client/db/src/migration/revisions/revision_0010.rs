@@ -1,4 +1,4 @@
-//! Migration from v9 to v10: no-op (new columns are created lazily when opened).
+//! Migration from v9 to v10: no-op (column addition handled on open)
 
 use crate::migration::{MigrationContext, MigrationError};
 
