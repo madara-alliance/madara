@@ -264,60 +264,60 @@ impl ExecutionReadCacheInner {
         seq
     }
 
-    fn insert_storage(&mut self, contract_address: ContractAddress, key: StorageKey, value: Felt) {
-        let entry_size = Self::STORAGE_ENTRY_SIZE;
+    fn insert_with_accounting(
+        &mut self,
+        entry_size: usize,
+        queue_key: CacheKey,
+        insert_or_replace: impl FnOnce(&mut Self, u64) -> bool,
+    ) {
         let seq = self.next_seq();
-        let cache_key = (contract_address, key);
-        if self.storage.insert(cache_key, CacheEntry { value, seq }).is_some() {
+        if insert_or_replace(self, seq) {
             self.current_bytes = self.current_bytes.saturating_sub(entry_size);
         }
         self.current_bytes = self.current_bytes.saturating_add(entry_size);
-        self.order.push_back(CacheQueueEntry { key: CacheKey::Storage(cache_key), seq });
+        self.order.push_back(CacheQueueEntry { key: queue_key, seq });
         self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
+    }
+
+    fn insert_storage(&mut self, contract_address: ContractAddress, key: StorageKey, value: Felt) {
+        let cache_key = (contract_address, key);
+        self.insert_with_accounting(
+            Self::STORAGE_ENTRY_SIZE,
+            CacheKey::Storage(cache_key),
+            |this, seq| this.storage.insert(cache_key, CacheEntry { value, seq }).is_some(),
+        );
     }
 
     fn insert_nonce(&mut self, contract_address: ContractAddress, value: Nonce) {
-        let entry_size = Self::NONCE_ENTRY_SIZE;
-        let seq = self.next_seq();
-        if self.nonces.insert(contract_address, CacheEntry { value, seq }).is_some() {
-            self.current_bytes = self.current_bytes.saturating_sub(entry_size);
-        }
-        self.current_bytes = self.current_bytes.saturating_add(entry_size);
-        self.order.push_back(CacheQueueEntry { key: CacheKey::Nonce(contract_address), seq });
-        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
+        self.insert_with_accounting(
+            Self::NONCE_ENTRY_SIZE,
+            CacheKey::Nonce(contract_address),
+            |this, seq| this.nonces.insert(contract_address, CacheEntry { value, seq }).is_some(),
+        );
     }
 
     fn insert_class_hash(&mut self, contract_address: ContractAddress, value: ClassHash) {
-        let entry_size = Self::CLASS_HASH_ENTRY_SIZE;
-        let seq = self.next_seq();
-        if self.class_hashes.insert(contract_address, CacheEntry { value, seq }).is_some() {
-            self.current_bytes = self.current_bytes.saturating_sub(entry_size);
-        }
-        self.current_bytes = self.current_bytes.saturating_add(entry_size);
-        self.order.push_back(CacheQueueEntry { key: CacheKey::ClassHash(contract_address), seq });
-        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
+        self.insert_with_accounting(
+            Self::CLASS_HASH_ENTRY_SIZE,
+            CacheKey::ClassHash(contract_address),
+            |this, seq| this.class_hashes.insert(contract_address, CacheEntry { value, seq }).is_some(),
+        );
     }
 
     fn insert_compiled_class_hash(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
-        let entry_size = Self::COMPILED_CLASS_HASH_ENTRY_SIZE;
-        let seq = self.next_seq();
-        if self.compiled_class_hashes.insert(class_hash, CacheEntry { value, seq }).is_some() {
-            self.current_bytes = self.current_bytes.saturating_sub(entry_size);
-        }
-        self.current_bytes = self.current_bytes.saturating_add(entry_size);
-        self.order.push_back(CacheQueueEntry { key: CacheKey::CompiledClassHash(class_hash), seq });
-        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
+        self.insert_with_accounting(
+            Self::COMPILED_CLASS_HASH_ENTRY_SIZE,
+            CacheKey::CompiledClassHash(class_hash),
+            |this, seq| this.compiled_class_hashes.insert(class_hash, CacheEntry { value, seq }).is_some(),
+        );
     }
 
     fn insert_compiled_class_hash_v2(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
-        let entry_size = Self::COMPILED_CLASS_HASH_ENTRY_SIZE;
-        let seq = self.next_seq();
-        if self.compiled_class_hashes_v2.insert(class_hash, CacheEntry { value, seq }).is_some() {
-            self.current_bytes = self.current_bytes.saturating_sub(entry_size);
-        }
-        self.current_bytes = self.current_bytes.saturating_add(entry_size);
-        self.order.push_back(CacheQueueEntry { key: CacheKey::CompiledClassHashV2(class_hash), seq });
-        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
+        self.insert_with_accounting(
+            Self::COMPILED_CLASS_HASH_ENTRY_SIZE,
+            CacheKey::CompiledClassHashV2(class_hash),
+            |this, seq| this.compiled_class_hashes_v2.insert(class_hash, CacheEntry { value, seq }).is_some(),
+        );
     }
 
     fn evict_if_needed(&mut self, max_bytes: usize) -> usize {
@@ -488,70 +488,75 @@ impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
         }
         self.inner.is_l1_to_l2_message_nonce_consumed(nonce)
     }
+
+    fn get_contract_scoped_with_cache<T, FLayered, FReadCache, FDb, FBackfill>(
+        &self,
+        contract_address: ContractAddress,
+        cache_kind: &'static str,
+        layered_lookup: FLayered,
+        read_cache_lookup: FReadCache,
+        db_lookup: FDb,
+        read_cache_backfill: FBackfill,
+    ) -> StateResult<T>
+    where
+        T: Copy,
+        FLayered: Fn(&CacheByBlock) -> Option<T>,
+        FReadCache: Fn(&ExecutionReadCache) -> Option<T>,
+        FDb: Fn(&BlockifierStateAdapter<D>) -> StateResult<T>,
+        FBackfill: Fn(&ExecutionReadCache, T),
+    {
+        if let Some(value) = self.cached_states_by_block_n.iter().find_map(layered_lookup) {
+            return Ok(value);
+        }
+
+        if let Some(read_cache) = &self.read_cache {
+            if read_cache.is_contract_enabled(contract_address) {
+                if let Some(value) = read_cache_lookup(read_cache) {
+                    exec_metrics().record_read_cache_hit(cache_kind);
+                    return Ok(value);
+                }
+                exec_metrics().record_read_cache_miss(cache_kind);
+            }
+        }
+
+        let value = db_lookup(&self.inner)?;
+        if let Some(read_cache) = &self.read_cache {
+            read_cache_backfill(read_cache, value);
+        }
+        Ok(value)
+    }
 }
 
 impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
-        if let Some(el) =
-            self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.storage.get(&(contract_address, key)))
-        {
-            return Ok(*el);
-        }
-        if let Some(read_cache) = &self.read_cache {
-            if read_cache.is_contract_enabled(contract_address) {
-                if let Some(value) = read_cache.get_storage(contract_address, key) {
-                    exec_metrics().record_read_cache_hit(read_cache_kind::STORAGE);
-                    return Ok(value);
-                }
-                exec_metrics().record_read_cache_miss(read_cache_kind::STORAGE);
-            }
-        }
-        let value = self.inner.get_storage_at(contract_address, key)?;
-        if let Some(read_cache) = &self.read_cache {
-            read_cache.insert_storage_value(contract_address, key, value);
-        }
-        Ok(value)
+        self.get_contract_scoped_with_cache(
+            contract_address,
+            read_cache_kind::STORAGE,
+            |s| s.state_diff.storage.get(&(contract_address, key)).copied(),
+            |read_cache| read_cache.get_storage(contract_address, key),
+            |inner| inner.get_storage_at(contract_address, key),
+            |read_cache, value| read_cache.insert_storage_value(contract_address, key, value),
+        )
     }
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
-        if let Some(el) = self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.nonces.get(&contract_address))
-        {
-            return Ok(*el);
-        }
-        if let Some(read_cache) = &self.read_cache {
-            if read_cache.is_contract_enabled(contract_address) {
-                if let Some(value) = read_cache.get_nonce(contract_address) {
-                    exec_metrics().record_read_cache_hit(read_cache_kind::NONCE);
-                    return Ok(value);
-                }
-                exec_metrics().record_read_cache_miss(read_cache_kind::NONCE);
-            }
-        }
-        let value = self.inner.get_nonce_at(contract_address)?;
-        if let Some(read_cache) = &self.read_cache {
-            read_cache.insert_nonce_value(contract_address, value);
-        }
-        Ok(value)
+        self.get_contract_scoped_with_cache(
+            contract_address,
+            read_cache_kind::NONCE,
+            |s| s.state_diff.nonces.get(&contract_address).copied(),
+            |read_cache| read_cache.get_nonce(contract_address),
+            |inner| inner.get_nonce_at(contract_address),
+            |read_cache, value| read_cache.insert_nonce_value(contract_address, value),
+        )
     }
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
-        if let Some(el) =
-            self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.class_hashes.get(&contract_address))
-        {
-            return Ok(*el);
-        }
-        if let Some(read_cache) = &self.read_cache {
-            if read_cache.is_contract_enabled(contract_address) {
-                if let Some(value) = read_cache.get_class_hash(contract_address) {
-                    exec_metrics().record_read_cache_hit(read_cache_kind::CLASS_HASH);
-                    return Ok(value);
-                }
-                exec_metrics().record_read_cache_miss(read_cache_kind::CLASS_HASH);
-            }
-        }
-        let value = self.inner.get_class_hash_at(contract_address)?;
-        if let Some(read_cache) = &self.read_cache {
-            read_cache.insert_class_hash_value(contract_address, value);
-        }
-        Ok(value)
+        self.get_contract_scoped_with_cache(
+            contract_address,
+            read_cache_kind::CLASS_HASH,
+            |s| s.state_diff.class_hashes.get(&contract_address).copied(),
+            |read_cache| read_cache.get_class_hash(contract_address),
+            |inner| inner.get_class_hash_at(contract_address),
+            |read_cache, value| read_cache.insert_class_hash_value(contract_address, value),
+        )
     }
     fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
         if let Some(el) = self.cached_states_by_block_n.iter().find_map(|s| s.classes.get(&class_hash)) {
@@ -606,7 +611,7 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
 
 #[cfg(test)]
 mod tests {
-    use super::LayeredStateAdapter;
+    use super::{ExecutionReadCache, LayeredStateAdapter};
     use blockifier::state::{cached_state::StateMaps, state_api::StateReader};
     use mc_db::{ExecutionReadCacheConfig, MadaraBackend, MadaraBackendConfig};
     use mp_block::{
@@ -616,6 +621,7 @@ mod tests {
     use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
     use mp_convert::{Felt, ToFelt};
     use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+    use starknet_api::core::{ClassHash, CompiledClassHash, Nonce};
     use std::sync::Arc;
 
     fn insert_confirmed_block_with_storage(
@@ -826,5 +832,73 @@ mod tests {
         assert!(inner.current_bytes <= max_bytes);
         assert_eq!(inner.storage.len(), 1);
         assert_eq!(inner.order.len(), 1);
+    }
+
+    #[test]
+    fn test_execution_read_cache_allowlist_supports_nonce_and_class_hash_paths() {
+        let allowed_address = Felt::ONE.try_into().unwrap();
+        let blocked_address = Felt::TWO.try_into().unwrap();
+        let allowed_class_hash = ClassHash(Felt::from(100u64));
+        let blocked_class_hash = ClassHash(Felt::from(200u64));
+        let compiled_hash = CompiledClassHash(Felt::from(300u64));
+        let compiled_hash_v2 = CompiledClassHash(Felt::from(400u64));
+
+        let config = ExecutionReadCacheConfig {
+            enabled: true,
+            all_contracts: false,
+            contracts: vec![allowed_address],
+            max_memory_bytes: 1024 * 1024,
+        };
+        let cache = ExecutionReadCache::from_config(&config).unwrap();
+
+        cache.insert_nonce_value(allowed_address, Nonce(Felt::from(1u64)));
+        cache.insert_nonce_value(blocked_address, Nonce(Felt::from(2u64)));
+        assert_eq!(cache.get_nonce(allowed_address), Some(Nonce(Felt::from(1u64))));
+        assert_eq!(cache.get_nonce(blocked_address), None);
+
+        cache.insert_class_hash_value(allowed_address, allowed_class_hash);
+        cache.insert_class_hash_value(blocked_address, blocked_class_hash);
+        assert_eq!(cache.get_class_hash(allowed_address), Some(allowed_class_hash));
+        assert_eq!(cache.get_class_hash(blocked_address), None);
+        assert!(cache.should_cache_class_hash(allowed_class_hash));
+        assert!(!cache.should_cache_class_hash(blocked_class_hash));
+
+        cache.insert_compiled_class_hash_value(allowed_class_hash, compiled_hash);
+        cache.insert_compiled_class_hash_v2_value(allowed_class_hash, compiled_hash_v2);
+        assert_eq!(cache.get_compiled_class_hash(allowed_class_hash), Some(compiled_hash));
+        assert_eq!(cache.get_compiled_class_hash_v2(allowed_class_hash), Some(compiled_hash_v2));
+
+        cache.insert_compiled_class_hash_value(blocked_class_hash, CompiledClassHash(Felt::from(301u64)));
+        cache.insert_compiled_class_hash_v2_value(blocked_class_hash, CompiledClassHash(Felt::from(401u64)));
+        assert_eq!(cache.get_compiled_class_hash(blocked_class_hash), None);
+        assert_eq!(cache.get_compiled_class_hash_v2(blocked_class_hash), None);
+    }
+
+    #[test]
+    fn test_execution_read_cache_all_contracts_supports_compiled_hash_paths() {
+        let address = Felt::ONE.try_into().unwrap();
+        let class_hash = ClassHash(Felt::from(500u64));
+        let class_hash_without_contract_mapping = ClassHash(Felt::from(600u64));
+        let compiled_hash = CompiledClassHash(Felt::from(700u64));
+        let compiled_hash_v2 = CompiledClassHash(Felt::from(800u64));
+
+        let config = ExecutionReadCacheConfig {
+            enabled: true,
+            all_contracts: true,
+            contracts: Vec::new(),
+            max_memory_bytes: 1024 * 1024,
+        };
+        let cache = ExecutionReadCache::from_config(&config).unwrap();
+
+        cache.insert_nonce_value(address, Nonce(Felt::from(3u64)));
+        cache.insert_class_hash_value(address, class_hash);
+        assert_eq!(cache.get_nonce(address), Some(Nonce(Felt::from(3u64))));
+        assert_eq!(cache.get_class_hash(address), Some(class_hash));
+
+        cache.insert_compiled_class_hash_value(class_hash_without_contract_mapping, compiled_hash);
+        cache.insert_compiled_class_hash_v2_value(class_hash_without_contract_mapping, compiled_hash_v2);
+        assert!(cache.should_cache_class_hash(class_hash_without_contract_mapping));
+        assert_eq!(cache.get_compiled_class_hash(class_hash_without_contract_mapping), Some(compiled_hash));
+        assert_eq!(cache.get_compiled_class_hash_v2(class_hash_without_contract_mapping), Some(compiled_hash_v2));
     }
 }
