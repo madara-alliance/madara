@@ -92,10 +92,12 @@
 //! holds the lock, preventing new transactions from being added. Use sparingly to avoid deadlocks.
 //!
 //! ```no_run
+//! # async fn example(mempool: &mc_mempool::Mempool) {
 //! let consumer = mempool.get_consumer().await;
 //! for tx in consumer {
 //!     // Process transaction
 //! }
+//! # }
 //! ```
 //!
 //! ## Notifications via tx_sender
@@ -121,7 +123,7 @@
 use anyhow::Context;
 use dashmap::DashMap;
 use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
-use metrics::MempoolMetrics;
+use metrics::{ExternalDbOutboxMetrics, MempoolMetrics};
 use mp_transactions::validated::{TxTimestamp, ValidatedToBlockifierTxError, ValidatedTransaction};
 use mp_utils::service::ServiceContext;
 use notify::MempoolInnerWithNotify;
@@ -158,11 +160,12 @@ pub enum MempoolInsertionError {
 #[derive(Debug, Clone)]
 pub struct MempoolConfig {
     pub save_to_db: bool,
+    pub external_outbox: ExternalOutboxConfig,
 }
 
 impl Default for MempoolConfig {
     fn default() -> Self {
-        Self { save_to_db: true }
+        Self { save_to_db: true, external_outbox: ExternalOutboxConfig::default() }
     }
 }
 
@@ -171,6 +174,29 @@ impl MempoolConfig {
         self.save_to_db = save_to_db;
         self
     }
+
+    pub fn with_external_outbox(mut self, external_outbox: ExternalOutboxConfig) -> Self {
+        self.external_outbox = external_outbox;
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ExternalOutboxConfig {
+    pub enabled: bool,
+    pub strict: bool,
+}
+
+impl ExternalOutboxConfig {
+    pub fn enabled(strict: bool) -> Self {
+        Self { enabled: true, strict }
+    }
+}
+
+impl Default for ExternalOutboxConfig {
+    fn default() -> Self {
+        Self { enabled: false, strict: true }
+    }
 }
 
 /// Mempool also holds all of the transaction statuses.
@@ -178,7 +204,9 @@ pub struct Mempool<D: MadaraStorageRead = RocksDBStorage> {
     backend: Arc<MadaraBackend<D>>,
     inner: MempoolInnerWithNotify,
     metrics: MempoolMetrics,
+    external_db_outbox_metrics: ExternalDbOutboxMetrics,
     config: MempoolConfig,
+    external_outbox: ExternalOutboxConfig,
     ttl: Option<Duration>,
     /// Pubsub for transaction statuses.
     watch_transaction_status: TopicWatchPubsub<Felt, Option<TransactionStatus>>,
@@ -192,8 +220,10 @@ impl<D: MadaraStorageRead> Mempool<D> {
             inner: MempoolInnerWithNotify::new(backend.chain_config()),
             ttl: backend.chain_config().mempool_ttl,
             backend,
+            external_outbox: config.external_outbox,
             config,
             metrics: MempoolMetrics::register(),
+            external_db_outbox_metrics: ExternalDbOutboxMetrics::register(),
             watch_transaction_status: Default::default(),
             preconfirmed_transactions_statuses: Default::default(),
         }
@@ -229,6 +259,24 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     async fn add_tx(&self, tx: ValidatedTransaction, is_new_tx: bool) -> Result<(), MempoolInsertionError> {
         tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
 
+        let mut outbox_id = None;
+        if is_new_tx && self.external_outbox.enabled {
+            match self.backend.write_external_outbox(&tx) {
+                Ok(id) => {
+                    outbox_id = Some(id);
+                    self.external_db_outbox_metrics.outbox_writes.add(1, &[]);
+                }
+                Err(err) => {
+                    tracing::error!("Could not write external outbox transaction: {err:#}");
+                    self.external_db_outbox_metrics.outbox_write_errors.add(1, &[]);
+                    if self.external_outbox.strict {
+                        self.external_db_outbox_metrics.outbox_strict_rejections.add(1, &[]);
+                        return Err(MempoolInsertionError::Internal(anyhow::anyhow!("outbox write failed: {err:#}")));
+                    }
+                }
+            }
+        }
+
         let now = TxTimestamp::now();
         let account_nonce =
             self.backend.view_on_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
@@ -239,6 +287,15 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
             let ret = lock.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);
             (ret, lock.summary())
         };
+
+        if ret.is_err() {
+            if let Some(outbox_id) = outbox_id {
+                if let Err(err) = self.backend.delete_external_outbox(outbox_id) {
+                    tracing::warn!("Failed to roll back external outbox write: {err:#}");
+                    self.external_db_outbox_metrics.outbox_rollback_delete_errors.add(1, &[]);
+                }
+            }
+        }
 
         self.metrics.record_mempool_state(&summary);
 
@@ -470,5 +527,62 @@ pub(crate) mod tests {
         assert!(mempool.is_empty().await, "Mempool should be empty");
 
         mempool.inner.read().await.check_invariants();
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_accept_writes_outbox(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let config = MempoolConfig::default().with_external_outbox(ExternalOutboxConfig::enabled(true));
+        let mempool = Mempool::new(backend.clone(), config);
+        let tx = tx_account.clone();
+
+        let result = mempool.accept_tx(tx_account).await;
+        assert_matches::assert_matches!(result, Ok(()));
+
+        let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
+        assert_eq!(outbox.len(), 1);
+        assert_eq!(outbox[0].tx, tx);
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn mempool_reject_rolls_back_outbox(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        mut tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let config = MempoolConfig::default().with_external_outbox(ExternalOutboxConfig::enabled(true));
+        let mempool = Mempool::new(backend.clone(), config);
+
+        tx_account.arrived_at = TxTimestamp::UNIX_EPOCH;
+        let result = mempool.accept_tx(tx_account).await;
+        assert_matches::assert_matches!(result, Err(MempoolInsertionError::InnerMempool(_)));
+
+        let outbox: Vec<_> = backend.get_external_outbox_transactions(10).collect::<Result<Vec<_>, _>>().unwrap();
+        assert!(outbox.is_empty());
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_millis(1_000))]
+    #[tokio::test]
+    async fn strict_outbox_rejects_on_write_failure(
+        #[future] backend: Arc<mc_db::MadaraBackend>,
+        tx_account: ValidatedTransaction,
+    ) {
+        let backend = backend.await;
+        let config = MempoolConfig::default().with_external_outbox(ExternalOutboxConfig::enabled(true));
+        let mempool = Mempool::new(backend.clone(), config);
+
+        mc_db::set_external_outbox_write_failpoint(true);
+        let result = mempool.accept_tx(tx_account).await;
+        mc_db::set_external_outbox_write_failpoint(false);
+
+        assert_matches::assert_matches!(result, Err(MempoolInsertionError::Internal(_)));
     }
 }
