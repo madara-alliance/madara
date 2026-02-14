@@ -616,6 +616,43 @@ mod tests {
     use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
     use mp_convert::{Felt, ToFelt};
     use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+    use std::sync::Arc;
+
+    fn insert_confirmed_block_with_storage(
+        backend: &Arc<MadaraBackend>,
+        block_number: u64,
+        address: Felt,
+        key: Felt,
+        value: Felt,
+    ) {
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader {
+                        block_number,
+                        sequencer_address: backend.chain_config().sequencer_address.to_felt(),
+                        block_timestamp: BlockTimestamp::now(),
+                        protocol_version: StarknetVersion::LATEST,
+                        gas_prices: GasPrices::default(),
+                        l1_da_mode: L1DataAvailabilityMode::Calldata,
+                    },
+                    state_diff: StateDiff {
+                        storage_diffs: [ContractStorageDiffItem {
+                            address,
+                            storage_entries: vec![StorageEntry { key, value }],
+                        }]
+                        .into(),
+                        ..Default::default()
+                    },
+                    transactions: vec![],
+                    events: vec![],
+                },
+                /* classes */ &[],
+                /* pre_v0_13_2_hash_override */ false,
+            )
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn test_layered_state_adapter() {
@@ -667,33 +704,7 @@ mod tests {
 
         // block is now in db
 
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader {
-                        block_number: 0,
-                        sequencer_address: backend.chain_config().sequencer_address.to_felt(),
-                        block_timestamp: BlockTimestamp::now(),
-                        protocol_version: StarknetVersion::LATEST,
-                        gas_prices: GasPrices::default(),
-                        l1_da_mode: L1DataAvailabilityMode::Calldata,
-                    },
-                    state_diff: StateDiff {
-                        storage_diffs: [ContractStorageDiffItem {
-                            address: Felt::ONE,
-                            storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::THREE }],
-                        }]
-                        .into(),
-                        ..Default::default()
-                    },
-                    transactions: vec![],
-                    events: vec![],
-                },
-                /* classes */ &[],
-                /* pre_v0_13_2_hash_override */ false,
-            )
-            .unwrap();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
 
         assert_eq!(adaptor.block_n(), 1);
         assert_eq!(adaptor.previous_block_n(), Some(0));
@@ -752,33 +763,7 @@ mod tests {
             assert_eq!(guard.storage.len(), 0);
         }
 
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader {
-                        block_number: 0,
-                        sequencer_address: backend.chain_config().sequencer_address.to_felt(),
-                        block_timestamp: BlockTimestamp::now(),
-                        protocol_version: StarknetVersion::LATEST,
-                        gas_prices: GasPrices::default(),
-                        l1_da_mode: L1DataAvailabilityMode::Calldata,
-                    },
-                    state_diff: StateDiff {
-                        storage_diffs: [ContractStorageDiffItem {
-                            address: Felt::ONE,
-                            storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::THREE }],
-                        }]
-                        .into(),
-                        ..Default::default()
-                    },
-                    transactions: vec![],
-                    events: vec![],
-                },
-                /* classes */ &[],
-                /* pre_v0_13_2_hash_override */ false,
-            )
-            .unwrap();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
 
         adaptor.finish_block(StateMaps::default(), Default::default(), Default::default()).unwrap();
 
@@ -814,33 +799,7 @@ mod tests {
         state_maps.storage.insert((blocked_address, storage_key), Felt::TWO);
         adaptor.finish_block(state_maps, Default::default(), Default::default()).unwrap();
 
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader {
-                        block_number: 0,
-                        sequencer_address: backend.chain_config().sequencer_address.to_felt(),
-                        block_timestamp: BlockTimestamp::now(),
-                        protocol_version: StarknetVersion::LATEST,
-                        gas_prices: GasPrices::default(),
-                        l1_da_mode: L1DataAvailabilityMode::Calldata,
-                    },
-                    state_diff: StateDiff {
-                        storage_diffs: [ContractStorageDiffItem {
-                            address: Felt::ONE,
-                            storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::THREE }],
-                        }]
-                        .into(),
-                        ..Default::default()
-                    },
-                    transactions: vec![],
-                    events: vec![],
-                },
-                /* classes */ &[],
-                /* pre_v0_13_2_hash_override */ false,
-            )
-            .unwrap();
+        insert_confirmed_block_with_storage(&backend, 0, Felt::ONE, Felt::ONE, Felt::THREE);
 
         adaptor.finish_block(StateMaps::default(), Default::default(), Default::default()).unwrap();
 
