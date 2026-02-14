@@ -9,11 +9,26 @@ use dashmap::DashMap;
 use mp_convert::ToFelt;
 use starknet_api::core::ClassHash;
 use std::path::PathBuf;
+#[cfg(test)]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use super::config;
 use super::native_class::NativeCompiledClass;
 use mp_class::SierraConvertedClass;
+
+#[cfg(test)]
+static TEST_MEMORY_CACHE_SEND_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+pub fn set_test_memory_cache_send_delay(delay: Duration) {
+    TEST_MEMORY_CACHE_SEND_DELAY_MS.store(delay.as_millis() as u64, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+fn test_memory_cache_send_delay() -> Duration {
+    Duration::from_millis(TEST_MEMORY_CACHE_SEND_DELAY_MS.load(Ordering::Relaxed))
+}
 
 /// Timeout for loading compiled classes from disk.
 ///
@@ -289,7 +304,7 @@ pub(crate) fn try_get_from_memory_cache(
     let thread_handle = thread::spawn(move || {
         let start = Instant::now();
 
-        if let Some(cached_entry) = NATIVE_CACHE.get(&class_hash_for_log) {
+        let result = if let Some(cached_entry) = NATIVE_CACHE.get(&class_hash_for_log) {
             // Retrieve the cached class (Arc clone is cheap - just increments reference count, doesn't copy data)
             let cached_class = cached_entry.value().0.clone();
             drop(cached_entry); // Release shard lock before expensive operations below
@@ -323,8 +338,7 @@ pub(crate) fn try_get_from_memory_cache(
                 cache_size = cache_size,
                 "memory_hit"
             );
-
-            let _ = tx.send(Some(runnable));
+            Some(runnable)
         } else {
             // Memory cache miss - log it
             let lookup_elapsed = start.elapsed();
@@ -338,8 +352,17 @@ pub(crate) fn try_get_from_memory_cache(
                 cache_size = cache_size,
                 "memory_cache_miss"
             );
-            let _ = tx.send(None);
+            None
+        };
+
+        #[cfg(test)]
+        {
+            let delay = test_memory_cache_send_delay();
+            if !delay.is_zero() {
+                std::thread::sleep(delay);
+            }
         }
+        let _ = tx.send(result);
     });
 
     let exec_config = config
