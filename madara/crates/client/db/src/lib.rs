@@ -158,6 +158,9 @@ pub mod view;
 
 use blockifier::bouncer::BouncerWeights;
 pub use rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
+pub use rocksdb::global_trie::in_memory::{
+    BonsaiOverlay, InMemoryRootComputation, TrieLogMode as ParallelMerkleInMemoryTrieLogMode,
+};
 pub use rocksdb::global_trie::MerklizationTimings;
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
@@ -1114,6 +1117,36 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     // pub fn update_metrics(&self) -> u64 {
     //     self.db_metrics.update(&self.db)
     // }
+}
+
+impl MadaraBackendWriter<RocksDBStorage> {
+    /// Compute state root for a cumulative state diff from a specific persisted snapshot base.
+    pub fn compute_parallel_merkle_root_from_snapshot_base(
+        &self,
+        snapshot_base_block_n: u64,
+        block_n: u64,
+        cumulative_state_diff: &StateDiff,
+        include_overlay: bool,
+        trie_log_mode: ParallelMerkleInMemoryTrieLogMode,
+    ) -> Result<InMemoryRootComputation> {
+        self.inner.db.compute_parallel_merkle_root_from_snapshot_base(
+            snapshot_base_block_n,
+            block_n,
+            cumulative_state_diff,
+            include_overlay,
+            trie_log_mode,
+        )
+    }
+
+    /// Flush a boundary overlay and atomically persist checkpoint metadata.
+    pub fn flush_parallel_merkle_overlay_and_checkpoint(
+        &self,
+        block_n: u64,
+        overlay: &BonsaiOverlay,
+        trie_log_mode: ParallelMerkleInMemoryTrieLogMode,
+    ) -> Result<()> {
+        self.inner.db.flush_parallel_merkle_overlay_and_checkpoint(block_n, overlay, trie_log_mode)
+    }
 }
 
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.

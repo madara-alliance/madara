@@ -125,6 +125,7 @@
 //! [`process_reply`]: BlockProductionTask::process_reply
 
 use crate::batcher::Batcher;
+use crate::finalizer::{spawn_parallel_merkle_finalizer, FinalizedBlockPayload, ParallelMerkleFinalizerHandle};
 use crate::metrics::BlockProductionMetrics;
 use crate::util::BlockExecutionContext;
 use anyhow::Context;
@@ -154,6 +155,7 @@ use tokio::sync::mpsc;
 
 mod batcher;
 mod executor;
+mod finalizer;
 mod handle;
 pub mod metrics;
 mod util;
@@ -342,8 +344,8 @@ pub struct BlockProductionTask {
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
     no_charge_fee: bool,
-    #[allow(dead_code)] // Will be consumed by finalizer orchestration in follow-up PRs.
     parallel_merkle: ParallelMerkleConfig,
+    parallel_merkle_finalizer: Option<ParallelMerkleFinalizerHandle>,
 }
 
 impl BlockProductionTask {
@@ -376,6 +378,7 @@ impl BlockProductionTask {
             bypass_tx_input: Some(bypass_tx_input),
             no_charge_fee,
             parallel_merkle,
+            parallel_merkle_finalizer: None,
         }
     }
 
@@ -915,15 +918,88 @@ impl BlockProductionTask {
         self.metrics.block_consumed_l1_nonces_count.record(consumed_l1_nonces_count as u64, &[]);
 
         let close_preconfirmed_start = Instant::now();
-        let db_result = Self::close_preconfirmed_block_with_state_diff(
-            self.backend.clone(),
-            state.block_number,
-            state.consumed_core_contract_nonces,
-            &block_exec_summary.bouncer_weights,
-            state_diff,
-        )
-        .await
-        .context("Closing block")?;
+        if self.parallel_merkle.enabled {
+            let finalizer = self
+                .parallel_merkle_finalizer
+                .as_ref()
+                .context("parallel merkle is enabled but finalizer handle is missing")?;
+
+            let (mut block_without_state_diff, classes) =
+                preconfirmed_view.get_full_block_without_state_diff().context("building finalizer payload block")?;
+            block_without_state_diff.state_diff = state_diff.clone();
+
+            let payload = FinalizedBlockPayload {
+                block_n: state.block_number,
+                block: block_without_state_diff,
+                classes,
+                state_diff,
+                consumed_core_contract_nonces: state.consumed_core_contract_nonces,
+                bouncer_weights: block_exec_summary.bouncer_weights,
+            };
+            finalizer.submit(payload).await.context("queueing block in parallel finalizer")?;
+        } else {
+            let db_result = Self::close_preconfirmed_block_with_state_diff(
+                self.backend.clone(),
+                state.block_number,
+                state.consumed_core_contract_nonces,
+                &block_exec_summary.bouncer_weights,
+                state_diff,
+            )
+            .await
+            .context("Closing block")?;
+
+            // Emit structured log event for Loki querying (close_block_complete)
+            // All timing values converted to milliseconds for human-readability
+            let timings = &db_result.timings;
+            let exec_stats = &state.accumulated_stats;
+            let time_to_close = start_time.elapsed();
+            let block_production_time = state.block_start_time.elapsed();
+            tracing::info!(
+                target: "close_block",
+                block_number = state.block_number,
+                tx_count = n_txs,
+                event_count = event_count,
+                // High-level timing
+                close_block_total_ms = time_to_close.as_secs_f64() * 1000.0,
+                block_close_ms = time_to_close.as_secs_f64() * 1000.0,
+                close_preconfirmed_ms = close_preconfirmed_start.elapsed().as_secs_f64() * 1000.0,
+                block_production_ms = block_production_time.as_secs_f64() * 1000.0,
+                // Execution stats
+                batches_executed = exec_stats.n_batches,
+                txs_added_to_block = exec_stats.n_added_to_block,
+                txs_executed = exec_stats.n_executed,
+                txs_reverted = exec_stats.n_reverted,
+                txs_rejected = exec_stats.n_rejected,
+                classes_declared = exec_stats.declared_classes,
+                l2_gas_consumed = exec_stats.l2_gas_consumed,
+                // State diff counts
+                state_diff_len = state_diff_len,
+                declared_classes = declared_classes_count,
+                deployed_contracts = deployed_contracts_count,
+                storage_diffs = storage_diffs_count,
+                nonce_updates = nonce_updates_count,
+                consumed_l1_nonces = consumed_l1_nonces_count,
+                // Bouncer weights
+                bouncer_l1_gas = bouncer_l1_gas,
+                bouncer_sierra_gas = bouncer_sierra_gas,
+                bouncer_n_events = bouncer_n_events,
+                bouncer_message_segment_length = bouncer_message_segment_length,
+                bouncer_state_diff_size = bouncer_state_diff_size,
+                // DB timing breakdown (all in ms)
+                get_full_block_ms = timings.get_full_block_with_classes.as_secs_f64() * 1000.0,
+                commitments_ms = timings.block_commitments_compute.as_secs_f64() * 1000.0,
+                merklization_ms = timings.merklization.as_secs_f64() * 1000.0,
+                contract_trie_ms = timings.contract_trie_root.as_secs_f64() * 1000.0,
+                class_trie_ms = timings.class_trie_root.as_secs_f64() * 1000.0,
+                contract_storage_trie_commit_ms = timings.contract_storage_trie_commit.as_secs_f64() * 1000.0,
+                contract_trie_commit_ms = timings.contract_trie_commit.as_secs_f64() * 1000.0,
+                class_trie_commit_ms = timings.class_trie_commit.as_secs_f64() * 1000.0,
+                block_hash_ms = timings.block_hash_compute.as_secs_f64() * 1000.0,
+                db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
+                "close_block_complete"
+            );
+        }
+
         let close_preconfirmed_duration = close_preconfirmed_start.elapsed();
         self.metrics.close_preconfirmed_duration.record(close_preconfirmed_duration.as_secs_f64(), &[]);
         self.metrics.close_preconfirmed_last.record(close_preconfirmed_duration.as_secs_f64(), &[]);
@@ -931,56 +1007,14 @@ impl BlockProductionTask {
         let time_to_close = start_time.elapsed();
         let block_production_time = state.block_start_time.elapsed();
 
-        // Emit structured log event for Loki querying (close_block_complete)
-        // All timing values converted to milliseconds for human-readability
-        let timings = &db_result.timings;
-        let exec_stats = &state.accumulated_stats;
-        tracing::info!(
-            target: "close_block",
-            block_number = state.block_number,
-            tx_count = n_txs,
-            event_count = event_count,
-            // High-level timing
-            close_block_total_ms = time_to_close.as_secs_f64() * 1000.0,
-            block_close_ms = time_to_close.as_secs_f64() * 1000.0,
-            close_preconfirmed_ms = close_preconfirmed_duration.as_secs_f64() * 1000.0,
-            block_production_ms = block_production_time.as_secs_f64() * 1000.0,
-            // Execution stats
-            batches_executed = exec_stats.n_batches,
-            txs_added_to_block = exec_stats.n_added_to_block,
-            txs_executed = exec_stats.n_executed,
-            txs_reverted = exec_stats.n_reverted,
-            txs_rejected = exec_stats.n_rejected,
-            classes_declared = exec_stats.declared_classes,
-            l2_gas_consumed = exec_stats.l2_gas_consumed,
-            // State diff counts
-            state_diff_len = state_diff_len,
-            declared_classes = declared_classes_count,
-            deployed_contracts = deployed_contracts_count,
-            storage_diffs = storage_diffs_count,
-            nonce_updates = nonce_updates_count,
-            consumed_l1_nonces = consumed_l1_nonces_count,
-            // Bouncer weights
-            bouncer_l1_gas = bouncer_l1_gas,
-            bouncer_sierra_gas = bouncer_sierra_gas,
-            bouncer_n_events = bouncer_n_events,
-            bouncer_message_segment_length = bouncer_message_segment_length,
-            bouncer_state_diff_size = bouncer_state_diff_size,
-            // DB timing breakdown (all in ms)
-            get_full_block_ms = timings.get_full_block_with_classes.as_secs_f64() * 1000.0,
-            commitments_ms = timings.block_commitments_compute.as_secs_f64() * 1000.0,
-            merklization_ms = timings.merklization.as_secs_f64() * 1000.0,
-            contract_trie_ms = timings.contract_trie_root.as_secs_f64() * 1000.0,
-            class_trie_ms = timings.class_trie_root.as_secs_f64() * 1000.0,
-            contract_storage_trie_commit_ms = timings.contract_storage_trie_commit.as_secs_f64() * 1000.0,
-            contract_trie_commit_ms = timings.contract_trie_commit.as_secs_f64() * 1000.0,
-            class_trie_commit_ms = timings.class_trie_commit.as_secs_f64() * 1000.0,
-            block_hash_ms = timings.block_hash_compute.as_secs_f64() * 1000.0,
-            db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
-            "close_block_complete"
-        );
-
-        tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
+        if self.parallel_merkle.enabled {
+            tracing::info!(
+                "⛏️  Queued block #{} with {n_txs} transactions for parallel finalizer - {time_to_close:?}",
+                state.block_number
+            );
+        } else {
+            tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
+        }
 
         // Record timing metrics
         self.metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
@@ -1009,6 +1043,13 @@ impl BlockProductionTask {
         // initial state
         let latest_block_n = self.backend.latest_confirmed_block_n();
         self.current_state = Some(TaskState::NotExecuting { latest_block_n });
+
+        if self.parallel_merkle.enabled {
+            self.parallel_merkle_finalizer = Some(
+                spawn_parallel_merkle_finalizer(self.backend.clone(), self.parallel_merkle.clone())
+                    .context("spawning parallel merkle finalizer")?,
+            );
+        }
 
         Ok(())
     }

@@ -4,7 +4,11 @@ use crate::{
     rocksdb::{
         backup::BackupManager,
         column::{Column, ALL_COLUMNS},
-        global_trie::{apply_to_global_trie, get_state_root, MerklizationTimings},
+        global_trie::{
+            apply_to_global_trie, get_state_root,
+            in_memory::{self, BonsaiOverlay, InMemoryRootComputation, TrieLogMode},
+            MerklizationTimings,
+        },
         meta::{ParallelMerkleStagedState, StoredChainTipWithoutContent},
         metrics::DbMetrics,
         options::rocksdb_global_options,
@@ -331,6 +335,33 @@ impl RocksDBStorage {
     /// carefully. This should only be used by the migration system.
     pub fn inner_db(&self) -> &DB {
         &self.inner.db
+    }
+
+    pub fn compute_parallel_merkle_root_from_snapshot_base(
+        &self,
+        snapshot_base_block_n: u64,
+        block_n: u64,
+        state_diff: &StateDiff,
+        include_overlay: bool,
+        trie_log_mode: TrieLogMode,
+    ) -> Result<InMemoryRootComputation> {
+        let (_, snapshot) = self.snapshots.get_closest(snapshot_base_block_n);
+        in_memory::compute_root_from_snapshot(self, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
+            .with_context(|| {
+                format!(
+                    "Computing parallel merkle root from snapshot_base_block_n={snapshot_base_block_n} for block_n={block_n}"
+                )
+            })
+    }
+
+    pub fn flush_parallel_merkle_overlay_and_checkpoint(
+        &self,
+        block_n: u64,
+        overlay: &BonsaiOverlay,
+        trie_log_mode: TrieLogMode,
+    ) -> Result<()> {
+        in_memory::flush_overlay_and_checkpoint(self, block_n, overlay, trie_log_mode)
+            .with_context(|| format!("Flushing parallel merkle overlay and checkpointing block_n={block_n}"))
     }
 }
 
