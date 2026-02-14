@@ -43,12 +43,26 @@ impl std::fmt::Debug for Migration {
 /// 2. Implement a `pub fn migrate(ctx: &MigrationContext) -> Result<(), MigrationError>`
 /// 3. Add the migration to the array below
 pub fn get_migrations() -> &'static [Migration] {
-    &[Migration {
-        from_version: 8,
-        to_version: 9,
-        name: "v8→v9: SierraClassInfo and StateDiff format",
-        migrate: super::revisions::revision_0009::migrate,
-    }]
+    &[
+        Migration {
+            from_version: 8,
+            to_version: 9,
+            name: "v8→v9: SierraClassInfo and StateDiff format",
+            migrate: super::revisions::revision_0009::migrate,
+        },
+        Migration {
+            from_version: 9,
+            to_version: 10,
+            name: "v9→v10: mempool/external DB column addition (no-op)",
+            migrate: super::revisions::revision_0010::migrate,
+        },
+        Migration {
+            from_version: 10,
+            to_version: 11,
+            name: "v10→v11: L1-to-L2 message status indexes (no-op)",
+            migrate: super::revisions::revision_0011::migrate,
+        },
+    ]
 }
 
 /// Get migrations needed to upgrade from `from_version` to `to_version`.

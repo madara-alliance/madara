@@ -371,7 +371,7 @@ Here is a list of all the supported methods with their current status:
 | ✅     | `starknet_getEvents`                       |
 | ✅     | `starknet_getNonce`                        |
 | ✅     | `starknet_getCompiledCasm` (v0.8.0)        |
-| ✅     | `starknet_getMessagesStatus`              |
+| ✅     | `starknet_getMessagesStatus`               |
 | 🚧     | `starknet_getStorageProof` (v0.8.0)        |
 
 </details>
