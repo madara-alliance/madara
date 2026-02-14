@@ -4,7 +4,8 @@ use crate::rocksdb::external_outbox::{ExternalOutboxEntry, ExternalOutboxId};
 use crate::rocksdb::global_trie::MerklizationTimings;
 use blockifier::bouncer::BouncerWeights;
 use mp_block::{
-    header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
+    header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, FullBlockWithoutCommitments, MadaraBlockInfo,
+    TransactionWithReceipt,
 };
 use mp_class::{ClassInfo, CompiledSierra, ConvertedClass};
 use mp_receipt::{Event, EventWithTransactionHash};
@@ -137,6 +138,11 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
         backend_chain_config: &mp_chain_config::ChainConfig,
     ) -> Result<Option<mp_chain_config::RuntimeExecutionConfig>>;
     fn get_snap_sync_latest_block(&self) -> Result<Option<u64>>;
+    fn has_parallel_merkle_staged_block(&self, block_n: u64) -> Result<bool>;
+    fn get_parallel_merkle_staged_block_header(&self, block_n: u64) -> Result<Option<PreconfirmedHeader>>;
+    fn get_parallel_merkle_staged_blocks(&self) -> Result<Vec<u64>>;
+    fn has_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<bool>;
+    fn get_parallel_merkle_latest_checkpoint(&self) -> Result<Option<u64>>;
 
     // L1 to L2 messages
 
@@ -157,6 +163,20 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageWrite: Send + Sync + 'static {
+    fn write_parallel_merkle_staged_block_data(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+    ) -> Result<()>;
+    fn confirm_parallel_merkle_staged_block(
+        &self,
+        header: BlockHeaderWithSignatures,
+        tx_hashes: &[Felt],
+        total_l2_gas_used: u128,
+    ) -> Result<()>;
+    fn write_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<()>;
+
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
     fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()>;

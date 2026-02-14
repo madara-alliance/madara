@@ -17,6 +17,22 @@ use std::iter;
 pub const EVENTS_BLOOM_COLUMN: Column = Column::new("events_bloom");
 
 impl RocksDBStorageInner {
+    pub(super) fn store_events_bloom_to_batch(
+        &self,
+        block_n: u64,
+        events: &[EventWithTransactionHash],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+
+        let writer = EventBloomWriter::from_events(events.iter().map(|ev| &ev.event));
+        let block_n = u32::try_from(block_n).context("Converting block_n to u32")?;
+        batch.put_cf(&self.get_column(EVENTS_BLOOM_COLUMN), block_n.to_be_bytes(), super::serialize(&writer)?);
+        Ok(())
+    }
+
     /// Retrieves an iterator over event bloom filters starting from the specified block.
     ///
     /// This method returns an iterator that yields (block_number, bloom_filter) pairs,
@@ -128,19 +144,9 @@ impl RocksDBStorageInner {
     }
 
     pub(super) fn store_events_bloom(&self, block_n: u64, value: &[EventWithTransactionHash]) -> Result<()> {
-        if value.is_empty() {
-            return Ok(());
-        }
-
-        let writer = EventBloomWriter::from_events(value.iter().map(|ev| &ev.event));
-        let block_n = u32::try_from(block_n).context("Converting block_n to u32")?;
-
-        self.db.put_cf_opt(
-            &self.get_column(EVENTS_BLOOM_COLUMN),
-            block_n.to_be_bytes(),
-            &super::serialize(&writer)?,
-            &self.writeopts,
-        )?;
+        let mut batch = WriteBatchWithTransaction::default();
+        self.store_events_bloom_to_batch(block_n, value, &mut batch)?;
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 

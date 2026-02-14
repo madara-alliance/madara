@@ -19,6 +19,23 @@ const META_CHAIN_INFO_KEY: &[u8] = b"CHAIN_INFO";
 const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
 const META_RUNTIME_EXEC_CONFIG_KEY: &[u8] = b"RUNTIME_EXEC_CONFIG";
 const META_SNAP_SYNC_LATEST_BLOCK: &[u8] = b"SNAP_SYNC_LATEST_BLOCK";
+const META_PARALLEL_MERKLE_STAGED_MARKER_PREFIX: &[u8] = b"PARALLEL_MERKLE_STAGED_MARKER/";
+const META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX: &[u8] = b"PARALLEL_MERKLE_STAGED_HEADER/";
+const META_PARALLEL_MERKLE_CHECKPOINT_PREFIX: &[u8] = b"PARALLEL_MERKLE_CHECKPOINT/";
+const META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY: &[u8] = b"PARALLEL_MERKLE_LATEST_CHECKPOINT";
+
+fn meta_key_with_block_n(prefix: &[u8], block_n: u64) -> Vec<u8> {
+    let mut key = Vec::with_capacity(prefix.len() + size_of::<u64>());
+    key.extend_from_slice(prefix);
+    key.extend_from_slice(&block_n.to_be_bytes());
+    key
+}
+
+fn parse_meta_block_n_key(prefix: &[u8], key: &[u8]) -> Option<u64> {
+    let suffix = key.strip_prefix(prefix)?;
+    let bytes: [u8; size_of::<u64>()] = suffix.try_into().ok()?;
+    Some(u64::from_be_bytes(bytes))
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub enum StoredChainTipWithoutContent {
@@ -27,6 +44,122 @@ pub enum StoredChainTipWithoutContent {
 }
 
 impl RocksDBStorageInner {
+    pub(super) fn replace_chain_tip_with_confirmed_in_batch(
+        &self,
+        block_n: u64,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let preconfirmed_col = self.get_column(PRECONFIRMED_COLUMN);
+        let meta_col = self.get_column(META_COLUMN);
+
+        batch.delete_range_cf(&preconfirmed_col, 0u16.to_be_bytes(), u16::MAX.to_be_bytes());
+        batch.put_cf(
+            &meta_col,
+            META_CHAIN_TIP_KEY,
+            super::serialize_to_smallvec::<[u8; 128]>(&StoredChainTipWithoutContent::Confirmed(block_n))?,
+        );
+
+        Ok(())
+    }
+
+    pub(super) fn parallel_merkle_mark_staged_block(
+        &self,
+        block_n: u64,
+        header: &PreconfirmedHeader,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let meta_col = self.get_column(META_COLUMN);
+        batch.put_cf(&meta_col, meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_MARKER_PREFIX, block_n), [1u8]);
+        batch.put_cf(
+            &meta_col,
+            meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, block_n),
+            super::serialize(header)?,
+        );
+        Ok(())
+    }
+
+    pub(super) fn parallel_merkle_unstage_block(&self, block_n: u64, batch: &mut WriteBatchWithTransaction) {
+        let meta_col = self.get_column(META_COLUMN);
+        batch.delete_cf(&meta_col, meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_MARKER_PREFIX, block_n));
+        batch.delete_cf(&meta_col, meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, block_n));
+    }
+
+    pub(super) fn has_parallel_merkle_staged_block(&self, block_n: u64) -> Result<bool> {
+        Ok(self
+            .db
+            .get_pinned_cf(
+                &self.get_column(META_COLUMN),
+                meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_MARKER_PREFIX, block_n),
+            )?
+            .is_some())
+    }
+
+    pub(super) fn get_parallel_merkle_staged_block_header(&self, block_n: u64) -> Result<Option<PreconfirmedHeader>> {
+        let Some(res) = self.db.get_pinned_cf(
+            &self.get_column(META_COLUMN),
+            meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, block_n),
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(super::deserialize(&res)?))
+    }
+
+    pub(super) fn get_parallel_merkle_staged_blocks(&self) -> Result<Vec<u64>> {
+        let meta_col = self.get_column(META_COLUMN);
+        let start = META_PARALLEL_MERKLE_STAGED_MARKER_PREFIX;
+        let mut options = ReadOptions::default();
+        options.set_prefix_same_as_start(false);
+        let mut out = Vec::new();
+
+        for item in
+            DBIterator::new_cf(&self.db, &meta_col, options, IteratorMode::From(start, rocksdb::Direction::Forward))
+                .into_iter_items(|(key, _value)| key.to_vec())
+        {
+            let key = item?;
+            if !key.starts_with(start) {
+                break;
+            }
+            if let Some(block_n) = parse_meta_block_n_key(start, key.as_slice()) {
+                out.push(block_n);
+            }
+        }
+
+        Ok(out)
+    }
+
+    pub(super) fn write_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<()> {
+        let meta_col = self.get_column(META_COLUMN);
+        let mut batch = WriteBatchWithTransaction::default();
+        batch.put_cf(&meta_col, meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, block_n), [1u8]);
+        batch.put_cf(
+            &meta_col,
+            META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY,
+            super::serialize_to_smallvec::<[u8; 16]>(&block_n)?,
+        );
+        self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
+    }
+
+    pub(super) fn has_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<bool> {
+        Ok(self
+            .db
+            .get_pinned_cf(
+                &self.get_column(META_COLUMN),
+                meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, block_n),
+            )?
+            .is_some())
+    }
+
+    pub(super) fn get_parallel_merkle_latest_checkpoint(&self) -> Result<Option<u64>> {
+        let Some(res) =
+            self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(super::deserialize(&res)?))
+    }
+
     /// Set the latest l1_block synced for the messaging worker.
     #[tracing::instrument(skip(self))]
     pub(super) fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {

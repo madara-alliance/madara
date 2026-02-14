@@ -7,11 +7,13 @@ use blockifier::bouncer::BouncerWeights;
 use itertools::{Either, Itertools};
 use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
 use mp_convert::Felt;
+use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
 };
 use rocksdb::{IteratorMode, ReadOptions};
 use starknet_types_core::felt::Felt as StarkFelt;
+use std::collections::HashMap;
 use std::iter;
 
 // TODO (mohit, 14/12/2024): Remove this struct once the v8→v9 migration from
@@ -53,6 +55,75 @@ fn make_transaction_column_key(block_n: u32, tx_index: u16) -> [u8; TRANSACTIONS
 }
 
 impl RocksDBStorageInner {
+    pub(super) fn blocks_stage_transactions(
+        &self,
+        block_number: u64,
+        transactions: &[TransactionWithReceipt],
+        events: &[EventWithTransactionHash],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
+        let tx_hash_to_index_col = self.get_column(TX_HASH_TO_INDEX_COLUMN);
+        let block_n_u32 = u32::try_from(block_number).context("Converting block_n to u32")?;
+
+        let mut events_per_tx = HashMap::<Felt, Vec<Event>>::new();
+        for ev in events {
+            events_per_tx.entry(ev.transaction_hash).or_default().push(ev.event.clone());
+        }
+
+        for (tx_index, tx) in transactions.iter().enumerate() {
+            let tx_index_u16 = u16::try_from(tx_index).context("Converting tx_index to u16")?;
+            let tx_hash = *tx.receipt.transaction_hash();
+
+            let mut tx_with_receipt = tx.clone();
+            tx_with_receipt.receipt.events_mut().clear();
+            if let Some(tx_events) = events_per_tx.remove(&tx_hash) {
+                tx_with_receipt.receipt.events_mut().extend(tx_events);
+            }
+
+            batch.put_cf(
+                &tx_hash_to_index_col,
+                tx_hash.to_bytes_be(),
+                super::serialize_to_smallvec::<[u8; 16]>(&(block_n_u32, tx_index_u16))?,
+            );
+            batch.put_cf(
+                &block_txs_col,
+                make_transaction_column_key(block_n_u32, tx_index_u16),
+                super::serialize(&tx_with_receipt)?,
+            );
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn blocks_store_header_with_info_to_batch(
+        &self,
+        header: &BlockHeaderWithSignatures,
+        tx_hashes: &[Felt],
+        total_l2_gas_used: u128,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let block_n = u32::try_from(header.header.block_number).context("Converting block_n to u32")?;
+        let block_hash_to_block_n_col = self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN);
+        let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
+
+        let info = MadaraBlockInfo {
+            header: header.header.clone(),
+            block_hash: header.block_hash,
+            tx_hashes: tx_hashes.to_vec(),
+            total_l2_gas_used,
+        };
+
+        batch.put_cf(&block_info_col, block_n.to_be_bytes(), super::serialize(&info)?);
+        batch.put_cf(
+            &block_hash_to_block_n_col,
+            header.block_hash.to_bytes_be(),
+            &super::serialize_to_smallvec::<[u8; 16]>(&block_n)?,
+        );
+
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self))]
     pub(super) fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let Some(res) =

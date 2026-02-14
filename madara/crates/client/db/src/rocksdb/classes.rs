@@ -14,6 +14,74 @@ pub const CLASS_INFO_COLUMN: Column = Column::new("class_info").set_point_lookup
 pub const CLASS_COMPILED_COLUMN: Column = Column::new("class_compiled").set_point_lookup();
 
 impl RocksDBStorageInner {
+    pub(crate) fn update_class_v2_hashes_to_batch(
+        &self,
+        migrations: impl IntoIterator<Item = (Felt, Felt)>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let class_info_col = self.get_column(CLASS_INFO_COLUMN);
+
+        for (class_hash, blake_compiled_class_hash) in migrations {
+            let Some(mut class_info_with_block) = self.get_class(&class_hash)? else {
+                tracing::warn!("Cannot update v2 hash for class {class_hash:#x}: class not found in DB");
+                continue;
+            };
+
+            match &mut class_info_with_block.class_info {
+                mp_class::ClassInfo::Sierra(sierra_info) => {
+                    sierra_info.compiled_class_hash_v2 = Some(blake_compiled_class_hash);
+                }
+                mp_class::ClassInfo::Legacy(_) => {
+                    tracing::warn!("Cannot update v2 hash for class {class_hash:#x}: class is Legacy, not Sierra");
+                    continue;
+                }
+            }
+
+            batch.put_cf(&class_info_col, class_hash.to_bytes_be(), super::serialize(&class_info_with_block)?);
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn store_classes_to_batch(
+        &self,
+        block_number: u64,
+        converted_classes: &[ConvertedClass],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let class_info_col = self.get_column(CLASS_INFO_COLUMN);
+        let class_compiled_col = self.get_column(CLASS_COMPILED_COLUMN);
+
+        for converted_class in converted_classes {
+            // Keep compatibility with existing logic where legacy classes may be declared multiple times.
+            if !self.contains_class(converted_class.class_hash())? {
+                batch.put_cf(
+                    &class_info_col,
+                    converted_class.class_hash().to_bytes_be(),
+                    super::serialize(&ClassInfoWithBlockN { class_info: converted_class.info(), block_number })?,
+                );
+            }
+        }
+
+        for converted_class in converted_classes {
+            if let ConvertedClass::Sierra(sierra) = converted_class {
+                // Use canonical compiled_class_hash (v2 if present, else v1)
+                if let Some(canonical_hash) = sierra.info.compiled_class_hash_v2.or(sierra.info.compiled_class_hash) {
+                    batch.put_cf(
+                        &class_compiled_col,
+                        canonical_hash.to_bytes_be(),
+                        super::serialize(&CompiledSierraWithBlockN {
+                            block_number,
+                            compiled_sierra: sierra.compiled.clone(),
+                        })?,
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self))]
     pub(super) fn get_class(&self, class_hash: &Felt) -> Result<Option<ClassInfoWithBlockN>> {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(CLASS_INFO_COLUMN), class_hash.to_bytes_be())? else {
@@ -40,28 +108,8 @@ impl RocksDBStorageInner {
     /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
     #[tracing::instrument(skip(self, migrations))]
     pub(crate) fn update_class_v2_hashes(&self, migrations: impl IntoIterator<Item = (Felt, Felt)>) -> Result<()> {
-        let col = self.get_column(CLASS_INFO_COLUMN);
         let mut batch = WriteBatchWithTransaction::default();
-
-        for (class_hash, blake_compiled_class_hash) in migrations {
-            let Some(mut class_info_with_block) = self.get_class(&class_hash)? else {
-                tracing::warn!("Cannot update v2 hash for class {class_hash:#x}: class not found in DB");
-                continue;
-            };
-
-            match &mut class_info_with_block.class_info {
-                mp_class::ClassInfo::Sierra(sierra_info) => {
-                    sierra_info.compiled_class_hash_v2 = Some(blake_compiled_class_hash);
-                }
-                mp_class::ClassInfo::Legacy(_) => {
-                    tracing::warn!("Cannot update v2 hash for class {class_hash:#x}: class is Legacy, not Sierra");
-                    continue;
-                }
-            }
-
-            batch.put_cf(&col, class_hash.to_bytes_be(), super::serialize(&class_info_with_block)?);
-        }
-
+        self.update_class_v2_hashes_to_batch(migrations, &mut batch)?;
         self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }

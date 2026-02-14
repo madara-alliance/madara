@@ -20,7 +20,9 @@ use bincode::Options;
 use blockifier::bouncer::BouncerWeights;
 use bonsai_trie::id::BasicId;
 
-use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
+use mp_block::{
+    BlockHeaderWithSignatures, EventWithInfo, FullBlockWithoutCommitments, MadaraBlockInfo, TransactionWithReceipt,
+};
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
@@ -169,6 +171,77 @@ impl RocksDBStorageInner {
                 .with_context(|| format!("Committing changes removing block_n={block_n} from database"))?;
         }
 
+        Ok(())
+    }
+
+    fn write_parallel_merkle_staged_block_data(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+    ) -> Result<()> {
+        let block_n = block.header.block_number;
+        if self.has_parallel_merkle_staged_block(block_n)? {
+            anyhow::bail!("parallel-merkle staged data already exists for block_n={block_n}");
+        }
+        if self.get_block_info(block_n)?.is_some() {
+            anyhow::bail!("cannot stage block_n={block_n}: block header already confirmed");
+        }
+
+        let block_n_u32 = u32::try_from(block_n).context("Converting block_n to u32")?;
+        let mut batch = WriteBatchWithTransaction::default();
+
+        self.parallel_merkle_mark_staged_block(block_n, &block.header, &mut batch)?;
+        self.blocks_stage_transactions(block_n, &block.transactions, &block.events, &mut batch)?;
+
+        batch.put_cf(
+            &self.get_column(blocks::BLOCK_STATE_DIFF_COLUMN),
+            block_n_u32.to_be_bytes(),
+            serialize(&block.state_diff)?,
+        );
+        self.state_apply_state_diff_to_batch(block_n, &block.state_diff, &mut batch)?;
+
+        if let Some(weights) = bouncer_weights {
+            batch.put_cf(
+                &self.get_column(blocks::BLOCK_BOUNCER_WEIGHT_COLUMN),
+                block_n_u32.to_be_bytes(),
+                serialize(weights)?,
+            );
+        }
+
+        if !block.state_diff.migrated_compiled_classes.is_empty() {
+            let migrations = block
+                .state_diff
+                .migrated_compiled_classes
+                .iter()
+                .map(|m| (m.class_hash, m.compiled_class_hash))
+                .collect::<Vec<_>>();
+            self.update_class_v2_hashes_to_batch(migrations, &mut batch)?;
+        }
+        self.store_classes_to_batch(block_n, classes, &mut batch)?;
+        self.store_events_bloom_to_batch(block_n, &block.events, &mut batch)?;
+
+        self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
+    }
+
+    fn confirm_parallel_merkle_staged_block(
+        &self,
+        header: &BlockHeaderWithSignatures,
+        tx_hashes: &[Felt],
+        total_l2_gas_used: u128,
+    ) -> Result<()> {
+        let block_n = header.header.block_number;
+        if !self.has_parallel_merkle_staged_block(block_n)? {
+            anyhow::bail!("cannot confirm block_n={block_n}: staged marker not found");
+        }
+
+        let mut batch = WriteBatchWithTransaction::default();
+        self.blocks_store_header_with_info_to_batch(header, tx_hashes, total_l2_gas_used, &mut batch)?;
+        self.replace_chain_tip_with_confirmed_in_batch(block_n, &mut batch)?;
+        self.parallel_merkle_unstage_block(block_n, &mut batch);
+
+        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 }
@@ -342,6 +415,30 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
         self.inner.get_snap_sync_latest_block().context("Getting snap sync latest block from db")
     }
+    fn has_parallel_merkle_staged_block(&self, block_n: u64) -> Result<bool> {
+        self.inner
+            .has_parallel_merkle_staged_block(block_n)
+            .with_context(|| format!("Checking parallel merkle staged marker for block_n={block_n}"))
+    }
+    fn get_parallel_merkle_staged_block_header(
+        &self,
+        block_n: u64,
+    ) -> Result<Option<mp_block::header::PreconfirmedHeader>> {
+        self.inner
+            .get_parallel_merkle_staged_block_header(block_n)
+            .with_context(|| format!("Getting parallel merkle staged header for block_n={block_n}"))
+    }
+    fn get_parallel_merkle_staged_blocks(&self) -> Result<Vec<u64>> {
+        self.inner.get_parallel_merkle_staged_blocks().context("Getting parallel merkle staged blocks")
+    }
+    fn has_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<bool> {
+        self.inner
+            .has_parallel_merkle_checkpoint(block_n)
+            .with_context(|| format!("Checking parallel merkle checkpoint for block_n={block_n}"))
+    }
+    fn get_parallel_merkle_latest_checkpoint(&self) -> Result<Option<u64>> {
+        self.inner.get_parallel_merkle_latest_checkpoint().context("Getting latest parallel merkle checkpoint")
+    }
 
     // L1 to L2 messages
 
@@ -379,6 +476,38 @@ impl MadaraStorageRead for RocksDBStorage {
 }
 
 impl MadaraStorageWrite for RocksDBStorage {
+    fn write_parallel_merkle_staged_block_data(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+    ) -> Result<()> {
+        tracing::debug!("Writing parallel merkle staged block data block_n={}", block.header.block_number);
+        self.inner
+            .write_parallel_merkle_staged_block_data(block, classes, bouncer_weights)
+            .with_context(|| format!("Writing parallel merkle staged block data block_n={}", block.header.block_number))
+    }
+
+    fn confirm_parallel_merkle_staged_block(
+        &self,
+        header: BlockHeaderWithSignatures,
+        tx_hashes: &[Felt],
+        total_l2_gas_used: u128,
+    ) -> Result<()> {
+        let block_n = header.header.block_number;
+        tracing::debug!("Confirming parallel merkle staged block block_n={block_n}");
+        self.inner
+            .confirm_parallel_merkle_staged_block(&header, tx_hashes, total_l2_gas_used)
+            .with_context(|| format!("Confirming parallel merkle staged block block_n={block_n}"))
+    }
+
+    fn write_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<()> {
+        tracing::debug!("Writing parallel merkle checkpoint block_n={block_n}");
+        self.inner
+            .write_parallel_merkle_checkpoint(block_n)
+            .with_context(|| format!("Writing parallel merkle checkpoint block_n={block_n}"))
+    }
+
     fn write_header(&self, header: mp_block::BlockHeaderWithSignatures) -> Result<()> {
         tracing::debug!("Writing header {}", header.header.block_number);
         let block_n = header.header.block_number;

@@ -774,6 +774,119 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(result)
     }
 
+    /// Persist block content for parallel merkle path without writing a confirmed header or advancing chain tip.
+    /// Data is staged atomically and can later be confirmed with a precomputed root.
+    pub fn write_parallel_merkle_staged_block_data(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+    ) -> Result<()> {
+        self.inner.db.write_parallel_merkle_staged_block_data(block, classes, bouncer_weights)
+    }
+
+    /// Confirm a previously staged block using an externally precomputed state root.
+    /// This computes commitments + block hash on confirm and atomically advances confirmed tip.
+    pub fn confirm_parallel_merkle_staged_block_with_root(
+        &self,
+        block_n: u64,
+        precomputed_root: Felt,
+        pre_v0_13_2_hash_override: bool,
+    ) -> Result<AddFullBlockResult> {
+        let expected_next = self.inner.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
+        if block_n != expected_next {
+            anyhow::bail!("expected next confirmable block #{expected_next}, got #{block_n}");
+        }
+
+        if !self.inner.db.has_parallel_merkle_staged_block(block_n)? {
+            anyhow::bail!("no staged block marker for block_n={block_n}");
+        }
+
+        let staged_header = self
+            .inner
+            .db
+            .get_parallel_merkle_staged_block_header(block_n)?
+            .with_context(|| format!("Missing staged preconfirmed header for block_n={block_n}"))?;
+        let state_diff = self
+            .inner
+            .db
+            .get_block_state_diff(block_n)?
+            .with_context(|| format!("Missing staged state diff for block_n={block_n}"))?;
+        let transactions: Vec<TransactionWithReceipt> =
+            self.inner.db.get_block_transactions(block_n, 0).collect::<Result<_>>()?;
+
+        let events = transactions
+            .iter()
+            .flat_map(|tx| {
+                let tx_hash = *tx.receipt.transaction_hash();
+                tx.receipt
+                    .events()
+                    .iter()
+                    .cloned()
+                    .map(move |event| EventWithTransactionHash { transaction_hash: tx_hash, event })
+            })
+            .collect::<Vec<_>>();
+        let tx_hashes = transactions.iter().map(|tx| *tx.receipt.transaction_hash()).collect::<Vec<_>>();
+        let total_l2_gas_used = transactions.iter().map(|tx| tx.receipt.l2_gas_used()).sum::<u128>();
+
+        let mut timings = CloseBlockTimings::default();
+        let parent_block_hash = if let Some(last_block) = self.inner.block_view_on_last_confirmed() {
+            last_block.get_block_info()?.block_hash
+        } else {
+            Felt::ZERO
+        };
+
+        let commitments_start = Instant::now();
+        let commitments = BlockCommitments::compute(
+            &CommitmentComputationContext {
+                protocol_version: self.inner.chain_config.latest_protocol_version,
+                chain_id: self.inner.chain_config.chain_id.to_felt(),
+            },
+            &transactions,
+            &state_diff,
+            &events,
+        );
+        timings.block_commitments_compute = commitments_start.elapsed();
+
+        let header = staged_header.into_confirmed_header(parent_block_hash, commitments.clone(), precomputed_root);
+        let hash_start = Instant::now();
+        let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
+        timings.block_hash_compute = hash_start.elapsed();
+
+        if let Some(custom_header) = self.inner.get_custom_header_with_clear(true) {
+            if !custom_header.is_block_hash_as_expected(&block_hash) {
+                tracing::warn!("Block hash not as expected for {}", block_n);
+            }
+        }
+
+        let write_start = Instant::now();
+        self.inner.db.confirm_parallel_merkle_staged_block(
+            BlockHeaderWithSignatures { header, block_hash, consensus_signatures: vec![] },
+            &tx_hashes,
+            total_l2_gas_used,
+        )?;
+        timings.db_write_block_parts = write_start.elapsed();
+
+        if self
+            .inner
+            .config
+            .flush_every_n_blocks
+            .is_some_and(|flush_every_n_blocks| block_n.checked_rem(flush_every_n_blocks) == Some(0))
+        {
+            self.inner.db.flush().context("Periodic database flush")?;
+        }
+
+        self.inner.db.on_new_confirmed_head(block_n)?;
+        self.inner.chain_tip.send_replace(ChainTip::Confirmed(block_n));
+
+        Ok(AddFullBlockResult { new_state_root: precomputed_root, commitments, block_hash, parent_block_hash, timings })
+    }
+
+    /// Write a checkpoint metadata entry for parallel merkle persistence.
+    pub fn write_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<()> {
+        self.inner.db.write_parallel_merkle_checkpoint(block_n)
+    }
+
     /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
     /// all the block parts. Returns the block hash and timing information.
     /// Note: The `get_full_block_with_classes` timing must be provided by the caller.
@@ -1008,6 +1121,24 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
         self.db.get_snap_sync_latest_block()
     }
+    pub fn has_parallel_merkle_staged_block(&self, block_n: u64) -> Result<bool> {
+        self.db.has_parallel_merkle_staged_block(block_n)
+    }
+    pub fn get_parallel_merkle_staged_blocks(&self) -> Result<Vec<u64>> {
+        self.db.get_parallel_merkle_staged_blocks()
+    }
+    pub fn get_parallel_merkle_staged_block_header(
+        &self,
+        block_n: u64,
+    ) -> Result<Option<mp_block::header::PreconfirmedHeader>> {
+        self.db.get_parallel_merkle_staged_block_header(block_n)
+    }
+    pub fn has_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<bool> {
+        self.db.has_parallel_merkle_checkpoint(block_n)
+    }
+    pub fn get_parallel_merkle_latest_checkpoint(&self) -> Result<Option<u64>> {
+        self.db.get_parallel_merkle_latest_checkpoint()
+    }
 }
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
@@ -1043,6 +1174,9 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_snap_sync_latest_block(block_n)
+    }
+    pub fn write_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<()> {
+        self.db.write_parallel_merkle_checkpoint(block_n)
     }
 
     /// Revert the blockchain to a specific block hash.
