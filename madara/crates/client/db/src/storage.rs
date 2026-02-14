@@ -2,7 +2,8 @@ use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::prelude::*;
 use blockifier::bouncer::BouncerWeights;
 use mp_block::{
-    header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
+    commitments::BlockCommitments, header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo,
+    FullBlockWithoutCommitments, MadaraBlockInfo, TransactionWithReceipt,
 };
 use mp_class::{ClassInfo, CompiledSierra, ConvertedClass};
 use mp_receipt::{Event, EventWithTransactionHash};
@@ -90,6 +91,13 @@ pub struct StoredChainInfo {
     pub chain_name: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ConfirmStagedBlockResult {
+    pub commitments: BlockCommitments,
+    pub block_hash: Felt,
+    pub parent_block_hash: Felt,
+}
+
 /// Trait abstracting over the storage interface.
 pub trait MadaraStorageRead: Send + Sync + 'static {
     // Blocks
@@ -128,6 +136,9 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_chain_tip(&self) -> Result<StorageChainTip>;
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
+    fn get_staged_block_header(&self, block_n: u64) -> Result<Option<PreconfirmedHeader>>;
+    fn get_max_staged_block_n(&self) -> Result<Option<u64>>;
+    fn get_parallel_merkle_checkpoint(&self) -> Result<Option<u64>>;
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>>;
     fn get_latest_applied_trie_update(&self) -> Result<Option<u64>>;
     fn get_runtime_exec_config(
@@ -157,6 +168,19 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()>;
     /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
     fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()>;
+    fn write_block_data_without_header(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        converted_classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+    ) -> Result<()>;
+    fn confirm_staged_block_with_precomputed_root(
+        &self,
+        block_n: u64,
+        precomputed_state_root: Felt,
+        chain_id: Felt,
+        pre_v0_13_2_hash_override: bool,
+    ) -> Result<ConfirmStagedBlockResult>;
 
     fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()>;
     fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()>;
@@ -172,6 +196,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()>;
     fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()>;
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()>;
+    fn write_parallel_merkle_checkpoint(&self, block_n: &Option<u64>) -> Result<()>;
     fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()>;
     fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()>;
 

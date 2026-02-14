@@ -12,8 +12,8 @@ use crate::{
         snapshots::Snapshots,
     },
     storage::{
-        ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
-        MadaraStorageWrite, StorageChainTip, StorageTxIndex, StoredChainInfo,
+        ClassInfoWithBlockN, CompiledSierraWithBlockN, ConfirmStagedBlockResult, DevnetPredeployedKeys, EventFilter,
+        MadaraStorageRead, MadaraStorageWrite, StorageChainTip, StorageTxIndex, StoredChainInfo,
     },
 };
 
@@ -21,7 +21,7 @@ use bincode::Options;
 use blockifier::bouncer::BouncerWeights;
 use bonsai_trie::id::BasicId;
 
-use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
+use mp_block::{EventWithInfo, FullBlockWithoutCommitments, MadaraBlockInfo, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
@@ -327,6 +327,17 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
         self.inner.get_l1_messaging_sync_tip().context("Getting l1 messaging sync tip")
     }
+    fn get_staged_block_header(&self, block_n: u64) -> Result<Option<mp_block::header::PreconfirmedHeader>> {
+        self.inner
+            .get_staged_block_header(block_n)
+            .with_context(|| format!("Getting staged block header for block_n={block_n}"))
+    }
+    fn get_max_staged_block_n(&self) -> Result<Option<u64>> {
+        self.inner.get_max_staged_block_n().context("Getting max staged block number")
+    }
+    fn get_parallel_merkle_checkpoint(&self) -> Result<Option<u64>> {
+        self.inner.get_parallel_merkle_checkpoint().context("Getting parallel merkle checkpoint")
+    }
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>> {
         self.inner.get_stored_chain_info().context("Getting stored chain info from db")
     }
@@ -437,6 +448,36 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner.update_class_v2_hashes(migrations).context("Updating class v2 hashes")
     }
 
+    fn write_block_data_without_header(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        converted_classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+    ) -> Result<()> {
+        tracing::debug!("Writing staged block data without header block_n={}", block.header.block_number);
+        self.inner
+            .write_block_data_without_header(block, converted_classes, bouncer_weights)
+            .with_context(|| format!("Writing staged block data for block_n={}", block.header.block_number))
+    }
+
+    fn confirm_staged_block_with_precomputed_root(
+        &self,
+        block_n: u64,
+        precomputed_state_root: Felt,
+        chain_id: Felt,
+        pre_v0_13_2_hash_override: bool,
+    ) -> Result<ConfirmStagedBlockResult> {
+        tracing::debug!("Confirming staged block with precomputed root block_n={block_n}");
+        self.inner
+            .confirm_staged_block_with_precomputed_root(
+                block_n,
+                precomputed_state_root,
+                chain_id,
+                pre_v0_13_2_hash_override,
+            )
+            .with_context(|| format!("Confirming staged block block_n={block_n} with precomputed root"))
+    }
+
     fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()> {
         tracing::debug!("Replace chain tip {chain_tip:?}");
         self.inner.replace_chain_tip(chain_tip).context("Replacing chain tip in db")
@@ -488,6 +529,10 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write latest applied trie update block_n={block_n:?}");
         self.inner.write_latest_applied_trie_update(block_n).context("Writing latest applied trie update block_n")
+    }
+    fn write_parallel_merkle_checkpoint(&self, block_n: &Option<u64>) -> Result<()> {
+        tracing::debug!("Write parallel merkle checkpoint block_n={block_n:?}");
+        self.inner.write_parallel_merkle_checkpoint(block_n).context("Writing parallel merkle checkpoint")
     }
     fn write_runtime_exec_config(&self, config: &mp_chain_config::RuntimeExecutionConfig) -> Result<()> {
         tracing::debug!("Writing runtime execution config");

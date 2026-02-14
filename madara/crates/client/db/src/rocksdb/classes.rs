@@ -124,6 +124,42 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    pub(crate) fn store_classes_in_batch(
+        &self,
+        block_number: u64,
+        converted_classes: &[ConvertedClass],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let class_info_col = self.get_column(CLASS_INFO_COLUMN);
+        let class_compiled_col = self.get_column(CLASS_COMPILED_COLUMN);
+
+        for converted_class in converted_classes {
+            // Keep existing behavior: do not overwrite existing class info entries.
+            if !self.contains_class(converted_class.class_hash())? {
+                batch.put_cf(
+                    &class_info_col,
+                    converted_class.class_hash().to_bytes_be(),
+                    super::serialize(&ClassInfoWithBlockN { class_info: converted_class.info(), block_number })?,
+                );
+            }
+
+            if let ConvertedClass::Sierra(sierra) = converted_class {
+                if let Some(canonical_hash) = sierra.info.compiled_class_hash_v2.or(sierra.info.compiled_class_hash) {
+                    batch.put_cf(
+                        &class_compiled_col,
+                        canonical_hash.to_bytes_be(),
+                        super::serialize(&CompiledSierraWithBlockN {
+                            block_number,
+                            compiled_sierra: sierra.compiled.clone(),
+                        })?,
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn classes_remove(
         &self,
         classes: impl IntoIterator<Item = (Felt, DeclaredClassCompiledClass)>,

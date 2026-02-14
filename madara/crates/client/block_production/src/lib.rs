@@ -161,6 +161,26 @@ mod util;
 
 pub use handle::BlockProductionHandle;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParallelMerkleTrieLogMode {
+    Off,
+    Checkpoint,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParallelMerkleConfig {
+    pub enabled: bool,
+    pub flush_interval: u64,
+    pub max_inflight: u64,
+    pub trie_log_mode: ParallelMerkleTrieLogMode,
+}
+
+impl Default for ParallelMerkleConfig {
+    fn default() -> Self {
+        Self { enabled: false, flush_interval: 3, max_inflight: 10, trie_log_mode: ParallelMerkleTrieLogMode::Off }
+    }
+}
+
 /// Used for listening to state changes in tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockProductionStateNotification {
@@ -320,6 +340,9 @@ pub struct BlockProductionTask {
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
     no_charge_fee: bool,
+    /// Wired in PR-01 for feature surface; consumed by finalizer logic in later PRs.
+    #[allow(dead_code)]
+    parallel_merkle: ParallelMerkleConfig,
 }
 
 impl BlockProductionTask {
@@ -336,6 +359,7 @@ impl BlockProductionTask {
         metrics: Arc<BlockProductionMetrics>,
         l1_client: Arc<dyn SettlementClient>,
         no_charge_fee: bool,
+        parallel_merkle: ParallelMerkleConfig,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
@@ -350,6 +374,7 @@ impl BlockProductionTask {
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
             no_charge_fee,
+            parallel_merkle,
         }
     }
 
@@ -959,7 +984,7 @@ impl BlockProductionTask {
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::BlockProductionStateNotification;
-    use crate::{metrics::BlockProductionMetrics, BlockProductionTask};
+    use crate::{metrics::BlockProductionMetrics, BlockProductionTask, ParallelMerkleConfig};
     use blockifier::bouncer::{BouncerConfig, BouncerWeights};
     use mc_db::MadaraBackend;
     use mc_devnet::{
@@ -1016,6 +1041,7 @@ pub(crate) mod tests {
                 self.metrics.clone(),
                 Arc::new(self.l1_client.clone()),
                 false, /* no_charge_fee = false */
+                ParallelMerkleConfig::default(),
             )
         }
     }
@@ -1856,6 +1882,7 @@ pub(crate) mod tests {
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
             initial_no_charge_fee,
+            ParallelMerkleConfig::default(),
         );
 
         let mut notifications = block_production_task.subscribe_state_notifications();
@@ -1886,6 +1913,7 @@ pub(crate) mod tests {
             original_devnet_setup.metrics.clone(),
             Arc::new(original_devnet_setup.l1_client.clone()),
             restart_no_charge_fee, // Current config: no_charge_fee = false
+            ParallelMerkleConfig::default(),
         );
 
         // Start the block production task.

@@ -1,12 +1,23 @@
 use crate::{
     prelude::*,
-    rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
-    storage::StorageTxIndex,
+    rocksdb::{
+        events::EVENTS_BLOOM_COLUMN,
+        events_bloom_filter::EventBloomWriter,
+        iter_pinned::DBIterator,
+        l1_to_l2_messages::{L1_TO_L2_PENDING_MESSAGE_BY_NONCE, L1_TO_L2_TXN_HASH_BY_NONCE},
+        Column, RocksDBStorageInner, WriteBatchWithTransaction,
+    },
+    storage::{ConfirmStagedBlockResult, StorageTxIndex},
 };
 use blockifier::bouncer::BouncerWeights;
 use itertools::{Either, Itertools};
-use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
+use mp_block::{
+    commitments::{BlockCommitments, CommitmentComputationContext},
+    BlockHeaderWithSignatures, FullBlockWithoutCommitments, MadaraBlockInfo, TransactionWithReceipt,
+};
+use mp_class::ConvertedClass;
 use mp_convert::Felt;
+use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
 };
@@ -50,6 +61,43 @@ fn make_transaction_column_key(block_n: u32, tx_index: u16) -> [u8; TRANSACTIONS
     key[..4].copy_from_slice(&block_n.to_be_bytes());
     key[4..].copy_from_slice(&tx_index.to_be_bytes());
     key
+}
+
+fn merge_transactions_with_events(
+    transactions: &[TransactionWithReceipt],
+    events: &[EventWithTransactionHash],
+) -> Result<Vec<TransactionWithReceipt>> {
+    let mut out = Vec::with_capacity(transactions.len());
+    let mut events = events.iter().peekable();
+
+    for tx in transactions {
+        let mut tx = tx.clone();
+        let transaction_hash = *tx.receipt.transaction_hash();
+        tx.receipt.events_mut().clear();
+        tx.receipt.events_mut().extend(
+            events
+                .peeking_take_while(|event| event.transaction_hash == transaction_hash)
+                .map(|event| event.event.clone()),
+        );
+        out.push(tx);
+    }
+
+    ensure!(
+        events.next().is_none(),
+        "Found event(s) with a transaction hash that is not present in persisted transactions"
+    );
+
+    Ok(out)
+}
+
+fn events_from_transactions(transactions: &[TransactionWithReceipt]) -> Vec<EventWithTransactionHash> {
+    transactions
+        .iter()
+        .flat_map(|tx| {
+            let transaction_hash = *tx.receipt.transaction_hash();
+            tx.receipt.events().iter().cloned().map(move |event| EventWithTransactionHash { transaction_hash, event })
+        })
+        .collect()
 }
 
 impl RocksDBStorageInner {
@@ -284,6 +332,151 @@ impl RocksDBStorageInner {
 
         self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
+    }
+
+    #[tracing::instrument(skip(self, block, converted_classes, bouncer_weights))]
+    pub(super) fn write_block_data_without_header(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        converted_classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+    ) -> Result<()> {
+        let block_n = block.header.block_number;
+        ensure!(
+            self.get_staged_block_header(block_n)?.is_none(),
+            "Block #{block_n} is already staged and cannot be written twice"
+        );
+        ensure!(self.get_block_info(block_n)?.is_none(), "Block #{block_n} is already confirmed and cannot be staged");
+
+        let block_n_u32 = u32::try_from(block_n).context("Converting block_n to u32")?;
+        let transactions = merge_transactions_with_events(&block.transactions, &block.events)?;
+
+        let block_transactions_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
+        let tx_hash_to_index_col = self.get_column(TX_HASH_TO_INDEX_COLUMN);
+        let block_state_diff_col = self.get_column(BLOCK_STATE_DIFF_COLUMN);
+        let block_bouncer_weight_col = self.get_column(BLOCK_BOUNCER_WEIGHT_COLUMN);
+        let events_bloom_col = self.get_column(EVENTS_BLOOM_COLUMN);
+
+        let mut batch = WriteBatchWithTransaction::default();
+
+        for (tx_index, transaction) in transactions.iter().enumerate() {
+            let tx_index_u16 = u16::try_from(tx_index).context("Converting tx_index to u16")?;
+            batch.put_cf(
+                &tx_hash_to_index_col,
+                transaction.receipt.transaction_hash().to_bytes_be(),
+                super::serialize_to_smallvec::<[u8; 16]>(&(block_n_u32, tx_index_u16))?,
+            );
+            batch.put_cf(
+                &block_transactions_col,
+                make_transaction_column_key(block_n_u32, tx_index_u16),
+                super::serialize(transaction)?,
+            );
+        }
+
+        batch.put_cf(&block_state_diff_col, block_n_u32.to_be_bytes(), super::serialize(&block.state_diff)?);
+
+        if let Some(weights) = bouncer_weights {
+            batch.put_cf(&block_bouncer_weight_col, block_n_u32.to_be_bytes(), super::serialize(weights)?);
+        }
+
+        if !block.events.is_empty() {
+            let writer = EventBloomWriter::from_events(block.events.iter().map(|event| &event.event));
+            batch.put_cf(&events_bloom_col, block_n_u32.to_be_bytes(), super::serialize(&writer)?);
+        }
+
+        self.store_classes_in_batch(block_n, converted_classes, &mut batch)?;
+        self.put_staged_block_header_in_batch(block_n, &block.header, &mut batch)?;
+        self.db.write_opt(batch, &self.writeopts)?;
+
+        // Apply state and class-index side effects so reads by block number remain consistent with
+        // existing partial-import behavior.
+        self.state_apply_state_diff(block_n, &block.state_diff)?;
+        if !block.state_diff.migrated_compiled_classes.is_empty() {
+            let migrations = block
+                .state_diff
+                .migrated_compiled_classes
+                .iter()
+                .map(|m| (m.class_hash, m.compiled_class_hash))
+                .collect::<Vec<_>>();
+            self.update_class_v2_hashes(migrations)?;
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn confirm_staged_block_with_precomputed_root(
+        &self,
+        block_n: u64,
+        precomputed_state_root: Felt,
+        chain_id: Felt,
+        pre_v0_13_2_hash_override: bool,
+    ) -> Result<ConfirmStagedBlockResult> {
+        let staged_header = self
+            .get_staged_block_header(block_n)?
+            .with_context(|| format!("Block #{block_n} is not staged and cannot be confirmed"))?;
+
+        ensure!(
+            staged_header.block_number == block_n,
+            "Staged header block number mismatch (expected #{block_n}, found #{})",
+            staged_header.block_number
+        );
+
+        let transactions = self.get_block_transactions(block_n, 0).collect::<Result<Vec<_>>>()?;
+        let state_diff = self
+            .get_block_state_diff(block_n)?
+            .with_context(|| format!("Missing persisted state diff for staged block #{block_n}"))?;
+        let events = events_from_transactions(&transactions);
+
+        let parent_block_hash = if block_n == 0 {
+            Felt::ZERO
+        } else {
+            self.get_block_info(block_n - 1)?
+                .with_context(|| format!("Parent block #{} not found for staged block #{block_n}", block_n - 1))?
+                .block_hash
+        };
+
+        let commitments = BlockCommitments::compute(
+            &CommitmentComputationContext { protocol_version: staged_header.protocol_version, chain_id },
+            &transactions,
+            &state_diff,
+            &events,
+        );
+        let header =
+            staged_header.into_confirmed_header(parent_block_hash, commitments.clone(), precomputed_state_root);
+        let block_hash = header.compute_hash(chain_id, pre_v0_13_2_hash_override);
+
+        let block_n_u32 = u32::try_from(block_n).context("Converting block_n to u32")?;
+        let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
+        let block_hash_to_block_n_col = self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN);
+        let pending_l1_to_l2_col = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
+        let on_l2_col = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
+
+        let tx_hashes = transactions.iter().map(|tx| *tx.receipt.transaction_hash()).collect::<Vec<_>>();
+        let total_l2_gas_used = transactions.iter().map(|tx| tx.receipt.l2_gas_used()).sum();
+        let block_info = MadaraBlockInfo { header, block_hash, tx_hashes, total_l2_gas_used };
+
+        let mut batch = WriteBatchWithTransaction::default();
+        batch.put_cf(&block_info_col, block_n_u32.to_be_bytes(), super::serialize(&block_info)?);
+        batch.put_cf(
+            &block_hash_to_block_n_col,
+            block_hash.to_bytes_be(),
+            super::serialize_to_smallvec::<[u8; 16]>(&block_n_u32)?,
+        );
+        for tx in &transactions {
+            if let (Some(l1_handler), Some(l1_handler_receipt)) =
+                (tx.transaction.as_l1_handler(), tx.receipt.as_l1_handler())
+            {
+                let nonce_key = l1_handler.nonce.to_be_bytes();
+                batch.delete_cf(&pending_l1_to_l2_col, nonce_key);
+                batch.put_cf(&on_l2_col, nonce_key, l1_handler_receipt.transaction_hash.to_bytes_be());
+            }
+        }
+        self.set_confirmed_chain_tip_and_clear_staged_marker_in_batch(block_n, block_n, &mut batch)?;
+
+        self.db.write_opt(batch, &self.writeopts)?;
+
+        Ok(ConfirmStagedBlockResult { commitments, block_hash, parent_block_hash })
     }
 
     #[tracing::instrument(skip(self, batch))]

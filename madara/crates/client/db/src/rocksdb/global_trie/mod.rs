@@ -88,8 +88,8 @@ mod tests {
         ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate,
         ReplacedClassItem,
     };
-    use serde::Deserialize;
     use rstest::*;
+    use serde::Deserialize;
     use std::collections::HashMap;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -200,11 +200,7 @@ mod tests {
         let mut last_root: Option<Felt> = None;
         for block in fixture.blocks {
             if let Some(prev_root) = last_root {
-                assert_eq!(
-                    block.old_root, prev_root,
-                    "old_root mismatch at block {}",
-                    block.block_number
-                );
+                assert_eq!(block.old_root, prev_root, "old_root mismatch at block {}", block.block_number);
             }
 
             let state_diff: StateDiff = block.state_diff.into();
@@ -280,7 +276,7 @@ mod tests {
                         let block_number = start_block + target_index as u64 + 1;
                         let from = (current_index + 1) as usize;
                         let to = target_index;
-                        let mut batch: Vec<StateDiff> = diffs[from..=to].iter().cloned().collect();
+                        let mut batch: Vec<StateDiff> = diffs[from..=to].to_vec();
                         for diff in &mut batch {
                             diff.sort();
                         }
@@ -334,7 +330,7 @@ mod tests {
     fn chain_config_for_fixture() -> ChainConfig {
         let mut config = ChainConfig::madara_devnet();
         let chain_id = std::env::var("MADARA_POC_CHAIN_ID").unwrap_or_else(|_| "POC_DEVNET".into());
-        config.chain_id = starknet_api::core::ChainId::Other(chain_id.into());
+        config.chain_id = starknet_api::core::ChainId::Other(chain_id);
         config
     }
 
@@ -369,5 +365,4 @@ mod tests {
         }
         Ok(())
     }
-
 }

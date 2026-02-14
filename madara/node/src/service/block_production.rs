@@ -1,6 +1,9 @@
-use crate::cli::block_production::BlockProductionParams;
+use crate::cli::block_production::{BlockProductionParams, ParallelMerkleTrieLogMode as CliParallelMerkleTrieLogMode};
 use anyhow::Context;
-use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask};
+use mc_block_production::{
+    metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask, ParallelMerkleConfig,
+    ParallelMerkleTrieLogMode,
+};
 use mc_db::MadaraBackend;
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_settlement_client::SettlementClient;
@@ -15,6 +18,18 @@ pub struct BlockProductionService {
 }
 
 impl BlockProductionService {
+    fn parallel_merkle_config(config: &BlockProductionParams) -> ParallelMerkleConfig {
+        ParallelMerkleConfig {
+            enabled: config.parallel_merkle_enabled,
+            flush_interval: config.parallel_merkle_flush_interval,
+            max_inflight: config.parallel_merkle_max_inflight,
+            trie_log_mode: match config.parallel_merkle_trie_log_mode {
+                CliParallelMerkleTrieLogMode::Off => ParallelMerkleTrieLogMode::Off,
+                CliParallelMerkleTrieLogMode::Checkpoint => ParallelMerkleTrieLogMode::Checkpoint,
+            },
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: &BlockProductionParams,
@@ -27,7 +42,14 @@ impl BlockProductionService {
 
         Ok(Self {
             backend: backend.clone(),
-            task: Some(BlockProductionTask::new(backend.clone(), mempool, metrics, l1_client, no_charge_fee)),
+            task: Some(BlockProductionTask::new(
+                backend.clone(),
+                mempool,
+                metrics,
+                l1_client,
+                no_charge_fee,
+                Self::parallel_merkle_config(config),
+            )),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
         })
@@ -92,5 +114,43 @@ impl BlockProductionService {
 
     pub fn handle(&self) -> BlockProductionHandle {
         self.task.as_ref().expect("Service started").handle()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn parallel_merkle_config_maps_defaults() {
+        let params = BlockProductionParams::try_parse_from(["madara"]).expect("defaults should parse");
+        let cfg = BlockProductionService::parallel_merkle_config(&params);
+
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.flush_interval, 3);
+        assert_eq!(cfg.max_inflight, 10);
+        assert_eq!(cfg.trie_log_mode, ParallelMerkleTrieLogMode::Off);
+    }
+
+    #[test]
+    fn parallel_merkle_config_maps_overrides() {
+        let params = BlockProductionParams::try_parse_from([
+            "madara",
+            "--parallel-merkle-enabled",
+            "--parallel-merkle-flush-interval",
+            "7",
+            "--parallel-merkle-max-inflight",
+            "21",
+            "--parallel-merkle-trie-log-mode",
+            "checkpoint",
+        ])
+        .expect("overrides should parse");
+        let cfg = BlockProductionService::parallel_merkle_config(&params);
+
+        assert!(cfg.enabled);
+        assert_eq!(cfg.flush_interval, 7);
+        assert_eq!(cfg.max_inflight, 21);
+        assert_eq!(cfg.trie_log_mode, ParallelMerkleTrieLogMode::Checkpoint);
     }
 }

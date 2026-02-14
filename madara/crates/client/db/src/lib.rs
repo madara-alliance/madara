@@ -729,6 +729,64 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(result)
     }
 
+    /// Path A persistence: save block data without writing header/hash mappings or moving the confirmed tip.
+    pub fn write_block_data_without_header(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+    ) -> Result<()> {
+        let block_n = block.header.block_number;
+        if let Some(latest_confirmed) = self.inner.latest_confirmed_block_n() {
+            ensure!(
+                block_n > latest_confirmed,
+                "Cannot stage block #{block_n}: latest confirmed block is #{latest_confirmed}"
+            );
+        }
+        self.inner.db.write_block_data_without_header(block, classes, bouncer_weights)
+    }
+
+    /// Confirmation path for staged data using an externally computed state root.
+    pub fn confirm_staged_block_with_precomputed_root(
+        &self,
+        block_n: u64,
+        precomputed_state_root: Felt,
+        pre_v0_13_2_hash_override: bool,
+    ) -> Result<AddFullBlockResult> {
+        let expected_next = self.inner.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
+        ensure!(
+            block_n == expected_next,
+            "Staged block confirmation must be in-order: expected #{expected_next}, got #{block_n}"
+        );
+
+        let confirmed = self.inner.db.confirm_staged_block_with_precomputed_root(
+            block_n,
+            precomputed_state_root,
+            self.inner.chain_config.chain_id.to_felt(),
+            pre_v0_13_2_hash_override,
+        )?;
+
+        if self
+            .inner
+            .config
+            .flush_every_n_blocks
+            .is_some_and(|flush_every_n_blocks| block_n.checked_rem(flush_every_n_blocks) == Some(0))
+        {
+            tracing::debug!("Flushing.");
+            self.inner.db.flush().context("Periodic database flush")?;
+        }
+
+        self.inner.db.on_new_confirmed_head(block_n)?;
+        self.inner.chain_tip.send_replace(ChainTip::Confirmed(block_n));
+
+        Ok(AddFullBlockResult {
+            new_state_root: precomputed_state_root,
+            commitments: confirmed.commitments,
+            block_hash: confirmed.block_hash,
+            parent_block_hash: confirmed.parent_block_hash,
+        })
+    }
+
     /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
     /// all the block parts. Returns the block hash.
     fn write_new_confirmed_inner(
@@ -917,6 +975,21 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_snap_sync_latest_block(&self) -> Result<Option<u64>> {
         self.db.get_snap_sync_latest_block()
     }
+    pub fn get_staged_block_header(&self, block_n: u64) -> Result<Option<mp_block::header::PreconfirmedHeader>> {
+        self.db.get_staged_block_header(block_n)
+    }
+    pub fn get_max_persisted_block_data(&self) -> Result<Option<u64>> {
+        let max_staged = self.db.get_max_staged_block_n()?;
+        Ok(match (self.latest_confirmed_block_n(), max_staged) {
+            (Some(confirmed), Some(staged)) => Some(confirmed.max(staged)),
+            (Some(confirmed), None) => Some(confirmed),
+            (None, Some(staged)) => Some(staged),
+            (None, None) => None,
+        })
+    }
+    pub fn get_parallel_merkle_checkpoint(&self) -> Result<Option<u64>> {
+        self.db.get_parallel_merkle_checkpoint()
+    }
 }
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
@@ -943,6 +1016,9 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_latest_applied_trie_update(block_n)
+    }
+    pub fn write_parallel_merkle_checkpoint(&self, block_n: &Option<u64>) -> Result<()> {
+        self.db.write_parallel_merkle_checkpoint(block_n)
     }
     pub fn write_snap_sync_latest_block(&self, block_n: &Option<u64>) -> Result<()> {
         self.db.write_snap_sync_latest_block(block_n)

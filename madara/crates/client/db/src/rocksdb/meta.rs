@@ -16,9 +16,32 @@ const META_LAST_SYNCED_L1_EVENT_BLOCK_KEY: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK"
 const META_CONFIRMED_ON_L1_TIP_KEY: &[u8] = b"CONFIRMED_ON_L1_TIP";
 const META_CHAIN_TIP_KEY: &[u8] = b"CHAIN_TIP";
 const META_CHAIN_INFO_KEY: &[u8] = b"CHAIN_INFO";
+const META_STAGED_BLOCK_KEY_PREFIX: &[u8] = b"STAGED_BLOCK:";
 const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
+const META_PARALLEL_MERKLE_CHECKPOINT_KEY: &[u8] = b"PARALLEL_MERKLE_CHECKPOINT";
 const META_RUNTIME_EXEC_CONFIG_KEY: &[u8] = b"RUNTIME_EXEC_CONFIG";
 const META_SNAP_SYNC_LATEST_BLOCK: &[u8] = b"SNAP_SYNC_LATEST_BLOCK";
+const META_STAGED_BLOCK_KEY_LEN: usize = 8 + 13;
+
+fn staged_block_meta_key(block_n: u64) -> [u8; META_STAGED_BLOCK_KEY_LEN] {
+    let mut key = [0u8; META_STAGED_BLOCK_KEY_LEN];
+    key[..META_STAGED_BLOCK_KEY_PREFIX.len()].copy_from_slice(META_STAGED_BLOCK_KEY_PREFIX);
+    key[META_STAGED_BLOCK_KEY_PREFIX.len()..].copy_from_slice(&block_n.to_be_bytes());
+    key
+}
+
+fn parse_staged_block_meta_key(key: &[u8]) -> Result<Option<u64>> {
+    if !key.starts_with(META_STAGED_BLOCK_KEY_PREFIX) {
+        return Ok(None);
+    }
+    let block_n = key
+        .get(META_STAGED_BLOCK_KEY_PREFIX.len()..)
+        .context("Malformed staged block marker key")?
+        .try_into()
+        .map(u64::from_be_bytes)
+        .context("Malformed staged block marker key block number")?;
+    Ok(Some(block_n))
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub enum StoredChainTipWithoutContent {
@@ -27,6 +50,94 @@ pub enum StoredChainTipWithoutContent {
 }
 
 impl RocksDBStorageInner {
+    pub(super) fn put_staged_block_header_in_batch(
+        &self,
+        block_n: u64,
+        header: &PreconfirmedHeader,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let meta_col = self.get_column(META_COLUMN);
+        batch.put_cf(&meta_col, staged_block_meta_key(block_n), super::serialize_to_smallvec::<[u8; 128]>(header)?);
+        Ok(())
+    }
+
+    pub(super) fn delete_staged_block_header_in_batch(
+        &self,
+        block_n: u64,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        batch.delete_cf(&self.get_column(META_COLUMN), staged_block_meta_key(block_n));
+        Ok(())
+    }
+
+    pub(super) fn get_staged_block_header(&self, block_n: u64) -> Result<Option<PreconfirmedHeader>> {
+        let Some(bytes) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), staged_block_meta_key(block_n))? else {
+            return Ok(None);
+        };
+        Ok(Some(super::deserialize(&bytes)?))
+    }
+
+    pub(super) fn get_max_staged_block_n(&self) -> Result<Option<u64>> {
+        let iter =
+            DBIterator::new_cf(&self.db, &self.get_column(META_COLUMN), ReadOptions::default(), IteratorMode::End)
+                .into_iter_items(|(k, _)| parse_staged_block_meta_key(k));
+
+        for key in iter {
+            if let Some(block_n) = key?? {
+                return Ok(Some(block_n));
+            }
+        }
+        Ok(None)
+    }
+
+    pub(super) fn set_confirmed_chain_tip_and_clear_staged_marker_in_batch(
+        &self,
+        confirmed_block_n: u64,
+        staged_block_n: u64,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let preconfirmed_col = self.get_column(PRECONFIRMED_COLUMN);
+        let meta_col = self.get_column(META_COLUMN);
+
+        batch.delete_range_cf(&preconfirmed_col, 0u16.to_be_bytes(), u16::MAX.to_be_bytes());
+        batch.put_cf(
+            &meta_col,
+            META_CHAIN_TIP_KEY,
+            super::serialize_to_smallvec::<[u8; 128]>(&StoredChainTipWithoutContent::Confirmed(confirmed_block_n))?,
+        );
+        self.delete_staged_block_header_in_batch(staged_block_n, batch)?;
+
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn get_parallel_merkle_checkpoint(&self) -> Result<Option<u64>> {
+        let Some(bytes) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_PARALLEL_MERKLE_CHECKPOINT_KEY)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(super::deserialize(&bytes)?))
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn write_parallel_merkle_checkpoint(&self, block_n: &Option<u64>) -> Result<()> {
+        if let Some(block_n) = block_n {
+            self.db.put_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_PARALLEL_MERKLE_CHECKPOINT_KEY,
+                super::serialize_to_smallvec::<[u8; 128]>(block_n)?,
+                &self.writeopts,
+            )?;
+        } else {
+            self.db.delete_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_PARALLEL_MERKLE_CHECKPOINT_KEY,
+                &self.writeopts,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Set the latest l1_block synced for the messaging worker.
     #[tracing::instrument(skip(self))]
     pub(super) fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {

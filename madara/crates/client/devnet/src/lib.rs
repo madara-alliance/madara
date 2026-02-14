@@ -409,6 +409,7 @@ mod tests {
             Arc::new(metrics),
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
             true,
+            mc_block_production::ParallelMerkleConfig::default(),
         );
 
         let tx_validator = Arc::new(TransactionValidator::new(
