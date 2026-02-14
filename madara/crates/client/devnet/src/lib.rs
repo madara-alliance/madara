@@ -261,7 +261,7 @@ mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use mc_block_production::metrics::BlockProductionMetrics;
-    use mc_block_production::{BlockProductionStateNotification, BlockProductionTask};
+    use mc_block_production::{BlockProductionStateNotification, BlockProductionTask, ParallelMerkleConfig};
     use mc_db::MadaraBackend;
     use mc_mempool::{Mempool, MempoolConfig};
     use mc_submit_tx::{
@@ -409,6 +409,7 @@ mod tests {
             Arc::new(metrics),
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
             true,
+            ParallelMerkleConfig::default(),
         );
 
         let tx_validator = Arc::new(TransactionValidator::new(
