@@ -11,8 +11,13 @@ use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;
 
-/// Expected DB version from build - update when version changes
-const EXPECTED_DB_VERSION: u32 = 10;
+/// Expected DB version from build.
+///
+/// This is injected from `.db-versions.yml` by `build.rs`, so this test suite stays aligned
+/// when the DB schema version changes.
+fn expected_db_version() -> u32 {
+    env!("DB_VERSION").parse().expect("DB_VERSION must be a valid u32 (checked at build time)")
+}
 
 fn setup_test_env() -> (TempDir, Arc<ChainConfig>, Arc<NativeConfig>) {
     let temp_dir = TempDir::new().unwrap();
@@ -42,9 +47,10 @@ async fn test_fresh_database_creates_version_file() {
     let version_file = temp_dir.path().join(DB_VERSION_FILE);
     assert!(version_file.exists(), "Version file should be created");
 
-    let runner = MigrationRunner::new(temp_dir.path(), EXPECTED_DB_VERSION, EXPECTED_DB_VERSION);
+    let expected_db_version = expected_db_version();
+    let runner = MigrationRunner::new(temp_dir.path(), expected_db_version, expected_db_version);
     let version = runner.read_version_file().unwrap();
-    assert_eq!(version, EXPECTED_DB_VERSION, "Version should match EXPECTED_DB_VERSION");
+    assert_eq!(version, expected_db_version, "Version should match EXPECTED_DB_VERSION");
 
     drop(backend);
 }
@@ -66,7 +72,8 @@ async fn test_full_database_lifecycle() {
         assert_eq!(backend.chain_config().chain_id, chain_config.chain_id);
     }
 
-    let runner = MigrationRunner::new(temp_dir.path(), EXPECTED_DB_VERSION, EXPECTED_DB_VERSION);
+    let expected_db_version = expected_db_version();
+    let runner = MigrationRunner::new(temp_dir.path(), expected_db_version, expected_db_version);
     let version1 = runner.read_version_file().unwrap();
 
     // 2. Reopen - no migration needed
@@ -85,7 +92,7 @@ async fn test_full_database_lifecycle() {
     // 3. Version unchanged
     let version2 = runner.read_version_file().unwrap();
     assert_eq!(version1, version2, "Version should not change on reopens");
-    assert_eq!(version1, EXPECTED_DB_VERSION);
+    assert_eq!(version1, expected_db_version);
 }
 
 #[tokio::test]
@@ -103,7 +110,8 @@ async fn test_same_version_opens_without_migration() {
         .unwrap();
     }
 
-    let runner = MigrationRunner::new(temp_dir.path(), EXPECTED_DB_VERSION, EXPECTED_DB_VERSION);
+    let expected_db_version = expected_db_version();
+    let runner = MigrationRunner::new(temp_dir.path(), expected_db_version, expected_db_version);
     assert!(matches!(runner.check_status().unwrap(), MigrationStatus::NoMigrationNeeded));
 }
 
@@ -143,7 +151,8 @@ fn test_version_file_parsing(#[case] content: &str, #[case] should_fail: bool) {
     let temp_dir = TempDir::new().unwrap();
     fs::write(temp_dir.path().join(DB_VERSION_FILE), content).unwrap();
 
-    let runner = MigrationRunner::new(temp_dir.path(), EXPECTED_DB_VERSION, EXPECTED_DB_VERSION);
+    let expected_db_version = expected_db_version();
+    let runner = MigrationRunner::new(temp_dir.path(), expected_db_version, expected_db_version);
     let result = runner.read_version_file();
 
     if should_fail {
