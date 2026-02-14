@@ -1,4 +1,5 @@
 use crate::executor::{self, ExecutorCommand, ExecutorCommandError};
+use crate::{ParallelMerkleConfig, ParallelMerkleTrieLogMode};
 use async_trait::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{
@@ -40,6 +41,8 @@ pub struct BlockProductionHandle {
     bypass_input: mpsc::Sender<ValidatedTransaction>,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
+    parallel_merkle_enabled: bool,
+    parallel_merkle_trie_log_mode: ParallelMerkleTrieLogMode,
 }
 
 impl BlockProductionHandle {
@@ -48,6 +51,7 @@ impl BlockProductionHandle {
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
         no_charge_fee: bool,
+        parallel_merkle: ParallelMerkleConfig,
     ) -> Self {
         Self {
             executor_commands,
@@ -58,6 +62,8 @@ impl BlockProductionHandle {
                 TransactionValidatorConfig { disable_validation: true, disable_fee: no_charge_fee },
             )
             .into(),
+            parallel_merkle_enabled: parallel_merkle.enabled,
+            parallel_merkle_trie_log_mode: parallel_merkle.trie_log_mode,
         }
     }
 
@@ -73,6 +79,14 @@ impl BlockProductionHandle {
     /// Send a transaction through the bypass channel to bypass mempool and validation.
     pub async fn send_tx_raw(&self, tx: ValidatedTransaction) -> Result<(), ExecutorCommandError> {
         self.bypass_input.send(tx).await.map_err(|_| ExecutorCommandError::ChannelClosed)
+    }
+
+    pub fn is_parallel_merkle_enabled(&self) -> bool {
+        self.parallel_merkle_enabled
+    }
+
+    pub fn parallel_merkle_trie_log_mode(&self) -> ParallelMerkleTrieLogMode {
+        self.parallel_merkle_trie_log_mode
     }
 }
 

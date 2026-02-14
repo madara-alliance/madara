@@ -1029,6 +1029,12 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner.class_db_revert(&state_diffs).context("Reverting class database")?;
         tracing::info!("✅ REORG: Class database reverted successfully");
 
+        tracing::info!("🧾 REORG: Pruning parallel merkle metadata to block_n={}", target_block_n);
+        self.inner
+            .parallel_merkle_reorg_metadata_to(target_block_n)
+            .context("Pruning parallel merkle metadata after reorg")?;
+        tracing::info!("✅ REORG: Parallel merkle metadata pruned successfully");
+
         tracing::info!("🔗 REORG: Updating chain tip to block_n={}", target_block_n);
         let new_tip = StorageChainTip::Confirmed(target_block_n);
         self.replace_chain_tip(&new_tip).context("Updating chain tip after reorg")?;

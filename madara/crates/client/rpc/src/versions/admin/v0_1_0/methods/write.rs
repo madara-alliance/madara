@@ -1,6 +1,7 @@
 use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
+use mc_block_production::ParallelMerkleTrieLogMode;
 use mc_db::MadaraStorageRead;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
@@ -11,6 +12,8 @@ use mp_rpc::v0_9_0::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_utils::service::MadaraServiceId;
+use std::time::Duration;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -126,7 +129,35 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             }
         }
 
-        self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
+        let mut restart_block_production = false;
+        if let Some(block_prod_handle) = self.block_prod_handle.as_ref() {
+            if block_prod_handle.is_parallel_merkle_enabled() {
+                if block_prod_handle.parallel_merkle_trie_log_mode() == ParallelMerkleTrieLogMode::Off {
+                    return Err(StarknetRpcApiError::ErrUnexpectedError {
+                        error: "Parallel merkle revert requires --parallel-merkle-trie-log-mode=checkpoint. Current mode is off."
+                            .to_string()
+                            .into(),
+                    }
+                    .into());
+                }
+
+                restart_block_production = self.ctx.service_status(MadaraServiceId::BlockProduction).is_on();
+                if restart_block_production {
+                    tracing::info!("⏸️ Quiescing block production before parallel revert");
+                    self.ctx.service_remove(MadaraServiceId::BlockProduction);
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+            }
+        }
+
+        let revert_result = self.backend.revert_to(&block_hash);
+
+        if restart_block_production {
+            tracing::info!("▶️ Resuming block production after parallel revert");
+            self.ctx.service_add(MadaraServiceId::BlockProduction);
+        }
+
+        revert_result.map_err(StarknetRpcApiError::from)?;
         let fresh_chain_tip = self
             .backend
             .db

@@ -186,6 +186,86 @@ impl RocksDBStorageInner {
         Ok(Some(super::deserialize(&res)?))
     }
 
+    fn latest_meta_block_n_at_or_before(&self, prefix: &[u8], target_block_n: u64) -> Result<Option<u64>> {
+        let meta_col = self.get_column(META_COLUMN);
+        let mut options = ReadOptions::default();
+        options.set_prefix_same_as_start(false);
+        let mut latest = None;
+
+        for item in
+            DBIterator::new_cf(&self.db, &meta_col, options, IteratorMode::From(prefix, rocksdb::Direction::Forward))
+                .into_iter_items(|(key, _value)| key.to_vec())
+        {
+            let key = item?;
+            if !key.starts_with(prefix) {
+                break;
+            }
+            let Some(block_n) = parse_meta_block_n_key(prefix, key.as_slice()) else {
+                continue;
+            };
+            if block_n > target_block_n {
+                break;
+            }
+            latest = Some(block_n);
+        }
+
+        Ok(latest)
+    }
+
+    fn delete_meta_entries_above(
+        &self,
+        prefix: &[u8],
+        target_block_n: u64,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let meta_col = self.get_column(META_COLUMN);
+        let mut options = ReadOptions::default();
+        options.set_prefix_same_as_start(false);
+
+        for item in
+            DBIterator::new_cf(&self.db, &meta_col, options, IteratorMode::From(prefix, rocksdb::Direction::Forward))
+                .into_iter_items(|(key, _value)| key.to_vec())
+        {
+            let key = item?;
+            if !key.starts_with(prefix) {
+                break;
+            }
+
+            if let Some(block_n) = parse_meta_block_n_key(prefix, key.as_slice()) {
+                if block_n > target_block_n {
+                    batch.delete_cf(&meta_col, key);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// On chain reorg, remove stale staged/checkpoint metadata above target and clamp latest checkpoint.
+    pub(super) fn parallel_merkle_reorg_metadata_to(&self, target_block_n: u64) -> Result<()> {
+        let mut batch = WriteBatchWithTransaction::default();
+        let meta_col = self.get_column(META_COLUMN);
+
+        self.delete_meta_entries_above(META_PARALLEL_MERKLE_STAGED_MARKER_PREFIX, target_block_n, &mut batch)?;
+        self.delete_meta_entries_above(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, target_block_n, &mut batch)?;
+        self.delete_meta_entries_above(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n, &mut batch)?;
+
+        if let Some(latest_checkpoint) =
+            self.latest_meta_block_n_at_or_before(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n)?
+        {
+            batch.put_cf(
+                &meta_col,
+                META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY,
+                super::serialize_to_smallvec::<[u8; 16]>(&latest_checkpoint)?,
+            );
+        } else {
+            batch.delete_cf(&meta_col, META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY);
+        }
+
+        self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
+    }
+
     /// Set the latest l1_block synced for the messaging worker.
     #[tracing::instrument(skip(self))]
     pub(super) fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
@@ -462,5 +542,55 @@ impl RocksDBStorageInner {
             self.db.delete_cf_opt(&self.get_column(META_COLUMN), META_SNAP_SYNC_LATEST_BLOCK, &self.writeopts)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rocksdb::{RocksDBConfig, RocksDBStorage};
+    use mp_block::header::PreconfirmedHeader;
+
+    fn create_test_storage() -> (tempfile::TempDir, RocksDBStorage) {
+        let temp_dir = tempfile::TempDir::with_prefix("meta-test").unwrap();
+        let storage = RocksDBStorage::open(temp_dir.path(), RocksDBConfig::default()).unwrap();
+        (temp_dir, storage)
+    }
+
+    fn mark_staged_block(storage: &RocksDBStorage, block_n: u64) {
+        let mut batch = WriteBatchWithTransaction::default();
+        let header = PreconfirmedHeader { block_number: block_n, ..Default::default() };
+        storage.inner.parallel_merkle_mark_staged_block(block_n, &header, &mut batch).unwrap();
+        storage.inner.db.write_opt(batch, &storage.inner.writeopts).unwrap();
+    }
+
+    #[test]
+    fn parallel_merkle_reorg_metadata_prunes_entries_above_target() {
+        let (_tmp, storage) = create_test_storage();
+
+        storage.inner.write_parallel_merkle_checkpoint(5).unwrap();
+        storage.inner.write_parallel_merkle_checkpoint(8).unwrap();
+        mark_staged_block(&storage, 9);
+
+        storage.inner.parallel_merkle_reorg_metadata_to(6).unwrap();
+
+        assert!(storage.inner.has_parallel_merkle_checkpoint(5).unwrap());
+        assert!(!storage.inner.has_parallel_merkle_checkpoint(8).unwrap());
+        assert_eq!(storage.inner.get_parallel_merkle_latest_checkpoint().unwrap(), Some(5));
+        assert!(!storage.inner.has_parallel_merkle_staged_block(9).unwrap());
+    }
+
+    #[test]
+    fn parallel_merkle_reorg_metadata_clears_latest_checkpoint_when_no_checkpoint_remains() {
+        let (_tmp, storage) = create_test_storage();
+
+        storage.inner.write_parallel_merkle_checkpoint(7).unwrap();
+        storage.inner.write_parallel_merkle_checkpoint(9).unwrap();
+
+        storage.inner.parallel_merkle_reorg_metadata_to(3).unwrap();
+
+        assert_eq!(storage.inner.get_parallel_merkle_latest_checkpoint().unwrap(), None);
+        assert!(!storage.inner.has_parallel_merkle_checkpoint(7).unwrap());
+        assert!(!storage.inner.has_parallel_merkle_checkpoint(9).unwrap());
     }
 }

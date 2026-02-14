@@ -1,8 +1,8 @@
 use crate::util::ExecutionStats;
-use crate::{ParallelMerkleConfig, ParallelMerkleTrieLogMode};
-use anyhow::Context;
+use crate::{remove_consumed_core_contract_nonces, ParallelMerkleConfig, ParallelMerkleTrieLogMode};
+use anyhow::{ensure, Context};
 use blockifier::bouncer::BouncerWeights;
-use mc_db::{BonsaiOverlay, MadaraBackend, ParallelMerkleInMemoryTrieLogMode};
+use mc_db::{BonsaiOverlay, MadaraBackend, MadaraStorageRead, ParallelMerkleInMemoryTrieLogMode};
 use mp_block::FullBlockWithoutCommitments;
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
@@ -137,6 +137,8 @@ pub fn spawn_parallel_merkle_finalizer(
         scheduled_blocks: BTreeSet::new(),
         failed_blocks: BTreeMap::new(),
     };
+    worker.initialize_recovery_state().context("recovering parallel merkle finalizer state on startup")?;
+
     tokio::spawn(async move {
         if let Err(error) = worker.run(receiver).await {
             tracing::error!(
@@ -179,6 +181,132 @@ struct ParallelMerkleFinalizerWorker {
 }
 
 impl ParallelMerkleFinalizerWorker {
+    fn initialize_recovery_state(&mut self) -> anyhow::Result<()> {
+        let latest_confirmed = self.backend.latest_confirmed_block_n();
+        let latest_checkpoint = self
+            .backend
+            .get_parallel_merkle_latest_checkpoint()
+            .context("reading latest parallel merkle checkpoint during startup recovery")?;
+
+        self.snapshot_base_block_n = latest_checkpoint.or(latest_confirmed).unwrap_or(0);
+        self.next_confirm = latest_confirmed.map(|n| n + 1).unwrap_or(0);
+
+        if let Some(tip) = latest_confirmed {
+            if self.snapshot_base_block_n > tip {
+                tracing::warn!(
+                    checkpoint = self.snapshot_base_block_n,
+                    tip,
+                    "parallel merkle checkpoint ahead of confirmed tip, clamping to confirmed tip"
+                );
+                self.snapshot_base_block_n = tip;
+            }
+        }
+
+        self.preload_confirmed_epoch_diffs(latest_confirmed)?;
+        self.recover_staged_blocks()?;
+        Ok(())
+    }
+
+    fn preload_confirmed_epoch_diffs(&mut self, latest_confirmed: Option<u64>) -> anyhow::Result<()> {
+        let Some(latest_confirmed) = latest_confirmed else {
+            return Ok(());
+        };
+
+        let start = self.snapshot_base_block_n.saturating_add(1);
+        if start > latest_confirmed {
+            return Ok(());
+        }
+
+        for block_n in start..=latest_confirmed {
+            let state_diff = self
+                .backend
+                .db
+                .get_block_state_diff(block_n)?
+                .with_context(|| format!("missing confirmed state diff for block #{block_n}"))?;
+            self.pending_epoch_diffs.insert(block_n, state_diff);
+        }
+        Ok(())
+    }
+
+    fn recover_staged_blocks(&mut self) -> anyhow::Result<()> {
+        let mut staged_blocks =
+            self.backend.get_parallel_merkle_staged_blocks().context("listing staged blocks for startup recovery")?;
+        staged_blocks.sort_unstable();
+
+        if staged_blocks.is_empty() {
+            return Ok(());
+        }
+
+        tracing::info!(
+            next_confirm = self.next_confirm,
+            snapshot_base = self.snapshot_base_block_n,
+            count = staged_blocks.len(),
+            "parallel merkle startup recovery detected staged blocks"
+        );
+
+        for block_n in staged_blocks {
+            ensure!(
+                block_n == self.next_confirm,
+                "staged blocks must be contiguous from next confirm. expected #{}, got #{block_n}",
+                self.next_confirm
+            );
+
+            self.recover_staged_block(block_n)?;
+            self.next_confirm += 1;
+        }
+
+        Ok(())
+    }
+
+    fn recover_staged_block(&mut self, block_n: u64) -> anyhow::Result<()> {
+        let state_diff = self
+            .backend
+            .db
+            .get_block_state_diff(block_n)?
+            .with_context(|| format!("missing staged state diff for block #{block_n}"))?;
+        self.pending_epoch_diffs.insert(block_n, state_diff);
+
+        let cumulative_start = Self::cumulative_range_start(self.snapshot_base_block_n, self.next_confirm);
+        let cumulative_state_diff = mc_db::rocksdb::global_trie::in_memory::squash_state_diffs(
+            self.pending_epoch_diffs.range(cumulative_start..=block_n).map(|(_, diff)| diff),
+        );
+        let is_boundary = Self::is_boundary_for(self.flush_interval, block_n);
+
+        let root_result = self.backend.write_access().compute_parallel_merkle_root_from_snapshot_base(
+            self.snapshot_base_block_n,
+            block_n,
+            &cumulative_state_diff,
+            is_boundary,
+            self.trie_log_mode,
+        )?;
+
+        self.backend
+            .write_access()
+            .confirm_parallel_merkle_staged_block_with_root(
+                block_n,
+                root_result.state_root,
+                /* pre_v0_13_2_hash_override */ true,
+            )
+            .with_context(|| format!("confirming staged block #{} during startup recovery", block_n))?;
+
+        if is_boundary {
+            let overlay = root_result
+                .overlay
+                .as_ref()
+                .with_context(|| format!("missing boundary overlay for recovered block #{block_n}"))?;
+            self.backend
+                .write_access()
+                .flush_parallel_merkle_overlay_and_checkpoint(block_n, overlay, self.trie_log_mode)
+                .with_context(|| format!("flushing checkpoint for recovered boundary block #{}", block_n))?;
+
+            self.snapshot_base_block_n = block_n;
+            self.pending_epoch_diffs = self.pending_epoch_diffs.split_off(&(block_n + 1));
+        }
+
+        tracing::info!(block_n, is_boundary, "recovered staged block");
+        Ok(())
+    }
+
     /// Main worker loop that coordinates ingestion, lane completion, and ordered confirmation.
     ///
     /// Flow:
@@ -265,6 +393,10 @@ impl ParallelMerkleFinalizerWorker {
     /// A duplicate `block_n` is rejected and recorded as a scheduler failure.
     fn schedule_block(&mut self, payload: FinalizedBlockPayload) {
         let block_n = payload.block_n;
+        if block_n < self.next_confirm {
+            tracing::warn!(block_n, next_confirm = self.next_confirm, "dropping already-confirmed payload");
+            return;
+        }
         if !self.scheduled_blocks.insert(block_n) {
             self.record_block_failure(
                 block_n,
@@ -274,7 +406,6 @@ impl ParallelMerkleFinalizerWorker {
             return;
         }
         self.close_block_logs.insert(block_n, BlockCloseLogContext::from_payload(&payload));
-
         let is_boundary = Self::is_boundary_for(self.flush_interval, block_n);
 
         self.pending_epoch_diffs.insert(block_n, payload.state_diff.clone());
@@ -504,7 +635,31 @@ impl ParallelMerkleFinalizerWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mc_db::MadaraBackend;
+    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
+    use mp_chain_config::ChainConfig;
+    use mp_receipt::{Event, EventWithTransactionHash, InvokeTransactionReceipt};
+    use mp_state_update::StateDiff;
+    use mp_transactions::InvokeTransactionV0;
     use rstest::rstest;
+
+    fn make_staged_block(block_n: u64, tx_hash: Felt) -> FullBlockWithoutCommitments {
+        let header = PreconfirmedHeader { block_number: block_n, ..Default::default() };
+        let tx = TransactionWithReceipt {
+            transaction: InvokeTransactionV0::default().into(),
+            receipt: InvokeTransactionReceipt { transaction_hash: tx_hash, ..Default::default() }.into(),
+        };
+        let events = vec![EventWithTransactionHash {
+            transaction_hash: tx_hash,
+            event: Event {
+                from_address: Felt::from(123_u64),
+                keys: vec![Felt::from(1_u64)],
+                data: vec![Felt::from(2_u64)],
+            },
+        }];
+
+        FullBlockWithoutCommitments { header, state_diff: StateDiff::default(), transactions: vec![tx], events }
+    }
 
     #[rstest]
     #[case(3, 0, false)]
@@ -549,6 +704,55 @@ mod tests {
 
         roots_ready.insert(5, root_ready);
         assert!(ParallelMerkleFinalizerWorker::is_confirm_ready(5, &persisted_ready, &roots_ready));
+    }
+
+    #[tokio::test]
+    async fn startup_recovery_confirms_staged_blocks_in_order() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let block_0 = make_staged_block(0, Felt::from_hex_unchecked("0xabc"));
+        let block_1 = make_staged_block(1, Felt::from_hex_unchecked("0xabd"));
+
+        backend.write_access().write_parallel_merkle_staged_block_data(&block_0, &[], None).unwrap();
+        backend.write_access().write_parallel_merkle_staged_block_data(&block_1, &[], None).unwrap();
+        assert_eq!(backend.latest_confirmed_block_n(), None);
+
+        let _handle = spawn_parallel_merkle_finalizer(
+            backend.clone(),
+            ParallelMerkleConfig {
+                enabled: true,
+                flush_interval: 3,
+                max_inflight: 8,
+                trie_log_mode: ParallelMerkleTrieLogMode::Checkpoint,
+            },
+        )
+        .expect("finalizer startup recovery should succeed");
+
+        assert_eq!(backend.latest_confirmed_block_n(), Some(1));
+        assert!(!backend.has_parallel_merkle_staged_block(0).unwrap());
+        assert!(!backend.has_parallel_merkle_staged_block(1).unwrap());
+    }
+
+    #[tokio::test]
+    async fn startup_recovery_rejects_non_contiguous_staged_blocks() {
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let block_1 = make_staged_block(1, Felt::from_hex_unchecked("0xabc"));
+
+        backend.write_access().write_parallel_merkle_staged_block_data(&block_1, &[], None).unwrap();
+
+        let err = spawn_parallel_merkle_finalizer(
+            backend,
+            ParallelMerkleConfig {
+                enabled: true,
+                flush_interval: 3,
+                max_inflight: 8,
+                trie_log_mode: ParallelMerkleTrieLogMode::Checkpoint,
+            },
+        )
+        .err()
+        .expect("non-contiguous staged blocks should fail startup recovery");
+
+        let err_text = format!("{err:#}");
+        assert!(err_text.contains("expected #0, got #1"), "unexpected startup recovery error: {err_text}");
     }
 
     #[rstest]
