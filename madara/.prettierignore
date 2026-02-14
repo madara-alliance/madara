@@ -1,0 +1,15 @@
+../.git
+../AI_docs
+../tmp
+../build-artifacts
+../dashboards
+../docs
+../observability
+../infra/Signoz
+../bootstrapper-v2/contracts/ethereum/lib
+../bootstrapper-v2/contracts/ethereum/out
+../bootstrapper-v2/contracts/madara/target
+target
+docs
+crates/resources/*
+crates/primitives/class/resources/*

@@ -1,5 +1,15 @@
+#![allow(
+    clippy::iter_cloned_collect,
+    clippy::print_stderr,
+    clippy::print_stdout,
+    clippy::redundant_locals,
+    clippy::too_many_arguments,
+    clippy::type_complexity
+)]
+
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, ValueEnum};
+use futures::{stream, StreamExt, TryStreamExt};
 use mc_class_exec::config::NativeConfig;
 use mc_class_exec::init_compilation_semaphore;
 use mc_db::{
@@ -8,8 +18,8 @@ use mc_db::{
 };
 use mp_chain_config::ChainConfig;
 use mp_state_update::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate, ReplacedClassItem,
-    StateDiff, StorageEntry,
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate,
+    ReplacedClassItem, StateDiff, StorageEntry,
 };
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
@@ -19,7 +29,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use futures::{stream, StreamExt, TryStreamExt};
 
 #[derive(Clone, Debug, Serialize, Deserialize, ValueEnum)]
 enum Mode {
@@ -227,10 +236,8 @@ fn main() -> Result<()> {
     let load_start = Instant::now();
     let (state_diffs, diff_meta, fixture_start_block, source) = load_state_diffs(&cli)?;
     let diff_load_ms = load_start.elapsed().as_millis();
-    let start_block = cli
-        .start_block
-        .or(fixture_start_block)
-        .unwrap_or_else(|| infer_start_block_from_db(&cli).unwrap_or(0));
+    let start_block =
+        cli.start_block.or(fixture_start_block).unwrap_or_else(|| infer_start_block_from_db(&cli).unwrap_or(0));
 
     let base_backend = open_backend(&cli.db_path, &cli.chain_id)?;
     let latest_confirmed = base_backend.latest_confirmed_block_n().unwrap_or(0);
@@ -251,7 +258,7 @@ fn main() -> Result<()> {
     if matches!(cli.mode, Mode::Sequential | Mode::Both) {
         let seq_dir = cli.work_dir.join("seq");
         let seq_copy = make_copy(&cli.db_path, &seq_dir, cli.copy_strategy.clone())?;
-    let seq_backend = open_backend(&seq_copy.path, &cli.chain_id)?;
+        let seq_backend = open_backend(&seq_copy.path, &cli.chain_id)?;
         let (per_block, total) =
             run_sequential(seq_backend, start_block, &diffs, cli.debug_block, cli.debug_output_dir.as_deref())?;
         sequential = Some(RunResult {
@@ -285,10 +292,7 @@ fn main() -> Result<()> {
         parallel = Some(RunResult {
             total_ms: total.as_millis(),
             per_block,
-            copy_times_ms: copy_infos
-                .into_iter()
-                .map(|c| CopyTime { copy_id: c.name, ms: c.copy_ms })
-                .collect(),
+            copy_times_ms: copy_infos.into_iter().map(|c| CopyTime { copy_id: c.name, ms: c.copy_ms }).collect(),
         });
     }
 
@@ -338,10 +342,7 @@ struct CopyInfo {
 fn ensure_work_dir(dir: &Path, overwrite: bool) -> Result<()> {
     if dir.exists() {
         if !overwrite {
-            return Err(anyhow!(
-                "work dir {} already exists; pass --overwrite-work-dir to replace",
-                dir.display()
-            ));
+            return Err(anyhow!("work dir {} already exists; pass --overwrite-work-dir to replace", dir.display()));
         }
         fs::remove_dir_all(dir).context("removing existing work dir")?;
     }
@@ -357,10 +358,7 @@ fn make_copy(base: &Path, dest: &Path, _strategy: CopyStrategy) -> Result<CopyIn
     let start = Instant::now();
     copy_dir_recursive(base, dest)?;
     Ok(CopyInfo {
-        name: dest
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "copy".into()),
+        name: dest.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "copy".into()),
         path: dest.to_path_buf(),
         copy_ms: start.elapsed().as_millis(),
     })
@@ -428,7 +426,9 @@ fn load_state_diffs(cli: &Cli) -> Result<(Vec<StateDiff>, Vec<OutputDiffBlock>, 
     }
 
     let backend = open_backend(&cli.db_path, &cli.chain_id)?;
-    let start_block = cli.start_block.unwrap_or_else(|| backend.latest_confirmed_block_n().unwrap_or(0).saturating_sub(cli.block_count));
+    let start_block = cli
+        .start_block
+        .unwrap_or_else(|| backend.latest_confirmed_block_n().unwrap_or(0).saturating_sub(cli.block_count));
     let mut diffs = Vec::with_capacity(cli.block_count as usize);
     let mut output = Vec::with_capacity(cli.block_count as usize);
 
@@ -478,13 +478,7 @@ fn run_sequential(
                 .with_context(|| format!("apply_to_global_trie block {}", block_number))?;
             let (contract_root, class_root) = read_trie_roots(&backend.db)?;
             if debug_block == Some(block_number) {
-                dump_contract_leaf_debug(
-                    &backend,
-                    block_number,
-                    &diff,
-                    debug_output_dir,
-                    "seq",
-                )?;
+                dump_contract_leaf_debug(&backend, block_number, &diff, debug_output_dir, "seq")?;
             }
             results.push(BlockResult {
                 block_number,
@@ -595,20 +589,17 @@ fn run_parallel(
                             }
                             let mut raw = map.to_raw_state_diff();
                             raw.sort();
-                            let pre_range_block = if squash_pre_range {
-                                Some(start_block + from as u64)
-                            } else {
-                                None
-                            };
+                            let pre_range_block = if squash_pre_range { Some(start_block + from as u64) } else { None };
 
                             let squash_start = Instant::now();
-                            let compressed = match runtime.block_on(compress_state_diff(raw, pre_range_block, backend.clone())) {
-                                Ok(c) => c,
-                                Err(err) => {
-                                    eprintln!("compress_state_diff failed for block {}: {err:#}", block_number);
-                                    return;
-                                }
-                            };
+                            let compressed =
+                                match runtime.block_on(compress_state_diff(raw, pre_range_block, backend.clone())) {
+                                    Ok(c) => c,
+                                    Err(err) => {
+                                        eprintln!("compress_state_diff failed for block {}: {err:#}", block_number);
+                                        return;
+                                    }
+                                };
                             let squash_us = Some(squash_start.elapsed().as_micros());
                             let root = backend.write_access().apply_to_global_trie(block_number, [&compressed]);
                             (root, squash_us)
@@ -686,7 +677,6 @@ fn run_parallel(
     Ok((all_results, start.elapsed()))
 }
 
-
 fn compare_roots(sequential: Option<&RunResult>, parallel: Option<&RunResult>) -> Option<Correctness> {
     let seq = sequential?;
     let par = parallel?;
@@ -742,9 +732,7 @@ fn compare_roots(sequential: Option<&RunResult>, parallel: Option<&RunResult>) -
 
 fn read_trie_roots(db: &mc_db::rocksdb::RocksDBStorage) -> Result<(Felt, Felt)> {
     let contract_trie = db.contract_trie();
-    let contract_root = contract_trie
-        .root_hash(bonsai_identifier::CONTRACT)
-        .map_err(WrappedBonsaiError)?;
+    let contract_root = contract_trie.root_hash(bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
 
     let class_trie = db.class_trie();
     let class_root = class_trie.root_hash(bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
@@ -796,21 +784,11 @@ fn dump_contract_leaf_debug(
 
     let mut contracts = Vec::new();
     for address in addresses {
-        let storage_root = contract_storage_trie
-            .root_hash(&address.to_bytes_be())
-            .map_err(WrappedBonsaiError)?;
-        let nonce = backend
-            .db
-            .get_contract_nonce_at(block_number, &address)?
-            .unwrap_or(Felt::ZERO);
-        let class_hash = backend
-            .db
-            .get_contract_class_hash_at(block_number, &address)?
-            .unwrap_or(Felt::ZERO);
-        let leaf_hash = Pedersen::hash(
-            &Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce),
-            &Felt::ZERO,
-        );
+        let storage_root = contract_storage_trie.root_hash(&address.to_bytes_be()).map_err(WrappedBonsaiError)?;
+        let nonce = backend.db.get_contract_nonce_at(block_number, &address)?.unwrap_or(Felt::ZERO);
+        let class_hash = backend.db.get_contract_class_hash_at(block_number, &address)?.unwrap_or(Felt::ZERO);
+        let leaf_hash =
+            Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO);
         contracts.push(ContractLeafDebug { address, class_hash, nonce, storage_root, leaf_hash });
     }
     contracts.sort_by_key(|c| c.address);
@@ -821,7 +799,6 @@ fn dump_contract_leaf_debug(
     fs::write(&out_path, serialized).context("writing debug dump")?;
     Ok(())
 }
-
 
 const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 400;
 const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 10000;
@@ -847,11 +824,8 @@ async fn compress_state_diff(
     let deployed_contracts_map: HashMap<Felt, Felt> =
         raw_state_diff.deployed_contracts.into_iter().map(|item| (item.address, item.class_hash)).collect();
 
-    let replaced_classes_map: HashMap<Felt, Felt> = raw_state_diff
-        .replaced_classes
-        .into_iter()
-        .map(|item| (item.contract_address, item.class_hash))
-        .collect();
+    let replaced_classes_map: HashMap<Felt, Felt> =
+        raw_state_diff.replaced_classes.into_iter().map(|item| (item.contract_address, item.class_hash)).collect();
 
     let (replaced_classes, deployed_contracts) = process_deployed_contracts_and_replaced_classes(
         backend.clone(),
@@ -884,7 +858,8 @@ async fn compress_single_contract(
 ) -> Result<Option<ContractStorageDiffItem>> {
     let storage_entries = match pre_range_block_option {
         Some(pre_range_block) => {
-            let contract_existed = check_contract_existed_at_block(backend.clone(), contract_addr, pre_range_block).await?;
+            let contract_existed =
+                check_contract_existed_at_block(backend.clone(), contract_addr, pre_range_block).await?;
             let compressed_entries = if contract_existed {
                 stream::iter(storage_entries)
                     .map(|entry| {
@@ -942,8 +917,7 @@ async fn process_deployed_contracts_and_replaced_classes(
                 .map(|(contract_address, class_hash)| {
                     let backend = backend.clone();
                     async move {
-                        let prev_hash =
-                            check_pre_range_class_hash(backend, contract_address, pre_range_block).await;
+                        let prev_hash = check_pre_range_class_hash(backend, contract_address, pre_range_block).await;
                         if prev_hash != Some(class_hash) {
                             Some(ReplacedClassItem { contract_address, class_hash })
                         } else {
@@ -975,10 +949,7 @@ async fn check_contract_existed_at_block(
     contract_address: Felt,
     block_n: u64,
 ) -> Result<bool> {
-    backend
-        .db
-        .is_contract_deployed_at(block_n, &contract_address)
-        .context("is_contract_deployed_at")
+    backend.db.is_contract_deployed_at(block_n, &contract_address).context("is_contract_deployed_at")
 }
 
 async fn check_pre_range_storage_value(
@@ -987,11 +958,7 @@ async fn check_pre_range_storage_value(
     key: Felt,
     pre_range_block: u64,
 ) -> Option<Felt> {
-    backend
-        .db
-        .get_storage_at(pre_range_block, &contract_address, &key)
-        .ok()
-        .flatten()
+    backend.db.get_storage_at(pre_range_block, &contract_address, &key).ok().flatten()
 }
 
 async fn check_pre_range_class_hash(
@@ -999,11 +966,7 @@ async fn check_pre_range_class_hash(
     contract_address: Felt,
     pre_range_block: u64,
 ) -> Option<Felt> {
-    backend
-        .db
-        .get_contract_class_hash_at(pre_range_block, &contract_address)
-        .ok()
-        .flatten()
+    backend.db.get_contract_class_hash_at(pre_range_block, &contract_address).ok().flatten()
 }
 
 #[derive(Default)]

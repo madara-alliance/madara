@@ -1,10 +1,17 @@
 target
+madara/target
+tmp
+.git
+AI_docs
 madara/crates/resources/*
 madara/crates/primitives/class/resources/*
 infra/Signoz
 build-artifacts/
 dashboards
 docs/
+bootstrapper-v2/contracts/ethereum/lib/
+bootstrapper-v2/contracts/ethereum/out/
+bootstrapper-v2/contracts/madara/target/
 
 orchestrator/cairo-lang/
 orchestrator/madara-bootstrapper/
