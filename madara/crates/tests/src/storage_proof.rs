@@ -1,15 +1,24 @@
 use crate::{MadaraCmd, MadaraCmdBuilder};
 use rstest::rstest;
 
+fn canonical_json(value: &serde_json::Value) -> String {
+    let mut copy = value.clone();
+    copy.sort_all_objects();
+    copy.to_string()
+}
+
 fn normalize(json: &mut serde_json::Value) {
     match json {
         serde_json::Value::Array(arr) => {
-            arr.sort_by_key(|k| k.to_string());
-            arr.iter_mut().for_each(normalize)
+            // Normalize nested values first, then sort arrays by a canonical JSON representation.
+            // This avoids flaky ordering differences when object key insertion order differs.
+            arr.iter_mut().for_each(normalize);
+            arr.sort_by_key(canonical_json);
         }
         serde_json::Value::Object(obj) => obj.values_mut().for_each(normalize),
         _ => {}
     }
+    json.sort_all_objects();
 }
 
 #[rstest]
