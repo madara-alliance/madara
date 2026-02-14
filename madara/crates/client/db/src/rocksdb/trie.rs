@@ -277,6 +277,9 @@ impl BonsaiDatabase for BonsaiTransaction {
     #[tracing::instrument(skip(self, key))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         tracing::trace!("Checking if RocksDB contains: {:?}", key);
+        if let Some(val) = self.changed.get(&to_changed_key(key)) {
+            return Ok(val.is_some());
+        }
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
         Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.is_some())
     }
@@ -287,8 +290,9 @@ impl BonsaiDatabase for BonsaiTransaction {
         value: &[u8],
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
+        let old_value = self.get(key)?;
         self.changed.insert(to_changed_key(key), Some(value.into()));
-        Ok(None)
+        Ok(old_value)
     }
 
     fn remove(
@@ -296,8 +300,9 @@ impl BonsaiDatabase for BonsaiTransaction {
         key: &DatabaseKey,
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
+        let old_value = self.get(key)?;
         self.changed.insert(to_changed_key(key), None);
-        Ok(None)
+        Ok(old_value)
     }
 
     fn remove_by_prefix(&mut self, _prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {

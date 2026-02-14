@@ -139,15 +139,32 @@ impl RocksDBStorageInner {
     }
 
     pub(super) fn write_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<()> {
-        let meta_col = self.get_column(META_COLUMN);
         let mut batch = WriteBatchWithTransaction::default();
+        self.parallel_merkle_mark_checkpoint_in_batch(block_n, &mut batch)?;
+        self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
+    }
+
+    pub(super) fn parallel_merkle_mark_checkpoint_in_batch(
+        &self,
+        block_n: u64,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        if let Some(latest_checkpoint) = self.get_parallel_merkle_latest_checkpoint()? {
+            if block_n < latest_checkpoint {
+                anyhow::bail!(
+                    "parallel merkle checkpoint must be monotonic: latest={latest_checkpoint}, attempted={block_n}"
+                );
+            }
+        }
+
+        let meta_col = self.get_column(META_COLUMN);
         batch.put_cf(&meta_col, meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, block_n), [1u8]);
         batch.put_cf(
             &meta_col,
             META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY,
             super::serialize_to_smallvec::<[u8; 16]>(&block_n)?,
         );
-        self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
     }
 

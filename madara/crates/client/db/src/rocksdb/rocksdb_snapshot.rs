@@ -12,7 +12,7 @@ use crate::rocksdb::RocksDBStorageInner;
 /// [rust-rocksdb/rust-rocksdb#936](https://github.com/rust-rocksdb/rust-rocksdb/issues/936).
 pub struct SnapshotWithDBArc {
     // We hold an Arc to the database to ensure the snapshot cannot outlive it.
-    pub db: Arc<RocksDBStorageInner>,
+    pub(super) db: Arc<RocksDBStorageInner>,
     // The Database needs to outlive the snapshot, and be created by the supplied `db`.
     inner: *const ffi::rocksdb_snapshot_t,
 }
@@ -31,7 +31,7 @@ impl SnapshotWithDBArc {
     }
 
     /// Creates a new `SnapshotWithDBArc` of the database `db`.
-    pub fn new(db: Arc<RocksDBStorageInner>) -> Self {
+    pub(super) fn new(db: Arc<RocksDBStorageInner>) -> Self {
         let snapshot = unsafe { db.db.create_snapshot() };
         Self { db, inner: snapshot }
     }
