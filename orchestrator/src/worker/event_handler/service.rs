@@ -263,10 +263,6 @@ impl JobHandlerService {
             }
         }
 
-        // Calculate and record queue wait time after confirming we will process the job
-        let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
-        MetricsRecorder::record_job_processing_started(&job, queue_wait_time);
-
         let job_handler = factory::get_job_handler(&job.job_type).await;
 
         // Check if dependencies are ready before processing
@@ -310,6 +306,10 @@ impl JobHandlerService {
 
         // Update job status tracking metrics for LockedForProcessing
         MetricsRecorder::record_job_status(&job, &JobStatus::LockedForProcessing);
+
+        // Record queue wait time only after readiness succeeds and the job is locked for processing.
+        let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
+        MetricsRecorder::record_job_processing_started(&job, queue_wait_time);
 
         // Increment process attempt counter
         job.metadata.common.process_attempt_no += 1;
