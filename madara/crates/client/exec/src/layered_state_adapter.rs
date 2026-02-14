@@ -39,20 +39,23 @@ mod read_cache_kind {
     pub const COMPILED_CLASS_HASH_V2: &str = "compiled_class_hash_v2";
 }
 
+type StorageEntryKey = (ContractAddress, StorageKey);
+type ContractEntryKey = ContractAddress;
+type ClassEntryKey = ClassHash;
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 enum CacheKey {
-    Storage(ContractAddress, StorageKey),
-    Nonce(ContractAddress),
-    ClassHash(ContractAddress),
-    CompiledClassHash(ClassHash),
-    CompiledClassHashV2(ClassHash),
+    Storage(StorageEntryKey),
+    Nonce(ContractEntryKey),
+    ClassHash(ContractEntryKey),
+    CompiledClassHash(ClassEntryKey),
+    CompiledClassHashV2(ClassEntryKey),
 }
 
 #[derive(Debug, Clone)]
 struct CacheEntry<T: Clone> {
     value: T,
     seq: u64,
-    size: usize,
 }
 
 #[derive(Debug)]
@@ -63,12 +66,12 @@ struct CacheQueueEntry {
 
 #[derive(Debug, Default)]
 struct ExecutionReadCacheInner {
-    storage: HashMap<(ContractAddress, StorageKey), CacheEntry<Felt>>,
-    nonces: HashMap<ContractAddress, CacheEntry<Nonce>>,
-    class_hashes: HashMap<ContractAddress, CacheEntry<ClassHash>>,
-    cached_class_hashes: HashSet<ClassHash>,
-    compiled_class_hashes: HashMap<ClassHash, CacheEntry<CompiledClassHash>>,
-    compiled_class_hashes_v2: HashMap<ClassHash, CacheEntry<CompiledClassHash>>,
+    storage: HashMap<StorageEntryKey, CacheEntry<Felt>>,
+    nonces: HashMap<ContractEntryKey, CacheEntry<Nonce>>,
+    class_hashes: HashMap<ContractEntryKey, CacheEntry<ClassHash>>,
+    cached_class_hashes: HashSet<ClassEntryKey>,
+    compiled_class_hashes: HashMap<ClassEntryKey, CacheEntry<CompiledClassHash>>,
+    compiled_class_hashes_v2: HashMap<ClassEntryKey, CacheEntry<CompiledClassHash>>,
     order: VecDeque<CacheQueueEntry>,
     current_bytes: usize,
     next_seq: u64,
@@ -90,10 +93,7 @@ impl ExecutionReadCache {
 
         let contracts = config.contracts.iter().copied().collect::<HashSet<_>>();
         if config.all_contracts {
-            tracing::info!(
-                "Execution read cache enabled for all contracts (max_bytes={}).",
-                config.max_memory_bytes
-            );
+            tracing::info!("Execution read cache enabled for all contracts (max_bytes={}).", config.max_memory_bytes);
         } else if contracts.is_empty() {
             tracing::warn!(
                 "Execution read cache enabled but no contract allowlist provided (max_bytes={}).",
@@ -251,11 +251,12 @@ impl ExecutionReadCache {
 }
 
 impl ExecutionReadCacheInner {
-    const STORAGE_ENTRY_SIZE: usize = size_of::<CacheEntry<Felt>>() + size_of::<(ContractAddress, StorageKey)>();
-    const NONCE_ENTRY_SIZE: usize = size_of::<CacheEntry<Nonce>>() + size_of::<ContractAddress>();
-    const CLASS_HASH_ENTRY_SIZE: usize = size_of::<CacheEntry<ClassHash>>() + size_of::<ContractAddress>();
+    const STORAGE_ENTRY_SIZE: usize = size_of::<CacheEntry<Felt>>() + size_of::<StorageEntryKey>();
+    const NONCE_ENTRY_SIZE: usize = size_of::<CacheEntry<Nonce>>() + size_of::<ContractEntryKey>();
+    const CLASS_HASH_ENTRY_SIZE: usize = size_of::<CacheEntry<ClassHash>>() + size_of::<ContractEntryKey>();
     const COMPILED_CLASS_HASH_ENTRY_SIZE: usize =
-        size_of::<CacheEntry<CompiledClassHash>>() + size_of::<ClassHash>();
+        size_of::<CacheEntry<CompiledClassHash>>() + size_of::<ClassEntryKey>();
+    const ORDER_ENTRY_SIZE: usize = size_of::<CacheQueueEntry>();
 
     fn next_seq(&mut self) -> u64 {
         let seq = self.next_seq;
@@ -266,68 +267,64 @@ impl ExecutionReadCacheInner {
     fn insert_storage(&mut self, contract_address: ContractAddress, key: StorageKey, value: Felt) {
         let entry_size = Self::STORAGE_ENTRY_SIZE;
         let seq = self.next_seq();
-        if let Some(existing) = self.storage.insert(
-            (contract_address, key),
-            CacheEntry { value, seq, size: entry_size },
-        ) {
-            self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+        let cache_key = (contract_address, key);
+        if self.storage.insert(cache_key, CacheEntry { value, seq }).is_some() {
+            self.current_bytes = self.current_bytes.saturating_sub(entry_size);
         }
         self.current_bytes = self.current_bytes.saturating_add(entry_size);
-        self.order.push_back(CacheQueueEntry { key: CacheKey::Storage(contract_address, key), seq });
+        self.order.push_back(CacheQueueEntry { key: CacheKey::Storage(cache_key), seq });
+        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
     }
 
     fn insert_nonce(&mut self, contract_address: ContractAddress, value: Nonce) {
         let entry_size = Self::NONCE_ENTRY_SIZE;
         let seq = self.next_seq();
-        if let Some(existing) = self.nonces.insert(contract_address, CacheEntry { value, seq, size: entry_size }) {
-            self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+        if self.nonces.insert(contract_address, CacheEntry { value, seq }).is_some() {
+            self.current_bytes = self.current_bytes.saturating_sub(entry_size);
         }
         self.current_bytes = self.current_bytes.saturating_add(entry_size);
         self.order.push_back(CacheQueueEntry { key: CacheKey::Nonce(contract_address), seq });
+        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
     }
 
     fn insert_class_hash(&mut self, contract_address: ContractAddress, value: ClassHash) {
         let entry_size = Self::CLASS_HASH_ENTRY_SIZE;
         let seq = self.next_seq();
-        if let Some(existing) =
-            self.class_hashes.insert(contract_address, CacheEntry { value, seq, size: entry_size })
-        {
-            self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+        if self.class_hashes.insert(contract_address, CacheEntry { value, seq }).is_some() {
+            self.current_bytes = self.current_bytes.saturating_sub(entry_size);
         }
         self.current_bytes = self.current_bytes.saturating_add(entry_size);
         self.order.push_back(CacheQueueEntry { key: CacheKey::ClassHash(contract_address), seq });
+        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
     }
 
     fn insert_compiled_class_hash(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
         let entry_size = Self::COMPILED_CLASS_HASH_ENTRY_SIZE;
         let seq = self.next_seq();
-        if let Some(existing) = self
-            .compiled_class_hashes
-            .insert(class_hash, CacheEntry { value, seq, size: entry_size })
-        {
-            self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+        if self.compiled_class_hashes.insert(class_hash, CacheEntry { value, seq }).is_some() {
+            self.current_bytes = self.current_bytes.saturating_sub(entry_size);
         }
         self.current_bytes = self.current_bytes.saturating_add(entry_size);
         self.order.push_back(CacheQueueEntry { key: CacheKey::CompiledClassHash(class_hash), seq });
+        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
     }
 
     fn insert_compiled_class_hash_v2(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
         let entry_size = Self::COMPILED_CLASS_HASH_ENTRY_SIZE;
         let seq = self.next_seq();
-        if let Some(existing) = self
-            .compiled_class_hashes_v2
-            .insert(class_hash, CacheEntry { value, seq, size: entry_size })
-        {
-            self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+        if self.compiled_class_hashes_v2.insert(class_hash, CacheEntry { value, seq }).is_some() {
+            self.current_bytes = self.current_bytes.saturating_sub(entry_size);
         }
         self.current_bytes = self.current_bytes.saturating_add(entry_size);
         self.order.push_back(CacheQueueEntry { key: CacheKey::CompiledClassHashV2(class_hash), seq });
+        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
     }
 
     fn evict_if_needed(&mut self, max_bytes: usize) -> usize {
         let mut evicted = 0;
         while self.current_bytes > max_bytes {
             let Some(entry) = self.order.pop_front() else { break };
+            self.current_bytes = self.current_bytes.saturating_sub(Self::ORDER_ENTRY_SIZE);
             if self.remove_if_match(entry) {
                 evicted += 1;
             }
@@ -337,11 +334,11 @@ impl ExecutionReadCacheInner {
 
     fn remove_if_match(&mut self, entry: CacheQueueEntry) -> bool {
         match entry.key {
-            CacheKey::Storage(contract_address, key) => {
-                if let Some(existing) = self.storage.get(&(contract_address, key)) {
+            CacheKey::Storage(cache_key) => {
+                if let Some(existing) = self.storage.get(&cache_key) {
                     if existing.seq == entry.seq {
-                        let existing = self.storage.remove(&(contract_address, key)).expect("entry exists");
-                        self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+                        let _ = self.storage.remove(&cache_key).expect("entry exists");
+                        self.current_bytes = self.current_bytes.saturating_sub(Self::STORAGE_ENTRY_SIZE);
                         return true;
                     }
                 }
@@ -349,8 +346,8 @@ impl ExecutionReadCacheInner {
             CacheKey::Nonce(contract_address) => {
                 if let Some(existing) = self.nonces.get(&contract_address) {
                     if existing.seq == entry.seq {
-                        let existing = self.nonces.remove(&contract_address).expect("entry exists");
-                        self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+                        let _ = self.nonces.remove(&contract_address).expect("entry exists");
+                        self.current_bytes = self.current_bytes.saturating_sub(Self::NONCE_ENTRY_SIZE);
                         return true;
                     }
                 }
@@ -358,8 +355,8 @@ impl ExecutionReadCacheInner {
             CacheKey::ClassHash(contract_address) => {
                 if let Some(existing) = self.class_hashes.get(&contract_address) {
                     if existing.seq == entry.seq {
-                        let existing = self.class_hashes.remove(&contract_address).expect("entry exists");
-                        self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+                        let _ = self.class_hashes.remove(&contract_address).expect("entry exists");
+                        self.current_bytes = self.current_bytes.saturating_sub(Self::CLASS_HASH_ENTRY_SIZE);
                         return true;
                     }
                 }
@@ -367,8 +364,8 @@ impl ExecutionReadCacheInner {
             CacheKey::CompiledClassHash(class_hash) => {
                 if let Some(existing) = self.compiled_class_hashes.get(&class_hash) {
                     if existing.seq == entry.seq {
-                        let existing = self.compiled_class_hashes.remove(&class_hash).expect("entry exists");
-                        self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+                        let _ = self.compiled_class_hashes.remove(&class_hash).expect("entry exists");
+                        self.current_bytes = self.current_bytes.saturating_sub(Self::COMPILED_CLASS_HASH_ENTRY_SIZE);
                         return true;
                     }
                 }
@@ -376,8 +373,8 @@ impl ExecutionReadCacheInner {
             CacheKey::CompiledClassHashV2(class_hash) => {
                 if let Some(existing) = self.compiled_class_hashes_v2.get(&class_hash) {
                     if existing.seq == entry.seq {
-                        let existing = self.compiled_class_hashes_v2.remove(&class_hash).expect("entry exists");
-                        self.current_bytes = self.current_bytes.saturating_sub(existing.size);
+                        let _ = self.compiled_class_hashes_v2.remove(&class_hash).expect("entry exists");
+                        self.current_bytes = self.current_bytes.saturating_sub(Self::COMPILED_CLASS_HASH_ENTRY_SIZE);
                         return true;
                     }
                 }
@@ -728,12 +725,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_layered_state_adapter_read_cache_updates_on_prune() {
-        let mut config = MadaraBackendConfig::default();
-        config.execution_read_cache = ExecutionReadCacheConfig {
-            enabled: true,
-            all_contracts: true,
-            contracts: Vec::new(),
-            max_memory_bytes: 1024 * 1024,
+        let config = MadaraBackendConfig {
+            execution_read_cache: ExecutionReadCacheConfig {
+                enabled: true,
+                all_contracts: true,
+                contracts: Vec::new(),
+                max_memory_bytes: 1024 * 1024,
+            },
+            ..Default::default()
         };
 
         let backend = MadaraBackend::open_for_testing_with_config(ChainConfig::madara_test().into(), config);
@@ -792,13 +791,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_layered_state_adapter_read_cache_contract_filter() {
-        let mut config = MadaraBackendConfig::default();
         let allowed_address = Felt::ONE.try_into().unwrap();
-        config.execution_read_cache = ExecutionReadCacheConfig {
-            enabled: true,
-            all_contracts: false,
-            contracts: vec![allowed_address],
-            max_memory_bytes: 1024 * 1024,
+        let config = MadaraBackendConfig {
+            execution_read_cache: ExecutionReadCacheConfig {
+                enabled: true,
+                all_contracts: false,
+                contracts: vec![allowed_address],
+                max_memory_bytes: 1024 * 1024,
+            },
+            ..Default::default()
         };
 
         let backend = MadaraBackend::open_for_testing_with_config(ChainConfig::madara_test().into(), config);
@@ -847,5 +848,24 @@ mod tests {
         let guard = cache.inner.read().unwrap();
         assert!(guard.storage.contains_key(&(allowed_address, storage_key)));
         assert!(!guard.storage.contains_key(&(blocked_address, storage_key)));
+    }
+
+    #[test]
+    fn test_execution_read_cache_inner_trims_order_on_repeated_overwrite() {
+        let mut inner = super::ExecutionReadCacheInner::default();
+        let contract_address = Felt::ONE.try_into().unwrap();
+        let storage_key = Felt::ONE.try_into().unwrap();
+
+        for i in 0..256u64 {
+            inner.insert_storage(contract_address, storage_key, Felt::from(i));
+        }
+
+        let max_bytes =
+            super::ExecutionReadCacheInner::STORAGE_ENTRY_SIZE + super::ExecutionReadCacheInner::ORDER_ENTRY_SIZE;
+        inner.evict_if_needed(max_bytes);
+
+        assert!(inner.current_bytes <= max_bytes);
+        assert_eq!(inner.storage.len(), 1);
+        assert_eq!(inner.order.len(), 1);
     }
 }
