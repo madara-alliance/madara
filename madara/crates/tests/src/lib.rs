@@ -200,6 +200,8 @@ mod devnet;
 #[cfg(test)]
 mod gateway;
 #[cfg(test)]
+mod parallel_merkle_state_root_parity;
+#[cfg(test)]
 mod preconfirmed_recovery;
 #[cfg(test)]
 mod rpc;
@@ -514,6 +516,30 @@ impl MadaraCmdBuilder {
 
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = label.into();
+        self
+    }
+
+    /// Clone an existing database directory into this builder's temp base path.
+    /// This is useful for test scenarios that need multiple nodes to start from the same DB snapshot.
+    pub fn clone_db_from(self, source: impl AsRef<Path>) -> Self {
+        fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+            std::fs::create_dir_all(dst)?;
+            for entry in std::fs::read_dir(src)? {
+                let entry = entry?;
+                let file_type = entry.file_type()?;
+                let src_path = entry.path();
+                let dst_path = dst.join(entry.file_name());
+                if file_type.is_dir() {
+                    copy_dir_all(&src_path, &dst_path)?;
+                } else {
+                    std::fs::copy(src_path, dst_path)?;
+                }
+            }
+            Ok(())
+        }
+
+        let source = source.as_ref();
+        copy_dir_all(source, self.tempdir.path()).expect("copying source db into test tempdir should succeed");
         self
     }
 
