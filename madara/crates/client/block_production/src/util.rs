@@ -204,31 +204,7 @@ pub(crate) fn create_execution_context(
             .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
 
         let gas_prices = backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?;
-
-        // Keep block timestamps deterministic from parent header progression whenever possible.
-        // This avoids mode-dependent hash drift (e.g. sequential vs parallel close timings) while
-        // remaining monotonic against wall clock in slow production scenarios.
-        let block_timestamp = if let Some(parent_n) = block_n.checked_sub(1) {
-            if let Some(parent_view) = backend.block_view_on_confirmed(parent_n) {
-                if let Ok(parent_info) = parent_view.get_block_info() {
-                    let parent_secs = parent_info.header.block_timestamp.0;
-                    let step_secs = backend.chain_config().block_time.as_secs().max(1);
-                    let candidate_secs = parent_secs.saturating_add(step_secs);
-                    let now_secs =
-                        SystemTime::now().duration_since(UNIX_EPOCH).expect("SystemTime::now() < Unix epoch").as_secs();
-                    let selected_secs = candidate_secs.max(now_secs);
-                    UNIX_EPOCH + Duration::from_secs(selected_secs)
-                } else {
-                    SystemTime::now()
-                }
-            } else {
-                SystemTime::now()
-            }
-        } else {
-            SystemTime::now()
-        };
-
-        (block_timestamp, gas_prices)
+        (SystemTime::now(), gas_prices)
     };
 
     Ok(BlockExecutionContext {
