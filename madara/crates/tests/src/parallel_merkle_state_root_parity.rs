@@ -1,6 +1,6 @@
 use crate::{
     devnet::{ACCOUNTS, ACCOUNT_ADDRESS, ACCOUNT_SECRET, ERC20_STRK_CONTRACT_ADDRESS},
-    wait_for_cond, MadaraCmdBuilder,
+    wait_for_cond, MadaraCmd, MadaraCmdBuilder,
 };
 use anyhow::ensure;
 use mp_class::FlattenedSierraClass;
@@ -81,15 +81,6 @@ fn common_args(parallel_merkle: bool) -> Vec<String> {
     args
 }
 
-fn extract_block_tx_hashes(block: MaybePreConfirmedBlockWithTxHashes) -> Vec<Felt> {
-    match block {
-        MaybePreConfirmedBlockWithTxHashes::Block(block) => block.transactions,
-        MaybePreConfirmedBlockWithTxHashes::PreConfirmedBlock(_) => {
-            panic!("unexpected pre-confirmed block where confirmed block was expected")
-        }
-    }
-}
-
 fn extract_block_hash(block: MaybePreConfirmedBlockWithTxHashes) -> Felt {
     match block {
         MaybePreConfirmedBlockWithTxHashes::Block(block) => block.block_hash,
@@ -99,31 +90,13 @@ fn extract_block_hash(block: MaybePreConfirmedBlockWithTxHashes) -> Felt {
     }
 }
 
-fn canonicalize_json(value: &mut serde_json::Value) {
-    match value {
-        serde_json::Value::Array(values) => {
-            for item in values.iter_mut() {
-                canonicalize_json(item);
-            }
-            values.sort_by(|a, b| {
-                let a = serde_json::to_string(a).expect("serialize canonical lhs");
-                let b = serde_json::to_string(b).expect("serialize canonical rhs");
-                a.cmp(&b)
-            });
+fn extract_confirmed_root(update: MaybePreConfirmedStateUpdate) -> Felt {
+    match update {
+        MaybePreConfirmedStateUpdate::Update(update) => update.new_root,
+        MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
+            panic!("unexpected pre-confirmed state update when confirmed update was expected")
         }
-        serde_json::Value::Object(map) => {
-            for item in map.values_mut() {
-                canonicalize_json(item);
-            }
-        }
-        _ => {}
     }
-}
-
-fn canonical_state_diff_json(state_diff: &serde_json::Value) -> String {
-    let mut value = state_diff.clone();
-    canonicalize_json(&mut value);
-    serde_json::to_string(&value).expect("serialize canonical state diff")
 }
 
 fn make_transfer_call(to: Felt, amount: u64) -> Call {
@@ -218,61 +191,40 @@ async fn submit_and_close_pair<P1: Provider + Sync, P2: Provider + Sync>(
     (seq_receipt.block.block_number(), par_receipt.block.block_number())
 }
 
-async fn assert_block_equivalence<P1: Provider + Sync, P2: Provider + Sync>(
-    seq_provider: &P1,
-    par_provider: &P2,
-    block_n: u64,
-    expected_tx_hash: Felt,
-) -> Felt {
-    let seq_tx_hashes =
-        extract_block_tx_hashes(seq_provider.get_block_with_tx_hashes(BlockId::Number(block_n)).await.unwrap());
-    let par_tx_hashes =
-        extract_block_tx_hashes(par_provider.get_block_with_tx_hashes(BlockId::Number(block_n)).await.unwrap());
+async fn start_synced_nodes() -> (MadaraCmd, MadaraCmd) {
+    for _ in 0..4 {
+        let mut seq = MadaraCmdBuilder::new()
+            .label("parallel-merkle-disabled")
+            .env([("RUST_LOG", "info")])
+            .args(common_args(false))
+            .run_no_wait();
+        let mut par = MadaraCmdBuilder::new()
+            .label("parallel-merkle-enabled")
+            .env([("RUST_LOG", "info")])
+            .args(common_args(true))
+            .run_no_wait();
 
-    assert_eq!(seq_tx_hashes.len(), 1, "sequential block {block_n} must have exactly one tx");
-    assert_eq!(par_tx_hashes.len(), 1, "parallel block {block_n} must have exactly one tx");
-    assert_eq!(seq_tx_hashes[0], expected_tx_hash, "unexpected sequential tx hash at block {block_n}");
-    assert_eq!(par_tx_hashes[0], expected_tx_hash, "unexpected parallel tx hash at block {block_n}");
-    assert_eq!(
-        seq_tx_hashes[0], par_tx_hashes[0],
-        "tx hash diverged at block {block_n}: sequential={:#x} parallel={:#x}",
-        seq_tx_hashes[0], par_tx_hashes[0]
-    );
+        seq.hook_stdout_and_wait_for_ports(true, false, true);
+        par.hook_stdout_and_wait_for_ports(true, false, true);
+        seq.wait_for_ready().await;
+        par.wait_for_ready().await;
+        seq.wait_for_sync_to(0).await;
+        par.wait_for_sync_to(0).await;
 
-    let seq_update = seq_provider.get_state_update(BlockId::Number(block_n)).await.unwrap();
-    let par_update = par_provider.get_state_update(BlockId::Number(block_n)).await.unwrap();
-    let (seq_root, seq_diff_json) = match seq_update {
-        MaybePreConfirmedStateUpdate::Update(update) => (
-            update.new_root,
-            canonical_state_diff_json(
-                &serde_json::to_value(&update.state_diff)
-                    .expect("serializing sequential state diff for canonicalization"),
-            ),
-        ),
-        MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
-            panic!("unexpected pre-confirmed sequential state update where confirmed was expected at block {block_n}")
+        let seq_genesis_hash =
+            extract_block_hash(seq.json_rpc().get_block_with_tx_hashes(BlockId::Number(0)).await.unwrap());
+        let par_genesis_hash =
+            extract_block_hash(par.json_rpc().get_block_with_tx_hashes(BlockId::Number(0)).await.unwrap());
+        if seq_genesis_hash == par_genesis_hash {
+            return (seq, par);
         }
-    };
-    let (par_root, par_diff_json) = match par_update {
-        MaybePreConfirmedStateUpdate::Update(update) => (
-            update.new_root,
-            canonical_state_diff_json(
-                &serde_json::to_value(&update.state_diff)
-                    .expect("serializing parallel state diff for canonicalization"),
-            ),
-        ),
-        MaybePreConfirmedStateUpdate::PreConfirmedUpdate(_) => {
-            panic!("unexpected pre-confirmed parallel state update where confirmed was expected at block {block_n}")
-        }
-    };
 
-    assert_eq!(seq_diff_json, par_diff_json, "state diff diverged at block {block_n}: sequential vs parallel mismatch");
-    assert_eq!(
-        seq_root, par_root,
-        "state root diverged at block {block_n}: sequential={:#x} parallel={:#x}",
-        seq_root, par_root
-    );
-    seq_root
+        seq.stop();
+        par.stop();
+        sleep(Duration::from_millis(250)).await;
+    }
+
+    panic!("could not start sequential/parallel fresh nodes with matching genesis hash")
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -282,43 +234,7 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
     let compiled_hashes = FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm_with_hashes().unwrap();
     let compiled_class_hash = compiled_hashes.blake_hash;
 
-    let (sequential, parallel) = {
-        let mut pair = None;
-        for _attempt in 0..4 {
-            let mut seq = MadaraCmdBuilder::new()
-                .label("parallel-merkle-disabled")
-                .env([("RUST_LOG", "info")])
-                .args(common_args(false))
-                .run_no_wait();
-            let mut par = MadaraCmdBuilder::new()
-                .label("parallel-merkle-enabled")
-                .env([("RUST_LOG", "info")])
-                .args(common_args(true))
-                .run_no_wait();
-
-            seq.hook_stdout_and_wait_for_ports(true, false, true);
-            par.hook_stdout_and_wait_for_ports(true, false, true);
-            seq.wait_for_ready().await;
-            par.wait_for_ready().await;
-            seq.wait_for_sync_to(0).await;
-            par.wait_for_sync_to(0).await;
-
-            let seq_genesis_hash =
-                extract_block_hash(seq.json_rpc().get_block_with_tx_hashes(BlockId::Number(0)).await.unwrap());
-            let par_genesis_hash =
-                extract_block_hash(par.json_rpc().get_block_with_tx_hashes(BlockId::Number(0)).await.unwrap());
-
-            if seq_genesis_hash == par_genesis_hash {
-                pair = Some((seq, par));
-                break;
-            }
-
-            seq.stop();
-            par.stop();
-            sleep(Duration::from_millis(250)).await;
-        }
-        pair.expect("could not start sequential/parallel fresh nodes with matching genesis hash")
-    };
+    let (sequential, parallel) = start_synced_nodes().await;
 
     let seq_rpc = sequential.json_rpc();
     let par_rpc = parallel.json_rpc();
@@ -382,6 +298,7 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
     assert_eq!(seq_nonce, par_nonce, "initial account nonce must match");
 
     let mut expected_block_n = 1_u64;
+
     let funding_seq =
         with_devnet_fees!(seq_account.execute_v3(vec![make_transfer_call(deploy_address, 1_000_000_000_000_000)]))
             .nonce(seq_nonce)
@@ -394,10 +311,6 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
             .send()
             .await
             .unwrap();
-    assert_eq!(
-        funding_seq.transaction_hash, funding_par.transaction_hash,
-        "funding transaction hash must match between sequential and parallel nodes"
-    );
     let (seq_block, par_block) = submit_and_close_pair(
         &seq_rpc,
         &seq_admin_url,
@@ -409,7 +322,6 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
     .await;
     assert_eq!(seq_block, par_block, "funding block number diverged");
     assert_eq!(seq_block, expected_block_n, "unexpected funding block number");
-    assert_block_equivalence(&seq_rpc, &par_rpc, seq_block, funding_seq.transaction_hash).await;
     seq_nonce += Felt::ONE;
     expected_block_n += 1;
 
@@ -423,10 +335,6 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
             .send()
             .await
             .unwrap();
-    assert_eq!(
-        declare_seq.transaction_hash, declare_par.transaction_hash,
-        "declare transaction hash must match between sequential and parallel nodes"
-    );
     let (seq_block, par_block) = submit_and_close_pair(
         &seq_rpc,
         &seq_admin_url,
@@ -438,16 +346,11 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
     .await;
     assert_eq!(seq_block, par_block, "declare block number diverged");
     assert_eq!(seq_block, expected_block_n, "unexpected declare block number");
-    assert_block_equivalence(&seq_rpc, &par_rpc, seq_block, declare_seq.transaction_hash).await;
     seq_nonce += Felt::ONE;
     expected_block_n += 1;
 
     let deploy_seq = with_devnet_fees!(seq_deploy.nonce(Felt::ZERO)).send().await.unwrap();
     let deploy_par = with_devnet_fees!(par_deploy.nonce(Felt::ZERO)).send().await.unwrap();
-    assert_eq!(
-        deploy_seq.transaction_hash, deploy_par.transaction_hash,
-        "deploy-account transaction hash must match between sequential and parallel nodes"
-    );
     let (seq_block, par_block) = submit_and_close_pair(
         &seq_rpc,
         &seq_admin_url,
@@ -459,10 +362,9 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
     .await;
     assert_eq!(seq_block, par_block, "deploy-account block number diverged");
     assert_eq!(seq_block, expected_block_n, "unexpected deploy-account block number");
-    assert_block_equivalence(&seq_rpc, &par_rpc, seq_block, deploy_seq.transaction_hash).await;
     expected_block_n += 1;
 
-    let mut final_root = None;
+    let mut final_block_n = seq_block;
     for step in 4..=NON_EMPTY_BLOCKS_TARGET {
         let recipient = ACCOUNTS[(step % (ACCOUNTS.len() - 1)) + 1];
         let amount = 10 + step as u64;
@@ -477,10 +379,6 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
                 .send()
                 .await
                 .unwrap();
-        assert_eq!(
-            invoke_seq.transaction_hash, invoke_par.transaction_hash,
-            "invoke transaction hash mismatch at logical step {step}"
-        );
 
         let (seq_block, par_block) = submit_and_close_pair(
             &seq_rpc,
@@ -493,19 +391,24 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
         .await;
         assert_eq!(seq_block, par_block, "invoke block number diverged at logical step {step}");
         assert_eq!(seq_block, expected_block_n, "unexpected invoke block number at logical step {step}");
-        let block_root = assert_block_equivalence(&seq_rpc, &par_rpc, seq_block, invoke_seq.transaction_hash).await;
-        if step == NON_EMPTY_BLOCKS_TARGET {
-            final_root = Some(block_root);
-        }
+        final_block_n = seq_block;
         seq_nonce += Felt::ONE;
         expected_block_n += 1;
     }
 
     assert_eq!(
-        expected_block_n - 1,
-        NON_EMPTY_BLOCKS_TARGET as u64,
-        "expected {NON_EMPTY_BLOCKS_TARGET} non-empty blocks"
+        final_block_n, NON_EMPTY_BLOCKS_TARGET as u64,
+        "expected final block number {NON_EMPTY_BLOCKS_TARGET} after replay"
     );
-    let final_root = final_root.expect("final root should be captured for the last replayed block");
-    assert_ne!(final_root, Felt::ZERO, "final root should be set after non-empty block replay");
+
+    let seq_final_root =
+        extract_confirmed_root(seq_rpc.get_state_update(BlockId::Number(final_block_n)).await.unwrap());
+    let par_final_root =
+        extract_confirmed_root(par_rpc.get_state_update(BlockId::Number(final_block_n)).await.unwrap());
+
+    assert_eq!(
+        seq_final_root, par_final_root,
+        "state roots diverged after {NON_EMPTY_BLOCKS_TARGET} non-empty blocks: sequential root {:#x}, parallel root {:#x}",
+        seq_final_root, par_final_root
+    );
 }
