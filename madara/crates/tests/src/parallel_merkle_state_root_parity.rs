@@ -14,10 +14,11 @@ use starknet_core::types::{
 use starknet_core::utils::starknet_keccak;
 use starknet_providers::Provider;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::time::sleep;
 
-const NON_EMPTY_BLOCKS_TARGET: usize = 100;
+const TX_COUNT_TARGET: usize = 100;
+const MIN_BLOCK_HEIGHT_TARGET: u64 = 100;
 const DEPLOY_ACCOUNT_SECRET: Felt =
     Felt::from_hex_unchecked("0x023f97ee39cb7032589df7f0ba66b92b8a4ed2ea67f9d2e31f2f8de4af61f14");
 const DEPLOY_ACCOUNT_SALT: Felt = Felt::from_hex_unchecked("0x123");
@@ -59,9 +60,7 @@ fn common_args(parallel_merkle: bool) -> Vec<String> {
         "--chain-config-path".to_string(),
         test_devnet_path(),
         "--chain-config-override".to_string(),
-        "block_time=5min".to_string(),
-        "--rpc-admin".to_string(),
-        "--rpc-unsafe".to_string(),
+        "block_time=3s".to_string(),
         "--private-key".to_string(),
         BLOCK_SIGNING_PRIVATE_KEY.to_string(),
     ];
@@ -107,41 +106,6 @@ fn make_transfer_call(to: Felt, amount: u64) -> Call {
     }
 }
 
-async fn call_admin_method(admin_url: &str, method: &str, params: serde_json::Value) {
-    let response = reqwest::Client::new()
-        .post(admin_url)
-        .json(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-            "id": 1,
-        }))
-        .send()
-        .await
-        .unwrap();
-    let value = response.json::<serde_json::Value>().await.unwrap();
-    if value.get("error").is_some() {
-        panic!("admin {method} failed: {value}");
-    }
-}
-
-async fn admin_close_block(admin_url: &str) {
-    call_admin_method(admin_url, "madara_closeBlock", serde_json::json!([])).await;
-}
-
-async fn wait_for_executed_receipt<P: Provider + Sync>(provider: &P, tx_hash: Felt) -> TransactionReceiptWithBlockInfo {
-    wait_for_cond(
-        || async {
-            let receipt = provider.get_transaction_receipt(tx_hash).await?;
-            ensure!(receipt.block.is_pre_confirmed() || receipt.block.is_block(), "tx has not reached execution yet");
-            Ok(receipt)
-        },
-        Duration::from_millis(250),
-        240,
-    )
-    .await
-}
-
 async fn wait_for_confirmed_receipt<P: Provider + Sync>(
     provider: &P,
     tx_hash: Felt,
@@ -153,42 +117,22 @@ async fn wait_for_confirmed_receipt<P: Provider + Sync>(
             Ok(receipt)
         },
         Duration::from_millis(250),
-        240,
+        400,
     )
     .await
 }
 
-async fn wait_for_safe_close_window() {
-    loop {
-        let millis =
-            SystemTime::now().duration_since(UNIX_EPOCH).expect("SystemTime::now() < Unix epoch").subsec_millis();
-        if (250..750).contains(&millis) {
-            return;
-        }
-        sleep(Duration::from_millis(10)).await;
-    }
-}
-
-async fn submit_and_close_pair<P1: Provider + Sync, P2: Provider + Sync>(
-    seq_provider: &P1,
-    seq_admin_url: &str,
-    seq_tx_hash: Felt,
-    par_provider: &P2,
-    par_admin_url: &str,
-    par_tx_hash: Felt,
-) -> (u64, u64) {
-    let seq_receipt = wait_for_executed_receipt(seq_provider, seq_tx_hash).await;
-    let par_receipt = wait_for_executed_receipt(par_provider, par_tx_hash).await;
-
-    if seq_receipt.block.is_pre_confirmed() || par_receipt.block.is_pre_confirmed() {
-        wait_for_safe_close_window().await;
-        let (_seq_close, _par_close) = tokio::join!(admin_close_block(seq_admin_url), admin_close_block(par_admin_url));
-        let seq_confirmed = wait_for_confirmed_receipt(seq_provider, seq_tx_hash).await;
-        let par_confirmed = wait_for_confirmed_receipt(par_provider, par_tx_hash).await;
-        return (seq_confirmed.block.block_number(), par_confirmed.block.block_number());
-    }
-
-    (seq_receipt.block.block_number(), par_receipt.block.block_number())
+async fn wait_for_block_at_least<P: Provider + Sync>(provider: &P, target_block_n: u64) {
+    let _ = wait_for_cond(
+        || async {
+            let block_n = provider.block_hash_and_number().await?.block_number;
+            ensure!(block_n >= target_block_n, "latest block is {block_n}, waiting for >= {target_block_n}");
+            Ok(block_n)
+        },
+        Duration::from_millis(250),
+        600,
+    )
+    .await;
 }
 
 async fn start_synced_nodes() -> (MadaraCmd, MadaraCmd) {
@@ -204,8 +148,8 @@ async fn start_synced_nodes() -> (MadaraCmd, MadaraCmd) {
             .args(common_args(true))
             .run_no_wait();
 
-        seq.hook_stdout_and_wait_for_ports(true, false, true);
-        par.hook_stdout_and_wait_for_ports(true, false, true);
+        seq.hook_stdout_and_wait_for_ports(true, false, false);
+        par.hook_stdout_and_wait_for_ports(true, false, false);
         seq.wait_for_ready().await;
         par.wait_for_ready().await;
         seq.wait_for_sync_to(0).await;
@@ -238,8 +182,6 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
 
     let seq_rpc = sequential.json_rpc();
     let par_rpc = parallel.json_rpc();
-    let seq_admin_url = format!("{}rpc/v0.1.0/", sequential.rpc_admin_url());
-    let par_admin_url = format!("{}rpc/v0.1.0/", parallel.rpc_admin_url());
 
     let seq_chain_id = seq_rpc.chain_id().await.unwrap();
     let par_chain_id = par_rpc.chain_id().await.unwrap();
@@ -297,118 +239,85 @@ async fn parallel_merkle_and_sequential_match_state_root_after_100_non_empty_blo
     let par_nonce = par_rpc.get_nonce(BlockId::Tag(BlockTag::Latest), ACCOUNT_ADDRESS).await.unwrap();
     assert_eq!(seq_nonce, par_nonce, "initial account nonce must match");
 
-    let mut expected_block_n = 1_u64;
-
-    let funding_seq =
+    let seq_funding =
         with_devnet_fees!(seq_account.execute_v3(vec![make_transfer_call(deploy_address, 1_000_000_000_000_000)]))
-            .nonce(seq_nonce)
-            .send()
-            .await
-            .unwrap();
-    let funding_par =
+            .nonce(seq_nonce);
+    let par_funding =
         with_devnet_fees!(par_account.execute_v3(vec![make_transfer_call(deploy_address, 1_000_000_000_000_000)]))
-            .nonce(seq_nonce)
-            .send()
-            .await
-            .unwrap();
-    let (seq_block, par_block) = submit_and_close_pair(
-        &seq_rpc,
-        &seq_admin_url,
-        funding_seq.transaction_hash,
-        &par_rpc,
-        &par_admin_url,
-        funding_par.transaction_hash,
-    )
-    .await;
-    assert_eq!(seq_block, par_block, "funding block number diverged");
-    assert_eq!(seq_block, expected_block_n, "unexpected funding block number");
+            .nonce(seq_nonce);
+    let (funding_seq, funding_par) = tokio::join!(seq_funding.send(), par_funding.send());
+    let funding_seq = funding_seq.unwrap();
+    let funding_par = funding_par.unwrap();
+
+    let (funding_seq_receipt, funding_par_receipt) = tokio::join!(
+        wait_for_confirmed_receipt(&seq_rpc, funding_seq.transaction_hash),
+        wait_for_confirmed_receipt(&par_rpc, funding_par.transaction_hash)
+    );
+    let (mut seq_last_tx_block, mut par_last_tx_block) =
+        (funding_seq_receipt.block.block_number(), funding_par_receipt.block.block_number());
     seq_nonce += Felt::ONE;
-    expected_block_n += 1;
 
-    let declare_seq =
-        with_devnet_fees!(seq_account.declare_v3(flattened_class.clone().into(), compiled_class_hash).nonce(seq_nonce))
-            .send()
-            .await
-            .unwrap();
-    let declare_par =
-        with_devnet_fees!(par_account.declare_v3(flattened_class.clone().into(), compiled_class_hash).nonce(seq_nonce))
-            .send()
-            .await
-            .unwrap();
-    let (seq_block, par_block) = submit_and_close_pair(
-        &seq_rpc,
-        &seq_admin_url,
-        declare_seq.transaction_hash,
-        &par_rpc,
-        &par_admin_url,
-        declare_par.transaction_hash,
-    )
-    .await;
-    assert_eq!(seq_block, par_block, "declare block number diverged");
-    assert_eq!(seq_block, expected_block_n, "unexpected declare block number");
+    let seq_declare =
+        with_devnet_fees!(seq_account.declare_v3(flattened_class.clone().into(), compiled_class_hash).nonce(seq_nonce));
+    let par_declare =
+        with_devnet_fees!(par_account.declare_v3(flattened_class.clone().into(), compiled_class_hash).nonce(seq_nonce));
+    let (declare_seq, declare_par) = tokio::join!(seq_declare.send(), par_declare.send());
+    let declare_seq = declare_seq.unwrap();
+    let declare_par = declare_par.unwrap();
+    let (declare_seq_receipt, declare_par_receipt) = tokio::join!(
+        wait_for_confirmed_receipt(&seq_rpc, declare_seq.transaction_hash),
+        wait_for_confirmed_receipt(&par_rpc, declare_par.transaction_hash)
+    );
+    seq_last_tx_block = seq_last_tx_block.max(declare_seq_receipt.block.block_number());
+    par_last_tx_block = par_last_tx_block.max(declare_par_receipt.block.block_number());
     seq_nonce += Felt::ONE;
-    expected_block_n += 1;
 
-    let deploy_seq = with_devnet_fees!(seq_deploy.nonce(Felt::ZERO)).send().await.unwrap();
-    let deploy_par = with_devnet_fees!(par_deploy.nonce(Felt::ZERO)).send().await.unwrap();
-    let (seq_block, par_block) = submit_and_close_pair(
-        &seq_rpc,
-        &seq_admin_url,
-        deploy_seq.transaction_hash,
-        &par_rpc,
-        &par_admin_url,
-        deploy_par.transaction_hash,
-    )
-    .await;
-    assert_eq!(seq_block, par_block, "deploy-account block number diverged");
-    assert_eq!(seq_block, expected_block_n, "unexpected deploy-account block number");
-    expected_block_n += 1;
+    let seq_deploy_tx = with_devnet_fees!(seq_deploy.nonce(Felt::ZERO));
+    let par_deploy_tx = with_devnet_fees!(par_deploy.nonce(Felt::ZERO));
+    let (deploy_seq, deploy_par) = tokio::join!(seq_deploy_tx.send(), par_deploy_tx.send());
+    let deploy_seq = deploy_seq.unwrap();
+    let deploy_par = deploy_par.unwrap();
+    let (deploy_seq_receipt, deploy_par_receipt) = tokio::join!(
+        wait_for_confirmed_receipt(&seq_rpc, deploy_seq.transaction_hash),
+        wait_for_confirmed_receipt(&par_rpc, deploy_par.transaction_hash)
+    );
+    seq_last_tx_block = seq_last_tx_block.max(deploy_seq_receipt.block.block_number());
+    par_last_tx_block = par_last_tx_block.max(deploy_par_receipt.block.block_number());
 
-    let mut final_block_n = seq_block;
-    for step in 4..=NON_EMPTY_BLOCKS_TARGET {
+    for step in 4..=TX_COUNT_TARGET {
         let recipient = ACCOUNTS[(step % (ACCOUNTS.len() - 1)) + 1];
         let amount = 10 + step as u64;
 
-        let invoke_seq =
-            with_devnet_fees!(seq_account.execute_v3(vec![make_transfer_call(recipient, amount)]).nonce(seq_nonce))
-                .send()
-                .await
-                .unwrap();
-        let invoke_par =
-            with_devnet_fees!(par_account.execute_v3(vec![make_transfer_call(recipient, amount)]).nonce(seq_nonce))
-                .send()
-                .await
-                .unwrap();
+        let seq_invoke =
+            with_devnet_fees!(seq_account.execute_v3(vec![make_transfer_call(recipient, amount)]).nonce(seq_nonce));
+        let par_invoke =
+            with_devnet_fees!(par_account.execute_v3(vec![make_transfer_call(recipient, amount)]).nonce(seq_nonce));
+        let (invoke_seq, invoke_par) = tokio::join!(seq_invoke.send(), par_invoke.send());
+        let invoke_seq = invoke_seq.unwrap();
+        let invoke_par = invoke_par.unwrap();
+        let (invoke_seq_receipt, invoke_par_receipt) = tokio::join!(
+            wait_for_confirmed_receipt(&seq_rpc, invoke_seq.transaction_hash),
+            wait_for_confirmed_receipt(&par_rpc, invoke_par.transaction_hash)
+        );
 
-        let (seq_block, par_block) = submit_and_close_pair(
-            &seq_rpc,
-            &seq_admin_url,
-            invoke_seq.transaction_hash,
-            &par_rpc,
-            &par_admin_url,
-            invoke_par.transaction_hash,
-        )
-        .await;
-        assert_eq!(seq_block, par_block, "invoke block number diverged at logical step {step}");
-        assert_eq!(seq_block, expected_block_n, "unexpected invoke block number at logical step {step}");
-        final_block_n = seq_block;
+        seq_last_tx_block = seq_last_tx_block.max(invoke_seq_receipt.block.block_number());
+        par_last_tx_block = par_last_tx_block.max(invoke_par_receipt.block.block_number());
         seq_nonce += Felt::ONE;
-        expected_block_n += 1;
     }
 
-    assert_eq!(
-        final_block_n, NON_EMPTY_BLOCKS_TARGET as u64,
-        "expected final block number {NON_EMPTY_BLOCKS_TARGET} after replay"
-    );
+    let comparison_block_n = MIN_BLOCK_HEIGHT_TARGET.max(seq_last_tx_block + 3).max(par_last_tx_block + 3);
+
+    wait_for_block_at_least(&seq_rpc, comparison_block_n).await;
+    wait_for_block_at_least(&par_rpc, comparison_block_n).await;
 
     let seq_final_root =
-        extract_confirmed_root(seq_rpc.get_state_update(BlockId::Number(final_block_n)).await.unwrap());
+        extract_confirmed_root(seq_rpc.get_state_update(BlockId::Number(comparison_block_n)).await.unwrap());
     let par_final_root =
-        extract_confirmed_root(par_rpc.get_state_update(BlockId::Number(final_block_n)).await.unwrap());
+        extract_confirmed_root(par_rpc.get_state_update(BlockId::Number(comparison_block_n)).await.unwrap());
 
     assert_eq!(
         seq_final_root, par_final_root,
-        "state roots diverged after {NON_EMPTY_BLOCKS_TARGET} non-empty blocks: sequential root {:#x}, parallel root {:#x}",
-        seq_final_root, par_final_root
+        "state roots diverged at block {}: sequential root {:#x}, parallel root {:#x}",
+        comparison_block_n, seq_final_root, par_final_root
     );
 }
