@@ -272,7 +272,7 @@ mod get_messages_status_tests {
     fn l1_txn_hash_deserializes_num_hex_inputs(#[case] source: &str, #[case] expected_json_hex: &str) {
         let h: L1TxnHash = serde_json::from_str(&format!("\"{}\"", source)).unwrap();
         let serialized = serde_json::to_string(&h).unwrap();
-        assert_eq!(serialized, expected_json_hex);
+        assert_eq!(serialized, format!("\"{expected_json_hex}\""));
     }
 
     #[rstest]
