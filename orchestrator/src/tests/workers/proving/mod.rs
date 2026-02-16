@@ -91,6 +91,14 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
         })
         .returning(move |_, _, _, _| Ok(snos_jobs.clone()));
 
+    let expected_proving_jobs = if incomplete_runs { 4 } else { 5 };
+    db.expect_get_snos_batches_by_indices().times(expected_proving_jobs).withf(|indices| indices.len() == 1).returning(
+        |indices| {
+            let index = indices[0];
+            Ok(vec![SnosBatch { index, start_block: index, end_block: index, num_blocks: 1, ..Default::default() }])
+        },
+    );
+
     // Set up expectations for each job
     for i in 1..=num_jobs {
         if incomplete_runs && i == random_incomplete_job_id {

@@ -4646,7 +4646,7 @@
         "x": 0,
         "y": 114
       },
-      "id": 307,
+      "id": 309,
       "options": {
         "legend": {
           "calcs": [
@@ -4758,7 +4758,7 @@
         "x": 12,
         "y": 114
       },
-      "id": 308,
+      "id": 314,
       "options": {
         "legend": {
           "calcs": [
@@ -5571,120 +5571,84 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
           "legendFormat": "Total Close Block",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap merklization_ms [$__interval]) by ()",
           "legendFormat": "Merklization",
           "refId": "B"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap commitments_ms [$__interval]) by ()",
           "legendFormat": "Commitments",
           "refId": "C"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap db_write_ms [$__interval]) by ()",
           "legendFormat": "DB Write",
           "refId": "D"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap block_hash_ms [$__interval]) by ()",
           "legendFormat": "Block Hash",
           "refId": "E"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_preconfirmed_ms [$__interval]) by ()",
           "legendFormat": "Close Preconfirmed",
           "refId": "F"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap get_full_block_ms [$__interval]) by ()",
           "legendFormat": "Get Full Block",
           "refId": "G"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_ms [$__interval]) by ()",
           "legendFormat": "Contract Trie",
           "refId": "H"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_ms [$__interval]) by ()",
           "legendFormat": "Class Trie",
           "refId": "I"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_storage_trie_commit_ms [$__interval]) by ()",
           "legendFormat": "Contract Storage Trie Commit",
           "refId": "J"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap contract_trie_commit_ms [$__interval]) by ()",
           "legendFormat": "Contract Trie Commit",
           "refId": "K"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap class_trie_commit_ms [$__interval]) by ()",
           "legendFormat": "Class Trie Commit",
@@ -5728,11 +5692,7 @@
           "showLegend": true,
           "displayMode": "table",
           "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "mean",
-            "max"
-          ]
+          "calcs": ["lastNotNull", "mean", "max"]
         },
         "tooltip": {
           "mode": "multi",
@@ -5741,10 +5701,7 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
           "legendFormat": "Close Block Total (p50)",
@@ -5800,120 +5757,84 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap tx_count [$__interval]) by ()",
           "legendFormat": "Tx Count",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap event_count [$__interval]) by ()",
           "legendFormat": "Event Count",
           "refId": "B"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_executed [$__interval]) by ()",
           "legendFormat": "Txs Executed",
           "refId": "C"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_reverted [$__interval]) by ()",
           "legendFormat": "Txs Reverted",
           "refId": "D"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap state_diff_len [$__interval]) by ()",
           "legendFormat": "State Diff Length",
           "refId": "E"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap batches_executed [$__interval]) by ()",
           "legendFormat": "Batches Executed",
           "refId": "F"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_added_to_block [$__interval]) by ()",
           "legendFormat": "Txs Added to Block",
           "refId": "G"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap txs_rejected [$__interval]) by ()",
           "legendFormat": "Txs Rejected",
           "refId": "H"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap classes_declared [$__interval]) by ()",
           "legendFormat": "Classes Declared",
           "refId": "I"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap deployed_contracts [$__interval]) by ()",
           "legendFormat": "Deployed Contracts",
           "refId": "J"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap storage_diffs [$__interval]) by ()",
           "legendFormat": "Storage Diffs",
           "refId": "K"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap nonce_updates [$__interval]) by ()",
           "legendFormat": "Nonce Updates",
@@ -5957,11 +5878,7 @@
           "showLegend": true,
           "displayMode": "table",
           "placement": "right",
-          "calcs": [
-            "lastNotNull",
-            "mean",
-            "max"
-          ]
+          "calcs": ["lastNotNull", "mean", "max"]
         },
         "tooltip": {
           "mode": "multi",
@@ -5970,60 +5887,42 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap l2_gas_consumed [$__interval]) by ()",
           "legendFormat": "L2 Gas Consumed",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_l1_gas [$__interval]) by ()",
           "legendFormat": "Bouncer L1 Gas",
           "refId": "B"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_sierra_gas [$__interval]) by ()",
           "legendFormat": "Bouncer Sierra Gas",
           "refId": "C"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_n_events [$__interval]) by ()",
           "legendFormat": "Bouncer Events",
           "refId": "D"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_message_segment_length [$__interval]) by ()",
           "legendFormat": "Bouncer Msg Segment Len",
           "refId": "E"
         },
         {
-          "datasource": {
-            "type": "loki",
-            "uid": "${DS_LOKI}"
-          },
+          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
           "editorMode": "code",
           "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_state_diff_size [$__interval]) by ()",
           "legendFormat": "Bouncer State Diff Size",
@@ -6048,6 +5947,9 @@
       "transformations": []
     },
     {
+      "id": 400,
+      "title": "External DB",
+      "type": "row",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -6055,7 +5957,1111 @@
         "x": 0,
         "y": 187
       },
-      "id": 314,
+      "panelLinks": null,
+      "targets": null,
+      "panels": []
+    },
+    {
+      "id": 401,
+      "type": "stat",
+      "title": "Outbox Backlog",
+      "description": "Estimated number of pending outbox (WAL) entries in RocksDB",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 188
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#56A64B",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(external_db_outbox_size{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Outbox backlog",
+          "refId": "A"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 402,
+      "type": "stat",
+      "title": "Outbox Writes/s (5m)",
+      "description": "Outbox append throughput (mempool -> RocksDB)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 188
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF9830",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_outbox_writes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Outbox writes/s",
+          "refId": "A"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 403,
+      "type": "stat",
+      "title": "Outbox Write Errors/s (5m)",
+      "description": "Outbox append failures (mempool -> RocksDB)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 188
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_outbox_write_errors_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Outbox write errors/s",
+          "refId": "A"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 404,
+      "type": "stat",
+      "title": "Mongo Write Errors/s (5m)",
+      "description": "MongoDB insert failures while draining outbox",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 188
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_mongodb_write_errors_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Mongo write errors/s",
+          "refId": "A"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 405,
+      "type": "stat",
+      "title": "MongoDB Up",
+      "description": "MongoDB availability gauge (1 = up, 0 = down). Reflects the last MongoDB operation in the external-db pipeline.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 188
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "#56A64B",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(external_db_mongodb_up{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "MongoDB up",
+          "refId": "A"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 406,
+      "type": "stat",
+      "title": "Retention Lag (blocks)",
+      "description": "Lag between eligible confirmed blocks and processed retention deletions",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 188
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF9830",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(external_db_retention_lag_blocks{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Retention lag (blocks)",
+          "refId": "A"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 407,
+      "type": "timeseries",
+      "title": "External DB Outbox Backlog",
+      "description": "Outbox backlog estimate and configured batch size",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 192
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(external_db_outbox_size{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Outbox backlog",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(external_db_batch_size{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Batch size",
+          "refId": "B"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 408,
+      "type": "timeseries",
+      "title": "Mempool -> Outbox (WAL Append)",
+      "description": "Append path metrics (accept tx -> write WAL to RocksDB). Strict rejections indicate strict_outbox=true failures.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 192
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*error.*|.*Error.*|.*reject.*|.*Reject.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_outbox_writes_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Outbox writes/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_outbox_write_errors_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Write errors/s",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_outbox_strict_rejections_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Strict rejections/s",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_outbox_rollback_delete_errors_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Rollback delete errors/s",
+          "refId": "D"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 409,
+      "type": "timeseries",
+      "title": "External DB Drain",
+      "description": "Drain path metrics (read outbox -> convert -> insert_many -> delete outbox). Rates are over 5m.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 200
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_transactions_attempted_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Attempted/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_transactions_written_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Written/s",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_transactions_duplicates_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Duplicates/s",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_transactions_deleted_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Deleted/s",
+          "refId": "D"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 410,
+      "type": "timeseries",
+      "title": "Mongo InsertMany Latency",
+      "description": "Histogram quantiles for external_db_write_latency_seconds (rate over 5m).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 200
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(external_db_write_latency_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(external_db_write_latency_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 411,
+      "type": "timeseries",
+      "title": "External DB Worker Errors",
+      "description": "Error counters by stage (rate over 5m)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 208
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Error.*|.*error.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_outbox_read_errors_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Outbox read errors/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_document_convert_errors_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Doc convert errors/s",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_mongodb_write_errors_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Mongo write errors/s",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_outbox_delete_errors_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Outbox delete errors/s",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_retention_tick_errors_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Retention tick errors/s",
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(rate(external_db_retry_count_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "Retry count/s",
+          "refId": "F"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "id": 412,
+      "type": "timeseries",
+      "title": "External DB Retention Progress",
+      "description": "L1 confirmation height and the latest eligible block for retention deletions",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 208
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(external_db_retention_latest_confirmed_block{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Latest confirmed (L1)",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "max(external_db_retention_eligible_latest_block{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Eligible latest",
+          "refId": "B"
+        }
+      ],
+      "pluginVersion": "11.4.0"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 216
+      },
+      "id": 413,
       "panels": [],
       "title": "Execution Read Cache",
       "type": "row"
@@ -6075,7 +7081,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "#56A64B",
                 "value": null
               }
             ]
@@ -6088,9 +7094,9 @@
         "h": 6,
         "w": 6,
         "x": 0,
-        "y": 188
+        "y": 217
       },
-      "id": 315,
+      "id": 414,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -6146,9 +7152,9 @@
         "h": 6,
         "w": 12,
         "x": 6,
-        "y": 188
+        "y": 217
       },
-      "id": 316,
+      "id": 415,
       "options": {
         "legend": {
           "displayMode": "table",
@@ -6208,7 +7214,7 @@
                 "value": null
               },
               {
-                "color": "green",
+                "color": "#56A64B",
                 "value": 0.8
               }
             ]
@@ -6221,9 +7227,9 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 188
+        "y": 217
       },
-      "id": 317,
+      "id": 416,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
