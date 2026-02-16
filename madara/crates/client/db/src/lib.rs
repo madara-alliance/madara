@@ -724,7 +724,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let preconfirmed_view =
             self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
 
-        let (mut block, classes, fetch_duration) = if let Some(state_diff) = state_diff {
+        let (block, classes, fetch_duration) = if let Some(state_diff) = state_diff {
             // Optimized path: skip expensive get_normalized_state_diff()
             // The caller provides a complete state_diff with all fields populated
             let (mut block, classes) = preconfirmed_view.get_full_block_without_state_diff()?;
