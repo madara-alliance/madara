@@ -281,27 +281,21 @@ impl ExecutionReadCacheInner {
 
     fn insert_storage(&mut self, contract_address: ContractAddress, key: StorageKey, value: Felt) {
         let cache_key = (contract_address, key);
-        self.insert_with_accounting(
-            Self::STORAGE_ENTRY_SIZE,
-            CacheKey::Storage(cache_key),
-            |this, seq| this.storage.insert(cache_key, CacheEntry { value, seq }).is_some(),
-        );
+        self.insert_with_accounting(Self::STORAGE_ENTRY_SIZE, CacheKey::Storage(cache_key), |this, seq| {
+            this.storage.insert(cache_key, CacheEntry { value, seq }).is_some()
+        });
     }
 
     fn insert_nonce(&mut self, contract_address: ContractAddress, value: Nonce) {
-        self.insert_with_accounting(
-            Self::NONCE_ENTRY_SIZE,
-            CacheKey::Nonce(contract_address),
-            |this, seq| this.nonces.insert(contract_address, CacheEntry { value, seq }).is_some(),
-        );
+        self.insert_with_accounting(Self::NONCE_ENTRY_SIZE, CacheKey::Nonce(contract_address), |this, seq| {
+            this.nonces.insert(contract_address, CacheEntry { value, seq }).is_some()
+        });
     }
 
     fn insert_class_hash(&mut self, contract_address: ContractAddress, value: ClassHash) {
-        self.insert_with_accounting(
-            Self::CLASS_HASH_ENTRY_SIZE,
-            CacheKey::ClassHash(contract_address),
-            |this, seq| this.class_hashes.insert(contract_address, CacheEntry { value, seq }).is_some(),
-        );
+        self.insert_with_accounting(Self::CLASS_HASH_ENTRY_SIZE, CacheKey::ClassHash(contract_address), |this, seq| {
+            this.class_hashes.insert(contract_address, CacheEntry { value, seq }).is_some()
+        });
     }
 
     fn insert_compiled_class_hash(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
@@ -612,8 +606,8 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
 #[cfg(test)]
 mod tests {
     use super::{ExecutionReadCache, LayeredStateAdapter};
-    use blockifier::state::{cached_state::StateMaps, state_api::StateReader};
     use crate::metrics::test_counters;
+    use blockifier::state::{cached_state::StateMaps, state_api::StateReader};
     use mc_db::{ExecutionReadCacheConfig, MadaraBackend, MadaraBackendConfig};
     use mp_block::{
         header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
