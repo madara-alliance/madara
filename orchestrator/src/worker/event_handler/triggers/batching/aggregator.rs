@@ -22,7 +22,6 @@ use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Upd
 use starknet_core::types::{BlockId, StateUpdate};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-use std::time::Instant;
 use tracing::{debug, error, info};
 
 #[allow(clippy::large_enum_variant)]
@@ -299,9 +298,6 @@ impl AggregatorHandler {
         start_block: u64,
         blob_len: usize,
     ) -> Result<AggregatorBatch, JobError> {
-        // Start timing batch creation
-        let start_time = Instant::now();
-
         // Fetch Starknet version for the start block
         // In tests, use a default version if fetch fails due to HTTP mocking limitations
         let starknet_version = get_block_version(start_block, self.config.madara_rpc_client()).await?;
@@ -334,24 +330,15 @@ impl AggregatorHandler {
 
         let batch = AggregatorBatch::new(index, start_block, bucket_id.clone(), blob_len, weights, starknet_version);
 
-        // Record batch creation time with starknet_version in metrics
-        let duration = start_time.elapsed();
+        // Record batch creation count
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", JobType::Aggregator)),
-            KeyValue::new("batch_index", index.to_string()),
             KeyValue::new("starknet_version", starknet_version.to_string()),
         ];
-        ORCHESTRATOR_METRICS.batch_creation_time.record(duration.as_secs_f64(), &attributes);
-
-        // Increment total batches created.
         // "Batching rate" is derived in PromQL/Grafana from this counter.
         ORCHESTRATOR_METRICS.batch_creation_total.add(1.0, &attributes);
 
-        debug!(
-            index = %index,
-            duration_seconds = %duration.as_secs_f64(),
-            "Batch created successfully"
-        );
+        debug!(index = %index, "Batch created successfully");
 
         Ok(batch)
     }

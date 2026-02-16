@@ -1627,7 +1627,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Time taken to create batches for different job types",
+      "description": "Batches created in a rolling 1h window by job type",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1637,7 +1637,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Time (s)",
+            "axisLabel": "Batches",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -1677,7 +1677,7 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -1708,22 +1708,12 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (operation_job_type, le)) >= 0",
-          "legendFormat": "p99 - {{operation_job_type}}",
+          "expr": "sum by(operation_job_type) (increase(batch_creation_total{service_name=\"${namespace}\"}[1h]))",
+          "legendFormat": "{{operation_job_type}}",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (operation_job_type, le)) >= 0",
-          "legendFormat": "p95 - {{operation_job_type}}",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.50, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (operation_job_type, le)) >= 0",
-          "legendFormat": "p50 - {{operation_job_type}}",
-          "refId": "C"
         }
       ],
-      "title": "Batch Creation Time (Percentiles)",
+      "title": "Batches Created (rolling 1h)",
       "type": "timeseries"
     },
     {
@@ -1731,7 +1721,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Rate of batch creation per minute by job type",
+      "description": "Rate of batch creation per hour by job type",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1741,7 +1731,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Batches/min",
+            "axisLabel": "Batches/hour",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
@@ -1811,12 +1801,12 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "sum by(operation_job_type) (rate(batch_creation_total{service_name=\"${namespace}\"}[$__rate_interval])) * 60",
+          "expr": "sum by(operation_job_type) (rate(batch_creation_total{service_name=\"${namespace}\"}[$__rate_interval])) * 3600",
           "legendFormat": "{{operation_job_type}}",
           "refId": "A"
         }
       ],
-      "title": "Batch Creation Rate",
+      "title": "Batch Creation Rate (per hour)",
       "type": "timeseries"
     },
     {
@@ -1824,7 +1814,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Average batch creation time by job type",
+      "description": "Total batches created in the last 5 minutes",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1840,15 +1830,15 @@
               },
               {
                 "color": "yellow",
-                "value": 1
+                "value": 10
               },
               {
                 "color": "red",
-                "value": 5
+                "value": 50
               }
             ]
           },
-          "unit": "s"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -1879,12 +1869,12 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "avg by(operation_job_type) (rate(batch_creation_time_seconds_sum{service_name=\"${namespace}\"}[$__rate_interval]) / (rate(batch_creation_time_seconds_count{service_name=\"${namespace}\"}[$__rate_interval]) > 0))",
-          "legendFormat": "{{operation_job_type}}",
+          "expr": "sum(increase(batch_creation_total{service_name=\"${namespace}\"}[5m]))",
+          "legendFormat": "Total Batches",
           "refId": "A"
         }
       ],
-      "title": "Avg Batch Creation Time",
+      "title": "Batches Created (5m)",
       "type": "stat"
     },
     {
@@ -1960,7 +1950,7 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Distribution of batch sizes being created",
+      "description": "Distribution of batches created by job type in the last 5 minutes",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2016,7 +2006,7 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "sum by(operation_job_type) (increase(batch_creation_time_seconds_count{service_name=\"${namespace}\"}[5m]))",
+          "expr": "sum by(operation_job_type) (increase(batch_creation_total{service_name=\"${namespace}\"}[5m]))",
           "legendFormat": "{{operation_job_type}}",
           "refId": "A"
         }
@@ -2029,15 +2019,13 @@
         "type": "prometheus",
         "uid": "${datasource}"
       },
-      "description": "Maximum batch creation time observed",
+      "description": "Peak batch creation rate per hour across job types",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
           "mappings": [],
-          "max": 10,
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -2047,19 +2035,19 @@
               },
               {
                 "color": "yellow",
-                "value": 3
+                "value": 10
               },
               {
                 "color": "orange",
-                "value": 5
+                "value": 30
               },
               {
                 "color": "red",
-                "value": 8
+                "value": 60
               }
             ]
           },
-          "unit": "s"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -2088,12 +2076,12 @@
       "pluginVersion": "12.3.0",
       "targets": [
         {
-          "expr": "max(histogram_quantile(1.0, sum(rate(batch_creation_time_seconds_bucket{service_name=\"${namespace}\"}[$__rate_interval])) by (le)) >= 0)",
-          "legendFormat": "Max Time",
+          "expr": "max(sum by(operation_job_type) (rate(batch_creation_total{service_name=\"${namespace}\"}[$__rate_interval])) * 3600)",
+          "legendFormat": "Peak Rate",
           "refId": "A"
         }
       ],
-      "title": "Max Batch Creation Time",
+      "title": "Peak Batch Rate (per hour)",
       "type": "gauge"
     },
     {
