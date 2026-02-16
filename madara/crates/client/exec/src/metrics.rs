@@ -11,6 +11,32 @@ use opentelemetry::{global, InstrumentationScope, KeyValue};
 use starknet_api::executable_transaction::TransactionType;
 use std::time::Instant;
 
+/// Test-only counters for verifying metrics in unit tests.
+#[cfg(test)]
+pub mod test_counters {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    pub static READ_CACHE_HITS_TOTAL: AtomicU64 = AtomicU64::new(0);
+    pub static READ_CACHE_MISSES_TOTAL: AtomicU64 = AtomicU64::new(0);
+    pub static READ_CACHE_SIZE_LAST: AtomicU64 = AtomicU64::new(0);
+    pub static READ_CACHE_SIZE_RECORDS: AtomicU64 = AtomicU64::new(0);
+
+    pub fn acquire_and_reset() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        reset_all();
+        guard
+    }
+
+    pub fn reset_all() {
+        READ_CACHE_HITS_TOTAL.store(0, Ordering::Relaxed);
+        READ_CACHE_MISSES_TOTAL.store(0, Ordering::Relaxed);
+        READ_CACHE_SIZE_LAST.store(0, Ordering::Relaxed);
+        READ_CACHE_SIZE_RECORDS.store(0, Ordering::Relaxed);
+    }
+}
+
 /// Transaction type labels for metrics.
 pub mod tx_type_label {
     pub const INVOKE: &str = "invoke";
@@ -99,14 +125,23 @@ impl ExecutionMetrics {
     }
 
     pub fn record_read_cache_hit(&self, kind: &str) {
+        #[cfg(test)]
+        test_counters::READ_CACHE_HITS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.read_cache_hits_counter.add(1, &[KeyValue::new("kind", kind.to_string())]);
     }
 
     pub fn record_read_cache_miss(&self, kind: &str) {
+        #[cfg(test)]
+        test_counters::READ_CACHE_MISSES_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.read_cache_misses_counter.add(1, &[KeyValue::new("kind", kind.to_string())]);
     }
 
     pub fn record_read_cache_size_bytes(&self, size_bytes: u64) {
+        #[cfg(test)]
+        {
+            test_counters::READ_CACHE_SIZE_LAST.store(size_bytes, std::sync::atomic::Ordering::Relaxed);
+            test_counters::READ_CACHE_SIZE_RECORDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         self.read_cache_size_bytes.record(size_bytes, &[]);
     }
 }

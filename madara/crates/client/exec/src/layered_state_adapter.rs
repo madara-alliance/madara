@@ -613,6 +613,7 @@ impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
 mod tests {
     use super::{ExecutionReadCache, LayeredStateAdapter};
     use blockifier::state::{cached_state::StateMaps, state_api::StateReader};
+    use crate::metrics::test_counters;
     use mc_db::{ExecutionReadCacheConfig, MadaraBackend, MadaraBackendConfig};
     use mp_block::{
         header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
@@ -622,7 +623,7 @@ mod tests {
     use mp_convert::{Felt, ToFelt};
     use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
     use starknet_api::core::{ClassHash, CompiledClassHash, Nonce};
-    use std::sync::Arc;
+    use std::sync::{atomic::Ordering, Arc};
 
     fn insert_confirmed_block_with_storage(
         backend: &Arc<MadaraBackend>,
@@ -900,5 +901,36 @@ mod tests {
         assert!(cache.should_cache_class_hash(class_hash_without_contract_mapping));
         assert_eq!(cache.get_compiled_class_hash(class_hash_without_contract_mapping), Some(compiled_hash));
         assert_eq!(cache.get_compiled_class_hash_v2(class_hash_without_contract_mapping), Some(compiled_hash_v2));
+    }
+
+    #[tokio::test]
+    async fn test_execution_read_cache_metrics_harness_records_hit_miss_and_size() {
+        let _metrics_guard = test_counters::acquire_and_reset();
+
+        let config = MadaraBackendConfig {
+            execution_read_cache: ExecutionReadCacheConfig {
+                enabled: true,
+                all_contracts: true,
+                contracts: Vec::new(),
+                max_memory_bytes: 1024 * 1024,
+            },
+            ..Default::default()
+        };
+
+        let backend = MadaraBackend::open_for_testing_with_config(ChainConfig::madara_test().into(), config);
+        backend.set_l1_gas_quote_for_testing();
+        let adaptor = LayeredStateAdapter::new(backend).unwrap();
+
+        let contract_address = Felt::ONE.try_into().unwrap();
+        let storage_key = Felt::ONE.try_into().unwrap();
+
+        // First call misses read-cache and backfills from DB; second call hits read-cache.
+        let _ = adaptor.get_storage_at(contract_address, storage_key).unwrap();
+        let _ = adaptor.get_storage_at(contract_address, storage_key).unwrap();
+
+        assert!(test_counters::READ_CACHE_MISSES_TOTAL.load(Ordering::Relaxed) >= 1);
+        assert!(test_counters::READ_CACHE_HITS_TOTAL.load(Ordering::Relaxed) >= 1);
+        assert!(test_counters::READ_CACHE_SIZE_RECORDS.load(Ordering::Relaxed) >= 1);
+        assert!(test_counters::READ_CACHE_SIZE_LAST.load(Ordering::Relaxed) > 0);
     }
 }
