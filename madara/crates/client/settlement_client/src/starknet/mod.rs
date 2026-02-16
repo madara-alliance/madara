@@ -736,8 +736,6 @@ mod starknet_client_messaging_test {
         StarknetClientTextFixture { context, db_service: db, starknet_client }
     }
 
-    #[rstest]
-    #[tokio::test]
     /// End-to-end test for Starknet-settlement-provider L1->L2 messaging metadata.
     ///
     /// Desired results:
@@ -745,6 +743,8 @@ mod starknet_client_messaging_test {
     ///   `getMessagesStatus` indices (`nonce -> l1_tx_hash` and `l1_tx_hash||nonce -> marker`).
     /// - After simulating L2 execution (writing a consumed L1-handler receipt), the pending entry is removed and the
     ///   `l1_tx_hash||nonce` entry is filled with the consumed L2 transaction hash.
+    #[rstest]
+    #[tokio::test]
     async fn e2e_test_basic_workflow_starknet(#[future] test_fixture: StarknetClientTextFixture) -> anyhow::Result<()> {
         let fixture = test_fixture.await;
 

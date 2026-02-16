@@ -256,39 +256,37 @@ pub struct MessageStatus {
 #[cfg(test)]
 mod get_messages_status_tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn l1_txn_hash_accepts_short_hex_and_left_pads() {
-        let h: L1TxnHash = serde_json::from_str("\"0x1\"").unwrap();
-        let mut expected = [0u8; 32];
-        expected[31] = 1;
-        assert_eq!(h, L1TxnHash(expected));
-        assert_eq!(
-            serde_json::to_string(&h).unwrap(),
-            "\"0x0000000000000000000000000000000000000000000000000000000000000001\""
-        );
+    #[rstest]
+    #[case::starknet_short_tx_hash("0x1", "0x0000000000000000000000000000000000000000000000000000000000000001")]
+    #[case::starknet_odd_nibbles("0xabc", "0x0000000000000000000000000000000000000000000000000000000000000abc")]
+    #[case::ethereum_hash_like(
+        "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    )]
+    #[case::ethereum_leading_zeros(
+        "0x00000000000000000000000000000000000000000000000000000000000000ab",
+        "0x00000000000000000000000000000000000000000000000000000000000000ab"
+    )]
+    fn l1_txn_hash_deserializes_num_hex_inputs(#[case] source: &str, #[case] expected_json_hex: &str) {
+        let h: L1TxnHash = serde_json::from_str(&format!("\"{}\"", source)).unwrap();
+        let serialized = serde_json::to_string(&h).unwrap();
+        assert_eq!(serialized, expected_json_hex);
+    }
+
+    #[rstest]
+    #[case::missing_prefix("123", "expected a 0x-prefixed hex string")]
+    #[case::invalid_characters("0xzz", "invalid hex digit")]
+    fn l1_txn_hash_rejects_invalid_inputs(#[case] source: &str, #[case] expected_error: &str) {
+        let err = serde_json::from_str::<L1TxnHash>(&format!("\"{}\"", source)).unwrap_err();
+        assert!(err.to_string().contains(expected_error));
     }
 
     #[test]
-    fn l1_txn_hash_accepts_odd_nibbles() {
-        let h: L1TxnHash = serde_json::from_str("\"0xabc\"").unwrap();
-        let mut expected = [0u8; 32];
-        expected[30] = 0x0a;
-        expected[31] = 0xbc;
-        assert_eq!(h, L1TxnHash(expected));
-    }
-
-    #[test]
-    fn l1_txn_hash_rejects_missing_prefix() {
-        let err = serde_json::from_str::<L1TxnHash>("\"123\"").unwrap_err();
-        assert!(err.to_string().contains("0x-prefixed"));
-    }
-
-    #[test]
-    fn l1_txn_hash_rejects_too_long() {
-        // 65 hex digits after 0x
-        let s = format!("\"0x{}\"", "1".repeat(65));
-        let err = serde_json::from_str::<L1TxnHash>(&s).unwrap_err();
+    fn l1_txn_hash_rejects_too_long_input() {
+        let source = format!("\"0x{}\"", "1".repeat(65));
+        let err = serde_json::from_str::<L1TxnHash>(&source).unwrap_err();
         assert!(err.to_string().contains("at most 64"));
     }
 }

@@ -82,13 +82,17 @@ impl RocksDBStorageInner {
         let cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
         let key = Self::message_to_l2_by_l1_tx_key(l1_tx_hash, core_contract_nonce);
         let Some(existing) = self.db.get_pinned_cf(&cf, key)? else { return Ok(None) };
-        Ok(Some(match existing.len() {
-            0 => L1ToL2MessageIndexEntry::Seen,
-            32 => L1ToL2MessageIndexEntry::Consumed(Felt::from_bytes_be(
-                existing[..].try_into().expect("slice len checked"),
-            )),
+        Ok(Some(Self::parse_l1_to_l2_message_status(&existing)?))
+    }
+
+    fn parse_l1_to_l2_message_status(raw: &[u8]) -> Result<L1ToL2MessageIndexEntry> {
+        match raw.len() {
+            0 => Ok(L1ToL2MessageIndexEntry::Seen),
+            32 => {
+                Ok(L1ToL2MessageIndexEntry::Consumed(Felt::from_bytes_be(raw.try_into().expect("slice len checked"))))
+            }
             n => bail!("Invalid l1->l2 message value length: expected 0 or 32, got {n}"),
-        }))
+        }
     }
 
     /// Insert the `(l1_tx_hash, nonce)` key with an empty marker value, if it is missing.
@@ -149,10 +153,9 @@ impl RocksDBStorageInner {
                 bail!("Invalid l1->l2 message key length: expected 40, got {}", key.len());
             }
             let nonce = u64::from_be_bytes(key[32..40].try_into().expect("slice len checked"));
-            let l2_hash = match val.len() {
-                0 => None,
-                32 => Some(Felt::from_bytes_be(val[..].try_into().expect("slice len checked"))),
-                n => bail!("Invalid l1->l2 message value length: expected 0 or 32, got {n}"),
+            let l2_hash = match Self::parse_l1_to_l2_message_status(&val)? {
+                L1ToL2MessageIndexEntry::Seen => None,
+                L1ToL2MessageIndexEntry::Consumed(tx_hash) => Some(tx_hash),
             };
             out.push((nonce, l2_hash));
         }
@@ -242,5 +245,41 @@ impl RocksDBStorageInner {
             batch.delete_cf(&on_l2_cf, core_contract_nonce.to_be_bytes());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::seen(&[])]
+    #[case::consumed(&[
+        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+        0xaa, 0xbb,
+    ])]
+    fn parse_l1_to_l2_message_status_parses_known_encodings(#[case] raw: &[u8]) {
+        let expected = match raw.len() {
+            0 => L1ToL2MessageIndexEntry::Seen,
+            32 => {
+                let mut bytes = [0u8; 32];
+                bytes.copy_from_slice(raw);
+                L1ToL2MessageIndexEntry::Consumed(Felt::from_bytes_be(&bytes))
+            }
+            _ => unreachable!(),
+        };
+        assert_eq!(RocksDBStorageInner::parse_l1_to_l2_message_status(raw).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::invalid_len_1(&[0u8])]
+    #[case::invalid_len_31(&[0u8; 31])]
+    #[case::invalid_len_33(&[0u8; 33])]
+    fn parse_l1_to_l2_message_status_rejects_invalid_sizes(#[case] raw: &[u8]) {
+        let err = RocksDBStorageInner::parse_l1_to_l2_message_status(raw)
+            .expect_err("invalid message value length should be rejected");
+        assert!(err.to_string().contains("expected 0 or 32"));
     }
 }
