@@ -718,28 +718,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     pub fn close_preconfirmed(
         &self,
         pre_v0_13_2_hash_override: bool,
-        state_diff: Option<StateDiff>,
+        state_diff: StateDiff,
     ) -> Result<AddFullBlockResult> {
         let fetch_start = Instant::now();
         let preconfirmed_view =
             self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
-
-        let (block, classes, fetch_duration) = if let Some(state_diff) = state_diff {
-            // Optimized path: skip expensive get_normalized_state_diff()
-            // The caller provides a complete state_diff with all fields populated
-            let (mut block, classes) = preconfirmed_view.get_full_block_without_state_diff()?;
-            let fetch_duration = fetch_start.elapsed();
-            block.state_diff = state_diff;
-            (block, classes, fetch_duration)
-        } else {
-            // Normal path: compute full normalized state diff
-            let (block, classes) = preconfirmed_view.get_full_block_with_classes()?;
-            let fetch_duration = fetch_start.elapsed();
-            let fetch_secs = fetch_duration.as_secs_f64();
-            metrics().get_full_block_with_classes_duration.record(fetch_secs, &[]);
-            metrics().get_full_block_with_classes_last.record(fetch_secs, &[]);
-            (block, classes, fetch_duration)
-        };
+        let (mut block, classes) = preconfirmed_view.get_full_block_without_state_diff()?;
+        let fetch_duration = fetch_start.elapsed();
+        block.state_diff = state_diff;
 
         // Write the block & apply to global trie
 
