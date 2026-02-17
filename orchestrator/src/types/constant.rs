@@ -2,9 +2,9 @@ use lazy_static::lazy_static;
 use num_bigint::{BigUint, ToBigUint};
 use std::str::FromStr;
 
-// Storage constants and path helpers live in core client storage.
+// Storage constants and path helpers live in types::storage_layout.
 // Re-exported here for backward compatibility across the codebase.
-pub use crate::core::client::storage::constants::{
+pub use crate::types::storage_layout::{
     get_batch_artifact_file, get_batch_artifacts_dir, get_batch_blob_dir, get_batch_blob_file,
     get_batch_state_update_file, get_snos_batch_dir, BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME,
     ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, PROOF_PART2_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
