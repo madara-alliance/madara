@@ -37,7 +37,7 @@
     "db_hard_pending_compaction_gib": 12,
     "exec_read_cache_enabled": false,
     "exec_read_cache_all_contracts": false,
-    "exec_read_cache_contracts": "",
+    "exec_read_cache_contracts": "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d",
     "exec_read_cache_max_memory_mib": 64
   },
   "l2_sync_params": {
