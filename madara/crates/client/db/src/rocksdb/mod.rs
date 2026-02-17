@@ -26,7 +26,7 @@ use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, FlushOptions, MultiThreaded, WriteOptions};
-use std::{collections::HashSet, fmt, path::Path, sync::Arc};
+use std::{fmt, path::Path, sync::Arc};
 
 mod backup;
 mod blocks;
@@ -568,6 +568,9 @@ impl MadaraStorageWrite for RocksDBStorage {
     /// * `new_tip_block_hash` - The block hash to revert to. This must be an existing block
     ///   that is an ancestor of the current chain tip. The block with this hash will become
     ///   the new chain tip after the revert completes.
+    /// * `l1_messages_rewind_hint` - Optional L1 block number hint used to safely rewind
+    ///   L1 message sync metadata when reverted L1-handler nonces are missing source-block
+    ///   mappings. If both DB-derived source blocks and a hint exist, the minimum is used.
     ///
     /// # Returns
     ///
@@ -592,8 +595,13 @@ impl MadaraStorageWrite for RocksDBStorage {
     ///
     /// # Notes
     ///
+    /// * L1-message preflight runs before destructive writes. If reverted L1-handler nonces
+    ///   are missing source-block mappings and no `l1_messages_rewind_hint` is provided,
+    ///   this function fails early without mutating chain state.
     /// * After calling this function, the caller MUST refresh the backend's chain_tip cache
     ///   by reading from the database, as this function only updates the database state.
+    /// * This function does not stop services or shutdown the process. Lifecycle side-effects
+    ///   are managed by upper layers (for example admin RPC orchestration).
     /// * This is a destructive operation - all blocks after the target block are permanently removed.
     /// * The function is atomic - if any step fails, the database may be in an inconsistent state.
     /// ```
@@ -641,7 +649,6 @@ impl MadaraStorageWrite for RocksDBStorage {
             .collect_reverted_l1_handler_nonces(target_block_n, current_tip)
             .context("Collecting reverted L1 handler nonces")?;
 
-        let reverted_l1_handler_nonces: HashSet<u64> = reverted_l1_handler_nonces.into_iter().collect();
         let mut min_source_l1_block: Option<u64> = None;
         let mut missing_source_block_nonces = Vec::new();
 
@@ -671,12 +678,9 @@ impl MadaraStorageWrite for RocksDBStorage {
             );
         }
 
-        let rewind_from_l1_block = match (min_source_l1_block, l1_messages_rewind_hint) {
-            (Some(db_min), Some(hint)) => Some(db_min.min(hint)),
-            (Some(db_min), None) => Some(db_min),
-            (None, Some(hint)) => Some(hint),
-            (None, None) => None,
-        };
+        let rewind_from_l1_block = [min_source_l1_block, l1_messages_rewind_hint].into_iter().flatten().min();
+        // Persist the tip one block before the chosen rewind point so next sync replays boundary events.
+        // This is intentional: L1 message ingestion/execution is idempotent by nonce and filters duplicates.
         let l1_messaging_sync_tip_after_revert = rewind_from_l1_block.map(|b| b.saturating_sub(1));
 
         tracing::info!(

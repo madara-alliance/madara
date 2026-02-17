@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use crate::{storage::StorageChainTip, test_utils::add_test_block, test_utils::l1_handler_tx_with_receipt, MadaraBackend, MadaraStorageRead};
+use crate::{
+    storage::StorageChainTip, test_utils::add_test_block, test_utils::l1_handler_tx_with_receipt, MadaraBackend,
+    MadaraStorageRead,
+};
 use mp_chain_config::ChainConfig;
 use mp_convert::Felt;
 use mp_transactions::L1HandlerTransactionWithFee;

@@ -15,9 +15,21 @@ use mp_utils::service::{MadaraServiceId, MadaraServiceStatus, SERVICE_GRACE_PERI
 use std::time::Duration;
 use tokio::time::Instant;
 
-fn services_to_stop_for_revert() -> [MadaraServiceId; 7] {
+const REVERT_STOP_WAIT_EXTRA: Duration = Duration::from_secs(5);
+const REVERT_STOP_LOG_INTERVAL: Duration = Duration::from_secs(1);
+const REVERT_STOP_POLL_INTERVAL: Duration = Duration::from_millis(200);
+const REVERT_SHUTDOWN_DELAY: Duration = Duration::from_millis(100);
+
+fn schedule_global_cancel(ctx: mp_utils::service::ServiceContext) {
+    tokio::spawn(async move {
+        tokio::time::sleep(REVERT_SHUTDOWN_DELAY).await;
+        ctx.cancel_global();
+    });
+}
+
+// Only include services controlled by ServiceMonitor.
+fn services_to_stop_for_revert() -> [MadaraServiceId; 6] {
     [
-        MadaraServiceId::Database,
         MadaraServiceId::L1Sync,
         MadaraServiceId::L2Sync,
         MadaraServiceId::BlockProduction,
@@ -163,10 +175,10 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         // 2) Wait until all services are *actually* down.
-        let timeout = SERVICE_GRACE_PERIOD + Duration::from_secs(5);
+        let timeout = SERVICE_GRACE_PERIOD + REVERT_STOP_WAIT_EXTRA;
         let deadline = Instant::now() + timeout;
         let mut last_log = Instant::now();
-        let log_interval = Duration::from_secs(1);
+        let log_interval = REVERT_STOP_LOG_INTERVAL;
 
         loop {
             let mut still_up: Vec<MadaraServiceId> = Vec::new();
@@ -186,6 +198,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                     "revertToAndShutdown: timed out waiting for services to stop; still_up={:?}",
                     still_up.iter().map(|s| s.to_string()).collect::<Vec<_>>()
                 );
+                schedule_global_cancel(self.ctx.clone());
                 return Err(StarknetRpcApiError::ErrUnexpectedError {
                     error: format!(
                         "Timed out waiting for services to stop (timeout {:?}). Still up: {:?}",
@@ -206,7 +219,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                 last_log = Instant::now();
             }
 
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            tokio::time::sleep(REVERT_STOP_POLL_INTERVAL).await;
         }
 
         tracing::info!(target: "rpc::admin", "revertToAndShutdown: all non-admin services are down; proceeding with revert");
@@ -233,11 +246,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         tracing::info!(target: "rpc::admin", "revertToAndShutdown: revert complete; triggering node shutdown");
 
         // Shut down the process after responding, so the client gets an ACK.
-        let ctx = self.ctx.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            ctx.cancel_global();
-        });
+        schedule_global_cancel(self.ctx.clone());
 
         Ok(())
     }

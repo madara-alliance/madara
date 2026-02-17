@@ -31,6 +31,9 @@ pub fn add_test_block(
 pub fn l1_handler_tx_with_receipt(nonce: u64, tx_hash: Felt) -> TransactionWithReceipt {
     TransactionWithReceipt {
         transaction: Transaction::L1Handler(L1HandlerTransaction { nonce, ..Default::default() }),
-        receipt: TransactionReceipt::L1Handler(L1HandlerTransactionReceipt { transaction_hash: tx_hash, ..Default::default() }),
+        receipt: TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+            transaction_hash: tx_hash,
+            ..Default::default()
+        }),
     }
 }
