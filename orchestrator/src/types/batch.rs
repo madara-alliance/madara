@@ -294,7 +294,7 @@ impl SnosBatchStatus {
 /// - SNOS batches can also close independently based on their own criteria
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 pub struct SnosBatch {
-    // Statis fields - set when starting and don't change after that
+    // Static fields - set when starting and don't change after that
     /// Unique identifier for the batch
     #[cfg_attr(feature = "with_mongodb", serde(rename = "_id", with = "uuid_1_as_binary"))]
     pub id: Uuid,
