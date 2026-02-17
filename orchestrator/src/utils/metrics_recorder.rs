@@ -269,4 +269,32 @@ impl MetricsRecorder {
             ORCHESTRATOR_METRICS.atlantic_data_transfer_bytes.add(data_size_bytes as f64, &attrs);
         }
     }
+
+    // =============================================================================
+    // Storage Cleanup Metrics
+    // =============================================================================
+
+    pub fn record_cleanup_run() {
+        ORCHESTRATOR_METRICS.cleanup_runs_total.add(1.0, &[]);
+    }
+
+    pub fn record_cleanup_job_attempted() {
+        ORCHESTRATOR_METRICS.cleanup_jobs_attempted.add(1.0, &[]);
+    }
+
+    pub fn record_cleanup_job_processed() {
+        ORCHESTRATOR_METRICS.cleanup_jobs_processed.add(1.0, &[]);
+    }
+
+    pub fn record_cleanup_artifacts_tagged(count: f64) {
+        if count > 0.0 {
+            ORCHESTRATOR_METRICS.cleanup_artifacts_tagged.add(count, &[]);
+        }
+    }
+
+    pub fn record_cleanup_failure(reason: &str) {
+        ORCHESTRATOR_METRICS
+            .cleanup_failures_total
+            .add(1.0, &[KeyValue::new("reason", reason.to_string())]);
+    }
 }
