@@ -73,8 +73,8 @@ async fn admin_revert_to(admin_url: &str, block_hash: Felt) {
         .post(admin_url)
         .json(&serde_json::json!({
             "jsonrpc": "2.0",
-            "method": "madara_revertTo",
-            "params": [format!("0x{:x}", block_hash)],
+            "method": "madara_revertToAndShutdown",
+            "params": [format!("0x{:x}", block_hash), serde_json::Value::Null],
             "id": 1,
         }))
         .send()
@@ -211,6 +211,7 @@ async fn e2e_devnet_replay_from_mongo_matches_root() {
 
     let cmd_builder = MadaraCmdBuilder::new()
         .env([
+            ("RUST_LOG", "info"),
             ("MADARA_EXTERNAL_DB_ENABLED", "true"),
             ("MADARA_EXTERNAL_DB_MONGODB_URI", uri.as_str()),
             ("MADARA_EXTERNAL_DB_DATABASE", db_name.as_str()),
@@ -343,17 +344,16 @@ async fn e2e_devnet_replay_from_mongo_matches_root() {
     let genesis_hash = extract_block_hash(rpc.get_state_update(BlockId::Number(0)).await.unwrap());
     admin_revert_to(&admin_url, genesis_hash).await;
 
+    // revertToAndShutdown exits the node after DB revert. Wait until RPC is unavailable.
     wait_for_cond(
         || async {
-            let block = rpc.block_hash_and_number().await?;
-            if block.block_number == 0 {
-                Ok(())
-            } else {
-                Err(anyhow::anyhow!("chain not reverted yet"))
+            match rpc.block_hash_and_number().await {
+                Ok(_) => Err(anyhow::anyhow!("node still running after revertToAndShutdown")),
+                Err(_) => Ok(()),
             }
         },
-        Duration::from_millis(500),
-        30,
+        Duration::from_millis(200),
+        60,
     )
     .await;
 
