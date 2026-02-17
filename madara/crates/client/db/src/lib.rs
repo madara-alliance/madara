@@ -138,8 +138,6 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 pub mod metrics;
-#[cfg(any(test, feature = "testing"))]
-pub mod test_utils;
 use metrics::metrics;
 pub mod migration;
 mod prelude;
