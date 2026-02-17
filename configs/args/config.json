@@ -34,7 +34,11 @@
     "db_l0_slowdown_trigger": 20,
     "db_l0_stop_trigger": 36,
     "db_soft_pending_compaction_gib": 6,
-    "db_hard_pending_compaction_gib": 12
+    "db_hard_pending_compaction_gib": 12,
+    "exec_read_cache_enabled": false,
+    "exec_read_cache_all_contracts": false,
+    "exec_read_cache_contracts":  "",
+    "exec_read_cache_max_memory_mib": 64
   },
   "l2_sync_params": {
     "l2_sync_disabled": false,
