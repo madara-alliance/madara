@@ -725,6 +725,10 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             self.inner.block_view_on_preconfirmed().context("There is no current preconfirmed block")?;
         let (mut block, classes) = preconfirmed_view.get_full_block_without_state_diff()?;
         let fetch_duration = fetch_start.elapsed();
+        let fetch_secs = fetch_duration.as_secs_f64();
+        metrics().get_full_block_without_state_diff_duration.record(fetch_secs, &[]);
+        metrics().get_full_block_without_state_diff_last.record(fetch_secs, &[]);
+
         block.state_diff = state_diff;
 
         // Write the block & apply to global trie
