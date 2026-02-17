@@ -8,9 +8,11 @@ use crate::types::constant::{
 };
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SettlementContext, StateUpdateMetadata};
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use chrono::Utc;
+use opentelemetry::KeyValue;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -36,6 +38,8 @@ impl JobTrigger for StorageCleanupTrigger {
                 return Ok(());
             }
         }
+
+        ORCHESTRATOR_METRICS.cleanup_runs_total.add(1.0, &[]);
 
         // Execute main work and ensure lock is released
         let result = self.process_completed_jobs(&config).await;
@@ -63,10 +67,17 @@ impl JobTrigger for StorageCleanupTrigger {
 impl StorageCleanupTrigger {
     /// Process completed StateTransition jobs that haven't had their artifacts tagged
     async fn process_completed_jobs(&self, config: &Arc<Config>) -> color_eyre::Result<()> {
-        let jobs_to_tag = config
+        let jobs_to_tag = match config
             .database()
             .get_jobs_without_storage_artifacts_tagged(Some(STORAGE_CLEANUP_MAX_JOBS_PER_RUN as i64))
-            .await?;
+            .await
+        {
+            Ok(jobs) => jobs,
+            Err(e) => {
+                ORCHESTRATOR_METRICS.cleanup_failures_total.add(1.0, &[KeyValue::new("reason", "db_jobs_lookup")]);
+                return Err(e.into());
+            }
+        };
 
         if jobs_to_tag.is_empty() {
             debug!("No completed StateTransition jobs need artifact tagging");
@@ -80,11 +91,13 @@ impl StorageCleanupTrigger {
         let mut total_artifacts_tagged = 0;
 
         for job in jobs_to_tag {
+            ORCHESTRATOR_METRICS.cleanup_jobs_attempted.add(1.0, &[]);
             let job_id = job.internal_id;
 
             let state_metadata: StateUpdateMetadata = match job.metadata.specific.clone().try_into() {
                 Ok(m) => m,
                 Err(e) => {
+                    ORCHESTRATOR_METRICS.cleanup_failures_total.add(1.0, &[KeyValue::new("reason", "metadata_parse")]);
                     error!(job_id = %job_id, error = %e, "Failed to parse StateUpdateMetadata");
                     continue;
                 }
@@ -111,7 +124,12 @@ impl StorageCleanupTrigger {
 
             let (tagged_count, all_tagged) = self.tag_artifacts(config, job_id, &paths_to_tag).await;
 
+            if tagged_count > 0 {
+                ORCHESTRATOR_METRICS.cleanup_artifacts_tagged.add(tagged_count as f64, &[]);
+            }
+
             if !all_tagged {
+                ORCHESTRATOR_METRICS.cleanup_failures_total.add(1.0, &[KeyValue::new("reason", "tagging")]);
                 warn!(
                     job_id = %job_id,
                     tagged = tagged_count,
@@ -122,12 +140,14 @@ impl StorageCleanupTrigger {
             }
 
             if let Err(e) = self.mark_job_tagged(config, &job, state_metadata).await {
+                ORCHESTRATOR_METRICS.cleanup_failures_total.add(1.0, &[KeyValue::new("reason", "update_job")]);
                 error!(job_id = %job_id, error = %e, "Failed to update job metadata after tagging");
                 continue;
             }
 
             jobs_processed += 1;
             total_artifacts_tagged += tagged_count;
+            ORCHESTRATOR_METRICS.cleanup_jobs_processed.add(1.0, &[]);
             debug!(job_id = %job_id, artifact_count = tagged_count, "Successfully tagged artifacts for expiration");
         }
 
@@ -167,13 +187,24 @@ impl StorageCleanupTrigger {
                     debug!(job_id = %job_id, dir = %dir, count = files.len(), "Found files");
                     paths.extend(files);
                 }
-                Err(e) => debug!(job_id = %job_id, dir = %dir, error = %e, "Dir not found or error"),
+                Err(e) => {
+                    ORCHESTRATOR_METRICS.cleanup_failures_total.add(1.0, &[KeyValue::new("reason", "list_dir")]);
+                    debug!(job_id = %job_id, dir = %dir, error = %e, "Dir not found or error");
+                }
             }
         }
 
         if matches!(state_metadata.context, SettlementContext::Batch(_)) {
             // Include SNOS batch dirs for all SNOS batches in this aggregator batch
-            let snos_batches = config.database().get_snos_batches_by_aggregator_index(job_id).await?;
+            let snos_batches = match config.database().get_snos_batches_by_aggregator_index(job_id).await {
+                Ok(batches) => batches,
+                Err(e) => {
+                    ORCHESTRATOR_METRICS
+                        .cleanup_failures_total
+                        .add(1.0, &[KeyValue::new("reason", "snos_batch_lookup")]);
+                    return Err(e.into());
+                }
+            };
             for snos_batch in snos_batches {
                 let snos_dir = get_snos_batch_dir(snos_batch.index);
                 match config.storage().list_files_in_dir(&snos_dir).await {
@@ -187,13 +218,16 @@ impl StorageCleanupTrigger {
                         );
                         paths.extend(files);
                     }
-                    Err(e) => debug!(
-                        job_id = %job_id,
-                        snos_batch_index = %snos_batch.index,
-                        dir = %snos_dir,
-                        error = %e,
-                        "SNOS batch dir not found or error"
-                    ),
+                    Err(e) => {
+                        ORCHESTRATOR_METRICS.cleanup_failures_total.add(1.0, &[KeyValue::new("reason", "list_dir")]);
+                        debug!(
+                            job_id = %job_id,
+                            snos_batch_index = %snos_batch.index,
+                            dir = %snos_dir,
+                            error = %e,
+                            "SNOS batch dir not found or error"
+                        );
+                    }
                 }
             }
         }

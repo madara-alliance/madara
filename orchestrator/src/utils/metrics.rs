@@ -58,6 +58,12 @@ pub struct OrchestratorMetrics {
     pub atlantic_api_errors_total: Counter<f64>,
     pub atlantic_api_retries_total: Counter<f64>,
     pub atlantic_data_transfer_bytes: Counter<f64>,
+    // Storage cleanup metrics
+    pub cleanup_runs_total: Counter<f64>,
+    pub cleanup_jobs_attempted: Counter<f64>,
+    pub cleanup_jobs_processed: Counter<f64>,
+    pub cleanup_artifacts_tagged: Counter<f64>,
+    pub cleanup_failures_total: Counter<f64>,
 }
 
 impl Metrics for OrchestratorMetrics {
@@ -323,6 +329,42 @@ impl Metrics for OrchestratorMetrics {
             "bytes".to_string(),
         );
 
+        // Storage cleanup metrics
+        let cleanup_runs_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_runs_total".to_string(),
+            "Total number of storage cleanup runs".to_string(),
+            "runs".to_string(),
+        );
+
+        let cleanup_jobs_processed = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_jobs_processed".to_string(),
+            "Total number of storage cleanup jobs processed successfully".to_string(),
+            "jobs".to_string(),
+        );
+
+        let cleanup_jobs_attempted = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_jobs_attempted".to_string(),
+            "Total number of storage cleanup jobs attempted".to_string(),
+            "jobs".to_string(),
+        );
+
+        let cleanup_artifacts_tagged = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_artifacts_tagged".to_string(),
+            "Total number of artifacts tagged for cleanup".to_string(),
+            "artifacts".to_string(),
+        );
+
+        let cleanup_failures_total = register_counter_metric_instrument(
+            &orchestrator_meter,
+            "cleanup_failures_total".to_string(),
+            "Total number of storage cleanup failures by reason".to_string(),
+            "errors".to_string(),
+        );
+
         Self {
             block_gauge,
             successful_job_operations,
@@ -357,6 +399,11 @@ impl Metrics for OrchestratorMetrics {
             atlantic_api_errors_total,
             atlantic_api_retries_total,
             atlantic_data_transfer_bytes,
+            cleanup_runs_total,
+            cleanup_jobs_attempted,
+            cleanup_jobs_processed,
+            cleanup_artifacts_tagged,
+            cleanup_failures_total,
         }
     }
 }
