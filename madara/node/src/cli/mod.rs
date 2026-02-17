@@ -12,6 +12,7 @@ pub mod backend;
 pub mod block_production;
 pub mod cairo_native;
 pub mod chain_config_overrides;
+pub mod external_db;
 pub mod gateway;
 pub mod l1;
 pub mod l2;
@@ -24,6 +25,7 @@ pub use backend::*;
 pub use block_production::*;
 pub use cairo_native::*;
 pub use chain_config_overrides::*;
+pub use external_db::*;
 pub use gateway::*;
 pub use l1::*;
 pub use rpc::*;
@@ -192,6 +194,11 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub cairo_native_params: CairoNativeParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    #[serde(default)]
+    pub external_db_params: ExternalDbParams,
 
     /// The node will run as a sequencer and produce its own state.
     #[arg(env = "MADARA_SEQUENCER", long, group = "mode")]

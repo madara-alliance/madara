@@ -379,6 +379,7 @@ pub enum MadaraServiceId {
     Telemetry,
     Analytics,
     Mempool,
+    ExternalDb,
 }
 
 impl ServiceId for MadaraServiceId {
@@ -396,6 +397,7 @@ impl ServiceId for MadaraServiceId {
             MadaraServiceId::Telemetry => PowerOfTwo::P7,
             MadaraServiceId::Analytics => PowerOfTwo::P8,
             MadaraServiceId::Mempool => PowerOfTwo::P9,
+            MadaraServiceId::ExternalDb => PowerOfTwo::P10,
         }
     }
 }
@@ -417,6 +419,7 @@ impl Display for MadaraServiceId {
                 Self::Telemetry => "telemetry",
                 Self::Analytics => "analytics",
                 Self::Mempool => "mempool",
+                Self::ExternalDb => "external db",
             }
         )
     }
@@ -451,7 +454,9 @@ impl From<PowerOfTwo> for MadaraServiceId {
             PowerOfTwo::P6 => Self::Gateway,
             PowerOfTwo::P7 => Self::Telemetry,
             PowerOfTwo::P8 => Self::Analytics,
-            _ => Self::Mempool,
+            PowerOfTwo::P9 => Self::Mempool,
+            PowerOfTwo::P10 => Self::ExternalDb,
+            _ => Self::Monitor, // Default fallback for unknown values
         }
     }
 }

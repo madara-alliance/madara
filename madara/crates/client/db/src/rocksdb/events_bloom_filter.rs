@@ -412,9 +412,7 @@ mod tests {
         let range = 100..1000usize;
         range.prop_flat_map(|size| {
             prop::collection::vec(
-                (0..u64::MAX).prop_map(|from| {
-                    // Generate 1 to 10 keys for each event
-                    let num_keys = rand::random::<usize>() % 10 + 1;
+                (any::<u64>(), 1usize..=10usize).prop_map(|(from, num_keys)| {
                     let keys = (0..num_keys).map(|i| from + i as u64).collect();
                     create_test_event(from, keys)
                 }),

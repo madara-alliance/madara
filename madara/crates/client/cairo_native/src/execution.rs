@@ -464,6 +464,14 @@ mod tests {
         Ok(())
     }
 
+    struct MemoryCacheDelayGuard;
+
+    impl Drop for MemoryCacheDelayGuard {
+        fn drop(&mut self) {
+            cache::set_test_memory_cache_send_delay(Duration::from_millis(0));
+        }
+    }
+
     // Helper function to poll for compilation completion with timeout (async version)
     // Returns true if compilation completed and class is cached, false if timeout
     async fn wait_for_compilation_completion_async(class_hash: &ClassHash, timeout_secs: u64) -> bool {
@@ -961,6 +969,10 @@ mod tests {
                 .build(),
         );
 
+        // Delay the memory-cache worker so the timeout fires after it records a miss.
+        cache::set_test_memory_cache_send_delay(Duration::from_millis(5));
+        let _delay_guard = MemoryCacheDelayGuard;
+
         // Verify memory cache doesn't have our unique class_hash
         assert!(!cache::cache_contains(&class_hash), "Class should not be in memory cache initially");
 
@@ -985,6 +997,10 @@ mod tests {
 
         // Verify it was loaded into memory cache after disk hit
         assert!(cache::cache_contains(&class_hash), "Should be loaded into memory cache after disk hit");
+
+        // Timeout can return before the background memory-cache worker updates miss metrics.
+        // Sleep briefly so metric assertions observe the completed worker path.
+        std::thread::sleep(Duration::from_secs(1));
 
         // Metrics assertions - memory timeout, disk hit, no compilation
         assert_counters!(
