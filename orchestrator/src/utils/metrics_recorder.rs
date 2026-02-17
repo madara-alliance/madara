@@ -293,8 +293,6 @@ impl MetricsRecorder {
     }
 
     pub fn record_cleanup_failure(reason: &str) {
-        ORCHESTRATOR_METRICS
-            .cleanup_failures_total
-            .add(1.0, &[KeyValue::new("reason", reason.to_string())]);
+        ORCHESTRATOR_METRICS.cleanup_failures_total.add(1.0, &[KeyValue::new("reason", reason.to_string())]);
     }
 }
