@@ -124,16 +124,16 @@ impl ExecutionMetrics {
         );
     }
 
-    pub fn record_read_cache_hit(&self, kind: &str) {
+    pub fn record_read_cache_hit(&self, kind: &'static str) {
         #[cfg(test)]
         test_counters::READ_CACHE_HITS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.read_cache_hits_counter.add(1, &[KeyValue::new("kind", kind.to_string())]);
+        self.read_cache_hits_counter.add(1, &[KeyValue::new("kind", kind)]);
     }
 
-    pub fn record_read_cache_miss(&self, kind: &str) {
+    pub fn record_read_cache_miss(&self, kind: &'static str) {
         #[cfg(test)]
         test_counters::READ_CACHE_MISSES_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.read_cache_misses_counter.add(1, &[KeyValue::new("kind", kind.to_string())]);
+        self.read_cache_misses_counter.add(1, &[KeyValue::new("kind", kind)]);
     }
 
     pub fn record_read_cache_size_bytes(&self, size_bytes: u64) {
