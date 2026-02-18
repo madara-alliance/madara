@@ -266,6 +266,7 @@ impl BackendParams {
             },
         }
     }
+
     pub fn rocksdb_config(&self) -> RocksDBConfig {
         RocksDBConfig {
             enable_statistics: self.db_enable_statistics,

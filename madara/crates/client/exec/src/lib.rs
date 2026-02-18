@@ -162,6 +162,7 @@ use starknet_types_core::felt::Felt;
 mod block_context;
 mod blockifier_state_adapter;
 mod call;
+mod execution_read_cache;
 mod fee;
 mod layered_state_adapter;
 pub mod metrics;
