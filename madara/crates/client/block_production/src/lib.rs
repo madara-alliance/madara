@@ -473,7 +473,7 @@ impl BlockProductionTask {
             // Close the preconfirmed block with state_diff
             let result = backend
                 .write_access()
-                .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, Some(state_diff))
+                .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, state_diff)
                 .context("Closing preconfirmed block")?;
 
             anyhow::Ok(result)
