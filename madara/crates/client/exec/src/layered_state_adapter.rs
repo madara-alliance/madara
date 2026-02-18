@@ -105,8 +105,10 @@ impl ExecutionReadCache {
             return None;
         }
 
-        let contracts = config.contracts.iter().copied().collect::<HashSet<_>>();
-        if config.all_contracts {
+        let all_contracts = config.contracts.is_none();
+        let contracts = config.contracts.as_deref().unwrap_or_default().iter().copied().collect::<HashSet<_>>();
+
+        if all_contracts {
             tracing::info!("Execution read cache enabled for all contracts (max_bytes={}).", config.max_memory_bytes);
         } else if contracts.is_empty() {
             tracing::warn!(
@@ -124,7 +126,7 @@ impl ExecutionReadCache {
         exec_metrics().record_read_cache_size_bytes(0);
 
         Some(Self {
-            all_contracts: config.all_contracts,
+            all_contracts,
             contracts,
             max_bytes: config.max_memory_bytes,
             inner: RwLock::new(ExecutionReadCacheInner::default()),
@@ -745,8 +747,7 @@ mod tests {
         let config = MadaraBackendConfig {
             execution_read_cache: ExecutionReadCacheConfig {
                 enabled: true,
-                all_contracts: true,
-                contracts: Vec::new(),
+                contracts: None,
                 max_memory_bytes: 1024 * 1024,
             },
             ..Default::default()
@@ -786,8 +787,7 @@ mod tests {
         let config = MadaraBackendConfig {
             execution_read_cache: ExecutionReadCacheConfig {
                 enabled: true,
-                all_contracts: false,
-                contracts: vec![allowed_address],
+                contracts: Some(vec![allowed_address]),
                 max_memory_bytes: 1024 * 1024,
             },
             ..Default::default()
@@ -845,8 +845,7 @@ mod tests {
 
         let config = ExecutionReadCacheConfig {
             enabled: true,
-            all_contracts: false,
-            contracts: vec![allowed_address],
+            contracts: Some(vec![allowed_address]),
             max_memory_bytes: 1024 * 1024,
         };
         let cache = ExecutionReadCache::from_config(&config).unwrap();
@@ -882,12 +881,7 @@ mod tests {
         let compiled_hash = CompiledClassHash(Felt::from(700u64));
         let compiled_hash_v2 = CompiledClassHash(Felt::from(800u64));
 
-        let config = ExecutionReadCacheConfig {
-            enabled: true,
-            all_contracts: true,
-            contracts: Vec::new(),
-            max_memory_bytes: 1024 * 1024,
-        };
+        let config = ExecutionReadCacheConfig { enabled: true, contracts: None, max_memory_bytes: 1024 * 1024 };
         let cache = ExecutionReadCache::from_config(&config).unwrap();
 
         cache.insert_nonce_value(address, Nonce(Felt::from(3u64)));
@@ -908,12 +902,8 @@ mod tests {
         let class_hash = ClassHash(Felt::from(123u64));
         let compiled_hash = CompiledClassHash(Felt::from(456u64));
 
-        let config = ExecutionReadCacheConfig {
-            enabled: true,
-            all_contracts: false,
-            contracts: vec![allowed_address],
-            max_memory_bytes: 1,
-        };
+        let config =
+            ExecutionReadCacheConfig { enabled: true, contracts: Some(vec![allowed_address]), max_memory_bytes: 1 };
         let cache = ExecutionReadCache::from_config(&config).unwrap();
 
         cache.insert_class_hash_value(allowed_address, class_hash);
@@ -935,8 +925,7 @@ mod tests {
         let config = MadaraBackendConfig {
             execution_read_cache: ExecutionReadCacheConfig {
                 enabled: true,
-                all_contracts: true,
-                contracts: Vec::new(),
+                contracts: None,
                 max_memory_bytes: 1024 * 1024,
             },
             ..Default::default()

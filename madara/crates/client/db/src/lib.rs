@@ -328,10 +328,12 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
 pub struct ExecutionReadCacheConfig {
     /// Enable the execution read cache. Default: false.
     pub enabled: bool,
-    /// Cache all contracts (ignore allowlist).
-    pub all_contracts: bool,
-    /// Allowlist of contracts to cache when `all_contracts` is false.
-    pub contracts: Vec<ContractAddress>,
+    /// Contracts to cache.
+    ///
+    /// - `None`: cache all contracts.
+    /// - `Some(vec)`: cache only those contracts (allowlist mode). `Some([])` is valid and means
+    ///   "cache none".
+    pub contracts: Option<Vec<ContractAddress>>,
     /// Maximum cache size in bytes.
     pub max_memory_bytes: usize,
 }
