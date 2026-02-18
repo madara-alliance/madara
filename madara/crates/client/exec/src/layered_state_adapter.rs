@@ -178,7 +178,6 @@ impl ExecutionReadCache {
         }
         let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
         guard.insert_class_hash(contract_address, value);
-        guard.cached_class_hashes.insert(value);
         exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
     }
 
@@ -203,13 +202,9 @@ impl ExecutionReadCache {
     fn apply_state_diff(&self, state_diff: &StateMaps) {
         let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
 
-        let mut allowed_class_hashes = HashSet::new();
-
         for (contract_address, class_hash) in &state_diff.class_hashes {
             if self.is_contract_enabled(*contract_address) {
                 guard.insert_class_hash(*contract_address, *class_hash);
-                allowed_class_hashes.insert(*class_hash);
-                guard.cached_class_hashes.insert(*class_hash);
             }
         }
 
@@ -229,9 +224,9 @@ impl ExecutionReadCache {
             for (class_hash, compiled_hash) in &state_diff.compiled_class_hashes {
                 guard.insert_compiled_class_hash(*class_hash, *compiled_hash);
             }
-        } else if !allowed_class_hashes.is_empty() {
+        } else {
             for (class_hash, compiled_hash) in &state_diff.compiled_class_hashes {
-                if allowed_class_hashes.contains(class_hash) {
+                if guard.cached_class_hashes.contains(class_hash) {
                     guard.insert_compiled_class_hash(*class_hash, *compiled_hash);
                 }
             }
@@ -254,6 +249,9 @@ impl ExecutionReadCacheInner {
     const STORAGE_ENTRY_SIZE: usize = size_of::<CacheEntry<Felt>>() + size_of::<StorageEntryKey>();
     const NONCE_ENTRY_SIZE: usize = size_of::<CacheEntry<Nonce>>() + size_of::<ContractEntryKey>();
     const CLASS_HASH_ENTRY_SIZE: usize = size_of::<CacheEntry<ClassHash>>() + size_of::<ContractEntryKey>();
+    // Approximate accounting for cached_class_hashes. This keeps max_memory_bytes meaningful without
+    // tracking HashSet's internal bucket allocations precisely.
+    const CACHED_CLASS_HASH_ENTRY_SIZE: usize = size_of::<ClassEntryKey>() + size_of::<usize>();
     const COMPILED_CLASS_HASH_ENTRY_SIZE: usize =
         size_of::<CacheEntry<CompiledClassHash>>() + size_of::<ClassEntryKey>();
     const ORDER_ENTRY_SIZE: usize = size_of::<CacheQueueEntry>();
@@ -293,9 +291,19 @@ impl ExecutionReadCacheInner {
     }
 
     fn insert_class_hash(&mut self, contract_address: ContractAddress, value: ClassHash) {
-        self.insert_with_accounting(Self::CLASS_HASH_ENTRY_SIZE, CacheKey::ClassHash(contract_address), |this, seq| {
-            this.class_hashes.insert(contract_address, CacheEntry { value, seq }).is_some()
-        });
+        let seq = self.next_seq();
+        if let Some(previous) = self.class_hashes.insert(contract_address, CacheEntry { value, seq }) {
+            self.current_bytes = self.current_bytes.saturating_sub(Self::CLASS_HASH_ENTRY_SIZE);
+            if self.cached_class_hashes.remove(&previous.value) {
+                self.current_bytes = self.current_bytes.saturating_sub(Self::CACHED_CLASS_HASH_ENTRY_SIZE);
+            }
+        }
+        self.current_bytes = self.current_bytes.saturating_add(Self::CLASS_HASH_ENTRY_SIZE);
+        if self.cached_class_hashes.insert(value) {
+            self.current_bytes = self.current_bytes.saturating_add(Self::CACHED_CLASS_HASH_ENTRY_SIZE);
+        }
+        self.order.push_back(CacheQueueEntry { key: CacheKey::ClassHash(contract_address), seq });
+        self.current_bytes = self.current_bytes.saturating_add(Self::ORDER_ENTRY_SIZE);
     }
 
     fn insert_compiled_class_hash(&mut self, class_hash: ClassHash, value: CompiledClassHash) {
@@ -349,8 +357,11 @@ impl ExecutionReadCacheInner {
             CacheKey::ClassHash(contract_address) => {
                 if let Some(existing) = self.class_hashes.get(&contract_address) {
                     if existing.seq == entry.seq {
-                        let _ = self.class_hashes.remove(&contract_address).expect("entry exists");
+                        let existing = self.class_hashes.remove(&contract_address).expect("entry exists");
                         self.current_bytes = self.current_bytes.saturating_sub(Self::CLASS_HASH_ENTRY_SIZE);
+                        if self.cached_class_hashes.remove(&existing.value) {
+                            self.current_bytes = self.current_bytes.saturating_sub(Self::CACHED_CLASS_HASH_ENTRY_SIZE);
+                        }
                         return true;
                     }
                 }
@@ -895,6 +906,32 @@ mod tests {
         assert!(cache.should_cache_class_hash(class_hash_without_contract_mapping));
         assert_eq!(cache.get_compiled_class_hash(class_hash_without_contract_mapping), Some(compiled_hash));
         assert_eq!(cache.get_compiled_class_hash_v2(class_hash_without_contract_mapping), Some(compiled_hash_v2));
+    }
+
+    #[test]
+    fn test_cached_class_hashes_removed_when_contract_class_hash_entry_evicted() {
+        let allowed_address = Felt::ONE.try_into().unwrap();
+        let class_hash = ClassHash(Felt::from(123u64));
+        let compiled_hash = CompiledClassHash(Felt::from(456u64));
+
+        let config = ExecutionReadCacheConfig {
+            enabled: true,
+            all_contracts: false,
+            contracts: vec![allowed_address],
+            max_memory_bytes: 1,
+        };
+        let cache = ExecutionReadCache::from_config(&config).unwrap();
+
+        cache.insert_class_hash_value(allowed_address, class_hash);
+        assert!(cache.should_cache_class_hash(class_hash));
+
+        // Evict everything; this will evict the ClassHash(contract) entry and should remove the class hash from the set.
+        cache.evict_if_needed();
+        assert!(!cache.should_cache_class_hash(class_hash));
+
+        // Even when class isn't considered cacheable anymore, fallback/insert path should not error.
+        cache.insert_compiled_class_hash_value(class_hash, compiled_hash);
+        assert_eq!(cache.get_compiled_class_hash(class_hash), None);
     }
 
     #[tokio::test]
