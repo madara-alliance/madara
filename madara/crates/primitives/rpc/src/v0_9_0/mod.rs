@@ -133,11 +133,15 @@ fn block_id_to_l1_accepted() {
     assert_eq!(s, "\"l1_accepted\"");
 }
 
-/// The hash of an Ethereum transaction.
+/// The hash of an L1 *settlement-chain* transaction (not necessarily Ethereum).
 ///
 /// Spec: `L1_TXN_HASH` is `NUM_AS_HEX` (`^0x[a-fA-F0-9]+$`). We accept 1..=64 hex digits
 /// after the `0x` prefix and left-pad to 32 bytes. We always serialize to a 32-byte
 /// canonical form (`0x` + 64 lowercase hex digits).
+///
+/// This is intentionally **L3-friendly**: it accepts both 32-byte Ethereum-style hashes and
+/// shorter Starknet-style transaction hashes (left-padded). See the `l1_txn_hash_*` tests below
+/// for concrete examples.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct L1TxnHash(pub [u8; 32]);
 
