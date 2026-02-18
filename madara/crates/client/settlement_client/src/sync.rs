@@ -25,6 +25,10 @@ impl L1ClientImpl {
             config.l1_block_metrics.clone(),
         ));
 
+        // TODO(18/02/2026,@prkpndy): we do not need message syncing service when not doing block production
+        // keeping it for now because when converting a full node (with L1 sync enabled) to
+        // sequencer, we cannot start just the message syncing service (we don't have the capability
+        // to toggle services inside a service)
         join_set.spawn(sync(
             self.provider.clone(),
             Arc::clone(&self.backend),
