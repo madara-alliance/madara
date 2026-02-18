@@ -1,4 +1,3 @@
-use crate::util::ExecutionStats;
 use crate::{remove_consumed_core_contract_nonces, ParallelMerkleConfig, ParallelMerkleTrieLogMode};
 use anyhow::{ensure, Context};
 use blockifier::bouncer::BouncerWeights;
@@ -7,17 +6,11 @@ use mp_block::FullBlockWithoutCommitments;
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::{sync::mpsc, task::JoinSet};
 
-/// Finalized block payload handed off from block production to the parallel finalizer.
-///
-/// This contains all data required by both finalizer lanes:
-/// - DB staging lane (block/classes/weights/consumed nonces)
-/// - Root compute lane (state diff for cumulative merklization)
-/// - Observability context used to emit `close_block_complete` on parallel confirm
 #[derive(Debug)]
 pub struct FinalizedBlockPayload {
     pub block_n: u64,
@@ -26,8 +19,44 @@ pub struct FinalizedBlockPayload {
     pub state_diff: StateDiff,
     pub consumed_core_contract_nonces: HashSet<u64>,
     pub bouncer_weights: BouncerWeights,
-    pub execution_stats: ExecutionStats,
-    pub block_production_duration: Duration,
+}
+
+const MADARA_PARALLEL_MERKLE_FINALIZER_DEBUG_DELAY_MS: &str = "MADARA_PARALLEL_MERKLE_FINALIZER_DEBUG_DELAY_MS";
+const MADARA_PARALLEL_MERKLE_FINALIZER_PATH_A_DEBUG_DELAY_MS: &str =
+    "MADARA_PARALLEL_MERKLE_FINALIZER_PATH_A_DEBUG_DELAY_MS";
+const MADARA_PARALLEL_MERKLE_FINALIZER_PATH_B_DEBUG_DELAY_MS: &str =
+    "MADARA_PARALLEL_MERKLE_FINALIZER_PATH_B_DEBUG_DELAY_MS";
+
+fn parse_delay_from_env(name: &str) -> Option<Duration> {
+    std::env::var(name).ok().and_then(|raw| raw.parse::<u64>().ok()).map(Duration::from_millis)
+}
+
+fn parallel_merkle_finalizer_debug_delays() -> (Duration, Duration) {
+    // Backward compatible fallback: if path-specific envs are absent,
+    // keep honoring the old single delay env for both paths.
+    let legacy_delay = parse_delay_from_env(MADARA_PARALLEL_MERKLE_FINALIZER_DEBUG_DELAY_MS).unwrap_or(Duration::ZERO);
+    let path_a_delay =
+        parse_delay_from_env(MADARA_PARALLEL_MERKLE_FINALIZER_PATH_A_DEBUG_DELAY_MS).unwrap_or(legacy_delay);
+    let path_b_delay =
+        parse_delay_from_env(MADARA_PARALLEL_MERKLE_FINALIZER_PATH_B_DEBUG_DELAY_MS).unwrap_or(legacy_delay);
+    (path_a_delay, path_b_delay)
+}
+
+fn describe_join_error(error: tokio::task::JoinError) -> String {
+    if error.is_panic() {
+        let panic_payload = error.into_panic();
+        if let Some(message) = panic_payload.downcast_ref::<String>() {
+            format!("panic payload (String): {message}")
+        } else if let Some(message) = panic_payload.downcast_ref::<&'static str>() {
+            format!("panic payload (&'static str): {message}")
+        } else {
+            format!("panic payload type: {:?}", panic_payload.type_id())
+        }
+    } else if error.is_cancelled() {
+        "task was cancelled".to_string()
+    } else {
+        format!("join error: {error}")
+    }
 }
 
 #[derive(Clone)]
@@ -36,11 +65,11 @@ pub struct ParallelMerkleFinalizerHandle {
 }
 
 impl ParallelMerkleFinalizerHandle {
-    /// Enqueue a block for parallel finalization.
-    ///
-    /// Queue backpressure is controlled by `parallel_merkle.max_inflight`.
-    pub async fn submit(&self, payload: FinalizedBlockPayload) -> anyhow::Result<()> {
-        self.sender.send(payload).await.context("sending finalized block payload to parallel-merkle finalizer")
+    pub async fn submit(
+        &self,
+        payload: FinalizedBlockPayload,
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<FinalizedBlockPayload>> {
+        self.sender.send(payload).await
     }
 }
 
@@ -49,51 +78,6 @@ struct RootReady {
     root: Felt,
     overlay: Option<BonsaiOverlay>,
     is_boundary: bool,
-}
-
-#[derive(Debug, Clone)]
-struct LaneFailure {
-    lane: &'static str,
-    message: String,
-}
-
-#[derive(Debug, Clone)]
-struct BlockCloseLogContext {
-    queued_at: Instant,
-    block_production_duration: Duration,
-    execution_stats: ExecutionStats,
-    tx_count: u64,
-    event_count: u64,
-    state_diff_len: usize,
-    declared_classes_count: usize,
-    deployed_contracts_count: usize,
-    storage_diffs_count: usize,
-    nonce_updates_count: usize,
-    consumed_l1_nonces_count: usize,
-    bouncer_weights: BouncerWeights,
-    db_staging_ms: Option<f64>,
-    root_compute_ms: Option<f64>,
-}
-
-impl BlockCloseLogContext {
-    fn from_payload(payload: &FinalizedBlockPayload) -> Self {
-        Self {
-            queued_at: Instant::now(),
-            block_production_duration: payload.block_production_duration,
-            execution_stats: payload.execution_stats.clone(),
-            tx_count: payload.block.transactions.len() as u64,
-            event_count: payload.block.events.len() as u64,
-            state_diff_len: payload.state_diff.len(),
-            declared_classes_count: payload.state_diff.declared_classes.len(),
-            deployed_contracts_count: payload.state_diff.deployed_contracts.len(),
-            storage_diffs_count: payload.state_diff.storage_diffs.len(),
-            nonce_updates_count: payload.state_diff.nonces.len(),
-            consumed_l1_nonces_count: payload.consumed_core_contract_nonces.len(),
-            bouncer_weights: payload.bouncer_weights,
-            db_staging_ms: None,
-            root_compute_ms: None,
-        }
-    }
 }
 
 pub fn spawn_parallel_merkle_finalizer(
@@ -107,53 +91,51 @@ pub fn spawn_parallel_merkle_finalizer(
 
     let latest_confirmed = backend.latest_confirmed_block_n();
     let next_confirm = latest_confirmed.map(|n| n + 1).unwrap_or(0);
-    let latest_checkpoint =
-        backend.get_parallel_merkle_latest_checkpoint().context("reading parallel merkle latest checkpoint")?;
-    if let (Some(checkpoint), Some(confirmed)) = (latest_checkpoint, latest_confirmed) {
-        if checkpoint < confirmed {
-            tracing::warn!(
-                latest_checkpoint = checkpoint,
-                latest_confirmed = confirmed,
-                "parallel finalizer bootstrap prefers latest confirmed as snapshot base to avoid stale checkpoint base"
-            );
-        }
-    }
-    let snapshot_base_block_n = initial_snapshot_base(latest_confirmed, latest_checkpoint);
+    let snapshot_base_block_n = backend
+        .get_parallel_merkle_latest_checkpoint()
+        .context("reading parallel merkle latest checkpoint")?
+        .or(latest_confirmed)
+        .unwrap_or(0);
 
     let trie_log_mode = map_trie_log_mode(config.trie_log_mode);
+    let (path_a_debug_delay, path_b_debug_delay) = parallel_merkle_finalizer_debug_delays();
+    if !path_a_debug_delay.is_zero() {
+        tracing::info!(
+            delay_ms = path_a_debug_delay.as_millis(),
+            env = MADARA_PARALLEL_MERKLE_FINALIZER_PATH_A_DEBUG_DELAY_MS,
+            "🔧 parallel finalizer path-a debug delay enabled"
+        );
+    }
+    if !path_b_debug_delay.is_zero() {
+        tracing::info!(
+            delay_ms = path_b_debug_delay.as_millis(),
+            env = MADARA_PARALLEL_MERKLE_FINALIZER_PATH_B_DEBUG_DELAY_MS,
+            "🔧 parallel finalizer path-b debug delay enabled"
+        );
+    }
     let mut worker = ParallelMerkleFinalizerWorker {
         backend,
         flush_interval: config.flush_interval.max(2),
         trie_log_mode,
+        path_a_debug_delay,
+        path_b_debug_delay,
         next_confirm,
         snapshot_base_block_n,
         pending_epoch_diffs: BTreeMap::new(),
         persisted_ready: BTreeSet::new(),
         roots_ready: BTreeMap::new(),
-        close_block_logs: BTreeMap::new(),
-        db_staging_jobs: JoinSet::new(),
-        root_compute_jobs: JoinSet::new(),
-        max_inflight_blocks: max_inflight,
-        scheduled_blocks: BTreeSet::new(),
-        failed_blocks: BTreeMap::new(),
+        path_a_jobs: JoinSet::new(),
+        path_b_jobs: JoinSet::new(),
     };
     worker.initialize_recovery_state().context("recovering parallel merkle finalizer state on startup")?;
 
     tokio::spawn(async move {
         if let Err(error) = worker.run(receiver).await {
-            tracing::error!(
-                target: "close_block",
-                error = %error,
-                "parallel_finalizer_worker_terminated"
-            );
+            tracing::error!(%error, "parallel merkle finalizer worker terminated with error");
         }
     });
 
     Ok(ParallelMerkleFinalizerHandle { sender })
-}
-
-fn initial_snapshot_base(latest_confirmed: Option<u64>, latest_checkpoint: Option<u64>) -> u64 {
-    latest_confirmed.or(latest_checkpoint).unwrap_or(0)
 }
 
 fn map_trie_log_mode(mode: ParallelMerkleTrieLogMode) -> ParallelMerkleInMemoryTrieLogMode {
@@ -167,17 +149,15 @@ struct ParallelMerkleFinalizerWorker {
     backend: Arc<MadaraBackend>,
     flush_interval: u64,
     trie_log_mode: ParallelMerkleInMemoryTrieLogMode,
+    path_a_debug_delay: Duration,
+    path_b_debug_delay: Duration,
     next_confirm: u64,
     snapshot_base_block_n: u64,
     pending_epoch_diffs: BTreeMap<u64, StateDiff>,
     persisted_ready: BTreeSet<u64>,
     roots_ready: BTreeMap<u64, RootReady>,
-    close_block_logs: BTreeMap<u64, BlockCloseLogContext>,
-    db_staging_jobs: JoinSet<(u64, anyhow::Result<Duration>)>,
-    root_compute_jobs: JoinSet<(u64, anyhow::Result<(RootReady, Duration)>)>,
-    max_inflight_blocks: usize,
-    scheduled_blocks: BTreeSet<u64>,
-    failed_blocks: BTreeMap<u64, LaneFailure>,
+    path_a_jobs: JoinSet<anyhow::Result<u64>>,
+    path_b_jobs: JoinSet<anyhow::Result<(u64, RootReady)>>,
 }
 
 impl ParallelMerkleFinalizerWorker {
@@ -307,64 +287,71 @@ impl ParallelMerkleFinalizerWorker {
         Ok(())
     }
 
-    /// Main worker loop that coordinates ingestion, lane completion, and ordered confirmation.
-    ///
-    /// Flow:
-    /// ```text
-    /// +------------------- loop -------------------+
-    /// | select!                                  |
-    /// | 1) recv payload (if inflight < limit)    |
-    /// |      -> schedule_block()                 |
-    /// | 2) db_staging job finished               |
-    /// |      -> mark persisted_ready OR failure  |
-    /// | 3) root_compute job finished             |
-    /// |      -> mark roots_ready OR failure      |
-    /// +--------------------+----------------------+
-    ///                      |
-    ///                      v
-    ///               try_confirm_ready()
-    ///                  (strictly next_confirm)
-    /// ```
-    ///
-    /// The loop exits only when the input channel is closed and both job sets are empty.
     async fn run(&mut self, mut receiver: mpsc::Receiver<FinalizedBlockPayload>) -> anyhow::Result<()> {
+        // Avoid busy-looping once the sender side is dropped. When the channel closes we keep
+        // polling in-flight jobs until completion.
+        let mut receiver_closed = false;
         loop {
             tokio::select! {
-                maybe_payload = receiver.recv(), if Self::can_schedule_more(self.max_inflight_blocks, &self.scheduled_blocks) => {
+                maybe_payload = receiver.recv(), if !receiver_closed => {
                     match maybe_payload {
-                        Some(payload) => self.schedule_block(payload),
+                        Some(payload) => {
+                            tracing::debug!(
+                                block_n = payload.block_n,
+                                next_confirm = self.next_confirm,
+                                path_a_running = self.path_a_jobs.len(),
+                                path_b_running = self.path_b_jobs.len(),
+                                "📥 parallel finalizer received payload"
+                            );
+                            self.schedule_block(payload)
+                        }
                         None => {
-                            if self.db_staging_jobs.is_empty() && self.root_compute_jobs.is_empty() {
-                                break;
-                            }
+                            receiver_closed = true;
                         }
                     }
                 }
-                Some(joined) = self.db_staging_jobs.join_next(), if !self.db_staging_jobs.is_empty() => {
-                    let (block_n, db_staging_result) = joined.context("joining db-staging persistence job")?;
-                    match db_staging_result {
-                        Ok(duration) => {
+                Some(joined) = self.path_a_jobs.join_next(), if !self.path_a_jobs.is_empty() => {
+                    match joined {
+                        Ok(Ok(block_n)) => {
+                            tracing::debug!(
+                                block_n,
+                                path_a_running = self.path_a_jobs.len(),
+                                path_b_running = self.path_b_jobs.len(),
+                                persisted_ready = self.persisted_ready.len(),
+                                roots_ready = self.roots_ready.len(),
+                                "✅ parallel finalizer path-a job completed"
+                            );
                             self.persisted_ready.insert(block_n);
-                            if let Some(log_ctx) = self.close_block_logs.get_mut(&block_n) {
-                                log_ctx.db_staging_ms = Some(duration.as_secs_f64() * 1000.0);
-                            }
+                        }
+                        Ok(Err(error)) => {
+                            return Err(error).context("parallel finalizer path-a job error");
                         }
                         Err(error) => {
-                            self.record_block_failure(block_n, "db-staging", error);
+                            let details = describe_join_error(error);
+                            return Err(anyhow::anyhow!(details)).context("parallel finalizer path-a job join error");
                         }
                     }
                 }
-                Some(joined) = self.root_compute_jobs.join_next(), if !self.root_compute_jobs.is_empty() => {
-                    let (block_n, root_result) = joined.context("joining root-compute job")?;
-                    match root_result {
-                        Ok((root_ready, duration)) => {
+                Some(joined) = self.path_b_jobs.join_next(), if !self.path_b_jobs.is_empty() => {
+                    match joined {
+                        Ok(Ok((block_n, root_ready))) => {
+                            tracing::debug!(
+                                block_n,
+                                is_boundary = root_ready.is_boundary,
+                                path_a_running = self.path_a_jobs.len(),
+                                path_b_running = self.path_b_jobs.len(),
+                                persisted_ready = self.persisted_ready.len(),
+                                roots_ready = self.roots_ready.len(),
+                                "✅ parallel finalizer path-b job completed"
+                            );
                             self.roots_ready.insert(block_n, root_ready);
-                            if let Some(log_ctx) = self.close_block_logs.get_mut(&block_n) {
-                                log_ctx.root_compute_ms = Some(duration.as_secs_f64() * 1000.0);
-                            }
+                        }
+                        Ok(Err(error)) => {
+                            return Err(error).context("parallel finalizer path-b job error");
                         }
                         Err(error) => {
-                            self.record_block_failure(block_n, "root-compute", error);
+                            let details = describe_join_error(error);
+                            return Err(anyhow::anyhow!(details)).context("parallel finalizer path-b job join error");
                         }
                     }
                 }
@@ -372,6 +359,10 @@ impl ParallelMerkleFinalizerWorker {
             }
 
             self.try_confirm_ready().await?;
+
+            if receiver_closed && self.path_a_jobs.is_empty() && self.path_b_jobs.is_empty() {
+                break;
+            }
         }
 
         // Drain any last ready confirmations after channel close.
@@ -379,114 +370,158 @@ impl ParallelMerkleFinalizerWorker {
         Ok(())
     }
 
-    /// Schedule both lanes for a single block.
-    ///
-    /// Flow:
-    /// ```text
-    /// payload(block_n)
-    ///   -> db_staging_jobs.spawn(...)
-    ///        writes staged block parts to DB
-    ///   -> root_compute_jobs.spawn(...)
-    ///        computes state root from snapshot base + cumulative state diff
-    /// ```
-    ///
-    /// A duplicate `block_n` is rejected and recorded as a scheduler failure.
     fn schedule_block(&mut self, payload: FinalizedBlockPayload) {
         let block_n = payload.block_n;
         if block_n < self.next_confirm {
             tracing::warn!(block_n, next_confirm = self.next_confirm, "dropping already-confirmed payload");
             return;
         }
-        if !self.scheduled_blocks.insert(block_n) {
-            self.record_block_failure(
-                block_n,
-                "scheduler",
-                anyhow::anyhow!("duplicate finalizer payload for block #{block_n}"),
-            );
-            return;
-        }
-        self.close_block_logs.insert(block_n, BlockCloseLogContext::from_payload(&payload));
         let is_boundary = Self::is_boundary_for(self.flush_interval, block_n);
-
+        let schedule_started = Instant::now();
+        tracing::debug!(
+            block_n,
+            next_confirm = self.next_confirm,
+            is_boundary,
+            pending_epoch_diff_count = self.pending_epoch_diffs.len(),
+            path_a_running = self.path_a_jobs.len(),
+            path_b_running = self.path_b_jobs.len(),
+            "🧩 scheduling block for parallel finalizer pipelines"
+        );
+        let in_flight_jobs = self.path_a_jobs.len() + self.path_b_jobs.len();
+        if in_flight_jobs > 0 {
+            tracing::debug!(
+                block_n,
+                in_flight_jobs,
+                path_a_running = self.path_a_jobs.len(),
+                path_b_running = self.path_b_jobs.len(),
+                "🧵 detected across-block overlap opportunity for parallel finalizer"
+            );
+        }
         self.pending_epoch_diffs.insert(block_n, payload.state_diff.clone());
+        let in_flight_blocks = self.pending_epoch_diffs.len();
+        let active_jobs = self.path_a_jobs.len() + self.path_b_jobs.len();
+        tracing::debug!(
+            block_n,
+            is_boundary,
+            in_flight_blocks,
+            active_jobs,
+            "🧩 block queued for parallel finalizer (across-block overlap indicator)"
+        );
         let cumulative_start = Self::cumulative_range_start(self.snapshot_base_block_n, self.next_confirm);
         let cumulative_state_diff = mc_db::rocksdb::global_trie::in_memory::squash_state_diffs(
             self.pending_epoch_diffs.range(cumulative_start..=block_n).map(|(_, diff)| diff),
         );
         let snapshot_base_block_n = self.snapshot_base_block_n;
         let trie_log_mode = self.trie_log_mode;
-        let backend_for_db_staging = Arc::clone(&self.backend);
-        let backend_for_root_compute = Arc::clone(&self.backend);
+        let backend_for_path_a = Arc::clone(&self.backend);
+        let backend_for_path_b = Arc::clone(&self.backend);
+        let path_a_debug_delay = self.path_a_debug_delay;
+        let block_n_for_paths = block_n;
+        // Keep bootstrap blocks comparable with sequential mode when debug delay is enabled.
+        // We only inject Path-B delay after the first epoch boundary so the initial setup
+        // transactions (fund/declare/deploy in e2e flows) are not shifted into different blocks.
+        let path_b_debug_delay = if self.path_b_debug_delay.is_zero() || block_n_for_paths <= self.flush_interval {
+            Duration::ZERO
+        } else {
+            self.path_b_debug_delay
+        };
 
-        self.db_staging_jobs.spawn(async move {
-            let started_at = Instant::now();
-            let db_staging_result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        self.path_a_jobs.spawn(async move {
+            let started = Instant::now();
+
+            tokio::task::spawn_blocking(move || -> anyhow::Result<u64> {
+                let thread_id = std::thread::current().id();
+                tracing::debug!(
+                    block_n = block_n_for_paths,
+                    thread_id = ?thread_id,
+                    "🧪 finalizer path-a worker started"
+                );
+
+                if !path_a_debug_delay.is_zero() {
+                    tracing::debug!(
+                        block_n = block_n_for_paths,
+                        thread_id = ?thread_id,
+                        delay_ms = path_a_debug_delay.as_millis(),
+                        "⏱️ finalizer path-a debug delay"
+                    );
+                    std::thread::sleep(path_a_debug_delay);
+                }
+
                 let mut block = payload.block;
                 block.state_diff = payload.state_diff;
 
-                backend_for_db_staging.write_access().write_parallel_merkle_staged_block_data_with_consumed_nonces(
+                remove_consumed_core_contract_nonces(
+                    backend_for_path_a.as_ref(),
+                    payload.consumed_core_contract_nonces,
+                    "parallel finalizer",
+                )?;
+
+                backend_for_path_a.write_access().write_parallel_merkle_staged_block_data(
                     &block,
                     &payload.classes,
                     Some(&payload.bouncer_weights),
-                    payload.consumed_core_contract_nonces,
                 )?;
-                Ok(())
+                tracing::debug!(
+                    block_n = block_n_for_paths,
+                    thread_id = ?thread_id,
+                    elapsed_ms = started.elapsed().as_millis(),
+                    "✅ finalizer path-a worker done"
+                );
+                Ok(block_n)
             })
             .await
-            .context("joining blocking db-staging worker")
-            .and_then(|result| result)
-            .map(|()| started_at.elapsed());
-            (block_n, db_staging_result)
+            .context("joining blocking path-a worker")?
         });
 
-        self.root_compute_jobs.spawn(async move {
-            let started_at = Instant::now();
-            let root_result = tokio::task::spawn_blocking(move || -> anyhow::Result<RootReady> {
-                let computed =
-                    backend_for_root_compute.write_access().compute_parallel_merkle_root_from_snapshot_base(
-                        snapshot_base_block_n,
+        self.path_b_jobs.spawn(async move {
+            let started = Instant::now();
+
+            tokio::task::spawn_blocking(move || -> anyhow::Result<(u64, RootReady)> {
+                let thread_id = std::thread::current().id();
+                tracing::debug!(
+                    block_n,
+                    thread_id = ?thread_id,
+                    "🧪 finalizer path-b worker started"
+                );
+
+                if !path_b_debug_delay.is_zero() {
+                    tracing::debug!(
                         block_n,
-                        &cumulative_state_diff,
-                        is_boundary,
-                        trie_log_mode,
-                    )?;
+                        thread_id = ?thread_id,
+                        delay_ms = path_b_debug_delay.as_millis(),
+                        "⏱️ finalizer path-b debug delay"
+                    );
+                    std::thread::sleep(path_b_debug_delay);
+                }
 
-                Ok(RootReady { root: computed.state_root, overlay: computed.overlay, is_boundary })
+                let root_result = backend_for_path_b.write_access().compute_parallel_merkle_root_from_snapshot_base(
+                    snapshot_base_block_n,
+                    block_n,
+                    &cumulative_state_diff,
+                    is_boundary,
+                    trie_log_mode,
+                )?;
+
+                tracing::debug!(
+                    block_n,
+                    thread_id = ?thread_id,
+                    elapsed_ms = started.elapsed().as_millis(),
+                    "✅ finalizer path-b worker done"
+                );
+                Ok((block_n, RootReady { root: root_result.state_root, overlay: root_result.overlay, is_boundary }))
             })
             .await
-            .context("joining blocking root-compute worker")
-            .and_then(|result| result)
-            .map(|root_ready| (root_ready, started_at.elapsed()));
-            (block_n, root_result)
+            .context("joining blocking path-b worker")?
         });
+
+        tracing::debug!(
+            block_n = block_n,
+            schedule_ms = schedule_started.elapsed().as_millis(),
+            "✅ scheduled parallel finalizer path-a/path-b jobs"
+        );
     }
 
-    /// Confirm all currently-ready blocks in strict sequence (`next_confirm` only).
-    ///
-    /// Flow per block:
-    /// ```text
-    /// if failure[next_confirm] -> bail
-    /// if persisted_ready && roots_ready for next_confirm:
-    ///   confirm staged block with precomputed root
-    ///   if boundary:
-    ///     flush overlay + checkpoint
-    ///     advance snapshot base and drop committed cumulative diffs
-    ///   next_confirm += 1
-    /// else:
-    ///   stop
-    /// ```
-    ///
-    /// This guarantees in-order DB confirmation even if lane completions arrive out-of-order.
     async fn try_confirm_ready(&mut self) -> anyhow::Result<()> {
-        if let Some(failure) = Self::next_confirm_failure(self.next_confirm, &self.failed_blocks) {
-            anyhow::bail!(
-                "parallel finalizer cannot progress at block #{}: {} lane failed: {}",
-                self.next_confirm,
-                failure.lane,
-                failure.message
-            );
-        }
-
         loop {
             if !Self::is_confirm_ready(self.next_confirm, &self.persisted_ready, &self.roots_ready) {
                 break;
@@ -495,7 +530,9 @@ impl ParallelMerkleFinalizerWorker {
                 break;
             };
 
-            let confirm_started_at = Instant::now();
+            self.persisted_ready.remove(&self.next_confirm);
+            self.roots_ready.remove(&self.next_confirm);
+
             let confirm_result = self
                 .backend
                 .write_access()
@@ -505,81 +542,48 @@ impl ParallelMerkleFinalizerWorker {
                     /* pre_v0_13_2_hash_override */ true,
                 )
                 .with_context(|| format!("confirming staged block #{} in parallel finalizer", self.next_confirm))?;
-            let parallel_confirm_ms = confirm_started_at.elapsed().as_secs_f64() * 1000.0;
 
-            let mut parallel_boundary_flush_ms = 0.0;
+            let state_diff = self.pending_epoch_diffs.get(&self.next_confirm);
+            let (storage_diffs, nonce_updates, deployed_contracts, declared_classes) = state_diff
+                .map(|sd| {
+                    (
+                        sd.storage_diffs.iter().map(|item| item.storage_entries.len()).sum::<usize>(),
+                        sd.nonces.len(),
+                        sd.deployed_contracts.len(),
+                        sd.declared_classes.len() + sd.old_declared_contracts.len(),
+                    )
+                })
+                .unwrap_or((0, 0, 0, 0));
+
+            tracing::info!(
+                "✅ Confirmed block #{} via parallel finalizer — state_root: {:#x}, block_hash: {:#x}, \
+                 state_diff: {{ storage_diffs: {}, nonce_updates: {}, deployed: {}, declared: {} }}",
+                self.next_confirm,
+                confirm_result.new_state_root,
+                confirm_result.block_hash,
+                storage_diffs,
+                nonce_updates,
+                deployed_contracts,
+                declared_classes,
+            );
+
             if root_ready.is_boundary {
                 let overlay = root_ready
                     .overlay
                     .as_ref()
                     .with_context(|| format!("missing boundary overlay for block #{}", self.next_confirm))?;
 
-                let flush_started_at = Instant::now();
                 self.backend
                     .write_access()
                     .flush_parallel_merkle_overlay_and_checkpoint(self.next_confirm, overlay, self.trie_log_mode)
                     .with_context(|| {
                         format!("flushing boundary overlay/checkpoint for block #{}", self.next_confirm)
                     })?;
-                parallel_boundary_flush_ms = flush_started_at.elapsed().as_secs_f64() * 1000.0;
 
                 self.snapshot_base_block_n = self.next_confirm;
                 self.pending_epoch_diffs = self.pending_epoch_diffs.split_off(&(self.next_confirm + 1));
             }
 
-            if let Some(log_ctx) = self.close_block_logs.remove(&self.next_confirm) {
-                let timings = &confirm_result.timings;
-                let close_block_total_ms = log_ctx.queued_at.elapsed().as_secs_f64() * 1000.0;
-                let close_preconfirmed_ms = log_ctx.db_staging_ms.unwrap_or_default();
-                tracing::info!(
-                    target: "close_block",
-                    block_number = self.next_confirm,
-                    tx_count = log_ctx.tx_count,
-                    event_count = log_ctx.event_count,
-                    close_block_total_ms = close_block_total_ms,
-                    block_close_ms = close_block_total_ms,
-                    close_preconfirmed_ms = close_preconfirmed_ms,
-                    block_production_ms = log_ctx.block_production_duration.as_secs_f64() * 1000.0,
-                    batches_executed = log_ctx.execution_stats.n_batches,
-                    txs_added_to_block = log_ctx.execution_stats.n_added_to_block,
-                    txs_executed = log_ctx.execution_stats.n_executed,
-                    txs_reverted = log_ctx.execution_stats.n_reverted,
-                    txs_rejected = log_ctx.execution_stats.n_rejected,
-                    classes_declared = log_ctx.execution_stats.declared_classes,
-                    l2_gas_consumed = log_ctx.execution_stats.l2_gas_consumed,
-                    state_diff_len = log_ctx.state_diff_len,
-                    declared_classes = log_ctx.declared_classes_count,
-                    deployed_contracts = log_ctx.deployed_contracts_count,
-                    storage_diffs = log_ctx.storage_diffs_count,
-                    nonce_updates = log_ctx.nonce_updates_count,
-                    consumed_l1_nonces = log_ctx.consumed_l1_nonces_count,
-                    bouncer_l1_gas = log_ctx.bouncer_weights.l1_gas,
-                    bouncer_sierra_gas = log_ctx.bouncer_weights.sierra_gas.0,
-                    bouncer_n_events = log_ctx.bouncer_weights.n_events,
-                    bouncer_message_segment_length = log_ctx.bouncer_weights.message_segment_length,
-                    bouncer_state_diff_size = log_ctx.bouncer_weights.state_diff_size,
-                    get_full_block_ms = timings.get_full_block_with_classes.as_secs_f64() * 1000.0,
-                    commitments_ms = timings.block_commitments_compute.as_secs_f64() * 1000.0,
-                    merklization_ms = timings.merklization.as_secs_f64() * 1000.0,
-                    contract_trie_ms = timings.contract_trie_root.as_secs_f64() * 1000.0,
-                    class_trie_ms = timings.class_trie_root.as_secs_f64() * 1000.0,
-                    contract_storage_trie_commit_ms = timings.contract_storage_trie_commit.as_secs_f64() * 1000.0,
-                    contract_trie_commit_ms = timings.contract_trie_commit.as_secs_f64() * 1000.0,
-                    class_trie_commit_ms = timings.class_trie_commit.as_secs_f64() * 1000.0,
-                    block_hash_ms = timings.block_hash_compute.as_secs_f64() * 1000.0,
-                    db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
-                    parallel_db_staging_ms = close_preconfirmed_ms,
-                    parallel_root_compute_ms = log_ctx.root_compute_ms.unwrap_or_default(),
-                    parallel_confirm_ms = parallel_confirm_ms,
-                    parallel_boundary_flush_ms = parallel_boundary_flush_ms,
-                    "close_block_complete"
-                );
-            }
-
-            // Consume readiness only after all DB side effects for this block succeeded.
-            self.persisted_ready.remove(&self.next_confirm);
-            self.roots_ready.remove(&self.next_confirm);
-            self.scheduled_blocks.remove(&self.next_confirm);
             self.next_confirm += 1;
         }
         Ok(())
@@ -604,32 +608,6 @@ impl ParallelMerkleFinalizerWorker {
     ) -> bool {
         persisted_ready.contains(&next_confirm) && roots_ready.contains_key(&next_confirm)
     }
-
-    /// Returns whether worker can accept another payload based on inflight block count.
-    fn can_schedule_more(max_inflight_blocks: usize, scheduled_blocks: &BTreeSet<u64>) -> bool {
-        scheduled_blocks.len() < max_inflight_blocks
-    }
-
-    fn next_confirm_failure(next_confirm: u64, failed_blocks: &BTreeMap<u64, LaneFailure>) -> Option<LaneFailure> {
-        failed_blocks.get(&next_confirm).cloned()
-    }
-
-    fn record_block_failure(&mut self, block_n: u64, lane: &'static str, error: anyhow::Error) {
-        let message = format!("{error:#}");
-        match self.failed_blocks.entry(block_n) {
-            Entry::Occupied(_) => {}
-            Entry::Vacant(entry) => {
-                tracing::error!(
-                    target: "close_block",
-                    block_number = block_n,
-                    lane = lane,
-                    error = %message,
-                    "parallel_finalizer_lane_failed"
-                );
-                entry.insert(LaneFailure { lane, message });
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -641,7 +619,6 @@ mod tests {
     use mp_receipt::{Event, EventWithTransactionHash, InvokeTransactionReceipt};
     use mp_state_update::StateDiff;
     use mp_transactions::InvokeTransactionV0;
-    use rstest::rstest;
 
     fn make_staged_block(block_n: u64, tx_hash: Felt) -> FullBlockWithoutCommitments {
         let header = PreconfirmedHeader { block_number: block_n, ..Default::default() };
@@ -661,31 +638,26 @@ mod tests {
         FullBlockWithoutCommitments { header, state_diff: StateDiff::default(), transactions: vec![tx], events }
     }
 
-    #[rstest]
-    #[case(3, 0, false)]
-    #[case(3, 1, false)]
-    #[case(3, 2, true)]
-    #[case(3, 3, false)]
-    #[case(3, 4, false)]
-    #[case(3, 5, true)]
-    fn boundary_rule_respects_flush_interval(
-        #[case] flush_interval: u64,
-        #[case] block_n: u64,
-        #[case] expected: bool,
-    ) {
-        assert_eq!(ParallelMerkleFinalizerWorker::is_boundary_for(flush_interval, block_n), expected);
+    #[test]
+    fn boundary_rule_respects_flush_interval() {
+        assert!(!ParallelMerkleFinalizerWorker::is_boundary_for(3, 0));
+        assert!(!ParallelMerkleFinalizerWorker::is_boundary_for(3, 1));
+        assert!(ParallelMerkleFinalizerWorker::is_boundary_for(3, 2));
+        assert!(!ParallelMerkleFinalizerWorker::is_boundary_for(3, 3));
+        assert!(!ParallelMerkleFinalizerWorker::is_boundary_for(3, 4));
+        assert!(ParallelMerkleFinalizerWorker::is_boundary_for(3, 5));
     }
 
-    #[rstest]
-    #[case(0, 0, 0)]
-    #[case(10, 0, 0)]
-    #[case(0, 1, 1)]
-    #[case(9, 10, 10)]
-    fn cumulative_start_cases(#[case] snapshot_base_block_n: u64, #[case] next_confirm: u64, #[case] expected: u64) {
-        assert_eq!(
-            ParallelMerkleFinalizerWorker::cumulative_range_start(snapshot_base_block_n, next_confirm),
-            expected
-        );
+    #[test]
+    fn cumulative_start_includes_block_zero_without_confirmed_tip() {
+        assert_eq!(ParallelMerkleFinalizerWorker::cumulative_range_start(0, 0), 0);
+        assert_eq!(ParallelMerkleFinalizerWorker::cumulative_range_start(10, 0), 0);
+    }
+
+    #[test]
+    fn cumulative_start_skips_persisted_snapshot_base_after_confirmed_tip() {
+        assert_eq!(ParallelMerkleFinalizerWorker::cumulative_range_start(0, 1), 1);
+        assert_eq!(ParallelMerkleFinalizerWorker::cumulative_range_start(9, 10), 10);
     }
 
     #[test]
@@ -753,49 +725,5 @@ mod tests {
 
         let err_text = format!("{err:#}");
         assert!(err_text.contains("expected #0, got #1"), "unexpected startup recovery error: {err_text}");
-    }
-
-    #[rstest]
-    #[case(2, 0, true)]
-    #[case(2, 1, true)]
-    #[case(2, 2, false)]
-    fn can_schedule_more_respects_inflight_bound(
-        #[case] max_inflight_blocks: usize,
-        #[case] scheduled_count: u64,
-        #[case] expected: bool,
-    ) {
-        let mut scheduled = BTreeSet::new();
-        for n in 0..scheduled_count {
-            scheduled.insert(10 + n);
-        }
-        assert_eq!(ParallelMerkleFinalizerWorker::can_schedule_more(max_inflight_blocks, &scheduled), expected);
-    }
-
-    #[rstest]
-    #[case(6, false)]
-    #[case(7, true)]
-    fn next_confirm_failure_only_blocks_matching_height(#[case] next_confirm: u64, #[case] should_find: bool) {
-        let mut failed_blocks = BTreeMap::new();
-        failed_blocks.insert(7, LaneFailure { lane: "root-compute", message: "boom".to_string() });
-        let failure = ParallelMerkleFinalizerWorker::next_confirm_failure(next_confirm, &failed_blocks);
-        assert_eq!(failure.is_some(), should_find);
-        if let Some(failure) = failure {
-            assert_eq!(failure.lane, "root-compute");
-            assert!(failure.message.contains("boom"));
-        }
-    }
-
-    #[rstest]
-    #[case(Some(10), Some(9), 10)]
-    #[case(Some(10), Some(15), 10)]
-    #[case(Some(10), None, 10)]
-    #[case(None, Some(8), 8)]
-    #[case(None, None, 0)]
-    fn initial_snapshot_base_cases(
-        #[case] latest_confirmed: Option<u64>,
-        #[case] latest_checkpoint: Option<u64>,
-        #[case] expected: u64,
-    ) {
-        assert_eq!(initial_snapshot_base(latest_confirmed, latest_checkpoint), expected);
     }
 }

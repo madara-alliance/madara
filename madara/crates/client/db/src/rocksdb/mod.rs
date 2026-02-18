@@ -292,6 +292,14 @@ impl RocksDBStorageInner {
             .get_block_info(block_n)?
             .with_context(|| format!("cannot confirm block_n={block_n}: staged block info not found"))?;
 
+        // If block production already advanced the chain tip to a newer preconfirmed block,
+        // we must not clear the preconfirmed column nor overwrite the chain tip meta entry.
+        // Doing so would drop the active preconfirmed block and break executor/finalizer overlap.
+        let keep_preconfirmed = matches!(
+            self.get_chain_tip_without_content()?,
+            Some(StoredChainTipWithoutContent::Preconfirmed(header)) if header.block_number > block_n
+        );
+
         let mut batch = WriteBatchWithTransaction::default();
         self.blocks_store_header_with_info_to_batch(
             header,
@@ -299,7 +307,9 @@ impl RocksDBStorageInner {
             staged_info.total_l2_gas_used,
             &mut batch,
         )?;
-        self.replace_chain_tip_with_confirmed_in_batch(block_n, &mut batch)?;
+        if !keep_preconfirmed {
+            self.replace_chain_tip_with_confirmed_in_batch(block_n, &mut batch)?;
+        }
         self.parallel_merkle_clear_staged_block(block_n, &mut batch);
 
         self.db.write_opt(batch, &self.writeopts)?;
@@ -501,6 +511,9 @@ impl MadaraStorageRead for RocksDBStorage {
     }
     fn get_chain_tip(&self) -> Result<StorageChainTip> {
         self.inner.get_chain_tip().context("Getting chain tip from db")
+    }
+    fn get_latest_confirmed_block_n(&self) -> Result<Option<u64>> {
+        self.inner.blocks_latest_confirmed_block_n().context("Getting latest confirmed block number from db")
     }
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>> {
         self.inner.get_confirmed_on_l1_tip().context("Getting confirmed block on l1 tip")

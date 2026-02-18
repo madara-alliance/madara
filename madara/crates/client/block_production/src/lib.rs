@@ -132,7 +132,7 @@ use anyhow::Context;
 use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
 use executor::{BatchExecutionResult, ExecutorMessage};
 use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
-use mc_db::{MadaraBackend, MadaraPreconfirmedBlockView, MadaraStateView};
+use mc_db::{AddFullBlockResult, MadaraBackend, MadaraPreconfirmedBlockView, MadaraStateView};
 use mc_exec::execution::TxInfo;
 use mc_exec::LayeredStateAdapter;
 use mc_mempool::Mempool;
@@ -377,19 +377,10 @@ impl BlockProductionTask {
         l1_client: Arc<dyn SettlementClient>,
         no_charge_fee: bool,
         parallel_merkle: ParallelMerkleConfig,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
-        let parallel_merkle_finalizer = if parallel_merkle.enabled {
-            Some(
-                spawn_parallel_merkle_finalizer(backend.clone(), parallel_merkle.clone())
-                    .context("spawning parallel merkle finalizer")?,
-            )
-        } else {
-            None
-        };
-
-        Ok(Self {
+        Self {
             backend: backend.clone(),
             mempool,
             current_state: None,
@@ -407,8 +398,8 @@ impl BlockProductionTask {
             bypass_tx_input: Some(bypass_tx_input),
             no_charge_fee,
             parallel_merkle,
-            parallel_merkle_finalizer,
-        })
+            parallel_merkle_finalizer: None,
+        }
     }
 
     pub fn handle(&self) -> BlockProductionHandle {
@@ -946,35 +937,59 @@ impl BlockProductionTask {
         self.metrics.block_consumed_l1_nonces_count.record(consumed_l1_nonces_count as u64, &[]);
 
         let close_preconfirmed_start = Instant::now();
-        if self.parallel_merkle.enabled {
+        enum CloseOutcome {
+            QueuedToParallelFinalizer,
+            ClosedSequential { db_result: AddFullBlockResult, is_fallback: bool },
+        }
+
+        let close_outcome: CloseOutcome = if self.parallel_merkle.enabled {
+            let block_number = state.block_number;
+            let consumed_core_contract_nonces = state.consumed_core_contract_nonces;
             let finalizer = self
                 .parallel_merkle_finalizer
                 .as_ref()
                 .context("parallel merkle is enabled but finalizer handle is missing")?;
 
-            let (mut block_without_state_diff, classes) =
+            let (block_without_state_diff, classes) =
                 preconfirmed_view.get_full_block_without_state_diff().context("building finalizer payload block")?;
-            block_without_state_diff.state_diff = state_diff.clone();
 
             let payload = FinalizedBlockPayload {
-                block_n: state.block_number,
+                block_n: block_number,
                 block: block_without_state_diff,
                 classes,
                 state_diff,
-                consumed_core_contract_nonces: state.consumed_core_contract_nonces,
+                consumed_core_contract_nonces,
                 bouncer_weights: block_exec_summary.bouncer_weights,
-                execution_stats: state.accumulated_stats.clone(),
-                block_production_duration: state.block_start_time.elapsed(),
             };
-            finalizer.submit(payload).await.context("queueing block in parallel finalizer")?;
-            tracing::info!(
-                target: "close_block",
-                block_number = state.block_number,
-                tx_count = n_txs,
-                event_count = event_count,
-                close_preconfirmed_ms = close_preconfirmed_start.elapsed().as_secs_f64() * 1000.0,
-                "close_block_queued_for_parallel_finalizer"
-            );
+            let submit_started = Instant::now();
+            if let Err(error) = finalizer.submit(payload).await {
+                let err = error.to_string();
+                let payload = error.0;
+                tracing::warn!(
+                    block_number,
+                    %err,
+                    "parallel finalizer queueing failed, falling back to sequential close"
+                );
+                let bouncer_weights = payload.bouncer_weights;
+                let db_result = Self::close_preconfirmed_block_with_state_diff(
+                    self.backend.clone(),
+                    block_number,
+                    payload.consumed_core_contract_nonces,
+                    &bouncer_weights,
+                    payload.state_diff,
+                )
+                .await
+                .with_context(|| format!("fallback sequential close for block #{}", block_number))?;
+
+                CloseOutcome::ClosedSequential { db_result, is_fallback: true }
+            } else {
+                tracing::info!(
+                    "📤 Submitted block #{} to parallel finalizer queue in {:?} (queueing stage)",
+                    block_number,
+                    submit_started.elapsed()
+                );
+                CloseOutcome::QueuedToParallelFinalizer
+            }
         } else {
             let db_result = Self::close_preconfirmed_block_with_state_diff(
                 self.backend.clone(),
@@ -985,6 +1000,37 @@ impl BlockProductionTask {
             )
             .await
             .context("Closing block")?;
+
+            CloseOutcome::ClosedSequential { db_result, is_fallback: false }
+        };
+
+        // When the block is closed sequentially (regular mode or fallback), emit consistent logs.
+        if let CloseOutcome::ClosedSequential { db_result, is_fallback } = &close_outcome {
+            if *is_fallback {
+                tracing::info!(
+                    "✅ fallback close block #{} via sequential path — state_root: {:#x}, block_hash: {:#x}, \
+                     state_diff: {{ storage_diffs: {}, nonce_updates: {}, deployed: {}, declared: {} }}",
+                    state.block_number,
+                    db_result.new_state_root,
+                    db_result.block_hash,
+                    storage_diffs_count,
+                    nonce_updates_count,
+                    deployed_contracts_count,
+                    declared_classes_count,
+                );
+            } else {
+                tracing::info!(
+                    "✅ Closed block #{} — state_root: {:#x}, block_hash: {:#x}, \
+                     state_diff: {{ storage_diffs: {}, nonce_updates: {}, deployed: {}, declared: {} }}",
+                    state.block_number,
+                    db_result.new_state_root,
+                    db_result.block_hash,
+                    storage_diffs_count,
+                    nonce_updates_count,
+                    deployed_contracts_count,
+                    declared_classes_count,
+                );
+            }
 
             // Emit structured log event for Loki querying (close_block_complete)
             // All timing values converted to milliseconds for human-readability
@@ -1046,10 +1092,28 @@ impl BlockProductionTask {
         let block_production_time = state.block_start_time.elapsed();
 
         if self.parallel_merkle.enabled {
-            tracing::info!(
-                "⛏️  Queued block #{} with {n_txs} transactions for parallel finalizer - {time_to_close:?}",
-                state.block_number
-            );
+            match &close_outcome {
+                CloseOutcome::QueuedToParallelFinalizer => {
+                    tracing::info!(
+                        "⛏️  Queued block #{} with {n_txs} transactions for parallel finalizer - {time_to_close:?}, \
+                         state_diff: {{ storage_diffs: {}, nonce_updates: {}, deployed: {}, declared: {} }}",
+                        state.block_number,
+                        storage_diffs_count,
+                        nonce_updates_count,
+                        deployed_contracts_count,
+                        declared_classes_count,
+                    );
+                }
+                CloseOutcome::ClosedSequential { is_fallback: true, .. } => {
+                    tracing::info!(
+                        "⛏️  Closed block #{} with {n_txs} transactions via sequential fallback - {time_to_close:?}",
+                        state.block_number
+                    );
+                }
+                CloseOutcome::ClosedSequential { is_fallback: false, .. } => {
+                    unreachable!("non-fallback sequential close should be impossible while parallel merkle is enabled")
+                }
+            }
         } else {
             tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
         }
@@ -1081,10 +1145,13 @@ impl BlockProductionTask {
         // initial state
         let latest_block_n = self.backend.latest_confirmed_block_n();
         self.current_state = Some(TaskState::NotExecuting { latest_block_n });
-        debug_assert!(
-            !self.parallel_merkle.enabled || self.parallel_merkle_finalizer.is_some(),
-            "parallel merkle finalizer must be initialized in BlockProductionTask::new when enabled"
-        );
+
+        if self.parallel_merkle.enabled {
+            self.parallel_merkle_finalizer = Some(
+                spawn_parallel_merkle_finalizer(self.backend.clone(), self.parallel_merkle.clone())
+                    .context("spawning parallel merkle finalizer")?,
+            );
+        }
 
         Ok(())
     }
@@ -1241,7 +1308,6 @@ pub(crate) mod tests {
                 false, /* no_charge_fee = false */
                 ParallelMerkleConfig::default(),
             )
-            .expect("creating block production task")
         }
     }
 
@@ -2082,8 +2148,7 @@ pub(crate) mod tests {
             Arc::new(original_devnet_setup.l1_client.clone()),
             initial_no_charge_fee,
             ParallelMerkleConfig::default(),
-        )
-        .expect("creating initial block production task");
+        );
 
         let mut notifications = block_production_task.subscribe_state_notifications();
         let restart_task =
@@ -2114,8 +2179,7 @@ pub(crate) mod tests {
             Arc::new(original_devnet_setup.l1_client.clone()),
             restart_no_charge_fee, // Current config: no_charge_fee = false
             ParallelMerkleConfig::default(),
-        )
-        .expect("creating restart block production task");
+        );
 
         // Start the block production task.
         // This will call setup_initial_state() which calls close_preconfirmed_block_if_exists().

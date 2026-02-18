@@ -379,9 +379,12 @@ impl MadaraCmd {
     pub fn hook_stdout_and_wait_for_ports(&mut self, rpc: bool, gateway: bool, rpc_admin: bool) {
         let stdout =
             self.process.as_mut().unwrap().stdout.take().expect("Could not capture stdout from Madara process");
+        let stderr =
+            self.process.as_mut().unwrap().stderr.take().expect("Could not capture stderr from Madara process");
         let pid = self.process.as_ref().unwrap().id();
 
         let stdout_prefix = if !self.label.is_empty() { format!("[{pid} {}]", self.label) } else { format!("[{pid}]") };
+        let stderr_prefix = format!("{stdout_prefix}[stderr]");
 
         let reader = BufReader::new(stdout);
         let (tx, rx) = mpsc::channel();
@@ -426,6 +429,11 @@ impl MadaraCmd {
                     let _ = tx.send((rpc_port, rpc_admin_port, gateway_port));
                 }
                 println!("{stdout_prefix} {line}");
+            }
+        });
+        thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                eprintln!("{stderr_prefix} {line}");
             }
         });
 

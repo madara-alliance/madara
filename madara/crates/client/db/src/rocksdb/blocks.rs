@@ -76,7 +76,23 @@ fn apply_events_to_transactions(
 }
 
 impl RocksDBStorageInner {
-    pub(super) fn blocks_store_transactions_with_indices_to_batch(
+    /// Returns the latest confirmed block number stored in `BLOCK_INFO_COLUMN`.
+    ///
+    /// This is more reliable than deriving it from the chain tip, because the chain tip can
+    /// advance through multiple preconfirmed blocks while confirmation lags behind.
+    pub(super) fn blocks_latest_confirmed_block_n(&self) -> Result<Option<u64>> {
+        let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
+        let mut iter = self.db.iterator_cf(&block_info_col, IteratorMode::End);
+        let Some(item) = iter.next() else {
+            return Ok(None);
+        };
+        let (key, _value) = item?;
+        let key: [u8; size_of::<u32>()] =
+            key.as_ref().try_into().context("Reading latest confirmed block number: invalid key length")?;
+        Ok(Some(u32::from_be_bytes(key) as u64))
+    }
+
+    pub(super) fn blocks_stage_transactions(
         &self,
         block_number: u64,
         transactions: &[TransactionWithReceipt],
@@ -103,6 +119,15 @@ impl RocksDBStorageInner {
         }
 
         Ok(())
+    }
+
+    pub(super) fn blocks_store_transactions_with_indices_to_batch(
+        &self,
+        block_number: u64,
+        transactions: &[TransactionWithReceipt],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        self.blocks_stage_transactions(block_number, transactions, batch)
     }
 
     pub(super) fn blocks_store_header_with_info_to_batch(

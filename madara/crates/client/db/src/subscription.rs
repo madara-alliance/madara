@@ -140,16 +140,19 @@ pub struct SubscribeNewHeads<D: MadaraStorageRead> {
     subscription: WatchChainTip<D>,
     tag: SubscribeNewBlocksTag,
     current_value: ChainTip,
+    last_confirmed_returned: Option<u64>,
 }
 impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
     fn new(backend: &Arc<MadaraBackend<D>>, tag: SubscribeNewBlocksTag) -> Self {
         let subscription = WatchChainTip::new(backend);
         let current_value = subscription.current_value.clone();
-        Self { backend: backend.clone(), current_value, subscription, tag }
+        let last_confirmed_returned = backend.latest_confirmed_block_n();
+        Self { backend: backend.clone(), current_value, subscription, tag, last_confirmed_returned }
     }
     pub fn set_start_from(&mut self, block_n: u64) {
         // We need to substract one
-        self.current_value = ChainTip::on_confirmed_block_n_or_empty(block_n.checked_sub(1))
+        self.last_confirmed_returned = block_n.checked_sub(1);
+        self.current_value = ChainTip::on_confirmed_block_n_or_empty(self.last_confirmed_returned);
     }
     pub fn current(&self) -> &ChainTip {
         &self.current_value
@@ -157,12 +160,12 @@ impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
     pub async fn next_head(&mut self) -> &ChainTip {
         loop {
             // Inclusive bound.
-            let next_block_to_return = self.current_value.latest_confirmed_block_n().map(|v| v + 1).unwrap_or(0);
+            let next_block_to_return = self.last_confirmed_returned.map(|v| v + 1).unwrap_or(0);
             // Exclusive bound.
-            let highest_block_plus_one =
-                self.subscription.current().latest_confirmed_block_n().map(|v| v + 1).unwrap_or(0);
+            let highest_block_plus_one = self.backend.latest_confirmed_block_n().map(|v| v + 1).unwrap_or(0);
 
             if next_block_to_return < highest_block_plus_one {
+                self.last_confirmed_returned = Some(next_block_to_return);
                 self.current_value = ChainTip::on_confirmed_block_n_or_empty(Some(next_block_to_return));
                 return &self.current_value;
             }

@@ -301,6 +301,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     starting_block: Option<u64>,
 
     pub chain_tip: tokio::sync::watch::Sender<ChainTip>,
+    latest_confirmed: tokio::sync::watch::Sender<Option<u64>>,
 
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
@@ -376,6 +377,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
+            latest_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             custom_header: Mutex::new(None),
         };
@@ -409,11 +411,17 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         } else {
             self.db.get_chain_tip()?
         });
-        self.starting_block = chain_tip.latest_confirmed_block_n();
+        // The chain tip can advance through multiple preconfirmed blocks while confirmations lag behind.
+        // Deriving "latest confirmed" from the chain tip is therefore not reliable in parallel finalizer mode.
+        let latest_confirmed = if let Some(starting_block) = self.starting_block {
+            Some(starting_block)
+        } else {
+            self.db.get_latest_confirmed_block_n()?
+        };
+        self.starting_block = latest_confirmed;
         // On startup, remove all blocks past the chain tip, in case we have partial blocks in db.
-        self.db.remove_all_blocks_starting_from(
-            chain_tip.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0),
-        )?;
+        self.db.remove_all_blocks_starting_from(latest_confirmed.map(|n| n + 1).unwrap_or(/* genesis */ 0))?;
+        self.latest_confirmed.send_replace(latest_confirmed);
         self.chain_tip.send_replace(chain_tip);
 
         // Init L1 head
@@ -618,7 +626,7 @@ pub struct AddFullBlockResult {
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn latest_confirmed_block_n(&self) -> Option<u64> {
-        self.chain_tip.borrow().latest_confirmed_block_n()
+        *self.latest_confirmed.borrow()
     }
     /// Latest block_n, which may be the pre-confirmed block.
     pub fn latest_block_n(&self) -> Option<u64> {
@@ -682,8 +690,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             ),
             // New preconfirmed at same height, replacing the previous proposal.
             (ChainTip::Preconfirmed(preconfirmed), ChainTip::Preconfirmed(new_preconfirmed)) => ensure!(
-                preconfirmed.header.block_number == new_preconfirmed.header.block_number,
-                "Replacing chain tip from preconfirmed to preconfirmed requires the new block_n to match the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
+                preconfirmed.header.block_number == new_preconfirmed.header.block_number
+                    || preconfirmed.header.block_number.checked_add(1) == Some(new_preconfirmed.header.block_number),
+                "Replacing chain tip from preconfirmed to preconfirmed requires the new block_n to match the previous one or be one plus it. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
             ),
             // New preconfirmed block on top of a confirmed block.
             (ChainTip::Confirmed(block_n), ChainTip::Preconfirmed(preconfirmed)) => ensure!(
@@ -715,6 +724,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         }
 
         // Write to the backend. This also sends the notification to subscribers :)
+        match &new_tip {
+            ChainTip::Empty => {
+                self.inner.latest_confirmed.send_replace(None);
+            }
+            ChainTip::Confirmed(block_n) => {
+                self.inner.latest_confirmed.send_replace(Some(*block_n));
+            }
+            ChainTip::Preconfirmed(_) => {}
+        }
         self.inner.chain_tip.send_replace(new_tip);
 
         Ok(())
@@ -910,7 +928,19 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         }
 
         self.inner.db.on_new_confirmed_head(block_n)?;
-        self.inner.chain_tip.send_replace(ChainTip::Confirmed(block_n));
+        self.inner.latest_confirmed.send_replace(Some(block_n));
+
+        let current_tip = self.inner.chain_tip.borrow().clone();
+        match current_tip {
+            ChainTip::Preconfirmed(preconfirmed) if preconfirmed.header.block_number > block_n => {
+                // Keep the currently-open preconfirmed block while advancing confirmed tip.
+                // This allows executor/finalizer overlap without forcing sequential block starts.
+                self.inner.chain_tip.send_replace(ChainTip::Preconfirmed(preconfirmed));
+            }
+            _ => {
+                self.inner.chain_tip.send_replace(ChainTip::Confirmed(block_n));
+            }
+        }
 
         Ok(AddFullBlockResult { new_state_root: precomputed_root, commitments, block_hash, parent_block_hash, timings })
     }

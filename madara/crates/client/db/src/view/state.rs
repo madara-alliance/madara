@@ -96,7 +96,12 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
     pub fn latest_confirmed_block_n(&self) -> Option<u64> {
         match self {
             Self::Empty(_) => None,
-            Self::OnBlock(MadaraBlockView::Preconfirmed(view)) => view.block_number().checked_sub(1),
+            Self::OnBlock(MadaraBlockView::Preconfirmed(view)) => {
+                let max_visible_confirmed = view.block_number().checked_sub(1)?;
+                self.backend()
+                    .latest_confirmed_block_n()
+                    .map(|latest_confirmed| std::cmp::min(latest_confirmed, max_visible_confirmed))
+            }
             Self::OnBlock(MadaraBlockView::Confirmed(view)) => Some(view.block_number()),
         }
     }

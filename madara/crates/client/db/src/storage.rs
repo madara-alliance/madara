@@ -140,6 +140,11 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
 
     fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>>;
     fn get_chain_tip(&self) -> Result<StorageChainTip>;
+    /// Returns the latest *confirmed* block number, independent of the chain tip.
+    ///
+    /// This is required when the chain tip can advance through multiple preconfirmed blocks
+    /// while confirmations lag behind (e.g. parallel finalizer overlap).
+    fn get_latest_confirmed_block_n(&self) -> Result<Option<u64>>;
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>>;

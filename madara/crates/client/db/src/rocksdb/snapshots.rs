@@ -45,28 +45,56 @@ impl Snapshots {
         }
     }
 
-    /// Called when a new block has been added in the database. This will make a snapshot
-    /// on top of the new block, and it will store that snapshot in the snapshot history every
-    /// `snapshot_interval` blocks.
-    #[tracing::instrument(skip(self))]
-    pub fn set_new_head(&self, block_n: u64) {
+    fn set_new_head_inner(&self, block_n: u64, pin_in_history: bool) {
         let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
-
         let mut inner = self.inner.write().expect("Poisoned lock");
 
-        if self.max_kept_snapshots != Some(0) && self.snapshot_interval != 0 && block_n % self.snapshot_interval == 0 {
+        if pin_in_history {
+            tracing::debug!("Pinning snapshot at {block_n:?}");
+            if self.max_kept_snapshots == Some(0) {
+                // Keep exactly one pinned snapshot when historical snapshots are disabled.
+                inner.historical.clear();
+            }
+            inner.historical.insert(block_n, Arc::clone(&snapshot));
+        } else if self.max_kept_snapshots != Some(0)
+            && self.snapshot_interval != 0
+            && block_n % self.snapshot_interval == 0
+        {
             tracing::debug!("Saving snapshot at {block_n:?}");
             inner.historical.insert(block_n, Arc::clone(&snapshot));
-
-            // remove the oldest snapshot
-            if self.max_kept_snapshots.is_some_and(|n| inner.historical.len() > n) {
-                inner.historical.pop_first();
+        } else if self.max_kept_snapshots == Some(0) {
+            // In disabled mode, only keep the most recent pinned snapshot that is not ahead of the current head.
+            let keep = inner.historical.range(..=block_n).next_back().map(|(n, snap)| (*n, Arc::clone(snap)));
+            inner.historical.clear();
+            if let Some((n, snap)) = keep {
+                inner.historical.insert(n, snap);
             }
         }
 
-        // Update head snapshot
+        if let Some(max_kept) = self.max_kept_snapshots {
+            if max_kept > 0 {
+                while inner.historical.len() > max_kept {
+                    inner.historical.pop_first();
+                }
+            }
+        }
+
         inner.head = snapshot;
         inner.head_block_n = Some(block_n);
+    }
+
+    /// Called when a new block has been added in the database. This will make a snapshot
+    /// on top of the new block, and store a historical snapshot according to retention settings.
+    #[tracing::instrument(skip(self))]
+    pub fn set_new_head(&self, block_n: u64) {
+        self.set_new_head_inner(block_n, false);
+    }
+
+    /// Called when a block must remain available as an exact snapshot base for parallel-merkle computations.
+    /// This pins the snapshot into history even when periodic snapshots are disabled.
+    #[tracing::instrument(skip(self))]
+    pub fn set_new_head_pinned(&self, block_n: u64) {
+        self.set_new_head_inner(block_n, true);
     }
 
     /// Get the closest snapshot that had been made at or after the provided `block_n`.
@@ -140,6 +168,38 @@ mod tests {
         // get_closest should still return the head snapshot
         let (block_n, _snapshot) = storage.snapshots.get_closest(10);
         assert_eq!(block_n, Some(19), "Should return head block when snapshots are disabled");
+    }
+
+    /// When periodic snapshots are disabled, pinned snapshots must still be retained so
+    /// parallel-merkle jobs can always find a checkpoint base.
+    #[test]
+    fn test_pinned_snapshots_are_retained_when_zero() {
+        let config = RocksDBConfig::default();
+        assert_eq!(config.max_kept_snapshots, Some(0), "Default config should disable periodic snapshots");
+        let (_temp_dir, storage) = create_test_storage(config);
+
+        storage.snapshots.set_new_head_pinned(5);
+        {
+            let inner = storage.snapshots.inner.read().expect("Poisoned lock");
+            assert_eq!(inner.historical.len(), 1);
+            assert!(inner.historical.contains_key(&5));
+        }
+
+        // Advancing head without pinning should keep the most recent pinned snapshot that is not ahead of head.
+        storage.snapshots.set_new_head(6);
+        {
+            let inner = storage.snapshots.inner.read().expect("Poisoned lock");
+            assert_eq!(inner.historical.len(), 1);
+            assert!(inner.historical.contains_key(&5));
+        }
+
+        // Pinning a newer checkpoint should replace the old pinned snapshot in disabled mode.
+        storage.snapshots.set_new_head_pinned(10);
+        {
+            let inner = storage.snapshots.inner.read().expect("Poisoned lock");
+            assert_eq!(inner.historical.len(), 1);
+            assert!(inner.historical.contains_key(&10));
+        }
     }
 
     /// When `max_kept_snapshots = Some(n)`, only n snapshots should be kept.

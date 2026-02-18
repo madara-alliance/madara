@@ -154,21 +154,39 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     tracing::debug!("Mempool task: new head.");
                     // If the previous head was preconfirmed, mark all of its transactions as removed.
                     if let Some(preconfirmed) = current_head.as_ref().and_then(|v| v.as_preconfirmed()) {
-                        let view_on_parent = preconfirmed.state_view_on_parent();
-                        for tx in preconfirmed.borrow_content().executed_transactions() {
-                            // re-convert PreconfirmedExecutedTransaction to ValidatedTransaction.
-                            removed.insert(*tx.transaction.receipt.transaction_hash(), tx.to_validated().into());
-                            // rollback the contract nonce to what it was before the transaction.
-                            for key in tx.state_diff.nonces.keys() {
-                                nonce_updates.insert(
-                                    *key,
-                                    // Get from db.
-                                    view_on_parent.get_contract_nonce(key)?.unwrap_or(Felt::ZERO),
-                                );
+                        let previous_preconfirmed_block_n = preconfirmed.block_number();
+                        let advanced_to_new_preconfirmed = matches!(new_head, MadaraBlockView::Preconfirmed(_))
+                            && new_head.block_number() > previous_preconfirmed_block_n;
+                        let previous_preconfirmed_unconfirmed = self
+                            .backend
+                            .latest_confirmed_block_n()
+                            .map(|confirmed| confirmed < previous_preconfirmed_block_n)
+                            .unwrap_or(true);
+
+                        if advanced_to_new_preconfirmed && previous_preconfirmed_unconfirmed {
+                            // Parallel mode can move from preconfirmed N to preconfirmed N+1 before N is confirmed.
+                            // In that case, executed txs from N are still canonical and must not be reinserted
+                            // into mempool, and account nonces must not be rolled back.
+                            for tx in preconfirmed.candidate_transactions() {
+                                removed.insert(tx.hash, tx.clone());
                             }
-                        }
-                        for tx in preconfirmed.candidate_transactions() {
-                            removed.insert(tx.hash, tx.clone());
+                        } else {
+                            let view_on_parent = preconfirmed.state_view_on_parent();
+                            for tx in preconfirmed.borrow_content().executed_transactions() {
+                                // re-convert PreconfirmedExecutedTransaction to ValidatedTransaction.
+                                removed.insert(*tx.transaction.receipt.transaction_hash(), tx.to_validated().into());
+                                // rollback the contract nonce to what it was before the transaction.
+                                for key in tx.state_diff.nonces.keys() {
+                                    nonce_updates.insert(
+                                        *key,
+                                        // Get from db.
+                                        view_on_parent.get_contract_nonce(key)?.unwrap_or(Felt::ZERO),
+                                    );
+                                }
+                            }
+                            for tx in preconfirmed.candidate_transactions() {
+                                removed.insert(tx.hash, tx.clone());
+                            }
                         }
                     }
 

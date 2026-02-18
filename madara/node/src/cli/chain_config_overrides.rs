@@ -105,6 +105,8 @@ pub struct ChainConfigOverridesInner {
     pub block_production_concurrency: BlockProductionConfig,
     #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub l1_messages_replay_max_duration: Duration,
+    #[serde(default)]
+    pub fixed_timestamp_start: Option<u64>,
 }
 
 impl ChainConfigOverrideParams {
@@ -142,6 +144,7 @@ impl ChainConfigOverrideParams {
             no_empty_blocks: chain_config.no_empty_blocks,
             block_production_concurrency: chain_config.block_production_concurrency,
             l1_messages_replay_max_duration: chain_config.l1_messages_replay_max_duration,
+            fixed_timestamp_start: chain_config.fixed_timestamp_start,
         })
         .context("Failed to convert ChainConfig to Value")?;
 
@@ -205,6 +208,7 @@ impl ChainConfigOverrideParams {
             block_production_concurrency: chain_config_overrides.block_production_concurrency,
             l1_messages_replay_max_duration: chain_config_overrides.l1_messages_replay_max_duration,
             l1_messages_finality_blocks: chain_config.l1_messages_finality_blocks,
+            fixed_timestamp_start: chain_config_overrides.fixed_timestamp_start,
         })
     }
 }

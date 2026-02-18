@@ -212,10 +212,12 @@ impl ChainGenesisDescription {
                     block_number: 0,
                     sequencer_address: chain_config.sequencer_address.to_felt(),
                     block_timestamp: mp_block::header::BlockTimestamp(
-                        SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)
-                            .expect("Current time is before unix epoch!")
-                            .as_secs(),
+                        chain_config.fixed_timestamp_start.unwrap_or_else(|| {
+                            SystemTime::now()
+                                .duration_since(SystemTime::UNIX_EPOCH)
+                                .expect("Current time is before unix epoch!")
+                                .as_secs()
+                        }),
                     ),
                     protocol_version: chain_config.latest_protocol_version,
                     gas_prices: GasPrices {
