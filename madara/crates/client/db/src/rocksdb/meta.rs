@@ -246,7 +246,7 @@ impl RocksDBStorageInner {
         let mut batch = WriteBatchWithTransaction::default();
         let meta_col = self.get_column(META_COLUMN);
 
-        self.delete_meta_entries_above(META_PARALLEL_MERKLE_STAGED_MARKER_PREFIX, target_block_n, &mut batch)?;
+        self.delete_meta_entries_above(META_PARALLEL_MERKLE_STAGED_STATE_PREFIX, target_block_n, &mut batch)?;
         self.delete_meta_entries_above(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, target_block_n, &mut batch)?;
         self.delete_meta_entries_above(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n, &mut batch)?;
 
@@ -560,7 +560,8 @@ mod tests {
     fn mark_staged_block(storage: &RocksDBStorage, block_n: u64) {
         let mut batch = WriteBatchWithTransaction::default();
         let header = PreconfirmedHeader { block_number: block_n, ..Default::default() };
-        storage.inner.parallel_merkle_mark_staged_block(block_n, &header, &mut batch).unwrap();
+        storage.inner.parallel_merkle_set_staged_header(block_n, &header, &mut batch).unwrap();
+        storage.inner.parallel_merkle_set_staged_state(block_n, ParallelMerkleStagedState::Final, &mut batch).unwrap();
         storage.inner.db.write_opt(batch, &storage.inner.writeopts).unwrap();
     }
 
