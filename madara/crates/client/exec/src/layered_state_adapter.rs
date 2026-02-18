@@ -86,6 +86,20 @@ struct ExecutionReadCache {
 }
 
 impl ExecutionReadCache {
+    fn with_read<R>(&self, f: impl FnOnce(&ExecutionReadCacheInner) -> R) -> R {
+        let guard = self.inner.read().expect("Poisoned execution read cache lock");
+        f(&guard)
+    }
+
+    fn with_write_recording<R>(&self, f: impl FnOnce(&mut ExecutionReadCacheInner) -> R) -> R {
+        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
+        let out = f(&mut guard);
+        let bytes = guard.current_bytes as u64;
+        drop(guard);
+        exec_metrics().record_read_cache_size_bytes(bytes);
+        out
+    }
+
     fn from_config(config: &ExecutionReadCacheConfig) -> Option<Self> {
         if !config.enabled || config.max_memory_bytes == 0 {
             return None;
@@ -125,122 +139,102 @@ impl ExecutionReadCache {
         if self.all_contracts {
             return true;
         }
-        let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.cached_class_hashes.contains(&class_hash)
+        self.with_read(|guard| guard.cached_class_hashes.contains(&class_hash))
     }
 
     fn get_storage(&self, contract_address: ContractAddress, key: StorageKey) -> Option<Felt> {
-        let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.storage.get(&(contract_address, key)).map(|entry| entry.value)
+        self.with_read(|guard| guard.storage.get(&(contract_address, key)).map(|entry| entry.value))
     }
 
     fn get_nonce(&self, contract_address: ContractAddress) -> Option<Nonce> {
-        let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.nonces.get(&contract_address).map(|entry| entry.value)
+        self.with_read(|guard| guard.nonces.get(&contract_address).map(|entry| entry.value))
     }
 
     fn get_class_hash(&self, contract_address: ContractAddress) -> Option<ClassHash> {
-        let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.class_hashes.get(&contract_address).map(|entry| entry.value)
+        self.with_read(|guard| guard.class_hashes.get(&contract_address).map(|entry| entry.value))
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> Option<CompiledClassHash> {
-        let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.compiled_class_hashes.get(&class_hash).map(|entry| entry.value)
+        self.with_read(|guard| guard.compiled_class_hashes.get(&class_hash).map(|entry| entry.value))
     }
 
     fn get_compiled_class_hash_v2(&self, class_hash: ClassHash) -> Option<CompiledClassHash> {
-        let guard = self.inner.read().expect("Poisoned execution read cache lock");
-        guard.compiled_class_hashes_v2.get(&class_hash).map(|entry| entry.value)
+        self.with_read(|guard| guard.compiled_class_hashes_v2.get(&class_hash).map(|entry| entry.value))
     }
 
     fn insert_storage_value(&self, contract_address: ContractAddress, key: StorageKey, value: Felt) {
         if !self.is_contract_enabled(contract_address) {
             return;
         }
-        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
-        guard.insert_storage(contract_address, key, value);
-        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        self.with_write_recording(|guard| guard.insert_storage(contract_address, key, value));
     }
 
     fn insert_nonce_value(&self, contract_address: ContractAddress, value: Nonce) {
         if !self.is_contract_enabled(contract_address) {
             return;
         }
-        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
-        guard.insert_nonce(contract_address, value);
-        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        self.with_write_recording(|guard| guard.insert_nonce(contract_address, value));
     }
 
     fn insert_class_hash_value(&self, contract_address: ContractAddress, value: ClassHash) {
         if !self.is_contract_enabled(contract_address) {
             return;
         }
-        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
-        guard.insert_class_hash(contract_address, value);
-        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        self.with_write_recording(|guard| guard.insert_class_hash(contract_address, value));
     }
 
     fn insert_compiled_class_hash_value(&self, class_hash: ClassHash, value: CompiledClassHash) {
         if !self.should_cache_class_hash(class_hash) {
             return;
         }
-        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
-        guard.insert_compiled_class_hash(class_hash, value);
-        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        self.with_write_recording(|guard| guard.insert_compiled_class_hash(class_hash, value));
     }
 
     fn insert_compiled_class_hash_v2_value(&self, class_hash: ClassHash, value: CompiledClassHash) {
         if !self.should_cache_class_hash(class_hash) {
             return;
         }
-        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
-        guard.insert_compiled_class_hash_v2(class_hash, value);
-        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        self.with_write_recording(|guard| guard.insert_compiled_class_hash_v2(class_hash, value));
     }
 
     fn apply_state_diff(&self, state_diff: &StateMaps) {
-        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
-
-        for (contract_address, class_hash) in &state_diff.class_hashes {
-            if self.is_contract_enabled(*contract_address) {
-                guard.insert_class_hash(*contract_address, *class_hash);
-            }
-        }
-
-        for ((contract_address, key), value) in &state_diff.storage {
-            if self.is_contract_enabled(*contract_address) {
-                guard.insert_storage(*contract_address, *key, *value);
-            }
-        }
-
-        for (contract_address, nonce) in &state_diff.nonces {
-            if self.is_contract_enabled(*contract_address) {
-                guard.insert_nonce(*contract_address, *nonce);
-            }
-        }
-
-        if self.all_contracts {
-            for (class_hash, compiled_hash) in &state_diff.compiled_class_hashes {
-                guard.insert_compiled_class_hash(*class_hash, *compiled_hash);
-            }
-        } else {
-            for (class_hash, compiled_hash) in &state_diff.compiled_class_hashes {
-                if guard.cached_class_hashes.contains(class_hash) {
-                    guard.insert_compiled_class_hash(*class_hash, *compiled_hash);
+        self.with_write_recording(|guard| {
+            for (contract_address, class_hash) in &state_diff.class_hashes {
+                if self.is_contract_enabled(*contract_address) {
+                    guard.insert_class_hash(*contract_address, *class_hash);
                 }
             }
-        }
 
-        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+            for ((contract_address, key), value) in &state_diff.storage {
+                if self.is_contract_enabled(*contract_address) {
+                    guard.insert_storage(*contract_address, *key, *value);
+                }
+            }
+
+            for (contract_address, nonce) in &state_diff.nonces {
+                if self.is_contract_enabled(*contract_address) {
+                    guard.insert_nonce(*contract_address, *nonce);
+                }
+            }
+
+            if self.all_contracts {
+                for (class_hash, compiled_hash) in &state_diff.compiled_class_hashes {
+                    guard.insert_compiled_class_hash(*class_hash, *compiled_hash);
+                }
+            } else {
+                for (class_hash, compiled_hash) in &state_diff.compiled_class_hashes {
+                    if guard.cached_class_hashes.contains(class_hash) {
+                        guard.insert_compiled_class_hash(*class_hash, *compiled_hash);
+                    }
+                }
+            }
+        });
     }
 
     fn evict_if_needed(&self) {
-        let mut guard = self.inner.write().expect("Poisoned execution read cache lock");
-        let evicted = guard.evict_if_needed(self.max_bytes);
-        exec_metrics().record_read_cache_size_bytes(guard.current_bytes as u64);
+        let evicted = self.with_write_recording(|guard| guard.evict_if_needed(self.max_bytes));
         if evicted > 0 {
-            tracing::debug!("Execution read cache evicted {evicted} entries (size_bytes={}).", guard.current_bytes);
+            tracing::debug!("Execution read cache evicted {evicted} entries.");
         }
     }
 }
