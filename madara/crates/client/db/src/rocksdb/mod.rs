@@ -5,7 +5,7 @@ use crate::{
         backup::BackupManager,
         column::{Column, ALL_COLUMNS},
         global_trie::{apply_to_global_trie, get_state_root, MerklizationTimings},
-        meta::StoredChainTipWithoutContent,
+        meta::{ParallelMerkleStagedState, StoredChainTipWithoutContent},
         metrics::DbMetrics,
         options::rocksdb_global_options,
         snapshots::Snapshots,
@@ -181,47 +181,60 @@ impl RocksDBStorageInner {
         bouncer_weights: Option<&BouncerWeights>,
     ) -> Result<()> {
         let block_n = block.header.block_number;
-        if self.has_parallel_merkle_staged_block(block_n)? {
-            anyhow::bail!("parallel-merkle staged data already exists for block_n={block_n}");
-        }
         if self.get_block_info(block_n)?.is_some() {
             anyhow::bail!("cannot stage block_n={block_n}: block header already confirmed");
         }
 
-        let block_n_u32 = u32::try_from(block_n).context("Converting block_n to u32")?;
-        let mut batch = WriteBatchWithTransaction::default();
-
-        self.parallel_merkle_mark_staged_block(block_n, &block.header, &mut batch)?;
-        self.blocks_stage_transactions(block_n, &block.transactions, &block.events, &mut batch)?;
-
-        batch.put_cf(
-            &self.get_column(blocks::BLOCK_STATE_DIFF_COLUMN),
-            block_n_u32.to_be_bytes(),
-            serialize(&block.state_diff)?,
-        );
-        self.state_apply_state_diff_to_batch(block_n, &block.state_diff, &mut batch)?;
-
-        if let Some(weights) = bouncer_weights {
-            batch.put_cf(
-                &self.get_column(blocks::BLOCK_BOUNCER_WEIGHT_COLUMN),
-                block_n_u32.to_be_bytes(),
-                serialize(weights)?,
-            );
+        if self.has_parallel_merkle_staged_block(block_n)? {
+            anyhow::bail!("parallel-merkle staged data already exists for block_n={block_n}");
         }
 
-        if !block.state_diff.migrated_compiled_classes.is_empty() {
-            let migrations = block
-                .state_diff
-                .migrated_compiled_classes
-                .iter()
-                .map(|m| (m.class_hash, m.compiled_class_hash))
-                .collect::<Vec<_>>();
-            self.update_class_v2_hashes_to_batch(migrations, &mut batch)?;
-        }
-        self.store_classes_to_batch(block_n, classes, &mut batch)?;
-        self.store_events_bloom_to_batch(block_n, &block.events, &mut batch)?;
+        // Staging is done in multiple commits to reduce batch size.
+        // A single per-block staged-state key in META_COLUMN allows idempotent resume.
+        let staged_state = self.get_parallel_merkle_staged_state(block_n)?;
 
-        self.db.write_opt(batch, &self.writeopts)?;
+        // Stage 1: Transactions + indices + staged header + txns_done marker (single atomic batch).
+        if staged_state.is_none() {
+            let mut batch = WriteBatchWithTransaction::default();
+            self.parallel_merkle_set_staged_header(block_n, &block.header, &mut batch)?;
+            self.parallel_merkle_set_staged_state(block_n, ParallelMerkleStagedState::Txns, &mut batch)?;
+            self.blocks_stage_transactions(block_n, &block.transactions, &block.events, &mut batch)?;
+            self.db.write_opt(batch, &self.writeopts)?;
+        }
+
+        // Stage 2: State diff + contract DB updates + classes (+ migrations) + optional bouncer weights.
+        // These are written via existing code paths which may commit internally; staged state is updated last.
+        if matches!(staged_state, None | Some(ParallelMerkleStagedState::Txns)) {
+            self.blocks_store_state_diff(block_n, &block.state_diff)?;
+            self.state_apply_state_diff(block_n, &block.state_diff)?;
+
+            if let Some(weights) = bouncer_weights {
+                self.blocks_store_bouncer_weights(block_n, weights)?;
+            }
+
+            if !block.state_diff.migrated_compiled_classes.is_empty() {
+                let migrations = block
+                    .state_diff
+                    .migrated_compiled_classes
+                    .iter()
+                    .map(|m| (m.class_hash, m.compiled_class_hash))
+                    .collect::<Vec<_>>();
+                self.update_class_v2_hashes(migrations)?;
+            }
+            self.store_classes(block_n, classes)?;
+
+            let mut batch = WriteBatchWithTransaction::default();
+            self.parallel_merkle_set_staged_state(block_n, ParallelMerkleStagedState::Diff, &mut batch)?;
+            self.db.write_opt(batch, &self.writeopts)?;
+        }
+
+        // Stage 3: Events bloom + final staged marker.
+        if !matches!(staged_state, Some(ParallelMerkleStagedState::Final)) {
+            self.store_events_bloom(block_n, &block.events)?;
+            let mut batch = WriteBatchWithTransaction::default();
+            self.parallel_merkle_set_staged_state(block_n, ParallelMerkleStagedState::Final, &mut batch)?;
+            self.db.write_opt(batch, &self.writeopts)?;
+        }
         Ok(())
     }
 
@@ -581,9 +594,19 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner.replace_chain_tip(chain_tip).context("Replacing chain tip in db")
     }
 
-    fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()> {
-        tracing::debug!("Append preconfirmed content start_tx_index={start_tx_index}, new_txs={}", txs.len());
-        self.inner.append_preconfirmed_content(start_tx_index, txs).context("Appending to preconfirmed content to db")
+    fn append_preconfirmed_content(
+        &self,
+        block_n: u64,
+        start_tx_index: u64,
+        txs: &[PreconfirmedExecutedTransaction],
+    ) -> Result<()> {
+        tracing::debug!(
+            "Append preconfirmed content block_n={block_n}, start_tx_index={start_tx_index}, new_txs={}",
+            txs.len()
+        );
+        self.inner
+            .append_preconfirmed_content(block_n, start_tx_index, txs)
+            .context("Appending to preconfirmed content to db")
     }
 
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {

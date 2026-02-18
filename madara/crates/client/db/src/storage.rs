@@ -187,7 +187,12 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()>;
 
     fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()>;
-    fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()>;
+    fn append_preconfirmed_content(
+        &self,
+        block_n: u64,
+        start_tx_index: u64,
+        txs: &[PreconfirmedExecutedTransaction],
+    ) -> Result<()>;
     /// Set the latest block confirmed on l1.
     fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()>;
     /// Write the latest l1_block synced for the messaging worker.

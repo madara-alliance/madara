@@ -701,7 +701,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         if self.inner.config.save_preconfirmed {
             let start_tx_index = block.content.borrow().n_executed();
             // We don't save candidate transactions.
-            self.inner.db.append_preconfirmed_content(start_tx_index as u64, executed)?;
+            self.inner.db.append_preconfirmed_content(block.header.block_number, start_tx_index as u64, executed)?;
         }
 
         block.append(executed.iter().cloned(), replace_candidates);
@@ -775,7 +775,10 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     }
 
     /// Persist block content for parallel merkle path without writing a confirmed header or advancing chain tip.
-    /// Data is staged atomically and can later be confirmed with a precomputed root.
+    ///
+    /// Staging is performed with a per-block staged-state metadata key and may involve multiple DB commits.
+    /// The `Final` staged state is written last and is the only readiness signal used by the confirm path.
+    /// This allows staging to be resumed idempotently after crashes while keeping confirmation strict and ordered.
     pub fn write_parallel_merkle_staged_block_data(
         &self,
         block: &FullBlockWithoutCommitments,
