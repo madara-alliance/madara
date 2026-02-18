@@ -252,7 +252,7 @@ impl BackendParams {
     pub fn backend_config(&self) -> MadaraBackendConfig {
         // Prevent integer overflow on user-provided values.
         // On 64-bit systems, the limit is very large for practical purposes :)
-        let max_memory_bytes = self.exec_read_cache_max_memory_mib.checked_mul(MiB).unwrap_or(usize::MAX);
+        let max_memory_bytes = self.exec_read_cache_max_memory_mib.saturating_mul(MiB);
 
         MadaraBackendConfig {
             flush_every_n_blocks: self.flush_every_n_blocks,
