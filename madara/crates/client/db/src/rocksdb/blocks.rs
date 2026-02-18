@@ -417,7 +417,7 @@ impl RocksDBStorageInner {
                 );
                 self.message_to_l2_remove_txns(l1_handler_nonces.iter().copied(), &mut batch)?;
                 self.message_to_l2_remove_pending(l1_handler_nonces.iter().copied(), &mut batch)?;
-                self.message_to_l2_remove_source_l1_block_by_nonces(l1_handler_nonces.iter().copied(), &mut batch)?;
+                self.message_to_l2_remove_l1_handler_l1_block_by_nonces(l1_handler_nonces.iter().copied(), &mut batch)?;
             }
 
             tracing::debug!(

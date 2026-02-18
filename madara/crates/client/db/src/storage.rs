@@ -143,7 +143,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn get_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>>;
     fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>>;
     fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>>;
-    fn get_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>>;
+    fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>>;
 
     // Mempool
 
@@ -175,7 +175,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()>;
 
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()>;
-    fn write_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()>;
+    fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()>;
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()>;
     fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()>;
 

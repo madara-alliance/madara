@@ -985,8 +985,8 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
     }
-    pub fn get_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
-        self.db.get_l1_message_source_l1_block_by_nonce(core_contract_nonce)
+    pub fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
+        self.db.get_l1_handler_l1_block_by_nonce(core_contract_nonce)
     }
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
@@ -1018,8 +1018,8 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         self.db.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash)
     }
-    pub fn write_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
-        self.db.write_l1_message_source_l1_block_by_nonce(core_contract_nonce, l1_block_n)
+    pub fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
+        self.db.write_l1_handler_l1_block_by_nonce(core_contract_nonce, l1_block_n)
     }
     pub fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
         self.db.write_pending_message_to_l2(msg)

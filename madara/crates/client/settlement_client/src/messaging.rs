@@ -243,9 +243,9 @@ async fn process_finalized_events(
         })?;
 
         if is_valid {
-            backend.write_l1_message_source_l1_block_by_nonce(event.message.tx.nonce, event.l1_block_number).map_err(
-                |e| SettlementClientError::DatabaseError(format!("Failed to store message source block: {}", e)),
-            )?;
+            backend
+                .write_l1_handler_l1_block_by_nonce(event.message.tx.nonce, event.l1_block_number)
+                .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store message source block: {}", e)))?;
             backend
                 .write_pending_message_to_l2(&event.message)
                 .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store message: {}", e)))?;

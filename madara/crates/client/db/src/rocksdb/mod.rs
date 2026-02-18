@@ -160,7 +160,7 @@ impl RocksDBStorageInner {
                     transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
                 self.message_to_l2_remove_txns(l1_handler_nonces.iter().copied(), &mut batch)?;
                 self.message_to_l2_remove_pending(l1_handler_nonces.iter().copied(), &mut batch)?;
-                self.message_to_l2_remove_source_l1_block_by_nonces(l1_handler_nonces.iter().copied(), &mut batch)?;
+                self.message_to_l2_remove_l1_handler_l1_block_by_nonces(l1_handler_nonces.iter().copied(), &mut batch)?;
 
                 self.blocks_remove_block(&block_info, &mut batch)?;
             }
@@ -361,10 +361,10 @@ impl MadaraStorageRead for RocksDBStorage {
             .get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
             .with_context(|| format!("Getting next pending message to l2 with nonce={core_contract_nonce}"))
     }
-    fn get_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
+    fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
         self.inner
-            .get_l1_message_source_l1_block_by_nonce(core_contract_nonce)
-            .with_context(|| format!("Getting l1 source block by nonce={core_contract_nonce}"))
+            .get_l1_handler_l1_block_by_nonce(core_contract_nonce)
+            .with_context(|| format!("Getting l1 handler l1 block by nonce={core_contract_nonce}"))
     }
 
     // Mempool
@@ -471,12 +471,12 @@ impl MadaraStorageWrite for RocksDBStorage {
             format!("Writing l1 handler txn hash by nonce nonce={core_contract_nonce} txn_hash={txn_hash:#x}")
         })
     }
-    fn write_l1_message_source_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
+    fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
         tracing::debug!(
-            "Write l1 message source block by nonce core_contract_nonce={core_contract_nonce}, l1_block_n={l1_block_n}"
+            "Write l1 handler l1 block by nonce core_contract_nonce={core_contract_nonce}, l1_block_n={l1_block_n}"
         );
-        self.inner.write_l1_message_source_l1_block_by_nonce(core_contract_nonce, l1_block_n).with_context(|| {
-            format!("Writing l1 message source block by nonce nonce={core_contract_nonce} l1_block_n={l1_block_n}")
+        self.inner.write_l1_handler_l1_block_by_nonce(core_contract_nonce, l1_block_n).with_context(|| {
+            format!("Writing l1 handler l1 block by nonce nonce={core_contract_nonce} l1_block_n={l1_block_n}")
         })
     }
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
@@ -679,8 +679,8 @@ impl MadaraStorageWrite for RocksDBStorage {
         for nonce in reverted_l1_handler_nonces.iter().copied() {
             match self
                 .inner
-                .get_l1_message_source_l1_block_by_nonce(nonce)
-                .with_context(|| format!("Fetching L1 source block for reverted nonce={nonce}"))?
+                .get_l1_handler_l1_block_by_nonce(nonce)
+                .with_context(|| format!("Fetching L1 handler L1 block for reverted nonce={nonce}"))?
             {
                 Some(l1_block_n) => {
                     min_source_l1_block = Some(match min_source_l1_block {
@@ -696,7 +696,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         if !missing_source_block_nonces.is_empty() && l1_messages_rewind_hint.is_none() {
             let sample: Vec<u64> = missing_source_block_nonces.iter().copied().take(8).collect();
             anyhow::bail!(
-                "Cannot revert: missing L1 source block mapping for {} reverted L1-handler nonce(s) (sample={sample:?}). \
+                "Cannot revert: missing L1 handler L1 block mapping for {} reverted L1-handler nonce(s) (sample={sample:?}). \
                  Retry with l1_messages_rewind_hint to force a safe rewind point.",
                 missing_source_block_nonces.len()
             );

@@ -27,7 +27,7 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
         ))
         .expect("Writing pending message should succeed");
     backend
-        .write_l1_message_source_l1_block_by_nonce(reverted_nonce, source_l1_block)
+        .write_l1_handler_l1_block_by_nonce(reverted_nonce, source_l1_block)
         .expect("Writing source L1 block mapping should succeed");
     backend.write_l1_messaging_sync_tip(Some(10_000)).expect("Writing sync tip should succeed");
 
@@ -40,6 +40,6 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
 
     assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     assert!(backend.get_pending_message_to_l2(reverted_nonce).expect("DB read should succeed").is_none());
-    assert!(backend.get_l1_message_source_l1_block_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
+    assert!(backend.get_l1_handler_l1_block_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(source_l1_block - 1));
 }
