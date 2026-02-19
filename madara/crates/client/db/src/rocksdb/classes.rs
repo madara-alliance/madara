@@ -43,45 +43,6 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    pub(crate) fn store_classes_to_batch(
-        &self,
-        block_number: u64,
-        converted_classes: &[ConvertedClass],
-        batch: &mut WriteBatchWithTransaction,
-    ) -> Result<()> {
-        let class_info_col = self.get_column(CLASS_INFO_COLUMN);
-        let class_compiled_col = self.get_column(CLASS_COMPILED_COLUMN);
-
-        for converted_class in converted_classes {
-            // Keep compatibility with existing logic where legacy classes may be declared multiple times.
-            if !self.contains_class(converted_class.class_hash())? {
-                batch.put_cf(
-                    &class_info_col,
-                    converted_class.class_hash().to_bytes_be(),
-                    super::serialize(&ClassInfoWithBlockN { class_info: converted_class.info(), block_number })?,
-                );
-            }
-        }
-
-        for converted_class in converted_classes {
-            if let ConvertedClass::Sierra(sierra) = converted_class {
-                // Use canonical compiled_class_hash (v2 if present, else v1)
-                if let Some(canonical_hash) = sierra.info.compiled_class_hash_v2.or(sierra.info.compiled_class_hash) {
-                    batch.put_cf(
-                        &class_compiled_col,
-                        canonical_hash.to_bytes_be(),
-                        super::serialize(&CompiledSierraWithBlockN {
-                            block_number,
-                            compiled_sierra: sierra.compiled.clone(),
-                        })?,
-                    );
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     #[tracing::instrument(skip(self))]
     pub(super) fn get_class(&self, class_hash: &Felt) -> Result<Option<ClassInfoWithBlockN>> {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(CLASS_INFO_COLUMN), class_hash.to_bytes_be())? else {
