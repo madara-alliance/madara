@@ -90,4 +90,24 @@ mod tests {
         assert!(err_text.contains("2"));
         assert!(err_text.contains("parallel-merkle-flush-interval"));
     }
+
+    #[test]
+    fn block_production_params_rejects_max_inflight_zero() {
+        let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-max-inflight", "0"])
+            .expect_err("max inflight <1 must be rejected");
+
+        let err_text = err.to_string();
+        assert!(err_text.contains("1"));
+        assert!(err_text.contains("parallel-merkle-max-inflight"));
+    }
+
+    #[test]
+    fn block_production_params_rejects_invalid_trie_log_mode() {
+        let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-trie-log-mode", "invalid"])
+            .expect_err("invalid trie-log mode must be rejected");
+
+        let err_text = err.to_string();
+        assert!(err_text.contains("parallel-merkle-trie-log-mode"));
+        assert!(err_text.contains("checkpoint") || err_text.contains("off"));
+    }
 }

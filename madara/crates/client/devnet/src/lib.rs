@@ -376,14 +376,18 @@ mod tests {
     }
 
     async fn test_chain() -> DevnetForTesting {
-        test_chain_with_chain_config(ChainConfig::madara_devnet()).await
+        test_chain_with_chain_config_and_parallel_merkle(ChainConfig::madara_devnet(), ParallelMerkleConfig::default())
+            .await
     }
     async fn test_chain_with_block_time(block_time: Duration) -> DevnetForTesting {
         let mut chain_config = ChainConfig::madara_devnet();
         chain_config.block_time = block_time;
-        test_chain_with_chain_config(chain_config).await
+        test_chain_with_chain_config_and_parallel_merkle(chain_config, ParallelMerkleConfig::default()).await
     }
-    async fn test_chain_with_chain_config(chain_config: ChainConfig) -> DevnetForTesting {
+    async fn test_chain_with_chain_config_and_parallel_merkle(
+        chain_config: ChainConfig,
+        parallel_merkle: ParallelMerkleConfig,
+    ) -> DevnetForTesting {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
@@ -409,7 +413,7 @@ mod tests {
             Arc::new(metrics),
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
             true,
-            ParallelMerkleConfig::default(),
+            parallel_merkle,
         );
 
         let tx_validator = Arc::new(TransactionValidator::new(
@@ -419,6 +423,67 @@ mod tests {
         ));
 
         DevnetForTesting { backend, contracts, block_production: Some(block_production), tx_validator }
+    }
+
+    #[tokio::test]
+    async fn test_block_production_with_parallel_merkle_enabled_config() {
+        let mut chain = test_chain_with_chain_config_and_parallel_merkle(
+            ChainConfig::madara_devnet(),
+            ParallelMerkleConfig {
+                enabled: true,
+                flush_interval: 5,
+                max_inflight: 16,
+                trie_log_mode: mc_block_production::ParallelMerkleTrieLogMode::Checkpoint,
+            },
+        )
+        .await;
+
+        let contract_0 = &chain.contracts.0[0];
+        let contract_1 = &chain.contracts.0[1];
+        let tx = chain
+            .sign_and_add_invoke_tx(
+                BroadcastedInvokeTxn::V3(InvokeTxnV3 {
+                    sender_address: contract_0.address,
+                    calldata: Multicall::default()
+                        .with(Call {
+                            to: ERC20_STRK_CONTRACT_ADDRESS,
+                            selector: Selector::from("transfer"),
+                            calldata: vec![contract_1.address, 1u128.into(), Felt::ZERO],
+                        })
+                        .flatten()
+                        .collect::<Vec<_>>()
+                        .into(),
+                    signature: vec![].into(),
+                    nonce: Felt::ZERO,
+                    resource_bounds: ResourceBoundsMapping {
+                        l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                        l2_gas: ResourceBounds { max_amount: 6000000000, max_price_per_unit: 100000 },
+                        l1_data_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                    },
+                    tip: 0,
+                    paymaster_data: vec![],
+                    account_deployment_data: vec![],
+                    nonce_data_availability_mode: DaMode::L1,
+                    fee_data_availability_mode: DaMode::L1,
+                }),
+                contract_0,
+            )
+            .await
+            .expect("invoke should be accepted");
+
+        let mut block_production = chain.block_production.take().expect("block production must be available");
+        let mut notifications = block_production.subscribe_state_notifications();
+        let _task =
+            AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
+
+        for _ in 0..10 {
+            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+            if chain.backend.view_on_latest().find_transaction_by_hash(&tx.transaction_hash).unwrap().is_some() {
+                return;
+            }
+        }
+
+        panic!("transaction should become visible in preconfirmed or confirmed view");
     }
 
     #[rstest]

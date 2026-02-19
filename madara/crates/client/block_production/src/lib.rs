@@ -383,6 +383,11 @@ impl BlockProductionTask {
         self.handle.clone()
     }
 
+    #[cfg(any(test, feature = "testing"))]
+    pub fn parallel_merkle_config_for_test(&self) -> &ParallelMerkleConfig {
+        &self.parallel_merkle
+    }
+
     /// This is a channel that helps the testing of the block production task. It is unused outside of tests.
     pub fn subscribe_state_notifications(&mut self) -> mpsc::UnboundedReceiver<BlockProductionStateNotification> {
         let (sender, recv) = mpsc::unbounded_channel();

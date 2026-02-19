@@ -121,6 +121,10 @@ impl BlockProductionService {
 mod tests {
     use super::*;
     use crate::cli::block_production::ParallelMerkleTrieLogMode as CliMode;
+    use mc_db::MadaraBackend;
+    use mc_mempool::{Mempool, MempoolConfig};
+    use mp_chain_config::ChainConfig;
+    use std::sync::Arc;
 
     #[test]
     fn parallel_merkle_config_maps_defaults() {
@@ -141,20 +145,29 @@ mod tests {
     }
 
     #[test]
-    fn parallel_merkle_config_maps_overrides() {
+    fn service_new_propagates_parallel_merkle_config_to_task() {
         let config = BlockProductionParams {
             block_production_disabled: false,
             devnet_contracts: 10,
             parallel_merkle_enabled: true,
-            parallel_merkle_flush_interval: 8,
-            parallel_merkle_max_inflight: 64,
+            parallel_merkle_flush_interval: 9,
+            parallel_merkle_max_inflight: 77,
             parallel_merkle_trie_log_mode: CliMode::Checkpoint,
         };
 
-        let cfg = BlockProductionService::parallel_merkle_config(&config);
-        assert!(cfg.enabled);
-        assert_eq!(cfg.flush_interval, 8);
-        assert_eq!(cfg.max_inflight, 64);
-        assert_eq!(cfg.trie_log_mode, ParallelMerkleTrieLogMode::Checkpoint);
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+        let mempool = Arc::new(Mempool::new(backend.clone(), MempoolConfig::default()));
+        let l1_client: Arc<dyn SettlementClient> = Arc::new(mc_settlement_client::L1SyncDisabledClient);
+
+        let service = BlockProductionService::new(&config, &backend, mempool, l1_client, /* no_charge_fee */ true)
+            .expect("service should be created");
+
+        let task_cfg =
+            service.task.as_ref().expect("task should be present before start").parallel_merkle_config_for_test();
+
+        assert!(task_cfg.enabled);
+        assert_eq!(task_cfg.flush_interval, 9);
+        assert_eq!(task_cfg.max_inflight, 77);
+        assert_eq!(task_cfg.trie_log_mode, ParallelMerkleTrieLogMode::Checkpoint);
     }
 }
