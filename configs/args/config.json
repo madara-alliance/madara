@@ -117,7 +117,11 @@
   },
   "block_production_params": {
     "block_production_disabled": false,
-    "devnet_contracts": 10
+    "devnet_contracts": 10,
+    "parallel_merkle_enabled": false,
+    "parallel_merkle_flush_interval": 3,
+    "parallel_merkle_max_inflight": 10,
+    "parallel_merkle_trie_log_mode": "off"
   },
   "chain_config_override": {
     "overrides": []
