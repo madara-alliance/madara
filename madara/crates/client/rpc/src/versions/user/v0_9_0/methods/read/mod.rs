@@ -6,10 +6,11 @@ use mp_chain_config::RpcVersion;
 use mp_convert::Felt;
 use mp_rpc::v0_9_0::{
     BlockHashAndNumber, BlockId, BroadcastedTxn, ContractStorageKeysItem, EventFilterWithPageRequest, EventsChunk,
-    FeeEstimate, FunctionCall, GetStorageProofResult, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes,
-    MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1,
-    SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
-    TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
+    FeeEstimate, FunctionCall, GetStorageProofResult, L1TxnHash, MaybeDeprecatedContractClass,
+    MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate,
+    MessageFeeEstimate, MessageStatus, MsgFromL1, SimulationFlagForEstimateFee,
+    StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo,
+    TxnWithHash,
 };
 
 pub mod call;
@@ -23,6 +24,7 @@ pub mod get_class;
 pub mod get_class_at;
 pub mod get_class_hash_at;
 pub mod get_events;
+pub mod get_messages_status;
 pub mod get_nonce;
 pub mod get_state_update;
 pub mod get_storage_at;
@@ -124,6 +126,10 @@ impl StarknetReadRpcApiV0_9_0Server for Starknet {
 
     async fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus> {
         Ok(get_transaction_status::get_transaction_status(self, transaction_hash).await?)
+    }
+
+    fn get_messages_status(&self, transaction_hash: L1TxnHash) -> RpcResult<Vec<MessageStatus>> {
+        Ok(get_messages_status::get_messages_status(self, transaction_hash)?)
     }
 
     fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedStateUpdate> {

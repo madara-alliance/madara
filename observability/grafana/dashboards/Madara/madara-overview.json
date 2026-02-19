@@ -4365,7 +4365,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "get_full_block_with_classes_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "expr": "get_full_block_without_state_diff_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Fetch Block",
           "refId": "A"
         },
@@ -4494,7 +4494,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(get_full_block_with_classes_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(get_full_block_without_state_diff_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Fetch Block p50",
           "refId": "A"
         },
@@ -4503,7 +4503,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(get_full_block_with_classes_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(get_full_block_without_state_diff_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
           "legendFormat": "Fetch Block p95",
           "refId": "B"
         },
@@ -5131,7 +5131,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "get_full_block_with_classes_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "expr": "get_full_block_without_state_diff_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Fetch Block",
           "refId": "A"
         },

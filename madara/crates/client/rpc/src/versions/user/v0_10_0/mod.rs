@@ -3,10 +3,10 @@ use m_proc_macros::versioned_rpc;
 use mp_rpc::v0_10_0::{
     AddInvokeTransactionResult, BlockHashAndNumber, BlockId, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, ContractStorageKeysItem,
-    EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult,
+    EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult, L1TxnHash,
     MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs,
-    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, SimulateTransactionsResult, SimulationFlag,
-    SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
+    MaybePreConfirmedStateUpdate, MessageFeeEstimate, MessageStatus, MsgFromL1, SimulateTransactionsResult,
+    SimulationFlag, SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
     TraceBlockTransactionsResult, TraceTransactionResult, TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo,
     TxnWithHash,
 };
@@ -113,6 +113,11 @@ pub trait StarknetReadRpcApi {
     /// Get the information about the result of executing the requested block
     #[method(name = "getStateUpdate")]
     fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedStateUpdate>;
+
+    /// Given an L1 tx hash, returns the associated l1_handler tx hashes and statuses for all L1 -> L2 messages sent by
+    /// the L1 transaction, ordered by the L1 tx sending order.
+    #[method(name = "getMessagesStatus")]
+    fn get_messages_status(&self, transaction_hash: L1TxnHash) -> RpcResult<Vec<MessageStatus>>;
 
     #[method(name = "getStorageProof")]
     fn get_storage_proof(

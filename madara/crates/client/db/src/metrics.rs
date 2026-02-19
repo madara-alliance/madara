@@ -14,11 +14,11 @@ pub struct DbMetrics {
     pub class_trie_commit_duration: Histogram<f64>,
     pub block_commitments_compute_duration: Histogram<f64>,
     pub block_hash_compute_duration: Histogram<f64>,
-    pub get_full_block_with_classes_duration: Histogram<f64>,
+    pub get_full_block_without_state_diff_duration: Histogram<f64>,
     pub db_write_block_parts_duration: Histogram<f64>,
 
     // Gauges for exact per-block values - Main 5 sequential operations
-    pub get_full_block_with_classes_last: Gauge<f64>,
+    pub get_full_block_without_state_diff_last: Gauge<f64>,
     pub block_commitments_compute_last: Gauge<f64>,
     pub apply_to_global_trie_last: Gauge<f64>,
     pub block_hash_compute_last: Gauge<f64>,
@@ -93,10 +93,10 @@ impl DbMetrics {
         );
 
         // Data fetching (Priority 3)
-        let get_full_block_with_classes_duration = register_histogram_metric_instrument(
+        let get_full_block_without_state_diff_duration = register_histogram_metric_instrument(
             &meter,
-            "get_full_block_with_classes_duration_seconds".to_string(),
-            "Time to fetch full block with classes".to_string(),
+            "get_full_block_without_state_diff_duration_seconds".to_string(),
+            "Time to fetch full block without state diff".to_string(),
             "s".to_string(),
         );
         let db_write_block_parts_duration = register_histogram_metric_instrument(
@@ -107,10 +107,10 @@ impl DbMetrics {
         );
 
         // Gauges for exact per-block values - Main 5 sequential operations
-        let get_full_block_with_classes_last = register_gauge_metric_instrument(
+        let get_full_block_without_state_diff_last = register_gauge_metric_instrument(
             &meter,
-            "get_full_block_with_classes_last_seconds".to_string(),
-            "Last block: time to fetch full block with classes".to_string(),
+            "get_full_block_without_state_diff_last_seconds".to_string(),
+            "Last block: time to fetch full block without state diff".to_string(),
             "s".to_string(),
         );
         let block_commitments_compute_last = register_gauge_metric_instrument(
@@ -179,10 +179,10 @@ impl DbMetrics {
             class_trie_commit_duration,
             block_commitments_compute_duration,
             block_hash_compute_duration,
-            get_full_block_with_classes_duration,
+            get_full_block_without_state_diff_duration,
             db_write_block_parts_duration,
             // Gauges
-            get_full_block_with_classes_last,
+            get_full_block_without_state_diff_last,
             block_commitments_compute_last,
             apply_to_global_trie_last,
             block_hash_compute_last,

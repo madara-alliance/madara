@@ -2,7 +2,7 @@
 
 use crate::types::constant::{
     get_batch_artifact_file, get_batch_artifacts_dir, get_batch_blob_dir, get_batch_blob_file,
-    get_batch_state_update_file, get_snos_legacy_dir,
+    get_batch_state_update_file, get_snos_batch_dir,
 };
 
 #[test]
@@ -22,10 +22,10 @@ fn test_path_helpers_format_and_structure() {
     // State update
     assert_eq!(get_batch_state_update_file(job_id), "state_update/batch/12345.json");
 
-    // SNOS legacy (root level, no path separators)
-    let snos_dir = get_snos_legacy_dir(job_id);
+    // SNOS batch dir (root level, no path separators)
+    let snos_dir = get_snos_batch_dir(job_id);
     assert_eq!(snos_dir, "12345");
-    assert!(!snos_dir.contains('/'), "SNOS legacy dir should be at root level");
+    assert!(!snos_dir.contains('/'), "SNOS batch dir should be at root level");
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn test_path_helpers_edge_cases() {
     // Zero
     assert_eq!(get_batch_artifacts_dir(0), "artifacts/batch/0");
     assert_eq!(get_batch_blob_dir(0), "blob/batch/0");
-    assert_eq!(get_snos_legacy_dir(0), "0");
+    assert_eq!(get_snos_batch_dir(0), "0");
     assert_eq!(get_batch_state_update_file(0), "state_update/batch/0.json");
 
     // Large value

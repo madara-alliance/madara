@@ -2,15 +2,17 @@ use crate::core::client::lock::LockValue;
 use crate::core::client::storage::StorageError;
 use crate::core::config::Config;
 use crate::types::constant::{
-    get_batch_artifacts_dir, get_batch_blob_dir, get_batch_state_update_file, get_snos_legacy_dir,
+    get_batch_artifacts_dir, get_batch_blob_dir, get_batch_state_update_file, get_snos_batch_dir,
     STORAGE_CLEANUP_LOCK_DURATION, STORAGE_CLEANUP_MAX_JOBS_PER_RUN, STORAGE_CLEANUP_WORKER_KEY,
     STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE,
 };
 use crate::types::jobs::job_updates::JobItemUpdates;
-use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
+use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SettlementContext, StateUpdateMetadata};
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use chrono::Utc;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
@@ -35,6 +37,8 @@ impl JobTrigger for StorageCleanupTrigger {
                 return Ok(());
             }
         }
+
+        MetricsRecorder::record_cleanup_run();
 
         // Execute main work and ensure lock is released
         let result = self.process_completed_jobs(&config).await;
@@ -62,10 +66,17 @@ impl JobTrigger for StorageCleanupTrigger {
 impl StorageCleanupTrigger {
     /// Process completed StateTransition jobs that haven't had their artifacts tagged
     async fn process_completed_jobs(&self, config: &Arc<Config>) -> color_eyre::Result<()> {
-        let jobs_to_tag = config
+        let jobs_to_tag = match config
             .database()
             .get_jobs_without_storage_artifacts_tagged(Some(STORAGE_CLEANUP_MAX_JOBS_PER_RUN as i64))
-            .await?;
+            .await
+        {
+            Ok(jobs) => jobs,
+            Err(e) => {
+                MetricsRecorder::record_cleanup_failure("db_jobs_lookup");
+                return Err(e.into());
+            }
+        };
 
         if jobs_to_tag.is_empty() {
             debug!("No completed StateTransition jobs need artifact tagging");
@@ -79,17 +90,25 @@ impl StorageCleanupTrigger {
         let mut total_artifacts_tagged = 0;
 
         for job in jobs_to_tag {
+            MetricsRecorder::record_cleanup_job_attempted();
             let job_id = job.internal_id;
 
             let state_metadata: StateUpdateMetadata = match job.metadata.specific.clone().try_into() {
                 Ok(m) => m,
                 Err(e) => {
+                    MetricsRecorder::record_cleanup_failure("metadata_parse");
                     error!(job_id = %job_id, error = %e, "Failed to parse StateUpdateMetadata");
                     continue;
                 }
             };
 
-            let paths_to_tag = self.collect_artifact_paths(config, job_id).await;
+            let paths_to_tag = match self.collect_artifact_paths(config, job_id, &state_metadata).await {
+                Ok(paths) => paths,
+                Err(e) => {
+                    error!(job_id = %job_id, error = %e, "Failed to collect artifacts for cleanup");
+                    continue;
+                }
+            };
 
             if paths_to_tag.is_empty() {
                 debug!(job_id = %job_id, "No artifacts found in storage, marking job as tagged");
@@ -104,7 +123,10 @@ impl StorageCleanupTrigger {
 
             let (tagged_count, all_tagged) = self.tag_artifacts(config, job_id, &paths_to_tag).await;
 
+            MetricsRecorder::record_cleanup_artifacts_tagged(tagged_count as f64);
+
             if !all_tagged {
+                MetricsRecorder::record_cleanup_failure("tagging");
                 warn!(
                     job_id = %job_id,
                     tagged = tagged_count,
@@ -115,12 +137,14 @@ impl StorageCleanupTrigger {
             }
 
             if let Err(e) = self.mark_job_tagged(config, &job, state_metadata).await {
+                MetricsRecorder::record_cleanup_failure("update_job");
                 error!(job_id = %job_id, error = %e, "Failed to update job metadata after tagging");
                 continue;
             }
 
             jobs_processed += 1;
             total_artifacts_tagged += tagged_count;
+            MetricsRecorder::record_cleanup_job_processed();
             debug!(job_id = %job_id, artifact_count = tagged_count, "Successfully tagged artifacts for expiration");
         }
 
@@ -132,25 +156,80 @@ impl StorageCleanupTrigger {
         Ok(())
     }
 
-    /// Collect artifact paths from: artifacts/, blob/, snos legacy dirs + state_update file
-    async fn collect_artifact_paths(&self, config: &Arc<Config>, job_id: u64) -> Vec<String> {
-        let mut paths = Vec::new();
+    /// Collect artifact paths from:
+    /// - batch artifacts dir
+    /// - batch blob dir
+    /// - SNOS batch dir (L3 only)
+    /// - SNOS batch dirs for all SNOS batches inside the aggregator batch (L2 only)
+    /// - state update file
+    async fn collect_artifact_paths(
+        &self,
+        config: &Arc<Config>,
+        job_id: u64,
+        state_metadata: &StateUpdateMetadata,
+    ) -> color_eyre::Result<Vec<String>> {
+        let mut paths = BTreeSet::new();
 
         // List files from each artifact directory
-        let dirs = [get_batch_artifacts_dir(job_id), get_batch_blob_dir(job_id), get_snos_legacy_dir(job_id)];
+        let mut dirs = vec![get_batch_artifacts_dir(job_id), get_batch_blob_dir(job_id)];
+
+        let is_l3 = matches!(state_metadata.context, SettlementContext::Block(_));
+        if is_l3 {
+            dirs.push(get_snos_batch_dir(job_id));
+        }
+
         for dir in &dirs {
             match config.storage().list_files_in_dir(dir).await {
                 Ok(files) => {
                     debug!(job_id = %job_id, dir = %dir, count = files.len(), "Found files");
                     paths.extend(files);
                 }
-                Err(e) => debug!(job_id = %job_id, dir = %dir, error = %e, "Dir not found or error"),
+                Err(e) => {
+                    MetricsRecorder::record_cleanup_failure("list_dir");
+                    debug!(job_id = %job_id, dir = %dir, error = %e, "Dir not found or error");
+                }
+            }
+        }
+
+        if matches!(state_metadata.context, SettlementContext::Batch(_)) {
+            // Include SNOS batch dirs for all SNOS batches in this aggregator batch
+            let snos_batches = match config.database().get_snos_batches_by_aggregator_index(job_id).await {
+                Ok(batches) => batches,
+                Err(e) => {
+                    MetricsRecorder::record_cleanup_failure("snos_batch_lookup");
+                    return Err(e.into());
+                }
+            };
+            for snos_batch in snos_batches {
+                let snos_dir = get_snos_batch_dir(snos_batch.index);
+                match config.storage().list_files_in_dir(&snos_dir).await {
+                    Ok(files) => {
+                        debug!(
+                            job_id = %job_id,
+                            snos_batch_index = %snos_batch.index,
+                            dir = %snos_dir,
+                            count = files.len(),
+                            "Found SNOS batch files"
+                        );
+                        paths.extend(files);
+                    }
+                    Err(e) => {
+                        MetricsRecorder::record_cleanup_failure("list_dir");
+                        debug!(
+                            job_id = %job_id,
+                            snos_batch_index = %snos_batch.index,
+                            dir = %snos_dir,
+                            error = %e,
+                            "SNOS batch dir not found or error"
+                        );
+                    }
+                }
             }
         }
 
         // Add state update file (single file, always included)
-        paths.push(get_batch_state_update_file(job_id));
-        paths
+        paths.insert(get_batch_state_update_file(job_id));
+        Ok(paths.into_iter().collect())
     }
 
     /// Tag artifacts for expiration. Returns (tagged_count, all_succeeded).

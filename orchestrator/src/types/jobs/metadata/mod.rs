@@ -112,7 +112,7 @@ pub struct AggregatorMetadata {
     /// downloaded. If `Some(value)`, the proof will be downloaded and stored to the specified path
     /// in the provided storage.
     pub download_proof: Option<String>,
-    /// Path of blob data (legacy, used for L3)
+    /// Path of blob data (batch-scoped directory for L2)
     pub blob_data_path: String,
     /// Path to the DA segment file from the prover (used for L2 with encryption)
     pub da_segment_path: String,
@@ -207,7 +207,7 @@ pub struct StateUpdateMetadata {
     pub snos_output_path: Option<String>,
     /// Path to program output file for the block/batch
     pub program_output_path: Option<String>,
-    /// Path to blob data file for the block/batch (legacy, used for L3)
+    /// Path to blob data file for the block/batch (used for L3)
     pub blob_data_path: Option<String>,
     /// Path to DA segment file for the batch (used for L2 with encryption)
     /// Note: One DA segment per aggregator job, one state update per aggregator job
