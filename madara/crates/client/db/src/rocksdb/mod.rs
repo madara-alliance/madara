@@ -158,9 +158,7 @@ impl RocksDBStorageInner {
                 self.events_remove_block(block_n, &mut batch)?;
                 let l1_handler_nonces: Vec<u64> =
                     transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
-                self.message_to_l2_remove_txns(l1_handler_nonces.iter().copied(), &mut batch)?;
-                self.message_to_l2_remove_pending(l1_handler_nonces.iter().copied(), &mut batch)?;
-                self.message_to_l2_remove_l1_handler_l1_block_by_nonces(l1_handler_nonces.iter().copied(), &mut batch)?;
+                self.message_to_l2_remove_for_l1_handler_nonces(&l1_handler_nonces, &mut batch)?;
 
                 self.blocks_remove_block(&block_info, &mut batch)?;
             }

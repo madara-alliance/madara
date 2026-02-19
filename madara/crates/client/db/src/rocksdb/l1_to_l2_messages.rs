@@ -127,6 +127,21 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    pub(super) fn message_to_l2_remove_for_l1_handler_nonces(
+        &self,
+        l1_handler_nonces: &[u64],
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        if l1_handler_nonces.is_empty() {
+            return Ok(());
+        }
+
+        self.message_to_l2_remove_txns(l1_handler_nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_pending(l1_handler_nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_l1_handler_l1_block_by_nonces(l1_handler_nonces.iter().copied(), batch)?;
+        Ok(())
+    }
+
     pub(super) fn message_to_l2_remove_l1_handler_l1_block_by_nonces(
         &self,
         core_contract_nonces: impl IntoIterator<Item = u64>,
