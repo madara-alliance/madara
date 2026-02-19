@@ -120,8 +120,10 @@ use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
 use mc_class_exec::config::NativeConfig;
-use mp_block::commitments::BlockCommitments;
-use mp_block::commitments::CommitmentComputationContext;
+use mp_block::commitments::{
+    BlockCommitments, CommitmentComputationContext, EventsCommitment, StateDiffCommitment,
+    TransactionAndReceiptCommitment,
+};
 use mp_block::header::CustomHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlockWithoutCommitments;
@@ -785,11 +787,16 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         classes: &[ConvertedClass],
         bouncer_weights: Option<&BouncerWeights>,
     ) -> Result<()> {
-        self.inner.db.write_parallel_merkle_staged_block_data(block, classes, bouncer_weights)
+        self.inner.db.write_parallel_merkle_staged_block_data(
+            block,
+            classes,
+            bouncer_weights,
+            self.inner.chain_config.chain_id.to_felt(),
+        )
     }
 
     /// Confirm a previously staged block using an externally precomputed state root.
-    /// This computes commitments + block hash on confirm and atomically advances confirmed tip.
+    /// This computes block hash on confirm and atomically advances confirmed tip.
     pub fn confirm_parallel_merkle_staged_block_with_root(
         &self,
         block_n: u64,
@@ -810,46 +817,42 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             .db
             .get_parallel_merkle_staged_block_header(block_n)?
             .with_context(|| format!("Missing staged preconfirmed header for block_n={block_n}"))?;
-        let state_diff = self
+        let staged_info = self
             .inner
             .db
-            .get_block_state_diff(block_n)?
-            .with_context(|| format!("Missing staged state diff for block_n={block_n}"))?;
-        let transactions: Vec<TransactionWithReceipt> =
-            self.inner.db.get_block_transactions(block_n, 0).collect::<Result<_>>()?;
+            .get_block_info(block_n)?
+            .with_context(|| format!("Missing staged block info for block_n={block_n}"))?;
 
-        let events = transactions
-            .iter()
-            .flat_map(|tx| {
-                let tx_hash = *tx.receipt.transaction_hash();
-                tx.receipt
-                    .events()
-                    .iter()
-                    .cloned()
-                    .map(move |event| EventWithTransactionHash { transaction_hash: tx_hash, event })
-            })
-            .collect::<Vec<_>>();
-        let tx_hashes = transactions.iter().map(|tx| *tx.receipt.transaction_hash()).collect::<Vec<_>>();
-        let total_l2_gas_used = transactions.iter().map(|tx| tx.receipt.l2_gas_used()).sum::<u128>();
-
+        let commitments = BlockCommitments {
+            transaction: TransactionAndReceiptCommitment {
+                transaction_commitment: staged_info.header.transaction_commitment,
+                receipt_commitment: staged_info
+                    .header
+                    .receipt_commitment
+                    .with_context(|| format!("Missing staged receipt commitment for block_n={block_n}"))?,
+                transaction_count: staged_info.header.transaction_count,
+            },
+            state_diff: StateDiffCommitment {
+                state_diff_commitment: staged_info
+                    .header
+                    .state_diff_commitment
+                    .with_context(|| format!("Missing staged state diff commitment for block_n={block_n}"))?,
+                state_diff_length: staged_info
+                    .header
+                    .state_diff_length
+                    .with_context(|| format!("Missing staged state diff length for block_n={block_n}"))?,
+            },
+            event: EventsCommitment {
+                events_commitment: staged_info.header.event_commitment,
+                events_count: staged_info.header.event_count,
+            },
+        };
         let mut timings = CloseBlockTimings::default();
         let parent_block_hash = if let Some(last_block) = self.inner.block_view_on_last_confirmed() {
             last_block.get_block_info()?.block_hash
         } else {
             Felt::ZERO
         };
-
-        let commitments_start = Instant::now();
-        let commitments = BlockCommitments::compute(
-            &CommitmentComputationContext {
-                protocol_version: self.inner.chain_config.latest_protocol_version,
-                chain_id: self.inner.chain_config.chain_id.to_felt(),
-            },
-            &transactions,
-            &state_diff,
-            &events,
-        );
-        timings.block_commitments_compute = commitments_start.elapsed();
 
         let header = staged_header.into_confirmed_header(parent_block_hash, commitments.clone(), precomputed_root);
         let hash_start = Instant::now();
@@ -863,11 +866,11 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         }
 
         let write_start = Instant::now();
-        self.inner.db.confirm_parallel_merkle_staged_block(
-            BlockHeaderWithSignatures { header, block_hash, consensus_signatures: vec![] },
-            &tx_hashes,
-            total_l2_gas_used,
-        )?;
+        self.inner.db.confirm_parallel_merkle_staged_block(BlockHeaderWithSignatures {
+            header,
+            block_hash,
+            consensus_signatures: vec![],
+        })?;
         timings.db_write_block_parts = write_start.elapsed();
 
         if self

@@ -41,6 +41,19 @@ async fn write_parallel_merkle_staged_block_data_persists_without_tip_advance() 
     assert!(backend.has_parallel_merkle_staged_block(0).unwrap(), "staged marker should be present");
     assert_eq!(backend.get_parallel_merkle_staged_blocks().unwrap(), vec![0]);
     assert!(backend.block_view_on_confirmed(0).is_none(), "header mapping must not exist before confirm");
+    let staged_info = backend.db.get_block_info(0).unwrap().expect("staged block info should be persisted");
+    assert_eq!(
+        staged_info.tx_hashes,
+        vec![*block.transactions[0].receipt.transaction_hash()],
+        "staged block info should contain tx hashes",
+    );
+    assert_eq!(staged_info.header.block_number, 0);
+    assert_eq!(staged_info.header.transaction_count, 1);
+    assert_eq!(staged_info.header.event_count, 1);
+    assert_eq!(staged_info.header.state_diff_length, Some(block.state_diff.len() as u64));
+    assert!(staged_info.header.state_diff_commitment.is_some());
+    assert!(staged_info.header.receipt_commitment.is_some());
+    assert_eq!(staged_info.block_hash, Felt::ZERO);
     assert!(backend.db.get_block_state_diff(0).unwrap().is_some(), "state diff should be persisted");
     assert_eq!(
         backend.db.get_parallel_merkle_staged_block_header(0).unwrap(),
@@ -117,4 +130,28 @@ async fn parallel_merkle_checkpoint_metadata_roundtrip() {
     assert!(backend.has_parallel_merkle_checkpoint(5).unwrap());
     assert!(backend.has_parallel_merkle_checkpoint(8).unwrap());
     assert_eq!(backend.get_parallel_merkle_latest_checkpoint().unwrap(), Some(8));
+}
+
+#[tokio::test]
+async fn find_block_by_hash_returns_any_confirmed_block_not_only_tip() {
+    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+
+    let block_0 = make_staged_block(0, Felt::from_hex_unchecked("0x100"));
+    let block_1 = make_staged_block(1, Felt::from_hex_unchecked("0x101"));
+
+    backend.write_access().write_parallel_merkle_staged_block_data(&block_0, &[], None).unwrap();
+    let result_0 = backend
+        .write_access()
+        .confirm_parallel_merkle_staged_block_with_root(0, Felt::from_hex_unchecked("0x1000"), true)
+        .unwrap();
+
+    backend.write_access().write_parallel_merkle_staged_block_data(&block_1, &[], None).unwrap();
+    let result_1 = backend
+        .write_access()
+        .confirm_parallel_merkle_staged_block_with_root(1, Felt::from_hex_unchecked("0x1001"), true)
+        .unwrap();
+
+    let view = backend.view_on_latest_confirmed();
+    assert_eq!(view.find_block_by_hash(&result_0.block_hash).unwrap(), Some(0));
+    assert_eq!(view.find_block_by_hash(&result_1.block_hash).unwrap(), Some(1));
 }

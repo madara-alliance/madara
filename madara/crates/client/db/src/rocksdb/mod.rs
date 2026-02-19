@@ -43,6 +43,7 @@ mod mempool;
 mod meta;
 mod metrics;
 mod options;
+mod preconfirmed;
 mod rocksdb_snapshot;
 mod snapshots;
 mod state;
@@ -179,32 +180,45 @@ impl RocksDBStorageInner {
         block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         bouncer_weights: Option<&BouncerWeights>,
+        chain_id: Felt,
     ) -> Result<()> {
         let block_n = block.header.block_number;
-        if self.get_block_info(block_n)?.is_some() {
+        let latest_confirmed = match self.get_chain_tip_without_content()? {
+            Some(StoredChainTipWithoutContent::Confirmed(n)) => Some(n),
+            Some(StoredChainTipWithoutContent::Preconfirmed(header)) => header.block_number.checked_sub(1),
+            None => None,
+        };
+        if latest_confirmed.is_some_and(|n| block_n <= n) {
             anyhow::bail!("cannot stage block_n={block_n}: block header already confirmed");
         }
 
-        if self.has_parallel_merkle_staged_block(block_n)? {
+        if self.parallel_merkle_has_staged_block(block_n)? {
             anyhow::bail!("parallel-merkle staged data already exists for block_n={block_n}");
         }
 
         // Staging is done in multiple commits to reduce batch size.
         // A single per-block staged-state key in META_COLUMN allows idempotent resume.
-        let staged_state = self.get_parallel_merkle_staged_state(block_n)?;
+        let staged_state = self.parallel_merkle_get_staged_state(block_n)?;
 
-        // Stage 1: Transactions + indices + staged header + txns_done marker (single atomic batch).
+        // Stage 1: Transactions + indices + staged header + txns marker (single atomic batch).
         if staged_state.is_none() {
             let mut batch = WriteBatchWithTransaction::default();
             self.parallel_merkle_set_staged_header(block_n, &block.header, &mut batch)?;
             self.parallel_merkle_set_staged_state(block_n, ParallelMerkleStagedState::Txns, &mut batch)?;
-            self.blocks_stage_transactions(block_n, &block.transactions, &block.events, &mut batch)?;
+            self.blocks_store_transactions_with_indices_to_batch(block_n, &block.transactions, &mut batch)?;
             self.db.write_opt(batch, &self.writeopts)?;
         }
 
-        // Stage 2: State diff + contract DB updates + classes (+ migrations) + optional bouncer weights.
+        // Stage 2: Materialize receipt events + commitments/staged block info + state diff/DB updates/classes.
         // These are written via existing code paths which may commit internally; staged state is updated last.
         if matches!(staged_state, None | Some(ParallelMerkleStagedState::Txns)) {
+            self.blocks_store_events_to_receipts(block_n, &block.events)?;
+
+            let commitments = self.blocks_compute_staged_commitments(block, chain_id);
+            let tx_hashes = block.transactions.iter().map(|tx| *tx.receipt.transaction_hash()).collect::<Vec<_>>();
+            let total_l2_gas_used = block.transactions.iter().map(|tx| tx.receipt.l2_gas_used()).sum::<u128>();
+            self.blocks_store_staged_block_info(&block.header, &tx_hashes, total_l2_gas_used, &commitments)?;
+
             self.blocks_store_state_diff(block_n, &block.state_diff)?;
             self.state_apply_state_diff(block_n, &block.state_diff)?;
 
@@ -238,21 +252,24 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    fn confirm_parallel_merkle_staged_block(
-        &self,
-        header: &BlockHeaderWithSignatures,
-        tx_hashes: &[Felt],
-        total_l2_gas_used: u128,
-    ) -> Result<()> {
+    fn confirm_parallel_merkle_staged_block(&self, header: &BlockHeaderWithSignatures) -> Result<()> {
         let block_n = header.header.block_number;
-        if !self.has_parallel_merkle_staged_block(block_n)? {
+        if !self.parallel_merkle_has_staged_block(block_n)? {
             anyhow::bail!("cannot confirm block_n={block_n}: staged marker not found");
         }
+        let staged_info = self
+            .get_block_info(block_n)?
+            .with_context(|| format!("cannot confirm block_n={block_n}: staged block info not found"))?;
 
         let mut batch = WriteBatchWithTransaction::default();
-        self.blocks_store_header_with_info_to_batch(header, tx_hashes, total_l2_gas_used, &mut batch)?;
+        self.blocks_store_header_with_info_to_batch(
+            header,
+            &staged_info.tx_hashes,
+            staged_info.total_l2_gas_used,
+            &mut batch,
+        )?;
         self.replace_chain_tip_with_confirmed_in_batch(block_n, &mut batch)?;
-        self.parallel_merkle_unstage_block(block_n, &mut batch);
+        self.parallel_merkle_clear_staged_block(block_n, &mut batch);
 
         self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
@@ -430,7 +447,7 @@ impl MadaraStorageRead for RocksDBStorage {
     }
     fn has_parallel_merkle_staged_block(&self, block_n: u64) -> Result<bool> {
         self.inner
-            .has_parallel_merkle_staged_block(block_n)
+            .parallel_merkle_has_staged_block(block_n)
             .with_context(|| format!("Checking parallel merkle staged marker for block_n={block_n}"))
     }
     fn get_parallel_merkle_staged_block_header(
@@ -438,11 +455,11 @@ impl MadaraStorageRead for RocksDBStorage {
         block_n: u64,
     ) -> Result<Option<mp_block::header::PreconfirmedHeader>> {
         self.inner
-            .get_parallel_merkle_staged_block_header(block_n)
+            .parallel_merkle_get_staged_block_header(block_n)
             .with_context(|| format!("Getting parallel merkle staged header for block_n={block_n}"))
     }
     fn get_parallel_merkle_staged_blocks(&self) -> Result<Vec<u64>> {
-        self.inner.get_parallel_merkle_staged_blocks().context("Getting parallel merkle staged blocks")
+        self.inner.parallel_merkle_get_staged_blocks().context("Getting parallel merkle staged blocks")
     }
     fn has_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<bool> {
         self.inner
@@ -494,23 +511,19 @@ impl MadaraStorageWrite for RocksDBStorage {
         block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         bouncer_weights: Option<&BouncerWeights>,
+        chain_id: Felt,
     ) -> Result<()> {
         tracing::debug!("Writing parallel merkle staged block data block_n={}", block.header.block_number);
         self.inner
-            .write_parallel_merkle_staged_block_data(block, classes, bouncer_weights)
+            .write_parallel_merkle_staged_block_data(block, classes, bouncer_weights, chain_id)
             .with_context(|| format!("Writing parallel merkle staged block data block_n={}", block.header.block_number))
     }
 
-    fn confirm_parallel_merkle_staged_block(
-        &self,
-        header: BlockHeaderWithSignatures,
-        tx_hashes: &[Felt],
-        total_l2_gas_used: u128,
-    ) -> Result<()> {
+    fn confirm_parallel_merkle_staged_block(&self, header: BlockHeaderWithSignatures) -> Result<()> {
         let block_n = header.header.block_number;
         tracing::debug!("Confirming parallel merkle staged block block_n={block_n}");
         self.inner
-            .confirm_parallel_merkle_staged_block(&header, tx_hashes, total_l2_gas_used)
+            .confirm_parallel_merkle_staged_block(&header)
             .with_context(|| format!("Confirming parallel merkle staged block block_n={block_n}"))
     }
 

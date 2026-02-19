@@ -134,7 +134,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
     /// Get a confirmed block by hash.
     pub fn find_block_by_hash(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let Some(latest_confirmed) = self.latest_confirmed_block_n() else { return Ok(None) };
-        Ok(self.backend().db.find_block_hash(block_hash)?.filter(|found_block_n| found_block_n >= &latest_confirmed))
+        Ok(self.backend().db.find_block_hash(block_hash)?.filter(|found_block_n| found_block_n <= &latest_confirmed))
     }
 
     fn lookup_preconfirmed_state<V>(
@@ -298,6 +298,9 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         };
 
         if block_number > on_block_n {
+            // NOTE: Parallel-merkle staging persists transactions (including TX_HASH_TO_INDEX) before a block is
+            // confirmed. We intentionally hide those receipts from the read view until confirmation advances the
+            // confirmed tip. If we later want RPC to surface staged receipts, this is one of the gating points.
             return Ok(None);
         }
 

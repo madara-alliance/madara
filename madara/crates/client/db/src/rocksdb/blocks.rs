@@ -5,15 +5,18 @@ use crate::{
 };
 use blockifier::bouncer::BouncerWeights;
 use itertools::{Either, Itertools};
-use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
+use mp_block::{
+    commitments::{BlockCommitments, CommitmentComputationContext},
+    header::PreconfirmedHeader,
+    BlockHeaderWithSignatures, FullBlockWithoutCommitments, MadaraBlockInfo, TransactionWithReceipt,
+};
 use mp_convert::Felt;
-use mp_receipt::{Event, EventWithTransactionHash};
+use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
 };
 use rocksdb::{IteratorMode, ReadOptions};
 use starknet_types_core::felt::Felt as StarkFelt;
-use std::collections::HashMap;
 use std::iter;
 
 // TODO (mohit, 14/12/2024): Remove this struct once the v8→v9 migration from
@@ -54,32 +57,38 @@ fn make_transaction_column_key(block_n: u32, tx_index: u16) -> [u8; TRANSACTIONS
     key
 }
 
+fn apply_events_to_transactions(
+    transactions: impl IntoIterator<Item = TransactionWithReceipt>,
+    events: &[EventWithTransactionHash],
+) -> Vec<TransactionWithReceipt> {
+    let mut events = events.iter().peekable();
+    transactions
+        .into_iter()
+        .map(|mut transaction| {
+            let transaction_hash = *transaction.receipt.transaction_hash();
+            transaction.receipt.events_mut().clear();
+            transaction.receipt.events_mut().extend(
+                events.peeking_take_while(|tx| tx.transaction_hash == transaction_hash).map(|tx| tx.event.clone()),
+            );
+            transaction
+        })
+        .collect()
+}
+
 impl RocksDBStorageInner {
-    pub(super) fn blocks_stage_transactions(
+    pub(super) fn blocks_store_transactions_with_indices_to_batch(
         &self,
         block_number: u64,
         transactions: &[TransactionWithReceipt],
-        events: &[EventWithTransactionHash],
         batch: &mut WriteBatchWithTransaction,
     ) -> Result<()> {
+        let block_n_u32 = u32::try_from(block_number).context("Converting block_n to u32")?;
         let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
         let tx_hash_to_index_col = self.get_column(TX_HASH_TO_INDEX_COLUMN);
-        let block_n_u32 = u32::try_from(block_number).context("Converting block_n to u32")?;
 
-        let mut events_per_tx = HashMap::<Felt, Vec<Event>>::new();
-        for ev in events {
-            events_per_tx.entry(ev.transaction_hash).or_default().push(ev.event.clone());
-        }
-
-        for (tx_index, tx) in transactions.iter().enumerate() {
+        for (tx_index, transaction) in transactions.iter().enumerate() {
             let tx_index_u16 = u16::try_from(tx_index).context("Converting tx_index to u16")?;
-            let tx_hash = *tx.receipt.transaction_hash();
-
-            let mut tx_with_receipt = tx.clone();
-            tx_with_receipt.receipt.events_mut().clear();
-            if let Some(tx_events) = events_per_tx.remove(&tx_hash) {
-                tx_with_receipt.receipt.events_mut().extend(tx_events);
-            }
+            let tx_hash = *transaction.receipt.transaction_hash();
 
             batch.put_cf(
                 &tx_hash_to_index_col,
@@ -89,7 +98,7 @@ impl RocksDBStorageInner {
             batch.put_cf(
                 &block_txs_col,
                 make_transaction_column_key(block_n_u32, tx_index_u16),
-                super::serialize(&tx_with_receipt)?,
+                super::serialize(transaction)?,
             );
         }
 
@@ -122,6 +131,74 @@ impl RocksDBStorageInner {
         );
 
         Ok(())
+    }
+
+    #[tracing::instrument(skip(self, header, tx_hashes))]
+    pub(super) fn blocks_store_staged_block_info(
+        &self,
+        header: &PreconfirmedHeader,
+        tx_hashes: &[Felt],
+        total_l2_gas_used: u128,
+        commitments: &BlockCommitments,
+    ) -> Result<()> {
+        let mut batch = WriteBatchWithTransaction::default();
+        let block_n = u32::try_from(header.block_number).context("Converting block_n to u32")?;
+        let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
+
+        let staged_header = mp_block::header::Header {
+            parent_block_hash: Felt::ZERO,
+            block_number: header.block_number,
+            global_state_root: Felt::ZERO,
+            sequencer_address: header.sequencer_address,
+            block_timestamp: header.block_timestamp,
+            transaction_count: commitments.transaction.transaction_count,
+            transaction_commitment: commitments.transaction.transaction_commitment,
+            event_count: commitments.event.events_count,
+            event_commitment: commitments.event.events_commitment,
+            state_diff_length: Some(commitments.state_diff.state_diff_length),
+            state_diff_commitment: Some(commitments.state_diff.state_diff_commitment),
+            receipt_commitment: Some(commitments.transaction.receipt_commitment),
+            protocol_version: header.protocol_version,
+            gas_prices: header.gas_prices.clone(),
+            l1_da_mode: header.l1_da_mode,
+        };
+
+        let info = MadaraBlockInfo {
+            header: staged_header,
+            block_hash: Felt::ZERO,
+            tx_hashes: tx_hashes.to_vec(),
+            total_l2_gas_used,
+        };
+        batch.put_cf(&block_info_col, block_n.to_be_bytes(), super::serialize(&info)?);
+
+        self.db.write_opt(batch, &self.writeopts)?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, block))]
+    pub(super) fn blocks_compute_staged_commitments(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        chain_id: Felt,
+    ) -> BlockCommitments {
+        let transactions_with_events = apply_events_to_transactions(block.transactions.iter().cloned(), &block.events);
+        let events_with_tx_hash = transactions_with_events
+            .iter()
+            .flat_map(|tx| {
+                let tx_hash = *tx.receipt.transaction_hash();
+                tx.receipt
+                    .events()
+                    .iter()
+                    .cloned()
+                    .map(move |event| EventWithTransactionHash { transaction_hash: tx_hash, event })
+            })
+            .collect::<Vec<_>>();
+        BlockCommitments::compute(
+            &CommitmentComputationContext { protocol_version: block.header.protocol_version, chain_id },
+            &transactions_with_events,
+            &block.state_diff,
+            &events_with_tx_hash,
+        )
     }
 
     #[tracing::instrument(skip(self))]
@@ -234,24 +311,7 @@ impl RocksDBStorageInner {
     #[tracing::instrument(skip(self, header))]
     pub(super) fn blocks_store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
-        let block_n = u32::try_from(header.header.block_number).context("Converting block_n to u32")?;
-
-        let block_hash_to_block_n_col = self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN);
-        let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
-
-        let info = MadaraBlockInfo {
-            header: header.header,
-            block_hash: header.block_hash,
-            tx_hashes: vec![],
-            total_l2_gas_used: 0,
-        };
-
-        batch.put_cf(&block_info_col, block_n.to_be_bytes(), super::serialize(&info)?);
-        batch.put_cf(
-            &block_hash_to_block_n_col,
-            header.block_hash.to_bytes_be(),
-            &super::serialize_to_smallvec::<[u8; 16]>(&block_n)?,
-        );
+        self.blocks_store_header_with_info_to_batch(&header, &[], 0, &mut batch)?;
 
         self.db.write_opt(batch, &self.writeopts)?;
         Ok(())
@@ -267,24 +327,9 @@ impl RocksDBStorageInner {
         );
 
         let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
-        let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
-        let tx_hash_to_index_col = self.get_column(TX_HASH_TO_INDEX_COLUMN);
-
         let block_n_u32 = u32::try_from(block_number).context("Converting block_n to u32")?;
 
-        for (tx_index, transaction) in value.iter().enumerate() {
-            let tx_index_u16 = u16::try_from(tx_index).context("Converting tx_index to u16")?;
-            batch.put_cf(
-                &tx_hash_to_index_col,
-                transaction.receipt.transaction_hash().to_bytes_be(),
-                super::serialize_to_smallvec::<[u8; 16]>(&(block_n_u32, tx_index_u16))?,
-            );
-            batch.put_cf(
-                &block_txs_col,
-                make_transaction_column_key(block_n_u32, tx_index_u16),
-                super::serialize(transaction)?,
-            );
-        }
+        self.blocks_store_transactions_with_indices_to_batch(block_number, value, &mut batch)?;
 
         // Update block info tx hashes
         // Also update total_l2_gas_used.
@@ -331,19 +376,14 @@ impl RocksDBStorageInner {
         value: &[mp_receipt::EventWithTransactionHash],
     ) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
-
-        let mut events = value.iter().peekable();
         let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
+        let transactions = self
+            .get_block_transactions(block_n, /* from_tx_index */ 0)
+            .collect::<Result<Vec<_>>>()
+            .context("Loading staged transactions for event materialization")?;
+        let transactions = apply_events_to_transactions(transactions, value);
 
-        for (tx_index, transaction) in self.get_block_transactions(block_n, /* from_tx_index */ 0).enumerate() {
-            let mut transaction = transaction.with_context(|| format!("Parsing transaction {tx_index}"))?;
-            let transaction_hash = *transaction.receipt.transaction_hash();
-
-            transaction.receipt.events_mut().clear();
-            transaction.receipt.events_mut().extend(
-                events.peeking_take_while(|tx| tx.transaction_hash == transaction_hash).map(|tx| tx.event.clone()),
-            );
-
+        for (tx_index, transaction) in transactions.into_iter().enumerate() {
             let block_n = u32::try_from(block_n).context("Converting block_n to u32")?;
             let tx_index = u16::try_from(tx_index).context("Converting tx_index to u16")?;
             batch.put_cf(

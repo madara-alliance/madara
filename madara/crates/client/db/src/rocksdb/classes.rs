@@ -116,59 +116,12 @@ impl RocksDBStorageInner {
 
     #[tracing::instrument(skip(self, converted_classes))]
     pub(crate) fn store_classes(&self, block_number: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
-        converted_classes.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
-            || self.get_column(CLASS_INFO_COLUMN),
-            |col, chunk| {
-                let mut batch = WriteBatchWithTransaction::default();
-                for converted_class in chunk {
-                    // this is a patch because some legacy classes are declared multiple times
-                    if !self.contains_class(converted_class.class_hash())? {
-                        batch.put_cf(
-                            col,
-                            converted_class.class_hash().to_bytes_be(),
-                            super::serialize(&ClassInfoWithBlockN {
-                                class_info: converted_class.info(),
-                                block_number,
-                            })?,
-                        );
-                    }
-                }
-                self.db.write_opt(batch, &self.writeopts)?;
-                anyhow::Ok(())
-            },
-        )?;
-
-        converted_classes
-            .iter()
-            .filter_map(|converted_class| match converted_class {
-                ConvertedClass::Sierra(sierra) => {
-                    // Use canonical compiled_class_hash (v2 if present, else v1)
-                    let canonical_hash = sierra.info.compiled_class_hash_v2.or(sierra.info.compiled_class_hash)?;
-                    Some((canonical_hash, sierra.compiled.clone()))
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .par_chunks(DB_UPDATES_BATCH_SIZE)
-            .try_for_each_init(
-                || self.get_column(CLASS_COMPILED_COLUMN),
-                |col, chunk| {
-                    let mut batch = WriteBatchWithTransaction::default();
-                    for (key, compiled_sierra) in chunk {
-                        batch.put_cf(
-                            col,
-                            key.to_bytes_be(),
-                            super::serialize(&CompiledSierraWithBlockN {
-                                block_number,
-                                compiled_sierra: compiled_sierra.clone(),
-                            })?,
-                        );
-                    }
-                    self.db.write_opt(batch, &self.writeopts)?;
-                    anyhow::Ok(())
-                },
-            )?;
-
+        converted_classes.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each(|chunk| {
+            let mut batch = WriteBatchWithTransaction::default();
+            self.store_classes_to_batch(block_number, chunk, &mut batch)?;
+            self.db.write_opt(batch, &self.writeopts)?;
+            anyhow::Ok(())
+        })?;
         Ok(())
     }
 

@@ -168,13 +168,9 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
         block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         bouncer_weights: Option<&BouncerWeights>,
+        chain_id: Felt,
     ) -> Result<()>;
-    fn confirm_parallel_merkle_staged_block(
-        &self,
-        header: BlockHeaderWithSignatures,
-        tx_hashes: &[Felt],
-        total_l2_gas_used: u128,
-    ) -> Result<()>;
+    fn confirm_parallel_merkle_staged_block(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<()>;
 
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;

@@ -86,45 +86,6 @@ fn make_contract_column_key(contract_address: &Felt, block_n: u32) -> [u8; CONTR
 }
 
 impl RocksDBStorageInner {
-    pub(crate) fn state_apply_state_diff_to_batch(
-        &self,
-        block_n: u64,
-        value: &StateDiff,
-        batch: &mut WriteBatchWithTransaction,
-    ) -> Result<()> {
-        let value = ContractDbBlockUpdate::from_state_diff(value.clone());
-        let block_n = u32::try_from(block_n).context("Converting block_n to u32")?;
-        let contract_class_hash_col = self.get_column(CONTRACT_CLASS_HASH_COLUMN);
-        let contract_nonce_col = self.get_column(CONTRACT_NONCE_COLUMN);
-        let contract_storage_col = self.get_column(CONTRACT_STORAGE_COLUMN);
-
-        for (contract_address, class_hash) in &value.contract_class_updates {
-            batch.put_cf(
-                &contract_class_hash_col,
-                make_contract_column_key(contract_address, block_n),
-                super::serialize_to_smallvec::<[u8; 64]>(class_hash)?,
-            );
-        }
-
-        for (contract_address, nonce) in &value.contract_nonces_updates {
-            batch.put_cf(
-                &contract_nonce_col,
-                make_contract_column_key(contract_address, block_n),
-                super::serialize_to_smallvec::<[u8; 64]>(nonce)?,
-            );
-        }
-
-        for ((contract_address, key), value) in &value.contract_kv_updates {
-            batch.put_cf(
-                &contract_storage_col,
-                make_storage_column_key(contract_address, key, block_n),
-                super::serialize_to_smallvec::<[u8; 64]>(value)?,
-            );
-        }
-
-        Ok(())
-    }
-
     fn db_history_kv_resolve<V: serde::de::DeserializeOwned + 'static>(
         &self,
         bin_prefix: &[u8],

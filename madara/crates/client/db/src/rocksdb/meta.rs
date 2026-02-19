@@ -1,7 +1,11 @@
 use crate::{
     preconfirmed::PreconfirmedExecutedTransaction,
     prelude::*,
-    rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
+    rocksdb::{
+        iter_pinned::DBIterator,
+        preconfirmed::{preconfirmed_tx_key, preconfirmed_tx_prefix, PRECONFIRMED_COLUMN},
+        Column, RocksDBStorageInner, WriteBatchWithTransaction,
+    },
     storage::{DevnetPredeployedKeys, StorageChainTip, StoredChainInfo},
 };
 use mp_block::header::PreconfirmedHeader;
@@ -9,7 +13,6 @@ use mp_chain_config::{ChainConfig, RuntimeExecutionConfig, RuntimeExecutionConfi
 use rocksdb::{IteratorMode, ReadOptions};
 
 pub const META_COLUMN: Column = Column::new("meta").set_point_lookup();
-pub const PRECONFIRMED_COLUMN: Column = Column::new("preconfirmed");
 
 const META_DEVNET_KEYS_KEY: &[u8] = b"DEVNET_KEYS";
 const META_LAST_SYNCED_L1_EVENT_BLOCK_KEY: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
@@ -20,16 +23,8 @@ const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
 const META_RUNTIME_EXEC_CONFIG_KEY: &[u8] = b"RUNTIME_EXEC_CONFIG";
 const META_SNAP_SYNC_LATEST_BLOCK: &[u8] = b"SNAP_SYNC_LATEST_BLOCK";
 
-// Parallel-merkle staged state (per block_n, big-endian u64 suffix).
-//
-// One per-block key stores the latest staging state:
-// - Txns: staged preconfirmed header + tx receipts + tx index persisted.
-// - Diff: state diff + contract/class updates persisted.
-// - Final: final readiness state used by confirm path.
-//
-// This key and staged header are removed when the block is confirmed.
+// Parallel-merkle staged/checkpoint metadata (kept in META_COLUMN).
 const META_PARALLEL_MERKLE_STAGED_STATE_PREFIX: &[u8] = b"PARALLEL_MERKLE_STAGED_STATE/";
-const META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX: &[u8] = b"PARALLEL_MERKLE_STAGED_HEADER/";
 const META_PARALLEL_MERKLE_CHECKPOINT_PREFIX: &[u8] = b"PARALLEL_MERKLE_CHECKPOINT/";
 const META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY: &[u8] = b"PARALLEL_MERKLE_LATEST_CHECKPOINT";
 
@@ -44,13 +39,6 @@ fn parse_meta_block_n_key(prefix: &[u8], key: &[u8]) -> Option<u64> {
     let suffix = key.strip_prefix(prefix)?;
     let bytes: [u8; size_of::<u64>()] = suffix.try_into().ok()?;
     Some(u64::from_be_bytes(bytes))
-}
-
-fn preconfirmed_tx_key(block_n: u64, tx_index: u16) -> [u8; size_of::<u64>() + size_of::<u16>()] {
-    let mut key = [0u8; size_of::<u64>() + size_of::<u16>()];
-    key[..size_of::<u64>()].copy_from_slice(&block_n.to_be_bytes());
-    key[size_of::<u64>()..].copy_from_slice(&tx_index.to_be_bytes());
-    key
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -72,14 +60,11 @@ impl RocksDBStorageInner {
         block_n: u64,
         batch: &mut WriteBatchWithTransaction,
     ) -> Result<()> {
-        let preconfirmed_col = self.get_column(PRECONFIRMED_COLUMN);
         let meta_col = self.get_column(META_COLUMN);
 
-        batch.delete_range_cf(
-            &preconfirmed_col,
-            [0u8; size_of::<u64>() + size_of::<u16>()],
-            [0xFFu8; size_of::<u64>() + size_of::<u16>()],
-        );
+        if let Some(StoredChainTipWithoutContent::Preconfirmed(prev_header)) = self.get_chain_tip_without_content()? {
+            self.preconfirmed_delete_block_txs_in_batch(prev_header.block_number, batch);
+        }
         batch.put_cf(
             &meta_col,
             META_CHAIN_TIP_KEY,
@@ -104,32 +89,17 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    pub(super) fn parallel_merkle_set_staged_header(
-        &self,
-        block_n: u64,
-        header: &PreconfirmedHeader,
-        batch: &mut WriteBatchWithTransaction,
-    ) -> Result<()> {
-        let meta_col = self.get_column(META_COLUMN);
-        batch.put_cf(
-            &meta_col,
-            meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, block_n),
-            super::serialize(header)?,
-        );
-        Ok(())
-    }
-
-    pub(super) fn parallel_merkle_unstage_block(&self, block_n: u64, batch: &mut WriteBatchWithTransaction) {
+    pub(super) fn parallel_merkle_clear_staged_block(&self, block_n: u64, batch: &mut WriteBatchWithTransaction) {
         let meta_col = self.get_column(META_COLUMN);
         batch.delete_cf(&meta_col, meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_STATE_PREFIX, block_n));
-        batch.delete_cf(&meta_col, meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, block_n));
+        self.parallel_merkle_clear_staged_header(block_n, batch);
     }
 
-    pub(super) fn has_parallel_merkle_staged_block(&self, block_n: u64) -> Result<bool> {
-        Ok(matches!(self.get_parallel_merkle_staged_state(block_n)?, Some(ParallelMerkleStagedState::Final)))
+    pub(super) fn parallel_merkle_has_staged_block(&self, block_n: u64) -> Result<bool> {
+        Ok(matches!(self.parallel_merkle_get_staged_state(block_n)?, Some(ParallelMerkleStagedState::Final)))
     }
 
-    pub(super) fn get_parallel_merkle_staged_state(&self, block_n: u64) -> Result<Option<ParallelMerkleStagedState>> {
+    pub(super) fn parallel_merkle_get_staged_state(&self, block_n: u64) -> Result<Option<ParallelMerkleStagedState>> {
         let Some(res) = self.db.get_pinned_cf(
             &self.get_column(META_COLUMN),
             meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_STATE_PREFIX, block_n),
@@ -140,18 +110,7 @@ impl RocksDBStorageInner {
         Ok(Some(super::deserialize(&res)?))
     }
 
-    pub(super) fn get_parallel_merkle_staged_block_header(&self, block_n: u64) -> Result<Option<PreconfirmedHeader>> {
-        let Some(res) = self.db.get_pinned_cf(
-            &self.get_column(META_COLUMN),
-            meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, block_n),
-        )?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(super::deserialize(&res)?))
-    }
-
-    pub(super) fn get_parallel_merkle_staged_blocks(&self) -> Result<Vec<u64>> {
+    pub(super) fn parallel_merkle_get_staged_blocks(&self) -> Result<Vec<u64>> {
         let meta_col = self.get_column(META_COLUMN);
         let start = META_PARALLEL_MERKLE_STAGED_STATE_PREFIX;
         let mut options = ReadOptions::default();
@@ -293,12 +252,10 @@ impl RocksDBStorageInner {
         let meta_col = self.get_column(META_COLUMN);
         let mut batch = WriteBatchWithTransaction::default();
 
-        // Delete previous preconfirmed content.
-        batch.delete_range_cf(
-            &preconfirmed_col,
-            [0u8; size_of::<u64>() + size_of::<u16>()],
-            [0xFFu8; size_of::<u64>() + size_of::<u16>()],
-        );
+        // Delete previous preconfirmed content for the previous preconfirmed tip (if any).
+        if let Some(StoredChainTipWithoutContent::Preconfirmed(prev_header)) = self.get_chain_tip_without_content()? {
+            self.preconfirmed_delete_block_txs_in_batch(prev_header.block_number, &mut batch);
+        }
 
         // Write new chain tip.
         match chain_tip {
@@ -370,18 +327,16 @@ impl RocksDBStorageInner {
             None => Ok(StorageChainTip::Empty),
             Some(StoredChainTipWithoutContent::Confirmed(block_n)) => Ok(StorageChainTip::Confirmed(block_n)),
             Some(StoredChainTipWithoutContent::Preconfirmed(header)) => {
-                // Get preconfirmed block content
-                let start = preconfirmed_tx_key(header.block_number, 0);
-                let mut end = [0xFFu8; size_of::<u64>() + size_of::<u16>()];
-                end[..size_of::<u64>()].copy_from_slice(&header.block_number.to_be_bytes());
-                let content = DBIterator::new_cf(
+                let start = preconfirmed_tx_prefix(header.block_number);
+                let tx_prefix = preconfirmed_tx_prefix(header.block_number);
+                let content: Vec<PreconfirmedExecutedTransaction> = DBIterator::new_cf(
                     &self.db,
                     &self.get_column(PRECONFIRMED_COLUMN),
                     ReadOptions::default(),
                     IteratorMode::From(&start, rocksdb::Direction::Forward),
                 )
                 .into_iter_items(|(key, value)| (key.to_vec(), value.to_vec()))
-                .take_while(|item| item.as_ref().map(|(key, _)| key.as_slice() < &end[..]).unwrap_or(true))
+                .take_while(|item| item.as_ref().map(|(key, _)| key.starts_with(&tx_prefix)).unwrap_or(true))
                 .map(|res| -> Result<PreconfirmedExecutedTransaction> {
                     let (_, bytes) = res?;
                     Ok(super::deserialize::<PreconfirmedExecutedTransaction>(&bytes)?)
