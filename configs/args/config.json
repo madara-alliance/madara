@@ -54,7 +54,8 @@
     "stop_on_sync": false,
     "backup_every_n_blocks": null,
     "bouncer_config_sync_enable": false,
-    "disable_reorg": false
+    "disable_reorg": false,
+    "l1_messages_rewind_hint": null
   },
   "l1_sync_params": {
     "l1_sync_disabled": true,

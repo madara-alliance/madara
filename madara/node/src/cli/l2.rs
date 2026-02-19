@@ -88,6 +88,12 @@ pub struct L2SyncParams {
     /// operators who want to manually handle chain divergences.
     #[clap(env = "MADARA_DISABLE_REORG", long, default_value_t = false)]
     pub disable_reorg: bool,
+
+    /// Optional L1 block hint used for automatic gateway reorgs when L1-handler nonce to
+    /// L1 block mappings are missing in local DB.
+    /// TODO(19/02/2026,@prkpndy): This argument is temporary. It'll be deprecated in the future!
+    #[clap(env = "MADARA_L1_MESSAGES_REWIND_HINT", long, value_name = "L1 BLOCK NUMBER")]
+    pub l1_messages_rewind_hint: Option<u64>,
 }
 
 impl L2SyncParams {

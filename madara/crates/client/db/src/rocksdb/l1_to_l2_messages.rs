@@ -93,11 +93,7 @@ impl RocksDBStorageInner {
         Ok(Some(u64::from_be_bytes(res[..].try_into().context("Deserializing l1 source block from DB")?)))
     }
 
-    pub(super) fn write_l1_handler_l1_block_by_nonce(
-        &self,
-        core_contract_nonce: u64,
-        l1_block_n: u64,
-    ) -> Result<()> {
+    pub(super) fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
         let source_cf = self.get_column(L1_TO_L2_SOURCE_L1_BLOCK_BY_NONCE);
         self.db.put_cf_opt(&source_cf, core_contract_nonce.to_be_bytes(), l1_block_n.to_be_bytes(), &self.writeopts)?;
         Ok(())

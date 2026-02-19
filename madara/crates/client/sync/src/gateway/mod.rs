@@ -28,6 +28,7 @@ pub struct ForwardSyncConfig {
     pub keep_pre_v0_13_2_hashes: bool,
     pub enable_bouncer_config_sync: bool,
     pub disable_reorg: bool,
+    pub l1_messages_rewind_hint: Option<u64>,
 }
 
 impl Default for ForwardSyncConfig {
@@ -44,6 +45,7 @@ impl Default for ForwardSyncConfig {
             keep_pre_v0_13_2_hashes: false,
             enable_bouncer_config_sync: false,
             disable_reorg: false,
+            l1_messages_rewind_hint: None,
         }
     }
 }
@@ -64,6 +66,9 @@ impl ForwardSyncConfig {
     }
     pub fn disable_reorg(self, val: bool) -> Self {
         Self { disable_reorg: val, ..self }
+    }
+    pub fn l1_messages_rewind_hint(self, val: Option<u64>) -> Self {
+        Self { l1_messages_rewind_hint: val, ..self }
     }
 }
 
@@ -116,6 +121,7 @@ impl GatewayForwardSync {
             config.keep_pre_v0_13_2_hashes,
             config.enable_bouncer_config_sync,
             config.disable_reorg,
+            config.l1_messages_rewind_hint,
         );
         let classes_pipeline = classes::classes_pipeline(
             backend.clone(),
