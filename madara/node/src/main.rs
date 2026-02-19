@@ -264,6 +264,8 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("💾  Preconfirmed blocks will be saved to database");
     }
 
+    run_cmd.backend_params.validate().context("Validating backend configuration")?;
+
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
         chain_config.clone(),
