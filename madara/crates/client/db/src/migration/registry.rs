@@ -56,6 +56,12 @@ pub fn get_migrations() -> &'static [Migration] {
             name: "v9→v10: mempool/external DB column addition (no-op)",
             migrate: super::revisions::revision_0010::migrate,
         },
+        Migration {
+            from_version: 10,
+            to_version: 11,
+            name: "v10→v11: L1-to-L2 message status indexes (no-op)",
+            migrate: super::revisions::revision_0011::migrate,
+        },
     ]
 }
 

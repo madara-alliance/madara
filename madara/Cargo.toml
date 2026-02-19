@@ -138,6 +138,7 @@ starknet = { package = "starknet-rust", version = "0.18.0-rc.0" }
 
 starknet-types-core = { version = "0.2.4", default-features = false, features = [
   "hash",
+  "serde",
 ] }
 blockifier = { git = "https://github.com/karnotxyz/sequencer", tag = "v0.14.1-alpha.0", features = [
   "node_api",
@@ -211,7 +212,7 @@ async-trait = "0.1"
 
 # Serialization
 derive_more = "2.0.1"
-serde = { version = "1.0", default-features = false, features = ["std"] }
+serde = { version = "1.0", default-features = false, features = ["std", "rc"] }
 serde_with = { version = "3.11", default-features = false, features = [
   "alloc",
   "macros",

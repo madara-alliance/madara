@@ -42,3 +42,10 @@ tokio = { workspace = true, features = ["rt", "macros"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
+
+[dev-dependencies]
+mc-class-exec.workspace = true
+mc-db = { workspace = true, features = ["testing"] }
+mp-chain-config.workspace = true
+mp-receipt.workspace = true
+mp-transactions.workspace = true
