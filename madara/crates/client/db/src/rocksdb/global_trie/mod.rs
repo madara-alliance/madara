@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 mod classes;
 mod contracts;
 pub mod in_memory;
+mod shared;
 
 /// Timing information from contract trie operations
 #[derive(Debug, Clone, Default)]

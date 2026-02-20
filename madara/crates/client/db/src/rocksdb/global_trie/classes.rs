@@ -1,25 +1,9 @@
+use super::shared;
 use super::ClassTrieTimings;
 use crate::metrics::metrics;
-use crate::rocksdb::trie::WrappedBonsaiError;
 use crate::{prelude::*, rocksdb::RocksDBStorage};
-use bitvec::order::Msb0;
-use bitvec::vec::BitVec;
-use bitvec::view::AsBits;
-use bonsai_trie::id::BasicId;
 use mp_state_update::{DeclaredClassItem, MigratedClassItem};
-use rayon::prelude::*;
 use starknet_types_core::felt::Felt;
-use starknet_types_core::hash::{Poseidon, StarkHash};
-use std::time::Instant;
-
-// "CONTRACT_CLASS_LEAF_V0"
-const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");
-
-/// Computes the class trie leaf hash for a class.
-/// The leaf hash is: Poseidon("CONTRACT_CLASS_LEAF_V0", compiled_class_hash)
-fn compute_class_leaf_hash(compiled_class_hash: &Felt) -> Felt {
-    Poseidon::hash(&CONTRACT_CLASS_HASH_VERSION, compiled_class_hash)
-}
 
 pub fn class_trie_root(
     backend: &RocksDBStorage,
@@ -27,49 +11,20 @@ pub fn class_trie_root(
     migrated_classes: &[MigratedClassItem],
     block_number: u64,
 ) -> Result<(Felt, ClassTrieTimings)> {
-    let mut timings = ClassTrieTimings::default();
     let mut class_trie = backend.class_trie();
-
-    // Process newly declared classes
-    let declared_updates: Vec<_> = declared_classes
-        .into_par_iter()
-        .map(|DeclaredClassItem { class_hash, compiled_class_hash }| {
-            let hash = compute_class_leaf_hash(compiled_class_hash);
-            (*class_hash, hash)
-        })
-        .collect();
-
-    // Process migrated classes (SNIP-34)
-    // For migrated classes, the compiled_class_hash in MigratedClassItem is the new BLAKE hash
-    let migrated_updates: Vec<_> = migrated_classes
-        .into_par_iter()
-        .map(|MigratedClassItem { class_hash, compiled_class_hash }| {
-            let hash = compute_class_leaf_hash(compiled_class_hash);
-            (*class_hash, hash)
-        })
-        .collect();
+    let class_updates = shared::collect_class_updates(declared_classes, migrated_classes);
 
     tracing::trace!(
         "class_trie inserting {} declared classes, {} migrated classes",
-        declared_updates.len(),
-        migrated_updates.len()
+        declared_classes.len(),
+        migrated_classes.len()
     );
 
-    for (key, value) in declared_updates.into_iter().chain(migrated_updates) {
-        let bytes = key.to_bytes_be();
-        let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-        class_trie.insert(super::bonsai_identifier::CLASS, &bv, &value).map_err(WrappedBonsaiError)?;
-    }
-
     tracing::trace!("class_trie committing");
-    let class_commit_start = Instant::now();
-    class_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
-    timings.trie_commit = class_commit_start.elapsed();
+    let (root_hash, timings) = shared::class_trie_root_from_updates(&mut class_trie, class_updates, block_number)?;
     let class_commit_secs = timings.trie_commit.as_secs_f64();
     metrics().class_trie_commit_duration.record(class_commit_secs, &[]);
     metrics().class_trie_commit_last.record(class_commit_secs, &[]);
-
-    let root_hash = class_trie.root_hash(super::bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("class_trie committed");
 
@@ -85,7 +40,7 @@ mod tests {
 
     #[test]
     fn test_contract_class_hash_version() {
-        assert_eq!(CONTRACT_CLASS_HASH_VERSION, Felt::from_bytes_be_slice(b"CONTRACT_CLASS_LEAF_V0"));
+        assert_eq!(shared::CONTRACT_CLASS_HASH_VERSION, Felt::from_bytes_be_slice(b"CONTRACT_CLASS_LEAF_V0"));
     }
 
     #[rstest]

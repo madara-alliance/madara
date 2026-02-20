@@ -184,21 +184,6 @@ fn in_memory_bonsai_write_batch_does_not_persist_to_rocksdb() {
 }
 
 #[test]
-fn in_memory_single_block_root_matches_sequential_apply() {
-    let backend_seq = setup_backend();
-    let backend_mem = setup_backend();
-    let diff = synthetic_state_diff(0);
-
-    let expected_root = sequential_roots(&backend_seq, std::slice::from_ref(&diff))[0];
-    let snapshot = fresh_snapshot(&backend_mem.db);
-    let computed =
-        compute_root_from_snapshot(&backend_mem.db, snapshot, 0, &diff, false, TrieLogMode::Off).expect("compute");
-
-    assert_eq!(computed.state_root, expected_root);
-    assert!(computed.overlay.is_none(), "overlay should be absent when include_overlay=false");
-}
-
-#[test]
 fn cumulative_squash_keeps_root_relevant_fields() {
     let contract_address = Felt::from(777_u64);
     let diff_a = StateDiff {
@@ -262,6 +247,48 @@ fn in_memory_parallel_roots_match_sequential_per_block() {
 }
 
 #[test]
+fn in_memory_storage_only_diff_reads_nonce_and_class_from_db() {
+    let backend_seq = setup_backend();
+    let backend_mem = setup_backend();
+    let contract_address = Felt::from(42_u64);
+    let class_hash = Felt::from(99_u64);
+    let init_diff = StateDiff {
+        storage_diffs: vec![ContractStorageDiffItem {
+            address: contract_address,
+            storage_entries: vec![StorageEntry { key: Felt::from(1_u64), value: Felt::from(10_u64) }],
+        }],
+        old_declared_contracts: vec![],
+        declared_classes: vec![DeclaredClassItem { class_hash, compiled_class_hash: Felt::from(777_u64) }],
+        deployed_contracts: vec![DeployedContractItem { address: contract_address, class_hash }],
+        replaced_classes: vec![],
+        nonces: vec![NonceUpdate { contract_address, nonce: Felt::from(5_u64) }],
+        migrated_compiled_classes: vec![],
+    };
+    let storage_only_diff = StateDiff {
+        storage_diffs: vec![ContractStorageDiffItem {
+            address: contract_address,
+            storage_entries: vec![StorageEntry { key: Felt::from(2_u64), value: Felt::from(20_u64) }],
+        }],
+        ..Default::default()
+    };
+
+    backend_seq.write_access().apply_to_global_trie(0, [&init_diff]).expect("sequential init should succeed");
+    backend_mem.write_access().apply_to_global_trie(0, [&init_diff]).expect("snapshot init should succeed");
+    let (expected_root, _timings) = backend_seq
+        .write_access()
+        .apply_to_global_trie(1, [&storage_only_diff])
+        .expect("sequential block #1 should succeed");
+
+    let snapshot = fresh_snapshot(&backend_mem.db);
+    let computed =
+        compute_root_from_snapshot(&backend_mem.db, snapshot, 1, &storage_only_diff, false, TrieLogMode::Checkpoint)
+            .expect("parallel in-memory compute should succeed");
+
+    assert_eq!(computed.state_root, expected_root);
+    assert!(computed.overlay.is_none(), "overlay should be absent when include_overlay=false");
+}
+
+#[test]
 fn boundary_flush_updates_persisted_root_and_checkpoint() {
     let backend = setup_backend();
     let diffs: Vec<_> = (0_u64..3).map(synthetic_state_diff).collect();
@@ -275,6 +302,64 @@ fn boundary_flush_updates_persisted_root_and_checkpoint() {
     let persisted_root = crate::rocksdb::global_trie::get_state_root(&backend.db).expect("read persisted root");
     assert_eq!(persisted_root, boundary.state_root);
     assert_checkpoint_state(&backend, 2);
+}
+
+#[test]
+fn in_memory_get_by_prefix_prefers_overlay_entries() {
+    use crate::rocksdb::trie::BONSAI_CONTRACT_FLAT_COLUMN;
+    use bonsai_trie::{BonsaiDatabase, DatabaseKey};
+    use std::collections::BTreeMap;
+
+    let backend = setup_backend();
+    let prefix = b"prefix/";
+
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, b"prefix/a", b"snapshot-a");
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, b"prefix/b", b"snapshot-b");
+    let snapshot = fresh_snapshot(&backend.db);
+    let mut db = InMemoryBonsaiDb::test_with_mapping(snapshot, InMemoryColumnMapping::contract());
+
+    db.insert(&DatabaseKey::Flat(b"prefix/a"), b"overlay-a", None).expect("overlay update should succeed");
+    db.insert(&DatabaseKey::Flat(b"prefix/c"), b"overlay-c", None).expect("overlay insert should succeed");
+
+    let merged = db.get_by_prefix(&DatabaseKey::Flat(prefix)).expect("prefix read should succeed");
+    let merged_map: BTreeMap<Vec<u8>, Vec<u8>> =
+        merged.into_iter().map(|(k, v)| (k.as_slice().to_vec(), v.as_slice().to_vec())).collect();
+
+    assert_eq!(merged_map.get(b"prefix/a".as_slice()), Some(&b"overlay-a".to_vec()));
+    assert_eq!(merged_map.get(b"prefix/b".as_slice()), Some(&b"snapshot-b".to_vec()));
+    assert_eq!(merged_map.get(b"prefix/c".as_slice()), Some(&b"overlay-c".to_vec()));
+}
+
+#[test]
+fn in_memory_remove_by_prefix_tombstones_snapshot_and_overlay() {
+    use crate::rocksdb::trie::BONSAI_CONTRACT_FLAT_COLUMN;
+    use bonsai_trie::{BonsaiDatabase, DatabaseKey};
+
+    let backend = setup_backend();
+    let prefix = b"wipe/";
+
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, b"wipe/a", b"snapshot-a");
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, b"wipe/b", b"snapshot-b");
+    write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, b"keep/z", b"snapshot-z");
+    let snapshot = fresh_snapshot(&backend.db);
+    let mut db = InMemoryBonsaiDb::test_with_mapping(snapshot, InMemoryColumnMapping::contract());
+
+    db.insert(&DatabaseKey::Flat(b"wipe/c"), b"overlay-c", None).expect("overlay insert should succeed");
+    db.insert(&DatabaseKey::Flat(b"keep/y"), b"overlay-y", None).expect("overlay insert should succeed");
+
+    db.remove_by_prefix(&DatabaseKey::Flat(prefix)).expect("remove by prefix should succeed");
+
+    assert_eq!(db.get(&DatabaseKey::Flat(b"wipe/a")).expect("read a"), None);
+    assert_eq!(db.get(&DatabaseKey::Flat(b"wipe/b")).expect("read b"), None);
+    assert_eq!(db.get(&DatabaseKey::Flat(b"wipe/c")).expect("read c"), None);
+    assert_eq!(
+        db.get(&DatabaseKey::Flat(b"keep/z")).expect("read untouched snapshot key"),
+        Some((&b"snapshot-z"[..]).into())
+    );
+    assert_eq!(
+        db.get(&DatabaseKey::Flat(b"keep/y")).expect("read untouched overlay key"),
+        Some((&b"overlay-y"[..]).into())
+    );
 }
 
 #[test]
@@ -320,12 +405,56 @@ fn trie_log_mode_controls_log_column_flush_behavior() {
 }
 
 #[test]
-fn checkpoint_metadata_must_be_monotonic() {
+fn flush_overlay_and_checkpoint_is_atomic_on_checkpoint_regression() {
     let backend = setup_backend();
-    backend.write_parallel_merkle_checkpoint(5).expect("checkpoint 5");
-    backend.write_parallel_merkle_checkpoint(8).expect("checkpoint 8");
+    backend.write_parallel_merkle_checkpoint(5).expect("checkpoint 5 should succeed");
+    let initial_root = crate::rocksdb::global_trie::get_state_root(&backend.db).expect("read initial root");
+    let initial_log_entries = count_trie_log_entries(&backend);
+    let diff = synthetic_state_diff(0);
+    let snapshot = fresh_snapshot(&backend.db);
+    let computed = compute_root_from_snapshot(&backend.db, snapshot, 0, &diff, true, TrieLogMode::Checkpoint)
+        .expect("parallel compute should succeed");
+    let overlay = computed.overlay.as_ref().expect("overlay should be present when include_overlay=true");
 
-    let err = backend.write_parallel_merkle_checkpoint(7).expect_err("checkpoint regression should be rejected");
+    let err = flush_overlay_and_checkpoint(&backend.db, 4, overlay, TrieLogMode::Checkpoint)
+        .expect_err("regressing checkpoint should fail");
     let message = format!("{err:#}");
     assert!(message.contains("must be monotonic"), "unexpected error: {message}");
+    assert_eq!(
+        crate::rocksdb::global_trie::get_state_root(&backend.db).expect("read root after failed flush"),
+        initial_root
+    );
+    assert_eq!(count_trie_log_entries(&backend), initial_log_entries);
+    assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(5));
+    assert!(!backend.has_parallel_merkle_checkpoint(4).expect("checkpoint marker for regressed block"));
+}
+
+#[test]
+fn compute_roots_boundary_and_empty_input_behavior() {
+    let diffs: Vec<_> = (0_u64..3).map(synthetic_state_diff).collect();
+
+    let none_boundary_results = assert_parallel_roots_match_sequential(
+        &setup_backend(),
+        &setup_backend(),
+        &diffs,
+        None,
+        TrieLogMode::Checkpoint,
+    );
+    assert!(none_boundary_results.iter().all(|result| result.overlay.is_none()));
+
+    let out_of_range_results = assert_parallel_roots_match_sequential(
+        &setup_backend(),
+        &setup_backend(),
+        &diffs,
+        Some(999),
+        TrieLogMode::Checkpoint,
+    );
+    assert!(out_of_range_results.iter().all(|result| result.overlay.is_none()));
+
+    let backend = setup_backend();
+    let snapshot = fresh_snapshot(&backend.db);
+    let empty_results =
+        compute_roots_in_parallel_from_snapshot(&backend.db, snapshot, 0, &[], Some(0), TrieLogMode::Checkpoint)
+            .expect("empty state diff list should succeed");
+    assert!(empty_results.is_empty());
 }

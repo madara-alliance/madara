@@ -1,3 +1,4 @@
+use super::super::shared;
 use super::db::InMemoryBonsaiDb;
 use super::overlay::{BonsaiOverlay, TrieLogMode};
 use super::state_diff::cumulative_squashed_state_diffs;
@@ -6,18 +7,13 @@ use crate::rocksdb::global_trie::{ClassTrieTimings, ContractTrieTimings, Merkliz
 use crate::rocksdb::snapshots::SnapshotRef;
 use crate::rocksdb::trie::BasicId;
 use crate::rocksdb::{RocksDBStorage, WriteBatchWithTransaction};
-use bitvec::{order::Msb0, vec::BitVec, view::AsBits};
 use bonsai_trie::BonsaiStorageConfig;
-use mp_state_update::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate,
-    ReplacedClassItem, StateDiff, StorageEntry,
-};
+use mp_state_update::StateDiff;
 use rayon::prelude::*;
 use starknet_types_core::{
     felt::Felt,
-    hash::{Pedersen, Poseidon, StarkHash},
+    hash::{Pedersen, Poseidon},
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -31,13 +27,6 @@ pub struct InMemoryRootComputation {
     pub overlay: Option<BonsaiOverlay>,
 }
 
-#[derive(Debug, Default)]
-struct ContractLeaf {
-    class_hash: Option<Felt>,
-    storage_root: Option<Felt>,
-    nonce: Option<Felt>,
-}
-
 fn bonsai_storage_config_for_mode(backend: &RocksDBStorage, trie_log_mode: TrieLogMode) -> BonsaiStorageConfig {
     BonsaiStorageConfig {
         max_saved_trie_logs: match trie_log_mode {
@@ -49,47 +38,6 @@ fn bonsai_storage_config_for_mode(backend: &RocksDBStorage, trie_log_mode: TrieL
     }
 }
 
-fn contract_state_leaf_hash(
-    backend: &RocksDBStorage,
-    contract_address: &Felt,
-    contract_leaf: &ContractLeaf,
-    block_number: u64,
-) -> Result<Felt> {
-    let nonce = contract_leaf
-        .nonce
-        .unwrap_or(backend.inner.get_contract_nonce_at(block_number, contract_address)?.unwrap_or(Felt::ZERO));
-
-    let class_hash = if let Some(class_hash) = contract_leaf.class_hash {
-        class_hash
-    } else {
-        backend.inner.get_contract_class_hash_at(block_number, contract_address)?.unwrap_or(Felt::ZERO)
-    };
-    let storage_root =
-        contract_leaf.storage_root.context("Storage root needs to be set before contract leaf hashing")?;
-
-    Ok(Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO))
-}
-
-fn felt_to_trie_bits(value: &Felt) -> BitVec<u8, Msb0> {
-    value.to_bytes_be().as_bits()[5..].to_owned()
-}
-
-fn collect_class_updates(state_diff: &StateDiff) -> Vec<(Felt, Felt)> {
-    let mut updates =
-        Vec::with_capacity(state_diff.declared_classes.len() + state_diff.migrated_compiled_classes.len());
-
-    updates.extend(state_diff.declared_classes.iter().map(|DeclaredClassItem { class_hash, compiled_class_hash }| {
-        (*class_hash, compute_class_leaf_hash(compiled_class_hash))
-    }));
-    updates.extend(state_diff.migrated_compiled_classes.iter().map(
-        |MigratedClassItem { class_hash, compiled_class_hash }| {
-            (*class_hash, compute_class_leaf_hash(compiled_class_hash))
-        },
-    ));
-
-    updates
-}
-
 fn in_memory_contract_trie_root(
     backend: &RocksDBStorage,
     contract_storage_trie: &mut InMemoryTrie<Pedersen>,
@@ -97,66 +45,18 @@ fn in_memory_contract_trie_root(
     state_diff: &StateDiff,
     block_n: u64,
 ) -> Result<(Felt, ContractTrieTimings)> {
-    let mut timings = ContractTrieTimings::default();
-    let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
-
-    for ContractStorageDiffItem { address, storage_entries } in &state_diff.storage_diffs {
-        for StorageEntry { key, value } in storage_entries {
-            let bitvec = felt_to_trie_bits(key);
-            contract_storage_trie
-                .insert(&address.to_bytes_be(), &bitvec, value)
-                .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-        }
-        contract_leafs.insert(*address, ContractLeaf::default());
-    }
-
-    let storage_commit_start = Instant::now();
-    contract_storage_trie.commit(BasicId::new(block_n)).map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-    timings.storage_commit = storage_commit_start.elapsed();
-
-    for NonceUpdate { contract_address, nonce } in &state_diff.nonces {
-        contract_leafs.entry(*contract_address).or_default().nonce = Some(*nonce);
-    }
-    for DeployedContractItem { address, class_hash } in &state_diff.deployed_contracts {
-        contract_leafs.entry(*address).or_default().class_hash = Some(*class_hash);
-    }
-    for ReplacedClassItem { contract_address, class_hash } in &state_diff.replaced_classes {
-        contract_leafs.entry(*contract_address).or_default().class_hash = Some(*class_hash);
-    }
-
-    let leaf_hashes: Vec<_> = contract_leafs
-        .into_par_iter()
-        .map(|(contract_address, mut leaf)| {
-            let storage_root = contract_storage_trie
-                .root_hash(&contract_address.to_bytes_be())
-                .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-            leaf.storage_root = Some(storage_root);
-            let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_n)?;
-            let bitvec = felt_to_trie_bits(&contract_address);
-            anyhow::Ok((bitvec, leaf_hash))
-        })
-        .collect::<Result<_>>()?;
-
-    for (key, value) in leaf_hashes {
-        contract_trie
-            .insert(super::super::bonsai_identifier::CONTRACT, &key, &value)
-            .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-    }
-
-    let trie_commit_start = Instant::now();
-    contract_trie.commit(BasicId::new(block_n)).map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-    timings.trie_commit = trie_commit_start.elapsed();
-
-    let root = contract_trie
-        .root_hash(super::super::bonsai_identifier::CONTRACT)
-        .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-    Ok((root, timings))
-}
-
-const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");
-
-fn compute_class_leaf_hash(compiled_class_hash: &Felt) -> Felt {
-    Poseidon::hash(&CONTRACT_CLASS_HASH_VERSION, compiled_class_hash)
+    shared::contract_trie_root_from_parts(
+        backend,
+        contract_storage_trie,
+        contract_trie,
+        shared::ContractTrieInputRefs {
+            deployed_contracts: &state_diff.deployed_contracts,
+            replaced_classes: &state_diff.replaced_classes,
+            nonces: &state_diff.nonces,
+            storage_diffs: &state_diff.storage_diffs,
+            block_n,
+        },
+    )
 }
 
 fn in_memory_class_trie_root(
@@ -164,22 +64,11 @@ fn in_memory_class_trie_root(
     state_diff: &StateDiff,
     block_n: u64,
 ) -> Result<(Felt, ClassTrieTimings)> {
-    let mut timings = ClassTrieTimings::default();
-
-    for (key, value) in collect_class_updates(state_diff) {
-        let bitvec = felt_to_trie_bits(&key);
-        class_trie
-            .insert(super::super::bonsai_identifier::CLASS, &bitvec, &value)
-            .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-    }
-
-    let trie_commit_start = Instant::now();
-    class_trie.commit(BasicId::new(block_n)).map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-    timings.trie_commit = trie_commit_start.elapsed();
-    let root = class_trie
-        .root_hash(super::super::bonsai_identifier::CLASS)
-        .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
-    Ok((root, timings))
+    shared::class_trie_root_from_updates(
+        class_trie,
+        shared::collect_class_updates(&state_diff.declared_classes, &state_diff.migrated_compiled_classes),
+        block_n,
+    )
 }
 
 pub fn compute_root_from_snapshot(
