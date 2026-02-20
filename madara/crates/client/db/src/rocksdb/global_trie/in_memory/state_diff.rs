@@ -1,106 +1,67 @@
 use mp_state_update::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, MigratedClassItem, NonceUpdate,
-    ReplacedClassItem, StateDiff, StorageEntry,
+    DeclaredClassCompiledClass, DeclaredClassItem, MigratedClassItem, StateDiff, TransactionStateUpdate,
 };
 use starknet_types_core::felt::Felt;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompiledClassUpdateOrigin {
+    Declared,
+    Migrated,
+}
 
 #[derive(Debug, Default)]
 struct StateDiffAccumulator {
-    storage_diffs: HashMap<Felt, HashMap<Felt, Felt>>,
-    contract_class_updates: HashMap<Felt, (Felt, bool)>, // (class_hash, from_deploy)
-    class_hash_updates: HashMap<Felt, (Felt, bool)>,     // (compiled_class_hash, migrated)
-    old_declared_classes: HashSet<Felt>,
-    nonces: HashMap<Felt, Felt>,
+    tx_update: TransactionStateUpdate,
+    class_update_origins: HashMap<Felt, CompiledClassUpdateOrigin>,
 }
 
 impl StateDiffAccumulator {
     fn apply_state_diff(&mut self, state_diff: &StateDiff) {
-        for ContractStorageDiffItem { address, storage_entries } in &state_diff.storage_diffs {
-            let storage = self.storage_diffs.entry(*address).or_default();
-            for StorageEntry { key, value } in storage_entries {
-                storage.insert(*key, *value);
-            }
-        }
+        let tx_update = TransactionStateUpdate::from_state_diff(state_diff);
+        self.tx_update.nonces.extend(tx_update.nonces);
+        self.tx_update.storage_diffs.extend(tx_update.storage_diffs);
+        self.tx_update.declared_classes.extend(tx_update.declared_classes);
+        self.tx_update.contract_class_hashes.extend(tx_update.contract_class_hashes);
 
-        for DeployedContractItem { address, class_hash } in &state_diff.deployed_contracts {
-            self.contract_class_updates.insert(*address, (*class_hash, true));
-        }
-        for ReplacedClassItem { contract_address, class_hash } in &state_diff.replaced_classes {
-            self.contract_class_updates.insert(*contract_address, (*class_hash, false));
-        }
+        self.class_update_origins.extend(
+            state_diff
+                .declared_classes
+                .iter()
+                .map(|DeclaredClassItem { class_hash, .. }| (*class_hash, CompiledClassUpdateOrigin::Declared)),
+        );
 
-        for DeclaredClassItem { class_hash, compiled_class_hash } in &state_diff.declared_classes {
-            self.class_hash_updates.insert(*class_hash, (*compiled_class_hash, false));
-        }
         for MigratedClassItem { class_hash, compiled_class_hash } in &state_diff.migrated_compiled_classes {
-            self.class_hash_updates.insert(*class_hash, (*compiled_class_hash, true));
+            self.tx_update
+                .declared_classes
+                .insert(*class_hash, DeclaredClassCompiledClass::Sierra(*compiled_class_hash));
+            self.class_update_origins.insert(*class_hash, CompiledClassUpdateOrigin::Migrated);
         }
 
-        self.old_declared_classes.extend(state_diff.old_declared_contracts.iter().copied());
-        for NonceUpdate { contract_address, nonce } in &state_diff.nonces {
-            self.nonces.insert(*contract_address, *nonce);
+        for class_hash in &state_diff.old_declared_contracts {
+            self.class_update_origins.remove(class_hash);
         }
     }
 
     fn to_state_diff(&self) -> StateDiff {
-        let mut storage_diffs: Vec<_> = self
-            .storage_diffs
-            .iter()
-            .map(|(address, entries)| {
-                let mut storage_entries: Vec<_> =
-                    entries.iter().map(|(key, value)| StorageEntry { key: *key, value: *value }).collect();
-                storage_entries.sort_by_key(|entry| entry.key);
-                ContractStorageDiffItem { address: *address, storage_entries }
-            })
-            .collect();
-        storage_diffs.sort_by_key(|entry| entry.address);
-
-        let mut deployed_contracts = Vec::new();
-        let mut replaced_classes = Vec::new();
-        for (address, (class_hash, from_deploy)) in self.contract_class_updates.iter() {
-            if *from_deploy {
-                deployed_contracts.push(DeployedContractItem { address: *address, class_hash: *class_hash });
-            } else {
-                replaced_classes.push(ReplacedClassItem { contract_address: *address, class_hash: *class_hash });
-            }
-        }
-        deployed_contracts.sort_by_key(|item| item.address);
-        replaced_classes.sort_by_key(|item| item.contract_address);
+        let mut state_diff = self.tx_update.to_state_diff();
 
         let mut declared_classes = Vec::new();
         let mut migrated_compiled_classes = Vec::new();
-        for (class_hash, (compiled_class_hash, migrated)) in self.class_hash_updates.iter() {
-            if *migrated {
-                migrated_compiled_classes
-                    .push(MigratedClassItem { class_hash: *class_hash, compiled_class_hash: *compiled_class_hash });
-            } else {
-                declared_classes
-                    .push(DeclaredClassItem { class_hash: *class_hash, compiled_class_hash: *compiled_class_hash });
+        for item in state_diff.declared_classes.drain(..) {
+            match self.class_update_origins.get(&item.class_hash) {
+                Some(CompiledClassUpdateOrigin::Migrated) => migrated_compiled_classes.push(MigratedClassItem {
+                    class_hash: item.class_hash,
+                    compiled_class_hash: item.compiled_class_hash,
+                }),
+                _ => declared_classes.push(item),
             }
         }
-        declared_classes.sort_by_key(|item| item.class_hash);
-        migrated_compiled_classes.sort_by_key(|item| item.class_hash);
 
-        let mut nonces: Vec<_> = self
-            .nonces
-            .iter()
-            .map(|(contract_address, nonce)| NonceUpdate { contract_address: *contract_address, nonce: *nonce })
-            .collect();
-        nonces.sort_by_key(|item| item.contract_address);
-
-        let mut old_declared_contracts: Vec<_> = self.old_declared_classes.iter().copied().collect();
-        old_declared_contracts.sort();
-
-        StateDiff {
-            storage_diffs,
-            old_declared_contracts,
-            declared_classes,
-            deployed_contracts,
-            replaced_classes,
-            nonces,
-            migrated_compiled_classes,
-        }
+        state_diff.declared_classes = declared_classes;
+        state_diff.migrated_compiled_classes = migrated_compiled_classes;
+        state_diff.sort();
+        state_diff
     }
 }
 
