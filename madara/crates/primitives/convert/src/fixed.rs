@@ -43,6 +43,10 @@ impl From<f64> for FixedPoint {
             return Self::zero();
         }
 
+        if value == 1.0 {
+            return Self::one();
+        }
+
         let max_u128 = u128::MAX as f64;
 
         let mut scale = 0u32;
@@ -67,5 +71,48 @@ impl From<f64> for FixedPoint {
         let mantissa = scaled.round() as u128;
 
         Self { value: mantissa, decimals }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_whole_number() {
+        let fp = FixedPoint::from(1.0);
+        assert_eq!(fp.decimals(), 0);
+        assert_eq!(fp.value(), 1);
+    }
+
+    #[test]
+    fn from_fractional() {
+        let fp = FixedPoint::from(1.5);
+        assert!((fp.to_f64() - 1.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn from_zero() {
+        let fp = FixedPoint::from(0.0);
+        assert_eq!(fp.decimals(), 0);
+        assert_eq!(fp.value(), 0);
+    }
+
+    /// Regression: with max-scale approach, 1.0 became FixedPoint { value: 999999999999999966662502642608529408, decimals: 36 }
+    /// which caused 25000 / strk_per_eth to truncate to 24999 instead of 25000.
+    /// Verify the representation is exact so integer division won't lose precision.
+    #[test]
+    fn one_is_exactly_representable() {
+        let fp = FixedPoint::from(1.0);
+        // value must equal 10^decimals exactly for the representation to be precise
+        assert_eq!(fp.value(), 10u128.pow(fp.decimals()));
+    }
+
+    #[test]
+    fn roundtrip_to_f64() {
+        for val in [1.0, 0.5, 3.14, 1000.0, 0.001] {
+            let fp = FixedPoint::from(val);
+            assert!((fp.to_f64() - val).abs() < 1e-9, "roundtrip failed for {val}");
+        }
     }
 }
