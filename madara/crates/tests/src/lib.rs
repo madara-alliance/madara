@@ -191,6 +191,11 @@
 #![allow(clippy::print_stdout)]
 
 #[cfg(test)]
+mod devnet_accounts;
+#[cfg(test)]
+pub use devnet_accounts::{ACCOUNTS, ACCOUNT_SECRETS};
+
+#[cfg(test)]
 mod devnet;
 #[cfg(test)]
 mod gateway;

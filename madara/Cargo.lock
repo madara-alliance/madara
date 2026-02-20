@@ -7186,11 +7186,16 @@ dependencies = [
  "flate2",
  "futures",
  "m-cairo-test-contracts",
+ "mc-class-exec",
+ "mc-db",
  "mc-gateway-client",
  "mp-block",
+ "mp-chain-config",
  "mp-class",
  "mp-convert",
+ "mp-receipt",
  "mp-state-update",
+ "mp-transactions",
  "rand 0.8.5",
  "reqwest",
  "rstest 0.18.2",
@@ -7463,6 +7468,7 @@ dependencies = [
  "mp-class",
  "mp-convert",
  "mp-oracle",
+ "mp-receipt",
  "mp-transactions",
  "mp-utils",
  "opentelemetry",
@@ -8030,6 +8036,7 @@ dependencies = [
 name = "mp-rpc"
 version = "0.10.0"
 dependencies = [
+ "rstest 0.18.2",
  "serde",
  "serde_json",
  "starknet-types-core",

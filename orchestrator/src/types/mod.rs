@@ -6,6 +6,7 @@ pub mod params;
 pub mod priority_slot;
 pub mod queue;
 pub mod queue_control;
+pub mod storage_layout;
 pub mod worker;
 
 pub use orchestrator_utils::layer::Layer;

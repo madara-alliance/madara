@@ -3,11 +3,39 @@
 //! This module provides execution time tracking for individual transactions.
 //! Metrics are exported via OpenTelemetry (OTEL) for integration with Prometheus/OTLP.
 
-use mc_analytics::register_histogram_metric_instrument;
-use opentelemetry::metrics::Histogram;
+use mc_analytics::{
+    register_counter_metric_instrument, register_gauge_metric_instrument, register_histogram_metric_instrument,
+};
+use opentelemetry::metrics::{Counter, Gauge, Histogram};
 use opentelemetry::{global, InstrumentationScope, KeyValue};
 use starknet_api::executable_transaction::TransactionType;
 use std::time::Instant;
+
+/// Test-only counters for verifying metrics in unit tests.
+#[cfg(test)]
+pub mod test_counters {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    pub static READ_CACHE_HITS_TOTAL: AtomicU64 = AtomicU64::new(0);
+    pub static READ_CACHE_MISSES_TOTAL: AtomicU64 = AtomicU64::new(0);
+    pub static READ_CACHE_SIZE_LAST: AtomicU64 = AtomicU64::new(0);
+    pub static READ_CACHE_SIZE_RECORDS: AtomicU64 = AtomicU64::new(0);
+
+    pub fn acquire_and_reset() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        reset_all();
+        guard
+    }
+
+    pub fn reset_all() {
+        READ_CACHE_HITS_TOTAL.store(0, Ordering::Relaxed);
+        READ_CACHE_MISSES_TOTAL.store(0, Ordering::Relaxed);
+        READ_CACHE_SIZE_LAST.store(0, Ordering::Relaxed);
+        READ_CACHE_SIZE_RECORDS.store(0, Ordering::Relaxed);
+    }
+}
 
 /// Transaction type labels for metrics.
 pub mod tx_type_label {
@@ -40,6 +68,12 @@ pub fn tx_type_to_label(tx_type: TransactionType) -> &'static str {
 pub struct ExecutionMetrics {
     /// Histogram tracking per-transaction execution time in milliseconds.
     tx_execution_time_histogram: Histogram<f64>,
+    /// Cache hits for execution read cache.
+    read_cache_hits_counter: Counter<u64>,
+    /// Cache misses for execution read cache.
+    read_cache_misses_counter: Counter<u64>,
+    /// Current read cache size in bytes.
+    read_cache_size_bytes: Gauge<u64>,
 }
 
 impl ExecutionMetrics {
@@ -58,7 +92,28 @@ impl ExecutionMetrics {
             "ms".to_string(),
         );
 
-        Self { tx_execution_time_histogram }
+        let read_cache_hits_counter = register_counter_metric_instrument(
+            &meter,
+            "exec_read_cache_hits_total".to_string(),
+            "Execution read cache hits".to_string(),
+            "hit".to_string(),
+        );
+
+        let read_cache_misses_counter = register_counter_metric_instrument(
+            &meter,
+            "exec_read_cache_misses_total".to_string(),
+            "Execution read cache misses".to_string(),
+            "miss".to_string(),
+        );
+
+        let read_cache_size_bytes = register_gauge_metric_instrument(
+            &meter,
+            "exec_read_cache_size_bytes".to_string(),
+            "Execution read cache size in bytes".to_string(),
+            "bytes".to_string(),
+        );
+
+        Self { tx_execution_time_histogram, read_cache_hits_counter, read_cache_misses_counter, read_cache_size_bytes }
     }
 
     /// Record transaction execution time with type and context labels.
@@ -67,6 +122,27 @@ impl ExecutionMetrics {
             duration_ms,
             &[KeyValue::new("tx_type", tx_type.to_string()), KeyValue::new("context", context.to_string())],
         );
+    }
+
+    pub fn record_read_cache_hit(&self, kind: &'static str) {
+        #[cfg(test)]
+        test_counters::READ_CACHE_HITS_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.read_cache_hits_counter.add(1, &[KeyValue::new("kind", kind)]);
+    }
+
+    pub fn record_read_cache_miss(&self, kind: &'static str) {
+        #[cfg(test)]
+        test_counters::READ_CACHE_MISSES_TOTAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.read_cache_misses_counter.add(1, &[KeyValue::new("kind", kind)]);
+    }
+
+    pub fn record_read_cache_size_bytes(&self, size_bytes: u64) {
+        #[cfg(test)]
+        {
+            test_counters::READ_CACHE_SIZE_LAST.store(size_bytes, std::sync::atomic::Ordering::Relaxed);
+            test_counters::READ_CACHE_SIZE_RECORDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.read_cache_size_bytes.record(size_bytes, &[]);
     }
 }
 

@@ -97,6 +97,7 @@ lazy_static.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
 mc-db = { workspace = true, features = ["testing"] }
 mp-class.workspace = true
+mp-receipt.workspace = true
 m-cairo-test-contracts.workspace = true
 mc-e2e-tests.workspace = true
 tokio-util = { workspace = true, features = ["time"] }

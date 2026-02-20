@@ -85,7 +85,8 @@
 //! The [`LayeredStateAdapter`] extends the basic state adapter with an in-memory cache layer
 //! for block production scenarios. It maintains a queue of recent state changes organized by
 //! block number, allowing execution to proceed even when recent blocks haven't been persisted
-//! to the database yet.
+//! to the database yet. It also supports an optional read cache for hot contract state
+//! (configurable via node settings) to reduce repeated DB reads during execution.
 //!
 //! # Transaction Flows
 //!
@@ -161,6 +162,7 @@ use starknet_types_core::felt::Felt;
 mod block_context;
 mod blockifier_state_adapter;
 mod call;
+mod execution_read_cache;
 mod fee;
 mod layered_state_adapter;
 pub mod metrics;

@@ -4,6 +4,7 @@ use crate::{RECONNECT_BASE_DELAY, RECONNECT_MAX_DELAY};
 use alloy::primitives::{B256, U256};
 use futures::StreamExt;
 use mc_db::MadaraBackend;
+use mp_convert::L1TransactionHash;
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
@@ -235,6 +236,31 @@ async fn process_finalized_events(
             confirmations
         );
 
+        // Persist minimal origin metadata for `starknet_getMessagesStatus`:
+        // - nonce -> l1_tx_hash
+        // - l1_tx_hash||nonce -> <empty> (seen marker), later filled with l2_tx_hash once known
+        let nonce = event.message.tx.nonce;
+        let l1_tx_hash = L1TransactionHash(event.l1_transaction_hash.to_be_bytes::<32>());
+        backend
+            .write_l1_txn_hash_by_nonce(nonce, &l1_tx_hash)
+            .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store l1_tx_hash by nonce: {}", e)))?;
+        backend
+            .insert_message_to_l2_seen_marker(&l1_tx_hash, nonce)
+            .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to store l1->l2 sent marker: {}", e)))?;
+
+        // Backfill the consumed L2 tx hash in case the L1 handler transaction was already written to the DB
+        // before we observed the L1 event for this nonce.
+        if let Some(l2_tx_hash) = backend.get_l1_handler_txn_hash_by_nonce(nonce).map_err(|e| {
+            SettlementClientError::DatabaseError(format!("Failed to read l1 handler tx hash by nonce: {}", e))
+        })? {
+            backend.write_message_to_l2_consumed_txn_hash(&l1_tx_hash, nonce, &l2_tx_hash).map_err(|e| {
+                SettlementClientError::DatabaseError(format!(
+                    "Failed to backfill l1->l2 consumed tx hash for (l1_tx_hash, nonce): {}",
+                    e
+                ))
+            })?;
+        }
+
         let is_valid = check_message_to_l2_validity(settlement_client, backend, &event.message).await.map_err(|e| {
             SettlementClientError::InvalidResponse(format!(
                 "Validity check failed for tx {}: {}",
@@ -387,6 +413,75 @@ mod messaging_module_tests {
 
         // Verify the message was processed
         assert_eq!(db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(), mock_event1.message);
+        let l1_tx_hash = mp_convert::L1TransactionHash(mock_event1.l1_transaction_hash.to_be_bytes::<32>());
+        assert_eq!(db.get_l1_txn_hash_by_nonce(mock_event1.message.tx.nonce).unwrap(), Some(l1_tx_hash));
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(mock_event1.message.tx.nonce, None)]
+        );
+
+        // Clean up: cancel context and abort task
+        ctx_clone.cancel_global();
+        sync_handle.abort();
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    /// Ensures `getMessagesStatus` metadata is consistent when the L1 event is observed *after* the L2 execution.
+    ///
+    /// Desired results:
+    /// - The message is not re-queued as pending (since `nonce -> l2_tx_hash` already exists).
+    /// - The `(l1_tx_hash||nonce)` secondary index is backfilled with the already-known L2 tx hash.
+    async fn test_sync_backfills_consumed_tx_hash_when_already_known(
+        #[future] setup_messaging_tests: MessagingTestRunner,
+    ) -> anyhow::Result<()> {
+        let MessagingTestRunner { mut client, db, ctx } = setup_messaging_tests.await;
+
+        // Setup mock event and configure backend
+        let mock_event1 = create_mock_event(100, 1);
+        let notify = Arc::new(Notify::new());
+
+        // Setup mock for last synced block (avoids calling find_replay_block_n_start)
+        db.write_l1_messaging_sync_tip(Some(99))?;
+
+        // Pretend the L1 handler tx was already executed and stored before we observed the L1 event.
+        let consumed_l2_tx_hash = Felt::from_hex_unchecked("0x123");
+        db.write_l1_handler_txn_hash_by_nonce(mock_event1.message.tx.nonce, &consumed_l2_tx_hash)?;
+
+        // Mock get_messaging_stream
+        let events = vec![mock_event1.clone()];
+        client.expect_messages_to_l2_stream().returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
+
+        // Mock get_latest_block_number (needed for finality check)
+        // Event is at block 100, latest is 200, so finality check passes (default finality_blocks=10)
+        client.expect_get_latest_block_number().returning(|| Ok(200));
+
+        // Mock get_client_type
+        client.expect_get_client_type().returning(|| ClientType::Eth);
+
+        // Wrap the client in Arc
+        let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
+
+        // Keep a reference to context for cancellation
+        let ctx_clone = ctx.clone();
+        let db_backend_clone = db.clone();
+
+        // Spawn the sync task in a separate thread
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
+
+        // Wait for event to be processed (short wait since stream returns immediately)
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Verify the message was not re-queued as pending (it is already processed).
+        assert!(db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().is_none());
+        let l1_tx_hash = mp_convert::L1TransactionHash(mock_event1.l1_transaction_hash.to_be_bytes::<32>());
+        assert_eq!(db.get_l1_txn_hash_by_nonce(mock_event1.message.tx.nonce).unwrap(), Some(l1_tx_hash));
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(mock_event1.message.tx.nonce, Some(consumed_l2_tx_hash))]
+        );
 
         // Clean up: cancel context and abort task
         ctx_clone.cancel_global();
@@ -451,6 +546,12 @@ mod messaging_module_tests {
 
         // Verify the message was processed
         assert_eq!(db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(), mock_event1.message);
+        let l1_tx_hash = mp_convert::L1TransactionHash(mock_event1.l1_transaction_hash.to_be_bytes::<32>());
+        assert_eq!(db.get_l1_txn_hash_by_nonce(mock_event1.message.tx.nonce).unwrap(), Some(l1_tx_hash));
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(mock_event1.message.tx.nonce, None)]
+        );
 
         // Clean up: cancel context and abort task
         ctx_clone.cancel_global();

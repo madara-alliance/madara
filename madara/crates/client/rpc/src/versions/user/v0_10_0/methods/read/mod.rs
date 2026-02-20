@@ -124,6 +124,13 @@ impl StarknetReadRpcApiV0_10_0Server for Starknet {
         V0_9_0Impl::get_transaction_status(self, transaction_hash).await
     }
 
+    fn get_messages_status(
+        &self,
+        transaction_hash: mp_rpc::v0_10_0::L1TxnHash,
+    ) -> RpcResult<Vec<mp_rpc::v0_10_0::MessageStatus>> {
+        V0_9_0Impl::get_messages_status(self, transaction_hash)
+    }
+
     fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePreConfirmedStateUpdate> {
         Ok(get_state_update::get_state_update(self, block_id)?)
     }

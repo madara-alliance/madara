@@ -133,6 +133,7 @@ use mp_state_update::StateDiff;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
+use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -323,6 +324,20 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     pub custom_header: Mutex<Option<CustomHeader>>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ExecutionReadCacheConfig {
+    /// Enable the execution read cache. Default: false.
+    pub enabled: bool,
+    /// Contracts to cache.
+    ///
+    /// - `None`: cache all contracts.
+    /// - `Some(vec)`: cache only those contracts (allowlist mode). `Some([])` is valid and means
+    ///   "cache none".
+    pub contracts: Option<Vec<ContractAddress>>,
+    /// Maximum cache size in bytes.
+    pub max_memory_bytes: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct MadaraBackendConfig {
     pub flush_every_n_blocks: Option<u64>,
@@ -333,6 +348,8 @@ pub struct MadaraBackendConfig {
     /// WARNING: Without backup, there's no recovery if migration fails.
     /// Only use if you have external snapshots/backups.
     pub skip_migration_backup: bool,
+    /// Execution-time read cache for hot contract state.
+    pub execution_read_cache: ExecutionReadCacheConfig,
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
@@ -460,6 +477,11 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 impl MadaraBackend<RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<Self> {
+        Self::open_for_testing_with_config(chain_config, Default::default())
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub fn open_for_testing_with_config(chain_config: Arc<ChainConfig>, config: MadaraBackendConfig) -> Arc<Self> {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
@@ -474,7 +496,7 @@ impl MadaraBackend<RocksDBStorage> {
         mc_class_exec::init_compilation_semaphore(max_concurrent);
         let test_config = builder.build();
         let cairo_native_config = Arc::new(test_config);
-        let mut backend = Self::new_and_init(db, chain_config, Default::default(), cairo_native_config).unwrap();
+        let mut backend = Self::new_and_init(db, chain_config, config, cairo_native_config).unwrap();
         backend._temp_dir = Some(temp_dir);
         Arc::new(backend)
     }
@@ -615,6 +637,10 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     pub fn chain_config(&self) -> &Arc<ChainConfig> {
         &self.chain_config
+    }
+
+    pub fn execution_read_cache_config(&self) -> &ExecutionReadCacheConfig {
+        &self.config.execution_read_cache
     }
 
     /// Get the runtime execution configuration from the database.
@@ -982,11 +1008,33 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
         self.db.get_next_pending_message_to_l2(start_nonce)
     }
+    /// Returns the L1 transaction hash which emitted the L1->L2 message for the given core contract nonce, if known.
+    ///
+    /// This is written by the settlement client during L1 messaging sync and is later used to answer
+    /// `starknet_getMessagesStatus` without making L1 requests at RPC time.
+    pub fn get_l1_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<mp_convert::L1TransactionHash>> {
+        self.db.get_l1_txn_hash_by_nonce(core_contract_nonce)
+    }
     pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
     }
     pub fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
         self.db.get_l1_handler_l1_block_by_nonce(core_contract_nonce)
+    }
+    /// Returns all messages sent by a given L1 transaction, as `(nonce, consumed_l2_tx_hash_if_known)`.
+    pub fn get_messages_to_l2_by_l1_tx_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<Option<crate::storage::L1ToL2MessagesByL1TxHash>> {
+        self.db.get_messages_to_l2_by_l1_tx_hash(l1_tx_hash)
+    }
+    /// Returns the status entry for a specific `(l1_tx_hash, nonce)` message index key.
+    pub fn get_message_to_l2_index_entry(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<Option<crate::storage::L1ToL2MessageIndexEntry>> {
+        self.db.get_message_to_l2_index_entry(l1_tx_hash, core_contract_nonce)
     }
     pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
@@ -1026,6 +1074,33 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
         self.db.remove_pending_message_to_l2(core_contract_nonce)
+    }
+    /// Stores the L1 transaction hash which emitted the L1->L2 message identified by `core_contract_nonce`.
+    pub fn write_l1_txn_hash_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+    ) -> Result<()> {
+        self.db.write_l1_txn_hash_by_nonce(core_contract_nonce, l1_tx_hash)
+    }
+    /// Inserts a "seen on L1" marker for the `(l1_tx_hash, nonce)` pair, if the key is missing.
+    ///
+    /// This is idempotent and will not overwrite an already-consumed entry.
+    pub fn insert_message_to_l2_seen_marker(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+    ) -> Result<bool> {
+        self.db.insert_message_to_l2_seen_marker(l1_tx_hash, core_contract_nonce)
+    }
+    /// Writes the consumed L2 transaction hash for the `(l1_tx_hash, nonce)` pair.
+    pub fn write_message_to_l2_consumed_txn_hash(
+        &self,
+        l1_tx_hash: &mp_convert::L1TransactionHash,
+        core_contract_nonce: u64,
+        l2_tx_hash: &Felt,
+    ) -> Result<()> {
+        self.db.write_message_to_l2_consumed_txn_hash(l1_tx_hash, core_contract_nonce, l2_tx_hash)
     }
     pub fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()> {
         self.db.write_devnet_predeployed_keys(devnet_keys)
