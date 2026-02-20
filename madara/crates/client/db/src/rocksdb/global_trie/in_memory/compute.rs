@@ -1,4 +1,4 @@
-use super::db::{InMemoryBonsaiDb, InMemoryColumnMapping};
+use super::db::InMemoryBonsaiDb;
 use super::overlay::{BonsaiOverlay, TrieLogMode};
 use super::state_diff::cumulative_squashed_state_diffs;
 use crate::prelude::*;
@@ -70,6 +70,26 @@ fn contract_state_leaf_hash(
     Ok(Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO))
 }
 
+fn felt_to_trie_bits(value: &Felt) -> BitVec<u8, Msb0> {
+    value.to_bytes_be().as_bits()[5..].to_owned()
+}
+
+fn collect_class_updates(state_diff: &StateDiff) -> Vec<(Felt, Felt)> {
+    let mut updates =
+        Vec::with_capacity(state_diff.declared_classes.len() + state_diff.migrated_compiled_classes.len());
+
+    updates.extend(state_diff.declared_classes.iter().map(|DeclaredClassItem { class_hash, compiled_class_hash }| {
+        (*class_hash, compute_class_leaf_hash(compiled_class_hash))
+    }));
+    updates.extend(state_diff.migrated_compiled_classes.iter().map(
+        |MigratedClassItem { class_hash, compiled_class_hash }| {
+            (*class_hash, compute_class_leaf_hash(compiled_class_hash))
+        },
+    ));
+
+    updates
+}
+
 fn in_memory_contract_trie_root(
     backend: &RocksDBStorage,
     contract_storage_trie: &mut InMemoryTrie<Pedersen>,
@@ -82,8 +102,7 @@ fn in_memory_contract_trie_root(
 
     for ContractStorageDiffItem { address, storage_entries } in &state_diff.storage_diffs {
         for StorageEntry { key, value } in storage_entries {
-            let bytes = key.to_bytes_be();
-            let bitvec: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+            let bitvec = felt_to_trie_bits(key);
             contract_storage_trie
                 .insert(&address.to_bytes_be(), &bitvec, value)
                 .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
@@ -113,8 +132,7 @@ fn in_memory_contract_trie_root(
                 .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
             leaf.storage_root = Some(storage_root);
             let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_n)?;
-            let bytes = contract_address.to_bytes_be();
-            let bitvec: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+            let bitvec = felt_to_trie_bits(&contract_address);
             anyhow::Ok((bitvec, leaf_hash))
         })
         .collect::<Result<_>>()?;
@@ -148,25 +166,8 @@ fn in_memory_class_trie_root(
 ) -> Result<(Felt, ClassTrieTimings)> {
     let mut timings = ClassTrieTimings::default();
 
-    let declared_updates: Vec<_> = state_diff
-        .declared_classes
-        .par_iter()
-        .map(|DeclaredClassItem { class_hash, compiled_class_hash }| {
-            (*class_hash, compute_class_leaf_hash(compiled_class_hash))
-        })
-        .collect();
-
-    let migrated_updates: Vec<_> = state_diff
-        .migrated_compiled_classes
-        .par_iter()
-        .map(|MigratedClassItem { class_hash, compiled_class_hash }| {
-            (*class_hash, compute_class_leaf_hash(compiled_class_hash))
-        })
-        .collect();
-
-    for (key, value) in declared_updates.into_iter().chain(migrated_updates) {
-        let bytes = key.to_bytes_be();
-        let bitvec: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+    for (key, value) in collect_class_updates(state_diff) {
+        let bitvec = felt_to_trie_bits(&key);
         class_trie
             .insert(super::super::bonsai_identifier::CLASS, &bitvec, &value)
             .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
@@ -272,27 +273,7 @@ pub fn flush_overlay_and_checkpoint(
     trie_log_mode: TrieLogMode,
 ) -> Result<()> {
     let mut batch = WriteBatchWithTransaction::default();
-    BonsaiOverlay::apply_changed_map_to_batch(
-        backend,
-        &InMemoryColumnMapping::contract(),
-        &overlay.contract_changed,
-        trie_log_mode,
-        &mut batch,
-    )?;
-    BonsaiOverlay::apply_changed_map_to_batch(
-        backend,
-        &InMemoryColumnMapping::contract_storage(),
-        &overlay.contract_storage_changed,
-        trie_log_mode,
-        &mut batch,
-    )?;
-    BonsaiOverlay::apply_changed_map_to_batch(
-        backend,
-        &InMemoryColumnMapping::class(),
-        &overlay.class_changed,
-        trie_log_mode,
-        &mut batch,
-    )?;
+    overlay.put_all_to_batch(backend, trie_log_mode, &mut batch)?;
     backend.inner.parallel_merkle_mark_checkpoint_in_batch(block_n, &mut batch)?;
     backend.inner.db.write_opt(batch, &backend.inner.writeopts)?;
     Ok(())

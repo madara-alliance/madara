@@ -17,10 +17,6 @@ fn setup_backend() -> Arc<MadaraBackend> {
     MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()))
 }
 
-fn setup_snapshot_db() -> Arc<MadaraBackend> {
-    setup_backend()
-}
-
 fn write_snapshot_value(backend: &RocksDBStorage, column: Column, key: &[u8], value: &[u8]) {
     let handle = backend.inner.get_column(column);
     backend.inner.db.put_cf(&handle, key, value).expect("write snapshot value");
@@ -69,12 +65,52 @@ fn sequential_roots(backend: &Arc<MadaraBackend>, diffs: &[StateDiff]) -> Vec<Fe
     roots
 }
 
+fn compute_parallel_results(
+    backend: &Arc<MadaraBackend>,
+    diffs: &[StateDiff],
+    boundary_block_n: Option<u64>,
+    trie_log_mode: TrieLogMode,
+) -> Vec<InMemoryRootComputation> {
+    let snapshot = fresh_snapshot(&backend.db);
+    compute_roots_in_parallel_from_snapshot(&backend.db, snapshot, 0, diffs, boundary_block_n, trie_log_mode)
+        .expect("parallel roots")
+}
+
+fn assert_parallel_roots_match_sequential(
+    backend_seq: &Arc<MadaraBackend>,
+    backend_parallel: &Arc<MadaraBackend>,
+    diffs: &[StateDiff],
+    boundary_block_n: Option<u64>,
+    trie_log_mode: TrieLogMode,
+) -> Vec<InMemoryRootComputation> {
+    let expected_roots = sequential_roots(backend_seq, diffs);
+    let results = compute_parallel_results(backend_parallel, diffs, boundary_block_n, trie_log_mode);
+    let got_roots: Vec<_> = results.iter().map(|result| result.state_root).collect();
+    assert_eq!(got_roots, expected_roots);
+    results
+}
+
+fn assert_checkpoint_state(backend: &Arc<MadaraBackend>, block_n: u64) {
+    assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(block_n));
+    assert!(backend.has_parallel_merkle_checkpoint(block_n).expect("checkpoint marker"));
+}
+
+fn count_trie_log_entries(backend: &Arc<MadaraBackend>) -> usize {
+    use crate::rocksdb::trie::{
+        BONSAI_CLASS_LOG_COLUMN, BONSAI_CONTRACT_LOG_COLUMN, BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
+    };
+
+    count_column_entries(&backend.db, BONSAI_CONTRACT_LOG_COLUMN)
+        + count_column_entries(&backend.db, BONSAI_CONTRACT_STORAGE_LOG_COLUMN)
+        + count_column_entries(&backend.db, BONSAI_CLASS_LOG_COLUMN)
+}
+
 #[test]
 fn in_memory_bonsai_overlay_hit_beats_snapshot() {
     use crate::rocksdb::trie::BONSAI_CONTRACT_FLAT_COLUMN;
     use bonsai_trie::{BonsaiDatabase, ByteVec, DatabaseKey};
 
-    let backend = setup_snapshot_db();
+    let backend = setup_backend();
     let key = b"overlay-hit-key";
     write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, key, b"snapshot-value");
     let snapshot = fresh_snapshot(&backend.db);
@@ -93,7 +129,7 @@ fn in_memory_bonsai_tombstone_hides_snapshot_value() {
     use crate::rocksdb::trie::BONSAI_CONTRACT_FLAT_COLUMN;
     use bonsai_trie::{BonsaiDatabase, DatabaseKey};
 
-    let backend = setup_snapshot_db();
+    let backend = setup_backend();
     let key = b"tombstone-key";
     write_snapshot_value(&backend.db, BONSAI_CONTRACT_FLAT_COLUMN, key, b"snapshot-value");
     let snapshot = fresh_snapshot(&backend.db);
@@ -110,7 +146,7 @@ fn in_memory_bonsai_tombstone_hides_snapshot_value() {
 fn in_memory_bonsai_insert_remove_contains_are_consistent() {
     use bonsai_trie::{BonsaiDatabase, ByteVec, DatabaseKey};
 
-    let backend = setup_snapshot_db();
+    let backend = setup_backend();
     let snapshot = fresh_snapshot(&backend.db);
     let mut db = InMemoryBonsaiDb::test_with_mapping(snapshot, InMemoryColumnMapping::contract());
     let key = b"in-memory-key";
@@ -134,7 +170,7 @@ fn in_memory_bonsai_write_batch_does_not_persist_to_rocksdb() {
     use crate::rocksdb::WriteBatchWithTransaction;
     use bonsai_trie::{BonsaiDatabase, DatabaseKey};
 
-    let backend = setup_snapshot_db();
+    let backend = setup_backend();
     let snapshot = fresh_snapshot(&backend.db);
     let mut db = InMemoryBonsaiDb::test_with_mapping(snapshot, InMemoryColumnMapping::contract());
     let key = b"not-persisted-key";
@@ -219,14 +255,8 @@ fn in_memory_parallel_roots_match_sequential_per_block() {
     let backend_mem = setup_backend();
     let diffs: Vec<_> = (0_u64..5).map(synthetic_state_diff).collect();
 
-    let expected_roots = sequential_roots(&backend_seq, &diffs);
-    let snapshot = fresh_snapshot(&backend_mem.db);
     let results =
-        compute_roots_in_parallel_from_snapshot(&backend_mem.db, snapshot, 0, &diffs, Some(2), TrieLogMode::Checkpoint)
-            .expect("parallel roots");
-
-    let got_roots: Vec<_> = results.iter().map(|result| result.state_root).collect();
-    assert_eq!(got_roots, expected_roots);
+        assert_parallel_roots_match_sequential(&backend_seq, &backend_mem, &diffs, Some(2), TrieLogMode::Checkpoint);
     assert_eq!(results.iter().filter(|result| result.overlay.is_some()).count(), 1);
     assert_eq!(results.iter().find(|result| result.overlay.is_some()).map(|result| result.block_n), Some(2));
 }
@@ -235,11 +265,7 @@ fn in_memory_parallel_roots_match_sequential_per_block() {
 fn boundary_flush_updates_persisted_root_and_checkpoint() {
     let backend = setup_backend();
     let diffs: Vec<_> = (0_u64..3).map(synthetic_state_diff).collect();
-    let snapshot = fresh_snapshot(&backend.db);
-
-    let results =
-        compute_roots_in_parallel_from_snapshot(&backend.db, snapshot, 0, &diffs, Some(2), TrieLogMode::Checkpoint)
-            .expect("parallel roots");
+    let results = compute_parallel_results(&backend, &diffs, Some(2), TrieLogMode::Checkpoint);
     let boundary = results.last().expect("boundary result");
     let overlay = boundary.overlay.as_ref().expect("boundary overlay");
 
@@ -248,16 +274,11 @@ fn boundary_flush_updates_persisted_root_and_checkpoint() {
 
     let persisted_root = crate::rocksdb::global_trie::get_state_root(&backend.db).expect("read persisted root");
     assert_eq!(persisted_root, boundary.state_root);
-    assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(2));
-    assert!(backend.has_parallel_merkle_checkpoint(2).expect("checkpoint marker"));
+    assert_checkpoint_state(&backend, 2);
 }
 
 #[test]
 fn trie_log_mode_controls_log_column_flush_behavior() {
-    use crate::rocksdb::trie::{
-        BONSAI_CLASS_LOG_COLUMN, BONSAI_CONTRACT_LOG_COLUMN, BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
-    };
-
     let backend_off = setup_backend();
     let backend_checkpoint = setup_backend();
     let diff = synthetic_state_diff(0);
@@ -291,12 +312,8 @@ fn trie_log_mode_controls_log_column_flush_behavior() {
     )
     .expect("checkpoint mode flush");
 
-    let off_log_entries = count_column_entries(&backend_off.db, BONSAI_CONTRACT_LOG_COLUMN)
-        + count_column_entries(&backend_off.db, BONSAI_CONTRACT_STORAGE_LOG_COLUMN)
-        + count_column_entries(&backend_off.db, BONSAI_CLASS_LOG_COLUMN);
-    let checkpoint_log_entries = count_column_entries(&backend_checkpoint.db, BONSAI_CONTRACT_LOG_COLUMN)
-        + count_column_entries(&backend_checkpoint.db, BONSAI_CONTRACT_STORAGE_LOG_COLUMN)
-        + count_column_entries(&backend_checkpoint.db, BONSAI_CLASS_LOG_COLUMN);
+    let off_log_entries = count_trie_log_entries(&backend_off);
+    let checkpoint_log_entries = count_trie_log_entries(&backend_checkpoint);
 
     assert_eq!(off_log_entries, 0, "off mode should not persist trie logs");
     assert!(checkpoint_log_entries > 0, "checkpoint mode should persist trie logs");

@@ -44,29 +44,25 @@ impl BonsaiOverlay {
         Ok(())
     }
 
+    pub(crate) fn put_all_to_batch(
+        &self,
+        backend: &RocksDBStorage,
+        trie_log_mode: TrieLogMode,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        for (mapping, changed) in [
+            (InMemoryColumnMapping::contract(), &self.contract_changed),
+            (InMemoryColumnMapping::contract_storage(), &self.contract_storage_changed),
+            (InMemoryColumnMapping::class(), &self.class_changed),
+        ] {
+            Self::apply_changed_map_to_batch(backend, &mapping, changed, trie_log_mode, batch)?;
+        }
+        Ok(())
+    }
+
     pub fn flush_to_db(&self, backend: &RocksDBStorage, trie_log_mode: TrieLogMode) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
-        Self::apply_changed_map_to_batch(
-            backend,
-            &InMemoryColumnMapping::contract(),
-            &self.contract_changed,
-            trie_log_mode,
-            &mut batch,
-        )?;
-        Self::apply_changed_map_to_batch(
-            backend,
-            &InMemoryColumnMapping::contract_storage(),
-            &self.contract_storage_changed,
-            trie_log_mode,
-            &mut batch,
-        )?;
-        Self::apply_changed_map_to_batch(
-            backend,
-            &InMemoryColumnMapping::class(),
-            &self.class_changed,
-            trie_log_mode,
-            &mut batch,
-        )?;
+        self.put_all_to_batch(backend, trie_log_mode, &mut batch)?;
 
         backend.inner.db.write_opt(batch, &backend.inner.writeopts)?;
         Ok(())

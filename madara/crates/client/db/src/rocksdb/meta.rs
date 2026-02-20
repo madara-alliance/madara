@@ -55,6 +55,18 @@ pub(super) enum ParallelMerkleStagedState {
 }
 
 impl RocksDBStorageInner {
+    fn get_meta_prefixed<T: serde::de::DeserializeOwned>(&self, prefix: &[u8], block_n: u64) -> Result<Option<T>> {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), meta_key_with_block_n(prefix, block_n))?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(super::deserialize(&res)?))
+    }
+
+    fn has_meta_prefixed(&self, prefix: &[u8], block_n: u64) -> Result<bool> {
+        Ok(self.db.get_pinned_cf(&self.get_column(META_COLUMN), meta_key_with_block_n(prefix, block_n))?.is_some())
+    }
+
     pub(super) fn replace_chain_tip_with_confirmed_in_batch(
         &self,
         block_n: u64,
@@ -100,14 +112,7 @@ impl RocksDBStorageInner {
     }
 
     pub(super) fn parallel_merkle_get_staged_state(&self, block_n: u64) -> Result<Option<ParallelMerkleStagedState>> {
-        let Some(res) = self.db.get_pinned_cf(
-            &self.get_column(META_COLUMN),
-            meta_key_with_block_n(META_PARALLEL_MERKLE_STAGED_STATE_PREFIX, block_n),
-        )?
-        else {
-            return Ok(None);
-        };
-        Ok(Some(super::deserialize(&res)?))
+        self.get_meta_prefixed(META_PARALLEL_MERKLE_STAGED_STATE_PREFIX, block_n)
     }
 
     pub(super) fn parallel_merkle_get_staged_blocks(&self) -> Result<Vec<u64>> {
@@ -169,13 +174,7 @@ impl RocksDBStorageInner {
     }
 
     pub(super) fn has_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<bool> {
-        Ok(self
-            .db
-            .get_pinned_cf(
-                &self.get_column(META_COLUMN),
-                meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, block_n),
-            )?
-            .is_some())
+        self.has_meta_prefixed(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, block_n)
     }
 
     pub(super) fn get_parallel_merkle_latest_checkpoint(&self) -> Result<Option<u64>> {

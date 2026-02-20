@@ -250,6 +250,24 @@ impl fmt::Debug for BonsaiTransaction {
     }
 }
 
+impl BonsaiTransaction {
+    fn changed_value(&self, key: &DatabaseKey) -> Option<Option<ByteVec>> {
+        self.changed.get(&to_changed_key(key)).cloned()
+    }
+
+    fn get_from_snapshot(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, TrieError> {
+        let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
+        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.map(Into::into))
+    }
+
+    fn read_overlay_or_snapshot(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, TrieError> {
+        if let Some(value) = self.changed_value(key) {
+            return Ok(value);
+        }
+        self.get_from_snapshot(key)
+    }
+}
+
 // TODO: a lot of this is not really used yet, this whole abstraction does not really make sense anyway, this needs to be modified
 // upstream in bonsai-trie
 impl BonsaiDatabase for BonsaiTransaction {
@@ -263,11 +281,7 @@ impl BonsaiDatabase for BonsaiTransaction {
     #[tracing::instrument(skip(self, key))]
     fn get(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, Self::DatabaseError> {
         tracing::trace!("Getting from RocksDB: {:?}", key);
-        if let Some(val) = self.changed.get(&to_changed_key(key)) {
-            return Ok(val.clone());
-        }
-        let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.map(Into::into))
+        self.read_overlay_or_snapshot(key)
     }
 
     fn get_by_prefix(&self, _prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
@@ -277,11 +291,7 @@ impl BonsaiDatabase for BonsaiTransaction {
     #[tracing::instrument(skip(self, key))]
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
         tracing::trace!("Checking if RocksDB contains: {:?}", key);
-        if let Some(val) = self.changed.get(&to_changed_key(key)) {
-            return Ok(val.is_some());
-        }
-        let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.db.db.get_cf(&handle, key.as_slice())?.is_some())
+        Ok(self.read_overlay_or_snapshot(key)?.is_some())
     }
 
     fn insert(
@@ -290,7 +300,7 @@ impl BonsaiDatabase for BonsaiTransaction {
         value: &[u8],
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        let old_value = self.get(key)?;
+        let old_value = self.read_overlay_or_snapshot(key)?;
         self.changed.insert(to_changed_key(key), Some(value.into()));
         Ok(old_value)
     }
@@ -300,7 +310,7 @@ impl BonsaiDatabase for BonsaiTransaction {
         key: &DatabaseKey,
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        let old_value = self.get(key)?;
+        let old_value = self.read_overlay_or_snapshot(key)?;
         self.changed.insert(to_changed_key(key), None);
         Ok(old_value)
     }

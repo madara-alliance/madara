@@ -123,42 +123,23 @@ impl InMemoryBonsaiDb {
     fn changed_value(&self, key: &DatabaseKey) -> Option<Option<ByteVec>> {
         self.changed.get(&to_changed_key(key)).map(|v| v.value().clone())
     }
-}
 
-impl BonsaiDatabase for InMemoryBonsaiDb {
-    type Batch = WriteBatchWithTransaction;
-    type DatabaseError = TrieError;
-
-    fn create_batch(&self) -> Self::Batch {
-        Self::Batch::default()
-    }
-
-    fn get(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, Self::DatabaseError> {
+    fn read_overlay_or_snapshot(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, TrieError> {
         if let Some(value) = self.changed_value(key) {
             return Ok(value);
         }
         self.get_from_snapshot(key)
     }
 
-    fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
-        // We only need this for trie-log pruning in commit paths. We read from live DB here,
-        // and rely on overlay-first entries to override current values for matching keys.
-        let prefix_key = to_changed_key(prefix);
-        let (prefix_col, prefix_bytes) = (prefix_key.0, prefix_key.1);
-
-        let Some(column) = self.column_mapping.map_from_column_id(prefix_col) else {
-            return Ok(Vec::new());
-        };
+    fn scan_snapshot_prefix(&self, column: &Column, prefix_bytes: &[u8]) -> Vec<(ByteVec, ByteVec)> {
         let handle = self.snapshot.db.get_column(column.clone());
-
-        let mut out: Vec<(ByteVec, ByteVec)> = self
-            .snapshot
+        self.snapshot
             .db
             .db
-            .iterator_cf(&handle, IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward))
+            .iterator_cf(&handle, IteratorMode::From(prefix_bytes, Direction::Forward))
             .map_while(|kv| {
                 if let Ok((key, value)) = kv {
-                    if key.starts_with(prefix_bytes.as_slice()) {
+                    if key.starts_with(prefix_bytes) {
                         Some((key.to_vec().into(), value.to_vec().into()))
                     } else {
                         None
@@ -167,11 +148,13 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
                     None
                 }
             })
-            .collect();
+            .collect()
+    }
 
+    fn merge_overlay_prefix(&self, prefix_col: u8, prefix_bytes: &[u8], out: &mut Vec<(ByteVec, ByteVec)>) {
         for entry in self.changed.iter() {
             let ((column_id, key), value) = entry.pair();
-            if *column_id != prefix_col || !key.starts_with(prefix_bytes.as_slice()) {
+            if *column_id != prefix_col || !key.starts_with(prefix_bytes) {
                 continue;
             }
 
@@ -188,15 +171,46 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
                 None => out.retain(|(existing_key, _)| existing_key.as_slice() != key.as_slice()),
             }
         }
+    }
+
+    fn overlay_keys_for_prefix(&self, prefix_col: u8, prefix_bytes: &[u8]) -> Vec<OverlayKey> {
+        self.changed
+            .iter()
+            .map(|entry| entry.key().clone())
+            .filter(|(column_id, key)| *column_id == prefix_col && key.starts_with(prefix_bytes))
+            .collect()
+    }
+}
+
+impl BonsaiDatabase for InMemoryBonsaiDb {
+    type Batch = WriteBatchWithTransaction;
+    type DatabaseError = TrieError;
+
+    fn create_batch(&self) -> Self::Batch {
+        Self::Batch::default()
+    }
+
+    fn get(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, Self::DatabaseError> {
+        self.read_overlay_or_snapshot(key)
+    }
+
+    fn get_by_prefix(&self, prefix: &DatabaseKey) -> Result<Vec<(ByteVec, ByteVec)>, Self::DatabaseError> {
+        // We only need this for trie-log pruning in commit paths. We read from live DB here,
+        // and rely on overlay-first entries to override current values for matching keys.
+        let prefix_key = to_changed_key(prefix);
+        let (prefix_col, prefix_bytes) = (prefix_key.0, prefix_key.1);
+
+        let Some(column) = self.column_mapping.map_from_column_id(prefix_col) else {
+            return Ok(Vec::new());
+        };
+        let mut out = self.scan_snapshot_prefix(column, prefix_bytes.as_slice());
+        self.merge_overlay_prefix(prefix_col, prefix_bytes.as_slice(), &mut out);
 
         Ok(out)
     }
 
     fn contains(&self, key: &DatabaseKey) -> Result<bool, Self::DatabaseError> {
-        if let Some(value) = self.changed_value(key) {
-            return Ok(value.is_some());
-        }
-        Ok(self.get_from_snapshot(key)?.is_some())
+        Ok(self.read_overlay_or_snapshot(key)?.is_some())
     }
 
     fn insert(
@@ -205,7 +219,7 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         value: &[u8],
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        let previous = self.get(key)?;
+        let previous = self.read_overlay_or_snapshot(key)?;
         self.changed.insert(to_changed_key(key), Some(value.into()));
         Ok(previous)
     }
@@ -215,7 +229,7 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         key: &DatabaseKey,
         _batch: Option<&mut Self::Batch>,
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
-        let previous = self.get(key)?;
+        let previous = self.read_overlay_or_snapshot(key)?;
         self.changed.insert(to_changed_key(key), None);
         Ok(previous)
     }
@@ -227,35 +241,12 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         let Some(column) = self.column_mapping.map_from_column_id(prefix_col) else {
             return Ok(());
         };
-        let handle = self.snapshot.db.get_column(column.clone());
 
-        for (key, _) in self
-            .snapshot
-            .db
-            .db
-            .iterator_cf(&handle, IteratorMode::From(prefix_bytes.as_slice(), Direction::Forward))
-            .map_while(|kv| {
-                if let Ok((key, value)) = kv {
-                    if key.starts_with(prefix_bytes.as_slice()) {
-                        Some((key, value))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-        {
-            self.changed.insert((prefix_col, key.to_vec().into()), None);
+        for (key, _) in self.scan_snapshot_prefix(column, prefix_bytes.as_slice()) {
+            self.changed.insert((prefix_col, key), None);
         }
 
-        for key in self
-            .changed
-            .iter()
-            .map(|entry| entry.key().clone())
-            .filter(|(column_id, key)| *column_id == prefix_col && key.starts_with(prefix_bytes.as_slice()))
-            .collect::<Vec<_>>()
-        {
+        for key in self.overlay_keys_for_prefix(prefix_col, prefix_bytes.as_slice()) {
             self.changed.insert(key, None);
         }
 
