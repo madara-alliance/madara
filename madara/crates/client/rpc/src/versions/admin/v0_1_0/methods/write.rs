@@ -117,7 +117,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     /// Force revert chain to a previous block by hash.
     /// Only available when unsafe RPC methods are enabled.
     /// Coordinated revert: stop all other services, wait for ack, revert DB, then exit.
-    async fn revert_to_and_shutdown(&self, block_hash: Felt, l1_messages_rewind_hint: Option<u64>) -> RpcResult<()> {
+    async fn revert_to_and_shutdown(&self, block_hash: Felt) -> RpcResult<()> {
         // Check if unsafe RPC methods are enabled
         if !self.rpc_unsafe_enabled {
             return Err(StarknetRpcApiError::ErrUnexpectedError {
@@ -227,12 +227,11 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         // 3) Revert DB state, then refresh backend chain tip broadcast.
         tracing::info!(
             target: "rpc::admin",
-            "revertToAndShutdown: reverting chain to block_hash={:#x} (block_number={}, l1_messages_rewind_hint={:?})",
+            "revertToAndShutdown: reverting chain to block_hash={:#x} (block_number={})",
             block_hash,
-            target_block_n,
-            l1_messages_rewind_hint
+            target_block_n
         );
-        self.backend.revert_to(&block_hash, l1_messages_rewind_hint).map_err(StarknetRpcApiError::from)?;
+        self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
 
         let fresh_chain_tip = self
             .backend
@@ -320,7 +319,7 @@ mod tests {
         let mut cancel_wait_ctx = ctx.clone();
         let wait_cancelled = tokio::spawn(async move { cancel_wait_ctx.cancelled().await });
 
-        let rpc_task = tokio::spawn(async move { rpc.revert_to_and_shutdown(block_0_hash, Some(0)).await });
+        let rpc_task = tokio::spawn(async move { rpc.revert_to_and_shutdown(block_0_hash).await });
 
         // While one service is still reported as "actually up", revert must not proceed.
         tokio::time::sleep(Duration::from_millis(350)).await;
@@ -341,7 +340,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn revert_requires_hint_when_source_mapping_missing_but_succeeds_with_hint() {
+    async fn revert_fails_when_source_mapping_missing() {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
 
         let block_0_hash = add_test_block(&backend, 0, vec![]);
@@ -350,19 +349,13 @@ mod tests {
 
         let rpc = make_starknet(backend.clone(), ServiceContext::default());
 
-        // Missing nonce->l1_block metadata and no hint should fail fast without mutating the chain.
+        // Missing nonce->l1_block metadata should fail fast without mutating the chain.
         let err = rpc
-            .revert_to_and_shutdown(block_0_hash, None)
+            .revert_to_and_shutdown(block_0_hash)
             .await
-            .expect_err("revert should fail without hint when source metadata is missing");
+            .expect_err("revert should fail when source metadata is missing");
         assert_ne!(err.code(), 0);
         assert_eq!(backend.latest_confirmed_block_n(), Some(1));
         assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_some());
-
-        // Providing a hint should allow a safe conservative revert.
-        rpc.revert_to_and_shutdown(block_0_hash, Some(55)).await.expect("revert should succeed with hint");
-        assert_eq!(backend.latest_confirmed_block_n(), Some(0));
-        assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(54));
-        assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     }
 }

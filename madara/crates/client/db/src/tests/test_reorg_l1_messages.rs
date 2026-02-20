@@ -32,7 +32,7 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
     backend.write_l1_messaging_sync_tip(Some(10_000)).expect("Writing sync tip should succeed");
 
     let (new_tip_n, new_tip_hash) =
-        backend.revert_to(&block_0_hash, None).expect("Revert should succeed with source mapping present");
+        backend.revert_to(&block_0_hash).expect("Revert should succeed with source mapping present");
 
     assert_eq!(new_tip_n, 0);
     assert_eq!(new_tip_hash, block_0_hash);

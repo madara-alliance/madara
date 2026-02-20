@@ -74,7 +74,7 @@ async fn admin_revert_to(admin_url: &str, block_hash: Felt) {
         .json(&serde_json::json!({
             "jsonrpc": "2.0",
             "method": "madara_revertToAndShutdown",
-            "params": [format!("0x{:x}", block_hash), serde_json::Value::Null],
+            "params": [format!("0x{:x}", block_hash)],
             "id": 1,
         }))
         .send()

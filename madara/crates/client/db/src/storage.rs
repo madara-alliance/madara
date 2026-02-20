@@ -247,7 +247,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn get_state_root_hash(&self) -> Result<Felt>;
 
     /// Revert the blockchain state to a specific block hash.
-    fn revert_to(&self, new_tip_block_hash: &Felt, l1_messages_rewind_hint: Option<u64>) -> Result<(u64, Felt)>;
+    fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)>;
 }
 
 /// Trait alias for `MadaraStorageRead + MadaraStorageWrite`.

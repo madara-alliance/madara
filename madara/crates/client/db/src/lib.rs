@@ -1125,7 +1125,7 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
 
     /// Revert the blockchain to a specific block hash.
-    pub fn revert_to(&self, new_tip_block_hash: &Felt, l1_messages_rewind_hint: Option<u64>) -> Result<(u64, Felt)> {
-        self.db.revert_to(new_tip_block_hash, l1_messages_rewind_hint)
+    pub fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
+        self.db.revert_to(new_tip_block_hash)
     }
 }

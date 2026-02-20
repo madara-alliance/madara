@@ -666,9 +666,6 @@ impl MadaraStorageWrite for RocksDBStorage {
     /// * `new_tip_block_hash` - The block hash to revert to. This must be an existing block
     ///   that is an ancestor of the current chain tip. The block with this hash will become
     ///   the new chain tip after the revert completes.
-    /// * `l1_messages_rewind_hint` - Optional L1 block number hint used to safely rewind
-    ///   L1 message sync metadata when reverted L1-handler nonces are missing source-block
-    ///   mappings. If both DB-derived source blocks and a hint exist, the minimum is used.
     ///
     /// # Returns
     ///
@@ -694,8 +691,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     /// # Notes
     ///
     /// * L1-message preflight runs before destructive writes. If reverted L1-handler nonces
-    ///   are missing source-block mappings and no `l1_messages_rewind_hint` is provided,
-    ///   this function fails early without mutating chain state.
+    ///   are missing source-block mappings, this function fails early without mutating chain state.
     /// * After calling this function, the caller MUST refresh the backend's chain_tip cache
     ///   by reading from the database, as this function only updates the database state.
     /// * This function does not stop services or shutdown the process. Lifecycle side-effects
@@ -703,7 +699,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     /// * This is a destructive operation - all blocks after the target block are permanently removed.
     /// * The function is atomic - if any step fails, the database may be in an inconsistent state.
     /// ```
-    fn revert_to(&self, new_tip_block_hash: &Felt, l1_messages_rewind_hint: Option<u64>) -> Result<(u64, Felt)> {
+    fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
         tracing::info!("Reverting blockchain to block_hash={new_tip_block_hash:#x}");
 
         let target_block_n = self
@@ -767,25 +763,23 @@ impl MadaraStorageWrite for RocksDBStorage {
         }
         missing_source_block_nonces.sort_unstable();
 
-        if !missing_source_block_nonces.is_empty() && l1_messages_rewind_hint.is_none() {
+        if !missing_source_block_nonces.is_empty() {
             let sample: Vec<u64> = missing_source_block_nonces.iter().copied().take(8).collect();
-            anyhow::bail!(
-                "Cannot revert: missing L1 handler L1 block mapping for {} reverted L1-handler nonce(s) (sample={sample:?}). \
-                 Retry with l1_messages_rewind_hint to force a safe rewind point.",
+            bail!(
+                "Cannot revert: missing L1 handler L1 block mapping for {} reverted L1-handler nonce(s) (sample={sample:?}).",
                 missing_source_block_nonces.len()
             );
         }
 
-        let rewind_from_l1_block = [min_source_l1_block, l1_messages_rewind_hint].into_iter().flatten().min();
+        let rewind_from_l1_block = min_source_l1_block;
         // Persist the tip one block before the chosen rewind point so next sync replays boundary events.
         // This is intentional: L1 message ingestion/execution is idempotent by nonce and filters duplicates.
         let l1_messaging_sync_tip_after_revert = rewind_from_l1_block.map(|b| b.saturating_sub(1));
 
         tracing::info!(
-            "🔁 REORG preflight: reverted_l1_handler_nonces={}, min_source_l1_block={:?}, hint={:?}, next_l1_sync_tip={:?}",
+            "🔁 REORG preflight: reverted_l1_handler_nonces={}, min_source_l1_block={:?}, next_l1_sync_tip={:?}",
             reverted_l1_handler_nonces.len(),
             min_source_l1_block,
-            l1_messages_rewind_hint,
             l1_messaging_sync_tip_after_revert
         );
 

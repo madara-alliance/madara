@@ -29,7 +29,6 @@ pub fn block_with_state_update_pipeline(
     keep_pre_v0_13_2_hashes: bool,
     sync_bouncer_config: bool,
     disable_reorg: bool,
-    l1_messages_rewind_hint: Option<u64>,
 ) -> GatewayBlockSync {
     PipelineController::new(
         GatewaySyncSteps {
@@ -39,7 +38,6 @@ pub fn block_with_state_update_pipeline(
             keep_pre_v0_13_2_hashes,
             sync_bouncer_config,
             disable_reorg,
-            l1_messages_rewind_hint,
         },
         parallelization,
         batch_size,
@@ -55,7 +53,6 @@ pub struct GatewaySyncSteps {
     keep_pre_v0_13_2_hashes: bool,
     sync_bouncer_config: bool,
     disable_reorg: bool,
-    l1_messages_rewind_hint: Option<u64>,
 }
 
 impl GatewaySyncSteps {
@@ -336,8 +333,7 @@ impl PipelineSteps for GatewaySyncSteps {
                                         } else {
                                             // Normal reorg - found common ancestor
                                             tracing::info!("🔄 Triggering reorg to common ancestor hash={:#x}", common_ancestor_hash);
-                                            self._backend
-                                                .revert_to(&common_ancestor_hash, self.l1_messages_rewind_hint)?;
+                                            self._backend.revert_to(&common_ancestor_hash)?;
 
                                             self._backend.db.flush()?;
 
