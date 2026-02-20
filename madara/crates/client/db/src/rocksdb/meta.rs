@@ -25,6 +25,7 @@ const META_SNAP_SYNC_LATEST_BLOCK: &[u8] = b"SNAP_SYNC_LATEST_BLOCK";
 
 // Parallel-merkle staged/checkpoint metadata (kept in META_COLUMN).
 const META_PARALLEL_MERKLE_STAGED_STATE_PREFIX: &[u8] = b"PARALLEL_MERKLE_STAGED_STATE/";
+const META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX: &[u8] = b"PARALLEL_MERKLE_STAGED_HEADER/";
 const META_PARALLEL_MERKLE_CHECKPOINT_PREFIX: &[u8] = b"PARALLEL_MERKLE_CHECKPOINT/";
 const META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY: &[u8] = b"PARALLEL_MERKLE_LATEST_CHECKPOINT";
 
@@ -578,7 +579,7 @@ mod tests {
         assert!(storage.inner.has_parallel_merkle_checkpoint(5).unwrap());
         assert!(!storage.inner.has_parallel_merkle_checkpoint(8).unwrap());
         assert_eq!(storage.inner.get_parallel_merkle_latest_checkpoint().unwrap(), Some(5));
-        assert!(!storage.inner.has_parallel_merkle_staged_block(9).unwrap());
+        assert!(!storage.inner.parallel_merkle_has_staged_block(9).unwrap());
     }
 
     #[test]
