@@ -420,7 +420,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Writing transactions {block_n}");
         // Save l1 core contract nonce to tx mapping.
         self.inner
-            .messages_to_l2_write_trasactions(
+            .messages_to_l2_write_transactions(
                 txs.iter().filter_map(|v| v.transaction.as_l1_handler().zip(v.receipt.as_l1_handler())),
             )
             .with_context(|| format!("Updating L1 state when storing transactions for block_n={block_n}"))?;
@@ -486,6 +486,14 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner.append_preconfirmed_content(start_tx_index, txs).context("Appending to preconfirmed content to db")
     }
 
+    fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()> {
+        tracing::debug!("Write confirmed on l1 tip block_n={block_n:?}");
+        self.inner.write_confirmed_on_l1_tip(block_n).context("Writing confirmed on l1 tip")
+    }
+    fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
+        tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
+        self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
+    }
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
         tracing::debug!(
             "Write l1 handler tx hash by nonce core_contract_nonce={core_contract_nonce}, txn_hash={txn_hash:#x}"
@@ -531,6 +539,7 @@ impl MadaraStorageWrite for RocksDBStorage {
             )
         })
     }
+
     fn insert_message_to_l2_seen_marker(
         &self,
         l1_tx_hash: &mp_convert::L1TransactionHash,
@@ -566,22 +575,13 @@ impl MadaraStorageWrite for RocksDBStorage {
             },
         )
     }
-
-    fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()> {
-        tracing::debug!("Write chain info");
-        self.inner.write_chain_info(info)
-    }
     fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()> {
         tracing::debug!("Write devnet keys");
         self.inner.write_devnet_predeployed_keys(devnet_keys).context("Writing devnet predeployed keys to db")
     }
-    fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
-        tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
-        self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
-    }
-    fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()> {
-        tracing::debug!("Write confirmed on l1 tip block_n={block_n:?}");
-        self.inner.write_confirmed_on_l1_tip(block_n).context("Writing confirmed on l1 tip")
+    fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()> {
+        tracing::debug!("Write chain info");
+        self.inner.write_chain_info(info)
     }
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
         tracing::debug!("Write latest applied trie update block_n={block_n:?}");
@@ -621,10 +621,6 @@ impl MadaraStorageWrite for RocksDBStorage {
             .with_context(|| format!("Deleting external outbox transaction arrived_at_ms={}", id.arrived_at_ms))
     }
 
-    fn get_state_root_hash(&self) -> Result<Felt> {
-        get_state_root(self)
-    }
-
     fn apply_to_global_trie<'a>(
         &self,
         start_block_n: u64,
@@ -652,6 +648,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .remove_all_blocks_starting_from(starting_from_block_n)
             .with_context(|| format!("Removing all blocks in range [{starting_from_block_n}..] from database"))
+    }
+
+    fn get_state_root_hash(&self) -> Result<Felt> {
+        get_state_root(self)
     }
 
     /// Reverts the blockchain state to a specific block hash during a chain reorganization.

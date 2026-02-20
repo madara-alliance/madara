@@ -17,8 +17,7 @@ pub const L1_TO_L2_L1_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_l1_txn_h
 /// <core_contract_nonce 8 bytes> => txn hash
 pub const L1_TO_L2_TXN_HASH_BY_NONCE: Column = Column::new("l1_to_l2_txn_hash_by_nonce").set_point_lookup();
 /// <core_contract_nonce 8 bytes> => l1 block number (u64 be)
-pub const L1_TO_L2_SOURCE_L1_BLOCK_BY_NONCE: Column =
-    Column::new("l1_to_l2_source_l1_block_by_nonce").set_point_lookup();
+pub const L1_TO_L2_L1_BLOCK_BY_NONCE: Column = Column::new("l1_to_l2_l1_block_by_nonce").set_point_lookup();
 
 /// <l1_tx_hash 32 bytes> + <core_contract_nonce 8 bytes> => <l2_tx_hash 32 bytes> | empty
 ///
@@ -32,7 +31,7 @@ pub const L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE: Column =
 
 impl RocksDBStorageInner {
     /// Also removed the given txns from the pending column.
-    pub(super) fn messages_to_l2_write_trasactions<'a>(
+    pub(super) fn messages_to_l2_write_transactions<'a>(
         &self,
         txs: impl IntoIterator<Item = (&'a L1HandlerTransaction, &'a L1HandlerTransactionReceipt)>,
     ) -> Result<()> {
@@ -239,7 +238,7 @@ impl RocksDBStorageInner {
     }
 
     pub(super) fn get_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<u64>> {
-        let source_cf = self.get_column(L1_TO_L2_SOURCE_L1_BLOCK_BY_NONCE);
+        let source_cf = self.get_column(L1_TO_L2_L1_BLOCK_BY_NONCE);
         let Some(res) = self.db.get_pinned_cf(&source_cf, core_contract_nonce.to_be_bytes())? else {
             return Ok(None);
         };
@@ -247,7 +246,7 @@ impl RocksDBStorageInner {
     }
 
     pub(super) fn write_l1_handler_l1_block_by_nonce(&self, core_contract_nonce: u64, l1_block_n: u64) -> Result<()> {
-        let source_cf = self.get_column(L1_TO_L2_SOURCE_L1_BLOCK_BY_NONCE);
+        let source_cf = self.get_column(L1_TO_L2_L1_BLOCK_BY_NONCE);
         self.db.put_cf_opt(&source_cf, core_contract_nonce.to_be_bytes(), l1_block_n.to_be_bytes(), &self.writeopts)?;
         Ok(())
     }
@@ -296,7 +295,7 @@ impl RocksDBStorageInner {
         core_contract_nonces: impl IntoIterator<Item = u64>,
         batch: &mut WriteBatchWithTransaction,
     ) -> Result<()> {
-        let source_cf = self.get_column(L1_TO_L2_SOURCE_L1_BLOCK_BY_NONCE);
+        let source_cf = self.get_column(L1_TO_L2_L1_BLOCK_BY_NONCE);
         for core_contract_nonce in core_contract_nonces {
             batch.delete_cf(&source_cf, core_contract_nonce.to_be_bytes());
         }
