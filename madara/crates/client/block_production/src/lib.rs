@@ -202,6 +202,20 @@ pub(crate) struct CurrentBlockState {
     pub accumulated_stats: util::ExecutionStats,
 }
 
+pub(crate) fn remove_consumed_core_contract_nonces(
+    backend: &MadaraBackend,
+    consumed_core_contract_nonces: impl IntoIterator<Item = u64>,
+    operation: &str,
+) -> anyhow::Result<()> {
+    for l1_nonce in consumed_core_contract_nonces {
+        backend
+            .remove_pending_message_to_l2(l1_nonce)
+            .with_context(|| format!("removing consumed l1->l2 nonce during {operation}"))?;
+    }
+
+    Ok(())
+}
+
 impl CurrentBlockState {
     pub fn new(backend: Arc<MadaraBackend>, block_number: u64) -> Self {
         Self {
@@ -489,12 +503,11 @@ impl BlockProductionTask {
         // Copy bouncer_weights to move into the closure (BouncerWeights implements Copy)
         let bouncer_weights = *bouncer_weights;
         global_spawn_rayon_task(move || {
-            // Remove consumed L1 to L2 message nonces
-            for l1_nonce in consumed_core_contract_nonces {
-                backend
-                    .remove_pending_message_to_l2(l1_nonce)
-                    .context("Removing pending message to l2 from database")?;
-            }
+            remove_consumed_core_contract_nonces(
+                backend.as_ref(),
+                consumed_core_contract_nonces,
+                "preconfirmed block close",
+            )?;
 
             // Save bouncer weights
             backend

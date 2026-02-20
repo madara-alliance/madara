@@ -1,4 +1,4 @@
-use crate::{ParallelMerkleConfig, ParallelMerkleTrieLogMode};
+use crate::{remove_consumed_core_contract_nonces, ParallelMerkleConfig, ParallelMerkleTrieLogMode};
 use anyhow::Context;
 use blockifier::bouncer::BouncerWeights;
 use mc_db::{BonsaiOverlay, MadaraBackend, ParallelMerkleInMemoryTrieLogMode};
@@ -149,11 +149,11 @@ impl ParallelMerkleFinalizerWorker {
                 let mut block = payload.block;
                 block.state_diff = payload.state_diff;
 
-                for l1_nonce in payload.consumed_core_contract_nonces {
-                    backend_for_path_a
-                        .remove_pending_message_to_l2(l1_nonce)
-                        .context("removing consumed l1->l2 nonce in parallel finalizer")?;
-                }
+                remove_consumed_core_contract_nonces(
+                    backend_for_path_a.as_ref(),
+                    payload.consumed_core_contract_nonces,
+                    "parallel finalizer",
+                )?;
 
                 backend_for_path_a.write_access().write_parallel_merkle_staged_block_data(
                     &block,
