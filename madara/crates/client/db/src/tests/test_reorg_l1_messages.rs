@@ -18,6 +18,9 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
     let reverted_tx_hash = Felt::from(999u64);
     let source_l1_block = 120u64;
     let l1_tx_hash = L1TransactionHash([0x42; 32]);
+    let pending_only_nonce = 13u64;
+    let pending_only_l1_block = 110u64;
+    let pending_only_l1_tx_hash = L1TransactionHash([0x24; 32]);
 
     backend
         .write_l1_txn_hash_by_nonce(reverted_nonce, &l1_tx_hash)
@@ -37,6 +40,21 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
     backend
         .write_l1_handler_l1_block_by_nonce(reverted_nonce, source_l1_block)
         .expect("Writing source L1 block mapping should succeed");
+    backend
+        .write_l1_txn_hash_by_nonce(pending_only_nonce, &pending_only_l1_tx_hash)
+        .expect("Writing pending nonce->l1_tx_hash mapping should succeed");
+    assert!(backend
+        .insert_message_to_l2_seen_marker(&pending_only_l1_tx_hash, pending_only_nonce)
+        .expect("Writing pending l1_tx_hash+nonce seen marker should succeed"));
+    backend
+        .write_l1_handler_l1_block_by_nonce(pending_only_nonce, pending_only_l1_block)
+        .expect("Writing pending source L1 block mapping should succeed");
+    backend
+        .write_pending_message_to_l2(&L1HandlerTransactionWithFee::new(
+            mp_transactions::L1HandlerTransaction { nonce: pending_only_nonce, ..Default::default() },
+            1,
+        ))
+        .expect("Writing pending-only message should succeed");
     backend.write_l1_messaging_sync_tip(Some(10_000)).expect("Writing sync tip should succeed");
 
     let (new_tip_n, new_tip_hash) =
@@ -51,5 +69,12 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
     assert!(backend.get_l1_handler_l1_block_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     assert!(backend.get_l1_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     assert!(backend.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).expect("DB read should succeed").is_none());
-    assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(source_l1_block - 1));
+    assert!(backend.get_pending_message_to_l2(pending_only_nonce).expect("DB read should succeed").is_none());
+    assert!(backend.get_l1_handler_l1_block_by_nonce(pending_only_nonce).expect("DB read should succeed").is_none());
+    assert!(backend.get_l1_txn_hash_by_nonce(pending_only_nonce).expect("DB read should succeed").is_none());
+    assert!(backend
+        .get_messages_to_l2_by_l1_tx_hash(&pending_only_l1_tx_hash)
+        .expect("DB read should succeed")
+        .is_none());
+    assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(pending_only_l1_block - 1));
 }

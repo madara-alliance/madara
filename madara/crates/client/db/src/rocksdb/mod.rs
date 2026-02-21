@@ -158,7 +158,7 @@ impl RocksDBStorageInner {
                 self.events_remove_block(block_n, &mut batch)?;
                 let l1_handler_nonces: Vec<u64> =
                     transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
-                self.message_to_l2_remove_for_l1_handler_nonces(&l1_handler_nonces, &mut batch)?;
+                self.message_to_l2_remove_for_nonces(&l1_handler_nonces, &mut batch)?;
 
                 self.blocks_remove_block(&block_info, &mut batch)?;
             }
@@ -742,15 +742,24 @@ impl MadaraStorageWrite for RocksDBStorage {
             .inner
             .collect_reverted_l1_handler_nonces(target_block_n, current_tip)
             .context("Collecting reverted L1 handler nonces")?;
+        let pending_l1_message_nonces =
+            self.inner.get_all_pending_message_nonces().context("Collecting pending L1 message nonces")?;
+
+        let mut l1_message_nonces_to_cleanup =
+            Vec::with_capacity(reverted_l1_handler_nonces.len() + pending_l1_message_nonces.len());
+        l1_message_nonces_to_cleanup.extend(reverted_l1_handler_nonces.iter().copied());
+        l1_message_nonces_to_cleanup.extend(pending_l1_message_nonces.iter().copied());
+        l1_message_nonces_to_cleanup.sort_unstable();
+        l1_message_nonces_to_cleanup.dedup();
 
         let mut min_source_l1_block: Option<u64> = None;
         let mut missing_source_block_nonces = Vec::new();
 
-        for nonce in reverted_l1_handler_nonces.iter().copied() {
+        for nonce in l1_message_nonces_to_cleanup.iter().copied() {
             match self
                 .inner
                 .get_l1_handler_l1_block_by_nonce(nonce)
-                .with_context(|| format!("Fetching L1 handler L1 block for reverted nonce={nonce}"))?
+                .with_context(|| format!("Fetching L1 handler L1 block for cleanup nonce={nonce}"))?
             {
                 Some(l1_block_n) => {
                     min_source_l1_block = Some(match min_source_l1_block {
@@ -766,7 +775,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         if !missing_source_block_nonces.is_empty() {
             let sample: Vec<u64> = missing_source_block_nonces.iter().copied().take(8).collect();
             bail!(
-                "Cannot revert: missing L1 handler L1 block mapping for {} reverted L1-handler nonce(s) (sample={sample:?}).",
+                "Cannot revert: missing L1 handler L1 block mapping for {} L1 message nonce(s) scheduled for cleanup (sample={sample:?}).",
                 missing_source_block_nonces.len()
             );
         }
@@ -777,8 +786,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         let l1_messaging_sync_tip_after_revert = rewind_from_l1_block.map(|b| b.saturating_sub(1));
 
         tracing::info!(
-            "🔁 REORG preflight: reverted_l1_handler_nonces={}, min_source_l1_block={:?}, next_l1_sync_tip={:?}",
+            "🔁 REORG preflight: reverted_l1_handler_nonces={}, pending_l1_message_nonces={}, l1_message_cleanup_nonces={}, min_source_l1_block={:?}, next_l1_sync_tip={:?}",
             reverted_l1_handler_nonces.len(),
+            pending_l1_message_nonces.len(),
+            l1_message_nonces_to_cleanup.len(),
             min_source_l1_block,
             l1_messaging_sync_tip_after_revert
         );
@@ -833,6 +844,23 @@ impl MadaraStorageWrite for RocksDBStorage {
         let state_diffs =
             self.inner.block_db_revert(target_block_n, current_tip).context("Reverting blocks database")?;
         tracing::info!("✅ REORG: Block database reverted, collected {} state diffs", state_diffs.len());
+
+        // Pending messages are synced by L1 block and may have never been consumed on L2 yet.
+        // On revert, we intentionally drop all currently pending L1 messages and related L1 indices so
+        // the next L1 sync replays them from `l1_messaging_sync_tip_after_revert`.
+        tracing::info!(
+            "📦 REORG: Cleaning {} L1 message nonce entries (reverted + pending)",
+            l1_message_nonces_to_cleanup.len()
+        );
+        let mut l1_message_cleanup_batch = WriteBatchWithTransaction::default();
+        self.inner
+            .message_to_l2_remove_for_nonces(&l1_message_nonces_to_cleanup, &mut l1_message_cleanup_batch)
+            .context("Removing L1 message data for reverted/pending nonces")?;
+        self.inner
+            .db
+            .write_opt(l1_message_cleanup_batch, &self.inner.writeopts)
+            .context("Committing L1 message cleanup batch after reorg")?;
+        tracing::info!("✅ REORG: L1 message cleanup completed");
 
         // Then use those state diffs to revert contract and class state
         tracing::info!("📝 REORG: Starting contract database revert...");

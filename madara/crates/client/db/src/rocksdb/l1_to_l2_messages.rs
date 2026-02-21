@@ -225,6 +225,22 @@ impl RocksDBStorageInner {
         iter.next().transpose()?.transpose().map_err(Into::into)
     }
 
+    pub(super) fn get_all_pending_message_nonces(&self) -> Result<Vec<u64>> {
+        let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
+        let iter = DBIterator::new_cf(&self.db, &pending_cf, ReadOptions::default(), rocksdb::IteratorMode::Start)
+            .into_iter_keys(|k| k.to_vec());
+
+        let mut nonces = Vec::new();
+        for key in iter {
+            let key = key?;
+            if key.len() != size_of::<u64>() {
+                bail!("Invalid pending message nonce key length: expected 8, got {}", key.len());
+            }
+            nonces.push(u64::from_be_bytes(key.as_slice().try_into().expect("slice len checked")));
+        }
+        Ok(nonces)
+    }
+
     pub(super) fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         let on_l2_cf = self.get_column(L1_TO_L2_TXN_HASH_BY_NONCE);
         let Some(res) = self.db.get_pinned_cf(&on_l2_cf, core_contract_nonce.to_be_bytes())? else { return Ok(None) };
@@ -275,26 +291,26 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    pub(super) fn message_to_l2_remove_for_l1_handler_nonces(
+    pub(super) fn message_to_l2_remove_for_nonces(
         &self,
-        l1_handler_nonces: &[u64],
+        nonces: &[u64],
         batch: &mut WriteBatchWithTransaction,
     ) -> Result<()> {
-        // TODO: update the code to remove all pending
-        if l1_handler_nonces.is_empty() {
+        if nonces.is_empty() {
             return Ok(());
         }
 
-        let l1_tx_hash_mappings: Vec<_> = l1_handler_nonces
+        // get the keys for deleting from (nonce|l1_hash -> l2_hash) mapping column before we delete from (nonce -> l1 hash) mapping column
+        let l1_tx_hash_mappings: Vec<_> = nonces
             .iter()
             .copied()
             .filter_map(|nonce| self.get_l1_txn_hash_by_nonce(nonce).transpose().map(|hash| hash.map(|h| (nonce, h))))
             .collect::<Result<_>>()?;
 
-        self.message_to_l2_remove_txns(l1_handler_nonces.iter().copied(), batch)?;
-        self.message_to_l2_remove_pending(l1_handler_nonces.iter().copied(), batch)?;
-        self.message_to_l2_remove_l1_handler_l1_block_by_nonces(l1_handler_nonces.iter().copied(), batch)?;
-        self.message_to_l2_remove_l1_txn_hash_by_nonces(l1_handler_nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_txns(nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_pending(nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_l1_block_by_nonces(nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_l1_txn_hash_by_nonces(nonces.iter().copied(), batch)?;
         self.message_to_l2_remove_l2_txn_hash_by_l1_txn_hash_and_nonce(l1_tx_hash_mappings, batch)?;
         Ok(())
     }
@@ -324,7 +340,7 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
-    pub(super) fn message_to_l2_remove_l1_handler_l1_block_by_nonces(
+    pub(super) fn message_to_l2_remove_l1_block_by_nonces(
         &self,
         core_contract_nonces: impl IntoIterator<Item = u64>,
         batch: &mut WriteBatchWithTransaction,

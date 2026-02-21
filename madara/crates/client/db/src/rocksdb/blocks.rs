@@ -399,24 +399,8 @@ impl RocksDBStorageInner {
                 batch.delete_cf(&block_n_to_state_diff, block_n_u32.to_be_bytes());
             }
 
-            // Get transactions for this block to handle L1 handler removal
-            let transactions: Vec<_> =
-                self.get_block_transactions(block_n, 0).take(block_info.tx_hashes.len()).collect::<Result<_>>()?;
-
             // Remove events for this block
             self.events_remove_block(block_n, &mut batch)?;
-
-            let l1_handler_nonces: Vec<u64> =
-                transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)).collect();
-            let l1_handler_count = l1_handler_nonces.len();
-            if l1_handler_count > 0 {
-                tracing::debug!(
-                    "📦 REORG [block_db_revert]: Removing {} L1->L2 messages from block {}",
-                    l1_handler_count,
-                    block_n
-                );
-                self.message_to_l2_remove_for_l1_handler_nonces(&l1_handler_nonces, &mut batch)?;
-            }
 
             tracing::debug!(
                 "📦 REORG [block_db_revert]: Removing {} transactions from block {}",
