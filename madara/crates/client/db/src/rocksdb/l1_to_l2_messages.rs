@@ -280,13 +280,47 @@ impl RocksDBStorageInner {
         l1_handler_nonces: &[u64],
         batch: &mut WriteBatchWithTransaction,
     ) -> Result<()> {
+        // TODO: update the code to remove all pending
         if l1_handler_nonces.is_empty() {
             return Ok(());
         }
 
+        let l1_tx_hash_mappings: Vec<_> = l1_handler_nonces
+            .iter()
+            .copied()
+            .filter_map(|nonce| self.get_l1_txn_hash_by_nonce(nonce).transpose().map(|hash| hash.map(|h| (nonce, h))))
+            .collect::<Result<_>>()?;
+
         self.message_to_l2_remove_txns(l1_handler_nonces.iter().copied(), batch)?;
         self.message_to_l2_remove_pending(l1_handler_nonces.iter().copied(), batch)?;
         self.message_to_l2_remove_l1_handler_l1_block_by_nonces(l1_handler_nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_l1_txn_hash_by_nonces(l1_handler_nonces.iter().copied(), batch)?;
+        self.message_to_l2_remove_l2_txn_hash_by_l1_txn_hash_and_nonce(l1_tx_hash_mappings, batch)?;
+        Ok(())
+    }
+
+    pub(super) fn message_to_l2_remove_l1_txn_hash_by_nonces(
+        &self,
+        core_contract_nonces: impl IntoIterator<Item = u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let l1_txn_hash_cf = self.get_column(L1_TO_L2_L1_TXN_HASH_BY_NONCE);
+        for core_contract_nonce in core_contract_nonces {
+            batch.delete_cf(&l1_txn_hash_cf, core_contract_nonce.to_be_bytes());
+        }
+        Ok(())
+    }
+
+    pub(super) fn message_to_l2_remove_l2_txn_hash_by_l1_txn_hash_and_nonce(
+        &self,
+        l1_tx_hash_mappings: impl IntoIterator<Item = (u64, L1TransactionHash)>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let by_l1_tx_hash_cf = self.get_column(L1_TO_L2_L2_TXN_HASH_BY_L1_TXN_HASH_AND_NONCE);
+        for (core_contract_nonce, l1_tx_hash) in l1_tx_hash_mappings {
+            let by_l1_key = Self::message_to_l2_by_l1_tx_key(&l1_tx_hash, core_contract_nonce);
+            batch.delete_cf(&by_l1_tx_hash_cf, by_l1_key);
+        }
         Ok(())
     }
 

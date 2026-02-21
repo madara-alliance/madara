@@ -5,7 +5,7 @@ use crate::{
     MadaraStorageRead,
 };
 use mp_chain_config::ChainConfig;
-use mp_convert::Felt;
+use mp_convert::{Felt, L1TransactionHash};
 use mp_transactions::L1HandlerTransactionWithFee;
 use std::sync::Arc;
 
@@ -17,6 +17,14 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
     let reverted_nonce = 9u64;
     let reverted_tx_hash = Felt::from(999u64);
     let source_l1_block = 120u64;
+    let l1_tx_hash = L1TransactionHash([0x42; 32]);
+
+    backend
+        .write_l1_txn_hash_by_nonce(reverted_nonce, &l1_tx_hash)
+        .expect("Writing nonce->l1_tx_hash mapping should succeed");
+    assert!(backend
+        .insert_message_to_l2_seen_marker(&l1_tx_hash, reverted_nonce)
+        .expect("Writing l1_tx_hash+nonce seen marker should succeed"));
 
     add_test_block(&backend, 1, vec![l1_handler_tx_with_receipt(reverted_nonce, reverted_tx_hash)]);
 
@@ -41,5 +49,7 @@ async fn revert_cleans_l1_message_state_and_rewinds_sync_tip_from_source_metadat
     assert!(backend.get_l1_handler_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
     assert!(backend.get_pending_message_to_l2(reverted_nonce).expect("DB read should succeed").is_none());
     assert!(backend.get_l1_handler_l1_block_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
+    assert!(backend.get_l1_txn_hash_by_nonce(reverted_nonce).expect("DB read should succeed").is_none());
+    assert!(backend.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).expect("DB read should succeed").is_none());
     assert_eq!(backend.get_l1_messaging_sync_tip().expect("DB read should succeed"), Some(source_l1_block - 1));
 }
