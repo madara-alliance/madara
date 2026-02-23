@@ -184,6 +184,7 @@ impl RocksDBStorageInner {
         block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         bouncer_weights: Option<&BouncerWeights>,
+        consumed_core_contract_nonces: impl IntoIterator<Item = u64>,
         chain_id: Felt,
     ) -> Result<()> {
         let block_n = block.header.block_number;
@@ -204,9 +205,10 @@ impl RocksDBStorageInner {
         // A single per-block staged-state key in META_COLUMN allows idempotent resume.
         let staged_state = self.parallel_merkle_get_staged_state(block_n)?;
 
-        // Stage 1: Transactions + indices + staged header + txns marker (single atomic batch).
+        // Stage 1: Pending L1->L2 nonce removals + transactions + indices + staged header + txns marker (single atomic batch).
         if staged_state.is_none() {
             let mut batch = WriteBatchWithTransaction::default();
+            self.remove_pending_messages_to_l2_in_batch(consumed_core_contract_nonces, &mut batch);
             self.parallel_merkle_set_staged_header(block_n, &block.header, &mut batch)?;
             self.parallel_merkle_set_staged_state(block_n, ParallelMerkleStagedState::Txns, &mut batch)?;
             self.blocks_store_transactions_with_indices_to_batch(block_n, &block.transactions, &mut batch)?;
@@ -337,6 +339,23 @@ impl RocksDBStorage {
         &self.inner.db
     }
 
+    pub fn write_parallel_merkle_staged_block_data_with_consumed_nonces(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+        consumed_core_contract_nonces: impl IntoIterator<Item = u64>,
+        chain_id: Felt,
+    ) -> Result<()> {
+        self.inner.write_parallel_merkle_staged_block_data(
+            block,
+            classes,
+            bouncer_weights,
+            consumed_core_contract_nonces,
+            chain_id,
+        )
+    }
+
     pub fn compute_parallel_merkle_root_from_snapshot_base(
         &self,
         snapshot_base_block_n: u64,
@@ -345,11 +364,14 @@ impl RocksDBStorage {
         include_overlay: bool,
         trie_log_mode: TrieLogMode,
     ) -> Result<InMemoryRootComputation> {
-        let (_, snapshot) = self.snapshots.get_closest(snapshot_base_block_n);
+        let (snapshot_block_n, snapshot) =
+            self.snapshots.get_at_or_before(snapshot_base_block_n).with_context(|| {
+                format!("No compatible snapshot at-or-before requested snapshot_base_block_n={snapshot_base_block_n}")
+            })?;
         in_memory::compute_root_from_snapshot(self, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
             .with_context(|| {
                 format!(
-                    "Computing parallel merkle root from snapshot_base_block_n={snapshot_base_block_n} for block_n={block_n}"
+                    "Computing parallel merkle root from snapshot_base_block_n={snapshot_base_block_n} using snapshot_at={snapshot_block_n:?} for block_n={block_n}"
                 )
             })
     }
@@ -570,9 +592,14 @@ impl MadaraStorageWrite for RocksDBStorage {
         chain_id: Felt,
     ) -> Result<()> {
         tracing::debug!("Writing parallel merkle staged block data block_n={}", block.header.block_number);
-        self.inner
-            .write_parallel_merkle_staged_block_data(block, classes, bouncer_weights, chain_id)
-            .with_context(|| format!("Writing parallel merkle staged block data block_n={}", block.header.block_number))
+        self.write_parallel_merkle_staged_block_data_with_consumed_nonces(
+            block,
+            classes,
+            bouncer_weights,
+            std::iter::empty(),
+            chain_id,
+        )
+        .with_context(|| format!("Writing parallel merkle staged block data block_n={}", block.header.block_number))
     }
 
     fn confirm_parallel_merkle_staged_block(&self, header: BlockHeaderWithSignatures) -> Result<()> {

@@ -16,7 +16,7 @@ use mp_class::ClassInfo;
 use mp_convert::{Felt, ToFelt};
 use mp_receipt::{Event, EventWithTransactionHash, InvokeTransactionReceipt};
 use mp_state_update::{ContractStorageDiffItem, MigratedClassItem, NonceUpdate, StateDiff, StorageEntry};
-use mp_transactions::{validated::TxTimestamp, InvokeTransactionV0};
+use mp_transactions::{validated::TxTimestamp, InvokeTransactionV0, L1HandlerTransaction, L1HandlerTransactionWithFee};
 
 fn make_staged_block(block_n: u64, tx_hash: Felt) -> FullBlockWithoutCommitments {
     let header = PreconfirmedHeader { block_number: block_n, ..Default::default() };
@@ -66,6 +66,18 @@ fn make_preconfirmed_executed_tx(tx_hash: Felt) -> PreconfirmedExecutedTransacti
         arrived_at: TxTimestamp::now(),
         paid_fee_on_l1: None,
     }
+}
+
+fn make_pending_l1_to_l2_message(core_contract_nonce: u64) -> L1HandlerTransactionWithFee {
+    L1HandlerTransactionWithFee::new(
+        L1HandlerTransaction {
+            nonce: core_contract_nonce,
+            contract_address: Felt::from_hex_unchecked("0x1234"),
+            entry_point_selector: Felt::from_hex_unchecked("0x99"),
+            ..Default::default()
+        },
+        10,
+    )
 }
 
 #[tokio::test]
@@ -132,6 +144,38 @@ async fn write_parallel_merkle_staged_block_data_rejects_confirmed_block() {
         .write_parallel_merkle_staged_block_data(&block, &[], None)
         .expect_err("confirmed block should not be staged again");
     assert!(format!("{err:#}").contains("already confirmed"));
+}
+
+#[tokio::test]
+async fn write_parallel_merkle_staged_block_data_stage_one_is_atomic_with_nonce_removals() {
+    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+    let consumed_nonce = 77_u64;
+    let pending = make_pending_l1_to_l2_message(consumed_nonce);
+    backend.write_pending_message_to_l2(&pending).expect("pending message should be stored");
+
+    // Use an overflowed block number so stage-1 fails before batch commit.
+    let block = make_staged_block(u64::MAX, Felt::from_hex_unchecked("0xdead"));
+    let err = backend
+        .write_access()
+        .write_parallel_merkle_staged_block_data_with_consumed_nonces(&block, &[], None, [consumed_nonce])
+        .expect_err("staged write should fail for overflowed block number");
+    assert!(format!("{err:#}").contains("Converting block_n to u32"));
+
+    // Stage-1 is atomic: nonce removal and staged metadata must not be committed on failure.
+    assert_eq!(
+        backend.get_pending_message_to_l2(consumed_nonce).unwrap(),
+        Some(pending),
+        "nonce removal must rollback when stage-1 fails"
+    );
+    assert!(
+        !backend.has_parallel_merkle_staged_block(block.header.block_number).unwrap(),
+        "staged marker must not be written on stage-1 failure"
+    );
+    assert_eq!(
+        backend.get_parallel_merkle_staged_block_header(block.header.block_number).unwrap(),
+        None,
+        "staged header must not be written on stage-1 failure"
+    );
 }
 
 #[tokio::test]
@@ -391,5 +435,34 @@ async fn staged_tx_hash_visibility_is_hidden_until_confirmation() {
     assert!(
         backend.view_on_latest_confirmed().find_transaction_by_hash(&tx_hash).unwrap().is_some(),
         "tx should become visible after confirmation"
+    );
+}
+
+#[tokio::test]
+async fn compute_parallel_merkle_root_from_snapshot_base_rejects_incompatible_snapshot_base() {
+    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+    for block_n in 0..=2_u64 {
+        let block = make_staged_block(block_n, Felt::from(0x800_u64 + block_n));
+        backend
+            .write_access()
+            .add_full_block_with_classes(&block, &[], /* pre_v0_13_2_hash_override */ true)
+            .expect("confirmed write should succeed");
+    }
+
+    let err = backend
+        .write_access()
+        .compute_parallel_merkle_root_from_snapshot_base(
+            0,
+            3,
+            &StateDiff::default(),
+            false,
+            crate::ParallelMerkleInMemoryTrieLogMode::Off,
+        )
+        .expect_err("older-than-head snapshot base without historical snapshots must fail");
+
+    let err_text = format!("{err:#}");
+    assert!(
+        err_text.contains("No compatible snapshot at-or-before requested snapshot_base_block_n=0"),
+        "unexpected error: {err_text}"
     );
 }

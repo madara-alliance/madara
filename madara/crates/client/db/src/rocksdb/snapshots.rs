@@ -85,6 +85,25 @@ impl Snapshots {
             // snapshots are disabled. In these cases we want to return the snapshot for the current latest block.
             .unwrap_or_else(|| (inner.head_block_n, Arc::clone(&inner.head)))
     }
+
+    /// Get the closest snapshot at or before the provided `block_n`.
+    ///
+    /// Returns `None` if the only available persisted snapshot is strictly newer than `block_n`.
+    /// For an empty chain (`head_block_n == None`), this returns the current head snapshot.
+    #[tracing::instrument(skip(self))]
+    pub fn get_at_or_before(&self, block_n: u64) -> Option<(Option<u64>, SnapshotRef)> {
+        let inner = self.inner.read().expect("Poisoned lock");
+
+        if let Some((snapshot_block_n, snapshot)) = inner.historical.range(..=block_n).next_back() {
+            return Some((Some(*snapshot_block_n), Arc::clone(snapshot)));
+        }
+
+        match inner.head_block_n {
+            Some(head_block_n) if head_block_n <= block_n => Some((Some(head_block_n), Arc::clone(&inner.head))),
+            Some(_) => None,
+            None => Some((None, Arc::clone(&inner.head))),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -180,5 +199,44 @@ mod tests {
             let (block_n, _) = storage.snapshots.get_closest(expected_block);
             assert_eq!(block_n, Some(expected_block), "Snapshot at block {} should exist", expected_block);
         }
+    }
+
+    #[test]
+    fn test_get_at_or_before_rejects_newer_only_head_snapshot() {
+        let config = RocksDBConfig::default();
+        let (_temp_dir, storage) = create_test_storage(config);
+
+        storage.snapshots.set_new_head(10);
+        assert!(
+            storage.snapshots.get_at_or_before(5).is_none(),
+            "newer head-only snapshot must not satisfy older snapshot base request"
+        );
+    }
+
+    #[test]
+    fn test_get_at_or_before_returns_head_for_equal_or_newer_request() {
+        let config = RocksDBConfig::default();
+        let (_temp_dir, storage) = create_test_storage(config);
+
+        storage.snapshots.set_new_head(10);
+        let (snapshot_block_n, _) = storage.snapshots.get_at_or_before(10).expect("equal head should be returned");
+        assert_eq!(snapshot_block_n, Some(10));
+
+        let (snapshot_block_n, _) =
+            storage.snapshots.get_at_or_before(11).expect("head should be returned for newer request");
+        assert_eq!(snapshot_block_n, Some(10));
+    }
+
+    #[test]
+    fn test_get_at_or_before_prefers_historical_snapshot_when_available() {
+        let config = RocksDBConfig { max_kept_snapshots: Some(5), snapshot_interval: 5, ..Default::default() };
+        let (_temp_dir, storage) = create_test_storage(config);
+
+        for block_n in 0..=20 {
+            storage.snapshots.set_new_head(block_n);
+        }
+
+        let (snapshot_block_n, _) = storage.snapshots.get_at_or_before(17).expect("historical snapshot should exist");
+        assert_eq!(snapshot_block_n, Some(15));
     }
 }

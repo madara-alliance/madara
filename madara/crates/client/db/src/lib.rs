@@ -1120,6 +1120,22 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 }
 
 impl MadaraBackendWriter<RocksDBStorage> {
+    pub fn write_parallel_merkle_staged_block_data_with_consumed_nonces(
+        &self,
+        block: &FullBlockWithoutCommitments,
+        classes: &[ConvertedClass],
+        bouncer_weights: Option<&BouncerWeights>,
+        consumed_core_contract_nonces: impl IntoIterator<Item = u64>,
+    ) -> Result<()> {
+        self.inner.db.write_parallel_merkle_staged_block_data_with_consumed_nonces(
+            block,
+            classes,
+            bouncer_weights,
+            consumed_core_contract_nonces,
+            self.inner.chain_config.chain_id.to_felt(),
+        )
+    }
+
     /// Compute state root for a cumulative state diff from a specific persisted snapshot base.
     pub fn compute_parallel_merkle_root_from_snapshot_base(
         &self,

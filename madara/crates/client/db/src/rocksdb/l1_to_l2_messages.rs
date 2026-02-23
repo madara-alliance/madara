@@ -200,6 +200,17 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    pub(super) fn remove_pending_messages_to_l2_in_batch(
+        &self,
+        core_contract_nonces: impl IntoIterator<Item = u64>,
+        batch: &mut WriteBatchWithTransaction,
+    ) {
+        let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
+        for core_contract_nonce in core_contract_nonces {
+            batch.delete_cf(&pending_cf, core_contract_nonce.to_be_bytes());
+        }
+    }
+
     pub(super) fn get_pending_message_to_l2(
         &self,
         core_contract_nonce: u64,
