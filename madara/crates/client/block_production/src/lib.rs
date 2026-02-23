@@ -957,8 +957,18 @@ impl BlockProductionTask {
                 state_diff,
                 consumed_core_contract_nonces: state.consumed_core_contract_nonces,
                 bouncer_weights: block_exec_summary.bouncer_weights,
+                execution_stats: state.accumulated_stats.clone(),
+                block_production_duration: state.block_start_time.elapsed(),
             };
             finalizer.submit(payload).await.context("queueing block in parallel finalizer")?;
+            tracing::info!(
+                target: "close_block",
+                block_number = state.block_number,
+                tx_count = n_txs,
+                event_count = event_count,
+                close_preconfirmed_ms = close_preconfirmed_start.elapsed().as_secs_f64() * 1000.0,
+                "close_block_queued_for_parallel_finalizer"
+            );
         } else {
             let db_result = Self::close_preconfirmed_block_with_state_diff(
                 self.backend.clone(),

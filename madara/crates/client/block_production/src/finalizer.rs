@@ -1,3 +1,4 @@
+use crate::util::ExecutionStats;
 use crate::{ParallelMerkleConfig, ParallelMerkleTrieLogMode};
 use anyhow::Context;
 use blockifier::bouncer::BouncerWeights;
@@ -6,8 +7,9 @@ use mp_block::FullBlockWithoutCommitments;
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::{sync::mpsc, task::JoinSet};
 
 /// Finalized block payload handed off from block production to the parallel finalizer.
@@ -15,6 +17,7 @@ use tokio::{sync::mpsc, task::JoinSet};
 /// This contains all data required by both finalizer lanes:
 /// - DB staging lane (block/classes/weights/consumed nonces)
 /// - Root compute lane (state diff for cumulative merklization)
+/// - Observability context used to emit `close_block_complete` on parallel confirm
 #[derive(Debug)]
 pub struct FinalizedBlockPayload {
     pub block_n: u64,
@@ -23,6 +26,8 @@ pub struct FinalizedBlockPayload {
     pub state_diff: StateDiff,
     pub consumed_core_contract_nonces: HashSet<u64>,
     pub bouncer_weights: BouncerWeights,
+    pub execution_stats: ExecutionStats,
+    pub block_production_duration: Duration,
 }
 
 #[derive(Clone)]
@@ -50,6 +55,45 @@ struct RootReady {
 struct LaneFailure {
     lane: &'static str,
     message: String,
+}
+
+#[derive(Debug, Clone)]
+struct BlockCloseLogContext {
+    queued_at: Instant,
+    block_production_duration: Duration,
+    execution_stats: ExecutionStats,
+    tx_count: u64,
+    event_count: u64,
+    state_diff_len: usize,
+    declared_classes_count: usize,
+    deployed_contracts_count: usize,
+    storage_diffs_count: usize,
+    nonce_updates_count: usize,
+    consumed_l1_nonces_count: usize,
+    bouncer_weights: BouncerWeights,
+    db_staging_ms: Option<f64>,
+    root_compute_ms: Option<f64>,
+}
+
+impl BlockCloseLogContext {
+    fn from_payload(payload: &FinalizedBlockPayload) -> Self {
+        Self {
+            queued_at: Instant::now(),
+            block_production_duration: payload.block_production_duration,
+            execution_stats: payload.execution_stats.clone(),
+            tx_count: payload.block.transactions.len() as u64,
+            event_count: payload.block.events.len() as u64,
+            state_diff_len: payload.state_diff.len(),
+            declared_classes_count: payload.state_diff.declared_classes.len(),
+            deployed_contracts_count: payload.state_diff.deployed_contracts.len(),
+            storage_diffs_count: payload.state_diff.storage_diffs.len(),
+            nonce_updates_count: payload.state_diff.nonces.len(),
+            consumed_l1_nonces_count: payload.consumed_core_contract_nonces.len(),
+            bouncer_weights: payload.bouncer_weights,
+            db_staging_ms: None,
+            root_compute_ms: None,
+        }
+    }
 }
 
 pub fn spawn_parallel_merkle_finalizer(
@@ -86,6 +130,7 @@ pub fn spawn_parallel_merkle_finalizer(
         pending_epoch_diffs: BTreeMap::new(),
         persisted_ready: BTreeSet::new(),
         roots_ready: BTreeMap::new(),
+        close_block_logs: BTreeMap::new(),
         db_staging_jobs: JoinSet::new(),
         root_compute_jobs: JoinSet::new(),
         max_inflight_blocks: max_inflight,
@@ -94,7 +139,11 @@ pub fn spawn_parallel_merkle_finalizer(
     };
     tokio::spawn(async move {
         if let Err(error) = worker.run(receiver).await {
-            tracing::error!(%error, "parallel merkle finalizer worker terminated with error");
+            tracing::error!(
+                target: "close_block",
+                error = %error,
+                "parallel_finalizer_worker_terminated"
+            );
         }
     });
 
@@ -121,8 +170,9 @@ struct ParallelMerkleFinalizerWorker {
     pending_epoch_diffs: BTreeMap<u64, StateDiff>,
     persisted_ready: BTreeSet<u64>,
     roots_ready: BTreeMap<u64, RootReady>,
-    db_staging_jobs: JoinSet<(u64, anyhow::Result<()>)>,
-    root_compute_jobs: JoinSet<(u64, anyhow::Result<RootReady>)>,
+    close_block_logs: BTreeMap<u64, BlockCloseLogContext>,
+    db_staging_jobs: JoinSet<(u64, anyhow::Result<Duration>)>,
+    root_compute_jobs: JoinSet<(u64, anyhow::Result<(RootReady, Duration)>)>,
     max_inflight_blocks: usize,
     scheduled_blocks: BTreeSet<u64>,
     failed_blocks: BTreeMap<u64, LaneFailure>,
@@ -165,8 +215,11 @@ impl ParallelMerkleFinalizerWorker {
                 Some(joined) = self.db_staging_jobs.join_next(), if !self.db_staging_jobs.is_empty() => {
                     let (block_n, db_staging_result) = joined.context("joining db-staging persistence job")?;
                     match db_staging_result {
-                        Ok(()) => {
+                        Ok(duration) => {
                             self.persisted_ready.insert(block_n);
+                            if let Some(log_ctx) = self.close_block_logs.get_mut(&block_n) {
+                                log_ctx.db_staging_ms = Some(duration.as_secs_f64() * 1000.0);
+                            }
                         }
                         Err(error) => {
                             self.record_block_failure(block_n, "db-staging", error);
@@ -176,8 +229,11 @@ impl ParallelMerkleFinalizerWorker {
                 Some(joined) = self.root_compute_jobs.join_next(), if !self.root_compute_jobs.is_empty() => {
                     let (block_n, root_result) = joined.context("joining root-compute job")?;
                     match root_result {
-                        Ok(root_ready) => {
+                        Ok((root_ready, duration)) => {
                             self.roots_ready.insert(block_n, root_ready);
+                            if let Some(log_ctx) = self.close_block_logs.get_mut(&block_n) {
+                                log_ctx.root_compute_ms = Some(duration.as_secs_f64() * 1000.0);
+                            }
                         }
                         Err(error) => {
                             self.record_block_failure(block_n, "root-compute", error);
@@ -217,6 +273,7 @@ impl ParallelMerkleFinalizerWorker {
             );
             return;
         }
+        self.close_block_logs.insert(block_n, BlockCloseLogContext::from_payload(&payload));
 
         let is_boundary = Self::is_boundary_for(self.flush_interval, block_n);
 
@@ -231,6 +288,7 @@ impl ParallelMerkleFinalizerWorker {
         let backend_for_root_compute = Arc::clone(&self.backend);
 
         self.db_staging_jobs.spawn(async move {
+            let started_at = Instant::now();
             let db_staging_result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
                 let mut block = payload.block;
                 block.state_diff = payload.state_diff;
@@ -245,11 +303,13 @@ impl ParallelMerkleFinalizerWorker {
             })
             .await
             .context("joining blocking db-staging worker")
-            .and_then(|result| result);
+            .and_then(|result| result)
+            .map(|()| started_at.elapsed());
             (block_n, db_staging_result)
         });
 
         self.root_compute_jobs.spawn(async move {
+            let started_at = Instant::now();
             let root_result = tokio::task::spawn_blocking(move || -> anyhow::Result<RootReady> {
                 let computed =
                     backend_for_root_compute.write_access().compute_parallel_merkle_root_from_snapshot_base(
@@ -264,7 +324,8 @@ impl ParallelMerkleFinalizerWorker {
             })
             .await
             .context("joining blocking root-compute worker")
-            .and_then(|result| result);
+            .and_then(|result| result)
+            .map(|root_ready| (root_ready, started_at.elapsed()));
             (block_n, root_result)
         });
     }
@@ -303,7 +364,9 @@ impl ParallelMerkleFinalizerWorker {
                 break;
             };
 
-            self.backend
+            let confirm_started_at = Instant::now();
+            let confirm_result = self
+                .backend
                 .write_access()
                 .confirm_parallel_merkle_staged_block_with_root(
                     self.next_confirm,
@@ -311,22 +374,75 @@ impl ParallelMerkleFinalizerWorker {
                     /* pre_v0_13_2_hash_override */ true,
                 )
                 .with_context(|| format!("confirming staged block #{} in parallel finalizer", self.next_confirm))?;
+            let parallel_confirm_ms = confirm_started_at.elapsed().as_secs_f64() * 1000.0;
 
+            let mut parallel_boundary_flush_ms = 0.0;
             if root_ready.is_boundary {
                 let overlay = root_ready
                     .overlay
                     .as_ref()
                     .with_context(|| format!("missing boundary overlay for block #{}", self.next_confirm))?;
 
+                let flush_started_at = Instant::now();
                 self.backend
                     .write_access()
                     .flush_parallel_merkle_overlay_and_checkpoint(self.next_confirm, overlay, self.trie_log_mode)
                     .with_context(|| {
                         format!("flushing boundary overlay/checkpoint for block #{}", self.next_confirm)
                     })?;
+                parallel_boundary_flush_ms = flush_started_at.elapsed().as_secs_f64() * 1000.0;
 
                 self.snapshot_base_block_n = self.next_confirm;
                 self.pending_epoch_diffs = self.pending_epoch_diffs.split_off(&(self.next_confirm + 1));
+            }
+
+            if let Some(log_ctx) = self.close_block_logs.remove(&self.next_confirm) {
+                let timings = &confirm_result.timings;
+                let close_block_total_ms = log_ctx.queued_at.elapsed().as_secs_f64() * 1000.0;
+                let close_preconfirmed_ms = log_ctx.db_staging_ms.unwrap_or_default();
+                tracing::info!(
+                    target: "close_block",
+                    block_number = self.next_confirm,
+                    tx_count = log_ctx.tx_count,
+                    event_count = log_ctx.event_count,
+                    close_block_total_ms = close_block_total_ms,
+                    block_close_ms = close_block_total_ms,
+                    close_preconfirmed_ms = close_preconfirmed_ms,
+                    block_production_ms = log_ctx.block_production_duration.as_secs_f64() * 1000.0,
+                    batches_executed = log_ctx.execution_stats.n_batches,
+                    txs_added_to_block = log_ctx.execution_stats.n_added_to_block,
+                    txs_executed = log_ctx.execution_stats.n_executed,
+                    txs_reverted = log_ctx.execution_stats.n_reverted,
+                    txs_rejected = log_ctx.execution_stats.n_rejected,
+                    classes_declared = log_ctx.execution_stats.declared_classes,
+                    l2_gas_consumed = log_ctx.execution_stats.l2_gas_consumed,
+                    state_diff_len = log_ctx.state_diff_len,
+                    declared_classes = log_ctx.declared_classes_count,
+                    deployed_contracts = log_ctx.deployed_contracts_count,
+                    storage_diffs = log_ctx.storage_diffs_count,
+                    nonce_updates = log_ctx.nonce_updates_count,
+                    consumed_l1_nonces = log_ctx.consumed_l1_nonces_count,
+                    bouncer_l1_gas = log_ctx.bouncer_weights.l1_gas,
+                    bouncer_sierra_gas = log_ctx.bouncer_weights.sierra_gas.0,
+                    bouncer_n_events = log_ctx.bouncer_weights.n_events,
+                    bouncer_message_segment_length = log_ctx.bouncer_weights.message_segment_length,
+                    bouncer_state_diff_size = log_ctx.bouncer_weights.state_diff_size,
+                    get_full_block_ms = timings.get_full_block_with_classes.as_secs_f64() * 1000.0,
+                    commitments_ms = timings.block_commitments_compute.as_secs_f64() * 1000.0,
+                    merklization_ms = timings.merklization.as_secs_f64() * 1000.0,
+                    contract_trie_ms = timings.contract_trie_root.as_secs_f64() * 1000.0,
+                    class_trie_ms = timings.class_trie_root.as_secs_f64() * 1000.0,
+                    contract_storage_trie_commit_ms = timings.contract_storage_trie_commit.as_secs_f64() * 1000.0,
+                    contract_trie_commit_ms = timings.contract_trie_commit.as_secs_f64() * 1000.0,
+                    class_trie_commit_ms = timings.class_trie_commit.as_secs_f64() * 1000.0,
+                    block_hash_ms = timings.block_hash_compute.as_secs_f64() * 1000.0,
+                    db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
+                    parallel_db_staging_ms = close_preconfirmed_ms,
+                    parallel_root_compute_ms = log_ctx.root_compute_ms.unwrap_or_default(),
+                    parallel_confirm_ms = parallel_confirm_ms,
+                    parallel_boundary_flush_ms = parallel_boundary_flush_ms,
+                    "close_block_complete"
+                );
             }
 
             // Consume readiness only after all DB side effects for this block succeeded.
@@ -369,7 +485,19 @@ impl ParallelMerkleFinalizerWorker {
 
     fn record_block_failure(&mut self, block_n: u64, lane: &'static str, error: anyhow::Error) {
         let message = format!("{error:#}");
-        self.failed_blocks.entry(block_n).or_insert(LaneFailure { lane, message });
+        match self.failed_blocks.entry(block_n) {
+            Entry::Occupied(_) => {}
+            Entry::Vacant(entry) => {
+                tracing::error!(
+                    target: "close_block",
+                    block_number = block_n,
+                    lane = lane,
+                    error = %message,
+                    "parallel_finalizer_lane_failed"
+                );
+                entry.insert(LaneFailure { lane, message });
+            }
+        }
     }
 }
 
