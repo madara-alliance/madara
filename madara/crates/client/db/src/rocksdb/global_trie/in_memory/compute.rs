@@ -2,6 +2,7 @@ use super::super::shared;
 use super::db::InMemoryBonsaiDb;
 use super::overlay::{BonsaiOverlay, TrieLogMode};
 use super::state_diff::cumulative_squashed_state_diffs;
+use crate::metrics::metrics;
 use crate::prelude::*;
 use crate::rocksdb::global_trie::{ClassTrieTimings, ContractTrieTimings, MerklizationTimings};
 use crate::rocksdb::snapshots::SnapshotRef;
@@ -120,6 +121,24 @@ pub fn compute_root_from_snapshot(
         contract_trie: contract_trie_timings,
         class_trie: class_trie_timings,
     };
+    let contract_root_secs = timings.contract_trie_root.as_secs_f64();
+    let class_root_secs = timings.class_trie_root.as_secs_f64();
+    let total_secs = timings.total.as_secs_f64();
+    let contract_storage_commit_secs = timings.contract_trie.storage_commit.as_secs_f64();
+    let contract_commit_secs = timings.contract_trie.trie_commit.as_secs_f64();
+    let class_commit_secs = timings.class_trie.trie_commit.as_secs_f64();
+    metrics().contract_trie_root_duration.record(contract_root_secs, &[]);
+    metrics().contract_trie_root_last.record(contract_root_secs, &[]);
+    metrics().class_trie_root_duration.record(class_root_secs, &[]);
+    metrics().class_trie_root_last.record(class_root_secs, &[]);
+    metrics().apply_to_global_trie_duration.record(total_secs, &[]);
+    metrics().apply_to_global_trie_last.record(total_secs, &[]);
+    metrics().contract_storage_trie_commit_duration.record(contract_storage_commit_secs, &[]);
+    metrics().contract_storage_trie_commit_last.record(contract_storage_commit_secs, &[]);
+    metrics().contract_trie_commit_duration.record(contract_commit_secs, &[]);
+    metrics().contract_trie_commit_last.record(contract_commit_secs, &[]);
+    metrics().class_trie_commit_duration.record(class_commit_secs, &[]);
+    metrics().class_trie_commit_last.record(class_commit_secs, &[]);
 
     let overlay =
         include_overlay.then_some(BonsaiOverlay { contract_changed, contract_storage_changed, class_changed });

@@ -1,4 +1,5 @@
 use crate::{
+    metrics::metrics,
     prelude::*,
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
     storage::StorageTxIndex,
@@ -18,6 +19,7 @@ use mp_state_update::{
 use rocksdb::{IteratorMode, ReadOptions};
 use starknet_types_core::felt::Felt as StarkFelt;
 use std::iter;
+use std::time::Instant;
 
 // TODO (mohit, 14/12/2024): Remove this struct once the v8→v9 migration from
 // tmp/0.14.1-with-migration is merged. After that, all databases will have migrated_compiled_classes.
@@ -181,6 +183,7 @@ impl RocksDBStorageInner {
         block: &FullBlockWithoutCommitments,
         chain_id: Felt,
     ) -> BlockCommitments {
+        let commitments_start = Instant::now();
         let transactions_with_events = apply_events_to_transactions(block.transactions.iter().cloned(), &block.events);
         let events_with_tx_hash = transactions_with_events
             .iter()
@@ -193,12 +196,16 @@ impl RocksDBStorageInner {
                     .map(move |event| EventWithTransactionHash { transaction_hash: tx_hash, event })
             })
             .collect::<Vec<_>>();
-        BlockCommitments::compute(
+        let commitments = BlockCommitments::compute(
             &CommitmentComputationContext { protocol_version: block.header.protocol_version, chain_id },
             &transactions_with_events,
             &block.state_diff,
             &events_with_tx_hash,
-        )
+        );
+        let commitments_secs = commitments_start.elapsed().as_secs_f64();
+        metrics().block_commitments_compute_duration.record(commitments_secs, &[]);
+        metrics().block_commitments_compute_last.record(commitments_secs, &[]);
+        commitments
     }
 
     #[tracing::instrument(skip(self))]

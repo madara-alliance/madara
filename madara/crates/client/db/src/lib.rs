@@ -882,6 +882,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let hash_start = Instant::now();
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
         timings.block_hash_compute = hash_start.elapsed();
+        let hash_secs = timings.block_hash_compute.as_secs_f64();
+        metrics().block_hash_compute_duration.record(hash_secs, &[]);
+        metrics().block_hash_compute_last.record(hash_secs, &[]);
 
         if let Some(custom_header) = self.inner.get_custom_header_with_clear(true) {
             if !custom_header.is_block_hash_as_expected(&block_hash) {
@@ -896,6 +899,9 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             consensus_signatures: vec![],
         })?;
         timings.db_write_block_parts = write_start.elapsed();
+        let write_secs = timings.db_write_block_parts.as_secs_f64();
+        metrics().db_write_block_parts_duration.record(write_secs, &[]);
+        metrics().db_write_block_parts_last.record(write_secs, &[]);
 
         if self
             .inner
