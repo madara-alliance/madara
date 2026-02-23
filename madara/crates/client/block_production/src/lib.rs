@@ -377,10 +377,19 @@ impl BlockProductionTask {
         l1_client: Arc<dyn SettlementClient>,
         no_charge_fee: bool,
         parallel_merkle: ParallelMerkleConfig,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
-        Self {
+        let parallel_merkle_finalizer = if parallel_merkle.enabled {
+            Some(
+                spawn_parallel_merkle_finalizer(backend.clone(), parallel_merkle.clone())
+                    .context("spawning parallel merkle finalizer")?,
+            )
+        } else {
+            None
+        };
+
+        Ok(Self {
             backend: backend.clone(),
             mempool,
             current_state: None,
@@ -392,8 +401,8 @@ impl BlockProductionTask {
             bypass_tx_input: Some(bypass_tx_input),
             no_charge_fee,
             parallel_merkle,
-            parallel_merkle_finalizer: None,
-        }
+            parallel_merkle_finalizer,
+        })
     }
 
     pub fn handle(&self) -> BlockProductionHandle {
@@ -1056,13 +1065,10 @@ impl BlockProductionTask {
         // initial state
         let latest_block_n = self.backend.latest_confirmed_block_n();
         self.current_state = Some(TaskState::NotExecuting { latest_block_n });
-
-        if self.parallel_merkle.enabled {
-            self.parallel_merkle_finalizer = Some(
-                spawn_parallel_merkle_finalizer(self.backend.clone(), self.parallel_merkle.clone())
-                    .context("spawning parallel merkle finalizer")?,
-            );
-        }
+        debug_assert!(
+            !self.parallel_merkle.enabled || self.parallel_merkle_finalizer.is_some(),
+            "parallel merkle finalizer must be initialized in BlockProductionTask::new when enabled"
+        );
 
         Ok(())
     }
@@ -1219,6 +1225,7 @@ pub(crate) mod tests {
                 false, /* no_charge_fee = false */
                 ParallelMerkleConfig::default(),
             )
+            .expect("creating block production task")
         }
     }
 
@@ -2059,7 +2066,8 @@ pub(crate) mod tests {
             Arc::new(original_devnet_setup.l1_client.clone()),
             initial_no_charge_fee,
             ParallelMerkleConfig::default(),
-        );
+        )
+        .expect("creating initial block production task");
 
         let mut notifications = block_production_task.subscribe_state_notifications();
         let restart_task =
@@ -2090,7 +2098,8 @@ pub(crate) mod tests {
             Arc::new(original_devnet_setup.l1_client.clone()),
             restart_no_charge_fee, // Current config: no_charge_fee = false
             ParallelMerkleConfig::default(),
-        );
+        )
+        .expect("creating restart block production task");
 
         // Start the block production task.
         // This will call setup_initial_state() which calls close_preconfirmed_block_if_exists().

@@ -10,6 +10,11 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinSet};
 
+/// Finalized block payload handed off from block production to the parallel finalizer.
+///
+/// This contains all data required by both finalizer lanes:
+/// - DB staging lane (block/classes/weights/consumed nonces)
+/// - Root compute lane (state diff for cumulative merklization)
 #[derive(Debug)]
 pub struct FinalizedBlockPayload {
     pub block_n: u64,
@@ -26,6 +31,9 @@ pub struct ParallelMerkleFinalizerHandle {
 }
 
 impl ParallelMerkleFinalizerHandle {
+    /// Enqueue a block for parallel finalization.
+    ///
+    /// Queue backpressure is controlled by `parallel_merkle.max_inflight`.
     pub async fn submit(&self, payload: FinalizedBlockPayload) -> anyhow::Result<()> {
         self.sender.send(payload).await.context("sending finalized block payload to parallel-merkle finalizer")
     }
@@ -121,6 +129,26 @@ struct ParallelMerkleFinalizerWorker {
 }
 
 impl ParallelMerkleFinalizerWorker {
+    /// Main worker loop that coordinates ingestion, lane completion, and ordered confirmation.
+    ///
+    /// Flow:
+    /// ```text
+    /// +------------------- loop -------------------+
+    /// | select!                                  |
+    /// | 1) recv payload (if inflight < limit)    |
+    /// |      -> schedule_block()                 |
+    /// | 2) db_staging job finished               |
+    /// |      -> mark persisted_ready OR failure  |
+    /// | 3) root_compute job finished             |
+    /// |      -> mark roots_ready OR failure      |
+    /// +--------------------+----------------------+
+    ///                      |
+    ///                      v
+    ///               try_confirm_ready()
+    ///                  (strictly next_confirm)
+    /// ```
+    ///
+    /// The loop exits only when the input channel is closed and both job sets are empty.
     async fn run(&mut self, mut receiver: mpsc::Receiver<FinalizedBlockPayload>) -> anyhow::Result<()> {
         loop {
             tokio::select! {
@@ -167,6 +195,18 @@ impl ParallelMerkleFinalizerWorker {
         Ok(())
     }
 
+    /// Schedule both lanes for a single block.
+    ///
+    /// Flow:
+    /// ```text
+    /// payload(block_n)
+    ///   -> db_staging_jobs.spawn(...)
+    ///        writes staged block parts to DB
+    ///   -> root_compute_jobs.spawn(...)
+    ///        computes state root from snapshot base + cumulative state diff
+    /// ```
+    ///
+    /// A duplicate `block_n` is rejected and recorded as a scheduler failure.
     fn schedule_block(&mut self, payload: FinalizedBlockPayload) {
         let block_n = payload.block_n;
         if !self.scheduled_blocks.insert(block_n) {
@@ -229,6 +269,22 @@ impl ParallelMerkleFinalizerWorker {
         });
     }
 
+    /// Confirm all currently-ready blocks in strict sequence (`next_confirm` only).
+    ///
+    /// Flow per block:
+    /// ```text
+    /// if failure[next_confirm] -> bail
+    /// if persisted_ready && roots_ready for next_confirm:
+    ///   confirm staged block with precomputed root
+    ///   if boundary:
+    ///     flush overlay + checkpoint
+    ///     advance snapshot base and drop committed cumulative diffs
+    ///   next_confirm += 1
+    /// else:
+    ///   stop
+    /// ```
+    ///
+    /// This guarantees in-order DB confirmation even if lane completions arrive out-of-order.
     async fn try_confirm_ready(&mut self) -> anyhow::Result<()> {
         if let Some(failure) = Self::next_confirm_failure(self.next_confirm, &self.failed_blocks) {
             anyhow::bail!(
@@ -246,9 +302,6 @@ impl ParallelMerkleFinalizerWorker {
             let Some(root_ready) = self.roots_ready.get(&self.next_confirm).cloned() else {
                 break;
             };
-
-            self.persisted_ready.remove(&self.next_confirm);
-            self.roots_ready.remove(&self.next_confirm);
 
             self.backend
                 .write_access()
@@ -276,6 +329,9 @@ impl ParallelMerkleFinalizerWorker {
                 self.pending_epoch_diffs = self.pending_epoch_diffs.split_off(&(self.next_confirm + 1));
             }
 
+            // Consume readiness only after all DB side effects for this block succeeded.
+            self.persisted_ready.remove(&self.next_confirm);
+            self.roots_ready.remove(&self.next_confirm);
             self.scheduled_blocks.remove(&self.next_confirm);
             self.next_confirm += 1;
         }
@@ -302,6 +358,7 @@ impl ParallelMerkleFinalizerWorker {
         persisted_ready.contains(&next_confirm) && roots_ready.contains_key(&next_confirm)
     }
 
+    /// Returns whether worker can accept another payload based on inflight block count.
     fn can_schedule_more(max_inflight_blocks: usize, scheduled_blocks: &BTreeSet<u64>) -> bool {
         scheduled_blocks.len() < max_inflight_blocks
     }
@@ -319,27 +376,33 @@ impl ParallelMerkleFinalizerWorker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn boundary_rule_respects_flush_interval() {
-        assert!(!ParallelMerkleFinalizerWorker::is_boundary_for(3, 0));
-        assert!(!ParallelMerkleFinalizerWorker::is_boundary_for(3, 1));
-        assert!(ParallelMerkleFinalizerWorker::is_boundary_for(3, 2));
-        assert!(!ParallelMerkleFinalizerWorker::is_boundary_for(3, 3));
-        assert!(!ParallelMerkleFinalizerWorker::is_boundary_for(3, 4));
-        assert!(ParallelMerkleFinalizerWorker::is_boundary_for(3, 5));
+    #[rstest]
+    #[case(3, 0, false)]
+    #[case(3, 1, false)]
+    #[case(3, 2, true)]
+    #[case(3, 3, false)]
+    #[case(3, 4, false)]
+    #[case(3, 5, true)]
+    fn boundary_rule_respects_flush_interval(
+        #[case] flush_interval: u64,
+        #[case] block_n: u64,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(ParallelMerkleFinalizerWorker::is_boundary_for(flush_interval, block_n), expected);
     }
 
-    #[test]
-    fn cumulative_start_includes_block_zero_without_confirmed_tip() {
-        assert_eq!(ParallelMerkleFinalizerWorker::cumulative_range_start(0, 0), 0);
-        assert_eq!(ParallelMerkleFinalizerWorker::cumulative_range_start(10, 0), 0);
-    }
-
-    #[test]
-    fn cumulative_start_skips_persisted_snapshot_base_after_confirmed_tip() {
-        assert_eq!(ParallelMerkleFinalizerWorker::cumulative_range_start(0, 1), 1);
-        assert_eq!(ParallelMerkleFinalizerWorker::cumulative_range_start(9, 10), 10);
+    #[rstest]
+    #[case(0, 0, 0)]
+    #[case(10, 0, 0)]
+    #[case(0, 1, 1)]
+    #[case(9, 10, 10)]
+    fn cumulative_start_cases(#[case] snapshot_base_block_n: u64, #[case] next_confirm: u64, #[case] expected: u64) {
+        assert_eq!(
+            ParallelMerkleFinalizerWorker::cumulative_range_start(snapshot_base_block_n, next_confirm),
+            expected
+        );
     }
 
     #[test]
@@ -360,38 +423,47 @@ mod tests {
         assert!(ParallelMerkleFinalizerWorker::is_confirm_ready(5, &persisted_ready, &roots_ready));
     }
 
-    #[test]
-    fn can_schedule_more_respects_inflight_bound() {
+    #[rstest]
+    #[case(2, 0, true)]
+    #[case(2, 1, true)]
+    #[case(2, 2, false)]
+    fn can_schedule_more_respects_inflight_bound(
+        #[case] max_inflight_blocks: usize,
+        #[case] scheduled_count: u64,
+        #[case] expected: bool,
+    ) {
         let mut scheduled = BTreeSet::new();
-        assert!(ParallelMerkleFinalizerWorker::can_schedule_more(2, &scheduled));
-
-        scheduled.insert(10);
-        scheduled.insert(11);
-        assert!(!ParallelMerkleFinalizerWorker::can_schedule_more(2, &scheduled));
+        for n in 0..scheduled_count {
+            scheduled.insert(10 + n);
+        }
+        assert_eq!(ParallelMerkleFinalizerWorker::can_schedule_more(max_inflight_blocks, &scheduled), expected);
     }
 
-    #[test]
-    fn next_confirm_failure_only_blocks_matching_height() {
+    #[rstest]
+    #[case(6, false)]
+    #[case(7, true)]
+    fn next_confirm_failure_only_blocks_matching_height(#[case] next_confirm: u64, #[case] should_find: bool) {
         let mut failed_blocks = BTreeMap::new();
         failed_blocks.insert(7, LaneFailure { lane: "root-compute", message: "boom".to_string() });
-        assert!(ParallelMerkleFinalizerWorker::next_confirm_failure(6, &failed_blocks).is_none());
-
-        let failure = ParallelMerkleFinalizerWorker::next_confirm_failure(7, &failed_blocks)
-            .expect("failure for next confirm block should be returned");
-        assert_eq!(failure.lane, "root-compute");
-        assert!(failure.message.contains("boom"));
+        let failure = ParallelMerkleFinalizerWorker::next_confirm_failure(next_confirm, &failed_blocks);
+        assert_eq!(failure.is_some(), should_find);
+        if let Some(failure) = failure {
+            assert_eq!(failure.lane, "root-compute");
+            assert!(failure.message.contains("boom"));
+        }
     }
 
-    #[test]
-    fn initial_snapshot_base_prefers_latest_confirmed_when_present() {
-        assert_eq!(initial_snapshot_base(Some(10), Some(9)), 10);
-        assert_eq!(initial_snapshot_base(Some(10), Some(15)), 10);
-        assert_eq!(initial_snapshot_base(Some(10), None), 10);
-    }
-
-    #[test]
-    fn initial_snapshot_base_falls_back_to_checkpoint_or_zero() {
-        assert_eq!(initial_snapshot_base(None, Some(8)), 8);
-        assert_eq!(initial_snapshot_base(None, None), 0);
+    #[rstest]
+    #[case(Some(10), Some(9), 10)]
+    #[case(Some(10), Some(15), 10)]
+    #[case(Some(10), None, 10)]
+    #[case(None, Some(8), 8)]
+    #[case(None, None, 0)]
+    fn initial_snapshot_base_cases(
+        #[case] latest_confirmed: Option<u64>,
+        #[case] latest_checkpoint: Option<u64>,
+        #[case] expected: u64,
+    ) {
+        assert_eq!(initial_snapshot_base(latest_confirmed, latest_checkpoint), expected);
     }
 }

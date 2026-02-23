@@ -179,6 +179,28 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    /// Persist staged data for a block in resumable multi-stage commits.
+    ///
+    /// Flow:
+    /// ```text
+    /// Stage 1 (atomic batch):
+    ///   remove pending L1->L2 nonces
+    ///   + write staged header
+    ///   + write txs + tx indices
+    ///   + STAGED_STATE = Txns
+    ///
+    /// Stage 2 (existing writers):
+    ///   materialize events into receipts
+    ///   + compute/store commitments + staged block info
+    ///   + write state diff + state/class updates + bouncer weights
+    ///   + STAGED_STATE = Diff
+    ///
+    /// Stage 3:
+    ///   store events bloom
+    ///   + STAGED_STATE = Final
+    /// ```
+    ///
+    /// Resume rule: stage state in META is the only progress marker and is updated last in each stage.
     fn write_parallel_merkle_staged_block_data(
         &self,
         block: &FullBlockWithoutCommitments,
@@ -258,6 +280,9 @@ impl RocksDBStorageInner {
         Ok(())
     }
 
+    /// Confirm a block only after staged state is `Final`.
+    ///
+    /// This atomically writes confirmed header info, advances chain tip, and clears staged metadata.
     fn confirm_parallel_merkle_staged_block(&self, header: &BlockHeaderWithSignatures) -> Result<()> {
         let block_n = header.header.block_number;
         if !self.parallel_merkle_has_staged_block(block_n)? {

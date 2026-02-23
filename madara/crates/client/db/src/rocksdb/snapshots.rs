@@ -109,6 +109,7 @@ impl Snapshots {
 #[cfg(test)]
 mod tests {
     use crate::rocksdb::{RocksDBConfig, RocksDBStorage};
+    use rstest::rstest;
 
     fn create_test_storage(config: RocksDBConfig) -> (tempfile::TempDir, RocksDBStorage) {
         let temp_dir = tempfile::TempDir::with_prefix("snapshot-test").unwrap();
@@ -213,18 +214,22 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_get_at_or_before_returns_head_for_equal_or_newer_request() {
+    #[rstest]
+    #[case(10, Some(10))]
+    #[case(11, Some(10))]
+    fn test_get_at_or_before_returns_head_for_equal_or_newer_request(
+        #[case] requested_block_n: u64,
+        #[case] expected_snapshot_n: Option<u64>,
+    ) {
         let config = RocksDBConfig::default();
         let (_temp_dir, storage) = create_test_storage(config);
 
         storage.snapshots.set_new_head(10);
-        let (snapshot_block_n, _) = storage.snapshots.get_at_or_before(10).expect("equal head should be returned");
-        assert_eq!(snapshot_block_n, Some(10));
-
-        let (snapshot_block_n, _) =
-            storage.snapshots.get_at_or_before(11).expect("head should be returned for newer request");
-        assert_eq!(snapshot_block_n, Some(10));
+        let (snapshot_block_n, _) = storage
+            .snapshots
+            .get_at_or_before(requested_block_n)
+            .expect("head should be returned for equal/newer request");
+        assert_eq!(snapshot_block_n, expected_snapshot_n);
     }
 
     #[test]

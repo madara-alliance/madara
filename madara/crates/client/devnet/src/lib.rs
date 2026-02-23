@@ -414,7 +414,8 @@ mod tests {
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
             true,
             parallel_merkle,
-        );
+        )
+        .expect("creating block production task");
 
         let tx_validator = Arc::new(TransactionValidator::new(
             Arc::clone(&mempool) as _,
