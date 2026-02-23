@@ -410,6 +410,13 @@ impl RocksDBStorage {
         in_memory::flush_overlay_and_checkpoint(self, block_n, overlay, trie_log_mode)
             .with_context(|| format!("Flushing parallel merkle overlay and checkpointing block_n={block_n}"))
     }
+
+    /// Resolve reorg target to the nearest persisted parallel-merkle checkpoint at or before `requested_block_n`.
+    ///
+    /// When no checkpoint marker exists at-or-before the requested block, we keep the requested target unchanged.
+    fn resolve_revert_target_block_n(&self, requested_block_n: u64) -> Result<u64> {
+        Ok(self.inner.get_parallel_merkle_checkpoint_at_or_before(requested_block_n)?.unwrap_or(requested_block_n))
+    }
 }
 
 impl MadaraStorageRead for RocksDBStorage {
@@ -890,61 +897,59 @@ impl MadaraStorageWrite for RocksDBStorage {
             .with_context(|| format!("Removing all blocks in range [{starting_from_block_n}..] from database"))
     }
 
-    /// Reverts the blockchain state to a specific block hash during a chain reorganization.
+    /// Reverts the blockchain state during a chain reorganization.
     ///
-    /// This function performs a complete rollback of the blockchain state to a target block,
-    /// which is typically the common ancestor between the current chain and a new canonical chain.
-    /// It ensures data consistency by reverting all state components including Bonsai tries,
-    /// block data, contract state, and class definitions.
+    /// The requested block hash is first resolved to the nearest persisted trie commit-id floor
+    /// (`checkpoint <= requested`). Revert is then executed against that floored block to avoid
+    /// targeting intermediary blocks that do not have persisted trie logs in parallel-merkle mode.
     ///
     /// # Arguments
     ///
-    /// * `new_tip_block_hash` - The block hash to revert to. This must be an existing block
-    ///   that is an ancestor of the current chain tip. The block with this hash will become
-    ///   the new chain tip after the revert completes.
+    /// * `new_tip_block_hash` - Requested block hash to revert towards. This must be an existing
+    ///   ancestor of the current chain tip.
     ///
     /// # Returns
     ///
     /// Returns `Ok((block_number, block_hash))` where:
     /// * `block_number` - The block number of the new chain tip
-    /// * `block_hash` - The block hash of the new chain tip (same as input `new_tip_block_hash`)
+    /// * `block_hash` - The block hash of the actual new chain tip (floored commit-id target)
     ///
     /// # Implementation Details
     ///
     /// The revert process performs the following steps in order:
     ///
-    /// 1. **Validation**: Finds and validates the target block exists and is finalized
-    /// 2. **Range Calculation**: Determines the range of blocks to remove (target_block + 1..=current_tip)
-    /// 3. **Bonsai Tries Revert**: Reverts the contract, contract_storage, and class tries to the target block's state
-    /// 4. **Trie Commit**: Commits the reverted tries to ensure consistency
-    /// 5. **Block Database Revert**: Removes blocks in the calculated range and collects state diffs
-    /// 6. **Contract & Class Revert**: Uses collected state diffs to revert contract and class databases
-    /// 7. **Chain Tip Update**: Updates the chain tip to the target block
-    /// 8. **Snapshot Update**: Updates the head snapshot to the target block
-    /// 9. **Applied Update Reset**: Resets the latest_applied_trie_update marker
-    /// 10. **Database Flush**: Ensures all changes are persisted to disk
+    /// 1. **Validation**: Finds and validates the requested target block exists
+    /// 2. **Floor Resolution**: Resolves to nearest persisted checkpoint at-or-before requested block
+    /// 3. **Range Calculation**: Determines the range of blocks to remove (target_block + 1..=current_tip)
+    /// 4. **Bonsai Tries Revert**: Reverts the contract, contract_storage, and class tries to the target block's state
+    /// 5. **Trie Commit**: Commits the reverted tries to ensure consistency
+    /// 6. **Block Database Revert**: Removes blocks in the calculated range and collects state diffs
+    /// 7. **Contract & Class Revert**: Uses collected state diffs to revert contract and class databases
+    /// 8. **Chain Tip Update**: Updates the chain tip to the target block
+    /// 9. **Snapshot Update**: Updates the head snapshot to the target block
+    /// 10. **Applied Update Reset**: Resets the latest_applied_trie_update marker
+    /// 11. **Database Flush**: Ensures all changes are persisted to disk
     ///
     /// # Notes
     ///
     /// * After calling this function, the caller MUST refresh the backend's chain_tip cache
     ///   by reading from the database, as this function only updates the database state.
-    /// * This is a destructive operation - all blocks after the target block are permanently removed.
+    /// * This is a destructive operation - all blocks after the resolved floor block are permanently removed.
     /// * The function is atomic - if any step fails, the database may be in an inconsistent state.
-    /// ```
     fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
         tracing::info!("Reverting blockchain to block_hash={new_tip_block_hash:#x}");
 
-        let target_block_n = self
+        let requested_block_n = self
             .inner
             .find_block_hash(new_tip_block_hash)
             .context("Finding target block for reorg")?
             .ok_or_else(|| anyhow::anyhow!("Target block hash {new_tip_block_hash:#x} not found"))?;
 
-        let target_block_info = self
-            .inner
-            .get_block_info(target_block_n)
-            .context("Getting target block info")?
-            .ok_or_else(|| anyhow::anyhow!("Target block info not found for block_n={target_block_n}"))?;
+        let requested_block_info =
+            self.inner
+                .get_block_info(requested_block_n)
+                .context("Getting target block info")?
+                .ok_or_else(|| anyhow::anyhow!("Target block info not found for block_n={requested_block_n}"))?;
 
         let current_tip = match self.inner.get_chain_tip()? {
             StorageChainTip::Empty => anyhow::bail!("Cannot revert when chain is empty"),
@@ -960,22 +965,43 @@ impl MadaraStorageWrite for RocksDBStorage {
             .context("Getting current tip block info")?
             .ok_or_else(|| anyhow::anyhow!("Current tip block info not found"))?;
 
+        if requested_block_n > current_tip {
+            anyhow::bail!("Cannot revert to block_n={requested_block_n} which is > current tip={current_tip}");
+        }
+
+        let target_block_n = self
+            .resolve_revert_target_block_n(requested_block_n)
+            .context("Resolving nearest persisted trie commit-id for reorg target")?;
+        let target_block_info = if target_block_n == requested_block_n {
+            requested_block_info
+        } else {
+            self.inner
+                .get_block_info(target_block_n)
+                .context("Getting floored target block info")?
+                .ok_or_else(|| anyhow::anyhow!("Floored target block info not found for block_n={target_block_n}"))?
+        };
+
+        if target_block_n != requested_block_n {
+            tracing::warn!(
+                requested_block_n,
+                floored_target_block_n = target_block_n,
+                "🔄 REORG: requested target has no persisted trie commit-id marker; reverting to nearest floor checkpoint"
+            );
+        }
+
         if target_block_n == current_tip {
             tracing::info!("🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed");
-            return Ok((target_block_n, *new_tip_block_hash));
-        }
-
-        if target_block_n > current_tip {
-            anyhow::bail!("Cannot revert to block_n={target_block_n} which is > current tip={current_tip}");
+            return Ok((target_block_n, target_block_info.block_hash));
         }
 
         tracing::info!(
-            "🔄 REORG: Starting blockchain reorganization from block_n={current_tip} to block_n={target_block_n}",
+            "🔄 REORG: Starting blockchain reorganization from block_n={current_tip} to block_n={target_block_n} (requested={requested_block_n})",
         );
         tracing::info!(
-            "🔄 REORG: Target block hash={:#x}, current tip hash={:#x}",
+            "🔄 REORG: Target block hash={:#x}, current tip hash={:#x}, requested hash={:#x}",
             target_block_info.block_hash,
-            current_tip_info.block_hash
+            current_tip_info.block_hash,
+            new_tip_block_hash,
         );
 
         let target_id = BasicId::new(target_block_n);

@@ -1,5 +1,5 @@
 use crate::util::ExecutionStats;
-use crate::{remove_consumed_core_contract_nonces, ParallelMerkleConfig, ParallelMerkleTrieLogMode};
+use crate::{ParallelMerkleConfig, ParallelMerkleTrieLogMode};
 use anyhow::{ensure, Context};
 use blockifier::bouncer::BouncerWeights;
 use mc_db::{BonsaiOverlay, MadaraBackend, MadaraStorageRead, ParallelMerkleInMemoryTrieLogMode};

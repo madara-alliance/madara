@@ -35,7 +35,7 @@ pub struct BlockProductionParams {
     pub parallel_merkle_max_inflight: u64,
 
     /// Trie-log mode for parallel merkle persistence.
-    #[arg(env = "MADARA_PARALLEL_MERKLE_TRIE_LOG_MODE", long, default_value = "off")]
+    #[arg(env = "MADARA_PARALLEL_MERKLE_TRIE_LOG_MODE", long, default_value = "checkpoint")]
     pub parallel_merkle_trie_log_mode: ParallelMerkleTrieLogMode,
 }
 
@@ -58,7 +58,7 @@ mod tests {
         assert!(!params.parallel_merkle_enabled);
         assert_eq!(params.parallel_merkle_flush_interval, 3);
         assert_eq!(params.parallel_merkle_max_inflight, 10);
-        assert_eq!(params.parallel_merkle_trie_log_mode, ParallelMerkleTrieLogMode::Off);
+        assert_eq!(params.parallel_merkle_trie_log_mode, ParallelMerkleTrieLogMode::Checkpoint);
     }
 
     #[test]

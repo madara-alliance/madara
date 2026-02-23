@@ -186,6 +186,10 @@ impl RocksDBStorageInner {
         Ok(Some(super::deserialize(&res)?))
     }
 
+    pub(super) fn get_parallel_merkle_checkpoint_at_or_before(&self, target_block_n: u64) -> Result<Option<u64>> {
+        self.latest_meta_block_n_at_or_before(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n)
+    }
+
     fn latest_meta_block_n_at_or_before(&self, prefix: &[u8], target_block_n: u64) -> Result<Option<u64>> {
         let meta_col = self.get_column(META_COLUMN);
         let mut options = ReadOptions::default();
@@ -247,7 +251,7 @@ impl RocksDBStorageInner {
         let meta_col = self.get_column(META_COLUMN);
 
         self.delete_meta_entries_above(META_PARALLEL_MERKLE_STAGED_STATE_PREFIX, target_block_n, &mut batch)?;
-        self.delete_meta_entries_above(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, target_block_n, &mut batch)?;
+        self.parallel_merkle_clear_staged_headers_above(target_block_n, &mut batch);
         self.delete_meta_entries_above(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n, &mut batch)?;
 
         if let Some(latest_checkpoint) =
@@ -578,7 +582,7 @@ mod tests {
         assert!(storage.inner.has_parallel_merkle_checkpoint(5).unwrap());
         assert!(!storage.inner.has_parallel_merkle_checkpoint(8).unwrap());
         assert_eq!(storage.inner.get_parallel_merkle_latest_checkpoint().unwrap(), Some(5));
-        assert!(!storage.inner.has_parallel_merkle_staged_block(9).unwrap());
+        assert!(!storage.inner.parallel_merkle_has_staged_block(9).unwrap());
     }
 
     #[test]
@@ -593,5 +597,20 @@ mod tests {
         assert_eq!(storage.inner.get_parallel_merkle_latest_checkpoint().unwrap(), None);
         assert!(!storage.inner.has_parallel_merkle_checkpoint(7).unwrap());
         assert!(!storage.inner.has_parallel_merkle_checkpoint(9).unwrap());
+    }
+
+    #[test]
+    fn parallel_merkle_checkpoint_floor_lookup_returns_latest_at_or_before_target() {
+        let (_tmp, storage) = create_test_storage();
+
+        storage.inner.write_parallel_merkle_checkpoint(5).unwrap();
+        storage.inner.write_parallel_merkle_checkpoint(8).unwrap();
+        storage.inner.write_parallel_merkle_checkpoint(12).unwrap();
+
+        assert_eq!(storage.inner.get_parallel_merkle_checkpoint_at_or_before(4).unwrap(), None);
+        assert_eq!(storage.inner.get_parallel_merkle_checkpoint_at_or_before(5).unwrap(), Some(5));
+        assert_eq!(storage.inner.get_parallel_merkle_checkpoint_at_or_before(7).unwrap(), Some(5));
+        assert_eq!(storage.inner.get_parallel_merkle_checkpoint_at_or_before(8).unwrap(), Some(8));
+        assert_eq!(storage.inner.get_parallel_merkle_checkpoint_at_or_before(99).unwrap(), Some(12));
     }
 }
