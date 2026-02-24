@@ -556,30 +556,30 @@ You should receive something like the following:
 | Websocat   | Latest  | [Official instructions](https://github.com/vi/websocat?tab=readme-ov-file#installation) |
 
 Websockets methods are enabled by default and are accessible through the same
-port as http RPC methods. Here is an example of how to call a JSON-RPC method
-using `websocat`.
+port as http RPC methods.
+
+> [!NOTE]
+> Subscription methods are currently placeholders and return
+> `UnimplementedMethod` on `v0.8.1`, `v0.9.0`, and `v0.10.0`.
+> `starknet_unsubscribe` is available, but active subscription streams are not
+> yet available.
+
+You can still use websocket transport to call methods and validate responses
+using `websocat`:
 
 ```bash
-(echo '{"jsonrpc":"2.0","method":"starknet_subscribeNewHeads","params":{"block_id":"latest"},"id":1}'; cat -) | \
 websocat -v ws://localhost:9944/rpc/v0_10_0
 ```
 
 > [!TIP]
-> This command and the strange use of `echo` in combination with `cat` is just a
-> way to start a websocket stream with `websocat` while staying in interactive
-> mode, meaning you can still enter other websocket requests.
-
-This will display header information on each new block synchronized. Use
-`Ctrl-C` to stop the subscription. Alternatively, you can achieve the same
-result more gracefully by calling `starknet_unsubscribe`. Paste the following
-into the subscription stream:
+> Once connected, paste JSON-RPC payloads directly in the terminal. For example:
 
 ```bash
-{ "jsonrpc": "2.0", "method": "starknet_unsubscribe", "params": ["your-subscription-id"], "id": 1 }
+{ "jsonrpc": "2.0", "method": "starknet_subscribeNewHeads", "params": {"block_id":"latest"}, "id": 1 }
 ```
 
-Where `your-subscription-id` corresponds to the value of the `subscription` field
-which is returned with each websocket response.
+This currently returns `UnimplementedMethod` until subscription support is
+re-enabled.
 
 ## 📚 Database Migration
 
@@ -750,25 +750,66 @@ commitment in the [Starknet documentation](https://docs.starknet.io/architecture
 Madara supports SnapSync (`--snap-sync`) to accelerate state synchronization by
 batching trie computations.
 
-> [!NOTE]
-> SnapSync optimizes sync speed, but historical storage-proof behavior depends
-> on your trie/snapshot retention settings.
+SnapSync uses a batched trie-apply path when both conditions hold:
+
+1. `--snap-sync` is enabled
+2. The distance to the sync target is `>= 1000` blocks
+
+When the remaining distance is below this threshold, Madara flushes accumulated
+state diffs and returns to block-by-block trie updates.
+
+> [!IMPORTANT]
+> SnapSync is a performance tradeoff with historical-data implications:
+>
+> - For blocks synchronized through SnapSync batches, per-block trie logs
+>   ("trielogs") are not produced for each intermediate block in that range.
+> - As a result, storage proofs are not guaranteed for every block in
+>   snap-synced ranges.
+> - Reverting into the snap-synced range is blocked by design. The admin revert
+>   API rejects targets lower than the recorded `snap_sync_latest_block` because
+>   trie data is only available from that boundary onward.
 
 ### Cairo Native Execution
 
-Madara supports opt-in Cairo Native execution.
-Enable it with:
+Madara supports opt-in Cairo Native execution controlled by a single flag:
 
 ```bash
 --enable-native-execution true
 ```
 
-By default, this is disabled and Cairo VM execution remains available.
+By default, this is disabled and Cairo VM execution remains the execution path.
+
+When native execution is enabled:
+
+1. Madara compiles Sierra classes into native artifacts and caches them.
+2. Compilation mode is controlled by `--native-compilation-mode`:
+   - `async` (default): compile in background, execute immediately with Cairo VM fallback.
+   - `blocking`: wait for compilation; compilation failure/timeout fails execution.
+3. Native artifacts are cached on disk under `<base-path>/native_classes` and
+   reused on restart.
+4. Async compilation retries are controlled by `--native-enable-retry` (default:
+   `true`).
+
+This means native compilation is resumable in practice through persisted cache
+reuse: compiled classes survive restarts, while classes not yet compiled are
+compiled on-demand after restart.
 
 ### L3 Support
 
-Madara supports running with different settlement layers via `--settlement-layer`.
-This includes Starknet settlement mode for L3-oriented deployments.
+Madara supports running with different settlement layers via
+`--settlement-layer`:
+
+- `Eth` (default)
+- `Starknet` (L3-oriented deployment mode)
+
+When `--settlement-layer Starknet` is used:
+
+1. `--l1-endpoint` is treated as a Starknet RPC endpoint (not Ethereum RPC).
+2. The settlement client switches to Starknet settlement sync.
+3. `--l1-gas-price` and `--blob-gas-price` are interpreted in `FRI` (instead
+   of `WEI` on Ethereum settlement).
+4. Chain execution is marked as L3 (`is_l3 = true`), which changes how
+   blockifier treats settlement-layer addresses.
 
 ### Automatic Database Migrations
 
