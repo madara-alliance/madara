@@ -49,7 +49,7 @@ impl BlockProductionService {
                 l1_client,
                 no_charge_fee,
                 Self::parallel_merkle_config(config),
-            )?),
+            )),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
         })

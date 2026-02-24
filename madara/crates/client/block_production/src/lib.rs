@@ -950,10 +950,13 @@ impl BlockProductionTask {
         let close_outcome: CloseOutcome = if self.parallel_merkle.enabled {
             let block_number = state.block_number;
             let consumed_core_contract_nonces = state.consumed_core_contract_nonces;
+            let consumed_core_contract_nonces_fallback = consumed_core_contract_nonces.clone();
+            let state_diff_fallback = state_diff.clone();
             let finalizer = self
                 .parallel_merkle_finalizer
                 .as_ref()
                 .context("parallel merkle is enabled but finalizer handle is missing")?;
+            let bouncer_weights = block_exec_summary.bouncer_weights;
 
             let (block_without_state_diff, classes) =
                 preconfirmed_view.get_full_block_without_state_diff().context("building finalizer payload block")?;
@@ -964,24 +967,24 @@ impl BlockProductionTask {
                 classes,
                 state_diff,
                 consumed_core_contract_nonces,
-                bouncer_weights: block_exec_summary.bouncer_weights,
+                bouncer_weights: bouncer_weights.clone(),
+                execution_stats: state.accumulated_stats.clone(),
+                block_production_duration: state.block_start_time.elapsed(),
             };
             let submit_started = Instant::now();
             if let Err(error) = finalizer.submit(payload).await {
-                let err = error.to_string();
-                let payload = error.0;
+                let err = format!("{error:#}");
                 tracing::warn!(
                     block_number,
                     %err,
                     "parallel finalizer queueing failed, falling back to sequential close"
                 );
-                let bouncer_weights = payload.bouncer_weights;
                 let db_result = Self::close_preconfirmed_block_with_state_diff(
                     self.backend.clone(),
                     block_number,
-                    payload.consumed_core_contract_nonces,
+                    consumed_core_contract_nonces_fallback,
                     &bouncer_weights,
-                    payload.state_diff,
+                    state_diff_fallback,
                 )
                 .await
                 .with_context(|| format!("fallback sequential close for block #{}", block_number))?;

@@ -102,3 +102,4 @@ mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
+rstest = { workspace = true }
