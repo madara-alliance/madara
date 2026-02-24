@@ -92,7 +92,7 @@ impl RocksDBStorageInner {
         Ok(Some(u32::from_be_bytes(key) as u64))
     }
 
-    pub(super) fn blocks_stage_transactions(
+    pub(super) fn blocks_store_transactions_with_indices_to_batch(
         &self,
         block_number: u64,
         transactions: &[TransactionWithReceipt],
@@ -119,15 +119,6 @@ impl RocksDBStorageInner {
         }
 
         Ok(())
-    }
-
-    pub(super) fn blocks_store_transactions_with_indices_to_batch(
-        &self,
-        block_number: u64,
-        transactions: &[TransactionWithReceipt],
-        batch: &mut WriteBatchWithTransaction,
-    ) -> Result<()> {
-        self.blocks_stage_transactions(block_number, transactions, batch)
     }
 
     pub(super) fn blocks_store_header_with_info_to_batch(
