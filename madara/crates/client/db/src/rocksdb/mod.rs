@@ -411,11 +411,80 @@ impl RocksDBStorage {
             .with_context(|| format!("Flushing parallel merkle overlay and checkpointing block_n={block_n}"))
     }
 
-    /// Resolve reorg target to the nearest persisted parallel-merkle checkpoint at or before `requested_block_n`.
+    /// Resolve reorg base to the nearest persisted parallel-merkle checkpoint at-or-before `requested_block_n`.
     ///
-    /// When no checkpoint marker exists at-or-before the requested block, we keep the requested target unchanged.
+    /// This base checkpoint is used to restore trie state first, then we can replay state-diffs
+    /// up to the exact requested block.
     fn resolve_revert_target_block_n(&self, requested_block_n: u64) -> Result<u64> {
         Ok(self.inner.get_parallel_merkle_checkpoint_at_or_before(requested_block_n)?.unwrap_or(requested_block_n))
+    }
+
+    fn collect_state_diffs_inclusive(&self, from_block_n: u64, to_block_n: u64) -> Result<Vec<StateDiff>> {
+        if from_block_n > to_block_n {
+            return Ok(Vec::new());
+        }
+
+        let mut state_diffs = Vec::with_capacity((to_block_n - from_block_n + 1) as usize);
+        for block_n in from_block_n..=to_block_n {
+            let state_diff = self
+                .inner
+                .get_block_state_diff(block_n)
+                .with_context(|| format!("Loading block state diff for replay block_n={block_n}"))?
+                .ok_or_else(|| anyhow::anyhow!("Missing block state diff for replay block_n={block_n}"))?;
+            state_diffs.push(state_diff);
+        }
+
+        Ok(state_diffs)
+    }
+
+    fn replay_tries_from_floor_to_target(
+        &self,
+        floor_block_n: u64,
+        target_block_n: u64,
+        expected_state_root: Felt,
+    ) -> Result<()> {
+        if target_block_n <= floor_block_n {
+            return Ok(());
+        }
+
+        let replay_start_block_n =
+            floor_block_n.checked_add(1).ok_or_else(|| anyhow::anyhow!("Replay start block overflow"))?;
+        let replay_diffs = self
+            .collect_state_diffs_inclusive(replay_start_block_n, target_block_n)
+            .with_context(|| {
+                format!(
+                    "Collecting replay state diffs in range [{replay_start_block_n}..={target_block_n}] after floor={floor_block_n}"
+                )
+            })?;
+
+        tracing::info!(
+            floor_block_n,
+            target_block_n,
+            replay_start_block_n,
+            replay_diffs_count = replay_diffs.len(),
+            "🌳 REORG: Replaying state diffs from floor checkpoint to exact requested target",
+        );
+
+        let (replayed_root, _timings) = apply_to_global_trie(self, replay_start_block_n, replay_diffs.iter())
+            .with_context(|| {
+                format!("Replaying global trie state diffs in range [{replay_start_block_n}..={target_block_n}]")
+            })?;
+
+        if replayed_root != expected_state_root {
+            anyhow::bail!(
+                "Replayed trie root mismatch at target block_n={target_block_n}: expected={expected_state_root:#x}, replayed={replayed_root:#x}"
+            );
+        }
+
+        let persisted_root = get_state_root(self)
+            .with_context(|| format!("Reading persisted state root after replay at block_n={target_block_n}"))?;
+        if persisted_root != replayed_root {
+            anyhow::bail!(
+                "Persisted trie root mismatch after replay at block_n={target_block_n}: persisted={persisted_root:#x}, replayed={replayed_root:#x}"
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -899,9 +968,9 @@ impl MadaraStorageWrite for RocksDBStorage {
 
     /// Reverts the blockchain state during a chain reorganization.
     ///
-    /// The requested block hash is first resolved to the nearest persisted trie commit-id floor
-    /// (`checkpoint <= requested`). Revert is then executed against that floored block to avoid
-    /// targeting intermediary blocks that do not have persisted trie logs in parallel-merkle mode.
+    /// The trie reorg always starts from the nearest persisted checkpoint floor (`checkpoint <= requested`).
+    /// If the requested block is above that floor, state diffs are replayed from `floor + 1..=requested`
+    /// to reconstruct and commit the exact requested trie state before final DB pruning.
     ///
     /// # Arguments
     ///
@@ -912,29 +981,29 @@ impl MadaraStorageWrite for RocksDBStorage {
     ///
     /// Returns `Ok((block_number, block_hash))` where:
     /// * `block_number` - The block number of the new chain tip
-    /// * `block_hash` - The block hash of the actual new chain tip (floored commit-id target)
+    /// * `block_hash` - The block hash of the exact requested new chain tip
     ///
     /// # Implementation Details
     ///
     /// The revert process performs the following steps in order:
     ///
     /// 1. **Validation**: Finds and validates the requested target block exists
-    /// 2. **Floor Resolution**: Resolves to nearest persisted checkpoint at-or-before requested block
-    /// 3. **Range Calculation**: Determines the range of blocks to remove (target_block + 1..=current_tip)
-    /// 4. **Bonsai Tries Revert**: Reverts the contract, contract_storage, and class tries to the target block's state
-    /// 5. **Trie Commit**: Commits the reverted tries to ensure consistency
-    /// 6. **Block Database Revert**: Removes blocks in the calculated range and collects state diffs
-    /// 7. **Contract & Class Revert**: Uses collected state diffs to revert contract and class databases
-    /// 8. **Chain Tip Update**: Updates the chain tip to the target block
-    /// 9. **Snapshot Update**: Updates the head snapshot to the target block
-    /// 10. **Applied Update Reset**: Resets the latest_applied_trie_update marker
+    /// 2. **Floor Resolution**: Resolves nearest persisted checkpoint at-or-before requested block
+    /// 3. **Trie Floor Revert**: Reverts tries from current tip to floor checkpoint and commits floor
+    /// 4. **Exact Target Replay**: If requested > floor, replays state diffs and validates requested state root
+    /// 5. **Block Database Revert**: Removes blocks in `(requested..=current_tip]` and collects state diffs
+    /// 6. **Contract & Class Revert**: Uses collected state diffs to revert contract and class databases
+    /// 7. **Metadata Reorg**: Prunes staged/checkpoint metadata to requested block and sets checkpoint marker
+    /// 8. **Chain Tip Update**: Updates chain tip to requested block
+    /// 9. **Snapshot Update**: Updates head snapshot to requested block
+    /// 10. **Applied Update Reset**: Resets latest_applied_trie_update marker
     /// 11. **Database Flush**: Ensures all changes are persisted to disk
     ///
     /// # Notes
     ///
     /// * After calling this function, the caller MUST refresh the backend's chain_tip cache
     ///   by reading from the database, as this function only updates the database state.
-    /// * This is a destructive operation - all blocks after the resolved floor block are permanently removed.
+    /// * This is a destructive operation - all blocks after the requested block are permanently removed.
     /// * The function is atomic - if any step fails, the database may be in an inconsistent state.
     fn revert_to(&self, new_tip_block_hash: &Felt) -> Result<(u64, Felt)> {
         tracing::info!("Reverting blockchain to block_hash={new_tip_block_hash:#x}");
@@ -969,75 +1038,90 @@ impl MadaraStorageWrite for RocksDBStorage {
             anyhow::bail!("Cannot revert to block_n={requested_block_n} which is > current tip={current_tip}");
         }
 
-        let target_block_n = self
+        if requested_block_n == current_tip {
+            tracing::info!("🔄 REORG: Requested block_n={requested_block_n} is already current tip, no revert needed");
+            return Ok((requested_block_n, requested_block_info.block_hash));
+        }
+
+        let floor_block_n = self
             .resolve_revert_target_block_n(requested_block_n)
             .context("Resolving nearest persisted trie commit-id for reorg target")?;
-        let target_block_info = if target_block_n == requested_block_n {
-            requested_block_info
+        let floor_block_info = if floor_block_n == requested_block_n {
+            requested_block_info.clone()
         } else {
             self.inner
-                .get_block_info(target_block_n)
+                .get_block_info(floor_block_n)
                 .context("Getting floored target block info")?
-                .ok_or_else(|| anyhow::anyhow!("Floored target block info not found for block_n={target_block_n}"))?
+                .ok_or_else(|| anyhow::anyhow!("Floored target block info not found for block_n={floor_block_n}"))?
         };
 
-        if target_block_n != requested_block_n {
+        if floor_block_n != requested_block_n {
             tracing::warn!(
                 requested_block_n,
-                floored_target_block_n = target_block_n,
-                "🔄 REORG: requested target has no persisted trie commit-id marker; reverting to nearest floor checkpoint"
+                floored_target_block_n = floor_block_n,
+                "🔄 REORG: requested target has no persisted trie commit-id marker; replay from floor checkpoint required"
             );
         }
 
-        if target_block_n == current_tip {
-            tracing::info!("🔄 REORG: Already at common ancestor block_n={target_block_n}, no revert needed");
-            return Ok((target_block_n, target_block_info.block_hash));
-        }
-
         tracing::info!(
-            "🔄 REORG: Starting blockchain reorganization from block_n={current_tip} to block_n={target_block_n} (requested={requested_block_n})",
+            "🔄 REORG: Starting blockchain reorganization from block_n={current_tip} to requested block_n={requested_block_n} via floor block_n={floor_block_n}",
         );
         tracing::info!(
-            "🔄 REORG: Target block hash={:#x}, current tip hash={:#x}, requested hash={:#x}",
-            target_block_info.block_hash,
+            "🔄 REORG: Floor block hash={:#x}, current tip hash={:#x}, requested hash={:#x}",
+            floor_block_info.block_hash,
             current_tip_info.block_hash,
             new_tip_block_hash,
         );
 
-        let target_id = BasicId::new(target_block_n);
+        let floor_id = BasicId::new(floor_block_n);
         let current_id = BasicId::new(current_tip);
 
-        tracing::info!("🌳 REORG: Reverting bonsai tries from current={} to target={}", current_tip, target_block_n);
+        tracing::info!("🌳 REORG: Reverting bonsai tries from current={} to floor={}", current_tip, floor_block_n);
 
         tracing::debug!("🌳 REORG: Reverting contract trie...");
         self.contract_trie()
-            .revert_to(target_id, current_id)
+            .revert_to(floor_id, current_id)
             .map_err(|e| anyhow::anyhow!("Failed to revert contract trie: {e:?}"))?;
         tracing::info!("✅ REORG: Contract trie reverted successfully");
 
         tracing::debug!("🌳 REORG: Reverting contract storage trie...");
         self.contract_storage_trie()
-            .revert_to(target_id, current_id)
+            .revert_to(floor_id, current_id)
             .map_err(|e| anyhow::anyhow!("Failed to revert contract storage trie: {e:?}"))?;
         tracing::info!("✅ REORG: Contract storage trie reverted successfully");
 
         tracing::debug!("🌳 REORG: Reverting class trie...");
         self.class_trie()
-            .revert_to(target_id, current_id)
+            .revert_to(floor_id, current_id)
             .map_err(|e| anyhow::anyhow!("Failed to revert class trie: {e:?}"))?;
         tracing::info!("✅ REORG: Class trie reverted successfully");
 
-        tracing::info!("💾 REORG: Committing tries after revert...");
+        tracing::info!("💾 REORG: Committing tries at floor block_n={}...", floor_block_n);
         self.contract_trie()
-            .commit(target_id)
+            .commit(floor_id)
             .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {e:?}"))?;
         self.contract_storage_trie()
-            .commit(target_id)
+            .commit(floor_id)
             .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {e:?}"))?;
         self.class_trie()
-            .commit(target_id)
+            .commit(floor_id)
             .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {e:?}"))?;
-        tracing::info!("✅ REORG: All tries committed successfully");
+        tracing::info!("✅ REORG: Floor tries committed successfully");
+
+        let (target_block_n, target_block_info) = if requested_block_n == floor_block_n {
+            (requested_block_n, floor_block_info)
+        } else {
+            self.replay_tries_from_floor_to_target(
+                floor_block_n,
+                requested_block_n,
+                requested_block_info.header.global_state_root,
+            )
+            .with_context(|| {
+                format!("Replaying tries from floor block_n={floor_block_n} to requested block_n={requested_block_n}")
+            })?;
+            tracing::info!("✅ REORG: Exact trie target reconstructed at block_n={requested_block_n}");
+            (requested_block_n, requested_block_info)
+        };
 
         // Revert database state using the three revert functions
         // First, revert blocks and collect state diffs
@@ -1059,6 +1143,12 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner
             .parallel_merkle_reorg_metadata_to(target_block_n)
             .context("Pruning parallel merkle metadata after reorg")?;
+        if !self.inner.has_parallel_merkle_checkpoint(target_block_n)? {
+            tracing::info!("🧾 REORG: Writing checkpoint marker for exact target block_n={target_block_n}");
+            self.inner
+                .write_parallel_merkle_checkpoint(target_block_n)
+                .with_context(|| format!("Writing checkpoint marker for target block_n={target_block_n}"))?;
+        }
         tracing::info!("✅ REORG: Parallel merkle metadata pruned successfully");
 
         tracing::info!("🔗 REORG: Updating chain tip to block_n={}", target_block_n);
