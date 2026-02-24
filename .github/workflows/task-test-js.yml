@@ -20,6 +20,34 @@ on:
 jobs:
   test-js:
     runs-on: blacksmith-4vcpu-ubuntu-2204
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: conformance
+            rpc_version: "0.8.1"
+            npm_script: "test:conformance"
+          - suite: conformance
+            rpc_version: "0.9.0"
+            npm_script: "test:conformance"
+          - suite: conformance
+            rpc_version: "0.10.0"
+            npm_script: "test:conformance"
+          - suite: extension
+            rpc_version: "0.8.1"
+            npm_script: "test:extension"
+          - suite: extension
+            rpc_version: "0.9.0"
+            npm_script: "test:extension"
+          - suite: extension
+            rpc_version: "0.10.0"
+            npm_script: "test:extension"
+          - suite: e2e
+            rpc_version: "0.10.0"
+            npm_script: "test:e2e"
+    env:
+      RPC_VERSION: ${{ matrix.rpc_version }}
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -50,7 +78,7 @@ jobs:
           cd tests/js_tests
           npm install
 
-      - name: Setup dev chain and run tests
+      - name: Setup dev chain and run tests (${{ matrix.suite }} @ ${{ matrix.rpc_version }})
         run: |
           ./target/release/madara \
             --name madara \
@@ -67,9 +95,8 @@ jobs:
             --rpc-pre-v0-9-preconfirmed-as-pending &
 
           MADARA_PID=$!
+          trap 'kill $MADARA_PID 2>/dev/null || true' EXIT
 
           while ! echo exit | nc localhost 9944; do sleep 1; done
           cd tests/js_tests
-          npm test
-
-          kill $MADARA_PID
+          npm run ${{ matrix.npm_script }}

@@ -1,0 +1,85 @@
+{
+  "generated_at": "2026-02-24",
+  "source": "starkware-libs/starknet-specs",
+  "entries": [
+    {
+      "tag": "v0.8.1",
+      "info_version": "0.8.0",
+      "notes": "Official tag v0.8.1 has OpenRPC info.version 0.8.0",
+      "files": [
+        {
+          "file": "starknet_api_openrpc.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.8.1/api/starknet_api_openrpc.json",
+          "sha256": "7eea51c1548d761c463abd63fad82118c81f120866a8023d676b90eac796c858"
+        },
+        {
+          "file": "starknet_write_api.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.8.1/api/starknet_write_api.json",
+          "sha256": "9ce548ca2f3cd98a1ca913745c3a5a284d0ac5c72d7d01b21631df9473cf8f2c"
+        },
+        {
+          "file": "starknet_trace_api_openrpc.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.8.1/api/starknet_trace_api_openrpc.json",
+          "sha256": "32c9ca77d11a4979f6e7fc81937d0f8783c84a0ce1c72d82588dc38f689e72d8"
+        },
+        {
+          "file": "starknet_ws_api.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.8.1/api/starknet_ws_api.json",
+          "sha256": "f5ff7b2505cf22281fdd6caf5f93269e987125289420de77931356761cf8ed3a"
+        }
+      ]
+    },
+    {
+      "tag": "v0.9.0",
+      "info_version": "0.9.0",
+      "files": [
+        {
+          "file": "starknet_api_openrpc.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.9.0/api/starknet_api_openrpc.json",
+          "sha256": "84df808c90a41b51c24c1fddbcf4e57fa6841b34aeec0ae6cf44d43691f11da0"
+        },
+        {
+          "file": "starknet_write_api.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.9.0/api/starknet_write_api.json",
+          "sha256": "8dd987f5ad3ad6641ab90693998eb499bd99ca1979e1c819d90bb55118d2affe"
+        },
+        {
+          "file": "starknet_trace_api_openrpc.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.9.0/api/starknet_trace_api_openrpc.json",
+          "sha256": "f9add9e607cfc42299e652f6b3eaefec890a47960bc89eed0f981868b5fbd0c8"
+        },
+        {
+          "file": "starknet_ws_api.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.9.0/api/starknet_ws_api.json",
+          "sha256": "212b6c47c4d5629561ee1e3bc64be052c79e5f077f11d146bd55d12e6283adaf"
+        }
+      ]
+    },
+    {
+      "tag": "v0.10.0",
+      "info_version": "0.10.0",
+      "files": [
+        {
+          "file": "starknet_api_openrpc.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_api_openrpc.json",
+          "sha256": "d8d4dc6279d00b35be3414cf17997523dfa84fa2604619c2ebbf2fdf8dde4b77"
+        },
+        {
+          "file": "starknet_write_api.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_write_api.json",
+          "sha256": "3aa263e858870634103487856c91ea502527ff6248d318bc7143be9e6eb84145"
+        },
+        {
+          "file": "starknet_trace_api_openrpc.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_trace_api_openrpc.json",
+          "sha256": "9cd30bc979f7e17d84cc7212dca0fb80549f42bb46262e96942746647bbdbb5e"
+        },
+        {
+          "file": "starknet_ws_api.json",
+          "source_url": "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.10.0/api/starknet_ws_api.json",
+          "sha256": "0f14dfb3ecc24b5b4e0c485e849b100df77b73501b454ecb15e0490d556f2a33"
+        }
+      ]
+    }
+  ]
+}
