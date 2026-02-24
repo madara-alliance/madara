@@ -433,7 +433,7 @@ impl MadaraCmd {
         });
         thread::spawn(move || {
             for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                eprintln!("{stderr_prefix} {line}");
+                println!("{stderr_prefix} {line}");
             }
         });
 
