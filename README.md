@@ -331,9 +331,9 @@ You can find examples on [configs](configs/).
 
 [⬅️ back to top](#-madara-starknet-client)
 
-Madara fully supports all the JSON-RPC methods as of the latest version of the
-Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs),
-with support for `v0.7.1`, `v0.8.1`, `v0.9.0`, and `v0.10.0` routes.
+Madara supports Starknet JSON-RPC routes `v0.7.1`, `v0.8.1`, `v0.9.0`, and
+`v0.10.0`. Method-level availability can vary depending on current implementation
+status and runtime retention/configuration.
 The default user RPC route is `rpc/v0_10_0`.
 Legacy user routes are also available under `rpc/v0_7_1`, `rpc/v0_8_1`, and `rpc/v0_9_0`.
 Admin RPC methods are exposed under `rpc/v0_1_0` (default port `9943`) when `--rpc-admin` is enabled.
@@ -381,7 +381,7 @@ Here is a list of all the supported methods with their current status:
 | ✅     | `starknet_getNonce`                        |
 | ✅     | `starknet_getCompiledCasm` (v0.8.1+)       |
 | ✅     | `starknet_getMessagesStatus` (v0.9.0+)     |
-| ✅     | `starknet_getStorageProof` (v0.8.1+)       |
+| ❌     | `starknet_getStorageProof` (v0.8.1+, currently unavailable in default profile) |
 
 </details>
 
@@ -424,6 +424,14 @@ Here is a list of all the supported methods with their current status:
 > [!NOTE]
 > Subscription methods are currently placeholders and return `UnimplementedMethod`.
 > This applies to `v0.8.1`, `v0.9.0`, and `v0.10.0` (which delegates to `v0.9.0`).
+
+> [!IMPORTANT]
+> `starknet_getStorageProof` is currently treated as unavailable in the default
+> node profile because the required retention is disabled in
+> [`configs/args/config.json`](configs/args/config.json):
+> `db_max_saved_trie_logs = 0`, `db_max_kept_snapshots = 0`, and
+> `rpc_storage_proof_max_distance = 0`. Madara loads this file by default when
+> run without explicit CLI/config overrides.
 
 > [!IMPORTANT]
 > Write methods are forwarded to the Sequencer and are not executed by Madara.
