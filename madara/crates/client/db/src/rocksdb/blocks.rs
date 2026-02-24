@@ -199,6 +199,7 @@ impl RocksDBStorageInner {
             &block.state_diff,
             &events_with_tx_hash,
         )
+    }
 
     /// Collect all L1 handler nonces for blocks in `(revert_to_block_n, current_tip_block_n]`.
     #[tracing::instrument(skip(self))]
