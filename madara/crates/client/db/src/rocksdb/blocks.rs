@@ -78,18 +78,29 @@ fn apply_events_to_transactions(
 impl RocksDBStorageInner {
     /// Returns the latest confirmed block number stored in `BLOCK_INFO_COLUMN`.
     ///
-    /// This is more reliable than deriving it from the chain tip, because the chain tip can
-    /// advance through multiple preconfirmed blocks while confirmation lags behind.
+    /// Staged block info is also written into `BLOCK_INFO_COLUMN`, so we only consider entries
+    /// that also have a matching `BLOCK_HASH_TO_BLOCK_N_COLUMN` index.
     pub(super) fn blocks_latest_confirmed_block_n(&self) -> Result<Option<u64>> {
         let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
-        let mut iter = self.db.iterator_cf(&block_info_col, IteratorMode::End);
-        let Some(item) = iter.next() else {
-            return Ok(None);
-        };
-        let (key, _value) = item?;
-        let key: [u8; size_of::<u32>()] =
-            key.as_ref().try_into().context("Reading latest confirmed block number: invalid key length")?;
-        Ok(Some(u32::from_be_bytes(key) as u64))
+        let block_hash_to_block_n_col = self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN);
+        let iter = self.db.iterator_cf(&block_info_col, IteratorMode::End);
+        for item in iter {
+            let (key, value) = item?;
+            let key: [u8; size_of::<u32>()] =
+                key.as_ref().try_into().context("Reading latest confirmed block number: invalid key length")?;
+            let block_n = u32::from_be_bytes(key);
+            let block_info: MadaraBlockInfo = super::deserialize(&value)?;
+            let Some(indexed_block_n_bytes) =
+                self.db.get_pinned_cf(&block_hash_to_block_n_col, block_info.block_hash.to_bytes_be())?
+            else {
+                continue;
+            };
+            let indexed_block_n: u32 = super::deserialize(&indexed_block_n_bytes)?;
+            if indexed_block_n == block_n {
+                return Ok(Some(block_n as u64));
+            }
+        }
+        Ok(None)
     }
 
     pub(super) fn blocks_store_transactions_with_indices_to_batch(

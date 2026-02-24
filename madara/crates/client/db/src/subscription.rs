@@ -211,6 +211,11 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         WatchChainTip::new(self)
     }
 
+    /// Watch canonical chain head state updates used by internal services.
+    pub fn watch_chain_head_state(self: &Arc<Self>) -> tokio::sync::watch::Receiver<crate::ChainHeadState> {
+        self.chain_head_state.subscribe()
+    }
+
     /// Subscribe to new blocks. See [`SubscribeNewHeads`] for more details
     pub fn subscribe_new_heads(self: &Arc<Self>, tag: SubscribeNewBlocksTag) -> SubscribeNewHeads<D> {
         SubscribeNewHeads::new(self, tag)

@@ -143,6 +143,37 @@ impl RocksDBStorageInner {
         Ok(out)
     }
 
+    /// Returns the highest contiguous block in `[from_block_n..=to_block_n]` that has
+    /// stage-1 data persisted.
+    ///
+    /// Stage-1 is considered present when:
+    /// - `PARALLEL_MERKLE_STAGED_STATE/<block_n>` exists (any state variant), and
+    /// - staged preconfirmed header exists for that block.
+    ///
+    /// Stops at the first missing block (no-gap semantics).
+    pub(super) fn parallel_merkle_get_staged_contiguous_tip(
+        &self,
+        from_block_n: u64,
+        to_block_n: u64,
+    ) -> Result<Option<u64>> {
+        if from_block_n > to_block_n {
+            return Ok(None);
+        }
+
+        let mut tip = None;
+        for block_n in from_block_n..=to_block_n {
+            let Some(_state) = self.parallel_merkle_get_staged_state(block_n)? else {
+                break;
+            };
+            if self.parallel_merkle_get_staged_block_header(block_n)?.is_none() {
+                break;
+            }
+            tip = Some(block_n);
+        }
+
+        Ok(tip)
+    }
+
     pub(super) fn write_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
         self.parallel_merkle_mark_checkpoint_in_batch(block_n, &mut batch)?;

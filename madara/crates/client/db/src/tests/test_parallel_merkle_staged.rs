@@ -1,9 +1,10 @@
 #![cfg(test)]
 
-use crate::preconfirmed::PreconfirmedExecutedTransaction;
+use crate::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
+use crate::rocksdb::RocksDBConfig;
 use crate::storage::{MadaraStorageRead, MadaraStorageWrite, StorageChainTip};
 use crate::test_utils::declare_v3;
-use crate::MadaraBackend;
+use crate::{MadaraBackend, MadaraBackendConfig};
 use blockifier::bouncer::BouncerWeights;
 use itertools::Itertools;
 use mp_block::{
@@ -17,6 +18,7 @@ use mp_convert::{Felt, ToFelt};
 use mp_receipt::{Event, EventWithTransactionHash, InvokeTransactionReceipt};
 use mp_state_update::{ContractStorageDiffItem, MigratedClassItem, NonceUpdate, StateDiff, StorageEntry};
 use mp_transactions::{validated::TxTimestamp, InvokeTransactionV0, L1HandlerTransaction, L1HandlerTransactionWithFee};
+use rstest::rstest;
 
 fn make_staged_block(block_n: u64, tx_hash: Felt) -> FullBlockWithoutCommitments {
     let header = PreconfirmedHeader { block_number: block_n, ..Default::default() };
@@ -80,6 +82,19 @@ fn make_pending_l1_to_l2_message(core_contract_nonce: u64) -> L1HandlerTransacti
     )
 }
 
+fn stage_blocks(backend: &std::sync::Arc<MadaraBackend>, block_numbers: &[u64], tx_hash_base: u64) {
+    for block_n in block_numbers {
+        backend
+            .write_access()
+            .write_parallel_merkle_staged_block_data(
+                &make_staged_block(*block_n, Felt::from(tx_hash_base + block_n)),
+                &[],
+                None,
+            )
+            .expect("staged write should succeed");
+    }
+}
+
 #[tokio::test]
 async fn write_parallel_merkle_staged_block_data_persists_without_tip_advance() {
     let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
@@ -115,35 +130,156 @@ async fn write_parallel_merkle_staged_block_data_persists_without_tip_advance() 
     );
 }
 
+#[rstest]
+#[case::stage1(&[0], Some(0), (0, 10, Some(0)), None)]
+#[case::gap(&[0, 2], Some(0), (0, 10, Some(0)), Some((2, 10, Some(2))))]
+#[case::cap_confirmed_plus_ten(
+    &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+    Some(10),
+    (0, 10, Some(10)),
+    None
+)]
 #[tokio::test]
-async fn write_parallel_merkle_staged_block_data_rejects_duplicate_block() {
+async fn chain_head_state_stage1_contiguous_and_cap_rules(
+    #[case] staged_blocks: &'static [u64],
+    #[case] expected_internal_tip: Option<u64>,
+    #[case] contiguous_query: (u64, u64, Option<u64>),
+    #[case] second_contiguous_query: Option<(u64, u64, Option<u64>)>,
+) {
     let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
-    let block = make_staged_block(0, Felt::from_hex_unchecked("0x1"));
+    assert_eq!(backend.chain_head_state().internal_preconfirmed_tip, None);
 
-    backend.write_access().write_parallel_merkle_staged_block_data(&block, &[], None).unwrap();
-    let err = backend
-        .write_access()
-        .write_parallel_merkle_staged_block_data(&block, &[], None)
-        .expect_err("duplicate staged write must be rejected");
+    stage_blocks(&backend, staged_blocks, 0xabc100_u64);
 
-    let err_text = format!("{err:#}");
-    assert!(err_text.contains("already exists"), "unexpected error: {err_text}");
+    let head_state = backend.chain_head_state();
+    assert_eq!(head_state.confirmed_tip, None);
+    assert_eq!(head_state.external_preconfirmed_tip, None);
+    assert_eq!(head_state.internal_preconfirmed_tip, expected_internal_tip);
+
+    let (from_1, to_1, expected_1) = contiguous_query;
+    assert_eq!(backend.get_parallel_merkle_staged_contiguous_tip(from_1, to_1).unwrap(), expected_1);
+
+    if let Some((from_2, to_2, expected_2)) = second_contiguous_query {
+        assert_eq!(backend.get_parallel_merkle_staged_contiguous_tip(from_2, to_2).unwrap(), expected_2);
+    }
 }
 
 #[tokio::test]
-async fn write_parallel_merkle_staged_block_data_rejects_confirmed_block() {
-    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
-    let block = make_staged_block(0, Felt::from_hex_unchecked("0x55"));
+async fn chain_head_state_tracks_external_and_internal_preconfirmed() {
+    let backend = MadaraBackend::open_for_testing_with_config(
+        ChainConfig::madara_test().into(),
+        MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+    );
+
+    let confirmed_block = make_staged_block(0, Felt::from_hex_unchecked("0xabc200"));
     backend
         .write_access()
-        .add_full_block_with_classes(&block, &[], /* pre_v0_13_2_hash_override */ true)
-        .expect("block should confirm");
+        .add_full_block_with_classes(&confirmed_block, &[], /* pre_v0_13_2_hash_override */ true)
+        .expect("confirmed write should succeed");
+
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
+        .expect("new preconfirmed block should succeed");
+
+    for block_n in 1..=3_u64 {
+        backend
+            .write_access()
+            .write_parallel_merkle_staged_block_data(
+                &make_staged_block(block_n, Felt::from(0xabc210_u64 + block_n)),
+                &[],
+                None,
+            )
+            .expect("staged write should succeed");
+    }
+
+    let head_state = backend.chain_head_state();
+    assert_eq!(head_state.confirmed_tip, Some(0));
+    assert_eq!(head_state.external_preconfirmed_tip, Some(1));
+    assert_eq!(head_state.internal_preconfirmed_tip, Some(3));
+}
+
+#[tokio::test]
+async fn chain_head_state_reconstructs_from_db_on_startup() {
+    let temp_dir = tempfile::TempDir::with_prefix("madara-chain-head").expect("temp dir should be created");
+    let chain_config: std::sync::Arc<ChainConfig> = ChainConfig::madara_test().into();
+    let builder = mc_class_exec::config::NativeConfig::builder();
+    mc_class_exec::init_compilation_semaphore(builder.max_concurrent_compilations());
+    let cairo_native_config = std::sync::Arc::new(builder.build());
+
+    let backend = MadaraBackend::open_rocksdb(
+        temp_dir.path(),
+        chain_config.clone(),
+        MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+        RocksDBConfig::default(),
+        cairo_native_config.clone(),
+    )
+    .expect("backend should open");
+
+    let confirmed_block = make_staged_block(0, Felt::from_hex_unchecked("0xabc300"));
+    backend
+        .write_access()
+        .add_full_block_with_classes(&confirmed_block, &[], /* pre_v0_13_2_hash_override */ true)
+        .expect("confirmed write should succeed");
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 1, ..Default::default() }))
+        .expect("new preconfirmed block should succeed");
+    for block_n in 1..=3_u64 {
+        backend
+            .write_access()
+            .write_parallel_merkle_staged_block_data(
+                &make_staged_block(block_n, Felt::from(0xabc310_u64 + block_n)),
+                &[],
+                None,
+            )
+            .expect("staged write should succeed");
+    }
+    drop(backend);
+
+    let restarted_backend = MadaraBackend::open_rocksdb(
+        temp_dir.path(),
+        chain_config,
+        MadaraBackendConfig { save_preconfirmed: true, ..Default::default() },
+        RocksDBConfig::default(),
+        cairo_native_config,
+    )
+    .expect("backend should reopen");
+    let head_state = restarted_backend.chain_head_state();
+
+    assert_eq!(head_state.confirmed_tip, Some(0));
+    assert_eq!(head_state.external_preconfirmed_tip, Some(1));
+    assert_eq!(head_state.internal_preconfirmed_tip, Some(3));
+}
+
+#[rstest]
+#[case::duplicate_after_stage("0x1", "already exists", false)]
+#[case::already_confirmed("0x55", "already confirmed", true)]
+#[tokio::test]
+async fn write_parallel_merkle_staged_block_data_rejects_invalid_stage_target(
+    #[case] tx_hash_hex: &str,
+    #[case] expected_error: &str,
+    #[case] confirm_first: bool,
+) {
+    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+    let block = make_staged_block(0, Felt::from_hex_unchecked(tx_hash_hex));
+
+    if confirm_first {
+        backend
+            .write_access()
+            .add_full_block_with_classes(&block, &[], /* pre_v0_13_2_hash_override */ true)
+            .expect("block should confirm");
+    } else {
+        backend.write_access().write_parallel_merkle_staged_block_data(&block, &[], None).unwrap();
+    }
 
     let err = backend
         .write_access()
         .write_parallel_merkle_staged_block_data(&block, &[], None)
-        .expect_err("confirmed block should not be staged again");
-    assert!(format!("{err:#}").contains("already confirmed"));
+        .expect_err("invalid staged target must fail");
+
+    let err_text = format!("{err:#}");
+    assert!(err_text.contains(expected_error), "unexpected error: {err_text}");
 }
 
 #[tokio::test]
@@ -182,9 +318,11 @@ async fn write_parallel_merkle_staged_block_data_stage_one_is_atomic_with_nonce_
 async fn confirm_parallel_merkle_staged_block_with_root_confirms_in_order() {
     let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
     let block = make_staged_block(0, Felt::from_hex_unchecked("0x44"));
+    let next_block = make_staged_block(1, Felt::from_hex_unchecked("0x45"));
     let root = Felt::from_hex_unchecked("0x123456");
 
     backend.write_access().write_parallel_merkle_staged_block_data(&block, &[], None).unwrap();
+    backend.write_access().write_parallel_merkle_staged_block_data(&next_block, &[], None).unwrap();
     let result = backend
         .write_access()
         .confirm_parallel_merkle_staged_block_with_root(0, root, /* pre_v0_13_2_hash_override */ true)
@@ -193,11 +331,17 @@ async fn confirm_parallel_merkle_staged_block_with_root_confirms_in_order() {
     assert_eq!(result.new_state_root, root);
     assert_eq!(backend.latest_confirmed_block_n(), Some(0));
     assert!(!backend.has_parallel_merkle_staged_block(0).unwrap(), "staged marker should be removed");
+    assert!(backend.has_parallel_merkle_staged_block(1).unwrap(), "next block should remain staged");
+    assert_eq!(backend.db.get_parallel_merkle_staged_block_header(0).unwrap(), None);
     assert_eq!(backend.db.find_block_hash(&result.block_hash).unwrap(), Some(0));
 
     let block_info = backend.block_view_on_confirmed(0).unwrap().get_block_info().unwrap();
     assert_eq!(block_info.header.global_state_root, root);
     assert_eq!(block_info.block_hash, result.block_hash);
+
+    let head_state = backend.chain_head_state();
+    assert_eq!(head_state.confirmed_tip, Some(0));
+    assert_eq!(head_state.internal_preconfirmed_tip, Some(1));
 }
 
 #[tokio::test]
@@ -219,21 +363,6 @@ async fn confirm_parallel_merkle_staged_block_with_root_rejects_out_of_order() {
     assert_eq!(backend.latest_confirmed_block_n(), None);
     assert!(backend.has_parallel_merkle_staged_block(0).unwrap());
     assert!(backend.has_parallel_merkle_staged_block(1).unwrap());
-}
-
-#[tokio::test]
-async fn confirm_parallel_merkle_staged_block_clears_staged_header_and_state() {
-    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
-    let block = make_staged_block(0, Felt::from_hex_unchecked("0xbeef"));
-    backend.write_access().write_parallel_merkle_staged_block_data(&block, &[], None).unwrap();
-    backend
-        .write_access()
-        .confirm_parallel_merkle_staged_block_with_root(0, Felt::from_hex_unchecked("0xff"), true)
-        .unwrap();
-
-    assert!(!backend.has_parallel_merkle_staged_block(0).unwrap());
-    assert_eq!(backend.get_parallel_merkle_staged_blocks().unwrap(), Vec::<u64>::new());
-    assert_eq!(backend.db.get_parallel_merkle_staged_block_header(0).unwrap(), None);
 }
 
 #[tokio::test]
@@ -370,32 +499,15 @@ async fn preconfirmed_chain_tip_reads_only_current_block_prefix() {
     }
 }
 
+#[rstest]
+#[case::latest_view(None, Some(0), Some(1))]
+#[case::boundary_view(Some(0), Some(0), None)]
 #[tokio::test]
-async fn find_block_by_hash_returns_any_confirmed_block_not_only_tip() {
-    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
-
-    let block_0 = make_staged_block(0, Felt::from_hex_unchecked("0x100"));
-    let block_1 = make_staged_block(1, Felt::from_hex_unchecked("0x101"));
-
-    backend.write_access().write_parallel_merkle_staged_block_data(&block_0, &[], None).unwrap();
-    let result_0 = backend
-        .write_access()
-        .confirm_parallel_merkle_staged_block_with_root(0, Felt::from_hex_unchecked("0x1000"), true)
-        .unwrap();
-
-    backend.write_access().write_parallel_merkle_staged_block_data(&block_1, &[], None).unwrap();
-    let result_1 = backend
-        .write_access()
-        .confirm_parallel_merkle_staged_block_with_root(1, Felt::from_hex_unchecked("0x1001"), true)
-        .unwrap();
-
-    let view = backend.view_on_latest_confirmed();
-    assert_eq!(view.find_block_by_hash(&result_0.block_hash).unwrap(), Some(0));
-    assert_eq!(view.find_block_by_hash(&result_1.block_hash).unwrap(), Some(1));
-}
-
-#[tokio::test]
-async fn find_block_by_hash_respects_view_boundary() {
+async fn find_block_by_hash_scopes_results_by_view(
+    #[case] view_on_block_n: Option<u64>,
+    #[case] expected_block_0: Option<u64>,
+    #[case] expected_block_1: Option<u64>,
+) {
     let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
     let block_0 = make_staged_block(0, Felt::from_hex_unchecked("0x200"));
     let block_1 = make_staged_block(1, Felt::from_hex_unchecked("0x201"));
@@ -411,9 +523,13 @@ async fn find_block_by_hash_respects_view_boundary() {
         .confirm_parallel_merkle_staged_block_with_root(1, Felt::from_hex_unchecked("0x2001"), true)
         .unwrap();
 
-    let view_on_block_0 = backend.view_on_confirmed(0).expect("block #0 should be visible");
-    assert_eq!(view_on_block_0.find_block_by_hash(&result_0.block_hash).unwrap(), Some(0));
-    assert_eq!(view_on_block_0.find_block_by_hash(&result_1.block_hash).unwrap(), None);
+    let view = match view_on_block_n {
+        Some(block_n) => backend.view_on_confirmed(block_n).expect("block should be visible"),
+        None => backend.view_on_latest_confirmed(),
+    };
+
+    assert_eq!(view.find_block_by_hash(&result_0.block_hash).unwrap(), expected_block_0);
+    assert_eq!(view.find_block_by_hash(&result_1.block_hash).unwrap(), expected_block_1);
 }
 
 #[tokio::test]
@@ -510,4 +626,7 @@ async fn revert_to_replays_from_checkpoint_floor_and_lands_on_exact_requested_bl
         Some(requested_block_n),
         "latest checkpoint should be clamped to exact target after reorg",
     );
+    let head_state = backend.chain_head_state();
+    assert_eq!(head_state.confirmed_tip, Some(requested_block_n));
+    assert_eq!(head_state.internal_preconfirmed_tip, None);
 }

@@ -157,6 +157,11 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn has_parallel_merkle_staged_block(&self, block_n: u64) -> Result<bool>;
     fn get_parallel_merkle_staged_block_header(&self, block_n: u64) -> Result<Option<PreconfirmedHeader>>;
     fn get_parallel_merkle_staged_blocks(&self) -> Result<Vec<u64>>;
+    /// Returns the highest contiguous block `<= to_block_n` starting from `from_block_n`
+    /// that has stage-1 parallel-merkle data persisted (staged state + staged header).
+    ///
+    /// If `from_block_n > to_block_n` or the first block is not stage-1 persisted, returns `None`.
+    fn get_parallel_merkle_staged_contiguous_tip(&self, from_block_n: u64, to_block_n: u64) -> Result<Option<u64>>;
     fn has_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<bool>;
     fn get_parallel_merkle_latest_checkpoint(&self) -> Result<Option<u64>>;
 

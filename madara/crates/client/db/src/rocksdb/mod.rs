@@ -210,11 +210,7 @@ impl RocksDBStorageInner {
         chain_id: Felt,
     ) -> Result<()> {
         let block_n = block.header.block_number;
-        let latest_confirmed = match self.get_chain_tip_without_content()? {
-            Some(StoredChainTipWithoutContent::Confirmed(n)) => Some(n),
-            Some(StoredChainTipWithoutContent::Preconfirmed(header)) => header.block_number.checked_sub(1),
-            None => None,
-        };
+        let latest_confirmed = self.blocks_latest_confirmed_block_n()?;
         if latest_confirmed.is_some_and(|n| block_n <= n) {
             anyhow::bail!("cannot stage block_n={block_n}: block header already confirmed");
         }
@@ -340,10 +336,7 @@ impl RocksDBStorage {
         tracing::info!("📝 Database write mode: {}", config.write_mode);
         let inner = Arc::new(RocksDBStorageInner { writeopts, db, config: config.clone() });
 
-        let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
-            StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
-            StoredChainTipWithoutContent::Preconfirmed(header) => header.block_number.checked_sub(1),
-        });
+        let head_block_n = inner.blocks_latest_confirmed_block_n()?;
 
         let snapshot = Snapshots::new(inner.clone(), head_block_n, config.max_kept_snapshots, config.snapshot_interval);
 
@@ -627,6 +620,11 @@ impl MadaraStorageRead for RocksDBStorage {
     }
     fn get_parallel_merkle_staged_blocks(&self) -> Result<Vec<u64>> {
         self.inner.parallel_merkle_get_staged_blocks().context("Getting parallel merkle staged blocks")
+    }
+    fn get_parallel_merkle_staged_contiguous_tip(&self, from_block_n: u64, to_block_n: u64) -> Result<Option<u64>> {
+        self.inner.parallel_merkle_get_staged_contiguous_tip(from_block_n, to_block_n).with_context(|| {
+            format!("Getting contiguous parallel merkle staged tip in range [{from_block_n}..={to_block_n}]")
+        })
     }
     fn has_parallel_merkle_checkpoint(&self, block_n: u64) -> Result<bool> {
         self.inner
