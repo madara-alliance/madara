@@ -466,3 +466,48 @@ async fn compute_parallel_merkle_root_from_snapshot_base_rejects_incompatible_sn
         "unexpected error: {err_text}"
     );
 }
+
+#[tokio::test]
+async fn revert_to_replays_from_checkpoint_floor_and_lands_on_exact_requested_block() {
+    let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+
+    let mut block_hashes = Vec::new();
+    for block_n in 0..=4_u64 {
+        let block = make_staged_block(block_n, Felt::from(0xA000_u64 + block_n));
+        let result = backend
+            .write_access()
+            .add_full_block_with_classes(&block, &[], /* pre_v0_13_2_hash_override */ true)
+            .expect("confirmed write should succeed");
+        block_hashes.push(result.block_hash);
+    }
+
+    // Only floor checkpoints are marked to emulate sparse persisted trie commit markers.
+    backend.write_parallel_merkle_checkpoint(0).expect("checkpoint #0 should be persisted");
+    backend.write_parallel_merkle_checkpoint(4).expect("checkpoint #4 should be persisted");
+
+    let requested_block_n = 2_u64;
+    let requested_block_hash = block_hashes[requested_block_n as usize];
+    let (actual_block_n, actual_block_hash) =
+        backend.revert_to(&requested_block_hash).expect("revert to requested block should succeed");
+
+    assert_eq!(actual_block_n, requested_block_n, "revert should land on exact requested block");
+    assert_eq!(actual_block_hash, requested_block_hash, "returned hash should match requested block hash");
+
+    match backend.db.get_chain_tip().expect("chain tip should be readable") {
+        StorageChainTip::Confirmed(block_n) => {
+            assert_eq!(block_n, requested_block_n, "chain tip should be updated to requested block");
+        }
+        other => panic!("expected confirmed chain tip at requested block, got {other:?}"),
+    }
+    assert_eq!(backend.db.get_block_info(3).unwrap(), None, "block #3 should be pruned");
+    assert_eq!(backend.db.get_block_info(4).unwrap(), None, "block #4 should be pruned");
+    assert!(
+        backend.has_parallel_merkle_checkpoint(requested_block_n).unwrap(),
+        "exact target should have a persisted checkpoint marker",
+    );
+    assert_eq!(
+        backend.get_parallel_merkle_latest_checkpoint().unwrap(),
+        Some(requested_block_n),
+        "latest checkpoint should be clamped to exact target after reorg",
+    );
+}

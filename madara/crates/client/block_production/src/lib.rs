@@ -178,7 +178,12 @@ pub struct ParallelMerkleConfig {
 
 impl Default for ParallelMerkleConfig {
     fn default() -> Self {
-        Self { enabled: false, flush_interval: 3, max_inflight: 10, trie_log_mode: ParallelMerkleTrieLogMode::Off }
+        Self {
+            enabled: false,
+            flush_interval: 3,
+            max_inflight: 10,
+            trie_log_mode: ParallelMerkleTrieLogMode::Checkpoint,
+        }
     }
 }
 

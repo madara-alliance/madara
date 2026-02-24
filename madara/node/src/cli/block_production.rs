@@ -35,7 +35,7 @@ pub struct BlockProductionParams {
     pub parallel_merkle_max_inflight: u64,
 
     /// Trie-log mode for parallel merkle persistence.
-    #[arg(env = "MADARA_PARALLEL_MERKLE_TRIE_LOG_MODE", long, default_value = "off")]
+    #[arg(env = "MADARA_PARALLEL_MERKLE_TRIE_LOG_MODE", long, default_value = "checkpoint")]
     pub parallel_merkle_trie_log_mode: ParallelMerkleTrieLogMode,
 }
 
@@ -50,6 +50,7 @@ pub enum ParallelMerkleTrieLogMode {
 mod tests {
     use super::*;
     use clap::Parser;
+    use rstest::rstest;
 
     #[test]
     fn block_production_params_defaults_parse() {
@@ -58,7 +59,7 @@ mod tests {
         assert!(!params.parallel_merkle_enabled);
         assert_eq!(params.parallel_merkle_flush_interval, 3);
         assert_eq!(params.parallel_merkle_max_inflight, 10);
-        assert_eq!(params.parallel_merkle_trie_log_mode, ParallelMerkleTrieLogMode::Off);
+        assert_eq!(params.parallel_merkle_trie_log_mode, ParallelMerkleTrieLogMode::Checkpoint);
     }
 
     #[test]
@@ -81,33 +82,23 @@ mod tests {
         assert_eq!(params.parallel_merkle_trie_log_mode, ParallelMerkleTrieLogMode::Checkpoint);
     }
 
-    #[test]
-    fn block_production_params_rejects_flush_interval_below_two() {
-        let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-flush-interval", "1"])
-            .expect_err("flush interval <2 must be rejected");
+    #[rstest]
+    #[case(&["madara", "--parallel-merkle-flush-interval", "1"], "parallel-merkle-flush-interval", "2")]
+    #[case(&["madara", "--parallel-merkle-max-inflight", "0"], "parallel-merkle-max-inflight", "1")]
+    #[case(
+        &["madara", "--parallel-merkle-trie-log-mode", "invalid"],
+        "parallel-merkle-trie-log-mode",
+        "checkpoint"
+    )]
+    fn block_production_params_rejects_invalid_parallel_merkle_args(
+        #[case] args: &[&str],
+        #[case] expected_flag: &str,
+        #[case] expected_hint: &str,
+    ) {
+        let err = BlockProductionParams::try_parse_from(args).expect_err("invalid args must be rejected");
 
         let err_text = err.to_string();
-        assert!(err_text.contains("2"));
-        assert!(err_text.contains("parallel-merkle-flush-interval"));
-    }
-
-    #[test]
-    fn block_production_params_rejects_max_inflight_zero() {
-        let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-max-inflight", "0"])
-            .expect_err("max inflight <1 must be rejected");
-
-        let err_text = err.to_string();
-        assert!(err_text.contains("1"));
-        assert!(err_text.contains("parallel-merkle-max-inflight"));
-    }
-
-    #[test]
-    fn block_production_params_rejects_invalid_trie_log_mode() {
-        let err = BlockProductionParams::try_parse_from(["madara", "--parallel-merkle-trie-log-mode", "invalid"])
-            .expect_err("invalid trie-log mode must be rejected");
-
-        let err_text = err.to_string();
-        assert!(err_text.contains("parallel-merkle-trie-log-mode"));
-        assert!(err_text.contains("checkpoint") || err_text.contains("off"));
+        assert!(err_text.contains(expected_flag));
+        assert!(err_text.contains(expected_hint) || err_text.contains("off"));
     }
 }

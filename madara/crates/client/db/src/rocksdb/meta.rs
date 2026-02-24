@@ -187,6 +187,10 @@ impl RocksDBStorageInner {
         Ok(Some(super::deserialize(&res)?))
     }
 
+    pub(super) fn get_parallel_merkle_checkpoint_at_or_before(&self, target_block_n: u64) -> Result<Option<u64>> {
+        self.latest_meta_block_n_at_or_before(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n)
+    }
+
     fn latest_meta_block_n_at_or_before(&self, prefix: &[u8], target_block_n: u64) -> Result<Option<u64>> {
         let meta_col = self.get_column(META_COLUMN);
         let mut options = ReadOptions::default();
@@ -248,7 +252,7 @@ impl RocksDBStorageInner {
         let meta_col = self.get_column(META_COLUMN);
 
         self.delete_meta_entries_above(META_PARALLEL_MERKLE_STAGED_STATE_PREFIX, target_block_n, &mut batch)?;
-        self.delete_meta_entries_above(META_PARALLEL_MERKLE_STAGED_HEADER_PREFIX, target_block_n, &mut batch)?;
+        self.parallel_merkle_clear_staged_headers_above(target_block_n, &mut batch);
         self.delete_meta_entries_above(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, target_block_n, &mut batch)?;
 
         if let Some(latest_checkpoint) =
@@ -551,6 +555,7 @@ mod tests {
     use super::*;
     use crate::rocksdb::{RocksDBConfig, RocksDBStorage};
     use mp_block::header::PreconfirmedHeader;
+    use rstest::rstest;
 
     fn create_test_storage() -> (tempfile::TempDir, RocksDBStorage) {
         let temp_dir = tempfile::TempDir::with_prefix("meta-test").unwrap();
@@ -594,5 +599,24 @@ mod tests {
         assert_eq!(storage.inner.get_parallel_merkle_latest_checkpoint().unwrap(), None);
         assert!(!storage.inner.has_parallel_merkle_checkpoint(7).unwrap());
         assert!(!storage.inner.has_parallel_merkle_checkpoint(9).unwrap());
+    }
+
+    #[rstest]
+    #[case(4, None)]
+    #[case(5, Some(5))]
+    #[case(7, Some(5))]
+    #[case(8, Some(8))]
+    #[case(99, Some(12))]
+    fn parallel_merkle_checkpoint_floor_lookup_returns_latest_at_or_before_target(
+        #[case] target_block_n: u64,
+        #[case] expected: Option<u64>,
+    ) {
+        let (_tmp, storage) = create_test_storage();
+
+        storage.inner.write_parallel_merkle_checkpoint(5).unwrap();
+        storage.inner.write_parallel_merkle_checkpoint(8).unwrap();
+        storage.inner.write_parallel_merkle_checkpoint(12).unwrap();
+
+        assert_eq!(storage.inner.get_parallel_merkle_checkpoint_at_or_before(target_block_n).unwrap(), expected);
     }
 }

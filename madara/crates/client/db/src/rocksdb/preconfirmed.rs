@@ -74,4 +74,19 @@ impl RocksDBStorageInner {
         let preconfirmed_col = self.get_column(PRECONFIRMED_COLUMN);
         batch.delete_cf(&preconfirmed_col, preconfirmed_block_key(PRECONFIRMED_STAGED_HEADER_TAG, block_n));
     }
+
+    pub(super) fn parallel_merkle_clear_staged_headers_above(
+        &self,
+        target_block_n: u64,
+        batch: &mut WriteBatchWithTransaction,
+    ) {
+        if target_block_n == u64::MAX {
+            return;
+        }
+
+        let preconfirmed_col = self.get_column(PRECONFIRMED_COLUMN);
+        let start = preconfirmed_block_key(PRECONFIRMED_STAGED_HEADER_TAG, target_block_n + 1).to_vec();
+        let end = vec![PRECONFIRMED_STAGED_HEADER_TAG + 1];
+        batch.delete_range_cf(&preconfirmed_col, start, end);
+    }
 }
