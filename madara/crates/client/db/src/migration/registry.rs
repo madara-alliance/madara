@@ -62,6 +62,12 @@ pub fn get_migrations() -> &'static [Migration] {
             name: "v10→v11: L1-to-L2 message status indexes (no-op)",
             migrate: super::revisions::revision_0011::migrate,
         },
+        Migration {
+            from_version: 11,
+            to_version: 12,
+            name: "v11→v12: revert L1-message cleanup consistency (no-op)",
+            migrate: super::revisions::revision_0012::migrate,
+        },
     ]
 }
 
