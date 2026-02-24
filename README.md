@@ -413,13 +413,17 @@ Here is a list of all the supported methods with their current status:
 | Status | Method                                           |
 | ------ | ------------------------------------------------ |
 | ✅     | `starknet_unsubscribe` (v0.8.1+)                  |
-| ✅     | `starknet_subscribeNewHeads` (v0.8.1+)            |
-| ✅     | `starknet_subscribeEvents` (v0.8.1+)              |
-| ✅     | `starknet_subscribeTransactionStatus` (v0.8.1+)   |
-| ✅     | `starknet_subscribePendingTransactions` (v0.8.1+) |
+| ❌     | `starknet_subscribeNewHeads` (placeholder)        |
+| ❌     | `starknet_subscribeEvents` (placeholder)          |
+| ❌     | `starknet_subscribeTransactionStatus` (placeholder) |
+| ❌     | `starknet_subscribePendingTransactions` (placeholder) |
 | ❌     | `starknet_subscriptionReorg`                       |
 
 </details>
+
+> [!NOTE]
+> Subscription methods are currently placeholders and return `UnimplementedMethod`.
+> This applies to `v0.8.1`, `v0.9.0`, and `v0.10.0` (which delegates to `v0.9.0`).
 
 > [!IMPORTANT]
 > Write methods are forwarded to the Sequencer and are not executed by Madara.
