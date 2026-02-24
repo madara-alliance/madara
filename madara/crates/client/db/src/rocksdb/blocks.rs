@@ -199,6 +199,25 @@ impl RocksDBStorageInner {
             &block.state_diff,
             &events_with_tx_hash,
         )
+
+    /// Collect all L1 handler nonces for blocks in `(revert_to_block_n, current_tip_block_n]`.
+    #[tracing::instrument(skip(self))]
+    pub(super) fn collect_reverted_l1_handler_nonces(
+        &self,
+        revert_to_block_n: u64,
+        current_tip_block_n: u64,
+    ) -> Result<Vec<u64>> {
+        let mut nonces = Vec::new();
+
+        for block_n in (revert_to_block_n + 1..=current_tip_block_n).rev() {
+            let block_info =
+                self.get_block_info(block_n)?.with_context(|| format!("Block info not found for block_n={block_n}"))?;
+            let transactions: Vec<_> =
+                self.get_block_transactions(block_n, 0).take(block_info.tx_hashes.len()).collect::<Result<_>>()?;
+            nonces.extend(transactions.iter().filter_map(|v| v.transaction.as_l1_handler().map(|tx| tx.nonce)));
+        }
+
+        Ok(nonces)
     }
 
     #[tracing::instrument(skip(self))]
@@ -490,27 +509,8 @@ impl RocksDBStorageInner {
                 batch.delete_cf(&block_n_to_state_diff, block_n_u32.to_be_bytes());
             }
 
-            // Get transactions for this block to handle L1 handler removal
-            let transactions: Vec<_> =
-                self.get_block_transactions(block_n, 0).take(block_info.tx_hashes.len()).collect::<Result<_>>()?;
-
             // Remove events for this block
             self.events_remove_block(block_n, &mut batch)?;
-
-            let l1_handler_count = transactions.iter().filter(|v| v.transaction.as_l1_handler().is_some()).count();
-            if l1_handler_count > 0 {
-                tracing::debug!(
-                    "📦 REORG [block_db_revert]: Removing {} L1->L2 messages from block {}",
-                    l1_handler_count,
-                    block_n
-                );
-            }
-
-            // TODO: No sure how to implement the same for the L2 Network
-            // self.message_to_l2_remove_txns(
-            //     transactions.iter().filter_map(|v| v.transaction.as_l1_handler()).map(|tx| tx.nonce),
-            //     &mut batch,
-            // )?;
 
             tracing::debug!(
                 "📦 REORG [block_db_revert]: Removing {} transactions from block {}",
