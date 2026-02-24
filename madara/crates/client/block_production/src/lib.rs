@@ -952,14 +952,12 @@ impl BlockProductionTask {
         let close_preconfirmed_start = Instant::now();
         enum CloseOutcome {
             QueuedToParallelFinalizer,
-            ClosedSequential { db_result: Box<AddFullBlockResult>, is_fallback: bool },
+            ClosedSequential { db_result: Box<AddFullBlockResult> },
         }
 
         let close_outcome: CloseOutcome = if self.parallel_merkle.enabled {
             let block_number = state.block_number;
             let consumed_core_contract_nonces = state.consumed_core_contract_nonces;
-            let consumed_core_contract_nonces_fallback = consumed_core_contract_nonces.clone();
-            let state_diff_fallback = state_diff.clone();
             let finalizer = self
                 .parallel_merkle_finalizer
                 .as_ref()
@@ -980,36 +978,21 @@ impl BlockProductionTask {
                 block_production_duration: state.block_start_time.elapsed(),
             };
             let submit_started = Instant::now();
-            if let Err(error) = finalizer.submit(payload).await {
-                let err = format!("{error:#}");
-                tracing::warn!(
-                    block_number,
-                    %err,
-                    "parallel finalizer queueing failed, falling back to sequential close"
-                );
-                let db_result = Self::close_preconfirmed_block_with_state_diff(
-                    self.backend.clone(),
-                    block_number,
-                    consumed_core_contract_nonces_fallback,
-                    &bouncer_weights,
-                    state_diff_fallback,
-                )
+            finalizer
+                .submit(payload)
                 .await
-                .with_context(|| format!("fallback sequential close for block #{}", block_number))?;
+                .with_context(|| format!("queueing block #{block_number} to parallel finalizer"))?;
 
-                CloseOutcome::ClosedSequential { db_result: Box::new(db_result), is_fallback: true }
-            } else {
-                tracing::info!(
-                    target: "close_block",
-                    block_number = block_number,
-                    tx_count = n_txs,
-                    event_count = event_count,
-                    close_preconfirmed_ms = close_preconfirmed_start.elapsed().as_secs_f64() * 1000.0,
-                    queue_submit_ms = submit_started.elapsed().as_secs_f64() * 1000.0,
-                    "close_block_queued_for_parallel_finalizer"
-                );
-                CloseOutcome::QueuedToParallelFinalizer
-            }
+            tracing::info!(
+                target: "close_block",
+                block_number = block_number,
+                tx_count = n_txs,
+                event_count = event_count,
+                close_preconfirmed_ms = close_preconfirmed_start.elapsed().as_secs_f64() * 1000.0,
+                queue_submit_ms = submit_started.elapsed().as_secs_f64() * 1000.0,
+                "close_block_queued_for_parallel_finalizer"
+            );
+            CloseOutcome::QueuedToParallelFinalizer
         } else {
             let db_result = Self::close_preconfirmed_block_with_state_diff(
                 self.backend.clone(),
@@ -1021,10 +1004,10 @@ impl BlockProductionTask {
             .await
             .context("Closing block")?;
 
-            CloseOutcome::ClosedSequential { db_result: Box::new(db_result), is_fallback: false }
+            CloseOutcome::ClosedSequential { db_result: Box::new(db_result) }
         };
 
-        // When the block is closed sequentially (regular mode or fallback), emit structured close logs.
+        // When the block is closed sequentially, emit structured close logs.
         if let CloseOutcome::ClosedSequential { db_result, .. } = &close_outcome {
             // Emit structured log event for Loki querying (close_block_complete)
             // All timing values converted to milliseconds for human-readability
@@ -1093,14 +1076,8 @@ impl BlockProductionTask {
                         state.block_number
                     );
                 }
-                CloseOutcome::ClosedSequential { is_fallback: true, .. } => {
-                    tracing::info!(
-                        "closed block #{} with {n_txs} transactions via sequential fallback - {time_to_close:?}",
-                        state.block_number
-                    );
-                }
-                CloseOutcome::ClosedSequential { is_fallback: false, .. } => {
-                    unreachable!("non-fallback sequential close should be impossible while parallel merkle is enabled")
+                CloseOutcome::ClosedSequential { .. } => {
+                    unreachable!("sequential close should be impossible while parallel merkle is enabled")
                 }
             }
         } else {
