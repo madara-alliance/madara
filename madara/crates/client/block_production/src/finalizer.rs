@@ -688,22 +688,29 @@ mod tests {
         );
     }
 
-    #[test]
-    fn confirm_ready_requires_both_paths_for_next_block() {
+    #[rstest]
+    #[case(None, None, false)]
+    #[case(Some(5), None, false)]
+    #[case(None, Some(5), false)]
+    #[case(Some(5), Some(6), false)]
+    #[case(Some(5), Some(5), true)]
+    fn confirm_ready_requires_both_paths_for_next_block(
+        #[case] persisted_block: Option<u64>,
+        #[case] root_block: Option<u64>,
+        #[case] expected: bool,
+    ) {
         let mut persisted_ready = BTreeSet::new();
         let mut roots_ready = BTreeMap::new();
         let root_ready = RootReady { root: Felt::ONE, overlay: None, is_boundary: false };
 
-        assert!(!ParallelMerkleFinalizerWorker::is_confirm_ready(5, &persisted_ready, &roots_ready));
+        if let Some(block_n) = persisted_block {
+            persisted_ready.insert(block_n);
+        }
+        if let Some(block_n) = root_block {
+            roots_ready.insert(block_n, root_ready);
+        }
 
-        persisted_ready.insert(5);
-        assert!(!ParallelMerkleFinalizerWorker::is_confirm_ready(5, &persisted_ready, &roots_ready));
-
-        roots_ready.insert(6, root_ready.clone());
-        assert!(!ParallelMerkleFinalizerWorker::is_confirm_ready(5, &persisted_ready, &roots_ready));
-
-        roots_ready.insert(5, root_ready);
-        assert!(ParallelMerkleFinalizerWorker::is_confirm_ready(5, &persisted_ready, &roots_ready));
+        assert_eq!(ParallelMerkleFinalizerWorker::is_confirm_ready(5, &persisted_ready, &roots_ready), expected);
     }
 
     #[tokio::test]

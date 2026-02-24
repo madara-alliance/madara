@@ -124,24 +124,30 @@ mod tests {
     use mc_db::MadaraBackend;
     use mc_mempool::{Mempool, MempoolConfig};
     use mp_chain_config::ChainConfig;
+    use rstest::rstest;
     use std::sync::Arc;
 
-    #[test]
-    fn parallel_merkle_config_maps_defaults() {
+    #[rstest]
+    #[case(CliMode::Off, ParallelMerkleTrieLogMode::Off)]
+    #[case(CliMode::Checkpoint, ParallelMerkleTrieLogMode::Checkpoint)]
+    fn parallel_merkle_config_maps_trie_log_mode(
+        #[case] cli_mode: CliMode,
+        #[case] expected_mode: ParallelMerkleTrieLogMode,
+    ) {
         let config = BlockProductionParams {
             block_production_disabled: false,
             devnet_contracts: 10,
             parallel_merkle_enabled: false,
             parallel_merkle_flush_interval: 3,
             parallel_merkle_max_inflight: 10,
-            parallel_merkle_trie_log_mode: CliMode::Off,
+            parallel_merkle_trie_log_mode: cli_mode,
         };
 
         let cfg = BlockProductionService::parallel_merkle_config(&config);
         assert!(!cfg.enabled);
         assert_eq!(cfg.flush_interval, 3);
         assert_eq!(cfg.max_inflight, 10);
-        assert_eq!(cfg.trie_log_mode, ParallelMerkleTrieLogMode::Off);
+        assert_eq!(cfg.trie_log_mode, expected_mode);
     }
 
     #[test]
