@@ -302,13 +302,6 @@ pub struct ChainConfigV1 {
     /// Recommended: 12 for Ethereum mainnet (~2.5 minutes).
     #[serde(default = "default_l1_messages_finality_blocks")]
     pub l1_messages_finality_blocks: u64,
-
-    /// Fixed starting timestamp (Unix seconds) for deterministic block production.
-    /// When set, block N gets timestamp `fixed_timestamp_start + block_n * block_time_secs`.
-    /// Useful for tests that need reproducible block hashes across runs.
-    /// Default: None (use wall-clock time).
-    #[serde(default)]
-    pub fixed_timestamp_start: Option<u64>,
 }
 
 /// Versioned chain config enum that handles different config versions
@@ -432,13 +425,6 @@ pub struct ChainConfig {
     /// Recommended: 12 for Ethereum mainnet (~2.5 minutes).
     #[serde(default = "default_l1_messages_finality_blocks")]
     pub l1_messages_finality_blocks: u64,
-
-    /// Fixed starting timestamp (Unix seconds) for deterministic block production.
-    /// When set, block N gets timestamp `fixed_timestamp_start + block_n * block_time_secs`.
-    /// Useful for tests that need reproducible block hashes across runs.
-    /// Default: None (use wall-clock time).
-    #[serde(default)]
-    pub fixed_timestamp_start: Option<u64>,
 }
 
 impl Clone for ChainConfig {
@@ -474,7 +460,6 @@ impl Clone for ChainConfig {
             block_production_concurrency: self.block_production_concurrency.clone(),
             l1_messages_replay_max_duration: self.l1_messages_replay_max_duration,
             l1_messages_finality_blocks: self.l1_messages_finality_blocks,
-            fixed_timestamp_start: self.fixed_timestamp_start,
         }
     }
 }
@@ -513,7 +498,6 @@ impl TryFrom<ChainConfigV1> for ChainConfig {
             block_production_concurrency: v1.block_production_concurrency,
             l1_messages_replay_max_duration: v1.l1_messages_replay_max_duration,
             l1_messages_finality_blocks: v1.l1_messages_finality_blocks,
-            fixed_timestamp_start: v1.fixed_timestamp_start,
         })
     }
 }
@@ -637,7 +621,6 @@ impl ChainConfig {
 
             l1_messages_replay_max_duration: default_l1_messages_replay_max_duration(),
             l1_messages_finality_blocks: default_l1_messages_finality_blocks(),
-            fixed_timestamp_start: None,
         }
     }
 

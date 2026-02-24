@@ -204,14 +204,7 @@ pub(crate) fn create_execution_context(
             .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
 
         let gas_prices = backend.calculate_gas_prices(&l1_gas_quote, previous_l2_gas_price, previous_l2_gas_used)?;
-        let block_timestamp = if let Some(start) = backend.chain_config().fixed_timestamp_start {
-            let block_time_secs = backend.chain_config().block_time.as_secs();
-            let secs = start.saturating_add(block_n.saturating_mul(block_time_secs));
-            UNIX_EPOCH + Duration::from_secs(secs)
-        } else {
-            SystemTime::now()
-        };
-        (block_timestamp, gas_prices)
+        (SystemTime::now(), gas_prices)
     };
 
     Ok(BlockExecutionContext {

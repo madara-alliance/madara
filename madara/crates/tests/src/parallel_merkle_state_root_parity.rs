@@ -33,7 +33,6 @@ const DEPLOY_ACCOUNT_SECRET: Felt =
 const DEPLOY_ACCOUNT_SALT: Felt = Felt::from_hex_unchecked("0x123");
 const BLOCK_SIGNING_PRIVATE_KEY: &str = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdea";
 const TEST_BLOCK_TIME: &str = "1s";
-const PARALLEL_FINALIZER_PATH_B_DEBUG_DELAY_MS: &str = "1000";
 const BLOCK_HASH_CONTRACT_ADDRESS: Felt = Felt::ONE;
 const SYSTEM_CONFIG_CONTRACT_ADDRESS: Felt = Felt::TWO;
 
@@ -60,11 +59,7 @@ fn test_devnet_path() -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_devnet.yaml").to_string_lossy().into_owned()
 }
 
-fn common_args(parallel_merkle: bool, fixed_timestamp_start: Option<u64>) -> Vec<String> {
-    let override_value = match fixed_timestamp_start {
-        Some(ts) => format!("block_time={TEST_BLOCK_TIME},fixed_timestamp_start={ts}"),
-        None => format!("block_time={TEST_BLOCK_TIME}"),
-    };
+fn common_args(parallel_merkle: bool) -> Vec<String> {
     let mut args = vec![
         "--devnet".to_string(),
         "--no-l1-sync".to_string(),
@@ -78,7 +73,7 @@ fn common_args(parallel_merkle: bool, fixed_timestamp_start: Option<u64>) -> Vec
         "--chain-config-path".to_string(),
         test_devnet_path(),
         "--chain-config-override".to_string(),
-        override_value,
+        format!("block_time={TEST_BLOCK_TIME}"),
         "--private-key".to_string(),
         BLOCK_SIGNING_PRIVATE_KEY.to_string(),
     ];
@@ -368,20 +363,13 @@ async fn collect_confirmed_block_state_changes(rpc: &JsonRpcClient<HttpTransport
     changes
 }
 
-async fn start_node(parallel_merkle: bool, fixed_timestamp_start: Option<u64>) -> MadaraCmd {
+async fn start_node(parallel_merkle: bool) -> MadaraCmd {
     let label = if parallel_merkle { "parallel-merkle-enabled" } else { "parallel-merkle-disabled" };
-    let mut env_vars = vec![("RUST_LOG", "info")];
-    if parallel_merkle {
-        env_vars
-            .push(("MADARA_PARALLEL_MERKLE_FINALIZER_PATH_B_DEBUG_DELAY_MS", PARALLEL_FINALIZER_PATH_B_DEBUG_DELAY_MS));
-    }
+    let env_vars = vec![("RUST_LOG", "info")];
 
     for _ in 0..4 {
-        let mut node = MadaraCmdBuilder::new()
-            .label(label)
-            .env(env_vars.clone())
-            .args(common_args(parallel_merkle, fixed_timestamp_start))
-            .run_no_wait();
+        let mut node =
+            MadaraCmdBuilder::new().label(label).env(env_vars.clone()).args(common_args(parallel_merkle)).run_no_wait();
 
         node.hook_stdout_and_wait_for_ports(true, false, false);
         node.wait_for_ready().await;
@@ -536,12 +524,8 @@ async fn parallel_merkle_and_sequential_match_squashed_state_diff_after_100_txs(
     let compiled_hashes = FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm_with_hashes().unwrap();
     let compiled_class_hash = compiled_hashes.blake_hash;
 
-    // Use a fixed timestamp for both runs so genesis block hash and all
-    // subsequent block timestamps are identical across sequential and parallel.
-    let fixed_ts = Some(1_000_000u64);
-
     // --- Run sequential mode first ---
-    let sequential = start_node(false, fixed_ts).await;
+    let sequential = start_node(false).await;
     let seq_rpc = sequential.json_rpc();
 
     let seq_changes = send_transactions_and_collect_block_state(
@@ -555,8 +539,8 @@ async fn parallel_merkle_and_sequential_match_squashed_state_diff_after_100_txs(
     drop(sequential);
     sleep(Duration::from_millis(500)).await;
 
-    // --- Run parallel mode with the same fixed timestamp ---
-    let parallel = start_node(true, fixed_ts).await;
+    // --- Run parallel mode ---
+    let parallel = start_node(true).await;
     let par_rpc = parallel.json_rpc();
 
     let par_changes = send_transactions_and_collect_block_state(
