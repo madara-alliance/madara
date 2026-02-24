@@ -2,6 +2,7 @@ import { bindSpec, buildRpcTarget, resolveMatrixFromEnv } from "../config/matrix
 import { normalizeSemver, toRpcPathVersion } from "../core/semver";
 import { createSpecRegistry } from "../spec/spec-registry";
 import { SPEC_LOCK_MANIFEST } from "../spec/spec-sync-manifest";
+import { ensureSpecCached } from "../spec/spec-cache";
 
 describe("Unit Harness", () => {
   test("normalizes semver and rpc path version correctly", () => {
@@ -13,6 +14,7 @@ describe("Unit Harness", () => {
     expect(bindSpec("0.10.0").specTag).toBe("v0.10.0");
     expect(bindSpec("0.10.1").specTag).toBe("v0.10.0");
     expect(bindSpec("0.9.2").specTag).toBe("v0.9.0");
+    expect(() => bindSpec("0.8.1")).toThrow();
   });
 
   test("matrix honors RPC_VERSION env", () => {
@@ -22,19 +24,20 @@ describe("Unit Harness", () => {
   });
 
   test("buildRpcTarget produces versioned URL", () => {
-    const target = buildRpcTarget("0.8.1", "http://127.0.0.1:9944");
-    expect(target.baseUrl).toBe("http://127.0.0.1:9944/rpc/v0_8_1/");
+    const target = buildRpcTarget("0.9.0", "http://127.0.0.1:9944");
+    expect(target.baseUrl).toBe("http://127.0.0.1:9944/rpc/v0_9_0/");
   });
 
   test("spec lock manifest has pinned entries", () => {
-    expect(SPEC_LOCK_MANIFEST.length).toBeGreaterThanOrEqual(3);
+    expect(SPEC_LOCK_MANIFEST.length).toBeGreaterThanOrEqual(2);
     const v10 = SPEC_LOCK_MANIFEST.find((entry) => entry.tag === "v0.10.0");
     expect(v10).toBeDefined();
     expect(v10?.files.length).toBe(4);
   });
 
-  test("spec registry loads validators from vendored OpenRPC docs", () => {
+  test("spec registry loads validators from cached official OpenRPC docs", async () => {
     const binding = bindSpec("0.10.0");
+    await ensureSpecCached(binding);
     const registry = createSpecRegistry(binding);
 
     expect(registry.listOfficialMethods().includes("starknet_chainId")).toBe(true);
@@ -46,8 +49,9 @@ describe("Unit Harness", () => {
     expect(resultValidator("0x534e5f4d41494e")).toBe(true);
   });
 
-  test("spec registry resolves cross-file refs for write and trace schemas", () => {
+  test("spec registry resolves cross-file refs for write and trace schemas", async () => {
     const binding = bindSpec("0.10.0");
+    await ensureSpecCached(binding);
     const registry = createSpecRegistry(binding);
 
     expect(() =>

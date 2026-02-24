@@ -25,17 +25,11 @@ jobs:
       matrix:
         include:
           - suite: conformance
-            rpc_version: "0.8.1"
-            npm_script: "test:conformance"
-          - suite: conformance
             rpc_version: "0.9.0"
             npm_script: "test:conformance"
           - suite: conformance
             rpc_version: "0.10.0"
             npm_script: "test:conformance"
-          - suite: extension
-            rpc_version: "0.8.1"
-            npm_script: "test:extension"
           - suite: extension
             rpc_version: "0.9.0"
             npm_script: "test:extension"

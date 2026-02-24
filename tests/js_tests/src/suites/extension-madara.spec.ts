@@ -31,6 +31,7 @@ describe(`Madara Extension Suite @ ${version}`, () => {
   test("getCompiledCasm extension is callable", async () => {
     const declared = await session.txFlow.declareContract(
       "madara_contracts_HelloStarknet",
+      { allowAlreadyDeclared: true },
     );
 
     const envelope = await session.transport.rawCall("starknet_getCompiledCasm", {

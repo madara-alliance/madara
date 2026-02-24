@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import { resolveSpecFilePath } from "../config/matrix";
 import type { SpecBinding, SpecRegistry } from "../config/types";
 import {
   compileMethodParamsValidator,
@@ -8,6 +7,7 @@ import {
   registerOpenRpcReferenceSchemas,
   type OpenRpcMethodDef,
 } from "./schema-compiler";
+import { resolveCachedSpecFilePath } from "./spec-cache";
 
 interface OpenRpcDocument {
   methods?: Array<{
@@ -41,7 +41,12 @@ export function loadOpenRpcBundle(binding: SpecBinding): OpenRpcBundle {
 }
 
 function loadOpenRpcDocument(specTag: string, fileName: string): OpenRpcDocument {
-  const filePath = resolveSpecFilePath(specTag, fileName);
+  const filePath = resolveCachedSpecFilePath(specTag, fileName);
+  if (!fs.existsSync(filePath)) {
+    throw new Error(
+      `Missing cached Starknet spec file ${filePath}. Call ensureSpecCached() before creating the registry.`,
+    );
+  }
   const content = fs.readFileSync(filePath, "utf8");
   return JSON.parse(content) as OpenRpcDocument;
 }
@@ -93,10 +98,14 @@ export class OpenRpcSpecRegistry implements SpecRegistry {
     const definition = this.getMethodOrThrow(method);
     const validator = compileMethodResultValidator(this.ajv, definition);
 
-    const wrapped = (value: unknown): boolean => {
+    const wrapped = ((value: unknown): boolean => {
       const ok = validator({ result: value });
       return Boolean(ok);
-    };
+    }) as ((value: unknown) => boolean) & { errors?: unknown };
+
+    Object.defineProperty(wrapped, "errors", {
+      get: () => (validator as { errors?: unknown }).errors,
+    });
 
     this.resultValidatorCache.set(method, wrapped);
     return wrapped;
@@ -111,7 +120,15 @@ export class OpenRpcSpecRegistry implements SpecRegistry {
     const definition = this.getMethodOrThrow(method);
     const validator = compileMethodParamsValidator(this.ajv, definition);
 
-    const wrapped = (value: unknown): boolean => Boolean(validator(value));
+    const wrapped = ((value: unknown): boolean =>
+      Boolean(validator(value))) as ((value: unknown) => boolean) & {
+      errors?: unknown;
+    };
+
+    Object.defineProperty(wrapped, "errors", {
+      get: () => (validator as { errors?: unknown }).errors,
+    });
+
     this.paramsValidatorCache.set(method, wrapped);
     return wrapped;
   }

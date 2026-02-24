@@ -160,7 +160,6 @@ const READ_SUCCESS_CASES: ReadMethodCase[] = [
         from_block: { block_number: state.touchedBlockNumber },
         to_block: { block_number: state.touchedBlockNumber },
         chunk_size: 100,
-        continuation_token: null,
       },
     }),
   },

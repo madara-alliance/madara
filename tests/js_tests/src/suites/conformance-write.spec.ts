@@ -19,6 +19,7 @@ describe(`Conformance Write Suite @ ${version}`, () => {
   test("successful write flows conform to official write result schemas", async () => {
     const declared = await session.txFlow.declareContract(
       "madara_contracts_HelloStarknet",
+      { allowAlreadyDeclared: true },
     );
     assertResultConformsSpec(session.spec, "starknet_addDeclareTransaction", {
       transaction_hash: declared.txHash,

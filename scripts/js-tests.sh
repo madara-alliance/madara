@@ -1,7 +1,15 @@
 #!/bin/bash
 
-CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin madara --release
-./target/release/madara    \
+if [[ -z "${CARGO_TARGET_DIR:-}" ]]; then
+  echo "CARGO_TARGET_DIR is not set. Load your shell profile (e.g. source ~/.zshrc) and retry."
+  exit 1
+fi
+TARGET_DIR="$CARGO_TARGET_DIR"
+export CARGO_TARGET_DIR="$TARGET_DIR"
+
+cargo build --manifest-path madara/Cargo.toml  --bin madara --release
+MADARA_BIN=$(realpath "$TARGET_DIR/release/madara")
+"$MADARA_BIN"              \
   --name madara            \
   --base-path ../madara_db \
   --rpc-port 9944          \

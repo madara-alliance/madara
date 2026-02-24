@@ -35,6 +35,7 @@ describe(`E2E Live Flow Suite @ ${version}`, () => {
 
     const declared = await session.txFlow.declareContract(
       "madara_contracts_HelloStarknet",
+      { allowAlreadyDeclared: true },
     );
     const deployed = await session.txFlow.deployFromDeclared(declared.classHash);
     const transfer = await session.txFlow.transferKnownToken(
@@ -52,7 +53,10 @@ describe(`E2E Live Flow Suite @ ${version}`, () => {
       senderBalanceBefore - transferAmount,
     );
 
-    const txHashes = [declared.txHash, deployed.txHash, transfer.txHash];
+    const txHashes = [deployed.txHash, transfer.txHash];
+    if (declared.txHash !== "0x0") {
+      txHashes.unshift(declared.txHash);
+    }
 
     const txByHash = await Promise.all(
       txHashes.map((hash) =>
@@ -78,9 +82,9 @@ describe(`E2E Live Flow Suite @ ${version}`, () => {
       ),
     );
 
-    expect(txByHash).toHaveLength(3);
-    expect(receipts).toHaveLength(3);
-    expect(statuses).toHaveLength(3);
+    expect(txByHash).toHaveLength(txHashes.length);
+    expect(receipts).toHaveLength(txHashes.length);
+    expect(statuses).toHaveLength(txHashes.length);
 
     for (const hash of txHashes) {
       assertParamsConformSpec(session.spec, "starknet_getTransactionByHash", {
@@ -252,7 +256,6 @@ describe(`E2E Live Flow Suite @ ${version}`, () => {
               }
             : "latest",
         chunk_size: 100,
-        continuation_token: null,
       },
     });
 

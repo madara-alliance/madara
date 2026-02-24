@@ -14,42 +14,6 @@ export interface SpecLockEntry {
 
 export const SPEC_LOCK_MANIFEST: SpecLockEntry[] = [
   {
-    tag: "v0.8.1",
-    infoVersion: "0.8.0",
-    fetchedAt: "2026-02-24",
-    notes: "Official tag v0.8.1 has OpenRPC info.version 0.8.0",
-    files: [
-      {
-        file: "starknet_api_openrpc.json",
-        sourceUrl:
-          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.8.1/api/starknet_api_openrpc.json",
-        sha256:
-          "7eea51c1548d761c463abd63fad82118c81f120866a8023d676b90eac796c858",
-      },
-      {
-        file: "starknet_write_api.json",
-        sourceUrl:
-          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.8.1/api/starknet_write_api.json",
-        sha256:
-          "9ce548ca2f3cd98a1ca913745c3a5a284d0ac5c72d7d01b21631df9473cf8f2c",
-      },
-      {
-        file: "starknet_trace_api_openrpc.json",
-        sourceUrl:
-          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.8.1/api/starknet_trace_api_openrpc.json",
-        sha256:
-          "32c9ca77d11a4979f6e7fc81937d0f8783c84a0ce1c72d82588dc38f689e72d8",
-      },
-      {
-        file: "starknet_ws_api.json",
-        sourceUrl:
-          "https://raw.githubusercontent.com/starkware-libs/starknet-specs/v0.8.1/api/starknet_ws_api.json",
-        sha256:
-          "f5ff7b2505cf22281fdd6caf5f93269e987125289420de77931356761cf8ed3a",
-      },
-    ],
-  },
-  {
     tag: "v0.9.0",
     infoVersion: "0.9.0",
     fetchedAt: "2026-02-24",

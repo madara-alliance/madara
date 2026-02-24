@@ -1,4 +1,3 @@
-import path from "node:path";
 import {
   normalizeSemver,
   parseSemver,
@@ -15,12 +14,6 @@ const SPEC_FILE_NAMES = {
 } as const;
 
 export const SPEC_BINDINGS: Record<RpcSemver, SpecBinding> = {
-  "0.8.1": {
-    rpcVersion: "0.8.1",
-    specTag: "v0.8.1",
-    specInfoVersion: "0.8.0",
-    files: SPEC_FILE_NAMES,
-  },
   "0.9.0": {
     rpcVersion: "0.9.0",
     specTag: "v0.9.0",
@@ -43,7 +36,7 @@ function createBaseCapabilities(version: RpcSemver): CapabilitySet {
   const parsed = parseSemver(version);
   const supportsPreConfirmed = isAtLeast(parsed, { major: 0, minor: 9, patch: 0 });
   const supportsL1Accepted = supportsPreConfirmed;
-  const supportsStorageProof = isAtLeast(parsed, { major: 0, minor: 8, patch: 1 });
+  const supportsStorageProof = isAtLeast(parsed, { major: 0, minor: 9, patch: 0 });
 
   return {
     supportsPreConfirmedTag: supportsPreConfirmed,
@@ -77,12 +70,9 @@ export function bindSpec(version: RpcSemver): SpecBinding {
   if (version.startsWith("0.9.")) {
     return SPEC_BINDINGS["0.9.0"];
   }
-
-  if (version.startsWith("0.8.")) {
-    return SPEC_BINDINGS["0.8.1"];
-  }
-
-  throw new Error(`No Starknet spec binding configured for RPC version ${version}`);
+  throw new Error(
+    `No Starknet spec binding configured for RPC version ${version}. Supported major/minor targets are 0.9.x and 0.10.x.`,
+  );
 }
 
 export function resolveRpcRootUrlFromEnv(): string {
@@ -129,8 +119,4 @@ export function resolveMatrixFromEnv(defaults?: RpcSemver[]): RpcSemver[] {
   }
 
   return ["0.10.0"];
-}
-
-export function resolveSpecFilePath(specTag: string, fileName: string): string {
-  return path.resolve(process.cwd(), "specs", "starknet", specTag, fileName);
 }

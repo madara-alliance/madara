@@ -1,19 +1,31 @@
+function normalizeHex(value: string): string {
+  if (!value.startsWith("0x")) {
+    return value;
+  }
+
+  try {
+    return `0x${BigInt(value).toString(16)}`;
+  } catch {
+    return value;
+  }
+}
+
 export const SIGNER_CONTRACT_ADDRESS =
-  process.env.SIGNER_CONTRACT_ADDRESS ||
-  "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d";
+  normalizeHex(process.env.SIGNER_CONTRACT_ADDRESS ||
+  "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d");
 
 export const SIGNER_PRIVATE =
-  process.env.SIGNER_PRIVATE ||
-  "0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07";
+  normalizeHex(process.env.SIGNER_PRIVATE ||
+  "0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07");
 
 export const ERC20_CONTRACT_ADDRESS =
-  process.env.ERC20_CONTRACT_ADDRESS ||
-  "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+  normalizeHex(process.env.ERC20_CONTRACT_ADDRESS ||
+  "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
 
 export const UDC_ADDRESS =
-  process.env.UDC_ADDRESS ||
-  "0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf";
+  normalizeHex(process.env.UDC_ADDRESS ||
+  "0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 
 export const DEFAULT_RECEIVER_ADDRESS =
-  process.env.RECEIVER_ADDRESS ||
-  "0x5e9e93c6235f8ae6c2f4f0069bd30753ec21b26fbad80cfbf5da2c1bc573d69";
+  normalizeHex(process.env.RECEIVER_ADDRESS ||
+  "0x5e9e93c6235f8ae6c2f4f0069bd30753ec21b26fbad80cfbf5da2c1bc573d69");
