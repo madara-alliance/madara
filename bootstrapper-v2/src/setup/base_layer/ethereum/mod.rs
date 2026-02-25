@@ -76,10 +76,7 @@ impl EthereumSetup {
 
     /// Computes the config hash using chain_id from config and applying Pedersen hash.
     /// If `fee_token_override` is provided, it overrides the fee token from config.
-    fn compute_config_hash(
-        &self,
-        fee_token_override: Option<Felt>,
-    ) -> Result<alloy::primitives::U256, EthereumError> {
+    fn compute_config_hash(&self, fee_token_override: Option<Felt>) -> Result<alloy::primitives::U256, EthereumError> {
         let params = ConfigHashParams::try_from(&self.config_hash_config)?;
         let fee_token = fee_token_override.unwrap_or(params.madara_fee_token);
         let params = params.with_fee_token(fee_token);
@@ -229,13 +226,7 @@ impl EthereumSetup {
 
         // Call enrollTokenBridge on the Manager contract
         // The function signature is: enrollTokenBridge(address token) payable
-        manager_instance
-            .enrollTokenBridge(l1_token_addr)
-            .value(enrollment_fee)
-            .send()
-            .await?
-            .watch()
-            .await?;
+        manager_instance.enrollTokenBridge(l1_token_addr).value(enrollment_fee).send().await?.watch().await?;
 
         log::info!(
             "Successfully enrolled token bridge on Manager for L1 token: {} (fee: {} wei)",

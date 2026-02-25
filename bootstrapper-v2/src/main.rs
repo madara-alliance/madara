@@ -64,10 +64,7 @@ async fn main() -> BootstrapperResult<()> {
                 .await?;
 
             // Save the fee token to Madara addresses file
-            madara_setup.insert_address(
-                bootstrapper_v2::setup::madara::DeployedContract::L2FeeToken,
-                l2_fee_token,
-            );
+            madara_setup.insert_address(bootstrapper_v2::setup::madara::DeployedContract::L2FeeToken, l2_fee_token);
             madara_setup.save_madara_addresses(&setup_madara.output_path)?;
 
             // Step 3: Compare with configured fee token (warning only)

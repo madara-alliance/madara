@@ -8,7 +8,7 @@ use tokio::fs;
 // Import all the services we've created
 pub use super::config::*;
 use crate::services::constants::{
-    ANVIL_DATABASE_FILE, DATA_DIR, LOCALSTACK_DATA_DIR, MADARA_DATABASE_DIR,
+    ANVIL_DATABASE_FILE, DATA_DIR, MADARA_DATABASE_DIR,
     MOCK_VERIFIER_ADDRESS_FILE, ORCHESTRATOR_DATABASE_NAME, REPO_ROOT,
 };
 use crate::services::helpers::get_file_path;
