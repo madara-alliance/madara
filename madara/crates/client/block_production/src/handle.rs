@@ -1,4 +1,5 @@
 use crate::executor::{self, ExecutorCommand, ExecutorCommandError};
+#[cfg(feature = "mempool-intake-admin")]
 use crate::MempoolIntakeMode;
 use async_trait::async_trait;
 use mc_db::MadaraBackend;
@@ -14,7 +15,9 @@ use mp_rpc::v0_9_0::{
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot, watch};
+#[cfg(feature = "mempool-intake-admin")]
+use tokio::sync::watch;
+use tokio::sync::{mpsc, oneshot};
 
 struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
@@ -39,6 +42,7 @@ pub struct BlockProductionHandle {
     /// Commands to executor task.
     executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
     bypass_input: mpsc::Sender<ValidatedTransaction>,
+    #[cfg(feature = "mempool-intake-admin")]
     mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
@@ -49,12 +53,13 @@ impl BlockProductionHandle {
         backend: Arc<MadaraBackend>,
         executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
         bypass_input: mpsc::Sender<ValidatedTransaction>,
-        mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
+        #[cfg(feature = "mempool-intake-admin")] mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
         no_charge_fee: bool,
     ) -> Self {
         Self {
             executor_commands,
             bypass_input: bypass_input.clone(),
+            #[cfg(feature = "mempool-intake-admin")]
             mempool_intake_tx,
             tx_converter: TransactionValidator::new(
                 Arc::new(BypassInput(bypass_input)),
@@ -74,6 +79,7 @@ impl BlockProductionHandle {
         recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
     }
 
+    #[cfg(feature = "mempool-intake-admin")]
     pub fn set_mempool_intake(&self, enabled: bool) -> anyhow::Result<()> {
         let mode = if enabled { MempoolIntakeMode::Running } else { MempoolIntakeMode::Paused };
         self.mempool_intake_tx.send(mode).map_err(|e| anyhow::anyhow!("Mempool intake channel closed: {e}"))?;

@@ -1,4 +1,5 @@
 use crate::util::{AdditionalTxInfo, BatchToExecute};
+#[cfg(feature = "mempool-intake-admin")]
 use crate::MempoolIntakeMode;
 use anyhow::Context;
 use futures::{
@@ -15,7 +16,9 @@ use mp_transactions::{
 };
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
+#[cfg(feature = "mempool-intake-admin")]
+use tokio::sync::watch;
 
 pub struct Batcher {
     backend: Arc<MadaraBackend>,
@@ -24,6 +27,7 @@ pub struct Batcher {
     ctx: ServiceContext,
     out: mpsc::Sender<BatchToExecute>,
     bypass_in: mpsc::Receiver<ValidatedTransaction>,
+    #[cfg(feature = "mempool-intake-admin")]
     mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     batch_size: usize,
 }
@@ -36,7 +40,7 @@ impl Batcher {
         ctx: ServiceContext,
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
-        mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
+        #[cfg(feature = "mempool-intake-admin")] mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     ) -> Self {
         Self {
             mempool,
@@ -44,6 +48,7 @@ impl Batcher {
             ctx,
             out,
             bypass_in,
+            #[cfg(feature = "mempool-intake-admin")]
             mempool_intake_rx,
             batch_size: backend.chain_config().block_production_concurrency.batch_size,
             backend,
@@ -87,21 +92,46 @@ impl Batcher {
             });
 
             // Note: this is not hoisted out of the loop, because we don't want to keep the lock around when waiting on the output channel reserve().
-            let mempool_txs_stream: BoxStream<'static, anyhow::Result<_>> = match *self.mempool_intake_rx.borrow() {
-                MempoolIntakeMode::Paused => stream::pending().boxed(),
-                MempoolIntakeMode::Running => stream::unfold(self.mempool.clone(), |mempool| async move {
-                    let consumer = mempool.get_consumer().await;
-                    Some((consumer, mempool))
-                })
-                .map(|c| {
-                    stream::iter(c.map(|tx| {
-                        tx.into_blockifier_for_sequencing()
-                            .map(|(btx, ts, declared_class)| (btx, AdditionalTxInfo { declared_class, arrived_at: ts }))
-                            .map_err(anyhow::Error::from)
-                    }))
-                })
-                .flatten()
-                .boxed(),
+            let mempool_txs_stream: BoxStream<'static, anyhow::Result<_>> = {
+                #[cfg(feature = "mempool-intake-admin")]
+                {
+                    match *self.mempool_intake_rx.borrow() {
+                        MempoolIntakeMode::Paused => stream::pending().boxed(),
+                        MempoolIntakeMode::Running => stream::unfold(self.mempool.clone(), |mempool| async move {
+                            let consumer = mempool.get_consumer().await;
+                            Some((consumer, mempool))
+                        })
+                        .map(|c| {
+                            stream::iter(c.map(|tx| {
+                                tx.into_blockifier_for_sequencing()
+                                    .map(|(btx, ts, declared_class)| {
+                                        (btx, AdditionalTxInfo { declared_class, arrived_at: ts })
+                                    })
+                                    .map_err(anyhow::Error::from)
+                            }))
+                        })
+                        .flatten()
+                        .boxed(),
+                    }
+                }
+                #[cfg(not(feature = "mempool-intake-admin"))]
+                {
+                    stream::unfold(self.mempool.clone(), |mempool| async move {
+                        let consumer = mempool.get_consumer().await;
+                        Some((consumer, mempool))
+                    })
+                    .map(|c| {
+                        stream::iter(c.map(|tx| {
+                            tx.into_blockifier_for_sequencing()
+                                .map(|(btx, ts, declared_class)| {
+                                    (btx, AdditionalTxInfo { declared_class, arrived_at: ts })
+                                })
+                                .map_err(anyhow::Error::from)
+                        }))
+                    })
+                    .flatten()
+                    .boxed()
+                }
             };
 
             // merge all three streams :)
@@ -126,6 +156,7 @@ impl Batcher {
 
             tokio::pin!(tx_stream);
 
+            #[cfg(feature = "mempool-intake-admin")]
             let batch = tokio::select! {
                 _ = self.ctx.cancelled() => {
                     // Stop condition: cancelled.
@@ -136,6 +167,21 @@ impl Batcher {
                         return anyhow::Ok(());
                     }
                     continue;
+                }
+                Some(got) = tx_stream.next() => {
+                    // got a batch :)
+                    let got = got.context("Creating batch for block building")?;
+                    tracing::debug!("Batcher got a batch of {}.", got.len());
+                    got.into_iter().collect::<BatchToExecute>()
+                }
+                // Stop condition: tx_stream is empty.
+                else => return anyhow::Ok(())
+            };
+            #[cfg(not(feature = "mempool-intake-admin"))]
+            let batch = tokio::select! {
+                _ = self.ctx.cancelled() => {
+                    // Stop condition: cancelled.
+                    return anyhow::Ok(());
                 }
                 Some(got) = tx_stream.next() => {
                     // got a batch :)

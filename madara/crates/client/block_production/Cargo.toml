@@ -38,6 +38,7 @@ m-cairo-test-contracts.workspace = true
 
 [features]
 testing = ["mc-db/testing", "mockall", "mc-settlement-client/testing"]
+mempool-intake-admin = []
 
 [dependencies]
 

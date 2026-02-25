@@ -20,7 +20,7 @@ name = "madara"
 
 [features]
 default = []
-mempool-intake-admin = ["mc-rpc/mempool-intake-admin"]
+mempool-intake-admin = ["mc-rpc/mempool-intake-admin", "mc-block-production/mempool-intake-admin"]
 
 [dependencies]
 
