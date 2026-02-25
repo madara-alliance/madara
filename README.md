@@ -609,6 +609,11 @@ Current migration metadata is tracked in [`.db-versions.yml`](.db-versions.yml):
 > Backups are created before migrations by default. Use
 > `--skip-migration-backup` only when you already have external backups.
 
+> [!CAUTION]
+> Database migrations are forward-oriented. After migrating to a newer schema
+> version, you cannot safely reuse the same database with an older Madara
+> binary. To roll back, restore from a backup taken before migration.
+
 To migrate your database, you have two options:
 
 1. Start the node and let automatic in-place migration run
