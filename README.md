@@ -354,33 +354,33 @@ Here is a list of all the supported methods with their current status:
 <details>
   <summary>Read Methods</summary>
 
-| Status | Method                                     |
-| ------ | ------------------------------------------ |
-| ✅     | `starknet_specVersion`                     |
-| ✅     | `starknet_getBlockWithTxHashes`            |
-| ✅     | `starknet_getBlockWithTxs`                 |
-| ✅     | `starknet_getBlockWithReceipts`            |
-| ✅     | `starknet_getStateUpdate`                  |
-| ✅     | `starknet_getStorageAt`                    |
-| ✅     | `starknet_getTransactionStatus`            |
-| ✅     | `starknet_getTransactionByHash`            |
-| ✅     | `starknet_getTransactionByBlockIdAndIndex` |
-| ✅     | `starknet_getTransactionReceipt`           |
-| ✅     | `starknet_getClass`                        |
-| ✅     | `starknet_getClassHashAt`                  |
-| ✅     | `starknet_getClassAt`                      |
-| ✅     | `starknet_getBlockTransactionCount`        |
-| ✅     | `starknet_call`                            |
-| ✅     | `starknet_estimateFee`                     |
-| ✅     | `starknet_estimateMessageFee`              |
-| ✅     | `starknet_blockNumber`                     |
-| ✅     | `starknet_blockHashAndNumber`              |
-| ✅     | `starknet_chainId`                         |
-| ✅     | `starknet_syncing`                         |
-| ✅     | `starknet_getEvents`                       |
-| ✅     | `starknet_getNonce`                        |
-| ✅     | `starknet_getCompiledCasm` (v0.8.1+)       |
-| ✅     | `starknet_getMessagesStatus` (v0.9.0+)     |
+| Status | Method                                                                         |
+| ------ | ------------------------------------------------------------------------------ |
+| ✅     | `starknet_specVersion`                                                         |
+| ✅     | `starknet_getBlockWithTxHashes`                                                |
+| ✅     | `starknet_getBlockWithTxs`                                                     |
+| ✅     | `starknet_getBlockWithReceipts`                                                |
+| ✅     | `starknet_getStateUpdate`                                                      |
+| ✅     | `starknet_getStorageAt`                                                        |
+| ✅     | `starknet_getTransactionStatus`                                                |
+| ✅     | `starknet_getTransactionByHash`                                                |
+| ✅     | `starknet_getTransactionByBlockIdAndIndex`                                     |
+| ✅     | `starknet_getTransactionReceipt`                                               |
+| ✅     | `starknet_getClass`                                                            |
+| ✅     | `starknet_getClassHashAt`                                                      |
+| ✅     | `starknet_getClassAt`                                                          |
+| ✅     | `starknet_getBlockTransactionCount`                                            |
+| ✅     | `starknet_call`                                                                |
+| ✅     | `starknet_estimateFee`                                                         |
+| ✅     | `starknet_estimateMessageFee`                                                  |
+| ✅     | `starknet_blockNumber`                                                         |
+| ✅     | `starknet_blockHashAndNumber`                                                  |
+| ✅     | `starknet_chainId`                                                             |
+| ✅     | `starknet_syncing`                                                             |
+| ✅     | `starknet_getEvents`                                                           |
+| ✅     | `starknet_getNonce`                                                            |
+| ✅     | `starknet_getCompiledCasm` (v0.8.1+)                                           |
+| ✅     | `starknet_getMessagesStatus` (v0.9.0+)                                         |
 | ❌     | `starknet_getStorageProof` (v0.8.1+, currently unavailable in default profile) |
 
 </details>
@@ -410,14 +410,14 @@ Here is a list of all the supported methods with their current status:
 <details>
   <summary>Websocket Methods</summary>
 
-| Status | Method                                           |
-| ------ | ------------------------------------------------ |
-| ✅     | `starknet_unsubscribe` (v0.8.1+)                  |
-| ❌     | `starknet_subscribeNewHeads` (placeholder)        |
-| ❌     | `starknet_subscribeEvents` (placeholder)          |
-| ❌     | `starknet_subscribeTransactionStatus` (placeholder) |
+| Status | Method                                                |
+| ------ | ----------------------------------------------------- |
+| ✅     | `starknet_unsubscribe` (v0.8.1+)                      |
+| ❌     | `starknet_subscribeNewHeads` (placeholder)            |
+| ❌     | `starknet_subscribeEvents` (placeholder)              |
+| ❌     | `starknet_subscribeTransactionStatus` (placeholder)   |
 | ❌     | `starknet_subscribePendingTransactions` (placeholder) |
-| ❌     | `starknet_subscriptionReorg`                       |
+| ❌     | `starknet_subscriptionReorg`                          |
 
 </details>
 
@@ -450,37 +450,37 @@ are exposed on a separate port **9943** unless specified otherwise with
 <details>
   <summary>Write Methods</summary>
 
-| Method                                      | About                                                             |
-| ------------------------------------------- | ----------------------------------------------------------------- |
-| `madara_addDeclareV0Transaction`            | Adds a legacy Declare V0 transaction                              |
-| `madara_bypassAddDeclareTransaction`        | Bypasses mempool/validation for Declare transactions              |
-| `madara_bypassAddDeployAccountTransaction`  | Bypasses mempool/validation for DeployAccount transactions        |
-| `madara_bypassAddInvokeTransaction`         | Bypasses mempool/validation for Invoke transactions               |
-| `madara_closeBlock`                         | Forces block closure in block production mode                     |
-| `madara_revertToAndShutdown`                | Reverts chain state to a block hash and shuts down the node       |
-| `madara_addL1HandlerMessage`                | Pushes an L1 handler message into bypass input                    |
-| `madara_setCustomBlockHeader`               | Sets custom block header fields for upcoming block                |
+| Method                                     | About                                                       |
+| ------------------------------------------ | ----------------------------------------------------------- |
+| `madara_addDeclareV0Transaction`           | Adds a legacy Declare V0 transaction                        |
+| `madara_bypassAddDeclareTransaction`       | Bypasses mempool/validation for Declare transactions        |
+| `madara_bypassAddDeployAccountTransaction` | Bypasses mempool/validation for DeployAccount transactions  |
+| `madara_bypassAddInvokeTransaction`        | Bypasses mempool/validation for Invoke transactions         |
+| `madara_closeBlock`                        | Forces block closure in block production mode               |
+| `madara_revertToAndShutdown`               | Reverts chain state to a block hash and shuts down the node |
+| `madara_addL1HandlerMessage`               | Pushes an L1 handler message into bypass input              |
+| `madara_setCustomBlockHeader`              | Sets custom block header fields for upcoming block          |
 
 </details>
 
 <details>
   <summary>Read Methods</summary>
 
-| Method                         | About                                  |
-| ------------------------------ | -------------------------------------- |
-| `madara_getBlockBuiltinWeights`| Returns builtin weights for a block    |
+| Method                          | About                               |
+| ------------------------------- | ----------------------------------- |
+| `madara_getBlockBuiltinWeights` | Returns builtin weights for a block |
 
 </details>
 
 <details>
   <summary>Status Methods</summary>
 
-| Method            | About                                                |
-| ----------------- | ---------------------------------------------------- |
-| `madara_ping`     | Return the unix time at which this method was called |
-| `madara_shutdown` | Gracefully stops the running node                    |
-| `madara_service`  | Sets the status of one or more services              |
-| `madara_serviceStatus` | Returns requested and actual service statuses   |
+| Method                 | About                                                |
+| ---------------------- | ---------------------------------------------------- |
+| `madara_ping`          | Return the unix time at which this method was called |
+| `madara_shutdown`      | Gracefully stops the running node                    |
+| `madara_service`       | Sets the status of one or more services              |
+| `madara_serviceStatus` | Returns requested and actual service statuses        |
 
 </details>
 
