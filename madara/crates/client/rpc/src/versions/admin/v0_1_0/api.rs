@@ -99,6 +99,17 @@ pub trait MadaraWriteRpcApi {
     async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult>;
 }
 
+#[cfg(feature = "mempool-intake-admin")]
+#[versioned_rpc("V0_1_0", "madara")]
+pub trait MadaraMempoolRpcApi {
+    /// Enable or disable intake of mempool transactions in block production mode.
+    ///
+    /// - `true`: consume transactions from mempool as usual.
+    /// - `false`: pause mempool intake while keeping bypass/L1 message paths active.
+    #[method(name = "setMempoolIntake")]
+    async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()>;
+}
+
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraReadRpcApi {

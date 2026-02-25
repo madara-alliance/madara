@@ -1,6 +1,11 @@
 use mp_rpc::admin::MempoolNonceFilter;
 use mp_transactions::validated::ValidatedTransaction;
 
+#[cfg(feature = "mempool-intake-admin")]
+use crate::{versions::admin::v0_1_0::MadaraMempoolRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
+#[cfg(feature = "mempool-intake-admin")]
+use jsonrpsee::core::{async_trait, RpcResult};
+
 pub(super) fn matches_nonce_filter(transaction: &ValidatedTransaction, nonce_filter: MempoolNonceFilter) -> bool {
     if nonce_filter != MempoolNonceFilter::default() && transaction.sender_contract_address().is_none() {
         return false;
@@ -59,5 +64,18 @@ mod tests {
         assert!(matches_nonce_filter(&account_tx, nonce_filter));
         assert!(!matches_nonce_filter(&l1_handler_tx, nonce_filter));
         assert!(matches_nonce_filter(&l1_handler_tx, MempoolNonceFilter::default()));
+    }
+}
+
+#[cfg(feature = "mempool-intake-admin")]
+#[async_trait]
+impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
+    async fn set_mempool_intake(&self, enabled: bool) -> RpcResult<()> {
+        Ok(self
+            .block_prod_handle
+            .as_ref()
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+            .set_mempool_intake(enabled)
+            .map_err(StarknetRpcApiError::from)?)
     }
 }

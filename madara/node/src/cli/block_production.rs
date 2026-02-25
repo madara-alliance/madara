@@ -15,6 +15,12 @@ pub struct BlockProductionParams {
     #[arg(env = "MADARA_DISCARD_PRECONFIRMED_ON_STARTUP", long)]
     pub discard_preconfirmed_on_startup: bool,
 
+    /// Start with mempool intake paused. This option is only available when
+    /// built with `--features mempool-intake-admin`.
+    #[cfg(feature = "mempool-intake-admin")]
+    #[arg(env = "MADARA_MEMPOOL_PAUSED", long)]
+    pub mempool_paused: bool,
+
     /// Create this number of contracts in the genesis block for the devnet configuration.
     #[arg(env = "MADARA_DEVNET_CONTRACTS", long, default_value_t = 10)]
     pub devnet_contracts: u64,
