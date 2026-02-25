@@ -30,6 +30,7 @@ pub struct BlockProductionMetrics {
     pub close_preconfirmed_last: Gauge<f64>,
     pub executor_finalize_duration: Histogram<f64>,
     pub executor_finalize_last: Gauge<f64>,
+    pub parallel_payload_mismatch_count: Counter<u64>,
 
     // Block data gauges
     pub block_event_count: Gauge<u64>,
@@ -181,6 +182,12 @@ impl BlockProductionMetrics {
             "Last block: time for executor.finalize() to complete".to_string(),
             "s".to_string(),
         );
+        let parallel_payload_mismatch_count = register_counter_metric_instrument(
+            &meter,
+            "parallel_payload_mismatch_count".to_string(),
+            "Number of close-block payload mismatches rejected before parallel finalizer submission".to_string(),
+            "mismatch".to_string(),
+        );
 
         // Block data gauges
         let block_event_count = register_gauge_metric_instrument(
@@ -279,6 +286,7 @@ impl BlockProductionMetrics {
             close_preconfirmed_last,
             executor_finalize_duration,
             executor_finalize_last,
+            parallel_payload_mismatch_count,
             block_event_count,
             block_state_diff_length,
             block_declared_classes_count,

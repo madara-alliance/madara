@@ -102,7 +102,7 @@ pub struct WatchChainTip<D: MadaraStorageRead> {
 }
 impl<D: MadaraStorageRead> WatchChainTip<D> {
     fn new(backend: &Arc<MadaraBackend<D>>) -> Self {
-        let subscription = backend.chain_tip.subscribe();
+        let subscription = backend.watch_chain_tip_receiver();
         let current_value = subscription.borrow().clone();
         Self { _backend: backend.clone(), current_value, subscription }
     }
@@ -213,7 +213,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     /// Watch canonical chain head state updates used by internal services.
     pub fn watch_chain_head_state(self: &Arc<Self>) -> tokio::sync::watch::Receiver<crate::ChainHeadState> {
-        self.chain_head_state.subscribe()
+        self.watch_chain_head_state_receiver()
     }
 
     /// Subscribe to new blocks. See [`SubscribeNewHeads`] for more details

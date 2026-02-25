@@ -157,16 +157,12 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                         let previous_preconfirmed_block_n = preconfirmed.block_number();
                         let advanced_to_new_preconfirmed = matches!(new_head, MadaraBlockView::Preconfirmed(_))
                             && new_head.block_number() > previous_preconfirmed_block_n;
-                        let previous_preconfirmed_unconfirmed = self
-                            .backend
-                            .latest_confirmed_block_n()
-                            .map(|confirmed| confirmed < previous_preconfirmed_block_n)
-                            .unwrap_or(true);
 
-                        if advanced_to_new_preconfirmed && previous_preconfirmed_unconfirmed {
+                        if advanced_to_new_preconfirmed {
                             // Parallel mode can move from preconfirmed N to preconfirmed N+1 before N is confirmed.
-                            // In that case, executed txs from N are still canonical and must not be reinserted
-                            // into mempool, and account nonces must not be rolled back.
+                            // Also in sequential mode, N can already be confirmed while we observe N+1 preconfirmed.
+                            // In both cases, executed txs from N are canonical and must not be reinserted into mempool,
+                            // and account nonces must not be rolled back.
                             for tx in preconfirmed.candidate_transactions() {
                                 removed.insert(tx.hash, tx.clone());
                             }

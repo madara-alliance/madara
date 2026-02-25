@@ -51,16 +51,16 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns a view on the latest block, which may be a preconfirmed block. This view is used to query content and listen for changes in that block.
     /// The preconfirmed block view will not include candidate transactions.
     pub fn block_view_on_latest(self: &Arc<Self>) -> Option<MadaraBlockView<D>> {
-        self.block_view_on_tip(self.chain_tip.borrow().clone())
+        self.block_view_on_tip(self.current_chain_tip())
     }
 
     /// Returns a view on the preconfirmed block. This view is used to query content and listen for changes in that block.
     /// This returns a fake preconfirmed block if there is not currently one in the backend.
     /// The preconfirmed block view will not include candidate transactions.
     pub fn block_view_on_preconfirmed_or_fake(self: &Arc<Self>) -> Result<MadaraPreconfirmedBlockView<D>> {
-        let chain_tip = self.chain_tip.borrow();
+        let chain_tip = self.current_chain_tip();
         // TODO: cache the preconfirmed fake blocks.
-        let block = match &*chain_tip {
+        let block = match &chain_tip {
             // Real preconfirmed block.
             ChainTip::Preconfirmed(block) => block.clone(),
             // Fake preconfirmed block, based on the previous block header. Most recent gas prices.
@@ -137,7 +137,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns a state view on the latest block state, including pre-confirmed state. This view can be used to query the state from this block and earlier.
     /// The preconfirmed block view will not include candidate transactions.
     pub fn view_on_latest(self: &Arc<Self>) -> MadaraStateView<D> {
-        self.view_on_tip(self.chain_tip.borrow().clone())
+        self.view_on_tip(self.current_chain_tip())
     }
 
     /// The preconfirmed block view will not include candidate transactions.

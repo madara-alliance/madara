@@ -32,7 +32,7 @@ pub struct FinalizedBlockPayload {
 
 #[derive(Clone)]
 pub struct ParallelMerkleFinalizerHandle {
-    sender: mpsc::Sender<FinalizedBlockPayload>,
+    sender: mpsc::Sender<FinalizerCommand>,
 }
 
 impl ParallelMerkleFinalizerHandle {
@@ -40,8 +40,30 @@ impl ParallelMerkleFinalizerHandle {
     ///
     /// Queue backpressure is controlled by `parallel_merkle.max_inflight`.
     pub async fn submit(&self, payload: FinalizedBlockPayload) -> anyhow::Result<()> {
-        self.sender.send(payload).await.context("sending finalized block payload to parallel-merkle finalizer")
+        self.sender
+            .send(FinalizerCommand::Payload(Box::new(payload)))
+            .await
+            .context("sending finalized block payload to parallel-merkle finalizer")
     }
+
+    /// Sync finalizer confirmation cursor from DB tip.
+    ///
+    /// This is used once during block production startup after initial state
+    /// setup (e.g. devnet genesis confirmation) so the worker starts from the
+    /// correct `next_confirm`.
+    pub async fn sync_confirmed_tip_from_db(&self) -> anyhow::Result<()> {
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        self.sender
+            .send(FinalizerCommand::SyncConfirmedTip { ack: ack_tx })
+            .await
+            .context("sending sync-confirmed-tip command to parallel-merkle finalizer")?;
+        ack_rx.await.context("receiving sync-confirmed-tip response from parallel-merkle finalizer")?
+    }
+}
+
+enum FinalizerCommand {
+    Payload(Box<FinalizedBlockPayload>),
+    SyncConfirmedTip { ack: tokio::sync::oneshot::Sender<anyhow::Result<()>> },
 }
 
 #[derive(Debug, Clone)]
@@ -105,13 +127,18 @@ pub fn spawn_parallel_merkle_finalizer(
     let max_inflight = max_inflight.max(1);
     let (sender, receiver) = mpsc::channel(max_inflight);
 
-    let latest_confirmed = backend.latest_confirmed_block_n();
+    // Bootstrap from DB truth because in-memory head state can be stale before
+    // block production setup refreshes it (e.g. devnet genesis on startup).
+    let latest_confirmed = backend
+        .db
+        .get_latest_confirmed_block_n()
+        .context("reading latest confirmed block during finalizer bootstrap")?;
     let next_confirm = latest_confirmed.map(|n| n + 1).unwrap_or(0);
     let latest_checkpoint =
         backend.get_parallel_merkle_latest_checkpoint().context("reading parallel merkle latest checkpoint")?;
     if let (Some(checkpoint), Some(confirmed)) = (latest_checkpoint, latest_confirmed) {
         if checkpoint < confirmed {
-            tracing::warn!(
+            tracing::debug!(
                 latest_checkpoint = checkpoint,
                 latest_confirmed = confirmed,
                 "parallel finalizer bootstrap prefers latest confirmed as snapshot base to avoid stale checkpoint base"
@@ -182,7 +209,11 @@ struct ParallelMerkleFinalizerWorker {
 
 impl ParallelMerkleFinalizerWorker {
     fn initialize_recovery_state(&mut self) -> anyhow::Result<()> {
-        let latest_confirmed = self.backend.latest_confirmed_block_n();
+        let latest_confirmed = self
+            .backend
+            .db
+            .get_latest_confirmed_block_n()
+            .context("reading latest confirmed block during startup recovery")?;
         let latest_checkpoint = self
             .backend
             .get_parallel_merkle_latest_checkpoint()
@@ -237,7 +268,7 @@ impl ParallelMerkleFinalizerWorker {
             return Ok(());
         }
 
-        tracing::info!(
+        tracing::debug!(
             next_confirm = self.next_confirm,
             snapshot_base = self.snapshot_base_block_n,
             count = staged_blocks.len(),
@@ -303,11 +334,14 @@ impl ParallelMerkleFinalizerWorker {
             self.pending_epoch_diffs = self.pending_epoch_diffs.split_off(&(block_n + 1));
         }
 
-        tracing::info!(block_n, is_boundary, "recovered staged block");
+        tracing::debug!(block_n, is_boundary, "recovered staged block");
         Ok(())
     }
 
     /// Main worker loop that coordinates ingestion, lane completion, and ordered confirmation.
+    ///
+    /// Lifecycle: this function is invoked exactly once per worker instance by
+    /// `spawn_parallel_merkle_finalizer`. It is not designed for re-entry.
     ///
     /// Flow:
     /// ```text
@@ -327,12 +361,15 @@ impl ParallelMerkleFinalizerWorker {
     /// ```
     ///
     /// The loop exits only when the input channel is closed and both job sets are empty.
-    async fn run(&mut self, mut receiver: mpsc::Receiver<FinalizedBlockPayload>) -> anyhow::Result<()> {
+    async fn run(&mut self, mut receiver: mpsc::Receiver<FinalizerCommand>) -> anyhow::Result<()> {
         loop {
             tokio::select! {
-                maybe_payload = receiver.recv(), if Self::can_schedule_more(self.max_inflight_blocks, &self.scheduled_blocks) => {
-                    match maybe_payload {
-                        Some(payload) => self.schedule_block(payload),
+                maybe_command = receiver.recv(), if Self::can_schedule_more(self.max_inflight_blocks, &self.scheduled_blocks) => {
+                    match maybe_command {
+                        Some(FinalizerCommand::Payload(payload)) => self.schedule_block(*payload),
+                        Some(FinalizerCommand::SyncConfirmedTip { ack }) => {
+                            let _ = ack.send(self.sync_confirmed_tip_from_db());
+                        }
                         None => {
                             if self.db_staging_jobs.is_empty() && self.root_compute_jobs.is_empty() {
                                 break;
@@ -379,6 +416,40 @@ impl ParallelMerkleFinalizerWorker {
         Ok(())
     }
 
+    fn sync_confirmed_tip_from_db(&mut self) -> anyhow::Result<()> {
+        ensure!(
+            self.scheduled_blocks.is_empty()
+                && self.persisted_ready.is_empty()
+                && self.roots_ready.is_empty()
+                && self.db_staging_jobs.is_empty()
+                && self.root_compute_jobs.is_empty(),
+            "cannot sync finalizer confirmed tip while work is in flight"
+        );
+
+        let latest_confirmed = self
+            .backend
+            .db
+            .get_latest_confirmed_block_n()
+            .context("reading latest confirmed block during finalizer tip sync")?;
+        let latest_checkpoint = self
+            .backend
+            .get_parallel_merkle_latest_checkpoint()
+            .context("reading latest parallel merkle checkpoint during finalizer tip sync")?;
+
+        self.snapshot_base_block_n = initial_snapshot_base(latest_confirmed, latest_checkpoint);
+        if let Some(tip) = latest_confirmed {
+            if self.snapshot_base_block_n > tip {
+                self.snapshot_base_block_n = tip;
+            }
+        }
+
+        self.next_confirm = latest_confirmed.map(|n| n + 1).unwrap_or(0);
+        self.pending_epoch_diffs.clear();
+        self.preload_confirmed_epoch_diffs(latest_confirmed)?;
+
+        Ok(())
+    }
+
     /// Schedule both lanes for a single block.
     ///
     /// Flow:
@@ -393,8 +464,19 @@ impl ParallelMerkleFinalizerWorker {
     /// A duplicate `block_n` is rejected and recorded as a scheduler failure.
     fn schedule_block(&mut self, payload: FinalizedBlockPayload) {
         let block_n = payload.block_n;
+        let payload_header_block_n = payload.block.header.block_number;
         if block_n < self.next_confirm {
             tracing::warn!(block_n, next_confirm = self.next_confirm, "dropping already-confirmed payload");
+            return;
+        }
+        if payload_header_block_n != block_n {
+            self.record_block_failure(
+                block_n,
+                "scheduler",
+                anyhow::anyhow!(
+                    "parallel finalizer payload mismatch: expected block_n={block_n}, payload_header_block_n={payload_header_block_n}"
+                ),
+            );
             return;
         }
         if !self.scheduled_blocks.insert(block_n) {
@@ -661,6 +743,38 @@ mod tests {
         FullBlockWithoutCommitments { header, state_diff: StateDiff::default(), transactions: vec![tx], events }
     }
 
+    fn make_payload(block_n: u64, header_block_n: u64) -> FinalizedBlockPayload {
+        FinalizedBlockPayload {
+            block_n,
+            block: make_staged_block(header_block_n, Felt::from(0xabc_u64 + header_block_n)),
+            classes: vec![],
+            state_diff: StateDiff::default(),
+            consumed_core_contract_nonces: HashSet::new(),
+            bouncer_weights: BouncerWeights::default(),
+            execution_stats: ExecutionStats::default(),
+            block_production_duration: Duration::ZERO,
+        }
+    }
+
+    fn make_worker(next_confirm: u64) -> ParallelMerkleFinalizerWorker {
+        ParallelMerkleFinalizerWorker {
+            backend: MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test())),
+            flush_interval: 3,
+            trie_log_mode: ParallelMerkleInMemoryTrieLogMode::Checkpoint,
+            next_confirm,
+            snapshot_base_block_n: next_confirm.saturating_sub(1),
+            pending_epoch_diffs: BTreeMap::new(),
+            persisted_ready: BTreeSet::new(),
+            roots_ready: BTreeMap::new(),
+            close_block_logs: BTreeMap::new(),
+            db_staging_jobs: JoinSet::new(),
+            root_compute_jobs: JoinSet::new(),
+            max_inflight_blocks: 4,
+            scheduled_blocks: BTreeSet::new(),
+            failed_blocks: BTreeMap::new(),
+        }
+    }
+
     #[rstest]
     #[case(3, 0, false)]
     #[case(3, 1, false)]
@@ -804,5 +918,26 @@ mod tests {
         #[case] expected: u64,
     ) {
         assert_eq!(initial_snapshot_base(latest_confirmed, latest_checkpoint), expected);
+    }
+
+    #[tokio::test]
+    async fn scheduler_rejects_payload_with_mismatched_block_numbers() {
+        let mut worker = make_worker(10);
+        let payload = make_payload(10, 9);
+
+        worker.schedule_block(payload);
+
+        let failure = worker.failed_blocks.get(&10).expect("mismatched payload should record failure");
+        assert_eq!(failure.lane, "scheduler");
+        assert!(
+            failure
+                .message
+                .contains("parallel finalizer payload mismatch: expected block_n=10, payload_header_block_n=9"),
+            "unexpected scheduler error: {}",
+            failure.message
+        );
+        assert!(!worker.scheduled_blocks.contains(&10), "mismatched payload must not be scheduled");
+        assert_eq!(worker.db_staging_jobs.len(), 0, "db staging lane must not start");
+        assert_eq!(worker.root_compute_jobs.len(), 0, "root compute lane must not start");
     }
 }

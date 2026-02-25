@@ -5,7 +5,7 @@ use crate::{
     SyncControllerConfig,
 };
 use anyhow::Context;
-use mc_db::{MadaraBackend, MadaraStorageRead};
+use mc_db::MadaraBackend;
 use mp_chain_config::ChainConfig;
 use mp_utils::service::ServiceContext;
 use rstest::{fixture, rstest};
@@ -40,10 +40,7 @@ impl ReorgTestContext {
 
     fn revert_to(&self, block_hash: &mp_convert::Felt) -> anyhow::Result<(u64, mp_convert::Felt)> {
         let result = self.backend.revert_to(block_hash)?;
-
-        let fresh_chain_tip = self.backend.db.get_chain_tip().context("Getting fresh chain tip after reorg")?;
-        let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-        self.backend.chain_tip.send_replace(backend_chain_tip);
+        self.backend.refresh_chain_heads_from_db().context("Refreshing head state after reorg")?;
 
         Ok(result)
     }

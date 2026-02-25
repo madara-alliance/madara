@@ -6,7 +6,7 @@ use crate::{
 use anyhow::Context;
 use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
-    MadaraBackend, MadaraStorageRead, MadaraStorageWrite,
+    MadaraBackend, MadaraStorageWrite,
 };
 use mc_gateway_client::{BlockId, GatewayProvider};
 use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
@@ -212,10 +212,7 @@ impl GatewaySyncSteps {
 
         // Step 4: Refresh backend cache
         tracing::info!("🔄 Refreshing backend cache...");
-        let fresh_chain_tip =
-            self._backend.db.get_chain_tip().context("Getting fresh chain tip after database wipe")?;
-        let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-        self._backend.chain_tip.send_replace(backend_chain_tip);
+        self._backend.refresh_chain_heads_from_db().context("Refreshing backend head state after database wipe")?;
         tracing::info!("✅ Backend cache refreshed");
         tracing::info!("🔄 Node will now resync from upstream genesis block...");
 
@@ -237,8 +234,7 @@ impl PipelineSteps for GatewaySyncSteps {
             tracing::debug!("Gateway sync parallel step {:?}", block_range);
 
             // Get the confirmed chain tip to detect sync resume scenarios
-            let confirmed_tip_at_start = self._backend.chain_tip.borrow()
-                .latest_confirmed_block_n();
+            let confirmed_tip_at_start = self._backend.latest_confirmed_block_n();
 
             for block_n in block_range {
                 tracing::debug!("📥 Fetching block #{} from gateway", block_n);
@@ -337,10 +333,9 @@ impl PipelineSteps for GatewaySyncSteps {
 
                                             self._backend.db.flush()?;
 
-                                            let fresh_chain_tip = self._backend.db.get_chain_tip()
-                                                .context("Getting fresh chain tip after reorg")?;
-                                            let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-                                            self._backend.chain_tip.send_replace(backend_chain_tip);
+                                            self._backend
+                                                .refresh_chain_heads_from_db()
+                                                .context("Refreshing backend head state after reorg")?;
                                             tracing::info!("✅ Reorg completed successfully, chain tip cache refreshed, aborting pipeline to restart from new chain tip");
 
                                             anyhow::bail!("Reorg detected and processed, restarting sync from new chain tip");

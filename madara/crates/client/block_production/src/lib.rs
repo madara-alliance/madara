@@ -966,6 +966,13 @@ impl BlockProductionTask {
 
             let (block_without_state_diff, classes) =
                 preconfirmed_view.get_full_block_without_state_diff().context("building finalizer payload block")?;
+            let payload_header_block_n = block_without_state_diff.header.block_number;
+            if let Err(error) =
+                Self::ensure_parallel_finalizer_payload_consistency(block_number, payload_header_block_n)
+            {
+                self.metrics.parallel_payload_mismatch_count.add(1, &[]);
+                return Err(error);
+            }
 
             let payload = FinalizedBlockPayload {
                 block_n: block_number,
@@ -1103,10 +1110,30 @@ impl BlockProductionTask {
         Ok(())
     }
 
+    fn ensure_parallel_finalizer_payload_consistency(
+        expected_block_n: u64,
+        payload_header_block_n: u64,
+    ) -> anyhow::Result<()> {
+        if payload_header_block_n == expected_block_n {
+            return Ok(());
+        }
+        anyhow::bail!(
+            "parallel finalizer payload mismatch: expected block_n={expected_block_n}, payload_header_block_n={payload_header_block_n}"
+        );
+    }
+
     pub(crate) async fn setup_initial_state(&mut self) -> Result<(), anyhow::Error> {
         self.backend.chain_config().precheck_block_production()?;
 
         self.close_preconfirmed_block_if_exists().await.context("Cannot close preconfirmed block on startup")?;
+
+        self.backend.refresh_chain_heads_from_db().context("Refreshing chain heads on startup")?;
+        if let Some(finalizer) = self.parallel_merkle_finalizer.as_ref() {
+            finalizer
+                .sync_confirmed_tip_from_db()
+                .await
+                .context("syncing parallel merkle finalizer tip from DB on startup")?;
+        }
 
         // initial state
         let latest_block_n = self.backend.latest_confirmed_block_n();
@@ -1580,6 +1607,114 @@ pub(crate) mod tests {
         );
 
         validator.submit_invoke_transaction(tx).await.expect("Should accept the transaction");
+    }
+
+    async fn wait_for_confirmed_block(backend: &Arc<MadaraBackend>, expected_block_n: u64) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if backend.latest_confirmed_block_n() == Some(expected_block_n) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("timed out waiting for expected confirmed block");
+    }
+
+    #[rstest::rstest]
+    #[case(7, 7, true)]
+    #[case(7, 6, false)]
+    fn close_block_parallel_payload_guard(
+        #[case] expected_block_n: u64,
+        #[case] payload_header_block_n: u64,
+        #[case] should_pass: bool,
+    ) {
+        let result = BlockProductionTask::ensure_parallel_finalizer_payload_consistency(
+            expected_block_n,
+            payload_header_block_n,
+        );
+
+        assert_eq!(result.is_ok(), should_pass);
+        if let Err(error) = result {
+            let err_text = format!("{error:#}");
+            assert!(
+                err_text.contains("parallel finalizer payload mismatch"),
+                "unexpected payload guard error: {err_text}"
+            );
+        }
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(60))]
+    #[tokio::test]
+    async fn test_parallel_finalizer_resumes_from_latest_confirmed_after_restart(
+        #[future]
+        #[with(Duration::from_secs(100), false)]
+        devnet_setup: DevnetSetup,
+    ) {
+        let parallel_cfg = ParallelMerkleConfig { enabled: true, ..ParallelMerkleConfig::default() };
+        let devnet_setup = devnet_setup.await;
+
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[0],
+            &devnet_setup.contracts.0[1],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        let mut first_task = BlockProductionTask::new(
+            devnet_setup.backend.clone(),
+            devnet_setup.mempool.clone(),
+            devnet_setup.metrics.clone(),
+            Arc::new(devnet_setup.l1_client.clone()),
+            false,
+            parallel_cfg.clone(),
+        )
+        .expect("creating first parallel block production task");
+        let first_handle = first_task.handle();
+        let mut first_notifications = first_task.subscribe_state_notifications();
+        let first_runner =
+            AbortOnDrop::spawn(async move { first_task.run(ServiceContext::new_for_testing()).await.unwrap() });
+
+        assert_eq!(first_notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        first_handle.close_block().await.unwrap();
+        assert_eq!(first_notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        wait_for_confirmed_block(&devnet_setup.backend, 1).await;
+        drop(first_runner);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        sign_and_add_invoke_tx(
+            &devnet_setup.contracts.0[2],
+            &devnet_setup.contracts.0[3],
+            &devnet_setup.backend,
+            &devnet_setup.tx_validator,
+            Felt::ZERO,
+        )
+        .await;
+
+        let mut restart_task = BlockProductionTask::new(
+            devnet_setup.backend.clone(),
+            devnet_setup.mempool.clone(),
+            devnet_setup.metrics.clone(),
+            Arc::new(devnet_setup.l1_client.clone()),
+            false,
+            parallel_cfg,
+        )
+        .expect("creating restarted parallel block production task");
+        let restart_handle = restart_task.handle();
+        let mut restart_notifications = restart_task.subscribe_state_notifications();
+        let restart_runner =
+            AbortOnDrop::spawn(async move { restart_task.run(ServiceContext::new_for_testing()).await.unwrap() });
+
+        assert_eq!(restart_notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
+        restart_handle.close_block().await.unwrap();
+        assert_eq!(restart_notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        wait_for_confirmed_block(&devnet_setup.backend, 2).await;
+
+        drop(restart_runner);
     }
 
     //
