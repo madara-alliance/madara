@@ -34,6 +34,10 @@ Madara is a powerful Starknet client written in Rust.
   - [Starknet Compliant](#starknet-compliant)
   - [Feeder-Gateway State Synchronization](#feeder-gateway-state-synchronization)
   - [State Commitment Computation](#state-commitment-computation)
+  - [SnapSync](#snapsync)
+  - [Cairo Native Execution](#cairo-native-execution)
+  - [L3 Support](#l3-support)
+  - [Automatic Database Migrations](#automatic-database-migrations)
 - 💬 [Get in touch](#-get-in-touch)
   - [Contributing](#contributing)
   - [Partnerships](#partnerships)
@@ -53,7 +57,7 @@ Ensure you have all the necessary dependencies available on your host system.
 
 | Dependency | Version    | Installation                                                      |
 | ---------- | ---------- | ----------------------------------------------------------------- |
-| Rust       | rustc 1.81 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Rust       | rustc 1.89 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Clang      | Latest     | `sudo apt-get install clang`                                      |
 | Openssl    | 0.10       | `sudo apt install openssl`                                        |
 
@@ -61,7 +65,8 @@ Once all dependencies are satisfied, you can clone the Madara repository:
 
 ```bash
 cd <your-destination-path>
-git clone https://github.com/madara-alliance/madara .
+git clone https://github.com/madara-alliance/madara
+cd madara
 ```
 
 #### 2. Build Madara
@@ -159,7 +164,7 @@ cargo run --bin madara --release -- \
    --name Madara       \
    --full              \
    --preset mainnet    \
-   --fgw
+   --gateway
 ```
 
 ---
@@ -216,11 +221,11 @@ simplify this process.
 | Gnu Make       | Latest  | `sudo apt install make`                                           |
 
 Once you have all the dependencies installed, start by saving your rpc key
-to a `.secrets` forlder:
+to a `.secrets` folder:
 
 ```bash
 mkdir .secrets
-echo *** .secrets/rpc_api.secret
+echo "${ETHEREUM_API_URL}" > .secrets/rpc_api.secret
 ```
 
 Then, run madara with the following commands:
@@ -274,7 +279,7 @@ make help
 For a comprehensive list of all command-line options, check out:
 
 ```bash
-cargo run -- --help
+cargo run --bin madara -- --help
 ```
 
 Or if you are using docker, simply:
@@ -326,8 +331,12 @@ You can find examples on [configs](configs/).
 
 [⬅️ back to top](#-madara-starknet-client)
 
-Madara fully supports all the JSON-RPC methods as of the latest version of the
-Starknet mainnet official [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+Madara supports Starknet JSON-RPC routes `v0.7.1`, `v0.8.1`, `v0.9.0`, and
+`v0.10.0`. Method-level availability can vary depending on current implementation
+status and runtime retention/configuration.
+The default user RPC route is `rpc/v0_10_0`.
+Legacy user routes are also available under `rpc/v0_7_1`, `rpc/v0_8_1`, and `rpc/v0_9_0`.
+Admin RPC methods are exposed under `rpc/v0_1_0` (default port `9943`) when `--rpc-admin` is enabled.
 These methods can be categorized into three main types: Read-Only Access Methods,
 Trace Generation Methods, and Write Methods. They are accessible through port
 **9944** unless specified otherwise with `--rpc-port`.
@@ -345,34 +354,34 @@ Here is a list of all the supported methods with their current status:
 <details>
   <summary>Read Methods</summary>
 
-| Status | Method                                     |
-| ------ | ------------------------------------------ |
-| ✅     | `starknet_specVersion`                     |
-| ✅     | `starknet_getBlockWithTxHashes`            |
-| ✅     | `starknet_getBlockWithTxs`                 |
-| ✅     | `starknet_getBlockWithReceipts`            |
-| ✅     | `starknet_getStateUpdate`                  |
-| ✅     | `starknet_getStorageAt`                    |
-| ✅     | `starknet_getTransactionStatus`            |
-| ✅     | `starknet_getTransactionByHash`            |
-| ✅     | `starknet_getTransactionByBlockIdAndIndex` |
-| ✅     | `starknet_getTransactionReceipt`           |
-| ✅     | `starknet_getClass`                        |
-| ✅     | `starknet_getClassHashAt`                  |
-| ✅     | `starknet_getClassAt`                      |
-| ✅     | `starknet_getBlockTransactionCount`        |
-| ✅     | `starknet_call`                            |
-| ✅     | `starknet_estimateFee`                     |
-| ✅     | `starknet_estimateMessageFee`              |
-| ✅     | `starknet_blockNumber`                     |
-| ✅     | `starknet_blockHashAndNumber`              |
-| ✅     | `starknet_chainId`                         |
-| ✅     | `starknet_syncing`                         |
-| ✅     | `starknet_getEvents`                       |
-| ✅     | `starknet_getNonce`                        |
-| ✅     | `starknet_getCompiledCasm` (v0.8.0)        |
-| ✅     | `starknet_getMessagesStatus`               |
-| 🚧     | `starknet_getStorageProof` (v0.8.0)        |
+| Status | Method                                                                         |
+| ------ | ------------------------------------------------------------------------------ |
+| ✅     | `starknet_specVersion`                                                         |
+| ✅     | `starknet_getBlockWithTxHashes`                                                |
+| ✅     | `starknet_getBlockWithTxs`                                                     |
+| ✅     | `starknet_getBlockWithReceipts`                                                |
+| ✅     | `starknet_getStateUpdate`                                                      |
+| ✅     | `starknet_getStorageAt`                                                        |
+| ✅     | `starknet_getTransactionStatus`                                                |
+| ✅     | `starknet_getTransactionByHash`                                                |
+| ✅     | `starknet_getTransactionByBlockIdAndIndex`                                     |
+| ✅     | `starknet_getTransactionReceipt`                                               |
+| ✅     | `starknet_getClass`                                                            |
+| ✅     | `starknet_getClassHashAt`                                                      |
+| ✅     | `starknet_getClassAt`                                                          |
+| ✅     | `starknet_getBlockTransactionCount`                                            |
+| ✅     | `starknet_call`                                                                |
+| ✅     | `starknet_estimateFee`                                                         |
+| ✅     | `starknet_estimateMessageFee`                                                  |
+| ✅     | `starknet_blockNumber`                                                         |
+| ✅     | `starknet_blockHashAndNumber`                                                  |
+| ✅     | `starknet_chainId`                                                             |
+| ✅     | `starknet_syncing`                                                             |
+| ✅     | `starknet_getEvents`                                                           |
+| ✅     | `starknet_getNonce`                                                            |
+| ✅     | `starknet_getCompiledCasm` (v0.8.1+)                                           |
+| ✅     | `starknet_getMessagesStatus` (v0.9.0+)                                         |
+| ❌     | `starknet_getStorageProof` (v0.8.1+, currently unavailable in default profile) |
 
 </details>
 
@@ -401,16 +410,28 @@ Here is a list of all the supported methods with their current status:
 <details>
   <summary>Websocket Methods</summary>
 
-| Status | Method                                           |
-| ------ | ------------------------------------------------ |
-| ✅     | `starknet_unsubscribe` (v0.8.0)                  |
-| ✅     | `starknet_subscribeNewHeads` (v0.8.0)            |
-| ✅     | `starknet_subscribeEvents` (v0.8.0)              |
-| ❌     | `starknet_subscribeTransactionStatus` (v0.8.0)   |
-| ❌     | `starknet_subscribePendingTransactions` (v0.8.0) |
-| ❌     | `starknet_subscriptionReorg` (v0.8.0)            |
+| Status | Method                                                |
+| ------ | ----------------------------------------------------- |
+| ✅     | `starknet_unsubscribe` (v0.8.1+)                      |
+| ❌     | `starknet_subscribeNewHeads` (placeholder)            |
+| ❌     | `starknet_subscribeEvents` (placeholder)              |
+| ❌     | `starknet_subscribeTransactionStatus` (placeholder)   |
+| ❌     | `starknet_subscribePendingTransactions` (placeholder) |
+| ❌     | `starknet_subscriptionReorg`                          |
 
 </details>
+
+> [!NOTE]
+> Subscription methods are currently placeholders and return `UnimplementedMethod`.
+> This applies to `v0.8.1`, `v0.9.0`, and `v0.10.0` (which delegates to `v0.9.0`).
+
+> [!IMPORTANT]
+> `starknet_getStorageProof` is currently treated as unavailable in the default
+> node profile because the required retention is disabled in
+> [`configs/args/config.json`](configs/args/config.json):
+> `db_max_saved_trie_logs = 0`, `db_max_kept_snapshots = 0`, and
+> `rpc_storage_proof_max_distance = 0`. Madara loads this file by default when
+> run without explicit CLI/config overrides.
 
 > [!IMPORTANT]
 > Write methods are forwarded to the Sequencer and are not executed by Madara.
@@ -429,20 +450,37 @@ are exposed on a separate port **9943** unless specified otherwise with
 <details>
   <summary>Write Methods</summary>
 
-| Method                           | About                                             |
-| -------------------------------- | ------------------------------------------------- |
-| `madara_addDeclareV0Transaction` | Adds a legacy Declare V0 Transaction to the state |
+| Method                                     | About                                                       |
+| ------------------------------------------ | ----------------------------------------------------------- |
+| `madara_addDeclareV0Transaction`           | Adds a legacy Declare V0 transaction                        |
+| `madara_bypassAddDeclareTransaction`       | Bypasses mempool/validation for Declare transactions        |
+| `madara_bypassAddDeployAccountTransaction` | Bypasses mempool/validation for DeployAccount transactions  |
+| `madara_bypassAddInvokeTransaction`        | Bypasses mempool/validation for Invoke transactions         |
+| `madara_closeBlock`                        | Forces block closure in block production mode               |
+| `madara_revertToAndShutdown`               | Reverts chain state to a block hash and shuts down the node |
+| `madara_addL1HandlerMessage`               | Pushes an L1 handler message into bypass input              |
+| `madara_setCustomBlockHeader`              | Sets custom block header fields for upcoming block          |
+
+</details>
+
+<details>
+  <summary>Read Methods</summary>
+
+| Method                          | About                               |
+| ------------------------------- | ----------------------------------- |
+| `madara_getBlockBuiltinWeights` | Returns builtin weights for a block |
 
 </details>
 
 <details>
   <summary>Status Methods</summary>
 
-| Method            | About                                                |
-| ----------------- | ---------------------------------------------------- |
-| `madara_ping`     | Return the unix time at which this method was called |
-| `madara_shutdown` | Gracefully stops the running node                    |
-| `madara_service`  | Sets the status of one or more services              |
+| Method                 | About                                                |
+| ---------------------- | ---------------------------------------------------- |
+| `madara_ping`          | Return the unix time at which this method was called |
+| `madara_shutdown`      | Gracefully stops the running node                    |
+| `madara_service`       | Sets the status of one or more services              |
+| `madara_serviceStatus` | Returns requested and actual service statuses        |
 
 </details>
 
@@ -456,8 +494,8 @@ are exposed on a separate port **9943** unless specified otherwise with
 </details>
 
 > [!CAUTION]
-> These methods are exposed on `locahost` by default for obvious security
-> reasons. You can always exposes them externally using `--rpc-admin-external`,
+> These methods are exposed on `localhost` by default for obvious security
+> reasons. You can always expose them externally using `--rpc-admin-external`,
 > but be _very careful_ when doing so as you might be compromising your node!
 > Madara does not do **any** authorization checks on the caller of these
 > methods and instead leaves it up to the user to set up their own proxy to
@@ -483,12 +521,12 @@ the bellow code, make sure you have a node running with rpc enabled on port 9944
 (this is the default configuration).
 
 > [!IMPORTANT]
-> Madara currently defaults to `v0.7.1` for its rpc calls. To access methods
-> in other or more recent versions, add `rpc/v*_*_*/` to your rpc url. This
-> Also works for websocket methods.
+> Madara currently defaults to `v0.10.0` for RPC calls.
+> To access specific versions, add `rpc/v*_*_*/` to your RPC URL.
+> This also works for websocket methods.
 
 ```bash
-curl --location 'localhost:9944'/v0_7_1/    \
+curl --location 'http://localhost:9944/rpc/v0_10_0/' \
   --header 'Content-Type: application/json' \
   --data '{
     "jsonrpc": "2.0",
@@ -510,9 +548,9 @@ You should receive something like the following:
       "rpc/V0_7_1/starknet_addDeployAccountTransaction",
       "rpc/V0_7_1/starknet_addInvokeTransaction",
       ...
-      "rpc/V0_8_0/starknet_traceBlockTransactions",
-      "rpc/V0_8_0/starknet_traceTransaction",
-      "rpc/V0_8_0/starknet_unsubscribe",
+      "rpc/V0_10_0/starknet_traceBlockTransactions",
+      "rpc/V0_10_0/starknet_traceTransaction",
+      "rpc/V0_10_0/starknet_unsubscribe",
       "rpc/rpc_methods"
     ]
   }
@@ -526,30 +564,30 @@ You should receive something like the following:
 | Websocat   | Latest  | [Official instructions](https://github.com/vi/websocat?tab=readme-ov-file#installation) |
 
 Websockets methods are enabled by default and are accessible through the same
-port as http RPC methods. Here is an example of how to call a JSON-RPC method
-using `websocat`.
+port as http RPC methods.
+
+> [!NOTE]
+> Subscription methods are currently placeholders and return
+> `UnimplementedMethod` on `v0.8.1`, `v0.9.0`, and `v0.10.0`.
+> `starknet_unsubscribe` is available, but active subscription streams are not
+> yet available.
+
+You can still use websocket transport to call methods and validate responses
+using `websocat`:
 
 ```bash
-(echo '{"jsonrpc":"2.0","method":"starknet_subscribeNewHeads","params":{"block_id":"latest"},"id":1}'; cat -) | \
-websocat -v ws://localhost:9944/rpc/v0_8_0
+websocat -v ws://localhost:9944/rpc/v0_10_0
 ```
 
 > [!TIP]
-> This command and the strange use of `echo` in combination with `cat` is just a
-> way to start a websocket stream with `websocat` while staying in interactive
-> mode, meaning you can still enter other websocket requests.
-
-This will display header information on each new block synchronized. Use
-`Ctrl-C` to stop the subscription. Alternatively, you can achieve the same
-result more gracefully by calling `starknet_unsubscribe`. Paste the following
-into the subscription stream:
+> Once connected, paste JSON-RPC payloads directly in the terminal. For example:
 
 ```bash
-{ "jsonrpc": "2.0", "method": "starknet_unsubscribe", "params": ["your-subscription-id"], "id": 1 }
+{ "jsonrpc": "2.0", "method": "starknet_subscribeNewHeads", "params": {"block_id":"latest"}, "id": 1 }
 ```
 
-Where `you-subscription-id` corresponds to the value of the `subscription` field
-which is returned with each websocket response.
+This currently returns `UnimplementedMethod` until subscription support is
+re-enabled.
 
 ## 📚 Database Migration
 
@@ -557,30 +595,30 @@ which is returned with each websocket response.
 
 ### Database Version Management
 
-The database version management system ensures compatibility between Madara's
-binary and database versions.
-When you encounter a version mismatch error, it means your database schema needs
-to be updated to match your current binary version.
+Madara now performs automatic database schema migration on startup when needed.
+This keeps binary and database versions aligned without manual migration steps
+in the common case.
 
-When you see:
+Current migration metadata is tracked in [`.db-versions.yml`](.db-versions.yml):
 
-```console
-Error: Database version 41 is not compatible with current binary. Expected version 42
-```
-
-This error indicates that:
-
-1. Your current binary requires database version 42
-2. Your database is still at version 41
-3. Migration is required before you can continue
+1. Current schema version: `12`
+2. Minimum migratable version: `8`
+3. Migrations are resumable and protected by migration lock/state files
 
 > [!IMPORTANT]
-> Don't panic! Your data is safe, but you need to migrate it before continuing.
+> Backups are created before migrations by default. Use
+> `--skip-migration-backup` only when you already have external backups.
+
+> [!CAUTION]
+> Database migrations are forward-oriented. After migrating to a newer schema
+> version, you cannot safely reuse the same database with an older Madara
+> binary. To roll back, restore from a backup taken before migration.
 
 To migrate your database, you have two options:
 
-1. Use Madara's **warp update** feature (recommended)
-2. Re-synchronize from genesis (not recommended)
+1. Start the node and let automatic in-place migration run
+2. Use Madara's **warp update** feature (recommended for fast local migration)
+3. Re-synchronize from genesis (not recommended)
 
 The warp update feature provides a trusted sync from a local source, offering
 better performance than re-synchronizing the entirety of your chain's state
@@ -598,7 +636,7 @@ cargo run --bin madara --release --      \
   --network mainnet         \
   --full                    \
   --l1-sync-disabled        `# We disable sync, for testing purposes` \
-  --n-blocks-to-sync 1000   `# Only synchronize the first 1000 blocks` \
+  --sync-stop-at 1000       `# Only synchronize the first 1000 blocks` \
   --stop-on-sync            `# ...and shutdown the node once this is done`
 ```
 
@@ -644,7 +682,7 @@ This will start generating a new up-to-date database under `/tmp/madara_new`.
 Once this process is over, the receiver node will automatically shutdown.
 
 > [!TIP]
-> There also exists a `--warp-update--shutdown-sender` option which allows the
+> There also exists a `--warp-update-shutdown-sender` option which allows the
 > receiver to take the place of the sender in certain limited circumstances.
 
 ### Running without `--warp-update-sender`
@@ -695,9 +733,10 @@ cargo run --bin madara --release --            \
 
 ### Starknet compliant
 
-Madara is compliant with the latest `v0.13.2` version of Starknet and `v0.7.1`
-JSON-RPC specs. You can find out more about this in the [interactions](#-interactions)
-section or at the official Starknet [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
+Madara supports Starknet JSON-RPC `v0.7.1`, `v0.8.1`, `v0.9.0`, and `v0.10.0`
+(default route: `v0.10.0`).
+You can find out more in the [interactions](#-interactions) section and the
+official Starknet [JSON-RPC specs](https://github.com/starkware-libs/starknet-specs).
 
 ### Feeder-Gateway State Synchronization
 
@@ -719,13 +758,85 @@ Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-allianc
 You can read more about Starknet Block structure and how it affects state
 commitment in the [Starknet documentation](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
 
+### SnapSync
+
+Madara supports SnapSync (`--snap-sync`) to accelerate state synchronization by
+batching trie computations.
+
+SnapSync uses a batched trie-apply path when both conditions hold:
+
+1. `--snap-sync` is enabled
+2. The distance to the sync target is `>= 1000` blocks
+
+When the remaining distance is below this threshold, Madara flushes accumulated
+state diffs and returns to block-by-block trie updates.
+
+> [!IMPORTANT]
+> SnapSync is a performance tradeoff with historical-data implications:
+>
+> - For blocks synchronized through SnapSync batches, per-block trie logs
+>   ("trielogs") are not produced for each intermediate block in that range.
+> - As a result, storage proofs are not guaranteed for every block in
+>   snap-synced ranges.
+> - Reverting into the snap-synced range is blocked by design. The admin revert
+>   API rejects targets lower than the recorded `snap_sync_latest_block` because
+>   trie data is only available from that boundary onward.
+
+### Cairo Native Execution
+
+Madara supports opt-in Cairo Native execution controlled by a single flag:
+
+```bash
+--enable-native-execution true
+```
+
+By default, this is disabled and Cairo VM execution remains the execution path.
+
+When native execution is enabled:
+
+1. Madara compiles Sierra classes into native artifacts and caches them.
+2. Compilation mode is controlled by `--native-compilation-mode`:
+   - `async` (default): compile in background, execute immediately with Cairo VM fallback.
+   - `blocking`: wait for compilation; compilation failure/timeout fails execution.
+3. Native artifacts are cached on disk under `<base-path>/native_classes` and
+   reused on restart.
+4. Async compilation retries are controlled by `--native-enable-retry` (default:
+   `true`).
+
+This means native compilation is resumable in practice through persisted cache
+reuse: compiled classes survive restarts, while classes not yet compiled are
+compiled on-demand after restart.
+
+### L3 Support
+
+Madara supports running with different settlement layers via
+`--settlement-layer`:
+
+- `Eth` (default)
+- `Starknet` (L3-oriented deployment mode)
+
+When `--settlement-layer Starknet` is used:
+
+1. `--l1-endpoint` is treated as a Starknet RPC endpoint (not Ethereum RPC).
+2. The settlement client switches to Starknet settlement sync.
+3. `--l1-gas-price` and `--blob-gas-price` are interpreted in `FRI` (instead
+   of `WEI` on Ethereum settlement).
+4. Chain execution is marked as L3 (`is_l3 = true`), which changes how
+   blockifier treats settlement-layer addresses.
+
+### Automatic Database Migrations
+
+Madara includes an automatic migration system with checkpoint backups and resume
+support to simplify upgrades across database schema versions.
+
 ## 💬 Get in touch
 
 [⬅️ back to top](#-madara-starknet-client)
 
 ### Contributing
 
-For guidelines on how to contribute to Madara, please see the [Contribution Guidelines](https://github.com/madara-alliance/madara/blob/main/CONTRIBUTING.md).
+Start with an issue using the templates under [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/),
+then open a pull request using [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md).
 
 ### Partnerships
 
