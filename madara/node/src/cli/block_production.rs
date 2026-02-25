@@ -8,6 +8,12 @@ pub struct BlockProductionParams {
     #[arg(env = "MADARA_BLOCK_PRODUCTION_DISABLED", long, alias = "no-block-production")]
     pub block_production_disabled: bool,
 
+    /// Start with mempool intake paused. This option is only available when
+    /// built with `--features mempool-intake-admin`.
+    #[cfg(feature = "mempool-intake-admin")]
+    #[arg(env = "MADARA_MEMPOOL_PAUSED", long)]
+    pub mempool_paused: bool,
+
     /// Create this number of contracts in the genesis block for the devnet configuration.
     #[arg(env = "MADARA_DEVNET_CONTRACTS", long, default_value_t = 10)]
     pub devnet_contracts: u64,

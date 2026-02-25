@@ -18,6 +18,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 [[bin]]
 name = "madara"
 
+[features]
+default = []
+mempool-intake-admin = ["mc-rpc/mempool-intake-admin"]
+
 [dependencies]
 
 # Madara
