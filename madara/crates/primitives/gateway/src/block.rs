@@ -92,7 +92,7 @@ impl ProviderBlock {
             .map(|(index, tx)| {
                 let l1_to_l2_consumed_message = match &tx.transaction {
                     mp_block::Transaction::L1Handler(l1_handler) => {
-                        mp_receipt::MsgToL2::try_from(&l1_handler.clone()).ok()
+                        mp_receipt::MsgToL2::try_from(l1_handler).ok()
                     }
                     _ => None,
                 };
@@ -217,7 +217,7 @@ impl ProviderBlockPreConfirmed {
             .map(|(index, (tx, state_diff))| {
                 let l1_to_l2_consumed_message = match &tx.transaction {
                     mp_block::Transaction::L1Handler(l1_handler) => {
-                        mp_receipt::MsgToL2::try_from(&l1_handler.clone()).ok()
+                        mp_receipt::MsgToL2::try_from(l1_handler).ok()
                     }
                     _ => None,
                 };
