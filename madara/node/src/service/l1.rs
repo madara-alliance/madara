@@ -73,16 +73,22 @@ impl L1SyncService {
             std::process::exit(1);
         };
         let client = match config.settlement_layer {
-            MadaraSettlementLayer::Eth => {
-                L1ClientImpl::new_ethereum(backend.clone(), endpoint, sync_config.l1_core_address)
-                    .await
-                    .context("Starting ethereum core contract client")?
-            }
-            MadaraSettlementLayer::Starknet => {
-                L1ClientImpl::new_starknet(backend.clone(), endpoint, sync_config.l1_core_address)
-                    .await
-                    .context("Starting starknet core contract client")?
-            }
+            MadaraSettlementLayer::Eth => L1ClientImpl::new_ethereum(
+                backend.clone(),
+                endpoint,
+                sync_config.l1_core_address,
+                config.unsafe_skip_l1_message_consumed_check,
+            )
+            .await
+            .context("Starting ethereum core contract client")?,
+            MadaraSettlementLayer::Starknet => L1ClientImpl::new_starknet(
+                backend.clone(),
+                endpoint,
+                sync_config.l1_core_address,
+                config.unsafe_skip_l1_message_consumed_check,
+            )
+            .await
+            .context("Starting starknet core contract client")?,
         };
 
         if !gas_provider_config.all_is_fixed() {
@@ -101,6 +107,7 @@ impl L1SyncService {
                 gas_provider_config,
                 l1_head_sender: sync_config.l1_head_snd,
                 l1_block_metrics: sync_config.l1_block_metrics,
+                unsafe_skip_l1_message_consumed_check: config.unsafe_skip_l1_message_consumed_check,
             }),
         })
     }
