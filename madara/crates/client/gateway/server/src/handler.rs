@@ -346,7 +346,7 @@ async fn declare_transaction(
         Ok(tx) => tx,
         Err(e) => {
             let error = StarknetError::new(StarknetErrorCode::InvalidContractDefinition, e.to_string());
-            return create_json_response(hyper::StatusCode::OK, &error);
+            return GatewayError::StarknetError(error).into();
         }
     };
 
