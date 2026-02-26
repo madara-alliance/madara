@@ -107,22 +107,6 @@ pub struct L1SyncParams {
     )]
     pub gas_price_poll: Duration,
 
-    /// DANGEROUS: Disables the check that verifies an L1→L2 message has not already been consumed
-    /// on the settlement layer (L1) before including it in block production.
-    ///
-    /// Normally, before consuming an L1→L2 message, Madara queries the core contract's `l1ToL2Messages(hash)`
-    /// mapping to confirm the message still exists (refcount > 0). After a state update is posted to L1, this
-    /// refcount is decremented to 0, causing the check to reject the message even if it hasn't been processed
-    /// locally. Enabling this flag skips that specific L1 query.
-    ///
-    /// **You almost certainly do not need this flag.** It is intended only for rare recovery scenarios where
-    /// messages must be re-processed locally despite already being marked as consumed on L1.
-    ///
-    /// WARNING: Enabling this removes a safety guard against double-processing of L1→L2 messages.
-    /// The local nonce check and cancellation check remain active.
-    #[clap(env = "MADARA_UNSAFE_SKIP_L1_MESSAGE_CONSUMED_CHECK", long)]
-    pub unsafe_skip_l1_message_consumed_check: bool,
-
     /// The settlement layer type. This specifies the type of API `--l1-endpoint <RPC url>` uses: Ethereum RPC, or Starknet RPC.
     /// The usual cases for this is:
     /// - When settling on Ethereum, which is the case for Starknet Mainnet, we are usually running an L2 - because Ethrereum is an L1 and doesn't settle on any other chain.

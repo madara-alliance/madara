@@ -11,7 +11,6 @@ pub struct SyncWorkerConfig {
     pub gas_provider_config: GasPriceProviderConfig,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
     pub l1_head_sender: L1HeadSender,
-    pub unsafe_skip_l1_message_consumed_check: bool,
 }
 
 impl L1ClientImpl {
@@ -35,7 +34,6 @@ impl L1ClientImpl {
             Arc::clone(&self.backend),
             self.notify_new_message_to_l2.clone(),
             ctx.clone(),
-            config.unsafe_skip_l1_message_consumed_check,
         ));
 
         if !config.gas_provider_config.all_is_fixed() {

@@ -755,15 +755,9 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(
-                    Arc::new(starknet_client),
-                    Arc::clone(&db),
-                    Default::default(),
-                    ServiceContext::new_for_testing(),
-                    false,
-                )
-                .await
-                .unwrap();
+                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing())
+                    .await
+                    .unwrap();
                 tracing::debug!("messaging worker stopped");
             })
         };
@@ -844,14 +838,8 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(
-                    Arc::new(starknet_client),
-                    Arc::clone(&db),
-                    Default::default(),
-                    ServiceContext::new_for_testing(),
-                    false,
-                )
-                .await
+                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing())
+                    .await
             })
         };
 

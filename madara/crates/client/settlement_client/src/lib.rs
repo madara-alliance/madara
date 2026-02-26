@@ -193,23 +193,11 @@ pub struct L1ClientImpl {
     provider: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_new_message_to_l2: Arc<Notify>,
-    unsafe_skip_l1_message_consumed_check: bool,
 }
 
 impl L1ClientImpl {
-    fn new(
-        backend: Arc<MadaraBackend>,
-        provider: Arc<dyn SettlementLayerProvider>,
-        unsafe_skip_l1_message_consumed_check: bool,
-    ) -> Self {
-        if unsafe_skip_l1_message_consumed_check {
-            tracing::warn!(
-                "⚠⚠⚠ UNSAFE: L1 message consumed check is DISABLED. \
-                 L1→L2 messages will NOT be verified against the core contract before consumption. \
-                 This removes a safety guard against double-processing. ⚠⚠⚠"
-            );
-        }
-        Self { provider, backend, notify_new_message_to_l2: Default::default(), unsafe_skip_l1_message_consumed_check }
+    fn new(backend: Arc<MadaraBackend>, provider: Arc<dyn SettlementLayerProvider>) -> Self {
+        Self { provider, backend, notify_new_message_to_l2: Default::default() }
     }
 
     pub fn provider(&self) -> Arc<dyn SettlementLayerProvider> {
@@ -220,24 +208,22 @@ impl L1ClientImpl {
         backend: Arc<MadaraBackend>,
         rpc_url: Url,
         core_contract_address: String,
-        unsafe_skip_l1_message_consumed_check: bool,
     ) -> anyhow::Result<Self> {
         let provider = EthereumClient::new(EthereumClientConfig { rpc_url, core_contract_address })
             .await
             .context("Creating ethereum client")?;
-        Ok(Self::new(backend, Arc::new(provider), unsafe_skip_l1_message_consumed_check))
+        Ok(Self::new(backend, Arc::new(provider)))
     }
 
     pub async fn new_starknet(
         backend: Arc<MadaraBackend>,
         rpc_url: Url,
         core_contract_address: String,
-        unsafe_skip_l1_message_consumed_check: bool,
     ) -> anyhow::Result<Self> {
         let provider = StarknetClient::new(StarknetClientConfig { rpc_url, core_contract_address })
             .await
             .context("Creating starknet client")?;
-        Ok(Self::new(backend, Arc::new(provider), unsafe_skip_l1_message_consumed_check))
+        Ok(Self::new(backend, Arc::new(provider)))
     }
 }
 
@@ -247,7 +233,6 @@ impl SettlementClient for L1ClientImpl {
             self.backend.clone(),
             self.provider.clone(),
             self.notify_new_message_to_l2.clone(),
-            self.unsafe_skip_l1_message_consumed_check,
         );
         stream::unfold(consumer, |mut consumer| async move { Some((consumer.consume_next_or_wait().await, consumer)) })
             .boxed()
