@@ -1,4 +1,3 @@
-#[cfg(feature = "mempool-intake-admin")]
 pub mod mempool;
 pub mod read;
 pub mod services;

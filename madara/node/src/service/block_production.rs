@@ -24,10 +24,7 @@ impl BlockProductionService {
         no_charge_fee: bool,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
-        #[cfg(feature = "mempool-intake-admin")]
         let mempool_paused = config.mempool_paused;
-        #[cfg(not(feature = "mempool-intake-admin"))]
-        let mempool_paused = false;
 
         Ok(Self {
             backend: backend.clone(),

@@ -151,7 +151,6 @@ use std::mem;
 use std::sync::Arc;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::sync::mpsc;
-#[cfg(feature = "mempool-intake-admin")]
 use tokio::sync::watch;
 
 mod batcher;
@@ -169,7 +168,6 @@ pub enum BlockProductionStateNotification {
     BatchExecuted,
 }
 
-#[cfg(feature = "mempool-intake-admin")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MempoolIntakeMode {
     Running,
@@ -330,7 +328,6 @@ pub struct BlockProductionTask {
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
     bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
-    #[cfg(feature = "mempool-intake-admin")]
     mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     no_charge_fee: bool,
 }
@@ -354,12 +351,8 @@ impl BlockProductionTask {
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
-        #[cfg(feature = "mempool-intake-admin")]
         let initial_intake = if mempool_paused { MempoolIntakeMode::Paused } else { MempoolIntakeMode::Running };
-        #[cfg(feature = "mempool-intake-admin")]
         let (mempool_intake_tx, mempool_intake_rx) = watch::channel(initial_intake);
-        #[cfg(not(feature = "mempool-intake-admin"))]
-        let _ = mempool_paused;
         Self {
             backend: backend.clone(),
             mempool,
@@ -369,7 +362,6 @@ impl BlockProductionTask {
                 backend,
                 sender,
                 bypass_input_sender,
-                #[cfg(feature = "mempool-intake-admin")]
                 mempool_intake_tx.clone(),
                 no_charge_fee,
             ),
@@ -377,7 +369,6 @@ impl BlockProductionTask {
             executor_commands_recv: Some(recv),
             l1_client,
             bypass_tx_input: Some(bypass_tx_input),
-            #[cfg(feature = "mempool-intake-admin")]
             mempool_intake_rx,
             no_charge_fee,
         }
@@ -1035,7 +1026,6 @@ impl BlockProductionTask {
                 ctx,
                 batch_sender,
                 bypass_tx_input,
-                #[cfg(feature = "mempool-intake-admin")]
                 self.mempool_intake_rx.clone(),
             )
             .run(),

@@ -457,7 +457,7 @@ are exposed on a separate port **9943** unless specified otherwise with
 | `madara_bypassAddDeployAccountTransaction` | Bypasses mempool/validation for DeployAccount transactions  |
 | `madara_bypassAddInvokeTransaction`        | Bypasses mempool/validation for Invoke transactions         |
 | `madara_closeBlock`                        | Forces block closure in block production mode               |
-| `madara_setMempoolIntake`                  | Enables/disables mempool intake (feature-gated)             |
+| `madara_setMempoolIntake`                  | Enables/disables mempool intake (requires `--rpc-unsafe`)   |
 | `madara_revertToAndShutdown`               | Reverts chain state to a block hash and shuts down the node |
 | `madara_addL1HandlerMessage`               | Pushes an L1 handler message into bypass input              |
 | `madara_setCustomBlockHeader`              | Sets custom block header fields for upcoming block          |
@@ -494,21 +494,20 @@ are exposed on a separate port **9943** unless specified otherwise with
 
 </details>
 
-#### Mempool Intake Control (Feature-gated)
+#### Mempool Intake Control (Unsafe Admin RPC)
 
-`madara_setMempoolIntake` is intentionally compiled out of default builds.
-To enable it, build Madara with:
-
-```bash
-cargo build --manifest-path madara/Cargo.toml --bin madara --features mempool-intake-admin
-```
+`madara_setMempoolIntake` is only exposed when unsafe admin RPC methods are
+enabled (`--rpc-admin --rpc-unsafe`).
+When `--rpc-unsafe` is disabled, the method is not registered and returns
+`Method not found` if called.
 
 When enabled:
 
 - `madara_setMempoolIntake(true)` resumes intake from the mempool.
 - `madara_setMempoolIntake(false)` pauses intake from the mempool.
 - Bypass/L1 message paths remain active while intake is paused.
-- You can start with intake paused via `--mempool-paused` (available only when built with `mempool-intake-admin`).
+- You can start with intake paused via `--mempool-paused`, which requires
+  `--rpc-admin --rpc-unsafe`.
 
 > [!CAUTION]
 > These methods are exposed on `localhost` by default for obvious security

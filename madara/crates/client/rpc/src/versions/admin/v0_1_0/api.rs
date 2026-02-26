@@ -89,7 +89,6 @@ pub trait MadaraWriteRpcApi {
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
 }
 
-#[cfg(feature = "mempool-intake-admin")]
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraMempoolRpcApi {
     /// Enable or disable intake of mempool transactions in block production mode.

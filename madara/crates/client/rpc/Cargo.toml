@@ -16,7 +16,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [features]
 default = []
-mempool-intake-admin = ["mc-block-production/mempool-intake-admin"]
 
 [dev-dependencies]
 

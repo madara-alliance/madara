@@ -8,9 +8,9 @@ pub struct BlockProductionParams {
     #[arg(env = "MADARA_BLOCK_PRODUCTION_DISABLED", long, alias = "no-block-production")]
     pub block_production_disabled: bool,
 
-    /// Start with mempool intake paused. This option is only available when
-    /// built with `--features mempool-intake-admin`.
-    #[cfg(feature = "mempool-intake-admin")]
+    /// Start with mempool intake paused.
+    ///
+    /// Requires `--rpc-admin --rpc-unsafe`.
     #[arg(env = "MADARA_MEMPOOL_PAUSED", long)]
     pub mempool_paused: bool,
 
