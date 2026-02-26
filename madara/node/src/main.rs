@@ -171,6 +171,11 @@ async fn main() -> anyhow::Result<()> {
     // Extracts the arguments into the struct
     let mut run_cmd: RunCmd = config.extract()?;
     run_cmd.check_mode()?;
+    if run_cmd.block_production_params.mempool_paused
+        && !(run_cmd.rpc_params.rpc_admin && run_cmd.rpc_params.rpc_unsafe)
+    {
+        bail!("`--mempool-paused` requires both `--rpc-admin` and `--rpc-unsafe`.");
+    }
 
     // Setting up telemetry
     let mut service_telemetry = TelemetryService::new(run_cmd.telemetry_params.as_telemetry_config())

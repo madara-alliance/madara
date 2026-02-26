@@ -99,7 +99,6 @@ pub trait MadaraWriteRpcApi {
     async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult>;
 }
 
-#[cfg(feature = "mempool-intake-admin")]
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraMempoolRpcApi {
     /// Enable or disable intake of mempool transactions in block production mode.

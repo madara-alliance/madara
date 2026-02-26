@@ -168,4 +168,3 @@ zeroize.workspace = true
 
 [features]
 default = []
-mempool-intake-admin = ["mc-rpc/mempool-intake-admin", "mc-block-production/mempool-intake-admin"]
