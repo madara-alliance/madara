@@ -10,11 +10,17 @@ pub struct MessagesToL2Consumer {
     backend: Arc<MadaraBackend>,
     l1_read: Arc<dyn SettlementLayerProvider>,
     notify: Arc<Notify>,
+    unsafe_skip_l1_message_consumed_check: bool,
 }
 
 impl MessagesToL2Consumer {
-    pub fn new(backend: Arc<MadaraBackend>, l1_read: Arc<dyn SettlementLayerProvider>, notify: Arc<Notify>) -> Self {
-        Self { next_nonce: 0, backend, l1_read, notify }
+    pub fn new(
+        backend: Arc<MadaraBackend>,
+        l1_read: Arc<dyn SettlementLayerProvider>,
+        notify: Arc<Notify>,
+        unsafe_skip_l1_message_consumed_check: bool,
+    ) -> Self {
+        Self { next_nonce: 0, backend, l1_read, notify, unsafe_skip_l1_message_consumed_check }
     }
 
     pub async fn consume_next_or_wait(&mut self) -> anyhow::Result<L1HandlerTransactionWithFee> {
@@ -40,9 +46,14 @@ impl MessagesToL2Consumer {
                 .context("Getting next pending message to l2")?
             {
                 self.next_nonce = msg.tx.nonce + 1;
-                match check_message_to_l2_validity(&self.l1_read, &self.backend, &msg)
-                    .await
-                    .context("Checking message to l2 validity")?
+                match check_message_to_l2_validity(
+                    &self.l1_read,
+                    &self.backend,
+                    &msg,
+                    self.unsafe_skip_l1_message_consumed_check,
+                )
+                .await
+                .context("Checking message to l2 validity")?
                 {
                     // can be consumed (not cancelled, still exists, not already in chain)
                     true => return Ok(msg),
@@ -134,7 +145,7 @@ mod tests {
         backend.write_pending_message_to_l2(&l1_handler_tx(103)).unwrap();
         mock_l1_handler_tx(&mut mock, 103, true, false);
 
-        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify);
+        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify, false);
 
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(4));
         assert_eq!(consumer.consume_next_or_wait().now_or_never().unwrap().unwrap(), l1_handler_tx(5));
@@ -153,7 +164,7 @@ mod tests {
         mock_l1_handler_tx(&mut mock, 4, true, false);
         mock_l1_handler_tx(&mut mock, 5, true, false);
 
-        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify.clone());
+        let mut consumer = MessagesToL2Consumer::new(backend.clone(), Arc::new(mock), notify.clone(), false);
 
         // first: test empty, then write.
         {

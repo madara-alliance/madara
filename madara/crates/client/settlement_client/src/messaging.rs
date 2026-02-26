@@ -26,10 +26,16 @@ pub struct MessageToL2WithMetadata {
 }
 
 /// Returns true if the message is valid, can be consumed.
+///
+/// When `unsafe_skip_l1_message_consumed_check` is true, the check against the core contract's
+/// `l1ToL2Messages(hash)` mapping is skipped. This means messages that have already been consumed
+/// on L1 (refcount == 0 after a state update) will still be considered valid. The local nonce
+/// check and cancellation check remain active.
 pub async fn check_message_to_l2_validity(
     settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
     tx: &L1HandlerTransactionWithFee,
+    unsafe_skip_l1_message_consumed_check: bool,
 ) -> Result<bool, SettlementClientError> {
     // Skip if already processed.
     if backend
@@ -53,7 +59,13 @@ pub async fn check_message_to_l2_validity(
     };
     tracing::debug!("Checking for cancellation, event hash: {:?}", converted_event_hash);
 
-    if !settlement_client
+    if unsafe_skip_l1_message_consumed_check {
+        tracing::warn!(
+            "UNSAFE: Skipping L1 consumed check for message nonce={}, hash={}",
+            tx.tx.nonce,
+            converted_event_hash
+        );
+    } else if !settlement_client
         .message_to_l2_is_pending(&event_hash)
         .await
         .map_err(|e| SettlementClientError::InvalidResponse(format!("Failed to check message still exists: {}", e)))?
@@ -81,9 +93,17 @@ pub async fn sync(
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
     mut ctx: ServiceContext,
+    unsafe_skip_l1_message_consumed_check: bool,
 ) -> Result<(), SettlementClientError> {
     // sync inner is cancellation safe.
-    ctx.run_until_cancelled(sync_inner(settlement_client, backend, notify_consumer)).await.transpose()?;
+    ctx.run_until_cancelled(sync_inner(
+        settlement_client,
+        backend,
+        notify_consumer,
+        unsafe_skip_l1_message_consumed_check,
+    ))
+    .await
+    .transpose()?;
     Ok(())
 }
 
@@ -91,6 +111,7 @@ async fn sync_inner(
     settlement_client: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
+    unsafe_skip_l1_message_consumed_check: bool,
 ) -> Result<(), SettlementClientError> {
     // Note: It's fine to reprocess events - duplicates are filtered during block production.
 
@@ -101,8 +122,15 @@ async fn sync_inner(
     let mut reconnect_delay = RECONNECT_BASE_DELAY;
 
     loop {
-        match run_message_sync(&settlement_client, &backend, &notify_consumer, replay_max_duration, finality_blocks)
-            .await
+        match run_message_sync(
+            &settlement_client,
+            &backend,
+            &notify_consumer,
+            replay_max_duration,
+            finality_blocks,
+            unsafe_skip_l1_message_consumed_check,
+        )
+        .await
         {
             Ok(()) => {
                 reconnect_delay = RECONNECT_BASE_DELAY;
@@ -124,6 +152,7 @@ async fn run_message_sync(
     notify_consumer: &Notify,
     replay_max_duration: Duration,
     finality_blocks: u64,
+    unsafe_skip_l1_message_consumed_check: bool,
 ) -> Result<(), SettlementClientError> {
     let from_l1_block_n = get_start_block(settlement_client, backend, replay_max_duration).await?;
 
@@ -164,9 +193,15 @@ async fn run_message_sync(
         }
 
         // Process finalized events - continue on transient errors
-        if let Err(e) =
-            process_finalized_events(settlement_client, backend, notify_consumer, &mut pending_events, finality_blocks)
-                .await
+        if let Err(e) = process_finalized_events(
+            settlement_client,
+            backend,
+            notify_consumer,
+            &mut pending_events,
+            finality_blocks,
+            unsafe_skip_l1_message_consumed_check,
+        )
+        .await
         {
             tracing::warn!("Error processing finalized events: {e:#}");
         }
@@ -205,6 +240,7 @@ async fn process_finalized_events(
     notify_consumer: &Notify,
     pending_events: &mut VecDeque<MessageToL2WithMetadata>,
     finality_blocks: u64,
+    unsafe_skip_l1_message_consumed_check: bool,
 ) -> Result<(), SettlementClientError> {
     if pending_events.is_empty() {
         return Ok(());
@@ -264,7 +300,14 @@ async fn process_finalized_events(
             })?;
         }
 
-        let is_valid = check_message_to_l2_validity(settlement_client, backend, &event.message).await.map_err(|e| {
+        let is_valid = check_message_to_l2_validity(
+            settlement_client,
+            backend,
+            &event.message,
+            unsafe_skip_l1_message_consumed_check,
+        )
+        .await
+        .map_err(|e| {
             SettlementClientError::InvalidResponse(format!(
                 "Validity check failed for tx {}: {}",
                 event.l1_transaction_hash, e
@@ -409,7 +452,7 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false).await });
 
         // Wait for event to be processed (short wait since stream returns immediately)
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -472,7 +515,7 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false).await });
 
         // Wait for event to be processed (short wait since stream returns immediately)
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -542,7 +585,7 @@ mod messaging_module_tests {
         let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
-        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx, false).await });
 
         // Wait for event to be processed (short wait since stream returns immediately)
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -601,7 +644,7 @@ mod messaging_module_tests {
         let notify = Arc::new(Notify::new());
         let db_clone = db.clone();
 
-        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false).await });
 
         // Wait for processing attempt (short wait)
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -657,7 +700,7 @@ mod messaging_module_tests {
         let notify = Arc::new(Notify::new());
         let db_clone = db.clone();
 
-        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db_clone, notify, ctx, false).await });
 
         // Wait for processing (short wait)
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -701,7 +744,7 @@ mod messaging_module_tests {
         let client = Arc::new(mock_client);
         let ctx = ServiceContext::new_for_testing();
 
-        let sync_handle = tokio::spawn(async move { sync(client, db, Arc::new(Notify::new()), ctx).await });
+        let sync_handle = tokio::spawn(async move { sync(client, db, Arc::new(Notify::new()), ctx, false).await });
 
         // Verify exponential backoff: 1s -> 2s -> 4s
         tokio::time::advance(Duration::from_millis(50)).await;

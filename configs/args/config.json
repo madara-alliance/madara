@@ -72,6 +72,7 @@
       "secs": 10,
       "nanos": 0
     },
+    "unsafe_skip_l1_message_consumed_check": false,
     "settlement_layer": "Eth"
   },
   "analytics_params": {
