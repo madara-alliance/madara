@@ -119,6 +119,7 @@ use crate::rocksdb::RocksDBStorage;
 use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
+use chain_head::ChainHeadState;
 use mc_class_exec::config::NativeConfig;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
@@ -140,6 +141,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 pub mod metrics;
 use metrics::metrics;
+pub mod chain_head;
+pub mod close_queue;
 pub mod migration;
 mod prelude;
 pub mod storage;
@@ -296,6 +299,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     starting_block: Option<u64>,
 
     pub chain_tip: tokio::sync::watch::Sender<ChainTip>,
+    pub chain_head_state: tokio::sync::watch::Sender<ChainHeadState>,
 
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
@@ -371,6 +375,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
+            chain_head_state: tokio::sync::watch::Sender::new(Default::default()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             custom_header: Mutex::new(None),
         };
@@ -404,11 +409,13 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         } else {
             self.db.get_chain_tip()?
         });
-        self.starting_block = chain_tip.latest_confirmed_block_n();
+        let chain_head_state = ChainHeadState::from_chain_tip(&chain_tip);
+        self.starting_block = chain_head_state.confirmed_tip;
         // On startup, remove all blocks past the chain tip, in case we have partial blocks in db.
         self.db.remove_all_blocks_starting_from(
-            chain_tip.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0),
+            chain_head_state.confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0),
         )?;
+        self.chain_head_state.send_replace(chain_head_state);
         self.chain_tip.send_replace(chain_tip);
 
         // Init L1 head
@@ -613,7 +620,7 @@ pub struct AddFullBlockResult {
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn latest_confirmed_block_n(&self) -> Option<u64> {
-        self.chain_tip.borrow().latest_confirmed_block_n()
+        self.chain_head_state.borrow().confirmed_tip
     }
     /// Latest block_n, which may be the pre-confirmed block.
     pub fn latest_block_n(&self) -> Option<u64> {
@@ -628,6 +635,10 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     pub fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
         self.chain_tip.borrow().as_preconfirmed().cloned()
+    }
+
+    pub fn chain_head_state(&self) -> ChainHeadState {
+        *self.chain_head_state.borrow()
     }
 
     /// Get the latest block_n that was in the db when this backend instance was initialized.
@@ -710,6 +721,8 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         }
 
         // Write to the backend. This also sends the notification to subscribers :)
+        let next_chain_head_state = ChainHeadState::from_chain_tip(&new_tip);
+        self.inner.chain_head_state.send_replace(next_chain_head_state);
         self.inner.chain_tip.send_replace(new_tip);
 
         Ok(())
