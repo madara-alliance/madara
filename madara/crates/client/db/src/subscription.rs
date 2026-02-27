@@ -1,4 +1,4 @@
-use crate::{chain_head::ChainHeadState, prelude::*, ChainTip};
+use crate::{chain_head::ChainHeadState, preconfirmed::PreconfirmedBlock, prelude::*, ChainTip};
 use futures::{stream, Stream};
 use std::sync::Arc;
 
@@ -167,14 +167,14 @@ pub enum SubscribeNewBlocksTag {
 /// Notifications of confirmed blocks are never missed. Notifications about preconfirmed blocks may be missed.
 pub struct SubscribeNewHeads<D: MadaraStorageRead> {
     backend: Arc<MadaraBackend<D>>,
-    subscription: WatchChainTip<D>,
+    subscription: WatchChainHeadState<D>,
     tag: SubscribeNewBlocksTag,
     current_value: ChainTip,
 }
 impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
     fn new(backend: &Arc<MadaraBackend<D>>, tag: SubscribeNewBlocksTag) -> Self {
-        let subscription = WatchChainTip::new(backend);
-        let current_value = subscription.current_value.clone();
+        let subscription = WatchChainHeadState::new(backend);
+        let current_value = ChainTip::from_chain_head_state(*subscription.current(), backend.preconfirmed_block());
         Self { backend: backend.clone(), current_value, subscription, tag }
     }
     pub fn set_start_from(&mut self, block_n: u64) {
@@ -189,20 +189,20 @@ impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
             // Inclusive bound.
             let next_block_to_return = self.current_value.latest_confirmed_block_n().map(|v| v + 1).unwrap_or(0);
             // Exclusive bound.
-            let highest_block_plus_one =
-                self.subscription.current().latest_confirmed_block_n().map(|v| v + 1).unwrap_or(0);
+            let highest_block_plus_one = self.subscription.current().confirmed_tip.map(|v| v + 1).unwrap_or(0);
 
             if next_block_to_return < highest_block_plus_one {
                 self.current_value = ChainTip::on_confirmed_block_n_or_empty(Some(next_block_to_return));
                 return &self.current_value;
             }
 
-            if self.tag == SubscribeNewBlocksTag::Preconfirmed
-                && self.subscription.current().is_preconfirmed()
-                && self.subscription.current() != &self.current_value
-            {
-                self.current_value = self.subscription.current().clone();
-                return &self.current_value;
+            if self.tag == SubscribeNewBlocksTag::Preconfirmed {
+                let projected_tip =
+                    ChainTip::from_chain_head_state(*self.subscription.current(), self.backend.preconfirmed_block());
+                if projected_tip.is_preconfirmed() && projected_tip != self.current_value {
+                    self.current_value = projected_tip;
+                    return &self.current_value;
+                }
             }
 
             self.subscription.recv().await;
@@ -217,6 +217,90 @@ impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
         self.next_head().await;
         self.current_block_view().expect("Cannot update chain to a pre-genesis state")
     }
+    pub fn into_block_view_stream(self) -> impl Stream<Item = MadaraBlockView<D>> {
+        stream::unfold(self, |mut this| async move { Some((this.next_block_view().await, this)) })
+    }
+}
+
+/// Subscribe to new block heads for internal services.
+/// This subscription is driven by [`WatchChainHeadState`], not by chain tip.
+///
+/// # Lag behavior
+///
+/// Notifications of confirmed blocks are never missed. Notifications about preconfirmed blocks may be missed.
+pub struct SubscribeInternalHeads<D: MadaraStorageRead> {
+    backend: Arc<MadaraBackend<D>>,
+    subscription: WatchChainHeadState<D>,
+    tag: SubscribeNewBlocksTag,
+    current_confirmed_tip: Option<u64>,
+    current_preconfirmed: Option<Arc<PreconfirmedBlock>>,
+}
+impl<D: MadaraStorageRead> SubscribeInternalHeads<D> {
+    fn new(backend: &Arc<MadaraBackend<D>>, tag: SubscribeNewBlocksTag) -> Self {
+        let subscription = WatchChainHeadState::new(backend);
+        let current_confirmed_tip = subscription.current().confirmed_tip;
+        let current_preconfirmed =
+            (tag == SubscribeNewBlocksTag::Preconfirmed).then(|| backend.preconfirmed_block()).flatten();
+        Self { backend: backend.clone(), subscription, tag, current_confirmed_tip, current_preconfirmed }
+    }
+
+    pub fn set_start_from(&mut self, block_n: u64) {
+        self.current_confirmed_tip = block_n.checked_sub(1);
+        self.current_preconfirmed = None;
+    }
+
+    pub fn current_confirmed_block_n(&self) -> Option<u64> {
+        self.current_confirmed_tip
+    }
+
+    pub fn current_block_view(&self) -> Option<MadaraBlockView<D>> {
+        self.current_preconfirmed
+            .as_ref()
+            .map(|block| MadaraPreconfirmedBlockView::new(self.backend.clone(), block.clone()).into())
+            .or_else(|| {
+                self.current_confirmed_tip.map(|n| MadaraConfirmedBlockView::new(self.backend.clone(), n).into())
+            })
+    }
+
+    async fn advance_if_needed(&mut self) {
+        loop {
+            // Inclusive bound.
+            let next_block_to_return = self.current_confirmed_tip.map(|v| v + 1).unwrap_or(0);
+            // Exclusive bound.
+            let highest_block_plus_one = self.subscription.current().confirmed_tip.map(|v| v + 1).unwrap_or(0);
+
+            if next_block_to_return < highest_block_plus_one {
+                self.current_confirmed_tip = Some(next_block_to_return);
+                self.current_preconfirmed = None;
+                return;
+            }
+
+            if self.tag == SubscribeNewBlocksTag::Preconfirmed {
+                let expected_preconfirmed_tip = self.subscription.current().external_preconfirmed_tip;
+                if let Some(next_preconfirmed) = self.backend.preconfirmed_block() {
+                    let next_preconfirmed_tip = Some(next_preconfirmed.header.block_number);
+                    let changed = self
+                        .current_preconfirmed
+                        .as_ref()
+                        .is_none_or(|current| !Arc::ptr_eq(current, &next_preconfirmed));
+
+                    if expected_preconfirmed_tip == next_preconfirmed_tip && changed {
+                        self.current_confirmed_tip = next_preconfirmed.header.block_number.checked_sub(1);
+                        self.current_preconfirmed = Some(next_preconfirmed);
+                        return;
+                    }
+                }
+            }
+
+            self.subscription.recv().await;
+        }
+    }
+
+    pub async fn next_block_view(&mut self) -> MadaraBlockView<D> {
+        self.advance_if_needed().await;
+        self.current_block_view().expect("Cannot update chain to a pre-genesis state")
+    }
+
     pub fn into_block_view_stream(self) -> impl Stream<Item = MadaraBlockView<D>> {
         stream::unfold(self, |mut this| async move { Some((this.next_block_view().await, this)) })
     }
@@ -246,5 +330,11 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Subscribe to new blocks. See [`SubscribeNewHeads`] for more details
     pub fn subscribe_new_heads(self: &Arc<Self>, tag: SubscribeNewBlocksTag) -> SubscribeNewHeads<D> {
         SubscribeNewHeads::new(self, tag)
+    }
+
+    /// Subscribe to new blocks for internal services.
+    /// This stream is driven by chain head state.
+    pub fn subscribe_internal_heads(self: &Arc<Self>, tag: SubscribeNewBlocksTag) -> SubscribeInternalHeads<D> {
+        SubscribeInternalHeads::new(self, tag)
     }
 }
