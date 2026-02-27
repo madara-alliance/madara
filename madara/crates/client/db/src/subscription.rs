@@ -1,4 +1,4 @@
-use crate::{prelude::*, ChainTip};
+use crate::{chain_head::ChainHeadState, prelude::*, ChainTip};
 use futures::{stream, Stream};
 use std::sync::Arc;
 
@@ -119,6 +119,36 @@ impl<D: MadaraStorageRead> WatchChainTip<D> {
     }
 }
 
+/// Watch chain head state changes. This subscription returns the latest value whenever updated.
+///
+/// # Lag behavior
+///
+/// Notifications are discarded, only the latest one is returned.
+#[derive(Debug)]
+pub struct WatchChainHeadState<D: MadaraStorageRead> {
+    _backend: Arc<MadaraBackend<D>>,
+    current_value: ChainHeadState,
+    subscription: tokio::sync::watch::Receiver<ChainHeadState>,
+}
+impl<D: MadaraStorageRead> WatchChainHeadState<D> {
+    fn new(backend: &Arc<MadaraBackend<D>>) -> Self {
+        let subscription = backend.chain_head_state.subscribe();
+        let current_value = *subscription.borrow();
+        Self { _backend: backend.clone(), current_value, subscription }
+    }
+    pub fn current(&self) -> &ChainHeadState {
+        &self.current_value
+    }
+    pub fn refresh(&mut self) {
+        self.current_value = *self.subscription.borrow_and_update();
+    }
+    pub async fn recv(&mut self) -> &ChainHeadState {
+        self.subscription.changed().await.expect("Channel closed");
+        self.current_value = *self.subscription.borrow_and_update();
+        &self.current_value
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubscribeNewBlocksTag {
     /// Returns notifications for Confirmed and Preconfirmed blocks.
@@ -206,6 +236,11 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Watch the chain tip. See [`WatchChainTip`] for more details
     pub fn watch_chain_tip(self: &Arc<Self>) -> WatchChainTip<D> {
         WatchChainTip::new(self)
+    }
+
+    /// Watch chain head state. See [`WatchChainHeadState`] for details.
+    pub fn watch_chain_head_state(self: &Arc<Self>) -> WatchChainHeadState<D> {
+        WatchChainHeadState::new(self)
     }
 
     /// Subscribe to new blocks. See [`SubscribeNewHeads`] for more details
