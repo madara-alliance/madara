@@ -182,7 +182,7 @@ impl ExecutorThread {
         } else {
             tracing::debug!("Waiting on block_n={} to get closed. (current={})", block_n_min_10, block_n);
             loop {
-                let mut receiver = self.backend.watch_chain_tip();
+                let mut receiver = self.backend.watch_chain_head_state();
                 // We need to re-query the DB here since the it is possible for the block hash to have arrived just in between.
                 if let Some(block_hash) = get_hash_from_db()? {
                     break Ok(Some((block_n_min_10, block_hash)));

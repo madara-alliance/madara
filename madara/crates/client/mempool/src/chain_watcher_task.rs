@@ -78,13 +78,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(())
     }
 
-    /// This task updates all the l1, confirmed, pre-confirmed, candidates statuses by watching the backend chain tip and pre-confirmed block.
+    /// This task updates all the l1, confirmed, pre-confirmed, candidates statuses by watching chain head state and pre-confirmed block runtime state.
     /// It is also responsible for adding transactions back into the mempool.
     pub(super) async fn run_chain_watcher_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
         let mut l1_new_heads_subscription = self.backend.subscribe_new_l1_confirmed_heads();
 
         let mut new_heads_subscription =
-            self.backend.subscribe_new_heads(mc_db::subscription::SubscribeNewBlocksTag::Preconfirmed);
+            self.backend.subscribe_internal_heads(mc_db::subscription::SubscribeNewBlocksTag::Preconfirmed);
         // Start returning heads from the next block after the latest confirmed block (inclusive).
         new_heads_subscription
             .set_start_from(self.backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0));
@@ -221,7 +221,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
                 // Process blocks confirmed on l1. Avoid updates that are past the l2 tip though.
                 new_head_on_l1 = l1_new_heads_subscription.next_block_view(),
-                    if *l1_new_heads_subscription.current() < new_heads_subscription.current().latest_confirmed_block_n() =>
+                    if *l1_new_heads_subscription.current() < new_heads_subscription.current_confirmed_block_n() =>
                 {
                     tracing::debug!("Mempool task: new head on l1.");
                     let new_head_on_l1: MadaraBlockView<D> = new_head_on_l1.into();

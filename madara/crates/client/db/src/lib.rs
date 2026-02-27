@@ -263,6 +263,20 @@ impl ChainTip {
         }
     }
 
+    /// Project an external chain tip from canonical chain head state.
+    pub fn from_chain_head_state(
+        chain_head_state: ChainHeadState,
+        preconfirmed: Option<Arc<PreconfirmedBlock>>,
+    ) -> Self {
+        if let Some(preconfirmed_tip) = chain_head_state.external_preconfirmed_tip {
+            if let Some(block) = preconfirmed.filter(|b| b.header.block_number == preconfirmed_tip) {
+                return Self::Preconfirmed(block);
+            }
+        }
+
+        Self::on_confirmed_block_n_or_empty(chain_head_state.confirmed_tip)
+    }
+
     /// Convert to the chain tip type for use in the storage backend. It is distinct from our the internal
     /// ChainTip to hide implementation details from the storage implementation.
     fn to_storage(&self) -> StorageChainTip {
@@ -300,6 +314,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
 
     pub chain_tip: tokio::sync::watch::Sender<ChainTip>,
     pub chain_head_state: tokio::sync::watch::Sender<ChainHeadState>,
+    pub preconfirmed_block_runtime: tokio::sync::watch::Sender<Option<Arc<PreconfirmedBlock>>>,
 
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
@@ -376,6 +391,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
             chain_head_state: tokio::sync::watch::Sender::new(Default::default()),
+            preconfirmed_block_runtime: tokio::sync::watch::Sender::new(None),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             custom_header: Mutex::new(None),
         };
@@ -403,19 +419,27 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             })?;
         }
 
-        // Init chain_tip and set starting block
-        let chain_tip = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
+        // Initialize canonical chain head state first, then project chain tip from it.
+        let stored_tip = if let Some(starting_block) = self.starting_block {
             StorageChainTip::Confirmed(starting_block)
         } else {
             self.db.get_chain_tip()?
-        });
-        let chain_head_state = ChainHeadState::from_chain_tip(&chain_tip);
+        };
+        let chain_head_state = ChainHeadState::from_storage_tip(&stored_tip);
+        let preconfirmed = match stored_tip {
+            StorageChainTip::Preconfirmed { header, content } => {
+                Some(PreconfirmedBlock::new_with_content(header, content, /* candidates */ []).into())
+            }
+            _ => None,
+        };
+        let chain_tip = ChainTip::from_chain_head_state(chain_head_state, preconfirmed.clone());
         self.starting_block = chain_head_state.confirmed_tip;
         // On startup, remove all blocks past the chain tip, in case we have partial blocks in db.
         self.db.remove_all_blocks_starting_from(
             chain_head_state.confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0),
         )?;
         self.chain_head_state.send_replace(chain_head_state);
+        self.preconfirmed_block_runtime.send_replace(preconfirmed.clone());
         self.chain_tip.send_replace(chain_tip);
 
         // Init L1 head
@@ -624,17 +648,23 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     }
     /// Latest block_n, which may be the pre-confirmed block.
     pub fn latest_block_n(&self) -> Option<u64> {
-        self.chain_tip.borrow().block_n()
+        let head = self.chain_head_state.borrow();
+        head.external_preconfirmed_tip.or(head.confirmed_tip)
     }
     pub fn has_preconfirmed_block(&self) -> bool {
-        self.chain_tip.borrow().is_preconfirmed()
+        self.chain_head_state.borrow().external_preconfirmed_tip.is_some()
     }
     pub fn latest_l1_confirmed_block_n(&self) -> Option<u64> {
         *self.latest_l1_confirmed.borrow()
     }
 
     pub fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
-        self.chain_tip.borrow().as_preconfirmed().cloned()
+        let expected_preconfirmed = self.chain_head_state.borrow().external_preconfirmed_tip?;
+        self.preconfirmed_block_runtime
+            .borrow()
+            .as_ref()
+            .filter(|block| block.header.block_number == expected_preconfirmed)
+            .cloned()
     }
 
     pub fn chain_head_state(&self) -> ChainHeadState {
@@ -669,61 +699,35 @@ pub struct MadaraBackendWriter<D: MadaraStorage> {
 
 impl<D: MadaraStorage> MadaraBackendWriter<D> {
     fn replace_chain_tip(&self, new_tip: ChainTip) -> Result<()> {
-        // Note: while you could think it is possible for the `chain_tip` to change between this next line when we
-        // originally get it, and when we save the replace it to a new one, leading to possible corruption in this
-        // race condition, we have explicitely forbidden `MadaraBackendWriter` as a whole to be used concurrently.
+        // Note: concurrent use of `MadaraBackendWriter` is forbidden by contract.
         let current_tip = self.inner.chain_tip.borrow().clone();
-
-        // Detect if state transition is valid.
-        match (&current_tip, &new_tip) {
-            // Adding the genesis block, which can be preconfirmed or confirmed. Replacing empty with empty won't work (block_n returns None).
-            (ChainTip::Empty, block) => ensure!(block.block_n() == Some(0), "Can only replace the empty chain tip with a genesis block. [current_tip={current_tip:?}, new_tip={new_tip:?}]"),
-            // Never valid.
-            (_, ChainTip::Empty) => bail!("Cannot replace the chain tip to empty. [current_tip={current_tip:?}, new_tip={new_tip:?}]"),
-            // Block is closed, preconfirmed replaces confirmed at same height.
-            // OR: preconfirmed block is being cleared.
-            (ChainTip::Preconfirmed(preconfirmed), ChainTip::Confirmed(new_block_n)) => ensure!(
-                preconfirmed.header.block_number == *new_block_n || preconfirmed.header.block_number == *new_block_n + 1,
-                "Replacing chain tip from preconfirmed to confirmed requires the new block_n to match the previous one, or be one less than it. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
-            ),
-            // New preconfirmed at same height, replacing the previous proposal.
-            (ChainTip::Preconfirmed(preconfirmed), ChainTip::Preconfirmed(new_preconfirmed)) => ensure!(
-                preconfirmed.header.block_number == new_preconfirmed.header.block_number,
-                "Replacing chain tip from preconfirmed to preconfirmed requires the new block_n to match the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
-            ),
-            // New preconfirmed block on top of a confirmed block.
-            (ChainTip::Confirmed(block_n), ChainTip::Preconfirmed(preconfirmed)) => ensure!(
-                block_n + 1 == preconfirmed.header.block_number,
-                "Replacing chain tip from confirmed to preconfirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
-            ),
-            // New confirmed block is added on top of a confirmed block.
-            (ChainTip::Confirmed(block_n), ChainTip::Confirmed(new_block_n)) => ensure!(
-                block_n + 1 == *new_block_n,
-                "Replacing chain tip from confirmed to confirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
-            ),
-        }
+        let current_head_state = *self.inner.chain_head_state.borrow();
+        let next_chain_head_state = current_head_state.next_from_transition(&new_tip)?;
+        let projected_new_tip =
+            ChainTip::from_chain_head_state(next_chain_head_state, new_tip.as_preconfirmed().cloned());
+        let projected_preconfirmed = projected_new_tip.as_preconfirmed().cloned();
 
         let current_tip_in_db = if self.inner.config.save_preconfirmed {
-            &current_tip
+            current_tip.clone()
         } else {
-            // Remove the pre-confirmed case: we save the parent confirmed in that case.
-            &ChainTip::on_confirmed_block_n_or_empty(current_tip.latest_confirmed_block_n())
+            // Remove the pre-confirmed case: only save the confirmed parent.
+            ChainTip::on_confirmed_block_n_or_empty(current_head_state.confirmed_tip)
         };
 
         let new_tip_in_db = if self.inner.config.save_preconfirmed {
-            &new_tip
+            projected_new_tip.clone()
         } else {
-            &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
+            ChainTip::on_confirmed_block_n_or_empty(next_chain_head_state.confirmed_tip)
         };
         // Write to db if needed.
         if current_tip_in_db != new_tip_in_db {
             self.inner.db.replace_chain_tip(&new_tip_in_db.to_storage())?;
         }
 
-        // Write to the backend. This also sends the notification to subscribers :)
-        let next_chain_head_state = ChainHeadState::from_chain_tip(&new_tip);
+        // Publish canonical head state first, then projected chain tip.
         self.inner.chain_head_state.send_replace(next_chain_head_state);
-        self.inner.chain_tip.send_replace(new_tip);
+        self.inner.preconfirmed_block_runtime.send_replace(projected_preconfirmed);
+        self.inner.chain_tip.send_replace(projected_new_tip);
 
         Ok(())
     }

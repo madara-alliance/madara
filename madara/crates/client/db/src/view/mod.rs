@@ -51,61 +51,61 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns a view on the latest block, which may be a preconfirmed block. This view is used to query content and listen for changes in that block.
     /// The preconfirmed block view will not include candidate transactions.
     pub fn block_view_on_latest(self: &Arc<Self>) -> Option<MadaraBlockView<D>> {
-        self.block_view_on_tip(self.chain_tip.borrow().clone())
+        let head = self.chain_head_state();
+        self.block_view_on_tip(ChainTip::from_chain_head_state(head, self.preconfirmed_block()))
     }
 
     /// Returns a view on the preconfirmed block. This view is used to query content and listen for changes in that block.
     /// This returns a fake preconfirmed block if there is not currently one in the backend.
     /// The preconfirmed block view will not include candidate transactions.
     pub fn block_view_on_preconfirmed_or_fake(self: &Arc<Self>) -> Result<MadaraPreconfirmedBlockView<D>> {
-        let chain_tip = self.chain_tip.borrow();
+        let chain_head = self.chain_head_state();
         // TODO: cache the preconfirmed fake blocks.
-        let block = match &*chain_tip {
-            // Real preconfirmed block.
-            ChainTip::Preconfirmed(block) => block.clone(),
+        let block = if let Some(block) = self.preconfirmed_block() {
+            block
+        } else if let Some(parent_block_number) = chain_head.confirmed_tip {
             // Fake preconfirmed block, based on the previous block header. Most recent gas prices.
-            ChainTip::Confirmed(parent_block_number) => {
-                let parent_block_info = self
-                    .block_view_on_confirmed(*parent_block_number)
-                    .context("Parent block should be found")?
-                    .get_block_info()?;
+            let parent_block_info = self
+                .block_view_on_confirmed(parent_block_number)
+                .context("Parent block should be found")?
+                .get_block_info()?;
 
-                let (block_timestamp, gas_prices) = if let Some(custom_header) = self
-                    .custom_header
-                    .lock()
-                    .expect("Poisoned lock")
-                    .clone()
-                    .filter(|h| h.block_n == parent_block_number + 1)
-                {
-                    // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
-                    let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
-                    let gas_prices = custom_header.gas_prices;
-                    (block_timestamp, gas_prices)
+            let (block_timestamp, gas_prices) = if let Some(custom_header) = self
+                .custom_header
+                .lock()
+                .expect("Poisoned lock")
+                .clone()
+                .filter(|h| h.block_n == parent_block_number.saturating_add(1))
+            {
+                // Convert Unix timestamp (seconds since Jan 1, 1970) to SystemTime
+                let block_timestamp = UNIX_EPOCH + Duration::from_secs(custom_header.timestamp);
+                let gas_prices = custom_header.gas_prices;
+                (block_timestamp, gas_prices)
+            } else {
+                let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
+                    self.calculate_gas_prices(
+                        &quote,
+                        parent_block_info.header.gas_prices.strk_l2_gas_price,
+                        parent_block_info.total_l2_gas_used,
+                    )?
                 } else {
-                    let gas_prices = if let Some(quote) = self.get_last_l1_gas_quote() {
-                        self.calculate_gas_prices(
-                            &quote,
-                            parent_block_info.header.gas_prices.strk_l2_gas_price,
-                            parent_block_info.total_l2_gas_used,
-                        )?
-                    } else {
-                        parent_block_info.header.gas_prices
-                    };
-                    (SystemTime::now(), gas_prices)
+                    parent_block_info.header.gas_prices
                 };
+                (SystemTime::now(), gas_prices)
+            };
 
-                PreconfirmedBlock::new(PreconfirmedHeader {
-                    block_number: *parent_block_number + 1,
-                    sequencer_address: parent_block_info.header.sequencer_address,
-                    block_timestamp: block_timestamp.into(),
-                    protocol_version: parent_block_info.header.protocol_version,
-                    gas_prices,
-                    l1_da_mode: parent_block_info.header.l1_da_mode,
-                })
-                .into()
-            }
+            PreconfirmedBlock::new(PreconfirmedHeader {
+                block_number: parent_block_number + 1,
+                sequencer_address: parent_block_info.header.sequencer_address,
+                block_timestamp: block_timestamp.into(),
+                protocol_version: parent_block_info.header.protocol_version,
+                gas_prices,
+                l1_da_mode: parent_block_info.header.l1_da_mode,
+            })
+            .into()
+        } else {
             // Fake preconfirmed block, based on chain config. Most recent gas prices.
-            ChainTip::Empty => PreconfirmedBlock::new(PreconfirmedHeader {
+            PreconfirmedBlock::new(PreconfirmedHeader {
                 block_number: 0,
                 sequencer_address: self.chain_config().sequencer_address.to_felt(),
                 block_timestamp: BlockTimestamp::now(),
@@ -117,7 +117,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
                 },
                 l1_da_mode: self.chain_config().l1_da_mode,
             })
-            .into(),
+            .into()
         };
         Ok(MadaraPreconfirmedBlockView::new(self.clone(), block))
     }
@@ -137,7 +137,8 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns a state view on the latest block state, including pre-confirmed state. This view can be used to query the state from this block and earlier.
     /// The preconfirmed block view will not include candidate transactions.
     pub fn view_on_latest(self: &Arc<Self>) -> MadaraStateView<D> {
-        self.view_on_tip(self.chain_tip.borrow().clone())
+        let head = self.chain_head_state();
+        self.view_on_tip(ChainTip::from_chain_head_state(head, self.preconfirmed_block()))
     }
 
     /// The preconfirmed block view will not include candidate transactions.
