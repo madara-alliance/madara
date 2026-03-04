@@ -4,8 +4,12 @@ use crate::core::client::storage::StorageError;
 use crate::types::params::AWSResourceIdentifier;
 use async_trait::async_trait;
 use aws_config::SdkConfig;
+use aws_sdk_s3::operation::put_object_tagging::PutObjectTaggingError;
 use aws_sdk_s3::types::{Tag, Tagging};
 use aws_sdk_s3::Client;
+use aws_smithy_runtime_api::client::result::SdkError;
+use aws_smithy_runtime_api::http::Response as SmithyResponse;
+use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use bytes::Bytes;
 
 /// AWSS3 is a struct that represents an AWS S3 client.
@@ -65,6 +69,23 @@ impl AWSS3 {
     }
 }
 
+fn is_not_found_tagging_error(err: &SdkError<PutObjectTaggingError, SmithyResponse>) -> bool {
+    if let Some(service_err) = err.as_service_error() {
+        if matches!(service_err.code(), Some("NoSuchKey" | "NotFound")) {
+            return true;
+        }
+    }
+
+    if let Some(raw) = err.raw_response() {
+        let status: u16 = raw.status().into();
+        if status == 404 {
+            return true;
+        }
+    }
+
+    false
+}
+
 #[async_trait]
 impl StorageClient for AWSS3 {
     /// Get the data from the bucket with the specified key.
@@ -105,37 +126,6 @@ impl StorageClient for AWSS3 {
         Ok(self.client().delete_object().bucket(self.bucket_name()?).key(key).send().await.map(|_| ())?)
     }
 
-    async fn list_files_in_dir(&self, dir_path: &str) -> Result<Vec<String>, StorageError> {
-        let mut file_paths = Vec::new();
-
-        // Ensure the directory path ends with '/' for proper prefix matching
-        let prefix = if dir_path.ends_with('/') { dir_path.to_string() } else { format!("{}/", dir_path) };
-
-        let mut paginator =
-            self.client().list_objects_v2().bucket(self.bucket_name()?).prefix(&prefix).into_paginator().send();
-
-        // Iterate through all pages of results
-        while let Some(page) = paginator.next().await {
-            if let Some(objects) = page
-                .map_err(|e| {
-                    StorageError::ObjectStreamError(format!("Failed to list files in path {}: {}", dir_path, e))
-                })?
-                .contents
-            {
-                for object in objects {
-                    if let Some(key) = object.key {
-                        // Skip directories (keys ending with '/')
-                        if !key.ends_with('/') {
-                            file_paths.push(key);
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(file_paths)
-    }
-
     async fn health_check(&self) -> Result<(), StorageError> {
         // Verify S3 bucket accessibility by checking if it exists
         // This operation requires ListBucket permission
@@ -169,11 +159,7 @@ impl StorageClient for AWSS3 {
 
         self.client().put_object_tagging().bucket(self.bucket_name()?).key(key).tagging(tagging).send().await.map_err(
             |e| {
-                let error_str = e.to_string();
-                if error_str.contains("NoSuchKey")
-                    || error_str.contains("not found")
-                    || error_str.contains("does not exist")
-                {
+                if is_not_found_tagging_error(&e) {
                     StorageError::NotFound(format!("Object '{}' not found", key))
                 } else {
                     StorageError::ObjectStreamError(format!("Failed to tag object '{}': {}", key, e))

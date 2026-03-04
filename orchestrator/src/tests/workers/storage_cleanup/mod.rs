@@ -3,8 +3,9 @@
 
 use bytes::Bytes;
 use rstest::rstest;
+use std::collections::BTreeSet;
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::core::client::database::{DatabaseError, MockDatabaseClient};
 use crate::core::client::lock::error::LockError;
@@ -15,8 +16,9 @@ use crate::tests::utils::build_snos_batch;
 use crate::tests::workers::utils::get_job_by_mock_id_vector;
 use crate::types::constant::{
     get_batch_artifact_file, get_batch_blob_dir, get_batch_blob_file, get_batch_state_update_file, get_snos_batch_dir,
-    BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME,
-    PROOF_PART2_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE,
+    BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, MAX_BLOBS, PROGRAM_OUTPUT_FILE_NAME,
+    PROOF_FILE_NAME, PROOF_PART2_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_EXPIRATION_TAG_KEY,
+    STORAGE_EXPIRATION_TAG_VALUE,
 };
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
@@ -141,7 +143,6 @@ async fn test_process_completed_jobs_skips_partial_tagging() -> Result<(), Box<d
 
     database.expect_get_jobs_without_storage_artifacts_tagged().returning(move |_| Ok(vec![valid_job.clone()]));
     database.expect_get_snos_batches_by_aggregator_index().times(0);
-    storage.expect_list_files_in_dir().returning(|_| Ok(vec!["file1.json".to_string()]));
     storage.expect_tag_object().returning(|_, _| {
         Err(crate::core::client::storage::StorageError::ObjectStreamError("Connection timeout".to_string()))
     });
@@ -199,8 +200,6 @@ async fn test_process_completed_jobs_skips_on_snos_batch_lookup_failure() -> Res
         .expect_get_snos_batches_by_aggregator_index()
         .returning(|_| Err(DatabaseError::KeyNotFound("db error".to_string())));
 
-    // Storage listing can still be called before DB error
-    storage.expect_list_files_in_dir().returning(|_| Ok(vec![]));
     storage.expect_tag_object().never();
     database.expect_update_job().never();
 
@@ -213,6 +212,203 @@ async fn test_process_completed_jobs_skips_on_snos_batch_lookup_failure() -> Res
 
     let result = StorageCleanupTrigger.run_worker(services.config).await;
     assert!(result.is_ok(), "Worker should continue even when SNOS batch lookup fails");
+    Ok(())
+}
+
+/// Test: L2 uses direct SNOS file paths (3 files) and never lists directories
+#[rstest]
+#[tokio::test]
+async fn test_storage_cleanup_l2_direct_snos_paths_without_listing() -> Result<(), Box<dyn Error>> {
+    let mut database = MockDatabaseClient::new();
+    let mut storage = MockStorageClient::new();
+    let mut lock = MockLockClient::new();
+
+    lock.expect_acquire_lock().returning(|_, _, _, _| Ok(LockResult::Acquired));
+    lock.expect_release_lock().returning(|_, _| Ok(LockResult::Released));
+
+    let job_id: u64 = 4242;
+    let snos_batch_ids = vec![10001_u64, 10002_u64];
+
+    let job = JobItem {
+        id: uuid::Uuid::new_v4(),
+        internal_id: job_id,
+        job_type: JobType::StateTransition,
+        status: JobStatus::Completed,
+        external_id: crate::types::jobs::external_id::ExternalId::Number(job_id as usize),
+        metadata: JobMetadata {
+            common: CommonMetadata::default(),
+            specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                snos_output_path: None,
+                program_output_path: None,
+                blob_data_path: None,
+                da_segment_path: None,
+                tx_hash: Some("0xabc".to_string()),
+                context: SettlementContext::Batch(SettlementContextData { to_settle: job_id, last_failed: None }),
+                storage_artifacts_tagged_at: None,
+            }),
+        },
+        version: 0,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    let snos_batches = snos_batch_ids
+        .iter()
+        .enumerate()
+        .map(|(idx, snos_batch_id)| build_snos_batch(*snos_batch_id, Some(job_id), 1000 + idx as u64))
+        .collect::<Vec<_>>();
+
+    database.expect_get_jobs_without_storage_artifacts_tagged().returning(move |_| Ok(vec![job.clone()]));
+    database
+        .expect_get_snos_batches_by_aggregator_index()
+        .returning(move |_| Ok(snos_batches.clone()));
+    database.expect_update_job().returning(|_, _| Ok(()));
+
+    let mut expected = BTreeSet::new();
+    for file in [
+        CAIRO_PIE_FILE_NAME,
+        DA_SEGMENT_FILE_NAME,
+        PROGRAM_OUTPUT_FILE_NAME,
+        SNOS_OUTPUT_FILE_NAME,
+        PROOF_FILE_NAME,
+    ] {
+        expected.insert(get_batch_artifact_file(job_id, file));
+    }
+    for blob_index in 0..=MAX_BLOBS {
+        expected.insert(get_batch_blob_file(job_id, blob_index as u64));
+    }
+    expected.insert(get_batch_state_update_file(job_id));
+    for snos_batch_id in &snos_batch_ids {
+        let snos_dir = get_snos_batch_dir(*snos_batch_id);
+        for file in [CAIRO_PIE_FILE_NAME, SNOS_OUTPUT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME] {
+            expected.insert(format!("{}/{}", snos_dir, file));
+        }
+    }
+
+    let expected = Arc::new(expected);
+    let seen = Arc::new(Mutex::new(BTreeSet::new()));
+    let expected_len = expected.len();
+
+    storage.expect_tag_object().times(expected_len).returning({
+        let expected = Arc::clone(&expected);
+        let seen = Arc::clone(&seen);
+        move |key, _| {
+            assert!(expected.contains(key), "Unexpected key tagged: {}", key);
+            seen.lock().unwrap().insert(key.to_string());
+            Ok(())
+        }
+    });
+
+    let services = TestConfigBuilder::new()
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
+        .configure_lock_client(lock.into())
+        .build()
+        .await;
+
+    let result = StorageCleanupTrigger.run_worker(services.config).await;
+    assert!(result.is_ok(), "Worker should complete");
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(*seen, *expected, "Tagged keys should match expected set");
+
+    Ok(())
+}
+
+/// Test: L3 uses direct SNOS file paths (6 files) and never lists directories
+#[rstest]
+#[tokio::test]
+async fn test_storage_cleanup_l3_direct_snos_paths_without_listing() -> Result<(), Box<dyn Error>> {
+    let mut database = MockDatabaseClient::new();
+    let mut storage = MockStorageClient::new();
+    let mut lock = MockLockClient::new();
+
+    lock.expect_acquire_lock().returning(|_, _, _, _| Ok(LockResult::Acquired));
+    lock.expect_release_lock().returning(|_, _| Ok(LockResult::Released));
+
+    let job_id: u64 = 7777;
+
+    let job = JobItem {
+        id: uuid::Uuid::new_v4(),
+        internal_id: job_id,
+        job_type: JobType::StateTransition,
+        status: JobStatus::Completed,
+        external_id: crate::types::jobs::external_id::ExternalId::Number(job_id as usize),
+        metadata: JobMetadata {
+            common: CommonMetadata::default(),
+            specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+                snos_output_path: None,
+                program_output_path: None,
+                blob_data_path: None,
+                da_segment_path: None,
+                tx_hash: Some("0xdef".to_string()),
+                context: SettlementContext::Block(SettlementContextData { to_settle: job_id, last_failed: None }),
+                storage_artifacts_tagged_at: None,
+            }),
+        },
+        version: 0,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    database.expect_get_jobs_without_storage_artifacts_tagged().returning(move |_| Ok(vec![job.clone()]));
+    database.expect_get_snos_batches_by_aggregator_index().times(0);
+    database.expect_update_job().returning(|_, _| Ok(()));
+
+    let mut expected = BTreeSet::new();
+    for file in [
+        CAIRO_PIE_FILE_NAME,
+        DA_SEGMENT_FILE_NAME,
+        PROGRAM_OUTPUT_FILE_NAME,
+        SNOS_OUTPUT_FILE_NAME,
+        PROOF_FILE_NAME,
+    ] {
+        expected.insert(get_batch_artifact_file(job_id, file));
+    }
+    for blob_index in 0..=MAX_BLOBS {
+        expected.insert(get_batch_blob_file(job_id, blob_index as u64));
+    }
+    expected.insert(get_batch_state_update_file(job_id));
+
+    let snos_dir = get_snos_batch_dir(job_id);
+    for file in [
+        CAIRO_PIE_FILE_NAME,
+        SNOS_OUTPUT_FILE_NAME,
+        PROGRAM_OUTPUT_FILE_NAME,
+        BLOB_DATA_FILE_NAME,
+        PROOF_FILE_NAME,
+        PROOF_PART2_FILE_NAME,
+    ] {
+        expected.insert(format!("{}/{}", snos_dir, file));
+    }
+
+    let expected = Arc::new(expected);
+    let seen = Arc::new(Mutex::new(BTreeSet::new()));
+    let expected_len = expected.len();
+
+    storage.expect_tag_object().times(expected_len).returning({
+        let expected = Arc::clone(&expected);
+        let seen = Arc::clone(&seen);
+        move |key, _| {
+            assert!(expected.contains(key), "Unexpected key tagged: {}", key);
+            seen.lock().unwrap().insert(key.to_string());
+            Ok(())
+        }
+    });
+
+    let services = TestConfigBuilder::new()
+        .configure_storage_client(storage.into())
+        .configure_database(database.into())
+        .configure_lock_client(lock.into())
+        .build()
+        .await;
+
+    let result = StorageCleanupTrigger.run_worker(services.config).await;
+    assert!(result.is_ok(), "Worker should complete");
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(*seen, *expected, "Tagged keys should match expected set");
+
     Ok(())
 }
 
@@ -413,39 +609,13 @@ async fn test_tag_object_success_and_error_cases() -> Result<(), Box<dyn Error>>
         applied_tags
     );
 
-    // Test 2: tag_nonexistent_object returns error
+    // Test 2: tag_nonexistent_object returns NotFound
     let result = storage.tag_object("nonexistent/path/file.json", &tags).await;
-    assert!(result.is_err(), "Tagging nonexistent object should return error");
-
-    Ok(())
-}
-
-/// Tests: list_files_in_dir returns all files in directory
-#[rstest]
-#[tokio::test]
-async fn test_list_files_in_dir_returns_all_files() -> Result<(), Box<dyn Error>> {
-    let services = TestConfigBuilder::new().configure_storage_client(ConfigType::Actual).build().await;
-    let storage = services.config.storage();
-
-    // Setup: create multiple files in a directory
-    let test_dir = "test_list_dir_12345";
-    let files = ["file1.json", "file2.json", "nested/file3.json"];
-    for file in &files {
-        let key = format!("{}/{}", test_dir, file);
-        storage.put_data(Bytes::from(r#"{"test": "list"}"#), &key).await?;
-    }
-
-    // Test: list_files_in_dir returns all files
-    let listed_files = storage.list_files_in_dir(test_dir).await?;
-    assert_eq!(listed_files.len(), 3, "Should list all 3 files");
-    for file in &files {
-        let expected_key = format!("{}/{}", test_dir, file);
-        assert!(listed_files.contains(&expected_key), "Should contain {}", expected_key);
-    }
-
-    // Test: empty directory returns empty list
-    let empty_result = storage.list_files_in_dir("nonexistent_dir_xyz").await?;
-    assert!(empty_result.is_empty(), "Nonexistent dir should return empty list");
+    assert!(
+        matches!(result, Err(crate::core::client::storage::StorageError::NotFound(_))),
+        "Expected NotFound for nonexistent object, got: {:?}",
+        result
+    );
 
     Ok(())
 }
