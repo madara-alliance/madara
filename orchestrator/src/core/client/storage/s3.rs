@@ -4,12 +4,10 @@ use crate::core::client::storage::StorageError;
 use crate::types::params::AWSResourceIdentifier;
 use async_trait::async_trait;
 use aws_config::SdkConfig;
+use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::put_object_tagging::PutObjectTaggingError;
 use aws_sdk_s3::types::{Tag, Tagging};
 use aws_sdk_s3::Client;
-use aws_smithy_runtime_api::client::result::SdkError;
-use aws_smithy_runtime_api::http::Response as SmithyResponse;
-use aws_smithy_types::error::metadata::ProvideErrorMetadata;
 use bytes::Bytes;
 
 /// AWSS3 is a struct that represents an AWS S3 client.
@@ -69,7 +67,7 @@ impl AWSS3 {
     }
 }
 
-fn is_not_found_tagging_error(err: &SdkError<PutObjectTaggingError, SmithyResponse>) -> bool {
+fn is_not_found_tagging_error(err: &SdkError<PutObjectTaggingError>) -> bool {
     if let Some(service_err) = err.as_service_error() {
         if matches!(service_err.code(), Some("NoSuchKey" | "NotFound")) {
             return true;

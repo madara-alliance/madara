@@ -259,19 +259,13 @@ async fn test_storage_cleanup_l2_direct_snos_paths_without_listing() -> Result<(
         .collect::<Vec<_>>();
 
     database.expect_get_jobs_without_storage_artifacts_tagged().returning(move |_| Ok(vec![job.clone()]));
-    database
-        .expect_get_snos_batches_by_aggregator_index()
-        .returning(move |_| Ok(snos_batches.clone()));
+    database.expect_get_snos_batches_by_aggregator_index().returning(move |_| Ok(snos_batches.clone()));
     database.expect_update_job().returning(|_, _| Ok(()));
 
     let mut expected = BTreeSet::new();
-    for file in [
-        CAIRO_PIE_FILE_NAME,
-        DA_SEGMENT_FILE_NAME,
-        PROGRAM_OUTPUT_FILE_NAME,
-        SNOS_OUTPUT_FILE_NAME,
-        PROOF_FILE_NAME,
-    ] {
+    for file in
+        [CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME, PROOF_FILE_NAME]
+    {
         expected.insert(get_batch_artifact_file(job_id, file));
     }
     for blob_index in 0..=MAX_BLOBS {
@@ -356,13 +350,9 @@ async fn test_storage_cleanup_l3_direct_snos_paths_without_listing() -> Result<(
     database.expect_update_job().returning(|_, _| Ok(()));
 
     let mut expected = BTreeSet::new();
-    for file in [
-        CAIRO_PIE_FILE_NAME,
-        DA_SEGMENT_FILE_NAME,
-        PROGRAM_OUTPUT_FILE_NAME,
-        SNOS_OUTPUT_FILE_NAME,
-        PROOF_FILE_NAME,
-    ] {
+    for file in
+        [CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME, PROOF_FILE_NAME]
+    {
         expected.insert(get_batch_artifact_file(job_id, file));
     }
     for blob_index in 0..=MAX_BLOBS {

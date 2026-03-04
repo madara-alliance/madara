@@ -4,9 +4,8 @@ use crate::core::config::Config;
 use crate::types::constant::{
     get_batch_artifact_file, get_batch_blob_file, get_batch_state_update_file, get_snos_batch_dir, BLOB_DATA_FILE_NAME,
     CAIRO_PIE_FILE_NAME, DA_SEGMENT_FILE_NAME, MAX_BLOBS, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME,
-    PROOF_PART2_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_CLEANUP_LOCK_DURATION,
-    STORAGE_CLEANUP_MAX_JOBS_PER_RUN, STORAGE_CLEANUP_WORKER_KEY, STORAGE_EXPIRATION_TAG_KEY,
-    STORAGE_EXPIRATION_TAG_VALUE,
+    PROOF_PART2_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_CLEANUP_LOCK_DURATION, STORAGE_CLEANUP_MAX_JOBS_PER_RUN,
+    STORAGE_CLEANUP_WORKER_KEY, STORAGE_EXPIRATION_TAG_KEY, STORAGE_EXPIRATION_TAG_VALUE,
 };
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SettlementContext, StateUpdateMetadata};
