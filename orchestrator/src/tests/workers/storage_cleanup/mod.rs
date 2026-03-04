@@ -260,7 +260,7 @@ async fn test_storage_cleanup_l2_direct_snos_paths_without_listing() -> Result<(
 
     database.expect_get_jobs_without_storage_artifacts_tagged().returning(move |_| Ok(vec![job.clone()]));
     database.expect_get_snos_batches_by_aggregator_index().returning(move |_| Ok(snos_batches.clone()));
-    database.expect_update_job().returning(|_, _| Ok(()));
+    database.expect_update_job().returning(|job, _| Ok(job.clone()));
 
     let mut expected = BTreeSet::new();
     for file in
@@ -347,7 +347,7 @@ async fn test_storage_cleanup_l3_direct_snos_paths_without_listing() -> Result<(
 
     database.expect_get_jobs_without_storage_artifacts_tagged().returning(move |_| Ok(vec![job.clone()]));
     database.expect_get_snos_batches_by_aggregator_index().times(0);
-    database.expect_update_job().returning(|_, _| Ok(()));
+    database.expect_update_job().returning(|job, _| Ok(job.clone()));
 
     let mut expected = BTreeSet::new();
     for file in
