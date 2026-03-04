@@ -663,8 +663,8 @@ async fn test_collect_and_tag_artifacts_integration() -> Result<(), Box<dyn Erro
     let job_id: u64 = 88888;
     let test_data = Bytes::from(r#"{"test": "collect_and_tag"}"#);
 
-    // Create artifacts in multiple directories
-    let artifact_file = get_batch_artifact_file(job_id, "test_proof.json");
+    // Create artifacts in multiple directories (use known filenames)
+    let artifact_file = get_batch_artifact_file(job_id, PROOF_FILE_NAME);
     let blob_file = get_batch_blob_file(job_id, 0);
     let state_update_file = get_batch_state_update_file(job_id);
 
