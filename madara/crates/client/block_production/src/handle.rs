@@ -45,6 +45,7 @@ pub struct BlockProductionHandle {
     executor_commands: mpsc::UnboundedSender<executor::ExecutorCommand>,
     bypass_input: mpsc::Sender<ValidatedTransaction>,
     mempool_intake_tx: watch::Sender<MempoolIntakeMode>,
+    replay_mode_enabled: bool,
     /// We use TransactionValidator to handle conversion to blockifier, class compilation etc. Mostly for convenience.
     tx_converter: Arc<TransactionValidator>,
 }
@@ -61,6 +62,7 @@ impl BlockProductionHandle {
             executor_commands,
             bypass_input: bypass_input.clone(),
             mempool_intake_tx,
+            replay_mode_enabled: false,
             tx_converter: TransactionValidator::new(
                 Arc::new(BypassInput(bypass_input)),
                 backend,
@@ -83,6 +85,14 @@ impl BlockProductionHandle {
         let mode = if enabled { MempoolIntakeMode::Running } else { MempoolIntakeMode::Paused };
         self.mempool_intake_tx.send(mode).map_err(|e| anyhow::anyhow!("Mempool intake channel closed: {e}"))?;
         Ok(())
+    }
+
+    pub(crate) fn set_replay_mode_enabled(&mut self, enabled: bool) {
+        self.replay_mode_enabled = enabled;
+    }
+
+    pub fn replay_mode_enabled(&self) -> bool {
+        self.replay_mode_enabled
     }
 
     /// Send a transaction through the bypass channel to bypass mempool and validation.
