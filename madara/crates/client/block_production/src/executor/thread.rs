@@ -15,6 +15,7 @@ use std::{
     collections::{HashMap, HashSet},
     mem,
     sync::Arc,
+    time::Instant as StdInstant,
 };
 use tokio::{sync::mpsc, time::Instant};
 
@@ -74,6 +75,7 @@ impl ExecutorThreadState {
 pub struct ExecutorThread {
     backend: Arc<MadaraBackend>,
     metrics: Arc<BlockProductionMetrics>,
+    replay_mode_enabled: bool,
 
     incoming_batches: mpsc::Receiver<super::BatchToExecute>,
     replies_sender: mpsc::Sender<super::ExecutorMessage>,
@@ -100,10 +102,12 @@ impl ExecutorThread {
         replies_sender: mpsc::Sender<super::ExecutorMessage>,
         commands: mpsc::UnboundedReceiver<super::ExecutorCommand>,
         metrics: Arc<BlockProductionMetrics>,
+        replay_mode_enabled: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             backend,
             metrics,
+            replay_mode_enabled,
             incoming_batches,
             replies_sender,
             commands,
@@ -249,6 +253,20 @@ impl ExecutorThread {
         }))
     }
 
+    fn replay_boundary_exists(&self, block_n: u64) -> bool {
+        self.backend.replay_boundary_exists(block_n)
+    }
+
+    fn replay_boundary_remaining_capacity(&self, block_n: u64) -> Option<usize> {
+        self.backend
+            .replay_boundary_remaining_execution_capacity(block_n)
+            .map(|remaining| usize::try_from(remaining).unwrap_or(usize::MAX))
+    }
+
+    fn replay_boundary_is_met(&self, block_n: u64) -> Option<bool> {
+        self.backend.replay_boundary_is_met(block_n)
+    }
+
     pub fn run(mut self) -> anyhow::Result<()> {
         let batch_size = self.backend.chain_config().block_production_concurrency.batch_size;
         let block_time = self.backend.chain_config().block_time;
@@ -259,6 +277,7 @@ impl ExecutorThread {
 
         // The batch of transactions to execute.
         let mut to_exec = BatchToExecute::with_capacity(batch_size);
+        let mut replay_next_block_buffer = BatchToExecute::with_capacity(batch_size);
 
         let mut next_block_deadline = Instant::now() + block_time;
         let mut force_close = false;
@@ -274,7 +293,17 @@ impl ExecutorThread {
         loop {
             // Take transactions to execute.
             if to_exec.len() < batch_size {
-                let wait_deadline = if block_empty && no_empty_blocks { None } else { Some(next_block_deadline) };
+                let replay_boundary_active = self.replay_mode_enabled
+                    && matches!(
+                        &state,
+                        ExecutorThreadState::Executing(executing_state)
+                            if self.replay_boundary_exists(executing_state.exec_ctx.block_number)
+                    );
+                let wait_deadline = if replay_boundary_active || (block_empty && no_empty_blocks) {
+                    None
+                } else {
+                    Some(next_block_deadline)
+                };
                 // should_wait: We don't want to wait if we already have transactions to process - but we would still like to fill up our batch if possible.
 
                 let taken = match self.wait_take_tx_batch(wait_deadline, /* should_wait */ to_exec.is_empty()) {
@@ -385,10 +414,16 @@ impl ExecutorThread {
                 ExecutorThreadState::Executing(ref mut executor_state_executing) => executor_state_executing,
                 ExecutorThreadState::NewBlock(state_new_block) => {
                     // Create new execution state.
+                    let create_state_start = Instant::now();
                     let execution_state = self
                         .create_execution_state(state_new_block, l2_gas_consumed_block)
                         .context("Creating execution state")?;
                     l2_gas_consumed_block = 0;
+                    tracing::info!(
+                        block_number = execution_state.exec_ctx.block_number,
+                        create_execution_state_ms = create_state_start.elapsed().as_secs_f64() * 1000.0,
+                        "executor_new_block_state_created"
+                    );
 
                     tracing::debug!("Starting new block, block_n={}", execution_state.exec_ctx.block_number);
                     if self
@@ -410,7 +445,38 @@ impl ExecutorThread {
                 }
             };
 
+            if self.replay_mode_enabled {
+                let block_n = execution_state.exec_ctx.block_number;
+                if let Some(remaining) = self.replay_boundary_remaining_capacity(block_n) {
+                    if to_exec.len() > remaining {
+                        let overflow_txs = to_exec.txs.split_off(remaining);
+                        let overflow_additional_info = to_exec.additional_info.split_off(remaining);
+                        let overflow_count = overflow_txs.len();
+                        replay_next_block_buffer
+                            .extend(BatchToExecute { txs: overflow_txs, additional_info: overflow_additional_info });
+                        tracing::info!(
+                            "replay_boundary_executor_slice block_number={} remaining_for_block={} moved_to_next_block={}",
+                            block_n,
+                            remaining,
+                            overflow_count
+                        );
+                    }
+                }
+            }
+
             let exec_start_time = Instant::now();
+            let (first_tx_hash, first_tx_type) = to_exec
+                .txs
+                .first()
+                .map(|tx| (format!("{:#x}", tx.tx_hash().to_felt()), tx_type_to_label(tx.tx_type())))
+                .unwrap_or_else(|| ("none".to_string(), "none"));
+            tracing::info!(
+                "executor_batch_execution_started block_number={} txs_in_batch={} first_tx_hash={} first_tx_type={}",
+                execution_state.exec_ctx.block_number,
+                to_exec.len(),
+                first_tx_hash,
+                first_tx_type
+            );
 
             // TODO: we should use the execution deadline option
             // Execute the transactions.
@@ -437,6 +503,7 @@ impl ExecutorThread {
             } else {
                 0.0
             };
+            let mut replay_executed_hashes: Vec<Felt> = Vec::new();
             for (btx, res) in executed_txs.txs.iter().zip(blockifier_results.iter()) {
                 match res {
                     Ok((execution_info, _state_diff)) => {
@@ -450,6 +517,7 @@ impl ExecutorThread {
                         );
 
                         stats.n_added_to_block += 1;
+                        replay_executed_hashes.push(btx.tx_hash().to_felt());
                         stats.l2_gas_consumed += u128::from(execution_info.receipt.gas.l2_gas.0);
                         block_empty = false;
                         if execution_info.revert_error.is_some() {
@@ -475,6 +543,25 @@ impl ExecutorThread {
             }
             l2_gas_consumed_block += stats.l2_gas_consumed;
 
+            if self.replay_mode_enabled && !replay_executed_hashes.is_empty() {
+                let block_n = execution_state.exec_ctx.block_number;
+                if let Some(status) =
+                    self.backend.replay_boundary_record_executed_hashes(block_n, &replay_executed_hashes)
+                {
+                    if let Some(mismatch) = status.mismatch {
+                        tracing::warn!(
+                            "replay_boundary_mismatch_after_execution block_number={} expected_tx_count={} executed_tx_count={} dispatched_tx_count={} reached_last_tx_hash={} message={}",
+                            block_n,
+                            status.expected_tx_count,
+                            status.executed_tx_count,
+                            status.dispatched_tx_count,
+                            status.reached_last_tx_hash,
+                            mismatch
+                        );
+                    }
+                }
+            }
+
             tracing::debug!("Finished batch execution.");
             tracing::debug!("Stats: {:?}", stats);
             tracing::debug!(
@@ -486,7 +573,21 @@ impl ExecutorThread {
                 block_state.state.evict_read_cache_if_needed();
             }
 
-            let exec_result = super::BatchExecutionResult { executed_txs, blockifier_results, stats };
+            let exec_result =
+                super::BatchExecutionResult { executed_txs, blockifier_results, stats, emitted_at: StdInstant::now() };
+            tracing::info!(
+                "executor_batch_execution_finished block_number={} txs_requested={} txs_executed={} txs_added_to_block={} txs_reverted={} txs_rejected={} batch_exec_duration_ms={} block_full={} first_tx_hash={} first_tx_type={}",
+                execution_state.exec_ctx.block_number,
+                exec_result.executed_txs.len(),
+                exec_result.stats.n_executed,
+                exec_result.stats.n_added_to_block,
+                exec_result.stats.n_reverted,
+                exec_result.stats.n_rejected,
+                exec_duration.as_secs_f64() * 1000.0,
+                block_full,
+                first_tx_hash,
+                first_tx_type
+            );
             if exec_result.stats.n_executed > 0
                 && self.replies_sender.blocking_send(super::ExecutorMessage::BatchExecuted(exec_result)).is_err()
             {
@@ -497,18 +598,34 @@ impl ExecutorThread {
             // End a block once we reached the block closing condition.
             // This transitions the state machine from ExecutorState::Executing to ExecutorState::NewBlock.
 
+            let block_n = execution_state.exec_ctx.block_number;
             let now = Instant::now();
             let block_time_deadline_reached = now >= next_block_deadline;
-            if force_close || block_full || block_time_deadline_reached {
+            let replay_boundary_exists = self.replay_mode_enabled && self.replay_boundary_exists(block_n);
+            let replay_boundary_met =
+                if replay_boundary_exists { self.replay_boundary_is_met(block_n).unwrap_or(false) } else { false };
+
+            let should_close = if replay_boundary_exists {
+                force_close || replay_boundary_met
+            } else {
+                force_close || block_full || block_time_deadline_reached
+            };
+
+            if should_close {
                 tracing::debug!(
-                    "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
-                    execution_state.exec_ctx.block_number,
+                    "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached}, replay_boundary_exists={replay_boundary_exists}, replay_boundary_met={replay_boundary_met})",
+                    block_n,
                 );
                 let finalize_start = Instant::now();
                 let block_exec_summary = execution_state.executor.finalize()?;
                 let finalize_secs = finalize_start.elapsed().as_secs_f64();
                 self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
                 self.metrics.executor_finalize_last.record(finalize_secs, &[]);
+                tracing::info!(
+                    block_number = block_n,
+                    finalize_ms = finalize_secs * 1000.0,
+                    "executor_finalize_complete"
+                );
 
                 if self
                     .replies_sender
@@ -518,10 +635,27 @@ impl ExecutorThread {
                     // Receiver closed
                     break Ok(());
                 }
+                tracing::info!(
+                    block_number = block_n,
+                    force_close = force_close,
+                    block_full = block_full,
+                    block_time_deadline_reached = block_time_deadline_reached,
+                    replay_boundary_exists = replay_boundary_exists,
+                    replay_boundary_met = replay_boundary_met,
+                    "executor_end_block_sent"
+                );
                 next_block_deadline = Instant::now() + block_time;
+                let end_block_start = Instant::now();
                 state = self.end_block(execution_state).context("Ending block")?;
+                tracing::info!(
+                    end_block_ms = end_block_start.elapsed().as_secs_f64() * 1000.0,
+                    "executor_end_block_state_transition_complete"
+                );
                 block_empty = true;
                 force_close = false;
+                if !replay_next_block_buffer.is_empty() {
+                    to_exec.extend(mem::take(&mut replay_next_block_buffer));
+                }
             }
         }
     }

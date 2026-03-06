@@ -231,7 +231,7 @@ impl RocksDBStorageInner {
     /// **Warning:** While not enforced, the following should be true:
     ///  * Each `StateDiff` should include the entire state for its block
     ///  * `state_diffs` should form a contiguous range of blocks
-    ///  * that range should end with the current blockchain tip
+    ///  * that range should end with the current blockchain head
     ///
     /// If this isn't the case, the db could end up storing inconsistent state for some blocks.
     #[tracing::instrument(skip(self, state_diffs))]

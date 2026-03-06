@@ -1,4 +1,4 @@
-use crate::cli::block_production::BlockProductionParams;
+use crate::cli::block_production::{BlockProductionParams, ParallelMerkleTrieLogMode};
 use anyhow::Context;
 use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask};
 use mc_db::MadaraBackend;
@@ -25,17 +25,25 @@ impl BlockProductionService {
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
         let mempool_paused = config.mempool_paused;
+        let close_queue_capacity = usize::try_from(config.parallel_merkle_max_inflight)
+            .context("parallel_merkle_max_inflight does not fit into usize")?
+            .max(1);
 
         Ok(Self {
             backend: backend.clone(),
-            task: Some(BlockProductionTask::new(
-                backend.clone(),
-                mempool,
-                metrics,
-                l1_client,
-                mempool_paused,
-                no_charge_fee,
-            )),
+            task: Some(
+                BlockProductionTask::new(backend.clone(), mempool, metrics, l1_client, mempool_paused, no_charge_fee)
+                    .with_close_queue_capacity(close_queue_capacity)
+                    .with_replay_mode_enabled(config.replay_mode)
+                    .with_parallel_merkle_enabled(config.parallel_merkle_enabled)
+                    .with_parallel_merkle_flush_interval(config.parallel_merkle_flush_interval)
+                    .with_parallel_merkle_trie_log_mode(match config.parallel_merkle_trie_log_mode {
+                        ParallelMerkleTrieLogMode::Off => mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Off,
+                        ParallelMerkleTrieLogMode::Checkpoint => {
+                            mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint
+                        }
+                    }),
+            ),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
         })

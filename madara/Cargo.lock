@@ -6919,6 +6919,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "reqwest",
+ "rstest 0.18.2",
  "serde",
  "serde_json",
  "serde_yaml",
