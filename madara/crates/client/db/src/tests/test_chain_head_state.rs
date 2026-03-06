@@ -315,6 +315,31 @@ fn revert_floor_replay_rewinds_and_reanchors_checkpoint_metadata() {
     assert!(!backend.has_parallel_merkle_checkpoint(5).expect("checkpoint above target should be removed"));
 }
 
+#[test]
+fn revert_errors_when_latest_checkpoint_exists_but_no_floor_covers_target() {
+    let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
+
+    let mut block_hashes = Vec::new();
+    for block_n in 0..=5 {
+        block_hashes.push(add_test_block(&backend, block_n, vec![]));
+    }
+
+    backend.write_parallel_merkle_checkpoint(4).expect("checkpoint 4");
+    backend.write_parallel_merkle_checkpoint(5).expect("checkpoint 5");
+
+    let err =
+        backend.revert_to(&block_hashes[3]).expect_err("revert should fail when no checkpoint floor covers the target");
+
+    assert!(
+        err.to_string()
+            .contains("Missing parallel merkle checkpoint floor for revert target 3 with latest checkpoint 5"),
+        "unexpected error: {err:#}"
+    );
+    assert_eq!(backend.get_parallel_merkle_latest_checkpoint().expect("latest checkpoint"), Some(5));
+    assert!(backend.has_parallel_merkle_checkpoint(4).expect("checkpoint 4 should remain"));
+    assert!(backend.has_parallel_merkle_checkpoint(5).expect("checkpoint 5 should remain"));
+}
+
 /// Metric violation counter increments on induced projection mismatch.
 #[test]
 fn metric_violation_counter_increments() {

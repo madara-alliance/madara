@@ -916,7 +916,11 @@ impl MadaraStorageWrite for RocksDBStorage {
                 .inner
                 .get_parallel_merkle_checkpoint_floor(target_block_n)
                 .context("Reading parallel merkle checkpoint floor before revert")?
-                .unwrap_or(0);
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Missing parallel merkle checkpoint floor for revert target {target_block_n} with latest checkpoint {bonsai_ceiling}"
+                    )
+                })?;
             let floor_id = BasicId::new(bonsai_floor);
             let ceiling_id = BasicId::new(bonsai_ceiling);
 

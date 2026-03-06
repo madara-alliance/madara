@@ -9,6 +9,9 @@ const META_COLUMN: &str = "meta";
 const PRECONFIRMED_COLUMN: &str = "preconfirmed";
 const META_HEAD_PROJECTION_KEY: &[u8] = b"HEAD_PROJECTION";
 const META_HEAD_PROJECTION_LEGACY_KEY: &[u8] = &[67, 72, 65, 73, 78, 95, 84, 73, 80];
+const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
+const META_PARALLEL_MERKLE_CHECKPOINT_PREFIX: &[u8] = b"PARALLEL_MERKLE_CHECKPOINT/";
+const META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY: &[u8] = b"PARALLEL_MERKLE_LATEST_CHECKPOINT";
 const META_PRECONFIRMED_HEADER_PREFIX: &[u8] = b"PRECONFIRMED_HEADER/";
 
 #[derive(serde::Deserialize)]
@@ -36,6 +39,20 @@ fn preconfirmed_header_key(block_n: u64) -> Vec<u8> {
     key
 }
 
+fn meta_key_with_block_n(prefix: &[u8], block_n: u64) -> Vec<u8> {
+    let mut key = Vec::with_capacity(prefix.len() + 8);
+    key.extend_from_slice(prefix);
+    key.extend_from_slice(&block_n.to_be_bytes());
+    key
+}
+
+fn latest_confirmed_from_projection(projection: &StoredHeadProjectionWithoutContent) -> Option<u64> {
+    match projection {
+        StoredHeadProjectionWithoutContent::Confirmed(block_n) => Some(*block_n),
+        StoredHeadProjectionWithoutContent::Preconfirmed(header) => header.block_number.checked_sub(1),
+    }
+}
+
 pub fn migrate(ctx: &MigrationContext<'_>) -> Result<(), MigrationError> {
     tracing::info!("Starting v12→v13 migration: block-keyed preconfirmed persistence");
 
@@ -59,41 +76,67 @@ pub fn migrate(ctx: &MigrationContext<'_>) -> Result<(), MigrationError> {
     let projection: StoredHeadProjectionWithoutContent = bincode_opts()
         .deserialize(&projection_raw)
         .map_err(|e| MigrationError::Serialization(format!("deserialize head projection: {e}")))?;
-
-    let StoredHeadProjectionWithoutContent::Preconfirmed(header) = projection else {
-        tracing::info!("v12→v13 migration: head is not preconfirmed, nothing to migrate");
-        return Ok(());
-    };
-
-    let block_n = header.block_number;
     let mut batch = WriteBatch::default();
     let mut moved = 0usize;
 
-    for item in db.iterator_cf(&preconfirmed_cf, rocksdb::IteratorMode::Start) {
-        let (key, value) = item?;
-        if key.len() != 2 {
-            continue;
-        }
-        let tx_index = u16::from_be_bytes(
-            key.as_ref()
-                .try_into()
-                .map_err(|_| MigrationError::Serialization("malformed legacy preconfirmed key".to_string()))?,
+    let latest_applied_trie_update = db
+        .get_pinned_cf(&meta_cf, META_LATEST_APPLIED_TRIE_UPDATE)?
+        .map(|raw| {
+            bincode_opts()
+                .deserialize::<u64>(&raw)
+                .map_err(|e| MigrationError::Serialization(format!("deserialize latest applied trie update: {e}")))
+        })
+        .transpose()?;
+    let checkpoint_seed = latest_applied_trie_update.or_else(|| latest_confirmed_from_projection(&projection));
+
+    if let Some(checkpoint_block_n) = checkpoint_seed {
+        batch.put_cf(
+            &meta_cf,
+            meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, checkpoint_block_n),
+            [1u8],
         );
-        batch.put_cf(&preconfirmed_cf, preconfirmed_content_key(block_n, tx_index), value);
-        batch.delete_cf(&preconfirmed_cf, key);
-        moved += 1;
+        batch.put_cf(
+            &meta_cf,
+            META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY,
+            bincode_opts()
+                .serialize(&checkpoint_block_n)
+                .map_err(|e| MigrationError::Serialization(format!("serialize latest checkpoint: {e}")))?,
+        );
     }
 
-    batch.put_cf(
-        &meta_cf,
-        preconfirmed_header_key(block_n),
-        bincode_opts()
-            .serialize(&header)
-            .map_err(|e| MigrationError::Serialization(format!("serialize preconfirmed header: {e}")))?,
-    );
+    if let StoredHeadProjectionWithoutContent::Preconfirmed(header) = projection {
+        let block_n = header.block_number;
+
+        for item in db.iterator_cf(&preconfirmed_cf, rocksdb::IteratorMode::Start) {
+            let (key, value) = item?;
+            if key.len() != 2 {
+                continue;
+            }
+            let tx_index = u16::from_be_bytes(
+                key.as_ref()
+                    .try_into()
+                    .map_err(|_| MigrationError::Serialization("malformed legacy preconfirmed key".to_string()))?,
+            );
+            batch.put_cf(&preconfirmed_cf, preconfirmed_content_key(block_n, tx_index), value);
+            batch.delete_cf(&preconfirmed_cf, key);
+            moved += 1;
+        }
+
+        batch.put_cf(
+            &meta_cf,
+            preconfirmed_header_key(block_n),
+            bincode_opts()
+                .serialize(&header)
+                .map_err(|e| MigrationError::Serialization(format!("serialize preconfirmed header: {e}")))?,
+        );
+    } else {
+        tracing::info!("v12→v13 migration: head is not preconfirmed, skipping legacy preconfirmed row migration");
+    }
     db.write(batch)?;
 
-    tracing::info!("v12→v13 migration completed: moved {moved} legacy preconfirmed rows for block #{block_n}");
+    tracing::info!(
+        "v12→v13 migration completed: moved {moved} legacy preconfirmed rows, checkpoint_seed={checkpoint_seed:?}, latest_applied_trie_update={latest_applied_trie_update:?}"
+    );
     Ok(())
 }
 
@@ -128,6 +171,20 @@ mod tests {
             ],
         )
         .expect("open db")
+    }
+
+    fn latest_checkpoint(db: &rocksdb::DBWithThreadMode<rocksdb::MultiThreaded>) -> Option<u64> {
+        let meta_cf = db.cf_handle(META_COLUMN).expect("meta cf");
+        db.get_pinned_cf(&meta_cf, META_PARALLEL_MERKLE_LATEST_CHECKPOINT_KEY)
+            .expect("read latest checkpoint")
+            .map(|raw| bincode_opts().deserialize(&raw).expect("decode latest checkpoint"))
+    }
+
+    fn has_checkpoint(db: &rocksdb::DBWithThreadMode<rocksdb::MultiThreaded>, block_n: u64) -> bool {
+        let meta_cf = db.cf_handle(META_COLUMN).expect("meta cf");
+        db.get_pinned_cf(&meta_cf, meta_key_with_block_n(META_PARALLEL_MERKLE_CHECKPOINT_PREFIX, block_n))
+            .expect("read checkpoint marker")
+            .is_some()
     }
 
     #[rstest]
@@ -165,6 +222,8 @@ mod tests {
         let stored_header = db.get_pinned_cf(&meta_cf, header_key).expect("read header").expect("header present");
         let decoded_header: PreconfirmedHeader = bincode_opts().deserialize(&stored_header).expect("decode header");
         assert_eq!(decoded_header.block_number, block_n);
+        assert_eq!(latest_checkpoint(&db), Some(block_n - 1));
+        assert!(has_checkpoint(&db, block_n - 1));
 
         assert!(db.get_pinned_cf(&preconfirmed_cf, 0u16.to_be_bytes()).expect("read legacy 0").is_none());
         assert!(db.get_pinned_cf(&preconfirmed_cf, 1u16.to_be_bytes()).expect("read legacy 1").is_none());
@@ -190,5 +249,55 @@ mod tests {
                 Some(&b"tx2"[..])
             );
         }
+    }
+
+    #[test]
+    fn migration_v13_seeds_checkpoint_for_confirmed_head() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db = open_db(&tmp);
+        let meta_cf = db.cf_handle(META_COLUMN).expect("meta cf");
+
+        let block_n = 11u64;
+        let projection = StoredHeadProjectionWithoutContentTest::Confirmed(block_n);
+        db.put_cf(
+            &meta_cf,
+            META_HEAD_PROJECTION_KEY,
+            bincode_opts().serialize(&projection).expect("serialize projection"),
+        )
+        .expect("write projection");
+
+        let ctx = MigrationContext::new(&db, Arc::new(AtomicBool::new(false)));
+        migrate(&ctx).expect("migration");
+
+        assert_eq!(latest_checkpoint(&db), Some(block_n));
+        assert!(has_checkpoint(&db, block_n));
+    }
+
+    #[test]
+    fn migration_v13_prefers_latest_applied_trie_update_for_checkpoint_seed() {
+        let tmp = TempDir::new().expect("tempdir");
+        let db = open_db(&tmp);
+        let meta_cf = db.cf_handle(META_COLUMN).expect("meta cf");
+
+        let header = PreconfirmedHeader { block_number: 9, ..Default::default() };
+        let projection = StoredHeadProjectionWithoutContentTest::Preconfirmed(header);
+        db.put_cf(
+            &meta_cf,
+            META_HEAD_PROJECTION_KEY,
+            bincode_opts().serialize(&projection).expect("serialize projection"),
+        )
+        .expect("write projection");
+        db.put_cf(
+            &meta_cf,
+            META_LATEST_APPLIED_TRIE_UPDATE,
+            bincode_opts().serialize(&6u64).expect("serialize latest applied trie update"),
+        )
+        .expect("write latest applied trie update");
+
+        let ctx = MigrationContext::new(&db, Arc::new(AtomicBool::new(false)));
+        migrate(&ctx).expect("migration");
+
+        assert_eq!(latest_checkpoint(&db), Some(6));
+        assert!(has_checkpoint(&db, 6));
     }
 }
