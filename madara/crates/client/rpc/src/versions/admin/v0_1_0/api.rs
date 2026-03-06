@@ -84,7 +84,7 @@ pub trait MadaraWriteRpcApi {
         l1_handler_message: L1HandlerTransactionWithFee,
     ) -> RpcResult<L1HandlerTransactionResult>;
 
-    /// Sets custom headers to be used for the upcoming block
+    /// Sets custom headers to be used for a specific block number.
     #[method(name = "setCustomBlockHeader")]
     async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
 

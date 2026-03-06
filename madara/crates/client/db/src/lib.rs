@@ -365,11 +365,11 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     /// header overrides that are applied during transaction validation and execution,
     /// along with the expected block hash to validate against after block creation.
     /// # Important Notes
-    /// - Custom header is different for each block and must be set per block
+    /// - Custom header is different for each block and must be stored per block number
     /// - **Must verify** that the block number matches before use
     /// - **Must clear** after use to prevent reuse across different blocks
     /// - Access is thread-safe via Mutex to allow concurrent operations
-    pub custom_header: Mutex<Option<CustomHeader>>,
+    pub custom_header: Mutex<BTreeMap<u64, CustomHeader>>,
 
     /// Replay boundary metadata and runtime progress.
     ///
@@ -427,7 +427,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             chain_head_state: tokio::sync::watch::Sender::new(Default::default()),
             preconfirmed_block_runtime: tokio::sync::watch::Sender::new(None),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
-            custom_header: Mutex::new(None),
+            custom_header: Mutex::new(BTreeMap::new()),
             replay_boundaries: Mutex::new(BTreeMap::new()),
         };
         backend.init().context("Initializing madara backend")?;
@@ -502,26 +502,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         self.db.write_confirmed_on_l1_tip(latest_l1_confirmed)?;
         self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
         Ok(())
-    }
-
-    pub fn get_custom_header(&self) -> Option<CustomHeader> {
-        self.get_custom_header_with_clear(false)
-    }
-
-    pub fn get_custom_header_with_clear(&self, clear: bool) -> Option<CustomHeader> {
-        let mut guard = self.custom_header.lock().expect("Poisoned lock");
-        let result = guard.clone();
-
-        if clear {
-            *guard = None;
-        }
-
-        result
-    }
-
-    pub fn set_custom_header(&self, custom_header: CustomHeader) {
-        let mut guard = self.custom_header.lock().expect("Poisoned lock");
-        *guard = Some(custom_header);
     }
 
     fn replay_boundary_seed_from_preconfirmed(&self, block_n: u64) -> (u64, Option<Felt>) {
@@ -705,6 +685,26 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// Must be called before shutdown to ensure data persistence.
     pub fn flush(&self) -> Result<()> {
         self.db.flush()
+    }
+}
+
+impl<D: MadaraStorageRead> MadaraBackend<D> {
+    pub fn get_custom_header(&self, block_n: u64) -> Option<CustomHeader> {
+        self.get_custom_header_with_clear(block_n, false)
+    }
+
+    pub fn get_custom_header_with_clear(&self, block_n: u64, clear: bool) -> Option<CustomHeader> {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        if clear {
+            guard.remove(&block_n)
+        } else {
+            guard.get(&block_n).cloned()
+        }
+    }
+
+    pub fn set_custom_header(&self, custom_header: CustomHeader) {
+        let mut guard = self.custom_header.lock().expect("Poisoned lock");
+        guard.insert(custom_header.block_n, custom_header);
     }
 }
 
@@ -1387,7 +1387,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        if let Some(header) = self.inner.get_custom_header_with_clear(true) {
+        if let Some(header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
             let is_valid = header.is_block_hash_as_expected(&block_hash);
             if !is_valid {
                 tracing::warn!("Block hash not as expected for {}", block.header.block_number);
@@ -1477,7 +1477,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::info!("Block hash {block_hash:#x} computed for #{} (parallel merkle)", block.header.block_number);
 
-        if let Some(header) = self.inner.get_custom_header_with_clear(true) {
+        if let Some(header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
             let is_valid = header.is_block_hash_as_expected(&block_hash);
             if !is_valid {
                 tracing::warn!("Block hash not as expected for {}", block.header.block_number);
