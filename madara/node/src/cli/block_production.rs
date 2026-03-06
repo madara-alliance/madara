@@ -112,4 +112,12 @@ mod tests {
         let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
         assert_eq!(params.parallel_merkle_trie_log_mode, expected);
     }
+
+    #[rstest]
+    #[case::default_disabled(vec!["madara"], false)]
+    #[case::enabled(vec!["madara", "--replay-mode"], true)]
+    fn block_production_params_parse_replay_mode(#[case] args: Vec<&str>, #[case] expected: bool) {
+        let params = BlockProductionParams::try_parse_from(args).expect("arguments should parse");
+        assert_eq!(params.replay_mode, expected);
+    }
 }

@@ -281,6 +281,15 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
+        if self.block_prod_handle.as_ref().is_some_and(|handle| !handle.replay_mode_enabled()) {
+            tracing::warn!(
+                target: "rpc::admin",
+                block_number = replay_boundary.block_n,
+                expected_tx_count = replay_boundary.expected_tx_count,
+                "setReplayBoundary called while replay mode is disabled; the boundary will be stored but ignored by batcher and executor until Madara is started with --replay-mode"
+            );
+        }
+
         Ok(self.backend.set_replay_boundary(replay_boundary))
     }
 

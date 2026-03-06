@@ -423,6 +423,7 @@ impl BlockProductionTask {
 
     pub fn with_replay_mode_enabled(mut self, enabled: bool) -> Self {
         self.replay_mode_enabled = enabled;
+        self.handle.set_replay_mode_enabled(enabled);
         self
     }
 
