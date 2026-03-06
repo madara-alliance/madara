@@ -509,9 +509,6 @@ impl BlockProductionTask {
             );
 
             let compute_started_at = Instant::now();
-            // DEBUG SLEEP: artificial delay to verify parallel merkle truly overlaps with execution.
-            // Remove before merging.
-            std::thread::sleep(std::time::Duration::from_secs(2));
             let result = backend.db.compute_root_from_latest_snapshot(
                 block_n,
                 &cumulative_state_diff,
