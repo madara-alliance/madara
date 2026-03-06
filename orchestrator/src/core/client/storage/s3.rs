@@ -68,20 +68,15 @@ impl AWSS3 {
 }
 
 fn is_not_found_tagging_error(err: &SdkError<PutObjectTaggingError>) -> bool {
-    if let Some(service_err) = err.as_service_error() {
-        if matches!(service_err.code(), Some("NoSuchKey" | "NotFound")) {
-            return true;
-        }
-    }
+    let service_error = err
+        .as_service_error()
+        .and_then(|e| e.code())
+        .map(|code| matches!(code, "NoSuchKey" | "NotFound"))
+        .unwrap_or(false);
 
-    if let Some(raw) = err.raw_response() {
-        let status: u16 = raw.status().into();
-        if status == 404 {
-            return true;
-        }
-    }
+    let status_404 = err.raw_response().map(|raw| raw.status().as_u16() == 404).unwrap_or(false);
 
-    false
+    service_error || status_404
 }
 
 #[async_trait]
