@@ -380,7 +380,7 @@ impl BlockProductionTask {
         no_charge_fee: bool,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
-        let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
+        let (bypass_input_sender, bypass_tx_input) = mpsc::channel(1024);
         let initial_intake = if mempool_paused { MempoolIntakeMode::Paused } else { MempoolIntakeMode::Running };
         let (mempool_intake_tx, mempool_intake_rx) = watch::channel(initial_intake);
         Self {
