@@ -6,7 +6,10 @@ use mc_db::MadaraStorageRead;
 use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_block::header::CustomHeader;
 use mp_convert::Felt;
-use mp_rpc::admin::{BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, MempoolNonceFilter};
+use mp_rpc::admin::{
+    BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, MempoolNonceFilter, ReplayBlockBoundary,
+    ReplayBlockBoundaryStatus,
+};
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, ClassAndTxnHash, ContractAndTxnHash,
@@ -292,7 +295,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         tracing::info!(target: "rpc::admin", "revertToAndShutdown: all non-admin services are down; proceeding with revert");
 
-        // 3) Revert DB state, then refresh backend chain tip broadcast.
+        // 3) Revert DB state, then refresh backend head projection broadcast.
         tracing::info!(
             target: "rpc::admin",
             "revertToAndShutdown: reverting chain to block_hash={:#x} (block_number={})",
@@ -301,14 +304,10 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         );
         self.backend.revert_to(&block_hash).map_err(StarknetRpcApiError::from)?;
 
-        let fresh_chain_tip = self
-            .backend
-            .db
-            .get_chain_tip()
-            .context("Failed to get chain tip after revert")
+        self.backend
+            .refresh_head_projection_from_db()
+            .context("Failed to refresh head projection after revert")
             .map_err(StarknetRpcApiError::from)?;
-        let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-        self.backend.chain_tip.send_replace(backend_chain_tip);
 
         tracing::info!(target: "rpc::admin", "revertToAndShutdown: revert complete; triggering node shutdown");
 
@@ -366,6 +365,30 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         Ok(FlushMempoolTxnsResult {
             removed_transaction_hashes: removed_transactions.into_iter().map(|tx| tx.hash).collect(),
         })
+    }
+
+    async fn set_replay_boundary(&self, replay_boundary: ReplayBlockBoundary) -> RpcResult<ReplayBlockBoundaryStatus> {
+        // Check if unsafe RPC methods are enabled
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+
+        Ok(self.backend.set_replay_boundary(replay_boundary))
+    }
+
+    async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>> {
+        // Check if unsafe RPC methods are enabled
+        if !self.rpc_unsafe_enabled {
+            return Err(StarknetRpcApiError::ErrUnexpectedError {
+                error: "This method requires the --rpc-unsafe flag to be enabled".to_string().into(),
+            }
+            .into());
+        }
+
+        Ok(self.backend.get_replay_boundary_status(block_n))
     }
 }
 

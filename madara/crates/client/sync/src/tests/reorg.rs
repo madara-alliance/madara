@@ -40,10 +40,7 @@ impl ReorgTestContext {
 
     fn revert_to(&self, block_hash: &mp_convert::Felt) -> anyhow::Result<(u64, mp_convert::Felt)> {
         let result = self.backend.revert_to(block_hash)?;
-
-        let fresh_chain_tip = self.backend.db.get_chain_tip().context("Getting fresh chain tip after reorg")?;
-        let backend_chain_tip = mc_db::ChainTip::from_storage(fresh_chain_tip);
-        self.backend.chain_tip.send_replace(backend_chain_tip);
+        self.backend.refresh_head_projection_from_db().context("Refreshing head projection after reorg")?;
 
         Ok(result)
     }
@@ -201,12 +198,12 @@ async fn test_reorg_detection_during_sync(reorg_ctx: ReorgTestContext) {
     assert_eq!(reverted_hash, block_0_hash);
 
     // Verify chain is back to block 0
-    // Note: The backend's chain_tip cache needs to be refreshed after revert_to
+    // Note: The backend's head projection needs to be refreshed after revert_to
     // The revert_to function updates the database but the backend cache might be stale
     // In the real implementation, the gateway sync reinitializes pipelines after reorg
     let new_latest = reorg_ctx.backend.latest_confirmed_block_n();
-    // The revert_to should have updated the chain tip to block 0
-    // If this fails, it means the chain_tip cache wasn't properly updated
+    // The revert_to should have updated the head projection to block 0
+    // If this fails, it means the head projection wasn't properly updated
     tracing::info!("Latest block after reorg: {:?}", new_latest);
     assert_eq!(new_latest, Some(0), "Latest block should be 0 after reorg");
 

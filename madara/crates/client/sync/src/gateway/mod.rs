@@ -8,7 +8,7 @@ use crate::{
 use anyhow::Context;
 use blocks::{gateway_preconfirmed_block_sync, GatewayBlockSync};
 use classes::ClassesSync;
-use mc_db::{MadaraBackend, MadaraStorageRead};
+use mc_db::MadaraBackend;
 use mc_gateway_client::{BlockId, BlockTag, GatewayProvider};
 use mp_gateway::block::ProviderBlockHeader;
 use std::{iter, sync::Arc, time::Duration};
@@ -169,25 +169,22 @@ impl GatewayForwardSync {
 
     /// Reinitialize pipelines from the database's current tip
     /// This is used after a reorg to restart from the new chain head
-    pub fn reinit_pipelines(&mut self) {
+    pub fn reinit_pipelines(&mut self) -> anyhow::Result<()> {
         tracing::info!("🔄 Reinitializing pipelines after reorg");
         // Ensure we flush any pending writes before reading head status
         if let Err(e) = self.backend.db.flush() {
             tracing::warn!("Failed to flush database before reading head status: {}", e);
         }
 
-        // After reorg, read chain tip directly from database to get fresh value
-        // (the cached chain_tip may be stale after revert_to)
-        let chain_tip = self.backend.db.get_chain_tip().expect("Failed to get chain tip after reorg");
-        let starting_block_n = match chain_tip {
-            mc_db::storage::StorageChainTip::Confirmed(block_n) => block_n + 1,
-            mc_db::storage::StorageChainTip::Preconfirmed { .. } => {
-                tracing::warn!("Unexpected preconfirmed block after reorg");
-                0
-            }
-            mc_db::storage::StorageChainTip::Empty => 0,
-        };
-        tracing::info!("📊 Restarting sync from block #{} (chain_tip={:?})", starting_block_n, chain_tip);
+        self.backend
+            .refresh_head_projection_from_db()
+            .context("Failed to refresh chain head projection after reorg")?;
+        let chain_head = self.backend.chain_head_state();
+        let starting_block_n = chain_head.confirmed_tip.map(|block_n| block_n + 1).unwrap_or(0);
+        if chain_head.external_preconfirmed_tip.is_some() {
+            tracing::warn!("Unexpected preconfirmed head after reorg: {chain_head:?}");
+        }
+        tracing::info!("📊 Restarting sync from block #{} (chain_head={:?})", starting_block_n, chain_head);
 
         let (blocks_pipeline, classes_pipeline, apply_state_pipeline) = Self::create_pipelines(
             self.backend.clone(),
@@ -200,6 +197,7 @@ impl GatewayForwardSync {
         self.blocks_pipeline = blocks_pipeline;
         self.classes_pipeline = classes_pipeline;
         self.apply_state_pipeline = apply_state_pipeline;
+        Ok(())
     }
 
     fn pipeline_status(&self) -> PipelineStatus {
@@ -261,14 +259,14 @@ impl ForwardPipeline for GatewayForwardSync {
                             // Check if this is a reorg error or genesis mismatch recovery
                             let error_msg = e.to_string();
                             if error_msg.contains("Reorg detected and processed") {
-                                tracing::info!("🔄 Handling reorg: reinitializing all pipelines from new chain tip");
-                                self.reinit_pipelines();
+                                tracing::info!("🔄 Handling reorg: reinitializing all pipelines from new head projection");
+                                self.reinit_pipelines()?;
                                 // Break inner loop to restart with fresh pipeline instances
                                 // Returning Ok() causes the outer run loop to call us again with new pipelines
                                 break;
                             } else if error_msg.contains("Genesis mismatch resolved - database cleared") {
                                 tracing::info!("🔄 Handling genesis mismatch recovery: reinitializing all pipelines from empty database");
-                                self.reinit_pipelines();
+                                self.reinit_pipelines()?;
                                 // Pipeline will now start from block 0 (empty database)
                                 // Will fetch correct genesis from upstream
                                 break;
@@ -284,7 +282,7 @@ impl ForwardPipeline for GatewayForwardSync {
             }
 
             // Calculate the range of blocks to seal based on:
-            // - start_next_block: The block after the current chain tip (last sealed block)
+            // - start_next_block: The block after the current head projection (last sealed block)
             // - new_next_block: The block after the minimum of all pipeline completions
             // This ensures we only seal blocks that have been fully processed by ALL pipelines
             let start_next_block = self.backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);

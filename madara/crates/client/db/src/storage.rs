@@ -76,8 +76,8 @@ pub struct DevnetPredeployedContractAccount {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct DevnetPredeployedKeys(pub Vec<DevnetPredeployedContractAccount>);
 
-#[derive(Clone, Debug)]
-pub enum StorageChainTip {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StorageHeadProjection {
     /// Empty pre-genesis state.
     Empty,
     /// Latest block is closed.
@@ -86,7 +86,7 @@ pub enum StorageChainTip {
     Preconfirmed { header: PreconfirmedHeader, content: Vec<PreconfirmedExecutedTransaction> },
 }
 
-impl std::fmt::Display for StorageChainTip {
+impl std::fmt::Display for StorageHeadProjection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Empty => write!(f, "empty state"),
@@ -139,7 +139,12 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     // Meta
 
     fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>>;
-    fn get_chain_tip(&self) -> Result<StorageChainTip>;
+    fn get_head_projection(&self) -> Result<StorageHeadProjection>;
+    fn get_preconfirmed_block_data(
+        &self,
+        block_n: u64,
+    ) -> Result<Option<(PreconfirmedHeader, Vec<PreconfirmedExecutedTransaction>)>>;
+    fn get_latest_preconfirmed_header_block_n(&self) -> Result<Option<u64>>;
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
     fn get_external_db_retention_cursor(&self) -> Result<Option<u64>>;
@@ -190,8 +195,15 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     /// Update the compiled_class_hash_v2 (BLAKE hash) for existing classes (SNIP-34 migration).
     fn update_class_v2_hashes(&self, migrations: Vec<(Felt, Felt)>) -> Result<()>;
 
-    fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()>;
-    fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()>;
+    fn replace_head_projection(&self, head_projection: &StorageHeadProjection) -> Result<()>;
+    fn append_preconfirmed_content(
+        &self,
+        block_n: u64,
+        start_tx_index: u64,
+        txs: &[PreconfirmedExecutedTransaction],
+    ) -> Result<()>;
+    fn write_preconfirmed_header(&self, header: &PreconfirmedHeader) -> Result<()>;
+    fn delete_preconfirmed_rows_up_to(&self, confirmed_tip: u64) -> Result<()>;
     /// Set the latest block confirmed on l1.
     fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()>;
     /// Write the latest l1_block synced for the messaging worker.

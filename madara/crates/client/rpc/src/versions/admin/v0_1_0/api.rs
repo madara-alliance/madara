@@ -5,7 +5,7 @@ use mp_block::header::CustomHeader;
 use mp_convert::Felt;
 use mp_rpc::admin::{
     BroadcastedDeclareTxnV0, FlushMempoolTxnsParams, FlushMempoolTxnsResult, GetMempoolTxnsParams, MempoolTxnHashInfo,
-    MempoolTxnInfo,
+    MempoolTxnInfo, ReplayBlockBoundary, ReplayBlockBoundaryStatus,
 };
 use mp_rpc::v0_10_2::BroadcastedInvokeTxn;
 use mp_rpc::v0_9_0::{
@@ -97,6 +97,17 @@ pub trait MadaraWriteRpcApi {
     /// account nonce gap, higher nonces remain pending so the missing nonce can be resubmitted.
     #[method(name = "flushMempoolTxns")]
     async fn flush_mempool_txns(&self, params: FlushMempoolTxnsParams) -> RpcResult<FlushMempoolTxnsResult>;
+
+    /// Sets replay block boundary metadata for a specific block.
+    ///
+    /// This metadata is consumed by replay-aware batching/execution to avoid crossing block
+    /// boundaries while transactions are sent asynchronously.
+    #[method(name = "setReplayBoundary")]
+    async fn set_replay_boundary(&self, replay_boundary: ReplayBlockBoundary) -> RpcResult<ReplayBlockBoundaryStatus>;
+
+    /// Returns replay boundary status for a given block, if a boundary is configured.
+    #[method(name = "getReplayBoundaryStatus")]
+    async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]

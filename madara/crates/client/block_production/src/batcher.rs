@@ -15,6 +15,7 @@ use mp_transactions::{
 };
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 
@@ -27,6 +28,7 @@ pub struct Batcher {
     bypass_in: mpsc::Receiver<ValidatedTransaction>,
     mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     batch_size: usize,
+    replay_mode_enabled: bool,
 }
 
 impl Batcher {
@@ -38,6 +40,7 @@ impl Batcher {
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
         mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
+        replay_mode_enabled: bool,
     ) -> Self {
         Self {
             mempool,
@@ -48,6 +51,7 @@ impl Batcher {
             mempool_intake_rx,
             batch_size: backend.chain_config().block_production_concurrency.batch_size,
             backend,
+            replay_mode_enabled,
         }
     }
 
@@ -122,12 +126,38 @@ impl Batcher {
             // This means that when the congestion is very low (mempool empty & no pending l1 msg), when a
             // transaction arrives we can instantly pick it up and send it for execution, ensuring the lowest latency possible.
 
+            let mut chunk_size = self.batch_size;
+            if self.replay_mode_enabled {
+                let head_state = self.backend.chain_head_state();
+                let current_block_n = head_state
+                    .external_preconfirmed_tip
+                    .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
+                    .unwrap_or(0);
+
+                if let Some(remaining) = self.backend.replay_boundary_remaining_dispatch_capacity(current_block_n) {
+                    if remaining == 0 {
+                        tokio::select! {
+                            _ = self.ctx.cancelled() => return anyhow::Ok(()),
+                            res = self.mempool_intake_rx.changed() => {
+                                if res.is_err() {
+                                    return anyhow::Ok(());
+                                }
+                            }
+                            _ = tokio::time::sleep(Duration::from_millis(25)) => {}
+                        }
+                        continue;
+                    }
+
+                    chunk_size = chunk_size.min(remaining as usize);
+                }
+            }
+
             let tx_stream = stream::select_with_strategy(
                 bypass_txs_stream,
                 stream::select(l1_txs_stream, mempool_txs_stream), // round-bobbin strategy
                 |()| PollNext::Left, // always prioritise bypass_txs when there are ready items in multiple streams
             )
-            .try_ready_chunks(self.batch_size);
+            .try_ready_chunks(chunk_size.max(1));
 
             tokio::pin!(tx_stream);
 
@@ -154,6 +184,27 @@ impl Batcher {
 
             if !batch.is_empty() {
                 tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
+                if self.replay_mode_enabled {
+                    let head_state = self.backend.chain_head_state();
+                    let current_block_n = head_state
+                        .external_preconfirmed_tip
+                        .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
+                        .unwrap_or(0);
+                    if let Some(status) =
+                        self.backend.replay_boundary_record_dispatched(current_block_n, batch.len() as u64)
+                    {
+                        if let Some(mismatch) = status.mismatch {
+                            tracing::warn!(
+                                "replay_boundary_mismatch_after_dispatch block_number={} expected_tx_count={} dispatched_tx_count={} executed_tx_count={} message={}",
+                                current_block_n,
+                                status.expected_tx_count,
+                                status.dispatched_tx_count,
+                                status.executed_tx_count,
+                                mismatch
+                            );
+                        }
+                    }
+                }
 
                 permit.send(batch);
             }
