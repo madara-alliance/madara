@@ -465,18 +465,22 @@ impl ExecutorThread {
             }
 
             let exec_start_time = Instant::now();
-            let (first_tx_hash, first_tx_type) = to_exec
-                .txs
-                .first()
-                .map(|tx| (format!("{:#x}", tx.tx_hash().to_felt()), tx_type_to_label(tx.tx_type())))
-                .unwrap_or_else(|| ("none".to_string(), "none"));
-            tracing::info!(
-                "executor_batch_execution_started block_number={} txs_in_batch={} first_tx_hash={} first_tx_type={}",
-                execution_state.exec_ctx.block_number,
-                to_exec.len(),
-                first_tx_hash,
-                first_tx_type
-            );
+            let has_txs_in_batch = !to_exec.is_empty();
+            let (first_tx_hash, first_tx_type) = if has_txs_in_batch {
+                let first_tx = to_exec.txs.first().expect("non-empty batch must have a first tx");
+                (format!("{:#x}", first_tx.tx_hash().to_felt()), tx_type_to_label(first_tx.tx_type()))
+            } else {
+                (String::new(), "")
+            };
+            if has_txs_in_batch {
+                tracing::info!(
+                    "executor_batch_execution_started block_number={} txs_in_batch={} first_tx_hash={} first_tx_type={}",
+                    execution_state.exec_ctx.block_number,
+                    to_exec.len(),
+                    first_tx_hash,
+                    first_tx_type
+                );
+            }
 
             // TODO: we should use the execution deadline option
             // Execute the transactions.
@@ -575,19 +579,21 @@ impl ExecutorThread {
 
             let exec_result =
                 super::BatchExecutionResult { executed_txs, blockifier_results, stats, emitted_at: StdInstant::now() };
-            tracing::info!(
-                "executor_batch_execution_finished block_number={} txs_requested={} txs_executed={} txs_added_to_block={} txs_reverted={} txs_rejected={} batch_exec_duration_ms={} block_full={} first_tx_hash={} first_tx_type={}",
-                execution_state.exec_ctx.block_number,
-                exec_result.executed_txs.len(),
-                exec_result.stats.n_executed,
-                exec_result.stats.n_added_to_block,
-                exec_result.stats.n_reverted,
-                exec_result.stats.n_rejected,
-                exec_duration.as_secs_f64() * 1000.0,
-                block_full,
-                first_tx_hash,
-                first_tx_type
-            );
+            if has_txs_in_batch {
+                tracing::info!(
+                    "executor_batch_execution_finished block_number={} txs_requested={} txs_executed={} txs_added_to_block={} txs_reverted={} txs_rejected={} batch_exec_duration_ms={} block_full={} first_tx_hash={} first_tx_type={}",
+                    execution_state.exec_ctx.block_number,
+                    exec_result.executed_txs.len(),
+                    exec_result.stats.n_executed,
+                    exec_result.stats.n_added_to_block,
+                    exec_result.stats.n_reverted,
+                    exec_result.stats.n_rejected,
+                    exec_duration.as_secs_f64() * 1000.0,
+                    block_full,
+                    first_tx_hash,
+                    first_tx_type
+                );
+            }
             if exec_result.stats.n_executed > 0
                 && self.replies_sender.blocking_send(super::ExecutorMessage::BatchExecuted(exec_result)).is_err()
             {
