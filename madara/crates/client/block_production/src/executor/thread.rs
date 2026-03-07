@@ -19,6 +19,8 @@ use std::{
 };
 use tokio::{sync::mpsc, time::Instant};
 
+const EXECUTOR_IDLE_INFO_MS: f64 = 100.0;
+
 struct ExecutorStateExecuting {
     exec_ctx: BlockExecutionContext,
     /// Note: We have a special StateAdaptor here. This is because saving the block to the database can actually lag a
@@ -126,10 +128,7 @@ impl ExecutorThread {
         should_wait: bool,
     ) -> WaitTxBatchOutcome {
         if let Ok(batch) = self.incoming_batches.try_recv() {
-            tracing::info!(
-                block_number = ?current_block_n,
-                tx_count = batch.len(),
-                receive_mode = "try_recv",
+            tracing::debug!(
                 "executor_batch_received block_number={current_block_n:?} tx_count={} receive_mode=try_recv",
                 batch.len()
             );
@@ -137,10 +136,7 @@ impl ExecutorThread {
         }
 
         if let Ok(cmd) = self.commands.try_recv() {
-            tracing::info!(
-                block_number = ?current_block_n,
-                command = ?cmd,
-                receive_mode = "try_recv",
+            tracing::debug!(
                 "executor_command_received block_number={current_block_n:?} command={cmd:?} receive_mode=try_recv"
             );
             return WaitTxBatchOutcome::Command(cmd);
@@ -154,10 +150,7 @@ impl ExecutorThread {
         let deadline_remaining_ms =
             deadline.map(|deadline| deadline.saturating_duration_since(now).as_secs_f64() * 1000.0);
         if deadline_remaining_ms.is_none_or(|remaining| remaining > 1.0) {
-            tracing::info!(
-                block_number = ?current_block_n,
-                until_block_time_deadline = deadline.is_some(),
-                deadline_remaining_ms = ?deadline_remaining_ms,
+            tracing::debug!(
                 "executor_waiting_for_batch block_number={current_block_n:?} until_block_time_deadline={} deadline_remaining_ms={deadline_remaining_ms:?}",
                 deadline.is_some()
             );
@@ -173,11 +166,7 @@ impl ExecutorThread {
             tokio::select! {
                 Some(cmd) = self.commands.recv() => {
                     let wait_ms = wait_started.elapsed().as_secs_f64() * 1000.0;
-                    tracing::info!(
-                        block_number = ?current_block_n,
-                        command = ?cmd,
-                        wait_ms,
-                        receive_mode = "recv",
+                    tracing::debug!(
                         "executor_command_received block_number={current_block_n:?} command={cmd:?} wait_ms={wait_ms} receive_mode=recv"
                     );
                     WaitTxBatchOutcome::Command(cmd)
@@ -185,9 +174,7 @@ impl ExecutorThread {
                 _ = OptionFuture::from(deadline.map(tokio::time::sleep_until)) => {
                     let wait_ms = wait_started.elapsed().as_secs_f64() * 1000.0;
                     if wait_ms > 1.0 {
-                        tracing::info!(
-                            block_number = ?current_block_n,
-                            wait_ms,
+                        tracing::debug!(
                             "executor_batch_wait_timed_out block_number={current_block_n:?} wait_ms={wait_ms}"
                         );
                     }
@@ -196,21 +183,22 @@ impl ExecutorThread {
                 el = self.incoming_batches.recv() => match el {
                     Some(el) => {
                         let wait_ms = wait_started.elapsed().as_secs_f64() * 1000.0;
-                        tracing::info!(
-                            block_number = ?current_block_n,
-                            tx_count = el.len(),
-                            wait_ms,
-                            receive_mode = "recv",
-                            "executor_batch_received block_number={current_block_n:?} tx_count={} wait_ms={wait_ms} receive_mode=recv",
-                            el.len()
-                        );
+                        if wait_ms >= EXECUTOR_IDLE_INFO_MS {
+                            tracing::info!(
+                                "executor_batch_received_after_wait block_number={current_block_n:?} tx_count={} wait_ms={wait_ms} receive_mode=recv",
+                                el.len()
+                            );
+                        } else {
+                            tracing::debug!(
+                                "executor_batch_received block_number={current_block_n:?} tx_count={} wait_ms={wait_ms} receive_mode=recv",
+                                el.len()
+                            );
+                        }
                         WaitTxBatchOutcome::Batch(el)
                     }
                     None => {
                         let wait_ms = wait_started.elapsed().as_secs_f64() * 1000.0;
                         tracing::info!(
-                            block_number = ?current_block_n,
-                            wait_ms,
                             "executor_batch_channel_closed block_number={current_block_n:?} wait_ms={wait_ms}"
                         );
                         WaitTxBatchOutcome::Exit

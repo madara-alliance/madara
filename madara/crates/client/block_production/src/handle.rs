@@ -17,6 +17,8 @@ use std::{sync::Arc, time::Instant};
 use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
 
+const BYPASS_ENQUEUE_WARN_MS: f64 = 25.0;
+
 struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 
 #[async_trait]
@@ -26,16 +28,20 @@ impl SubmitValidatedTransaction for BypassInput {
         let available_capacity_before_send = self.0.capacity();
         let send_started = Instant::now();
         self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))?;
-        tracing::info!(
-            tx_hash = ?tx_hash,
-            available_capacity_before_send,
-            available_capacity_after_send = self.0.capacity(),
-            send_wait_ms = send_started.elapsed().as_secs_f64() * 1000.0,
-            "bypass_input_tx_enqueued tx_hash={tx_hash:#x} available_capacity_before_send={} available_capacity_after_send={} send_wait_ms={}",
-            available_capacity_before_send,
-            self.0.capacity(),
-            send_started.elapsed().as_secs_f64() * 1000.0
-        );
+        let send_wait_ms = send_started.elapsed().as_secs_f64() * 1000.0;
+        if send_wait_ms >= BYPASS_ENQUEUE_WARN_MS {
+            tracing::warn!(
+                "bypass_input_tx_slow_enqueue tx_hash={tx_hash:#x} available_capacity_before_send={} available_capacity_after_send={} send_wait_ms={send_wait_ms}",
+                available_capacity_before_send,
+                self.0.capacity()
+            );
+        } else {
+            tracing::debug!(
+                "bypass_input_tx_enqueued tx_hash={tx_hash:#x} available_capacity_before_send={} available_capacity_after_send={} send_wait_ms={send_wait_ms}",
+                available_capacity_before_send,
+                self.0.capacity()
+            );
+        }
         Ok(())
     }
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {

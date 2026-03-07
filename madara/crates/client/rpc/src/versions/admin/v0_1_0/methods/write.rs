@@ -106,15 +106,8 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
 
         match result {
             Ok(result) => {
-                tracing::info!(
+                tracing::debug!(
                     target: "rpc::admin",
-                    transaction_hash = ?result.transaction_hash,
-                    tx_version = ?tx_version,
-                    is_query,
-                    rpc_ms = elapsed_ms,
-                    confirmed_tip = ?head.confirmed_tip,
-                    external_preconfirmed_tip = ?head.external_preconfirmed_tip,
-                    internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
                     "bypass_add_invoke_transaction_completed transaction_hash={:?} tx_version={:?} is_query={} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
                     result.transaction_hash,
                     tx_version,
@@ -129,13 +122,6 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             Err(err) => {
                 tracing::warn!(
                     target: "rpc::admin",
-                    tx_version = ?tx_version,
-                    is_query,
-                    rpc_ms = elapsed_ms,
-                    confirmed_tip = ?head.confirmed_tip,
-                    external_preconfirmed_tip = ?head.external_preconfirmed_tip,
-                    internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
-                    error = %err,
                     "bypass_add_invoke_transaction_failed tx_version={:?} is_query={} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?} error={}",
                     tx_version,
                     is_query,
@@ -318,14 +304,8 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         }
 
         let head = self.backend.chain_head_state();
-        tracing::info!(
+        tracing::debug!(
             target: "rpc::admin",
-            block_number = custom_block_headers.block_n,
-            timestamp = custom_block_headers.timestamp,
-            expected_block_hash = ?custom_block_headers.expected_block_hash,
-            confirmed_tip = ?head.confirmed_tip,
-            external_preconfirmed_tip = ?head.external_preconfirmed_tip,
-            internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
             "custom_block_header_set block_number={} timestamp={} expected_block_hash={:?} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
             custom_block_headers.block_n,
             custom_block_headers.timestamp,
@@ -360,20 +340,8 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         let status = self.backend.set_replay_boundary(replay_boundary.clone());
         let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
         let head = self.backend.chain_head_state();
-        tracing::info!(
+        tracing::debug!(
             target: "rpc::admin",
-            block_number = replay_boundary.block_n,
-            expected_tx_count = replay_boundary.expected_tx_count,
-            last_tx_hash = ?replay_boundary.last_tx_hash,
-            dispatched_tx_count = status.dispatched_tx_count,
-            executed_tx_count = status.executed_tx_count,
-            boundary_met = status.boundary_met,
-            closed = status.closed,
-            mismatch = ?status.mismatch,
-            rpc_ms = elapsed_ms,
-            confirmed_tip = ?head.confirmed_tip,
-            external_preconfirmed_tip = ?head.external_preconfirmed_tip,
-            internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
             "replay_boundary_set_rpc block_number={} expected_tx_count={} last_tx_hash={:?} dispatched_tx_count={} executed_tx_count={} boundary_met={} closed={} mismatch={:?} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
             replay_boundary.block_n,
             replay_boundary.expected_tx_count,
