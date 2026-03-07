@@ -125,7 +125,7 @@
 //! [`process_reply`]: BlockProductionTask::process_reply
 
 use crate::batcher::Batcher;
-use crate::close_queue::{CloseJobCompletion, QueuedClosePayload, TrieComputeJoinHandle};
+use crate::close_queue::{CloseJobCompletion, QueuedClosePayload};
 use crate::finalizer::FinalizerHandle;
 use crate::metrics::BlockProductionMetrics;
 use crate::util::BlockExecutionContext;
@@ -482,20 +482,25 @@ impl BlockProductionTask {
             && next_block_n.checked_rem(self.parallel_merkle_flush_interval) == Some(0)
     }
 
-    fn dispatch_root(
-        &self,
-        block_n: u64,
-        cumulative_state_diff: StateDiff,
-        is_boundary: bool,
-    ) -> TrieComputeJoinHandle {
-        let backend = Arc::clone(&self.backend);
-        let metrics = Arc::clone(&self.metrics);
-        let trie_log_mode = self.parallel_merkle_trie_log_mode;
+    fn dispatch_roots_batch(
+        backend: Arc<MadaraBackend>,
+        metrics: Arc<BlockProductionMetrics>,
+        start_block_n: u64,
+        state_diffs: Vec<StateDiff>,
+        boundary_block_n: Option<u64>,
+        trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode,
+    ) -> tokio::task::JoinHandle<anyhow::Result<Vec<mc_db::rocksdb::global_trie::in_memory::InMemoryRootComputation>>>
+    {
         let dispatched_at = Instant::now();
+        let batch_size = state_diffs.len();
+        let end_block_n =
+            start_block_n + u64::try_from(batch_size.saturating_sub(1)).expect("batch size fits into u64");
         tracing::debug!(
-            "parallel_root_dispatch_enqueued block_number={block_n} boundary={is_boundary} tracked_diffs_since_snapshot={} pending_close_completions={}",
-            self.diffs_since_snapshot.len(),
-            self.pending_completions.len()
+            "parallel_root_batch_dispatch_enqueued start_block={} end_block={} batch_size={} boundary_block={:?}",
+            start_block_n,
+            end_block_n,
+            batch_size,
+            boundary_block_n
         );
         tokio::task::spawn_blocking(move || {
             let closure_started_at = Instant::now();
@@ -505,22 +510,27 @@ impl BlockProductionTask {
                 .record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
             metrics.parallel_root_spawn_blocking_queue_last.record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
             tracing::debug!(
-                "parallel_root_compute_started block_number={block_n} spawn_blocking_queue_ms={}",
+                "parallel_root_batch_compute_started start_block={} end_block={} batch_size={} spawn_blocking_queue_ms={}",
+                start_block_n,
+                end_block_n,
+                batch_size,
                 spawn_blocking_queue_duration.as_secs_f64() * 1000.0
             );
             tracing::info!(
-                "parallel_root_artificial_delay block_number={} boundary={} delay_ms={} background_worker=true",
-                block_n,
-                is_boundary,
+                "parallel_root_artificial_delay start_block={} end_block={} batch_size={} boundary_block={:?} delay_ms={} background_worker=true",
+                start_block_n,
+                end_block_n,
+                batch_size,
+                boundary_block_n,
                 PARALLEL_MERKLE_ARTIFICIAL_DELAY.as_millis()
             );
             std::thread::sleep(PARALLEL_MERKLE_ARTIFICIAL_DELAY);
 
             let compute_started_at = Instant::now();
-            let result = backend.db.compute_root_from_latest_snapshot(
-                block_n,
-                &cumulative_state_diff,
-                is_boundary,
+            let result = backend.db.compute_roots_in_parallel_from_latest_snapshot(
+                start_block_n,
+                &state_diffs,
+                boundary_block_n,
                 trie_log_mode,
             );
             let compute_duration = compute_started_at.elapsed();
@@ -532,7 +542,10 @@ impl BlockProductionTask {
             metrics.parallel_root_total_last.record(total_duration.as_secs_f64(), &[]);
 
             tracing::debug!(
-                "parallel_root_compute_finished block_number={block_n} success={} compute_ms={} total_ms={}",
+                "parallel_root_batch_compute_finished start_block={} end_block={} batch_size={} success={} compute_ms={} total_ms={}",
+                start_block_n,
+                end_block_n,
+                batch_size,
                 result.is_ok(),
                 compute_duration.as_secs_f64() * 1000.0,
                 total_duration.as_secs_f64() * 1000.0
@@ -1030,16 +1043,28 @@ impl BlockProductionTask {
             old_declared_contracts,
         );
 
-        let trie_handle = if self.parallel_merkle_enabled {
+        let is_boundary = self.is_boundary_block(block_n);
+        let (trie_batch_handle, trie_batch_index) = if self.parallel_merkle_enabled {
             self.diffs_since_snapshot.push((block_n, state_diff.clone()));
-            // Keep cumulative squashing logic over tuple diffs for pipelined mode.
-            let cumulative_state_diff = mc_db::rocksdb::global_trie::in_memory::squash_state_diffs(
-                self.diffs_since_snapshot.iter().map(|(_, diff)| diff),
+            let start_block_n = self
+                .diffs_since_snapshot
+                .first()
+                .map(|(tracked_block_n, _)| *tracked_block_n)
+                .expect("tracked diffs exist for parallel merkle close");
+            let trie_batch_index = self.diffs_since_snapshot.len().saturating_sub(1);
+            let state_diffs: Vec<_> =
+                self.diffs_since_snapshot.iter().map(|(_, tracked_state_diff)| tracked_state_diff.clone()).collect();
+            let trie_batch_handle = Self::dispatch_roots_batch(
+                Arc::clone(&self.backend),
+                Arc::clone(&self.metrics),
+                start_block_n,
+                state_diffs,
+                is_boundary.then_some(block_n),
+                self.parallel_merkle_trie_log_mode,
             );
-            let is_boundary = self.is_boundary_block(block_n);
-            Some(self.dispatch_root(block_n, cumulative_state_diff, is_boundary))
+            (Some(trie_batch_handle), Some(trie_batch_index))
         } else {
-            None
+            (None, None)
         };
 
         let payload = QueuedClosePayload {
@@ -1047,8 +1072,10 @@ impl BlockProductionTask {
             state,
             block_exec_summary,
             state_diff,
+            is_boundary,
             trie_log_mode: self.parallel_merkle_trie_log_mode,
-            trie_handle,
+            trie_batch_handle,
+            trie_batch_index,
             enqueued_at: Instant::now(),
         };
         tracing::debug!("enqueue_close_block_to_async_worker block_number={block_n}");
@@ -1125,10 +1152,7 @@ impl BlockProductionTask {
         metrics: Arc<BlockProductionMetrics>,
         payload: QueuedClosePayload,
     ) -> anyhow::Result<CloseJobCompletion> {
-        let QueuedClosePayload { state, block_exec_summary, state_diff, trie_handle, .. } = payload;
-        if trie_handle.is_some() {
-            anyhow::bail!("Serial finalizer received unexpected parallel trie handle");
-        }
+        let QueuedClosePayload { state, block_exec_summary, state_diff, .. } = payload;
         tracing::debug!("Close and save block block_n={}", state.block_number);
         let start_time = Instant::now();
 
@@ -1249,15 +1273,105 @@ impl BlockProductionTask {
         Ok(CloseJobCompletion { block_n: state.block_number })
     }
 
+    async fn execute_close_payload_batch_parallel(
+        metrics: Arc<BlockProductionMetrics>,
+        payloads: Vec<QueuedClosePayload>,
+    ) -> Vec<anyhow::Result<CloseJobCompletion>> {
+        let mut results = Vec::with_capacity(payloads.len());
+        for payload in payloads {
+            results.push(Self::execute_close_payload_parallel(metrics.clone(), payload).await);
+        }
+        results
+    }
+
+    async fn execute_close_payload_batch(
+        metrics: Arc<BlockProductionMetrics>,
+        payloads: Vec<QueuedClosePayload>,
+    ) -> Vec<anyhow::Result<CloseJobCompletion>> {
+        let mut results = Vec::with_capacity(payloads.len());
+        for payload in payloads {
+            results.push(Self::execute_close_payload(metrics.clone(), payload).await);
+        }
+        results
+    }
+
     /// Parallel merkle variant of `execute_close_payload`.
     ///
-    /// The trie root computation is offloaded to `root_handle` while commitments,
-    /// header, hash, and DB writes remain inline in this method.
+    /// Trie roots are precomputed in a batched background worker, while DB writes
+    /// and block confirmation remain serial per block.
     async fn execute_close_payload_parallel(
         metrics: Arc<BlockProductionMetrics>,
         payload: QueuedClosePayload,
     ) -> anyhow::Result<CloseJobCompletion> {
-        let QueuedClosePayload { state, block_exec_summary, state_diff, trie_log_mode, trie_handle, .. } = payload;
+        let QueuedClosePayload {
+            db_payload,
+            state,
+            block_exec_summary,
+            state_diff,
+            is_boundary,
+            trie_log_mode,
+            trie_batch_handle,
+            trie_batch_index,
+            enqueued_at,
+        } = payload;
+        let block_n = state.block_number;
+        let trie_batch_index = trie_batch_index.context("Missing trie batch index for parallel close job")?;
+        let root_wait_started_at = Instant::now();
+        let root_results = trie_batch_handle
+            .context("Missing trie batch handle for parallel close job")?
+            .await
+            .map_err(|error| {
+                metrics.parallel_root_failures_total.add(1, &[]);
+                anyhow::anyhow!("Parallel merkle blocking task panicked for block #{block_n}: {error:#}")
+            })?
+            .map_err(|error| {
+                metrics.parallel_root_failures_total.add(1, &[]);
+                error
+            })
+            .context(format!("Parallel merkle root computation for block #{block_n}"))?;
+        let root_wait_duration = root_wait_started_at.elapsed();
+        metrics.parallel_root_await_duration.record(root_wait_duration.as_secs_f64(), &[]);
+        metrics.parallel_root_await_last.record(root_wait_duration.as_secs_f64(), &[]);
+        tracing::info!(
+            "parallel_root_await_finished block_number={} root_wait_ms={} real_parallel_merkle=true",
+            block_n,
+            root_wait_duration.as_secs_f64() * 1000.0
+        );
+
+        let root_response = root_results
+            .into_iter()
+            .nth(trie_batch_index)
+            .with_context(|| format!("Missing batched root result at index {trie_batch_index} for block #{block_n}"))?;
+        anyhow::ensure!(
+            root_response.block_n == block_n,
+            "Batched root result mismatch: expected block #{block_n}, got #{} at index {trie_batch_index}",
+            root_response.block_n
+        );
+
+        Self::execute_close_payload_parallel_precomputed(
+            metrics,
+            QueuedClosePayload {
+                db_payload,
+                state,
+                block_exec_summary,
+                state_diff,
+                is_boundary,
+                trie_log_mode,
+                trie_batch_handle: None,
+                trie_batch_index: None,
+                enqueued_at,
+            },
+            root_response,
+        )
+        .await
+    }
+
+    async fn execute_close_payload_parallel_precomputed(
+        metrics: Arc<BlockProductionMetrics>,
+        payload: QueuedClosePayload,
+        root_response: mc_db::rocksdb::global_trie::in_memory::InMemoryRootComputation,
+    ) -> anyhow::Result<CloseJobCompletion> {
+        let QueuedClosePayload { state, block_exec_summary, state_diff, trie_log_mode, .. } = payload;
         tracing::debug!("Close and save block block_n={} (parallel merkle)", state.block_number);
         let start_time = Instant::now();
 
@@ -1298,29 +1412,6 @@ impl BlockProductionTask {
         metrics.block_bouncer_message_segment_length.record(bouncer_message_segment_length as u64, &[]);
         metrics.block_bouncer_state_diff_size.record(bouncer_state_diff_size as u64, &[]);
         metrics.block_consumed_l1_nonces_count.record(consumed_l1_nonces_count as u64, &[]);
-
-        // Await the pre-dispatched trie computation started at enqueue-time.
-        let root_wait_started_at = Instant::now();
-        let root_response = trie_handle
-            .context("Missing pre-dispatched trie handle for parallel close job")?
-            .await
-            .map_err(|err| {
-                metrics.parallel_root_failures_total.add(1, &[]);
-                anyhow::anyhow!("Parallel merkle blocking task panicked: {err:#}")
-            })?
-            .map_err(|err| {
-                metrics.parallel_root_failures_total.add(1, &[]);
-                err
-            })
-            .context("Parallel merkle root computation")?;
-        let root_wait_duration = root_wait_started_at.elapsed();
-        metrics.parallel_root_await_duration.record(root_wait_duration.as_secs_f64(), &[]);
-        metrics.parallel_root_await_last.record(root_wait_duration.as_secs_f64(), &[]);
-        tracing::info!(
-            "parallel_root_await_finished block_number={} root_wait_ms={} real_parallel_merkle=true",
-            state.block_number,
-            root_wait_duration.as_secs_f64() * 1000.0
-        );
 
         let close_preconfirmed_start = Instant::now();
 
@@ -1536,12 +1627,13 @@ impl BlockProductionTask {
         validate_parallel_queue_invariant(self.parallel_merkle_enabled, close_queue_capacity)?;
 
         // Spawn the finalizer pipeline: serial (default) or parallel merkle.
-        // In parallel mode, trie computation is dispatched at enqueue-time and awaited in finalizer.
+        // In parallel mode, the finalizer batches contiguous close jobs up to the
+        // next boundary and computes their trie roots together from a shared snapshot.
         let (close_queue_handle, finalizer_task_handle) = if self.parallel_merkle_enabled {
             let (close_queue_handle, finalizer_task_handle) = FinalizerHandle::spawn(
                 close_queue_capacity,
                 self.metrics.clone(),
-                Self::execute_close_payload_parallel,
+                Self::execute_close_payload_batch_parallel,
             );
             tracing::info!(
                 "initialized_finalizer_runtime mode=parallel_merkle queue_capacity={} configured_max_inflight={} configured_capacity={} parallel_merkle={}",
@@ -1553,7 +1645,7 @@ impl BlockProductionTask {
             (close_queue_handle, finalizer_task_handle)
         } else {
             let (close_queue_handle, finalizer_task_handle) =
-                FinalizerHandle::spawn(close_queue_capacity, self.metrics.clone(), Self::execute_close_payload);
+                FinalizerHandle::spawn(close_queue_capacity, self.metrics.clone(), Self::execute_close_payload_batch);
             tracing::info!(
                 "initialized_finalizer_runtime mode=serial queue_capacity={} configured_max_inflight={} configured_capacity={}",
                 close_queue_capacity,

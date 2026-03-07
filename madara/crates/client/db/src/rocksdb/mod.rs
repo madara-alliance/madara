@@ -7,7 +7,8 @@ use crate::{
         global_trie::{
             apply_to_global_trie, get_state_root,
             in_memory::{
-                compute_root_from_snapshot, squash_state_diffs, BonsaiOverlay, InMemoryRootComputation, TrieLogMode,
+                compute_root_from_snapshot, compute_roots_in_parallel_from_snapshot, squash_state_diffs, BonsaiOverlay,
+                InMemoryRootComputation, TrieLogMode,
             },
             MerklizationTimings,
         },
@@ -266,6 +267,24 @@ impl RocksDBStorage {
     ) -> Result<InMemoryRootComputation> {
         let (_snapshot_block, snapshot) = self.snapshots.get_closest(block_n);
         compute_root_from_snapshot(self, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
+    }
+
+    pub fn compute_roots_in_parallel_from_latest_snapshot(
+        &self,
+        start_block_n: u64,
+        state_diffs: &[StateDiff],
+        boundary_block_n: Option<u64>,
+        trie_log_mode: TrieLogMode,
+    ) -> Result<Vec<InMemoryRootComputation>> {
+        let (_snapshot_block, snapshot) = self.snapshots.get_closest(start_block_n);
+        compute_roots_in_parallel_from_snapshot(
+            self,
+            snapshot,
+            start_block_n,
+            state_diffs,
+            boundary_block_n,
+            trie_log_mode,
+        )
     }
 
     pub fn flush_overlay_and_checkpoint(

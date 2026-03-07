@@ -11,19 +11,20 @@ use tokio::sync::{mpsc, oneshot};
 struct InFlightGaugeGuard {
     metrics: Arc<BlockProductionMetrics>,
     in_flight: Arc<AtomicUsize>,
+    job_count: usize,
 }
 
 impl InFlightGaugeGuard {
-    fn new(metrics: Arc<BlockProductionMetrics>, in_flight: Arc<AtomicUsize>) -> Self {
-        let current = in_flight.fetch_add(1, Ordering::Relaxed) + 1;
+    fn new(metrics: Arc<BlockProductionMetrics>, in_flight: Arc<AtomicUsize>, job_count: usize) -> Self {
+        let current = in_flight.fetch_add(job_count, Ordering::Relaxed) + job_count;
         metrics.close_queue_in_flight.record(current as u64, &[]);
-        Self { metrics, in_flight }
+        Self { metrics, in_flight, job_count }
     }
 }
 
 impl Drop for InFlightGaugeGuard {
     fn drop(&mut self) {
-        let current = self.in_flight.fetch_sub(1, Ordering::Relaxed).saturating_sub(1);
+        let current = self.in_flight.fetch_sub(self.job_count, Ordering::Relaxed).saturating_sub(self.job_count);
         self.metrics.close_queue_in_flight.record(current as u64, &[]);
     }
 }
@@ -50,7 +51,8 @@ pub(crate) struct FinalizerTaskHandle {
 impl FinalizerHandle {
     /// Spawn the finalizer worker and return the handle pair.
     ///
-    /// The worker processes close jobs serially in FIFO order.
+    /// The worker processes close jobs in FIFO order, batching contiguous jobs up to
+    /// the next boundary while preserving serial completion order.
     /// Shutdown: drop the FinalizerHandle, then await FinalizerTaskHandle::join().
     pub fn spawn<F, Fut>(
         capacity: usize,
@@ -58,8 +60,8 @@ impl FinalizerHandle {
         execute_fn: F,
     ) -> (Self, FinalizerTaskHandle)
     where
-        F: Fn(Arc<BlockProductionMetrics>, QueuedClosePayload) -> Fut + Send + 'static,
-        Fut: Future<Output = Result<CloseJobCompletion>> + Send + 'static,
+        F: Fn(Arc<BlockProductionMetrics>, Vec<QueuedClosePayload>) -> Fut + Send + 'static,
+        Fut: Future<Output = Vec<Result<CloseJobCompletion>>> + Send + 'static,
     {
         let capacity = capacity.max(1);
         let (sender, receiver) = mpsc::channel(capacity);
@@ -69,34 +71,82 @@ impl FinalizerHandle {
 
         let join_handle = tokio::spawn(async move {
             let mut receiver: mpsc::Receiver<QueuedCloseJob> = receiver;
-            while let Some(job) = receiver.recv().await {
-                let _in_flight_guard = InFlightGaugeGuard::new(metrics.clone(), Arc::clone(&in_flight_worker));
-                let block_n = job.payload.db_payload.block_n;
-                let queue_wait = job.payload.enqueued_at.elapsed();
-                metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
-                tracing::debug!(
-                    "close_job_processing_started block_number={} queue_wait_ms={} in_flight={}",
-                    block_n,
-                    queue_wait.as_secs_f64() * 1000.0,
-                    in_flight_worker.load(Ordering::Relaxed)
-                );
+            while let Some(first_job) = receiver.recv().await {
+                let mut jobs = vec![first_job];
+                while !jobs.last().is_some_and(|job| job.payload.is_boundary) {
+                    match receiver.try_recv() {
+                        Ok(job) => jobs.push(job),
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+                    }
+                }
 
-                let execute_start = std::time::Instant::now();
-                let result = execute_fn(metrics.clone(), job.payload).await;
-                if let Err(error) = &result {
-                    metrics.close_job_failures_total.add(1, &[]);
-                    tracing::error!(block_number = block_n, error = ?error, "close_job_processing_failed");
+                let batch_len = jobs.len();
+                let _in_flight_guard =
+                    InFlightGaugeGuard::new(metrics.clone(), Arc::clone(&in_flight_worker), batch_len);
+
+                let first_block_n = jobs.first().expect("close batch has first job").payload.db_payload.block_n;
+                let last_block_n = jobs.last().expect("close batch has last job").payload.db_payload.block_n;
+                let block_numbers: Vec<_> = jobs.iter().map(|job| job.payload.db_payload.block_n).collect();
+                for job in &jobs {
+                    let queue_wait = job.payload.enqueued_at.elapsed();
+                    metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
                 }
                 tracing::debug!(
-                    "close_job_processing_finished block_number={} execute_duration_ms={} success={} in_flight={}",
-                    block_n,
-                    execute_start.elapsed().as_secs_f64() * 1000.0,
-                    result.is_ok(),
+                    "close_job_batch_processing_started start_block={} end_block={} batch_size={} in_flight={}",
+                    first_block_n,
+                    last_block_n,
+                    batch_len,
                     in_flight_worker.load(Ordering::Relaxed)
                 );
 
-                if let Err(_send_err) = job.completion.send(result) {
-                    tracing::debug!("Close job completion receiver dropped before finalizer send");
+                let mut payloads = Vec::with_capacity(batch_len);
+                let mut completions = Vec::with_capacity(batch_len);
+                for job in jobs {
+                    completions.push(job.completion);
+                    payloads.push(job.payload);
+                }
+
+                let execute_start = std::time::Instant::now();
+                let mut results = execute_fn(metrics.clone(), payloads).await;
+                if results.len() != batch_len {
+                    let message = format!(
+                        "Finalizer batch executor returned {} results for {} queued jobs",
+                        results.len(),
+                        batch_len
+                    );
+                    tracing::error!(
+                        start_block = first_block_n,
+                        end_block = last_block_n,
+                        returned_results = results.len(),
+                        expected_results = batch_len,
+                        "close_job_batch_result_mismatch"
+                    );
+                    results = (0..batch_len).map(|_| Err(anyhow!(message.clone()))).collect();
+                }
+
+                for (block_n, result) in block_numbers.into_iter().zip(results.iter()) {
+                    if let Err(error) = result {
+                        metrics.close_job_failures_total.add(1, &[]);
+                        tracing::error!(block_number = block_n, error = ?error, "close_job_processing_failed");
+                    }
+                }
+
+                let successful = results.iter().filter(|result| result.is_ok()).count();
+                tracing::debug!(
+                    "close_job_batch_processing_finished start_block={} end_block={} batch_size={} successful={} execute_duration_ms={} in_flight={}",
+                    first_block_n,
+                    last_block_n,
+                    batch_len,
+                    successful,
+                    execute_start.elapsed().as_secs_f64() * 1000.0,
+                    in_flight_worker.load(Ordering::Relaxed)
+                );
+
+                for (completion, result) in completions.into_iter().zip(results.into_iter()) {
+                    if let Err(_send_err) = completion.send(result) {
+                        tracing::debug!("Close job completion receiver dropped before finalizer send");
+                    }
                 }
             }
 
@@ -199,6 +249,10 @@ mod tests {
     }
 
     fn test_payload(block_n: u64) -> QueuedClosePayload {
+        test_payload_with_boundary(block_n, false)
+    }
+
+    fn test_payload_with_boundary(block_n: u64, is_boundary: bool) -> QueuedClosePayload {
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         QueuedClosePayload {
             db_payload: DbCloseJobPayload { block_n },
@@ -213,17 +267,19 @@ mod tests {
                 nonces: vec![],
                 migrated_compiled_classes: vec![],
             },
+            is_boundary,
             trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint,
-            trie_handle: None,
+            trie_batch_handle: None,
+            trie_batch_index: None,
             enqueued_at: Instant::now(),
         }
     }
 
     async fn test_execute(
         _metrics: Arc<BlockProductionMetrics>,
-        payload: QueuedClosePayload,
-    ) -> Result<CloseJobCompletion> {
-        Ok(CloseJobCompletion { block_n: payload.db_payload.block_n })
+        payloads: Vec<QueuedClosePayload>,
+    ) -> Vec<Result<CloseJobCompletion>> {
+        payloads.into_iter().map(|payload| Ok(CloseJobCompletion { block_n: payload.db_payload.block_n })).collect()
     }
 
     #[rstest]
@@ -281,22 +337,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn batches_stop_at_boundary() {
+        let seen_batches: Arc<std::sync::Mutex<Vec<Vec<u64>>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_batches_clone = Arc::clone(&seen_batches);
+        let execute_fn =
+            move |_metrics: Arc<BlockProductionMetrics>,
+                  payloads: Vec<QueuedClosePayload>|
+                  -> std::pin::Pin<Box<dyn Future<Output = Vec<Result<CloseJobCompletion>>> + Send>> {
+                let seen_batches = Arc::clone(&seen_batches_clone);
+                Box::pin(async move {
+                    let block_numbers: Vec<_> = payloads.iter().map(|payload| payload.db_payload.block_n).collect();
+                    seen_batches.lock().expect("batch log mutex").push(block_numbers.clone());
+                    payloads
+                        .into_iter()
+                        .map(|payload| Ok(CloseJobCompletion { block_n: payload.db_payload.block_n }))
+                        .collect()
+                })
+            };
+
+        let metrics = Arc::new(BlockProductionMetrics::register());
+        let (handle, task_handle) = FinalizerHandle::spawn(8, metrics, execute_fn);
+
+        let mut receivers = Vec::new();
+        for (block_n, is_boundary) in [(0_u64, false), (1, true), (2, false), (3, false)] {
+            let (_, recv) =
+                handle.try_enqueue(test_payload_with_boundary(block_n, is_boundary)).expect("enqueue should succeed");
+            receivers.push(recv);
+        }
+
+        for recv in receivers {
+            recv.await.expect("channel open").expect("close ok");
+        }
+
+        drop(handle);
+        task_handle.join().await.expect("worker should complete cleanly");
+
+        assert_eq!(
+            *seen_batches.lock().expect("batch log mutex"),
+            vec![vec![0, 1], vec![2, 3]],
+            "worker should batch up to the first boundary, then start a new batch"
+        );
+    }
+
+    #[tokio::test]
     async fn drain_shutdown_completes_in_flight_job() {
         let gate = Arc::new(tokio::sync::Notify::new());
         let gate_clone = gate.clone();
 
-        let execute_fn = move |_metrics: Arc<BlockProductionMetrics>,
-                               payload: QueuedClosePayload|
-              -> std::pin::Pin<Box<dyn Future<Output = Result<CloseJobCompletion>> + Send>> {
-            let gate = gate_clone.clone();
-            Box::pin(async move {
-                if payload.db_payload.block_n == 0 {
-                    // Block until gate is released, simulating in-flight work during shutdown.
-                    gate.notified().await;
-                }
-                Ok(CloseJobCompletion { block_n: payload.db_payload.block_n })
-            })
-        };
+        let execute_fn =
+            move |_metrics: Arc<BlockProductionMetrics>,
+                  payloads: Vec<QueuedClosePayload>|
+                  -> std::pin::Pin<Box<dyn Future<Output = Vec<Result<CloseJobCompletion>>> + Send>> {
+                let gate = gate_clone.clone();
+                Box::pin(async move {
+                    if payloads.iter().any(|payload| payload.db_payload.block_n == 0) {
+                        // Block until gate is released, simulating in-flight work during shutdown.
+                        gate.notified().await;
+                    }
+                    payloads
+                        .into_iter()
+                        .map(|payload| Ok(CloseJobCompletion { block_n: payload.db_payload.block_n }))
+                        .collect()
+                })
+            };
 
         let metrics = Arc::new(BlockProductionMetrics::register());
         let (handle, task_handle) = FinalizerHandle::spawn(4, metrics, execute_fn);

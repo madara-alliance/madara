@@ -32,6 +32,14 @@ pub struct Batcher {
 }
 
 impl Batcher {
+    fn replay_current_block_n(head_state: mc_db::chain_head::ChainHeadState) -> u64 {
+        head_state
+            .internal_preconfirmed_tip
+            .or(head_state.external_preconfirmed_tip)
+            .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
+            .unwrap_or(0)
+    }
+
     pub fn new(
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
@@ -129,10 +137,7 @@ impl Batcher {
             let mut chunk_size = self.batch_size;
             if self.replay_mode_enabled {
                 let head_state = self.backend.chain_head_state();
-                let current_block_n = head_state
-                    .external_preconfirmed_tip
-                    .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
-                    .unwrap_or(0);
+                let current_block_n = Self::replay_current_block_n(head_state);
 
                 if let Some(remaining) = self.backend.replay_boundary_remaining_dispatch_capacity(current_block_n) {
                     if remaining == 0 {
@@ -186,10 +191,7 @@ impl Batcher {
                 tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
                 if self.replay_mode_enabled {
                     let head_state = self.backend.chain_head_state();
-                    let current_block_n = head_state
-                        .external_preconfirmed_tip
-                        .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
-                        .unwrap_or(0);
+                    let current_block_n = Self::replay_current_block_n(head_state);
                     if let Some(status) =
                         self.backend.replay_boundary_record_dispatched(current_block_n, batch.len() as u64)
                     {
@@ -209,5 +211,52 @@ impl Batcher {
                 permit.send(batch);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Batcher;
+    use mc_db::chain_head::ChainHeadState;
+
+    #[test]
+    fn replay_current_block_prefers_internal_preconfirmed_tip() {
+        let head = ChainHeadState {
+            confirmed_tip: Some(10),
+            external_preconfirmed_tip: Some(11),
+            internal_preconfirmed_tip: Some(15),
+        };
+
+        assert_eq!(Batcher::replay_current_block_n(head), 15);
+    }
+
+    #[test]
+    fn replay_current_block_falls_back_to_external_preconfirmed_tip() {
+        let head = ChainHeadState {
+            confirmed_tip: Some(10),
+            external_preconfirmed_tip: Some(11),
+            internal_preconfirmed_tip: None,
+        };
+
+        assert_eq!(Batcher::replay_current_block_n(head), 11);
+    }
+
+    #[test]
+    fn replay_current_block_falls_back_to_next_confirmed_block() {
+        let head = ChainHeadState {
+            confirmed_tip: Some(10),
+            external_preconfirmed_tip: None,
+            internal_preconfirmed_tip: None,
+        };
+
+        assert_eq!(Batcher::replay_current_block_n(head), 11);
+    }
+
+    #[test]
+    fn replay_current_block_uses_genesis_when_chain_is_empty() {
+        let head =
+            ChainHeadState { confirmed_tip: None, external_preconfirmed_tip: None, internal_preconfirmed_tip: None };
+
+        assert_eq!(Batcher::replay_current_block_n(head), 0);
     }
 }
