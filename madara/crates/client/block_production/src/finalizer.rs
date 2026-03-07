@@ -92,7 +92,7 @@ impl FinalizerHandle {
                     let queue_wait = job.payload.enqueued_at.elapsed();
                     metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
                 }
-                tracing::info!(
+                tracing::debug!(
                     "close_job_batch_processing_started start_block={} end_block={} batch_size={} in_flight={}",
                     first_block_n,
                     last_block_n,
@@ -133,7 +133,7 @@ impl FinalizerHandle {
                 }
 
                 let successful = results.iter().filter(|result| result.is_ok()).count();
-                tracing::info!(
+                tracing::debug!(
                     "close_job_batch_processing_finished start_block={} end_block={} batch_size={} successful={} execute_duration_ms={} in_flight={}",
                     first_block_n,
                     last_block_n,
