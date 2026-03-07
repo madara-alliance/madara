@@ -184,14 +184,29 @@ impl ExecutorThread {
         if let Some(block_hash) = get_hash_from_db()? {
             Ok(Some((block_n_min_10, block_hash)))
         } else {
-            tracing::debug!("Waiting on block_n={} to get closed. (current={})", block_n_min_10, block_n);
+            tracing::info!(
+                "executor_waiting_for_confirmed_hash required_block={} current_block={}",
+                block_n_min_10,
+                block_n
+            );
+            let wait_started = std::time::Instant::now();
             loop {
                 let mut receiver = self.backend.watch_chain_head_state();
                 // We need to re-query the DB here since the it is possible for the block hash to have arrived just in between.
                 if let Some(block_hash) = get_hash_from_db()? {
+                    tracing::info!(
+                        "executor_confirmed_hash_available required_block={} current_block={} wait_ms={}",
+                        block_n_min_10,
+                        block_n,
+                        wait_started.elapsed().as_secs_f64() * 1000.0
+                    );
                     break Ok(Some((block_n_min_10, block_hash)));
                 }
-                tracing::debug!("Waiting for hash of block_n-10.");
+                tracing::info!(
+                    "executor_confirmed_hash_still_pending required_block={} current_block={}",
+                    block_n_min_10,
+                    block_n
+                );
                 self.wait_rt.block_on(async { receiver.recv().await });
             }
         }
@@ -419,13 +434,13 @@ impl ExecutorThread {
                         .create_execution_state(state_new_block, l2_gas_consumed_block)
                         .context("Creating execution state")?;
                     l2_gas_consumed_block = 0;
-                    tracing::debug!(
+                    tracing::info!(
                         block_number = execution_state.exec_ctx.block_number,
                         create_execution_state_ms = create_state_start.elapsed().as_secs_f64() * 1000.0,
                         "executor_new_block_state_created"
                     );
 
-                    tracing::debug!("Starting new block, block_n={}", execution_state.exec_ctx.block_number);
+                    tracing::info!("executor_start_new_block block_number={}", execution_state.exec_ctx.block_number);
                     if self
                         .replies_sender
                         .blocking_send(super::ExecutorMessage::StartNewBlock {
@@ -473,7 +488,7 @@ impl ExecutorThread {
                 (String::new(), "")
             };
             if has_txs_in_batch {
-                tracing::debug!(
+                tracing::info!(
                     "executor_batch_execution_started block_number={} txs_in_batch={} first_tx_hash={} first_tx_type={}",
                     execution_state.exec_ctx.block_number,
                     to_exec.len(),
@@ -580,7 +595,7 @@ impl ExecutorThread {
             let exec_result =
                 super::BatchExecutionResult { executed_txs, blockifier_results, stats, emitted_at: StdInstant::now() };
             if has_txs_in_batch {
-                tracing::debug!(
+                tracing::info!(
                     "executor_batch_execution_finished block_number={} txs_requested={} txs_executed={} txs_added_to_block={} txs_reverted={} txs_rejected={} batch_exec_duration_ms={} block_full={} first_tx_hash={} first_tx_type={}",
                     execution_state.exec_ctx.block_number,
                     exec_result.executed_txs.len(),
@@ -618,7 +633,7 @@ impl ExecutorThread {
             };
 
             if should_close {
-                tracing::debug!(
+                tracing::info!(
                     "Ending block block_n={} (force_close={force_close}, block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached}, replay_boundary_exists={replay_boundary_exists}, replay_boundary_met={replay_boundary_met})",
                     block_n,
                 );
@@ -627,7 +642,7 @@ impl ExecutorThread {
                 let finalize_secs = finalize_start.elapsed().as_secs_f64();
                 self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
                 self.metrics.executor_finalize_last.record(finalize_secs, &[]);
-                tracing::debug!(
+                tracing::info!(
                     block_number = block_n,
                     finalize_ms = finalize_secs * 1000.0,
                     "executor_finalize_complete"
@@ -641,7 +656,7 @@ impl ExecutorThread {
                     // Receiver closed
                     break Ok(());
                 }
-                tracing::debug!(
+                tracing::info!(
                     block_number = block_n,
                     force_close = force_close,
                     block_full = block_full,
@@ -653,7 +668,7 @@ impl ExecutorThread {
                 next_block_deadline = Instant::now() + block_time;
                 let end_block_start = Instant::now();
                 state = self.end_block(execution_state).context("Ending block")?;
-                tracing::debug!(
+                tracing::info!(
                     end_block_ms = end_block_start.elapsed().as_secs_f64() * 1000.0,
                     "executor_end_block_state_transition_complete"
                 );
