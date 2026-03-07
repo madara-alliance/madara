@@ -115,7 +115,14 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                     confirmed_tip = ?head.confirmed_tip,
                     external_preconfirmed_tip = ?head.external_preconfirmed_tip,
                     internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
-                    "bypass_add_invoke_transaction_completed"
+                    "bypass_add_invoke_transaction_completed transaction_hash={:?} tx_version={:?} is_query={} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+                    result.transaction_hash,
+                    tx_version,
+                    is_query,
+                    elapsed_ms,
+                    head.confirmed_tip,
+                    head.external_preconfirmed_tip,
+                    head.internal_preconfirmed_tip
                 );
                 Ok(result)
             }
@@ -129,7 +136,14 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                     external_preconfirmed_tip = ?head.external_preconfirmed_tip,
                     internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
                     error = %err,
-                    "bypass_add_invoke_transaction_failed"
+                    "bypass_add_invoke_transaction_failed tx_version={:?} is_query={} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?} error={}",
+                    tx_version,
+                    is_query,
+                    elapsed_ms,
+                    head.confirmed_tip,
+                    head.external_preconfirmed_tip,
+                    head.internal_preconfirmed_tip,
+                    err
                 );
                 Err(StarknetRpcApiError::from(err).into())
             }
@@ -312,7 +326,13 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             confirmed_tip = ?head.confirmed_tip,
             external_preconfirmed_tip = ?head.external_preconfirmed_tip,
             internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
-            "custom_block_header_set"
+            "custom_block_header_set block_number={} timestamp={} expected_block_hash={:?} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+            custom_block_headers.block_n,
+            custom_block_headers.timestamp,
+            custom_block_headers.expected_block_hash,
+            head.confirmed_tip,
+            head.external_preconfirmed_tip,
+            head.internal_preconfirmed_tip
         );
         self.backend.set_custom_header(custom_block_headers);
         Ok(())
@@ -354,7 +374,19 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             confirmed_tip = ?head.confirmed_tip,
             external_preconfirmed_tip = ?head.external_preconfirmed_tip,
             internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
-            "replay_boundary_set_rpc"
+            "replay_boundary_set_rpc block_number={} expected_tx_count={} last_tx_hash={:?} dispatched_tx_count={} executed_tx_count={} boundary_met={} closed={} mismatch={:?} rpc_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+            replay_boundary.block_n,
+            replay_boundary.expected_tx_count,
+            replay_boundary.last_tx_hash,
+            status.dispatched_tx_count,
+            status.executed_tx_count,
+            status.boundary_met,
+            status.closed,
+            status.mismatch,
+            elapsed_ms,
+            head.confirmed_tip,
+            head.external_preconfirmed_tip,
+            head.internal_preconfirmed_tip
         );
 
         Ok(status)

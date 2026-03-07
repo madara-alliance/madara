@@ -72,7 +72,9 @@ impl Batcher {
                     permit_wait_ms,
                     output_capacity_before_wait,
                     output_capacity_after_reserve = self.out.capacity(),
-                    "batcher_output_permit_acquired"
+                    "batcher_output_permit_acquired permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
+                    output_capacity_before_wait,
+                    self.out.capacity()
                 );
             }
 
@@ -180,14 +182,22 @@ impl Batcher {
                         confirmed_tip = ?head.confirmed_tip,
                         external_preconfirmed_tip = ?head.external_preconfirmed_tip,
                         internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
-                        "batcher_batch_ready"
+                        "batcher_batch_ready tx_count={} batch_wait_ms={batch_wait_ms} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+                        batch.len(),
+                        head.confirmed_tip,
+                        head.external_preconfirmed_tip,
+                        head.internal_preconfirmed_tip
                     );
                 } else {
                     tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
                 }
                 permit.send(batch);
                 if self.replay_mode_enabled {
-                    tracing::info!(output_capacity_after_send = self.out.capacity(), "batcher_batch_sent");
+                    tracing::info!(
+                        output_capacity_after_send = self.out.capacity(),
+                        "batcher_batch_sent output_capacity_after_send={}",
+                        self.out.capacity()
+                    );
                 }
             }
         }

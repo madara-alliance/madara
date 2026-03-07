@@ -31,7 +31,10 @@ impl SubmitValidatedTransaction for BypassInput {
             available_capacity_before_send,
             available_capacity_after_send = self.0.capacity(),
             send_wait_ms = send_started.elapsed().as_secs_f64() * 1000.0,
-            "bypass_input_tx_enqueued"
+            "bypass_input_tx_enqueued tx_hash={tx_hash:#x} available_capacity_before_send={} available_capacity_after_send={} send_wait_ms={}",
+            available_capacity_before_send,
+            self.0.capacity(),
+            send_started.elapsed().as_secs_f64() * 1000.0
         );
         Ok(())
     }
