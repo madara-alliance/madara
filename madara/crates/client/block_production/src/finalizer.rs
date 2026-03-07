@@ -2,6 +2,7 @@ use crate::close_queue::{CloseJobCompletion, QueuedCloseJob, QueuedClosePayload}
 use crate::metrics::BlockProductionMetrics;
 use anyhow::{anyhow, bail, Context, Result};
 use mc_db::close_pipeline_contract::{ClosePreconfirmedResult, QueuedMeta};
+use opentelemetry::KeyValue;
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -34,6 +35,7 @@ pub(crate) struct FinalizerHandle {
     sender: mpsc::Sender<QueuedCloseJob>,
     configured_capacity: usize,
     in_flight: Arc<AtomicUsize>,
+    metrics: Arc<BlockProductionMetrics>,
 }
 
 /// Handle for joining the finalizer worker task on shutdown.
@@ -63,6 +65,7 @@ impl FinalizerHandle {
         let (sender, receiver) = mpsc::channel(capacity);
         let in_flight = Arc::new(AtomicUsize::new(0));
         let in_flight_worker = Arc::clone(&in_flight);
+        let handle_metrics = Arc::clone(&metrics);
 
         let join_handle = tokio::spawn(async move {
             let mut receiver: mpsc::Receiver<QueuedCloseJob> = receiver;
@@ -71,7 +74,7 @@ impl FinalizerHandle {
                 let block_n = job.payload.db_payload.block_n;
                 let queue_wait = job.payload.enqueued_at.elapsed();
                 metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
-                tracing::info!(
+                tracing::debug!(
                     "close_job_processing_started block_number={} queue_wait_ms={} in_flight={}",
                     block_n,
                     queue_wait.as_secs_f64() * 1000.0,
@@ -80,7 +83,11 @@ impl FinalizerHandle {
 
                 let execute_start = std::time::Instant::now();
                 let result = execute_fn(metrics.clone(), job.payload).await;
-                tracing::info!(
+                if let Err(error) = &result {
+                    metrics.close_job_failures_total.add(1, &[]);
+                    tracing::error!(block_number = block_n, error = ?error, "close_job_processing_failed");
+                }
+                tracing::debug!(
                     "close_job_processing_finished block_number={} execute_duration_ms={} success={} in_flight={}",
                     block_n,
                     execute_start.elapsed().as_secs_f64() * 1000.0,
@@ -89,14 +96,14 @@ impl FinalizerHandle {
                 );
 
                 if let Err(_send_err) = job.completion.send(result) {
-                    tracing::warn!("Close job completion receiver dropped before finalizer send");
+                    tracing::debug!("Close job completion receiver dropped before finalizer send");
                 }
             }
 
             Ok(())
         });
 
-        let handle = Self { sender, configured_capacity: capacity, in_flight };
+        let handle = Self { sender, configured_capacity: capacity, in_flight, metrics: handle_metrics };
         let task_handle = FinalizerTaskHandle { join_handle };
         (handle, task_handle)
     }
@@ -129,9 +136,20 @@ impl FinalizerHandle {
                 Ok((ClosePreconfirmedResult::Queued(queued), receiver))
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
+                self.metrics.close_queue_enqueue_failures_total.add(1, &[KeyValue::new("reason", "full")]);
+                tracing::warn!(
+                    block_number = block_n,
+                    queue_depth = self.current_depth(),
+                    queue_capacity = self.configured_capacity,
+                    queue_in_flight = self.current_in_flight(),
+                    "close_queue_backpressure"
+                );
                 bail!("Close queue is full (capacity={}), invariant/config violation", self.configured_capacity)
             }
-            Err(mpsc::error::TrySendError::Closed(_)) => Err(anyhow!("Close queue is closed")),
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                self.metrics.close_queue_enqueue_failures_total.add(1, &[KeyValue::new("reason", "closed")]);
+                Err(anyhow!("Close queue is closed"))
+            }
         }
     }
 }

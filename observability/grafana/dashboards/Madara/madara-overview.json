@@ -1258,12 +1258,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
-          "legendFormat": "Requests/s",
+          "expr": "sum by (transport) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m]))",
+          "legendFormat": "{{transport}}",
           "refId": "A"
         }
       ],
-      "title": "RPC Request Rate",
+      "title": "RPC Transport Rate",
       "type": "timeseries"
     },
     {
@@ -1733,12 +1733,21 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}",
-          "legendFormat": "Active Sessions",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(ws_sessions_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
+          "legendFormat": "p50",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(ws_sessions_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\", pod!~\".*fullnode.*\"}[5m])))",
+          "legendFormat": "p90",
+          "refId": "B"
         }
       ],
-      "title": "Active WebSocket Sessions",
+      "title": "WebSocket Session Duration",
       "type": "timeseries"
     },
     {

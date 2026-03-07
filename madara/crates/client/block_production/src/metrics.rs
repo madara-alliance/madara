@@ -43,6 +43,8 @@ pub struct BlockProductionMetrics {
     pub parallel_root_await_duration: Histogram<f64>,
     pub parallel_root_await_last: Gauge<f64>,
     pub parallel_root_failures_total: Counter<u64>,
+    pub close_queue_enqueue_failures_total: Counter<u64>,
+    pub close_job_failures_total: Counter<u64>,
     pub close_queue_depth: Gauge<u64>,
     pub close_queue_enqueued_total: Counter<u64>,
     pub close_queue_dequeued_total: Counter<u64>,
@@ -281,6 +283,18 @@ impl BlockProductionMetrics {
             "Count of parallel root computation failures".to_string(),
             "failure".to_string(),
         );
+        let close_queue_enqueue_failures_total = register_counter_metric_instrument(
+            &meter,
+            "close_queue_enqueue_failures_total".to_string(),
+            "Count of close queue enqueue failures".to_string(),
+            "failure".to_string(),
+        );
+        let close_job_failures_total = register_counter_metric_instrument(
+            &meter,
+            "close_job_failures_total".to_string(),
+            "Count of close jobs that failed in the finalizer pipeline".to_string(),
+            "failure".to_string(),
+        );
         let close_queue_depth = register_gauge_metric_instrument(
             &meter,
             "close_queue_depth".to_string(),
@@ -446,6 +460,8 @@ impl BlockProductionMetrics {
             parallel_root_await_duration,
             parallel_root_await_last,
             parallel_root_failures_total,
+            close_queue_enqueue_failures_total,
+            close_job_failures_total,
             close_queue_depth,
             close_queue_enqueued_total,
             close_queue_dequeued_total,
