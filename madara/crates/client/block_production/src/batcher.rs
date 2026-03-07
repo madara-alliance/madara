@@ -15,7 +15,6 @@ use mp_transactions::{
 };
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 
@@ -28,18 +27,10 @@ pub struct Batcher {
     bypass_in: mpsc::Receiver<ValidatedTransaction>,
     mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     batch_size: usize,
-    replay_mode_enabled: bool,
+    _replay_mode_enabled: bool,
 }
 
 impl Batcher {
-    fn replay_current_block_n(head_state: mc_db::chain_head::ChainHeadState) -> u64 {
-        head_state
-            .internal_preconfirmed_tip
-            .or(head_state.external_preconfirmed_tip)
-            .or(head_state.confirmed_tip.and_then(|block_n| block_n.checked_add(1)))
-            .unwrap_or(0)
-    }
-
     pub fn new(
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
@@ -48,7 +39,7 @@ impl Batcher {
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
         mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
-        replay_mode_enabled: bool,
+        _replay_mode_enabled: bool,
     ) -> Self {
         Self {
             mempool,
@@ -59,7 +50,7 @@ impl Batcher {
             mempool_intake_rx,
             batch_size: backend.chain_config().block_production_concurrency.batch_size,
             backend,
-            replay_mode_enabled,
+            _replay_mode_enabled,
         }
     }
 
@@ -134,28 +125,7 @@ impl Batcher {
             // This means that when the congestion is very low (mempool empty & no pending l1 msg), when a
             // transaction arrives we can instantly pick it up and send it for execution, ensuring the lowest latency possible.
 
-            let mut chunk_size = self.batch_size;
-            if self.replay_mode_enabled {
-                let head_state = self.backend.chain_head_state();
-                let current_block_n = Self::replay_current_block_n(head_state);
-
-                if let Some(remaining) = self.backend.replay_boundary_remaining_dispatch_capacity(current_block_n) {
-                    if remaining == 0 {
-                        tokio::select! {
-                            _ = self.ctx.cancelled() => return anyhow::Ok(()),
-                            res = self.mempool_intake_rx.changed() => {
-                                if res.is_err() {
-                                    return anyhow::Ok(());
-                                }
-                            }
-                            _ = tokio::time::sleep(Duration::from_millis(25)) => {}
-                        }
-                        continue;
-                    }
-
-                    chunk_size = chunk_size.min(remaining as usize);
-                }
-            }
+            let chunk_size = self.batch_size;
 
             let tx_stream = stream::select_with_strategy(
                 bypass_txs_stream,
@@ -189,74 +159,8 @@ impl Batcher {
 
             if !batch.is_empty() {
                 tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
-                if self.replay_mode_enabled {
-                    let head_state = self.backend.chain_head_state();
-                    let current_block_n = Self::replay_current_block_n(head_state);
-                    if let Some(status) =
-                        self.backend.replay_boundary_record_dispatched(current_block_n, batch.len() as u64)
-                    {
-                        if let Some(mismatch) = status.mismatch {
-                            tracing::warn!(
-                                "replay_boundary_mismatch_after_dispatch block_number={} expected_tx_count={} dispatched_tx_count={} executed_tx_count={} message={}",
-                                current_block_n,
-                                status.expected_tx_count,
-                                status.dispatched_tx_count,
-                                status.executed_tx_count,
-                                mismatch
-                            );
-                        }
-                    }
-                }
-
                 permit.send(batch);
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Batcher;
-    use mc_db::chain_head::ChainHeadState;
-
-    #[test]
-    fn replay_current_block_prefers_internal_preconfirmed_tip() {
-        let head = ChainHeadState {
-            confirmed_tip: Some(10),
-            external_preconfirmed_tip: Some(11),
-            internal_preconfirmed_tip: Some(15),
-        };
-
-        assert_eq!(Batcher::replay_current_block_n(head), 15);
-    }
-
-    #[test]
-    fn replay_current_block_falls_back_to_external_preconfirmed_tip() {
-        let head = ChainHeadState {
-            confirmed_tip: Some(10),
-            external_preconfirmed_tip: Some(11),
-            internal_preconfirmed_tip: None,
-        };
-
-        assert_eq!(Batcher::replay_current_block_n(head), 11);
-    }
-
-    #[test]
-    fn replay_current_block_falls_back_to_next_confirmed_block() {
-        let head = ChainHeadState {
-            confirmed_tip: Some(10),
-            external_preconfirmed_tip: None,
-            internal_preconfirmed_tip: None,
-        };
-
-        assert_eq!(Batcher::replay_current_block_n(head), 11);
-    }
-
-    #[test]
-    fn replay_current_block_uses_genesis_when_chain_is_empty() {
-        let head =
-            ChainHeadState { confirmed_tip: None, external_preconfirmed_tip: None, internal_preconfirmed_tip: None };
-
-        assert_eq!(Batcher::replay_current_block_n(head), 0);
     }
 }
