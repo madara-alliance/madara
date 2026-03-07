@@ -19,6 +19,9 @@ use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::time::Instant;
 
+const BATCHER_OUTPUT_BACKPRESSURE_INFO_MS: f64 = 50.0;
+const BATCHER_INPUT_WAIT_INFO_MS: f64 = 100.0;
+
 pub struct Batcher {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
@@ -68,14 +71,19 @@ impl Batcher {
             };
             let permit_wait_ms = permit_wait_started.elapsed().as_secs_f64() * 1000.0;
             if self.replay_mode_enabled {
-                tracing::info!(
-                    permit_wait_ms,
-                    output_capacity_before_wait,
-                    output_capacity_after_reserve = self.out.capacity(),
-                    "batcher_output_permit_acquired permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
-                    output_capacity_before_wait,
-                    self.out.capacity()
-                );
+                if permit_wait_ms >= BATCHER_OUTPUT_BACKPRESSURE_INFO_MS {
+                    tracing::info!(
+                        "batcher_output_backpressured permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
+                        output_capacity_before_wait,
+                        self.out.capacity()
+                    );
+                } else {
+                    tracing::debug!(
+                        "batcher_output_permit_acquired permit_wait_ms={permit_wait_ms} output_capacity_before_wait={} output_capacity_after_reserve={}",
+                        output_capacity_before_wait,
+                        self.out.capacity()
+                    );
+                }
             }
 
             // We have 3 transactions streams:
@@ -176,29 +184,27 @@ impl Batcher {
                 let batch_wait_ms = batch_wait_started.elapsed().as_secs_f64() * 1000.0;
                 if self.replay_mode_enabled {
                     let head = self.backend.chain_head_state();
-                    tracing::info!(
-                        tx_count = batch.len(),
-                        batch_wait_ms,
-                        confirmed_tip = ?head.confirmed_tip,
-                        external_preconfirmed_tip = ?head.external_preconfirmed_tip,
-                        internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
-                        "batcher_batch_ready tx_count={} batch_wait_ms={batch_wait_ms} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
-                        batch.len(),
-                        head.confirmed_tip,
-                        head.external_preconfirmed_tip,
-                        head.internal_preconfirmed_tip
-                    );
+                    if batch_wait_ms >= BATCHER_INPUT_WAIT_INFO_MS {
+                        tracing::info!(
+                            "batcher_batch_ready_after_wait tx_count={} batch_wait_ms={batch_wait_ms} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+                            batch.len(),
+                            head.confirmed_tip,
+                            head.external_preconfirmed_tip,
+                            head.internal_preconfirmed_tip
+                        );
+                    } else {
+                        tracing::debug!(
+                            "batcher_batch_ready tx_count={} batch_wait_ms={batch_wait_ms} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
+                            batch.len(),
+                            head.confirmed_tip,
+                            head.external_preconfirmed_tip,
+                            head.internal_preconfirmed_tip
+                        );
+                    }
                 } else {
                     tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
                 }
                 permit.send(batch);
-                if self.replay_mode_enabled {
-                    tracing::info!(
-                        output_capacity_after_send = self.out.capacity(),
-                        "batcher_batch_sent output_capacity_after_send={}",
-                        self.out.capacity()
-                    );
-                }
             }
         }
     }
