@@ -119,12 +119,29 @@ impl ExecutorThread {
     }
     /// Returns None when the channel is closed.
     /// We want to close down the thread in that case.
-    fn wait_take_tx_batch(&mut self, deadline: Option<Instant>, should_wait: bool) -> WaitTxBatchOutcome {
+    fn wait_take_tx_batch(
+        &mut self,
+        current_block_n: Option<u64>,
+        deadline: Option<Instant>,
+        should_wait: bool,
+    ) -> WaitTxBatchOutcome {
         if let Ok(batch) = self.incoming_batches.try_recv() {
+            tracing::info!(
+                block_number = ?current_block_n,
+                tx_count = batch.len(),
+                receive_mode = "try_recv",
+                "executor_batch_received"
+            );
             return WaitTxBatchOutcome::Batch(batch);
         }
 
         if let Ok(cmd) = self.commands.try_recv() {
+            tracing::info!(
+                block_number = ?current_block_n,
+                command = ?cmd,
+                receive_mode = "try_recv",
+                "executor_command_received"
+            );
             return WaitTxBatchOutcome::Command(cmd);
         }
 
@@ -132,7 +149,12 @@ impl ExecutorThread {
             return WaitTxBatchOutcome::Batch(Default::default());
         }
 
-        tracing::debug!("Waiting for batch. until_block_time_deadline={}", deadline.is_some());
+        tracing::info!(
+            block_number = ?current_block_n,
+            until_block_time_deadline = deadline.is_some(),
+            "executor_waiting_for_batch"
+        );
+        let wait_started = StdInstant::now();
 
         // nb: tokio has blocking_recv, but no blocking_recv_timeout? this kinda sucks :(
         // especially because they do have it implemented in send_timeout and internally, they just have not exposed the
@@ -142,20 +164,40 @@ impl ExecutorThread {
         self.wait_rt.block_on(async {
             tokio::select! {
                 Some(cmd) = self.commands.recv() => {
-                    tracing::debug!("Got cmd {cmd:?}.");
+                    tracing::info!(
+                        block_number = ?current_block_n,
+                        command = ?cmd,
+                        wait_ms = wait_started.elapsed().as_secs_f64() * 1000.0,
+                        receive_mode = "recv",
+                        "executor_command_received"
+                    );
                     WaitTxBatchOutcome::Command(cmd)
                 }
                 _ = OptionFuture::from(deadline.map(tokio::time::sleep_until)) => {
-                    tracing::debug!("Waiting for batch timed out.");
+                    tracing::info!(
+                        block_number = ?current_block_n,
+                        wait_ms = wait_started.elapsed().as_secs_f64() * 1000.0,
+                        "executor_batch_wait_timed_out"
+                    );
                     WaitTxBatchOutcome::Batch(Default::default())
                 }
                 el = self.incoming_batches.recv() => match el {
                     Some(el) => {
-                        tracing::debug!("Got new batch with {} transactions.", el.len());
+                        tracing::info!(
+                            block_number = ?current_block_n,
+                            tx_count = el.len(),
+                            wait_ms = wait_started.elapsed().as_secs_f64() * 1000.0,
+                            receive_mode = "recv",
+                            "executor_batch_received"
+                        );
                         WaitTxBatchOutcome::Batch(el)
                     }
                     None => {
-                        tracing::debug!("Batch channel closed.");
+                        tracing::info!(
+                            block_number = ?current_block_n,
+                            wait_ms = wait_started.elapsed().as_secs_f64() * 1000.0,
+                            "executor_batch_channel_closed"
+                        );
                         WaitTxBatchOutcome::Exit
                     }
                 }
@@ -321,7 +363,15 @@ impl ExecutorThread {
                 };
                 // should_wait: We don't want to wait if we already have transactions to process - but we would still like to fill up our batch if possible.
 
-                let taken = match self.wait_take_tx_batch(wait_deadline, /* should_wait */ to_exec.is_empty()) {
+                let current_block_n = match &state {
+                    ExecutorThreadState::Executing(executing_state) => Some(executing_state.exec_ctx.block_number),
+                    ExecutorThreadState::NewBlock(new_block_state) => Some(new_block_state.state_adaptor.block_n()),
+                };
+                let taken = match self.wait_take_tx_batch(
+                    current_block_n,
+                    wait_deadline,
+                    /* should_wait */ to_exec.is_empty(),
+                ) {
                     // Got a batch
                     WaitTxBatchOutcome::Batch(batch_to_execute) => batch_to_execute,
                     // Got a command

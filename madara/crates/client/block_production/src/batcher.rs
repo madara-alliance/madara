@@ -17,6 +17,7 @@ use mp_utils::service::ServiceContext;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
+use tokio::time::Instant;
 
 pub struct Batcher {
     backend: Arc<MadaraBackend>,
@@ -27,7 +28,7 @@ pub struct Batcher {
     bypass_in: mpsc::Receiver<ValidatedTransaction>,
     mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
     batch_size: usize,
-    _replay_mode_enabled: bool,
+    replay_mode_enabled: bool,
 }
 
 impl Batcher {
@@ -39,7 +40,7 @@ impl Batcher {
         out: mpsc::Sender<BatchToExecute>,
         bypass_in: mpsc::Receiver<ValidatedTransaction>,
         mempool_intake_rx: watch::Receiver<MempoolIntakeMode>,
-        _replay_mode_enabled: bool,
+        replay_mode_enabled: bool,
     ) -> Self {
         Self {
             mempool,
@@ -50,7 +51,7 @@ impl Batcher {
             mempool_intake_rx,
             batch_size: backend.chain_config().block_production_concurrency.batch_size,
             backend,
-            _replay_mode_enabled,
+            replay_mode_enabled,
         }
     }
 
@@ -59,10 +60,21 @@ impl Batcher {
             // We use the permit API so that we don't have to remove transactions from the mempool until the last moment.
             // The buffer inside the channel is of size 1 - meaning we're preparing the next batch of transactions that will immediately be executed next, once
             // the worker has finished executing its current one.
+            let permit_wait_started = Instant::now();
+            let output_capacity_before_wait = self.out.capacity();
             let Some(Ok(permit)) = self.ctx.run_until_cancelled(self.out.reserve()).await else {
                 // Stop condition: service stopped (ctx), or batch sender closed.
                 return anyhow::Ok(());
             };
+            let permit_wait_ms = permit_wait_started.elapsed().as_secs_f64() * 1000.0;
+            if self.replay_mode_enabled {
+                tracing::info!(
+                    permit_wait_ms,
+                    output_capacity_before_wait,
+                    output_capacity_after_reserve = self.out.capacity(),
+                    "batcher_output_permit_acquired"
+                );
+            }
 
             // We have 3 transactions streams:
             // * bypass inclusion (for admin rpc/chain bootstrapping purposes)
@@ -136,6 +148,7 @@ impl Batcher {
 
             tokio::pin!(tx_stream);
 
+            let batch_wait_started = Instant::now();
             let batch = tokio::select! {
                 _ = self.ctx.cancelled() => {
                     // Stop condition: cancelled.
@@ -158,8 +171,24 @@ impl Batcher {
             };
 
             if !batch.is_empty() {
-                tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
+                let batch_wait_ms = batch_wait_started.elapsed().as_secs_f64() * 1000.0;
+                if self.replay_mode_enabled {
+                    let head = self.backend.chain_head_state();
+                    tracing::info!(
+                        tx_count = batch.len(),
+                        batch_wait_ms,
+                        confirmed_tip = ?head.confirmed_tip,
+                        external_preconfirmed_tip = ?head.external_preconfirmed_tip,
+                        internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
+                        "batcher_batch_ready"
+                    );
+                } else {
+                    tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
+                }
                 permit.send(batch);
+                if self.replay_mode_enabled {
+                    tracing::info!(output_capacity_after_send = self.out.capacity(), "batcher_batch_sent");
+                }
             }
         }
     }

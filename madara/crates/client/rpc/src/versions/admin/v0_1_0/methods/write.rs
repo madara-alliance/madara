@@ -92,13 +92,48 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
         &self,
         invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult> {
-        Ok(self
+        let tx_version = invoke_transaction.version();
+        let is_query = invoke_transaction.is_query();
+        let started = Instant::now();
+        let result = self
             .block_prod_handle
             .as_ref()
             .ok_or(StarknetRpcApiError::UnimplementedMethod)?
             .submit_invoke_transaction(invoke_transaction)
-            .await
-            .map_err(StarknetRpcApiError::from)?)
+            .await;
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let head = self.backend.chain_head_state();
+
+        match result {
+            Ok(result) => {
+                tracing::info!(
+                    target: "rpc::admin",
+                    transaction_hash = ?result.transaction_hash,
+                    tx_version = ?tx_version,
+                    is_query,
+                    rpc_ms = elapsed_ms,
+                    confirmed_tip = ?head.confirmed_tip,
+                    external_preconfirmed_tip = ?head.external_preconfirmed_tip,
+                    internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
+                    "bypass_add_invoke_transaction_completed"
+                );
+                Ok(result)
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "rpc::admin",
+                    tx_version = ?tx_version,
+                    is_query,
+                    rpc_ms = elapsed_ms,
+                    confirmed_tip = ?head.confirmed_tip,
+                    external_preconfirmed_tip = ?head.external_preconfirmed_tip,
+                    internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
+                    error = %err,
+                    "bypass_add_invoke_transaction_failed"
+                );
+                Err(StarknetRpcApiError::from(err).into())
+            }
+        }
     }
 
     /// Force close a block.
@@ -268,6 +303,17 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
+        let head = self.backend.chain_head_state();
+        tracing::info!(
+            target: "rpc::admin",
+            block_number = custom_block_headers.block_n,
+            timestamp = custom_block_headers.timestamp,
+            expected_block_hash = ?custom_block_headers.expected_block_hash,
+            confirmed_tip = ?head.confirmed_tip,
+            external_preconfirmed_tip = ?head.external_preconfirmed_tip,
+            internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
+            "custom_block_header_set"
+        );
         self.backend.set_custom_header(custom_block_headers);
         Ok(())
     }
@@ -290,7 +336,28 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             );
         }
 
-        Ok(self.backend.set_replay_boundary(replay_boundary))
+        let started = Instant::now();
+        let status = self.backend.set_replay_boundary(replay_boundary.clone());
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let head = self.backend.chain_head_state();
+        tracing::info!(
+            target: "rpc::admin",
+            block_number = replay_boundary.block_n,
+            expected_tx_count = replay_boundary.expected_tx_count,
+            last_tx_hash = ?replay_boundary.last_tx_hash,
+            dispatched_tx_count = status.dispatched_tx_count,
+            executed_tx_count = status.executed_tx_count,
+            boundary_met = status.boundary_met,
+            closed = status.closed,
+            mismatch = ?status.mismatch,
+            rpc_ms = elapsed_ms,
+            confirmed_tip = ?head.confirmed_tip,
+            external_preconfirmed_tip = ?head.external_preconfirmed_tip,
+            internal_preconfirmed_tip = ?head.internal_preconfirmed_tip,
+            "replay_boundary_set_rpc"
+        );
+
+        Ok(status)
     }
 
     async fn get_replay_boundary_status(&self, block_n: u64) -> RpcResult<Option<ReplayBlockBoundaryStatus>> {

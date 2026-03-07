@@ -13,7 +13,7 @@ use mp_rpc::v0_9_0::{
 };
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
 
@@ -22,7 +22,18 @@ struct BypassInput(mpsc::Sender<ValidatedTransaction>);
 #[async_trait]
 impl SubmitValidatedTransaction for BypassInput {
     async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
-        self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
+        let tx_hash = tx.hash;
+        let available_capacity_before_send = self.0.capacity();
+        let send_started = Instant::now();
+        self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))?;
+        tracing::info!(
+            tx_hash = ?tx_hash,
+            available_capacity_before_send,
+            available_capacity_after_send = self.0.capacity(),
+            send_wait_ms = send_started.elapsed().as_secs_f64() * 1000.0,
+            "bypass_input_tx_enqueued"
+        );
+        Ok(())
     }
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
         None
