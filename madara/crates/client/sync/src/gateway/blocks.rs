@@ -1,5 +1,6 @@
 use crate::{
     import::BlockImporter,
+    metrics::control_metrics,
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
     probe::ThrottledRepeatedFuture,
 };
@@ -15,7 +16,11 @@ use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use mp_state_update::StateDiff;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use mp_utils::AbortOnDrop;
-use std::{ops::Range, sync::Arc, time::Duration};
+use std::{
+    ops::Range,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::Mutex;
 
 pub type GatewayBlockSync = PipelineController<GatewaySyncSteps>;
@@ -91,13 +96,14 @@ impl GatewaySyncSteps {
     /// 4. If we reach genesis (block 0), use it as the common ancestor
     async fn find_common_ancestor(&self, starting_block_n: u64) -> anyhow::Result<mp_convert::Felt> {
         tracing::info!("🔍 Finding common ancestor starting from block {}", starting_block_n);
+        let search_started_at = Instant::now();
 
         let mut probe_block_n = starting_block_n;
 
         loop {
             if probe_block_n == 0 {
                 // At genesis - VERIFY it matches upstream to detect network misconfiguration
-                tracing::warn!("🔍 Reached genesis block, verifying against upstream...");
+                tracing::info!("🔍 Reached genesis block, verifying against upstream...");
 
                 let local_genesis_view = self
                     ._backend
@@ -114,11 +120,23 @@ impl GatewaySyncSteps {
                         let upstream_genesis_hash = upstream_genesis.block_hash;
 
                         if local_genesis_hash != upstream_genesis_hash {
-                            tracing::warn!("🔄 Genesis mismatch detected - starting automatic recovery");
-                            tracing::warn!("🔄 Wiping database and preparing to resync from upstream...");
+                            control_metrics().genesis_mismatch_total.add(1, &[]);
+                            control_metrics()
+                                .common_ancestor_search_duration
+                                .record(search_started_at.elapsed().as_secs_f64(), &[]);
+                            control_metrics().common_ancestor_distance_blocks.record(starting_block_n as f64, &[]);
+                            tracing::warn!(
+                                local_genesis_hash = format!("{local_genesis_hash:#x}"),
+                                upstream_genesis_hash = format!("{upstream_genesis_hash:#x}"),
+                                "sync_genesis_mismatch_detected"
+                            );
                             return Ok(Felt::ZERO);
                         }
 
+                        control_metrics()
+                            .common_ancestor_search_duration
+                            .record(search_started_at.elapsed().as_secs_f64(), &[]);
+                        control_metrics().common_ancestor_distance_blocks.record(starting_block_n as f64, &[]);
                         tracing::info!(
                             "✅ Genesis blocks match (hash={:#x}), using as common ancestor",
                             local_genesis_hash
@@ -151,6 +169,12 @@ impl GatewaySyncSteps {
 
                         if local_block_hash == gateway_hash {
                             // Found common ancestor!
+                            control_metrics()
+                                .common_ancestor_search_duration
+                                .record(search_started_at.elapsed().as_secs_f64(), &[]);
+                            control_metrics()
+                                .common_ancestor_distance_blocks
+                                .record(starting_block_n.saturating_sub(probe_block_n) as f64, &[]);
                             tracing::info!("✅ Found common ancestor at block {}", probe_block_n);
                             return Ok(local_block_hash);
                         } else {
@@ -188,36 +212,37 @@ impl GatewaySyncSteps {
     /// It should only be called when genesis mismatch is detected and the operator
     /// has explicitly enabled auto-recovery.
     async fn handle_genesis_mismatch(&self) -> anyhow::Result<()> {
-        tracing::warn!("Auto-recovery from genesis mismatch is enabled.");
-        tracing::warn!("All local blockchain data will be deleted and resynced from upstream.");
+        let started_at = Instant::now();
+        control_metrics().genesis_recovery_total.add(1, &[]);
+        tracing::warn!("sync_genesis_recovery_started");
 
         // Step 1: Remove ALL blocks from database
-        tracing::info!("🗑️  Removing all blocks from database...");
+        tracing::debug!("🗑️  Removing all blocks from database...");
         self._backend
             .db
             .remove_all_blocks_starting_from(0)
             .context("Removing all blocks during genesis mismatch recovery")?;
-        tracing::info!("✅ All blocks removed successfully");
+        tracing::debug!("✅ All blocks removed successfully");
 
         // Step 2: Reset head projection to empty
-        tracing::info!("🗑️  Resetting head projection to empty...");
+        tracing::debug!("🗑️  Resetting head projection to empty...");
         let empty_tip = mc_db::storage::StorageHeadProjection::Empty;
         self._backend
             .db
             .replace_head_projection(&empty_tip)
             .context("Resetting head projection during genesis mismatch recovery")?;
-        tracing::info!("✅ Head projection reset to empty");
+        tracing::debug!("✅ Head projection reset to empty");
 
         // Step 3: Flush database to ensure persistence
-        tracing::info!("🗑️  Flushing database...");
+        tracing::debug!("🗑️  Flushing database...");
         self._backend.db.flush().context("Flushing database after wipe")?;
-        tracing::info!("✅ Database flushed successfully");
+        tracing::debug!("✅ Database flushed successfully");
 
         // Step 4: Refresh backend cache
-        tracing::info!("🔄 Refreshing backend cache...");
+        tracing::debug!("🔄 Refreshing backend cache...");
         self._backend.refresh_head_projection_from_db().context("Refreshing head projection after database wipe")?;
-        tracing::info!("✅ Backend cache refreshed");
-        tracing::info!("🔄 Node will now resync from upstream genesis block...");
+        control_metrics().genesis_recovery_duration.record(started_at.elapsed().as_secs_f64(), &[]);
+        tracing::info!(recovery_ms = started_at.elapsed().as_secs_f64() * 1000.0, "sync_genesis_recovery_finished");
 
         Ok(())
     }
@@ -268,12 +293,12 @@ impl PipelineSteps for GatewaySyncSteps {
                         let upstream_genesis_hash = gateway_block.block_hash;
 
                         if local_genesis_hash != upstream_genesis_hash {
+                            control_metrics().genesis_mismatch_total.add(1, &[]);
                             tracing::warn!(
-                                "🔄 GENESIS MISMATCH DETECTED: local_genesis={:#x}, upstream_genesis={:#x}",
-                                local_genesis_hash, upstream_genesis_hash
+                                local_genesis_hash = format!("{local_genesis_hash:#x}"),
+                                upstream_genesis_hash = format!("{upstream_genesis_hash:#x}"),
+                                "sync_genesis_mismatch_detected"
                             );
-                            tracing::warn!("🔄 Cannot sync chains with different genesis blocks");
-                            tracing::warn!("🔄 Wiping database and preparing to resync from upstream...");
 
                             self.handle_genesis_mismatch().await?;
                             anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
@@ -294,6 +319,7 @@ impl PipelineSteps for GatewaySyncSteps {
                             let local_parent_hash = parent_info.block_hash;
 
                             if incoming_parent_hash != local_parent_hash {
+                                control_metrics().reorg_detected_total.add(1, &[]);
                                 tracing::warn!(
                                     "🔄 REORG DETECTED: Parent hash mismatch at block_n={}! incoming_parent={:#x}, our_parent={:#x}",
                                     block_n, incoming_parent_hash, local_parent_hash
@@ -301,17 +327,13 @@ impl PipelineSteps for GatewaySyncSteps {
 
                                 // Check if reorg is disabled
                                 if self.disable_reorg {
-                                    tracing::error!("❌ REORG DETECTED but reorg is explicitly denied by config!");
-                                    tracing::error!("   Block number: {}", block_n);
-                                    tracing::error!("   Expected parent hash: {:#x}", local_parent_hash);
-                                    tracing::error!("   Incoming parent hash: {:#x}", incoming_parent_hash);
-                                    tracing::error!("");
-                                    tracing::error!("⚠️  Divergent state detected - the local chain has diverged from the upstream chain.");
-                                    tracing::error!("⚠️  Blockchain reorganization is required but disabled by reorg is explicitly denied by config.");
-                                    tracing::error!("");
-                                    tracing::error!("To resolve this issue, you can:");
-                                    tracing::error!("  1. Allow auto reorgs using the config");
-                                    tracing::error!("  2. Manually investigate the divergence and wipe the database if needed");
+                                    control_metrics().reorg_required_but_disabled_total.add(1, &[]);
+                                    tracing::error!(
+                                        block_number = block_n,
+                                        expected_parent_hash = format!("{local_parent_hash:#x}"),
+                                        incoming_parent_hash = format!("{incoming_parent_hash:#x}"),
+                                        "sync_reorg_required_but_disabled"
+                                    );
                                     anyhow::bail!(
                                         "Reorg required but disabled by config. Parent hash mismatch at block {}: expected {:#x}, got {:#x}",
                                         block_n, local_parent_hash, incoming_parent_hash
@@ -324,10 +346,7 @@ impl PipelineSteps for GatewaySyncSteps {
                                 match self.find_common_ancestor(block_n - 1).await {
                                     Ok(common_ancestor_hash) => {
                                         if common_ancestor_hash == Felt::ZERO {
-                                            // Genesis mismatch - no common ancestor found
-                                            tracing::warn!("🔄 Genesis mismatch detected - starting automatic recovery");
-                                            tracing::warn!("🔄 Wiping database and preparing to resync from upstream...");
-                                            tracing::error!("❌ Genesis mismatch detected, aborting sync");
+                                            tracing::warn!("sync_genesis_mismatch_recovery_required");
                                             self.handle_genesis_mismatch().await?;
 
                                             anyhow::bail!("Genesis mismatch resolved - database cleared, restarting sync from upstream genesis");
@@ -341,6 +360,7 @@ impl PipelineSteps for GatewaySyncSteps {
                                             self._backend
                                                 .refresh_head_projection_from_db()
                                                 .context("Refreshing head projection after reorg")?;
+                                            control_metrics().reorg_processed_total.add(1, &[]);
                                             tracing::info!("✅ Reorg completed successfully, head projection cache refreshed, aborting pipeline to restart from new head projection");
 
                                             anyhow::bail!("Reorg detected and processed, restarting sync from new head projection");

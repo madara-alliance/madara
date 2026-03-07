@@ -419,7 +419,7 @@ impl ExecutorThread {
                         .create_execution_state(state_new_block, l2_gas_consumed_block)
                         .context("Creating execution state")?;
                     l2_gas_consumed_block = 0;
-                    tracing::info!(
+                    tracing::debug!(
                         block_number = execution_state.exec_ctx.block_number,
                         create_execution_state_ms = create_state_start.elapsed().as_secs_f64() * 1000.0,
                         "executor_new_block_state_created"
@@ -454,7 +454,7 @@ impl ExecutorThread {
                         let overflow_count = overflow_txs.len();
                         replay_next_block_buffer
                             .extend(BatchToExecute { txs: overflow_txs, additional_info: overflow_additional_info });
-                        tracing::info!(
+                        tracing::debug!(
                             "replay_boundary_executor_slice block_number={} remaining_for_block={} moved_to_next_block={}",
                             block_n,
                             remaining,
@@ -473,7 +473,7 @@ impl ExecutorThread {
                 (String::new(), "")
             };
             if has_txs_in_batch {
-                tracing::info!(
+                tracing::debug!(
                     "executor_batch_execution_started block_number={} txs_in_batch={} first_tx_hash={} first_tx_type={}",
                     execution_state.exec_ctx.block_number,
                     to_exec.len(),
@@ -580,7 +580,7 @@ impl ExecutorThread {
             let exec_result =
                 super::BatchExecutionResult { executed_txs, blockifier_results, stats, emitted_at: StdInstant::now() };
             if has_txs_in_batch {
-                tracing::info!(
+                tracing::debug!(
                     "executor_batch_execution_finished block_number={} txs_requested={} txs_executed={} txs_added_to_block={} txs_reverted={} txs_rejected={} batch_exec_duration_ms={} block_full={} first_tx_hash={} first_tx_type={}",
                     execution_state.exec_ctx.block_number,
                     exec_result.executed_txs.len(),
@@ -627,7 +627,7 @@ impl ExecutorThread {
                 let finalize_secs = finalize_start.elapsed().as_secs_f64();
                 self.metrics.executor_finalize_duration.record(finalize_secs, &[]);
                 self.metrics.executor_finalize_last.record(finalize_secs, &[]);
-                tracing::info!(
+                tracing::debug!(
                     block_number = block_n,
                     finalize_ms = finalize_secs * 1000.0,
                     "executor_finalize_complete"
@@ -641,7 +641,7 @@ impl ExecutorThread {
                     // Receiver closed
                     break Ok(());
                 }
-                tracing::info!(
+                tracing::debug!(
                     block_number = block_n,
                     force_close = force_close,
                     block_full = block_full,
@@ -653,7 +653,7 @@ impl ExecutorThread {
                 next_block_deadline = Instant::now() + block_time;
                 let end_block_start = Instant::now();
                 state = self.end_block(execution_state).context("Ending block")?;
-                tracing::info!(
+                tracing::debug!(
                     end_block_ms = end_block_start.elapsed().as_secs_f64() * 1000.0,
                     "executor_end_block_state_transition_complete"
                 );

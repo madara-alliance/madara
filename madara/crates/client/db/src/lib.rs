@@ -1028,20 +1028,6 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
             next_runtime_preconfirmed_block_n = ?next_runtime_preconfirmed_block_n,
             "chain_head_state_updated"
         );
-        tracing::info!(
-            target: "db::chain_head_projection",
-            "chain_head_state_updated transition={} prev_confirmed={:?} prev_external_preconfirmed={:?} prev_internal_preconfirmed={:?} next_confirmed={:?} next_external_preconfirmed={:?} next_internal_preconfirmed={:?} prev_runtime_preconfirmed={:?} next_runtime_preconfirmed={:?}",
-            transition,
-            previous_head_state.confirmed_tip,
-            previous_head_state.external_preconfirmed_tip,
-            previous_head_state.internal_preconfirmed_tip,
-            chain_head_state.confirmed_tip,
-            chain_head_state.external_preconfirmed_tip,
-            chain_head_state.internal_preconfirmed_tip,
-            previous_runtime_preconfirmed_block_n,
-            next_runtime_preconfirmed_block_n
-        );
-
         // Publish runtime preconfirmed first, then canonical head state.
         // This narrows the window where readers can observe a new head with stale runtime preconfirmed.
         self.preconfirmed_block_runtime.send_replace(preconfirmed);
@@ -1385,7 +1371,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().block_hash_compute_duration.record(hash_secs, &[]);
         metrics().block_hash_compute_last.record(hash_secs, &[]);
 
-        tracing::info!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
+        tracing::debug!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
         if let Some(header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
             let is_valid = header.is_block_hash_as_expected(&block_hash);
@@ -1475,7 +1461,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         metrics().block_hash_compute_duration.record(hash_secs, &[]);
         metrics().block_hash_compute_last.record(hash_secs, &[]);
 
-        tracing::info!("Block hash {block_hash:#x} computed for #{} (parallel merkle)", block.header.block_number);
+        tracing::debug!("Block hash {block_hash:#x} computed for #{} (parallel merkle)", block.header.block_number);
 
         if let Some(header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
             let is_valid = header.is_block_hash_as_expected(&block_hash);

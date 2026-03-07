@@ -304,7 +304,7 @@
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
-            "max"
+            "lastNotNull"
           ],
           "fields": "",
           "values": false
@@ -318,12 +318,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(transaction_counter_total{namespace=~\"$namespace\", pod=~\"$pod\"}[1m]))",
-          "legendFormat": "Max TPS",
+          "expr": "sum(mempool_ready_transactions{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Mempool Ready",
           "refId": "A"
         }
       ],
-      "title": "Max TPS",
+      "title": "Mempool Ready",
       "type": "stat"
     },
     {
@@ -1258,12 +1258,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
-          "legendFormat": "Requests/s",
+          "expr": "sum by (transport) (rate(calls_finished_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "legendFormat": "{{transport}}",
           "refId": "A"
         }
       ],
-      "title": "RPC Request Rate",
+      "title": "RPC Transport Rate",
       "type": "timeseries"
     },
     {
@@ -1700,7 +1700,7 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "ms"
         },
         "overrides": []
       },
@@ -1733,12 +1733,21 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ws_sessions_opened_total{namespace=~\"$namespace\", pod=~\"$pod\"} - ws_sessions_closed_total{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Active Sessions",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(ws_sessions_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "p50",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.90, sum by (le) (rate(ws_sessions_time_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])))",
+          "legendFormat": "p90",
+          "refId": "B"
         }
       ],
-      "title": "Active WebSocket Sessions",
+      "title": "WebSocket Session Duration",
       "type": "timeseries"
     },
     {
@@ -2184,7 +2193,7 @@
               }
             ]
           },
-          "unit": "Bps"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -2202,7 +2211,7 @@
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
-            "mean"
+            "lastNotNull"
           ],
           "fields": "",
           "values": false
@@ -2216,12 +2225,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(db_size{namespace=~\"$namespace\", pod=~\"$pod\"}[5m]))",
-          "legendFormat": "Growth Rate",
+          "expr": "sum(head_projection_violation_total{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Projection Violations",
           "refId": "A"
         }
       ],
-      "title": "Growth Rate",
+      "title": "Head Projection Violations",
       "type": "stat"
     },
     {
@@ -4921,9 +4930,36 @@
           "expr": "block_storage_diffs_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "Storage Diffs",
           "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_event_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Events",
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_nonce_updates_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Nonce Updates",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_consumed_l1_nonces_count{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Consumed L1 Nonces",
+          "refId": "G"
         }
       ],
-      "title": "Block State Diff Stats",
+      "title": "Block Data & State Diff",
       "type": "timeseries"
     },
     {
@@ -4985,8 +5021,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 114
+        "x": 0,
+        "y": 138
       },
       "id": 304,
       "options": {
@@ -5040,6 +5076,15 @@
           "expr": "block_bouncer_state_diff_size{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "State Diff Size",
           "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "block_bouncer_message_segment_length{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "Message Segment Length",
+          "refId": "E"
         }
       ],
       "title": "Bouncer Weights",
@@ -5097,15 +5142,15 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 122
+        "x": 12,
+        "y": 138
       },
       "id": 305,
       "options": {
@@ -5131,8 +5176,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "get_full_block_without_state_diff_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Fetch Block",
+          "expr": "sum(close_queue_depth{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Queue Depth",
           "refId": "A"
         },
         {
@@ -5140,8 +5185,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "block_commitments_compute_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Commitments",
+          "expr": "sum(close_queue_in_flight{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "In Flight",
           "refId": "B"
         },
         {
@@ -5149,8 +5194,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "apply_to_global_trie_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Merklization",
+          "expr": "sum(block_stage_pending_close_completions{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Pending Completions",
           "refId": "C"
         },
         {
@@ -5158,8 +5203,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "block_hash_compute_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Block Hash",
+          "expr": "sum(block_stage_diffs_since_snapshot{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Diffs Since Snapshot",
           "refId": "D"
         },
         {
@@ -5167,12 +5212,39 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "db_write_block_parts_last_seconds{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "Write Block to DB",
+          "expr": "sum(block_stage_executing_blocks{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "Executing Blocks",
           "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(close_queue_enqueue_failures_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "Enqueue Failures",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(close_job_failures_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "Close Job Failures",
+          "refId": "G"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(parallel_root_failures_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "Root Failures",
+          "refId": "H"
         }
       ],
-      "title": "Close Block Timing (Latest Values)",
+      "title": "Close Queue & Pipeline State",
       "type": "timeseries"
     },
     {
@@ -5673,58 +5745,6 @@
       "transformations": []
     },
     {
-      "id": 312,
-      "type": "timeseries",
-      "title": "Close Block Metrics (Loki)",
-      "description": "Close block timing metrics from structured logs (p50)",
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 167
-      },
-      "options": {
-        "legend": {
-          "showLegend": true,
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap close_block_total_ms [$__interval]) by ()",
-          "legendFormat": "Close Block Total (p50)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "showPoints": "never",
-            "spanNulls": true
-          }
-        },
-        "overrides": []
-      },
-      "transformations": []
-    },
-    {
       "id": 311,
       "type": "timeseries",
       "title": "Block Execution Stats (Loki)",
@@ -5861,11 +5881,11 @@
     {
       "id": 313,
       "type": "timeseries",
-      "title": "Bouncer Weights (Loki)",
-      "description": "Bouncer weights and gas consumption from structured logs",
+      "title": "Sync Recovery & Reorgs",
+      "description": "Recovery and reorg event counters from sync control metrics",
       "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
       },
       "gridPos": {
         "h": 10,
@@ -5878,7 +5898,11 @@
           "showLegend": true,
           "displayMode": "table",
           "placement": "right",
-          "calcs": ["lastNotNull", "mean", "max"]
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
         },
         "tooltip": {
           "mode": "multi",
@@ -5887,45 +5911,57 @@
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap l2_gas_consumed [$__interval]) by ()",
-          "legendFormat": "L2 Gas Consumed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(sync_reorg_detected_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "Reorg Detected",
           "refId": "A"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_l1_gas [$__interval]) by ()",
-          "legendFormat": "Bouncer L1 Gas",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(sync_reorg_processed_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "Reorg Processed",
           "refId": "B"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_sierra_gas [$__interval]) by ()",
-          "legendFormat": "Bouncer Sierra Gas",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(sync_reorg_required_but_disabled_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "Reorg Disabled",
           "refId": "C"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_n_events [$__interval]) by ()",
-          "legendFormat": "Bouncer Events",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(sync_genesis_mismatch_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "Genesis Mismatch",
           "refId": "D"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_message_segment_length [$__interval]) by ()",
-          "legendFormat": "Bouncer Msg Segment Len",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(sync_genesis_recovery_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "Genesis Recovery",
           "refId": "E"
         },
         {
-          "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
-          "editorMode": "code",
-          "expr": "avg_over_time({namespace=~\"$namespace\", pod=~\"$pod\"} |= \"close_block_complete\" | json | unwrap bouncer_state_diff_size [$__interval]) by ()",
-          "legendFormat": "Bouncer State Diff Size",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(sync_pipeline_reinitialized_total{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+          "legendFormat": "Pipeline Reinitialized",
           "refId": "F"
         }
       ],
@@ -5943,8 +5979,7 @@
         },
         "overrides": []
       },
-      "pluginVersion": 39,
-      "transformations": []
+      "pluginVersion": "11.4.0"
     },
     {
       "id": 400,

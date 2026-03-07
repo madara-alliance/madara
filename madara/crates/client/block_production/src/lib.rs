@@ -491,7 +491,7 @@ impl BlockProductionTask {
         let metrics = Arc::clone(&self.metrics);
         let trie_log_mode = self.parallel_merkle_trie_log_mode;
         let dispatched_at = Instant::now();
-        tracing::info!(
+        tracing::debug!(
             "parallel_root_dispatch_enqueued block_number={block_n} boundary={is_boundary} tracked_diffs_since_snapshot={} pending_close_completions={}",
             self.diffs_since_snapshot.len(),
             self.pending_completions.len()
@@ -503,7 +503,7 @@ impl BlockProductionTask {
                 .parallel_root_spawn_blocking_queue_duration
                 .record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
             metrics.parallel_root_spawn_blocking_queue_last.record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
-            tracing::info!(
+            tracing::debug!(
                 "parallel_root_compute_started block_number={block_n} spawn_blocking_queue_ms={}",
                 spawn_blocking_queue_duration.as_secs_f64() * 1000.0
             );
@@ -523,7 +523,7 @@ impl BlockProductionTask {
             metrics.parallel_root_total_duration.record(total_duration.as_secs_f64(), &[]);
             metrics.parallel_root_total_last.record(total_duration.as_secs_f64(), &[]);
 
-            tracing::info!(
+            tracing::debug!(
                 "parallel_root_compute_finished block_number={block_n} success={} compute_ms={} total_ms={}",
                 result.is_ok(),
                 compute_duration.as_secs_f64() * 1000.0,
@@ -947,7 +947,7 @@ impl BlockProductionTask {
                 self.metrics.executor_batch_execution_last.record(batch_exec_secs, &[]);
                 self.metrics.executor_to_main_delivery_duration.record(executor_to_main_delivery_secs, &[]);
                 self.metrics.executor_to_main_delivery_last.record(executor_to_main_delivery_secs, &[]);
-                tracing::info!(
+                tracing::debug!(
                     "received_executor_batch_executed block_number={} txs_executed_in_batch={} txs_added_to_block={} txs_reverted={} txs_rejected={} batch_exec_duration_ms={} executor_to_main_delivery_ms={} close_queue_depth={} close_queue_in_flight={} pending_close_completions={}",
                     state.block_number,
                     batch_execution_result.stats.n_executed,
@@ -972,7 +972,7 @@ impl BlockProductionTask {
                 self.send_state_notification(BlockProductionStateNotification::BatchExecuted);
             }
             ExecutorMessage::EndBlock(block_exec_summary) => {
-                tracing::info!("received_executor_end_block");
+                tracing::debug!("received_executor_end_block");
                 self.close_block(block_exec_summary, close_queue).await?;
             }
             ExecutorMessage::EndFinalBlock(block_exec_summary) => {
@@ -1003,7 +1003,7 @@ impl BlockProductionTask {
             anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
         };
         let block_n = state.block_number;
-        tracing::info!("close_block_received_from_executor block_number={block_n}");
+        tracing::debug!("close_block_received_from_executor block_number={block_n}");
 
         let preconfirmed_view = state
             .backend
@@ -1043,7 +1043,7 @@ impl BlockProductionTask {
             trie_handle,
             enqueued_at: Instant::now(),
         };
-        tracing::info!("enqueue_close_block_to_async_worker block_number={block_n}");
+        tracing::debug!("enqueue_close_block_to_async_worker block_number={block_n}");
         let (queued_result, completion) = close_queue.try_enqueue(payload)?;
         let ClosePreconfirmedResult::Queued(queued_meta) = queued_result;
         let queue_depth = close_queue.current_depth();
@@ -1055,7 +1055,7 @@ impl BlockProductionTask {
         };
         self.metrics.close_queue_enqueued_total.add(1, &[]);
         self.metrics.close_queue_depth.record(queue_depth as u64, &[]);
-        tracing::info!(
+        tracing::debug!(
             "close_block_queued block_number={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} parallel_merkle={}",
             queued_meta.block_n,
             queue_depth,
@@ -1213,7 +1213,7 @@ impl BlockProductionTask {
             "close_block_complete"
         );
 
-        tracing::info!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
+        tracing::debug!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
 
         metrics.close_block_total_duration.record(time_to_close.as_secs_f64(), &[]);
         metrics.close_block_total_last.record(time_to_close.as_secs_f64(), &[]);
@@ -1295,7 +1295,7 @@ impl BlockProductionTask {
         let root_wait_duration = root_wait_started_at.elapsed();
         metrics.parallel_root_await_duration.record(root_wait_duration.as_secs_f64(), &[]);
         metrics.parallel_root_await_last.record(root_wait_duration.as_secs_f64(), &[]);
-        tracing::info!(
+        tracing::debug!(
             "parallel_root_await_finished block_number={} root_wait_ms={}",
             state.block_number,
             root_wait_duration.as_secs_f64() * 1000.0
@@ -1310,7 +1310,7 @@ impl BlockProductionTask {
         let backend = state.backend.clone();
         let state_diff_len_for_close_pipeline = state_diff_len;
         let has_boundary_overlay = root_response.overlay.is_some();
-        tracing::info!(
+        tracing::debug!(
             "parallel_close_db_pipeline_started block_number={} state_diff_len={} has_boundary_overlay={}",
             block_number,
             state_diff_len_for_close_pipeline,
@@ -1327,7 +1327,7 @@ impl BlockProductionTask {
                     .remove_pending_message_to_l2(l1_nonce)
                     .context("Removing pending message to l2 from database")?;
             }
-            tracing::info!(
+            tracing::debug!(
                 "parallel_close_phase_nonce_cleanup_done block_number={} consumed_nonces={} duration_ms={}",
                 block_number,
                 consumed_nonces_count,
@@ -1340,7 +1340,7 @@ impl BlockProductionTask {
                 .write_access()
                 .write_bouncer_weights(block_number, &bouncer_weights)
                 .context("Saving Bouncer Weights for SNOS")?;
-            tracing::info!(
+            tracing::debug!(
                 "parallel_close_phase_bouncer_write_done block_number={} duration_ms={}",
                 block_number,
                 write_bouncer_start.elapsed().as_secs_f64() * 1000.0
@@ -1358,7 +1358,7 @@ impl BlockProductionTask {
                     root_response.timings,
                 )
                 .context("Closing preconfirmed block with precomputed root")?;
-            tracing::info!(
+            tracing::debug!(
                 "parallel_close_phase_write_parts_done block_number={} duration_ms={} merklization_ms={} commitments_ms={} block_hash_ms={} db_write_ms={}",
                 block_number,
                 write_parts_start.elapsed().as_secs_f64() * 1000.0,
@@ -1375,7 +1375,7 @@ impl BlockProductionTask {
                     .db
                     .flush_overlay_and_checkpoint(block_number, overlay, trie_log_mode)
                     .context("Flushing boundary overlay and writing parallel-merkle checkpoint")?;
-                tracing::info!(
+                tracing::debug!(
                     "parallel_close_phase_boundary_flush_done block_number={} duration_ms={} contract_changes={} contract_storage_changes={} class_changes={}",
                     block_number,
                     boundary_flush_start.elapsed().as_secs_f64() * 1000.0,
@@ -1392,7 +1392,7 @@ impl BlockProductionTask {
                 .new_confirmed_block(block_number)
                 .context("Advancing confirmed head after parallel close write/flush")?;
             let head_after_confirm = backend.chain_head_state();
-            tracing::info!(
+            tracing::debug!(
                 "parallel_close_phase_confirm_done block_number={} duration_ms={} confirmed_tip={:?} external_preconfirmed_tip={:?} internal_preconfirmed_tip={:?}",
                 block_number,
                 confirm_phase_start.elapsed().as_secs_f64() * 1000.0,
@@ -1400,7 +1400,7 @@ impl BlockProductionTask {
                 head_after_confirm.external_preconfirmed_tip,
                 head_after_confirm.internal_preconfirmed_tip
             );
-            tracing::info!(
+            tracing::debug!(
                 "parallel_close_db_pipeline_finished block_number={} total_duration_ms={}",
                 block_number,
                 pipeline_start.elapsed().as_secs_f64() * 1000.0
@@ -1460,7 +1460,7 @@ impl BlockProductionTask {
             "close_block_complete"
         );
 
-        tracing::info!(
+        tracing::debug!(
             "⛏️  Closed block #{} with {n_txs} transactions (parallel merkle) - {time_to_close:?}",
             state.block_number
         );
@@ -1607,7 +1607,7 @@ impl BlockProductionTask {
                         .context("Close queue worker dropped completion channel")??;
                     self.metrics.close_queue_dequeued_total.add(1, &[]);
                     self.metrics.close_queue_depth.record(close_queue_handle.current_depth() as u64, &[]);
-                    tracing::info!(
+                    tracing::debug!(
                         "close_block_complete block_number={} expected_block_n={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} parallel_merkle={}",
                         completion.block_n,
                         expected_block_n,

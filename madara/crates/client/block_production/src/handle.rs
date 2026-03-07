@@ -79,7 +79,13 @@ impl BlockProductionHandle {
 
     pub fn set_mempool_intake(&self, enabled: bool) -> anyhow::Result<()> {
         let mode = if enabled { MempoolIntakeMode::Running } else { MempoolIntakeMode::Paused };
+        let previous_mode = *self.mempool_intake_tx.borrow();
         self.mempool_intake_tx.send(mode).map_err(|e| anyhow::anyhow!("Mempool intake channel closed: {e}"))?;
+        if previous_mode != mode {
+            tracing::info!(previous_mode = ?previous_mode, new_mode = ?mode, "mempool_intake_updated");
+        } else {
+            tracing::debug!(mode = ?mode, "mempool_intake_already_set");
+        }
         Ok(())
     }
 

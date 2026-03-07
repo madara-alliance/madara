@@ -1,7 +1,7 @@
 use crate::{
     apply_state::ApplyStateSync,
     import::BlockImporter,
-    metrics::SyncMetrics,
+    metrics::{control_metrics, SyncMetrics},
     probe::ThrottledRepeatedFuture,
     sync::{ForwardPipeline, SyncController, SyncControllerConfig},
 };
@@ -171,6 +171,7 @@ impl GatewayForwardSync {
     /// This is used after a reorg to restart from the new chain head
     pub fn reinit_pipelines(&mut self) -> anyhow::Result<()> {
         tracing::info!("🔄 Reinitializing pipelines after reorg");
+        control_metrics().pipeline_reinitialized_total.add(1, &[]);
         // Ensure we flush any pending writes before reading head status
         if let Err(e) = self.backend.db.flush() {
             tracing::warn!("Failed to flush database before reading head status: {}", e);

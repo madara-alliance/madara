@@ -11,6 +11,7 @@ impl MadaraMempoolRpcApiV0_1_0Server for Starknet {
             .into());
         }
 
+        tracing::info!(target: "rpc::admin", enabled, "setMempoolIntake request received");
         Ok(self
             .block_prod_handle
             .as_ref()
