@@ -168,6 +168,7 @@ mod util;
 pub use handle::BlockProductionHandle;
 
 const PARALLEL_MERKLE_PROTOCOL_MIN_INFLIGHT: usize = 10;
+const PARALLEL_MERKLE_ARTIFICIAL_DELAY: Duration = Duration::from_secs(1);
 
 fn validate_parallel_queue_invariant(parallel_merkle_enabled: bool, close_queue_capacity: usize) -> anyhow::Result<()> {
     if parallel_merkle_enabled && close_queue_capacity < PARALLEL_MERKLE_PROTOCOL_MIN_INFLIGHT {
@@ -507,6 +508,13 @@ impl BlockProductionTask {
                 "parallel_root_compute_started block_number={block_n} spawn_blocking_queue_ms={}",
                 spawn_blocking_queue_duration.as_secs_f64() * 1000.0
             );
+            tracing::info!(
+                "parallel_root_artificial_delay block_number={} boundary={} delay_ms={} background_worker=true",
+                block_n,
+                is_boundary,
+                PARALLEL_MERKLE_ARTIFICIAL_DELAY.as_millis()
+            );
+            std::thread::sleep(PARALLEL_MERKLE_ARTIFICIAL_DELAY);
 
             let compute_started_at = Instant::now();
             let result = backend.db.compute_root_from_latest_snapshot(
@@ -1069,6 +1077,14 @@ impl BlockProductionTask {
             self.pending_completions.push_back((block_n, completion));
             self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(block_n) });
             self.record_block_stage_metrics();
+            tracing::info!(
+                "parallel_merkle_close_deferred block_number={} queue_depth={} queue_capacity={} queue_in_flight={} pending_close_completions={} root_compute_background=true",
+                block_n,
+                close_queue.current_depth(),
+                close_queue.configured_capacity(),
+                close_queue.current_in_flight(),
+                self.pending_completions.len()
+            );
             return Ok(());
         }
 
@@ -1212,6 +1228,11 @@ impl BlockProductionTask {
             db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
             "close_block_complete"
         );
+        tracing::info!(
+            "Closed block #{} with {n_txs} transactions - {:.6}ms",
+            state.block_number,
+            time_to_close.as_secs_f64() * 1000.0
+        );
 
         tracing::debug!("⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}", state.block_number);
 
@@ -1295,8 +1316,8 @@ impl BlockProductionTask {
         let root_wait_duration = root_wait_started_at.elapsed();
         metrics.parallel_root_await_duration.record(root_wait_duration.as_secs_f64(), &[]);
         metrics.parallel_root_await_last.record(root_wait_duration.as_secs_f64(), &[]);
-        tracing::debug!(
-            "parallel_root_await_finished block_number={} root_wait_ms={}",
+        tracing::info!(
+            "parallel_root_await_finished block_number={} root_wait_ms={} real_parallel_merkle=true",
             state.block_number,
             root_wait_duration.as_secs_f64() * 1000.0
         );
@@ -1458,6 +1479,11 @@ impl BlockProductionTask {
             db_write_ms = timings.db_write_block_parts.as_secs_f64() * 1000.0,
             parallel_merkle = true,
             "close_block_complete"
+        );
+        tracing::info!(
+            "Closed block #{} with {n_txs} transactions (parallel merkle) - {:.6}ms",
+            state.block_number,
+            time_to_close.as_secs_f64() * 1000.0
         );
 
         tracing::debug!(
