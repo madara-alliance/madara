@@ -1419,27 +1419,49 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::debug!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
+        if let Some(custom_header) = self.inner.take_custom_header(block.header.block_number) {
             tracing::debug!(
                 target: "custom_header",
                 block_n = block.header.block_number,
-                consumed_timestamp = header.timestamp,
-                consumed_gas_prices = ?header.gas_prices,
+                consumed_timestamp = custom_header.timestamp,
+                consumed_gas_prices = ?custom_header.gas_prices,
                 block_timestamp = block.header.block_timestamp.0,
                 block_gas_prices = ?block.header.gas_prices,
                 "consuming custom header during block close"
             );
-            if !header.is_block_hash_as_expected(&block_hash) {
+            let is_valid = custom_header.is_block_hash_as_expected(&block_hash);
+            tracing::info!(
+                "replay_block_hash_verification path=inline_trie block_number={} expected_block_hash={:#x} actual_block_hash={:#x} match={} parent_block_hash={:#x} state_root={:#x} transaction_commitment={:#x} event_commitment={:#x} receipt_commitment={:#x} state_diff_commitment={:#x} timestamp={} eth_l1_gas_price={} eth_l1_data_gas_price={} eth_l2_gas_price={} strk_l1_gas_price={} strk_l1_data_gas_price={} strk_l2_gas_price={}",
+                block.header.block_number,
+                custom_header.expected_block_hash,
+                block_hash,
+                is_valid,
+                parent_block_hash,
+                global_state_root,
+                commitments.transaction.transaction_commitment,
+                commitments.event.events_commitment,
+                commitments.transaction.receipt_commitment,
+                commitments.state_diff.state_diff_commitment,
+                custom_header.timestamp,
+                custom_header.gas_prices.eth_l1_gas_price,
+                custom_header.gas_prices.eth_l1_data_gas_price,
+                custom_header.gas_prices.eth_l2_gas_price,
+                custom_header.gas_prices.strk_l1_gas_price,
+                custom_header.gas_prices.strk_l1_data_gas_price,
+                custom_header.gas_prices.strk_l2_gas_price
+            );
+            if !is_valid {
                 let msg = format!(
                     "Block hash mismatch at block #{}: expected={}, computed={}. \
                      No data has been persisted.",
-                    block.header.block_number, header.expected_block_hash, block_hash,
+                    block.header.block_number, custom_header.expected_block_hash, block_hash,
                 );
                 tracing::warn!(
                     target: "custom_header",
                     block_n = block.header.block_number,
-                    expected = ?header.expected_block_hash,
+                    expected = ?custom_header.expected_block_hash,
                     computed = ?block_hash,
+                    state_root = ?global_state_root,
                     "{msg}"
                 );
                 anyhow::bail!(msg);
@@ -1566,27 +1588,49 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::debug!("Block hash {block_hash:#x} computed for #{} (parallel merkle)", block.header.block_number);
 
-        if let Some(header) = self.inner.take_custom_header(block.header.block_number) {
+        if let Some(custom_header) = self.inner.take_custom_header(block.header.block_number) {
             tracing::debug!(
                 target: "custom_header",
                 block_n = block.header.block_number,
-                consumed_timestamp = header.timestamp,
-                consumed_gas_prices = ?header.gas_prices,
+                consumed_timestamp = custom_header.timestamp,
+                consumed_gas_prices = ?custom_header.gas_prices,
                 block_timestamp = block.header.block_timestamp.0,
                 block_gas_prices = ?block.header.gas_prices,
                 "consuming custom header during parallel merkle block close"
             );
-            if !header.is_block_hash_as_expected(&block_hash) {
+            let is_valid = custom_header.is_block_hash_as_expected(&block_hash);
+            tracing::info!(
+                "replay_block_hash_verification path=parallel_precomputed block_number={} expected_block_hash={:#x} actual_block_hash={:#x} match={} parent_block_hash={:#x} state_root={:#x} transaction_commitment={:#x} event_commitment={:#x} receipt_commitment={:#x} state_diff_commitment={:#x} timestamp={} eth_l1_gas_price={} eth_l1_data_gas_price={} eth_l2_gas_price={} strk_l1_gas_price={} strk_l1_data_gas_price={} strk_l2_gas_price={}",
+                block.header.block_number,
+                custom_header.expected_block_hash,
+                block_hash,
+                is_valid,
+                parent_block_hash,
+                global_state_root,
+                commitments.transaction.transaction_commitment,
+                commitments.event.events_commitment,
+                commitments.transaction.receipt_commitment,
+                commitments.state_diff.state_diff_commitment,
+                custom_header.timestamp,
+                custom_header.gas_prices.eth_l1_gas_price,
+                custom_header.gas_prices.eth_l1_data_gas_price,
+                custom_header.gas_prices.eth_l2_gas_price,
+                custom_header.gas_prices.strk_l1_gas_price,
+                custom_header.gas_prices.strk_l1_data_gas_price,
+                custom_header.gas_prices.strk_l2_gas_price
+            );
+            if !is_valid {
                 let msg = format!(
                     "Block hash mismatch at block #{}: expected={}, computed={}. \
                      No data has been persisted.",
-                    block.header.block_number, header.expected_block_hash, block_hash,
+                    block.header.block_number, custom_header.expected_block_hash, block_hash,
                 );
                 tracing::warn!(
                     target: "custom_header",
                     block_n = block.header.block_number,
-                    expected = ?header.expected_block_hash,
+                    expected = ?custom_header.expected_block_hash,
                     computed = ?block_hash,
+                    state_root = ?global_state_root,
                     "{msg}"
                 );
                 anyhow::bail!(msg);
