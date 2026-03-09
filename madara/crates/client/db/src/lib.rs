@@ -1386,10 +1386,36 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::debug!("Block hash {block_hash:#x} computed for #{}", block.header.block_number);
 
-        if let Some(header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
-            let is_valid = header.is_block_hash_as_expected(&block_hash);
+        if let Some(custom_header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
+            let is_valid = custom_header.is_block_hash_as_expected(&block_hash);
+            tracing::info!(
+                "replay_block_hash_verification path=inline_trie block_number={} expected_block_hash={:#x} actual_block_hash={:#x} match={} parent_block_hash={:#x} state_root={:#x} transaction_commitment={:#x} event_commitment={:#x} receipt_commitment={:#x} state_diff_commitment={:#x} timestamp={} eth_l1_gas_price={} eth_l1_data_gas_price={} eth_l2_gas_price={} strk_l1_gas_price={} strk_l1_data_gas_price={} strk_l2_gas_price={}",
+                block.header.block_number,
+                custom_header.expected_block_hash,
+                block_hash,
+                is_valid,
+                parent_block_hash,
+                global_state_root,
+                commitments.transaction.transaction_commitment,
+                commitments.event.events_commitment,
+                commitments.transaction.receipt_commitment,
+                commitments.state_diff.state_diff_commitment,
+                custom_header.timestamp,
+                custom_header.gas_prices.eth_l1_gas_price,
+                custom_header.gas_prices.eth_l1_data_gas_price,
+                custom_header.gas_prices.eth_l2_gas_price,
+                custom_header.gas_prices.strk_l1_gas_price,
+                custom_header.gas_prices.strk_l1_data_gas_price,
+                custom_header.gas_prices.strk_l2_gas_price
+            );
             if !is_valid {
-                tracing::warn!("Block hash not as expected for {}", block.header.block_number);
+                tracing::warn!(
+                    "Block hash not as expected for {} expected={:#x} actual={:#x} state_root={:#x}",
+                    block.header.block_number,
+                    custom_header.expected_block_hash,
+                    block_hash,
+                    global_state_root
+                );
             }
         }
 
@@ -1476,10 +1502,36 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         tracing::debug!("Block hash {block_hash:#x} computed for #{} (parallel merkle)", block.header.block_number);
 
-        if let Some(header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
-            let is_valid = header.is_block_hash_as_expected(&block_hash);
+        if let Some(custom_header) = self.inner.get_custom_header_with_clear(block.header.block_number, true) {
+            let is_valid = custom_header.is_block_hash_as_expected(&block_hash);
+            tracing::info!(
+                "replay_block_hash_verification path=parallel_precomputed block_number={} expected_block_hash={:#x} actual_block_hash={:#x} match={} parent_block_hash={:#x} state_root={:#x} transaction_commitment={:#x} event_commitment={:#x} receipt_commitment={:#x} state_diff_commitment={:#x} timestamp={} eth_l1_gas_price={} eth_l1_data_gas_price={} eth_l2_gas_price={} strk_l1_gas_price={} strk_l1_data_gas_price={} strk_l2_gas_price={}",
+                block.header.block_number,
+                custom_header.expected_block_hash,
+                block_hash,
+                is_valid,
+                parent_block_hash,
+                global_state_root,
+                commitments.transaction.transaction_commitment,
+                commitments.event.events_commitment,
+                commitments.transaction.receipt_commitment,
+                commitments.state_diff.state_diff_commitment,
+                custom_header.timestamp,
+                custom_header.gas_prices.eth_l1_gas_price,
+                custom_header.gas_prices.eth_l1_data_gas_price,
+                custom_header.gas_prices.eth_l2_gas_price,
+                custom_header.gas_prices.strk_l1_gas_price,
+                custom_header.gas_prices.strk_l1_data_gas_price,
+                custom_header.gas_prices.strk_l2_gas_price
+            );
             if !is_valid {
-                tracing::warn!("Block hash not as expected for {}", block.header.block_number);
+                tracing::warn!(
+                    "Block hash not as expected for {} expected={:#x} actual={:#x} state_root={:#x}",
+                    block.header.block_number,
+                    custom_header.expected_block_hash,
+                    block_hash,
+                    global_state_root
+                );
             }
         }
 

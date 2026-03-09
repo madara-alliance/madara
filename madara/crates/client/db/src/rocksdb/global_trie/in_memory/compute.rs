@@ -229,6 +229,21 @@ pub fn compute_root_from_snapshot(
     let (contract_root, contract_trie_timings) = contract_result?;
     let (class_root, class_trie_timings) = class_result?;
     let state_root = super::super::calculate_state_root(contract_root, class_root);
+    tracing::info!(
+        "parallel_root_computed block_number={} contract_root={:#x} class_root={:#x} state_root={:#x} storage_diff_contracts={} deployed_contracts={} replaced_classes={} nonces={} declared_classes={} migrated_compiled_classes={} include_overlay={} trie_log_mode={:?}",
+        block_n,
+        contract_root,
+        class_root,
+        state_root,
+        state_diff.storage_diffs.len(),
+        state_diff.deployed_contracts.len(),
+        state_diff.replaced_classes.len(),
+        state_diff.nonces.len(),
+        state_diff.declared_classes.len(),
+        state_diff.migrated_compiled_classes.len(),
+        include_overlay,
+        trie_log_mode
+    );
 
     let timings = crate::rocksdb::global_trie::MerklizationTimings {
         total: block_start.elapsed(),
