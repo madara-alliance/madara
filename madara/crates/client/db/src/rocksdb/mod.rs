@@ -208,6 +208,11 @@ impl RocksDBStorage {
             StoredHeadProjectionWithoutContent::Confirmed(block_n) => Some(block_n),
             StoredHeadProjectionWithoutContent::Preconfirmed(header) => header.block_number.checked_sub(1),
         });
+        tracing::info!(
+            "opened_db_snapshot_config head_block_n={head_block_n:?} max_kept_snapshots={:?} snapshot_interval={}",
+            config.max_kept_snapshots,
+            config.snapshot_interval
+        );
 
         let snapshot = Snapshots::new(inner.clone(), head_block_n, config.max_kept_snapshots, config.snapshot_interval);
 
@@ -265,7 +270,17 @@ impl RocksDBStorage {
         include_overlay: bool,
         trie_log_mode: TrieLogMode,
     ) -> Result<InMemoryRootComputation> {
-        let (_snapshot_block, snapshot) = self.snapshots.get_closest(block_n);
+        let (snapshot_block, snapshot) = self.snapshots.get_closest(block_n);
+        if snapshot_block.is_some_and(|selected| selected > block_n) {
+            tracing::info!(
+                "parallel_root_snapshot_selected block_number={} snapshot_block={snapshot_block:?} latest_checkpoint={:?} checkpoint_floor={:?} include_overlay={} trie_log_mode={:?}",
+                block_n,
+                self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
+                self.get_parallel_merkle_checkpoint_floor(block_n).ok().flatten(),
+                include_overlay,
+                trie_log_mode
+            );
+        }
         compute_root_from_snapshot(self, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
     }
 
@@ -276,7 +291,20 @@ impl RocksDBStorage {
         boundary_block_n: Option<u64>,
         trie_log_mode: TrieLogMode,
     ) -> Result<Vec<InMemoryRootComputation>> {
-        let (_snapshot_block, snapshot) = self.snapshots.get_closest(start_block_n);
+        let (snapshot_block, snapshot) = self.snapshots.get_closest(start_block_n);
+        let end_block_n = start_block_n
+            + u64::try_from(state_diffs.len().saturating_sub(1)).expect("state diff batch size fits in u64");
+        if snapshot_block.is_some_and(|selected| selected > start_block_n) || boundary_block_n.is_some() {
+            tracing::info!(
+                "parallel_root_snapshot_selected start_block={} end_block={} batch_size={} snapshot_block={snapshot_block:?} latest_checkpoint={:?} checkpoint_floor_for_start={:?} boundary_block={boundary_block_n:?} trie_log_mode={:?}",
+                start_block_n,
+                end_block_n,
+                state_diffs.len(),
+                self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
+                self.get_parallel_merkle_checkpoint_floor(start_block_n).ok().flatten(),
+                trie_log_mode
+            );
+        }
         compute_roots_in_parallel_from_snapshot(
             self,
             snapshot,

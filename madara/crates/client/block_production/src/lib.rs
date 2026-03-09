@@ -1485,6 +1485,14 @@ impl BlockProductionTask {
                     overlay.contract_storage_changed.len(),
                     overlay.class_changed.len()
                 );
+                tracing::info!(
+                    "parallel_boundary_checkpoint_written block_number={} duration_ms={} latest_checkpoint={:?} checkpoint_floor_for_block={:?} trie_log_mode={:?}",
+                    block_number,
+                    boundary_flush_start.elapsed().as_secs_f64() * 1000.0,
+                    backend.db.get_parallel_merkle_latest_checkpoint().ok().flatten(),
+                    backend.db.get_parallel_merkle_checkpoint_floor(block_number).ok().flatten(),
+                    trie_log_mode
+                );
             }
 
             // Phase 3: only after successful write(+flush), advance confirmed head + GC side effects.
