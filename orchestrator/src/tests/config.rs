@@ -781,7 +781,11 @@ pub(crate) fn get_env_params(test_id: Option<&str>) -> EnvParams {
         .parse::<u64>()
         .unwrap(),
         max_num_blobs,
-        max_blob_size: max_num_blobs * BLOB_LEN,
+        blob_size_buffer: get_env_var_or_default("MADARA_ORCHESTRATOR_BLOB_SIZE_BUFFER", "15")
+            .parse::<usize>()
+            .unwrap(),
+        max_blob_size: max_num_blobs * BLOB_LEN
+            - get_env_var_or_default("MADARA_ORCHESTRATOR_BLOB_SIZE_BUFFER", "15").parse::<usize>().unwrap(),
         default_empty_block_proving_gas: get_env_var_or_default(
             "MADARA_ORCHESTRATOR_DEFAULT_EMPTY_BLOCK_PROVING_GAS",
             "1500000",

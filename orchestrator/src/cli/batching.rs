@@ -16,6 +16,12 @@ pub struct BatchingCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_NUM_BLOBS", long, default_value = "6")]
     pub max_num_blobs: usize,
 
+    /// Buffer (in number of felts) to subtract from the maximum blob capacity.
+    /// The effective max blob size becomes (max_num_blobs * 4096) - blob_size_buffer.
+    /// This accounts for overhead added by the prover (e.g. encryption headers).
+    #[arg(env = "MADARA_ORCHESTRATOR_BLOB_SIZE_BUFFER", long, default_value = "15")]
+    pub blob_size_buffer: usize,
+
     /// Batching worker lock duration in seconds.
     /// This lock ensures that only one Batching Worker is running at a time.
     #[arg(env = "MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS", long, default_value = "3600")]
