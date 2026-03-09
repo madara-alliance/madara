@@ -45,9 +45,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns a view on a block-scoped preconfirmed block.
     /// The preconfirmed block view will not include candidate transactions.
     pub fn block_view_on_preconfirmed(self: &Arc<Self>, block_n: u64) -> Option<MadaraPreconfirmedBlockView<D>> {
-        if let Some(block) =
-            self.preconfirmed_block_runtime.borrow().as_ref().filter(|b| b.header.block_number == block_n).cloned()
-        {
+        if let Some(block) = self.preconfirmed_block_runtime.read().expect("Poisoned lock").get(&block_n).cloned() {
             return Some(MadaraPreconfirmedBlockView::new(self.clone(), block));
         }
 

@@ -139,7 +139,7 @@ use starknet_api::core::ContractAddress;
 use starknet_types_core::felt::Felt;
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 pub mod metrics;
 use metrics::metrics;
@@ -303,8 +303,29 @@ fn storage_tip_from_head_projection(
     storage_tip_from_confirmed_or_empty(chain_head_state.confirmed_tip)
 }
 
-fn runtime_preconfirmed_block_n(preconfirmed: Option<&Arc<PreconfirmedBlock>>) -> Option<u64> {
-    preconfirmed.map(|block| block.header.block_number)
+type RuntimePreconfirmedBlocks = BTreeMap<u64, Arc<PreconfirmedBlock>>;
+
+fn runtime_preconfirmed_tip_block_n(preconfirmed: &RuntimePreconfirmedBlocks) -> Option<u64> {
+    preconfirmed.last_key_value().map(|(block_n, _)| *block_n)
+}
+
+fn runtime_preconfirmed_block(
+    preconfirmed: &RuntimePreconfirmedBlocks,
+    block_n: u64,
+) -> Option<Arc<PreconfirmedBlock>> {
+    preconfirmed.get(&block_n).cloned()
+}
+
+fn prune_runtime_preconfirmed_blocks(preconfirmed: &mut RuntimePreconfirmedBlocks, chain_head_state: ChainHeadState) {
+    if let Some(confirmed_tip) = chain_head_state.confirmed_tip {
+        preconfirmed.retain(|block_n, _| *block_n > confirmed_tip);
+    }
+
+    if let Some(internal_tip) = chain_head_state.internal_preconfirmed_tip {
+        preconfirmed.retain(|block_n, _| *block_n <= internal_tip);
+    } else {
+        preconfirmed.clear();
+    }
 }
 
 fn classify_chain_head_transition(previous: ChainHeadState, next: ChainHeadState) -> &'static str {
@@ -343,7 +364,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     starting_block: Option<u64>,
 
     pub chain_head_state: tokio::sync::watch::Sender<ChainHeadState>,
-    pub preconfirmed_block_runtime: tokio::sync::watch::Sender<Option<Arc<PreconfirmedBlock>>>,
+    pub preconfirmed_block_runtime: RwLock<RuntimePreconfirmedBlocks>,
 
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
@@ -425,7 +446,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
             chain_head_state: tokio::sync::watch::Sender::new(Default::default()),
-            preconfirmed_block_runtime: tokio::sync::watch::Sender::new(None),
+            preconfirmed_block_runtime: RwLock::new(BTreeMap::new()),
             latest_l1_confirmed: tokio::sync::watch::Sender::new(Default::default()),
             custom_header: Mutex::new(BTreeMap::new()),
             replay_boundaries: Mutex::new(BTreeMap::new()),
@@ -505,12 +526,8 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     }
 
     fn replay_boundary_seed_from_preconfirmed(&self, block_n: u64) -> (u64, Option<Felt>) {
-        if let Some(runtime_block) = self
-            .preconfirmed_block_runtime
-            .borrow()
-            .as_ref()
-            .filter(|block| block.header.block_number == block_n)
-            .cloned()
+        if let Some(runtime_block) =
+            runtime_preconfirmed_block(&self.preconfirmed_block_runtime.read().expect("Poisoned lock"), block_n)
         {
             let guard = runtime_block.content.borrow();
             let executed_tx_count = guard.n_executed() as u64;
@@ -925,31 +942,40 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     fn ensure_runtime_preconfirmed_alignment(
         chain_head_state: ChainHeadState,
-        preconfirmed: Option<&Arc<PreconfirmedBlock>>,
+        preconfirmed: &RuntimePreconfirmedBlocks,
     ) -> Result<()> {
-        match (chain_head_state.internal_preconfirmed_tip, preconfirmed) {
-            (None, None) => Ok(()),
-            (Some(expected), Some(block)) if block.header.block_number == expected => Ok(()),
-            (Some(expected), Some(block)) => {
+        match chain_head_state.internal_preconfirmed_tip {
+            None if preconfirmed.is_empty() => Ok(()),
+            Some(expected) if preconfirmed.contains_key(&expected) => {
+                if let Some(confirmed_tip) = chain_head_state.confirmed_tip {
+                    ensure!(
+                        preconfirmed.keys().all(|block_n| *block_n > confirmed_tip),
+                        "Runtime preconfirmed blocks must be strictly above confirmed_tip {}. [head={chain_head_state:?}, runtime_blocks={:?}]",
+                        confirmed_tip,
+                        preconfirmed.keys().copied().collect::<Vec<_>>()
+                    );
+                }
+                ensure!(
+                    preconfirmed.keys().all(|block_n| *block_n <= expected),
+                    "Runtime preconfirmed blocks must not be ahead of internal_preconfirmed_tip {}. [head={chain_head_state:?}, runtime_blocks={:?}]",
+                    expected,
+                    preconfirmed.keys().copied().collect::<Vec<_>>()
+                );
+                Ok(())
+            }
+            Some(expected) => {
                 let message = format!(
-                    "Runtime preconfirmed block number {} does not match head internal_preconfirmed_tip {}. [head={chain_head_state:?}]",
-                    block.header.block_number, expected
+                    "Runtime preconfirmed block is missing while head expects internal preconfirmed tip {}. [head={chain_head_state:?}, runtime_blocks={:?}]",
+                    expected,
+                    preconfirmed.keys().copied().collect::<Vec<_>>()
                 );
                 Self::register_projection_violation(message.clone());
                 bail!("{message}");
             }
-            (Some(expected), None) => {
+            None => {
                 let message = format!(
-                    "Runtime preconfirmed block is missing while head expects internal preconfirmed tip {}. [head={chain_head_state:?}]",
-                    expected
-                );
-                Self::register_projection_violation(message.clone());
-                bail!("{message}");
-            }
-            (None, Some(block)) => {
-                let message = format!(
-                    "Runtime preconfirmed block {} exists while head has no internal preconfirmed tip. [head={chain_head_state:?}]",
-                    block.header.block_number
+                    "Runtime preconfirmed blocks {:?} exist while head has no internal preconfirmed tip. [head={chain_head_state:?}]",
+                    preconfirmed.keys().copied().collect::<Vec<_>>()
                 );
                 Self::register_projection_violation(message.clone());
                 bail!("{message}");
@@ -1005,14 +1031,27 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
             Self::register_projection_violation(message.clone());
             anyhow::anyhow!(message)
         })?;
-        Self::ensure_runtime_preconfirmed_alignment(chain_head_state, preconfirmed.as_ref())?;
-        let projected_tip = storage_tip_from_head_projection(chain_head_state, preconfirmed.clone());
-        Self::ensure_tip_not_ahead_of_head_state(chain_head_state, &projected_tip)?;
 
         let previous_head_state = *self.chain_head_state.borrow();
-        let previous_runtime_preconfirmed_block_n =
-            runtime_preconfirmed_block_n(self.preconfirmed_block_runtime.borrow().as_ref());
-        let next_runtime_preconfirmed_block_n = runtime_preconfirmed_block_n(preconfirmed.as_ref());
+        let current_runtime_preconfirmed = self.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
+        let previous_runtime_preconfirmed_block_n = runtime_preconfirmed_tip_block_n(&current_runtime_preconfirmed);
+
+        let mut next_runtime_preconfirmed = current_runtime_preconfirmed;
+        if let Some(block) = preconfirmed {
+            next_runtime_preconfirmed.insert(block.header.block_number, block);
+        }
+        prune_runtime_preconfirmed_blocks(&mut next_runtime_preconfirmed, chain_head_state);
+
+        Self::ensure_runtime_preconfirmed_alignment(chain_head_state, &next_runtime_preconfirmed)?;
+        let projected_tip = storage_tip_from_head_projection(
+            chain_head_state,
+            chain_head_state
+                .external_preconfirmed_tip
+                .and_then(|block_n| runtime_preconfirmed_block(&next_runtime_preconfirmed, block_n)),
+        );
+        Self::ensure_tip_not_ahead_of_head_state(chain_head_state, &projected_tip)?;
+
+        let next_runtime_preconfirmed_block_n = runtime_preconfirmed_tip_block_n(&next_runtime_preconfirmed);
         let transition = classify_chain_head_transition(previous_head_state, chain_head_state);
 
         tracing::info!(
@@ -1030,7 +1069,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         );
         // Publish runtime preconfirmed first, then canonical head state.
         // This narrows the window where readers can observe a new head with stale runtime preconfirmed.
-        self.preconfirmed_block_runtime.send_replace(preconfirmed);
+        *self.preconfirmed_block_runtime.write().expect("Poisoned lock") = next_runtime_preconfirmed;
         self.chain_head_state.send_replace(chain_head_state);
 
         Ok(())
@@ -1061,22 +1100,18 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     pub(crate) fn internal_preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
         let expected_preconfirmed = self.chain_head_state.borrow().internal_preconfirmed_tip?;
-        self.preconfirmed_block_runtime
-            .borrow()
-            .as_ref()
-            .filter(|block| block.header.block_number == expected_preconfirmed)
-            .cloned()
+        runtime_preconfirmed_block(
+            &self.preconfirmed_block_runtime.read().expect("Poisoned lock"),
+            expected_preconfirmed,
+        )
     }
 
     pub fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
         let expected_preconfirmed = self.chain_head_state.borrow().external_preconfirmed_tip?;
-        if let Some(runtime) = self
-            .preconfirmed_block_runtime
-            .borrow()
-            .as_ref()
-            .filter(|block| block.header.block_number == expected_preconfirmed)
-            .cloned()
-        {
+        if let Some(runtime) = runtime_preconfirmed_block(
+            &self.preconfirmed_block_runtime.read().expect("Poisoned lock"),
+            expected_preconfirmed,
+        ) {
             return Some(runtime);
         }
 
@@ -1132,37 +1167,18 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         // Note: concurrent use of `MadaraBackendWriter` is forbidden by contract.
         let current_head_state = *self.inner.chain_head_state.borrow();
 
-        let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.borrow().clone();
-        MadaraBackend::<D>::ensure_runtime_preconfirmed_alignment(
-            current_head_state,
-            current_preconfirmed_runtime.as_ref(),
-        )?;
+        let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
+        MadaraBackend::<D>::ensure_runtime_preconfirmed_alignment(current_head_state, &current_preconfirmed_runtime)?;
 
         let next_chain_head_state = match new_confirmed_tip {
             Some(block_n) => current_head_state.next_for_confirmed(block_n)?,
             None => bail!("Cannot replace chain head to empty"),
         };
 
-        let next_runtime_preconfirmed = match next_chain_head_state.internal_preconfirmed_tip {
-            Some(expected_block_n) => Some(
-                current_preconfirmed_runtime
-                    .clone()
-                    .filter(|block| block.header.block_number == expected_block_n)
-                    .with_context(|| {
-                        format!(
-                            "Runtime preconfirmed block should remain available at internal tip #{expected_block_n}"
-                        )
-                    })?,
-            ),
-            None => None,
-        };
-
         if self.inner.config.save_preconfirmed {
             let new_tip_in_db = if let Some(external_tip) = next_chain_head_state.external_preconfirmed_tip {
-                if let Some(block) =
-                    next_runtime_preconfirmed.as_ref().filter(|block| block.header.block_number == external_tip)
-                {
-                    storage_tip_from_preconfirmed_block(block)
+                if let Some(block) = runtime_preconfirmed_block(&current_preconfirmed_runtime, external_tip) {
+                    storage_tip_from_preconfirmed_block(&block)
                 } else {
                     let (header, content) =
                         self.inner.db.get_preconfirmed_block_data(external_tip)?.with_context(|| {
@@ -1184,18 +1200,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             }
         }
 
-        self.inner.publish_head_projection(next_chain_head_state, next_runtime_preconfirmed)
+        self.inner.publish_head_projection(next_chain_head_state, None)
     }
 
     fn transition_to_preconfirmed(&self, preconfirmed: Arc<PreconfirmedBlock>) -> Result<()> {
         // Note: concurrent use of `MadaraBackendWriter` is forbidden by contract.
         let current_head_state = *self.inner.chain_head_state.borrow();
 
-        let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.borrow().clone();
-        MadaraBackend::<D>::ensure_runtime_preconfirmed_alignment(
-            current_head_state,
-            current_preconfirmed_runtime.as_ref(),
-        )?;
+        let current_preconfirmed_runtime = self.inner.preconfirmed_block_runtime.read().expect("Poisoned lock").clone();
+        MadaraBackend::<D>::ensure_runtime_preconfirmed_alignment(current_head_state, &current_preconfirmed_runtime)?;
 
         let next_chain_head_state = current_head_state.next_for_preconfirmed(preconfirmed.header.block_number)?;
 
