@@ -58,31 +58,56 @@ fn bonsai_storage_config_for_mode(backend: &RocksDBStorage, trie_log_mode: TrieL
 
 fn contract_state_leaf_hash(
     backend: &RocksDBStorage,
+    snapshot: &SnapshotRef,
     contract_address: &Felt,
     contract_leaf: &ContractLeaf,
     block_number: u64,
+    snapshot_block: Option<u64>,
 ) -> Result<Felt> {
-    let nonce = contract_leaf
-        .nonce
-        .unwrap_or(backend.inner.get_contract_nonce_at(block_number, contract_address)?.unwrap_or(Felt::ZERO));
-
+    let nonce = if let Some(nonce) = contract_leaf.nonce {
+        nonce
+    } else {
+        backend
+            .inner
+            .get_contract_nonce_at_from_snapshot(snapshot, block_number, contract_address)?
+            .unwrap_or(Felt::ZERO)
+    };
     let class_hash = if let Some(class_hash) = contract_leaf.class_hash {
         class_hash
     } else {
-        backend.inner.get_contract_class_hash_at(block_number, contract_address)?.unwrap_or(Felt::ZERO)
+        backend
+            .inner
+            .get_contract_class_hash_at_from_snapshot(snapshot, block_number, contract_address)?
+            .unwrap_or(Felt::ZERO)
     };
     let storage_root =
         contract_leaf.storage_root.context("Storage root needs to be set before contract leaf hashing")?;
+
+    if contract_leaf.nonce.is_none() || contract_leaf.class_hash.is_none() {
+        tracing::info!(
+            "parallel_contract_leaf_fallback block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_address={:#x} nonce_source={} class_hash_source={} nonce={:#x} class_hash={:#x} storage_root={:#x}",
+            block_number,
+            snapshot_block.is_some_and(|selected| selected > block_number),
+            contract_address,
+            if contract_leaf.nonce.is_some() { "state_diff" } else { "snapshot_history" },
+            if contract_leaf.class_hash.is_some() { "state_diff" } else { "snapshot_history" },
+            nonce,
+            class_hash,
+            storage_root
+        );
+    }
 
     Ok(Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO))
 }
 
 fn in_memory_contract_trie_root(
     backend: &RocksDBStorage,
+    snapshot: &SnapshotRef,
     contract_storage_trie: &mut InMemoryTrie<Pedersen>,
     contract_trie: &mut InMemoryTrie<Pedersen>,
     state_diff: &StateDiff,
     block_n: u64,
+    snapshot_block: Option<u64>,
 ) -> Result<(Felt, ContractTrieTimings)> {
     let mut timings = ContractTrieTimings::default();
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
@@ -119,7 +144,8 @@ fn in_memory_contract_trie_root(
                 .root_hash(&contract_address.to_bytes_be())
                 .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
             leaf.storage_root = Some(storage_root);
-            let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_n)?;
+            let leaf_hash =
+                contract_state_leaf_hash(backend, snapshot, &contract_address, &leaf, block_n, snapshot_block)?;
             let bytes = contract_address.to_bytes_be();
             let bitvec: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
             anyhow::Ok((bitvec, leaf_hash))
@@ -198,6 +224,7 @@ pub fn compute_root_from_snapshot(
     trie_log_mode: TrieLogMode,
 ) -> Result<InMemoryRootComputation> {
     let config = bonsai_storage_config_for_mode(backend, trie_log_mode);
+    let contract_snapshot = Arc::clone(&snapshot);
     let (contract_db, contract_changed) = InMemoryBonsaiDb::contract(Arc::clone(&snapshot));
     let (contract_storage_db, contract_storage_changed) = InMemoryBonsaiDb::contract_storage(Arc::clone(&snapshot));
     let (class_db, class_changed) = InMemoryBonsaiDb::class(snapshot);
@@ -213,10 +240,12 @@ pub fn compute_root_from_snapshot(
             let start = Instant::now();
             let result = in_memory_contract_trie_root(
                 backend,
+                &contract_snapshot,
                 &mut contract_storage_trie,
                 &mut contract_trie,
                 state_diff,
                 block_n,
+                snapshot_block,
             );
             (result, start.elapsed())
         },

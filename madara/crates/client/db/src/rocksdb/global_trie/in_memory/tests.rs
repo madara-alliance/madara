@@ -1,6 +1,7 @@
 use super::*;
 use crate::rocksdb::column::Column;
 use crate::rocksdb::rocksdb_snapshot::SnapshotWithDBArc;
+use crate::rocksdb::state::{CONTRACT_CLASS_HASH_COLUMN, CONTRACT_NONCE_COLUMN};
 use crate::rocksdb::trie::{
     BONSAI_CLASS_LOG_COLUMN, BONSAI_CONTRACT_FLAT_COLUMN, BONSAI_CONTRACT_LOG_COLUMN,
     BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
@@ -15,6 +16,7 @@ use mp_state_update::{
 };
 use rocksdb::IteratorMode;
 use starknet_types_core::felt::Felt;
+use std::mem::size_of;
 use std::sync::Arc;
 
 use crate::rocksdb::snapshots::SnapshotRef;
@@ -58,6 +60,13 @@ fn synthetic_state_diff(index: u64) -> StateDiff {
         nonces: vec![NonceUpdate { contract_address, nonce: Felt::from(index + 1) }],
         migrated_compiled_classes: vec![],
     }
+}
+
+fn make_contract_history_key(contract_address: &Felt, block_n: u32) -> [u8; 32 + size_of::<u32>()] {
+    let mut key = [0u8; 32 + size_of::<u32>()];
+    key[..32].copy_from_slice(&contract_address.to_bytes_be());
+    key[32..].copy_from_slice(&(u32::MAX - block_n).to_be_bytes());
+    key
 }
 
 fn sequential_roots(backend: &Arc<MadaraBackend>, diffs: &[StateDiff]) -> Vec<Felt> {
@@ -231,6 +240,90 @@ fn in_memory_parallel_roots_match_sequential_per_block() {
     assert_eq!(got_roots, expected_roots);
     assert_eq!(results.iter().filter(|result| result.overlay.is_some()).count(), 1);
     assert_eq!(results.iter().find(|result| result.overlay.is_some()).map(|result| result.block_n), Some(2));
+}
+
+#[test]
+fn contract_leaf_fallback_reads_nonce_and_class_from_snapshot_state() {
+    let contract_address = Felt::from(777_u64);
+    let original_nonce = Felt::from(11_u64);
+    let original_class_hash = Felt::from(22_u64);
+    let mutated_nonce = Felt::from(33_u64);
+    let mutated_class_hash = Felt::from(44_u64);
+
+    let base_diff = StateDiff {
+        storage_diffs: vec![],
+        old_declared_contracts: vec![],
+        declared_classes: vec![],
+        deployed_contracts: vec![DeployedContractItem { address: contract_address, class_hash: original_class_hash }],
+        replaced_classes: vec![],
+        nonces: vec![NonceUpdate { contract_address, nonce: original_nonce }],
+        migrated_compiled_classes: vec![],
+    };
+    let current_diff = StateDiff {
+        storage_diffs: vec![ContractStorageDiffItem {
+            address: contract_address,
+            storage_entries: vec![StorageEntry { key: Felt::from(1_u64), value: Felt::from(55_u64) }],
+        }],
+        old_declared_contracts: vec![],
+        declared_classes: vec![],
+        deployed_contracts: vec![],
+        replaced_classes: vec![],
+        nonces: vec![],
+        migrated_compiled_classes: vec![],
+    };
+
+    let backend_expected = setup_backend();
+    backend_expected.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
+    let expected = compute_root_from_snapshot(
+        &backend_expected.db,
+        Some(0),
+        fresh_snapshot(&backend_expected.db),
+        1,
+        &current_diff,
+        false,
+        TrieLogMode::Checkpoint,
+    )
+    .expect("expected compute");
+
+    let backend_actual = setup_backend();
+    backend_actual.db.inner.state_apply_state_diff(0, &base_diff).expect("seed base history");
+    let snapshot = fresh_snapshot(&backend_actual.db);
+
+    let nonce_handle = backend_actual.db.inner.get_column(CONTRACT_NONCE_COLUMN);
+    let class_handle = backend_actual.db.inner.get_column(CONTRACT_CLASS_HASH_COLUMN);
+    backend_actual
+        .db
+        .inner
+        .db
+        .put_cf(
+            &nonce_handle,
+            make_contract_history_key(&contract_address, 1),
+            crate::rocksdb::serialize_to_smallvec::<[u8; 64]>(&mutated_nonce).expect("serialize nonce"),
+        )
+        .expect("mutate live nonce history");
+    backend_actual
+        .db
+        .inner
+        .db
+        .put_cf(
+            &class_handle,
+            make_contract_history_key(&contract_address, 1),
+            crate::rocksdb::serialize_to_smallvec::<[u8; 64]>(&mutated_class_hash).expect("serialize class hash"),
+        )
+        .expect("mutate live class history");
+
+    let actual = compute_root_from_snapshot(
+        &backend_actual.db,
+        Some(0),
+        snapshot,
+        1,
+        &current_diff,
+        false,
+        TrieLogMode::Checkpoint,
+    )
+    .expect("actual compute");
+
+    assert_eq!(actual.state_root, expected.state_root, "snapshot-scoped fallback should ignore live DB mutation");
 }
 
 #[test]
