@@ -216,12 +216,20 @@ impl RocksDBStorage {
 
         let snapshot = Snapshots::new(inner.clone(), head_block_n, config.max_kept_snapshots, config.snapshot_interval);
 
-        Ok(Self {
+        let storage = Self {
             inner,
             snapshots: snapshot.into(),
             metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
-        })
+        };
+
+        if let Some(head_block_n) = head_block_n {
+            if storage.has_parallel_merkle_checkpoint(head_block_n)? {
+                storage.snapshots.pin_head(head_block_n);
+            }
+        }
+
+        Ok(storage)
     }
 
     /// Flush all pending writes to disk. This is important when WAL is disabled.
@@ -270,17 +278,36 @@ impl RocksDBStorage {
         include_overlay: bool,
         trie_log_mode: TrieLogMode,
     ) -> Result<InMemoryRootComputation> {
-        let (snapshot_block, snapshot) = self.snapshots.get_closest(block_n);
+        let base_block_n = block_n.checked_sub(1);
+        let inventory = self.snapshots.inventory();
+        let snapshot = self.snapshots.get_exact(base_block_n).ok_or_else(|| {
+            tracing::error!(
+                "parallel_root_base_snapshot_missing block_number={} base_block={base_block_n:?} head_block_n={:?} exact_count={} historical_count={} oldest_exact={:?} newest_exact={:?} oldest_snapshot={:?} newest_snapshot={:?} has_empty_base={} latest_checkpoint={:?} checkpoint_floor={:?} include_overlay={} trie_log_mode={:?}",
+                block_n,
+                inventory.head_block_n,
+                inventory.exact_count,
+                inventory.historical_count,
+                inventory.oldest_exact,
+                inventory.newest_exact,
+                inventory.oldest_historical,
+                inventory.newest_historical,
+                inventory.has_empty_base,
+                self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
+                self.get_parallel_merkle_checkpoint_floor(block_n).ok().flatten(),
+                include_overlay,
+                trie_log_mode
+            );
+            anyhow::anyhow!("Missing exact base snapshot for block #{block_n} (base {base_block_n:?})")
+        })?;
         tracing::info!(
-            "parallel_root_snapshot_selected block_number={} snapshot_block={snapshot_block:?} selected_after_requested={} latest_checkpoint={:?} checkpoint_floor={:?} include_overlay={} trie_log_mode={:?}",
+            "parallel_root_base_snapshot_selected block_number={} base_block={base_block_n:?} snapshot_block={base_block_n:?} exact_match=true latest_checkpoint={:?} checkpoint_floor={:?} include_overlay={} trie_log_mode={:?}",
             block_n,
-            snapshot_block.is_some_and(|selected| selected > block_n),
             self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
             self.get_parallel_merkle_checkpoint_floor(block_n).ok().flatten(),
             include_overlay,
             trie_log_mode
         );
-        compute_root_from_snapshot(self, snapshot_block, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
+        compute_root_from_snapshot(self, base_block_n, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
     }
 
     pub fn compute_roots_in_parallel_from_latest_snapshot(
@@ -290,22 +317,46 @@ impl RocksDBStorage {
         boundary_block_n: Option<u64>,
         trie_log_mode: TrieLogMode,
     ) -> Result<Vec<InMemoryRootComputation>> {
-        let (snapshot_block, snapshot) = self.snapshots.get_closest(start_block_n);
+        let base_block_n = start_block_n.checked_sub(1);
         let end_block_n = start_block_n
             + u64::try_from(state_diffs.len().saturating_sub(1)).expect("state diff batch size fits in u64");
+        let inventory = self.snapshots.inventory();
+        let snapshot = self.snapshots.get_exact(base_block_n).ok_or_else(|| {
+            tracing::error!(
+                "parallel_root_base_snapshot_missing start_block={} end_block={} batch_size={} base_block={base_block_n:?} boundary_block={boundary_block_n:?} head_block_n={:?} exact_count={} historical_count={} oldest_exact={:?} newest_exact={:?} oldest_snapshot={:?} newest_snapshot={:?} has_empty_base={} latest_checkpoint={:?} checkpoint_floor_for_start={:?} trie_log_mode={:?}",
+                start_block_n,
+                end_block_n,
+                state_diffs.len(),
+                inventory.head_block_n,
+                inventory.exact_count,
+                inventory.historical_count,
+                inventory.oldest_exact,
+                inventory.newest_exact,
+                inventory.oldest_historical,
+                inventory.newest_historical,
+                inventory.has_empty_base,
+                self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
+                self.get_parallel_merkle_checkpoint_floor(start_block_n).ok().flatten(),
+                trie_log_mode
+            );
+            anyhow::anyhow!(
+                "Missing exact base snapshot for root batch {}..={} (base {base_block_n:?})",
+                start_block_n,
+                end_block_n
+            )
+        })?;
         tracing::info!(
-            "parallel_root_snapshot_selected start_block={} end_block={} batch_size={} snapshot_block={snapshot_block:?} selected_after_requested={} latest_checkpoint={:?} checkpoint_floor_for_start={:?} boundary_block={boundary_block_n:?} trie_log_mode={:?}",
+            "parallel_root_base_snapshot_selected start_block={} end_block={} batch_size={} base_block={base_block_n:?} snapshot_block={base_block_n:?} exact_match=true latest_checkpoint={:?} checkpoint_floor_for_start={:?} boundary_block={boundary_block_n:?} trie_log_mode={:?}",
             start_block_n,
             end_block_n,
             state_diffs.len(),
-            snapshot_block.is_some_and(|selected| selected > start_block_n),
             self.get_parallel_merkle_latest_checkpoint().ok().flatten(),
             self.get_parallel_merkle_checkpoint_floor(start_block_n).ok().flatten(),
             trie_log_mode
         );
         compute_roots_in_parallel_from_snapshot(
             self,
-            snapshot_block,
+            base_block_n,
             snapshot,
             start_block_n,
             state_diffs,
@@ -784,6 +835,9 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn on_new_confirmed_head(&self, block_n: u64) -> Result<()> {
         tracing::debug!("on_new_confirmed_head block_n={block_n}");
         self.snapshots.set_new_head(block_n);
+        if self.has_parallel_merkle_checkpoint(block_n)? {
+            self.snapshots.pin_head(block_n);
+        }
         self.metrics.update(self);
         Ok(())
     }
@@ -1112,7 +1166,10 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::info!("✅ REORG: Head projection updated successfully");
 
         tracing::info!("📸 REORG: Updating snapshots to new head block_n={}", target_block_n);
-        self.snapshots.set_new_head(target_block_n);
+        self.snapshots.rewind_to(target_block_n);
+        if self.has_parallel_merkle_checkpoint(target_block_n)? {
+            self.snapshots.pin_head(target_block_n);
+        }
         tracing::info!("✅ REORG: Snapshots updated successfully");
 
         tracing::info!("🔄 REORG: Resetting latest_applied_trie_update to block_n={}", target_block_n);
@@ -1142,5 +1199,99 @@ impl MadaraStorageWrite for RocksDBStorage {
         );
 
         Ok((target_block_n, target_block_info.block_hash))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, NonceUpdate, StateDiff, StorageEntry};
+
+    fn create_test_storage(config: RocksDBConfig) -> (tempfile::TempDir, RocksDBStorage) {
+        let temp_dir = tempfile::TempDir::with_prefix("rocksdb-exact-base-test").unwrap();
+        let storage = RocksDBStorage::open(temp_dir.path(), config).unwrap();
+        (temp_dir, storage)
+    }
+
+    fn synthetic_state_diff(index: u64) -> StateDiff {
+        let contract_address = Felt::from(10_000 + index);
+        let class_hash = Felt::from(20_000 + index);
+        StateDiff {
+            storage_diffs: vec![ContractStorageDiffItem {
+                address: contract_address,
+                storage_entries: vec![StorageEntry { key: Felt::from(1_u64), value: Felt::from(40_000 + index) }],
+            }],
+            old_declared_contracts: vec![],
+            declared_classes: vec![],
+            deployed_contracts: vec![DeployedContractItem { address: contract_address, class_hash }],
+            replaced_classes: vec![],
+            nonces: vec![NonceUpdate { contract_address, nonce: Felt::from(index + 1) }],
+            migrated_compiled_classes: vec![],
+        }
+    }
+
+    #[test]
+    fn latest_snapshot_path_uses_exact_checkpoint_base() {
+        let (_temp_expected, expected_storage) = create_test_storage(RocksDBConfig::default());
+        let diff0 = synthetic_state_diff(0);
+        let diff1 = synthetic_state_diff(1);
+
+        expected_storage.apply_to_global_trie(0, [&diff0]).expect("apply block 0");
+        expected_storage.on_new_confirmed_head(0).expect("confirm block 0");
+        let (expected_root, _) = expected_storage.apply_to_global_trie(1, [&diff1]).expect("apply block 1");
+
+        let (_temp_actual, storage) = create_test_storage(RocksDBConfig::default());
+        storage.apply_to_global_trie(0, [&diff0]).expect("apply block 0");
+        storage.write_parallel_merkle_checkpoint(0).expect("checkpoint 0");
+        storage.on_new_confirmed_head(0).expect("confirm block 0");
+
+        let results = storage
+            .compute_roots_in_parallel_from_latest_snapshot(1, &[diff1], None, TrieLogMode::Checkpoint)
+            .expect("parallel roots");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].state_root, expected_root);
+    }
+
+    #[test]
+    fn latest_snapshot_path_rejects_snapshot_at_first_diff_block() {
+        let (_temp_dir, storage) = create_test_storage(RocksDBConfig::default());
+        let diff0 = synthetic_state_diff(0);
+        let diff1 = synthetic_state_diff(1);
+
+        storage.apply_to_global_trie(0, [&diff0]).expect("apply block 0");
+        storage.on_new_confirmed_head(0).expect("confirm block 0");
+        storage.apply_to_global_trie(1, [&diff1]).expect("apply block 1");
+        storage.on_new_confirmed_head(1).expect("confirm block 1");
+
+        let err = storage
+            .compute_roots_in_parallel_from_latest_snapshot(1, &[diff1], None, TrieLogMode::Checkpoint)
+            .expect_err("missing exact base snapshot should fail");
+        let message = format!("{err:#}");
+        assert!(message.contains("Missing exact base snapshot"), "unexpected error: {message}");
+    }
+
+    #[test]
+    fn empty_base_snapshot_survives_head_advance_for_precheckpoint_batches() {
+        let (_temp_expected, expected_storage) = create_test_storage(RocksDBConfig::default());
+        let diffs: Vec<_> = (0_u64..3).map(synthetic_state_diff).collect();
+        let mut expected_roots = Vec::new();
+        for (block_n, diff) in diffs.iter().enumerate() {
+            let block_n = block_n as u64;
+            let (root, _) = expected_storage.apply_to_global_trie(block_n, [diff]).expect("sequential apply");
+            expected_storage.on_new_confirmed_head(block_n).expect("confirm block");
+            expected_roots.push(root);
+        }
+
+        let (_temp_actual, storage) = create_test_storage(RocksDBConfig::default());
+        storage.apply_to_global_trie(0, [&diffs[0]]).expect("apply block 0");
+        storage.on_new_confirmed_head(0).expect("confirm block 0");
+        storage.apply_to_global_trie(1, [&diffs[1]]).expect("apply block 1");
+        storage.on_new_confirmed_head(1).expect("confirm block 1");
+
+        let results = storage
+            .compute_roots_in_parallel_from_latest_snapshot(0, &diffs, None, TrieLogMode::Checkpoint)
+            .expect("parallel roots from empty base");
+        let got_roots: Vec<_> = results.into_iter().map(|result| result.state_root).collect();
+        assert_eq!(got_roots, expected_roots);
     }
 }

@@ -1,6 +1,9 @@
 use crate::{
     prelude::*,
-    rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE},
+    rocksdb::{
+        iter_pinned::DBIterator, snapshots::SnapshotRef, Column, RocksDBStorageInner, WriteBatchWithTransaction,
+        DB_UPDATES_BATCH_SIZE,
+    },
 };
 use mp_convert::Felt;
 use mp_state_update::{
@@ -101,6 +104,23 @@ impl RocksDBStorageInner {
         Ok(n.transpose()?.transpose()?)
     }
 
+    fn db_history_kv_resolve_from_snapshot<V: serde::de::DeserializeOwned + 'static>(
+        &self,
+        snapshot: &SnapshotRef,
+        bin_prefix: &[u8],
+        col: Column,
+    ) -> Result<Option<V>> {
+        let mut options = snapshot.read_options_with_snapshot();
+        options.set_prefix_same_as_start(true);
+        let mode = IteratorMode::From(bin_prefix, rocksdb::Direction::Forward);
+        let handle = snapshot.db.get_column(col);
+        let mut iter = DBIterator::new_cf(&snapshot.db.db, &handle, options, mode)
+            .into_iter_values(|bytes| super::deserialize(bytes));
+        let n = iter.next();
+
+        Ok(n.transpose()?.transpose()?)
+    }
+
     fn db_history_kv_contains(&self, bin_prefix: &[u8], col: Column) -> Result<bool> {
         let mut options = ReadOptions::default();
         options.set_prefix_same_as_start(true);
@@ -123,11 +143,35 @@ impl RocksDBStorageInner {
         self.db_history_kv_resolve(&prefix, CONTRACT_NONCE_COLUMN)
     }
 
+    #[tracing::instrument(skip(self, snapshot))]
+    pub(super) fn get_contract_nonce_at_from_snapshot(
+        &self,
+        snapshot: &SnapshotRef,
+        block_n: u64,
+        contract_address: &Felt,
+    ) -> Result<Option<Felt>> {
+        let block_n = u32::try_from(block_n).unwrap_or(u32::MAX);
+        let prefix = make_contract_column_key(contract_address, block_n);
+        self.db_history_kv_resolve_from_snapshot(snapshot, &prefix, CONTRACT_NONCE_COLUMN)
+    }
+
     #[tracing::instrument(skip(self))]
     pub(super) fn get_contract_class_hash_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
         let block_n = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
         let prefix = make_contract_column_key(contract_address, block_n);
         self.db_history_kv_resolve(&prefix, CONTRACT_CLASS_HASH_COLUMN)
+    }
+
+    #[tracing::instrument(skip(self, snapshot))]
+    pub(super) fn get_contract_class_hash_at_from_snapshot(
+        &self,
+        snapshot: &SnapshotRef,
+        block_n: u64,
+        contract_address: &Felt,
+    ) -> Result<Option<Felt>> {
+        let block_n = u32::try_from(block_n).unwrap_or(u32::MAX);
+        let prefix = make_contract_column_key(contract_address, block_n);
+        self.db_history_kv_resolve_from_snapshot(snapshot, &prefix, CONTRACT_CLASS_HASH_COLUMN)
     }
 
     #[tracing::instrument(skip(self))]
