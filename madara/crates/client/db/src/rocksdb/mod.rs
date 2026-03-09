@@ -280,7 +280,7 @@ impl RocksDBStorage {
             include_overlay,
             trie_log_mode
         );
-        compute_root_from_snapshot(self, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
+        compute_root_from_snapshot(self, snapshot_block, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
     }
 
     pub fn compute_roots_in_parallel_from_latest_snapshot(
@@ -305,6 +305,7 @@ impl RocksDBStorage {
         );
         compute_roots_in_parallel_from_snapshot(
             self,
+            snapshot_block,
             snapshot,
             start_block_n,
             state_diffs,
@@ -1085,6 +1086,25 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::info!("🎓 REORG: Starting class database revert...");
         self.inner.class_db_revert(&state_diffs).context("Reverting class database")?;
         tracing::info!("✅ REORG: Class database reverted successfully");
+
+        let expected_target_root = target_block_info.header.global_state_root;
+        let actual_target_root = self.get_state_root_hash().context("Reading global state root after trie revert")?;
+        let target_root_matches = actual_target_root == expected_target_root;
+        tracing::info!(
+            "reorg_target_state_root_verification target_block_n={} expected_root={:#x} actual_root={:#x} match={}",
+            target_block_n,
+            expected_target_root,
+            actual_target_root,
+            target_root_matches
+        );
+        if !target_root_matches {
+            tracing::error!(
+                "reorg_target_state_root_mismatch target_block_n={} expected_root={:#x} actual_root={:#x}",
+                target_block_n,
+                expected_target_root,
+                actual_target_root
+            );
+        }
 
         tracing::info!("🔗 REORG: Updating head projection to block_n={}", target_block_n);
         let new_tip = StorageHeadProjection::Confirmed(target_block_n);

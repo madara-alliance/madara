@@ -190,6 +190,7 @@ fn in_memory_class_trie_root(
 
 pub fn compute_root_from_snapshot(
     backend: &RocksDBStorage,
+    snapshot_block: Option<u64>,
     snapshot: SnapshotRef,
     block_n: u64,
     state_diff: &StateDiff,
@@ -230,8 +231,9 @@ pub fn compute_root_from_snapshot(
     let (class_root, class_trie_timings) = class_result?;
     let state_root = super::super::calculate_state_root(contract_root, class_root);
     tracing::info!(
-        "parallel_root_computed block_number={} contract_root={:#x} class_root={:#x} state_root={:#x} storage_diff_contracts={} deployed_contracts={} replaced_classes={} nonces={} declared_classes={} migrated_compiled_classes={} include_overlay={} trie_log_mode={:?}",
+        "parallel_root_computed block_number={} source_snapshot_block={snapshot_block:?} source_snapshot_is_future={} contract_root={:#x} class_root={:#x} state_root={:#x} storage_diff_contracts={} deployed_contracts={} replaced_classes={} nonces={} declared_classes={} migrated_compiled_classes={} include_overlay={} trie_log_mode={:?}",
         block_n,
+        snapshot_block.is_some_and(|selected| selected > block_n),
         contract_root,
         class_root,
         state_root,
@@ -260,6 +262,7 @@ pub fn compute_root_from_snapshot(
 
 pub fn compute_roots_in_parallel_from_snapshot(
     backend: &RocksDBStorage,
+    snapshot_block: Option<u64>,
     snapshot: SnapshotRef,
     start_block_n: u64,
     state_diffs: &[StateDiff],
@@ -274,6 +277,7 @@ pub fn compute_roots_in_parallel_from_snapshot(
             let block_n = start_block_n + u64::try_from(index).expect("index fits into u64");
             compute_root_from_snapshot(
                 backend,
+                snapshot_block,
                 Arc::clone(&snapshot),
                 block_n,
                 &state_diff,
