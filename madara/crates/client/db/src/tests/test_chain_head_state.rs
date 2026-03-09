@@ -150,6 +150,57 @@ fn runahead_keeps_external_visibility_and_promotes_next_on_confirm() {
 }
 
 #[test]
+fn runahead_keeps_multiple_runtime_preconfirmed_blocks_when_persistence_is_disabled() {
+    let backend = MadaraBackend::open_for_testing_with_config(
+        Arc::new(ChainConfig::madara_test()),
+        MadaraBackendConfig { save_preconfirmed: false, ..Default::default() },
+    );
+
+    for block_n in 0..=2 {
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
+                block_number: block_n,
+                ..Default::default()
+            }))
+            .expect("creating runtime-only preconfirmed block should succeed");
+    }
+
+    let head = backend.chain_head_state();
+    assert_eq!(head.confirmed_tip, None);
+    assert_eq!(head.external_preconfirmed_tip, Some(0));
+    assert_eq!(head.internal_preconfirmed_tip, Some(2));
+
+    for block_n in 0..=2 {
+        assert_eq!(
+            backend
+                .block_view_on_preconfirmed(block_n)
+                .expect("runtime-only preconfirmed block should stay queryable")
+                .block_number(),
+            block_n
+        );
+    }
+
+    backend.write_access().new_confirmed_block(0).expect("confirming block 0 should succeed");
+
+    assert!(backend.block_view_on_preconfirmed(0).is_none(), "confirmed block should be pruned from runtime map");
+    assert_eq!(
+        backend
+            .block_view_on_preconfirmed(1)
+            .expect("next in-flight preconfirmed block should remain queryable")
+            .block_number(),
+        1
+    );
+    assert_eq!(
+        backend
+            .block_view_on_preconfirmed(2)
+            .expect("higher in-flight preconfirmed block should remain queryable")
+            .block_number(),
+        2
+    );
+}
+
+#[test]
 fn refresh_reconstructs_internal_tip_from_persisted_preconfirmed_headers() {
     let backend = MadaraBackend::open_for_testing_with_config(
         Arc::new(ChainConfig::madara_test()),
