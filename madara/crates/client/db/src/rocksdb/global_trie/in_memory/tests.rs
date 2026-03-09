@@ -150,8 +150,8 @@ fn in_memory_single_block_root_matches_sequential_apply() {
 
     let expected_root = sequential_roots(&backend_seq, std::slice::from_ref(&diff))[0];
     let snapshot = fresh_snapshot(&backend_mem.db);
-    let computed =
-        compute_root_from_snapshot(&backend_mem.db, snapshot, 0, &diff, false, TrieLogMode::Off).expect("compute");
+    let computed = compute_root_from_snapshot(&backend_mem.db, None, snapshot, 0, &diff, false, TrieLogMode::Off)
+        .expect("compute");
 
     assert_eq!(computed.state_root, expected_root);
     assert!(computed.overlay.is_none(), "overlay should be absent when include_overlay=false");
@@ -216,9 +216,16 @@ fn in_memory_parallel_roots_match_sequential_per_block() {
 
     let expected_roots = sequential_roots(&backend_seq, &diffs);
     let snapshot = fresh_snapshot(&backend_mem.db);
-    let results =
-        compute_roots_in_parallel_from_snapshot(&backend_mem.db, snapshot, 0, &diffs, Some(2), TrieLogMode::Checkpoint)
-            .expect("parallel roots");
+    let results = compute_roots_in_parallel_from_snapshot(
+        &backend_mem.db,
+        None,
+        snapshot,
+        0,
+        &diffs,
+        Some(2),
+        TrieLogMode::Checkpoint,
+    )
+    .expect("parallel roots");
 
     let got_roots: Vec<_> = results.iter().map(|result| result.state_root).collect();
     assert_eq!(got_roots, expected_roots);
@@ -232,9 +239,16 @@ fn boundary_flush_updates_persisted_root_and_checkpoint() {
     let diffs: Vec<_> = (0_u64..3).map(synthetic_state_diff).collect();
     let snapshot = fresh_snapshot(&backend.db);
 
-    let results =
-        compute_roots_in_parallel_from_snapshot(&backend.db, snapshot, 0, &diffs, Some(2), TrieLogMode::Checkpoint)
-            .expect("parallel roots");
+    let results = compute_roots_in_parallel_from_snapshot(
+        &backend.db,
+        None,
+        snapshot,
+        0,
+        &diffs,
+        Some(2),
+        TrieLogMode::Checkpoint,
+    )
+    .expect("parallel roots");
     let boundary = results.last().expect("boundary result");
     let overlay = boundary.overlay.as_ref().expect("boundary overlay");
 
@@ -254,7 +268,7 @@ fn trie_log_mode_controls_log_column_flush_behavior() {
     let diff = synthetic_state_diff(0);
 
     let off_snapshot = fresh_snapshot(&backend_off.db);
-    let off_result = compute_root_from_snapshot(&backend_off.db, off_snapshot, 0, &diff, true, TrieLogMode::Off)
+    let off_result = compute_root_from_snapshot(&backend_off.db, None, off_snapshot, 0, &diff, true, TrieLogMode::Off)
         .expect("off mode compute");
     flush_overlay_and_checkpoint(
         &backend_off.db,
@@ -267,6 +281,7 @@ fn trie_log_mode_controls_log_column_flush_behavior() {
     let checkpoint_snapshot = fresh_snapshot(&backend_checkpoint.db);
     let checkpoint_result = compute_root_from_snapshot(
         &backend_checkpoint.db,
+        None,
         checkpoint_snapshot,
         0,
         &diff,

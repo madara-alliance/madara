@@ -428,6 +428,33 @@ pub struct MadaraBackendConfig {
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
+    fn log_confirmed_state_root_consistency(&self, context: &str, block_n: u64) -> Result<bool> {
+        let block_info = self.db.get_block_info(block_n)?.ok_or_else(|| {
+            anyhow::anyhow!("Missing block info while verifying confirmed state root for block #{block_n}")
+        })?;
+        let expected_root = block_info.header.global_state_root;
+        let actual_root = self.db.get_state_root_hash()?;
+        let matches = actual_root == expected_root;
+        tracing::info!(
+            "confirmed_state_root_consistency context={} block_number={} expected_root={:#x} actual_root={:#x} match={}",
+            context,
+            block_n,
+            expected_root,
+            actual_root,
+            matches
+        );
+        if !matches {
+            tracing::error!(
+                "confirmed_state_root_consistency_mismatch context={} block_number={} expected_root={:#x} actual_root={:#x}",
+                context,
+                block_n,
+                expected_root,
+                actual_root
+            );
+        }
+        Ok(matches)
+    }
+
     fn new_and_init(
         db: D,
         chain_config: Arc<ChainConfig>,
@@ -488,6 +515,9 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             chain_head_state.confirmed_tip.map(|n| n + 1).unwrap_or(/* genesis */ 0),
         )?;
         self.publish_head_projection(chain_head_state, preconfirmed)?;
+        if let Some(confirmed_tip) = chain_head_state.confirmed_tip {
+            let _ = self.log_confirmed_state_root_consistency("startup_init", confirmed_tip);
+        }
 
         // Init L1 head
         self.latest_l1_confirmed.send_replace(self.db.get_confirmed_on_l1_tip()?);
