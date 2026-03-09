@@ -37,6 +37,9 @@ impl Snapshots {
         snapshot_interval: u64,
     ) -> Self {
         let head = Arc::new(SnapshotWithDBArc::new(Arc::clone(&db)));
+        tracing::info!(
+            "initialized_db_snapshots head_block_n={head_block_n:?} max_kept_snapshots={max_kept_snapshots:?} snapshot_interval={snapshot_interval}"
+        );
         Self {
             db,
             inner: SnapshotsInner { historical: Default::default(), head, head_block_n }.into(),
@@ -59,9 +62,20 @@ impl Snapshots {
             inner.historical.insert(block_n, Arc::clone(&snapshot));
 
             // remove the oldest snapshot
-            if self.max_kept_snapshots.is_some_and(|n| inner.historical.len() > n) {
-                inner.historical.pop_first();
-            }
+            let pruned_snapshot_block = if self.max_kept_snapshots.is_some_and(|n| inner.historical.len() > n) {
+                inner.historical.pop_first().map(|(pruned_block_n, _)| pruned_block_n)
+            } else {
+                None
+            };
+            tracing::info!(
+                "db_snapshot_saved block_number={} historical_count={} oldest_snapshot={:?} newest_snapshot={:?} pruned_snapshot={pruned_snapshot_block:?} max_kept_snapshots={:?} snapshot_interval={}",
+                block_n,
+                inner.historical.len(),
+                inner.historical.keys().next().copied(),
+                inner.historical.keys().next_back().copied(),
+                self.max_kept_snapshots,
+                self.snapshot_interval
+            );
         }
 
         // Update head snapshot
@@ -75,15 +89,30 @@ impl Snapshots {
     pub fn get_closest(&self, block_n: u64) -> (Option<u64>, SnapshotRef) {
         tracing::debug!("get closest {block_n:?} {self:?}");
         let inner = self.inner.read().expect("Poisoned lock");
+        let historical_count = inner.historical.len();
+        let oldest_snapshot = inner.historical.keys().next().copied();
+        let newest_snapshot = inner.historical.keys().next_back().copied();
         // We want the closest snapshot that is younger than this block_n.
-        inner
+        let (selected_block_n, snapshot_ref, source) = inner
             .historical
             .range(&block_n..)
             .next()
-            .map(|(block_n, snapshot)| (Some(*block_n), Arc::clone(snapshot)))
+            .map(|(block_n, snapshot)| (Some(*block_n), Arc::clone(snapshot), "historical"))
             // If none was found, this means that we are asking for a block that's between the last snapshot and the current latest block, or
             // snapshots are disabled. In these cases we want to return the snapshot for the current latest block.
-            .unwrap_or_else(|| (inner.head_block_n, Arc::clone(&inner.head)))
+            .unwrap_or_else(|| (inner.head_block_n, Arc::clone(&inner.head), "head"));
+        if selected_block_n.is_some_and(|selected| selected > block_n) {
+            tracing::info!(
+                "db_snapshot_selected_after_requested requested_block={} selected_snapshot_block={selected_block_n:?} source={} head_block_n={:?} historical_count={} oldest_snapshot={oldest_snapshot:?} newest_snapshot={newest_snapshot:?} max_kept_snapshots={:?} snapshot_interval={}",
+                block_n,
+                source,
+                inner.head_block_n,
+                historical_count,
+                self.max_kept_snapshots,
+                self.snapshot_interval
+            );
+        }
+        (selected_block_n, snapshot_ref)
     }
 }
 
