@@ -20,6 +20,13 @@ fn is_lex_sorted(bytes: &[ByteVec]) -> bool {
     bytes.windows(2).all(|pair| pair[0].as_slice() <= pair[1].as_slice())
 }
 
+fn split_identifier_and_suffix(bytes: &[u8]) -> Option<(String, String)> {
+    (bytes.len() >= 32).then(|| {
+        let (identifier, suffix) = bytes.split_at(32);
+        (bytes_to_hex(identifier), bytes_to_hex(suffix))
+    })
+}
+
 const OVERLAY_TRIE_COLUMN_ID: u8 = 0;
 const OVERLAY_FLAT_COLUMN_ID: u8 = 1;
 pub(super) const OVERLAY_TRIE_LOG_COLUMN_ID: u8 = 2;
@@ -120,7 +127,25 @@ impl InMemoryBonsaiDb {
 
     fn get_from_snapshot(&self, key: &DatabaseKey) -> Result<Option<ByteVec>, TrieError> {
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
-        Ok(self.snapshot.get_cf(&handle, key.as_slice())?.map(Into::into))
+        let value = self.snapshot.get_cf(&handle, key.as_slice())?.map(ByteVec::from);
+        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
+            let key_kind = match key {
+                DatabaseKey::Trie(_) => "trie",
+                DatabaseKey::Flat(_) => "flat",
+                DatabaseKey::TrieLog(_) => "trie_log",
+            };
+            let (identifier, suffix) =
+                split_identifier_and_suffix(key.as_slice()).unwrap_or_else(|| ("".into(), bytes_to_hex(key.as_slice())));
+            tracing::info!(
+                "parallel_contract_storage_snapshot_get key_kind={} identifier=0x{} suffix=0x{} suffix_len={} hit={}",
+                key_kind,
+                identifier,
+                suffix,
+                suffix.len() / 2,
+                value.is_some()
+            );
+        }
+        Ok(value)
     }
 
     fn changed_value(&self, key: &DatabaseKey) -> Option<Option<ByteVec>> {
@@ -151,7 +176,8 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
             return Ok(Vec::new());
         };
         let handle = self.snapshot.db.get_column(column.clone());
-        let readopts = self.snapshot.read_options_with_snapshot();
+        let mut readopts = self.snapshot.read_options_with_snapshot();
+        readopts.set_prefix_same_as_start(true);
 
         let mut out: Vec<(ByteVec, ByteVec)> = Vec::new();
         for item in self.snapshot.db.db.iterator_cf_opt(
@@ -258,7 +284,8 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
             return Ok(());
         };
         let handle = self.snapshot.db.get_column(column.clone());
-        let readopts = self.snapshot.read_options_with_snapshot();
+        let mut readopts = self.snapshot.read_options_with_snapshot();
+        readopts.set_prefix_same_as_start(true);
 
         for item in self.snapshot.db.db.iterator_cf_opt(
             &handle,
