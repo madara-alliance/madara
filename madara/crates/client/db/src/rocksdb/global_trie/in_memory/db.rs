@@ -207,6 +207,8 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
             }
         }
 
+        out.sort_by(|(left_key, _), (right_key, _)| left_key.as_slice().cmp(right_key.as_slice()));
+
         tracing::info!(
             "parallel_bonsai_get_by_prefix_result column_id={} prefix={} merged_matches={} keys={:?} keys_sorted={} values_lens={:?}",
             prefix_col,
