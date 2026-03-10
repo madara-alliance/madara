@@ -27,6 +27,18 @@ fn split_identifier_and_suffix(bytes: &[u8]) -> Option<(String, String)> {
     })
 }
 
+fn describe_database_key(key: &DatabaseKey) -> (&'static str, String, String, usize) {
+    let key_kind = match key {
+        DatabaseKey::Trie(_) => "trie",
+        DatabaseKey::Flat(_) => "flat",
+        DatabaseKey::TrieLog(_) => "trie_log",
+    };
+    let (identifier, suffix) =
+        split_identifier_and_suffix(key.as_slice()).unwrap_or_else(|| ("".into(), bytes_to_hex(key.as_slice())));
+    let suffix_len = suffix.len() / 2;
+    (key_kind, identifier, suffix, suffix_len)
+}
+
 const OVERLAY_TRIE_COLUMN_ID: u8 = 0;
 const OVERLAY_FLAT_COLUMN_ID: u8 = 1;
 pub(super) const OVERLAY_TRIE_LOG_COLUMN_ID: u8 = 2;
@@ -129,19 +141,13 @@ impl InMemoryBonsaiDb {
         let handle = self.snapshot.db.get_column(self.column_mapping.map(key).clone());
         let value = self.snapshot.get_cf(&handle, key.as_slice())?.map(ByteVec::from);
         if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
-            let key_kind = match key {
-                DatabaseKey::Trie(_) => "trie",
-                DatabaseKey::Flat(_) => "flat",
-                DatabaseKey::TrieLog(_) => "trie_log",
-            };
-            let (identifier, suffix) =
-                split_identifier_and_suffix(key.as_slice()).unwrap_or_else(|| ("".into(), bytes_to_hex(key.as_slice())));
+            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(key);
             tracing::info!(
                 "parallel_contract_storage_snapshot_get key_kind={} identifier=0x{} suffix=0x{} suffix_len={} hit={}",
                 key_kind,
                 identifier,
                 suffix,
-                suffix.len() / 2,
+                suffix_len,
                 value.is_some()
             );
         }
@@ -149,7 +155,21 @@ impl InMemoryBonsaiDb {
     }
 
     fn changed_value(&self, key: &DatabaseKey) -> Option<Option<ByteVec>> {
-        self.changed.get(&to_changed_key(key)).map(|v| v.value().clone())
+        let value = self.changed.get(&to_changed_key(key)).map(|v| v.value().clone());
+        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
+            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(key);
+            tracing::info!(
+                "parallel_contract_storage_overlay_lookup key_kind={} identifier=0x{} suffix=0x{} suffix_len={} present={} tombstone={} overlay_entries={}",
+                key_kind,
+                identifier,
+                suffix,
+                suffix_len,
+                value.is_some(),
+                value.as_ref().is_some_and(|inner| inner.is_none()),
+                self.changed.len()
+            );
+        }
+        value
     }
 }
 
@@ -263,6 +283,19 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         let previous = self.get(key)?;
         self.changed.insert(to_changed_key(key), Some(value.into()));
+        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
+            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(key);
+            tracing::info!(
+                "parallel_contract_storage_overlay_insert key_kind={} identifier=0x{} suffix=0x{} suffix_len={} value_len={} previous_present={} overlay_entries={}",
+                key_kind,
+                identifier,
+                suffix,
+                suffix_len,
+                value.len(),
+                previous.is_some(),
+                self.changed.len()
+            );
+        }
         Ok(previous)
     }
 
@@ -273,12 +306,25 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
     ) -> Result<Option<ByteVec>, Self::DatabaseError> {
         let previous = self.get(key)?;
         self.changed.insert(to_changed_key(key), None);
+        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
+            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(key);
+            tracing::info!(
+                "parallel_contract_storage_overlay_remove key_kind={} identifier=0x{} suffix=0x{} suffix_len={} previous_present={} overlay_entries={}",
+                key_kind,
+                identifier,
+                suffix,
+                suffix_len,
+                previous.is_some(),
+                self.changed.len()
+            );
+        }
         Ok(previous)
     }
 
     fn remove_by_prefix(&mut self, prefix: &DatabaseKey) -> Result<(), Self::DatabaseError> {
         let prefix_key = to_changed_key(prefix);
         let (prefix_col, prefix_bytes) = (prefix_key.0, prefix_key.1);
+        let before = self.changed.len();
 
         let Some(column) = self.column_mapping.map_from_column_id(prefix_col) else {
             return Ok(());
@@ -309,11 +355,36 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
             self.changed.insert(key, None);
         }
 
+        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
+            let (key_kind, identifier, suffix, suffix_len) = describe_database_key(prefix);
+            tracing::info!(
+                "parallel_contract_storage_overlay_remove_by_prefix key_kind={} identifier=0x{} suffix=0x{} suffix_len={} overlay_entries_before={} overlay_entries_after={}",
+                key_kind,
+                identifier,
+                suffix,
+                suffix_len,
+                before,
+                self.changed.len()
+            );
+        }
+
         Ok(())
     }
 
     fn write_batch(&mut self, _batch: Self::Batch) -> Result<(), Self::DatabaseError> {
         // Intentionally a no-op: all writes stay in overlay until explicit flush.
+        if self.column_mapping.flat.rocksdb_name == BONSAI_CONTRACT_STORAGE_FLAT_COLUMN.rocksdb_name {
+            let trie_entries = self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_TRIE_COLUMN_ID).count();
+            let flat_entries = self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_FLAT_COLUMN_ID).count();
+            let trie_log_entries = self.changed.iter().filter(|entry| entry.key().0 == OVERLAY_TRIE_LOG_COLUMN_ID).count();
+            tracing::info!(
+                "parallel_contract_storage_overlay_write_batch noop=true overlay_entries={} trie_entries={} flat_entries={} trie_log_entries={}",
+                self.changed.len(),
+                trie_entries,
+                flat_entries,
+                trie_log_entries
+            );
+        }
         Ok(())
     }
 }
