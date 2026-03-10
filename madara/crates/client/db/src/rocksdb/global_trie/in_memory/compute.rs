@@ -164,7 +164,7 @@ fn in_memory_contract_trie_root(
         touched_contracts_sorted.iter().map(|address| format!("{:#x}", address)).collect::<Vec<_>>()
     );
 
-    let leaf_hashes: Vec<_> = contract_leafs
+    let mut leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, mut leaf)| {
             let storage_root = contract_storage_trie
@@ -185,6 +185,10 @@ fn in_memory_contract_trie_root(
             anyhow::Ok((contract_address, bitvec, leaf_hash))
         })
         .collect::<Result<_>>()?;
+
+    leaf_hashes.sort_by(|(left_address, left_key, _), (right_address, right_key, _)| {
+        left_key.as_raw_slice().cmp(right_key.as_raw_slice()).then_with(|| left_address.cmp(right_address))
+    });
 
     tracing::info!(
         "parallel_contract_trie_insert_order block_number={} actual_order={:?} sorted_order={:?}",
