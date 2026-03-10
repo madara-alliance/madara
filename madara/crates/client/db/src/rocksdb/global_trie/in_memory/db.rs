@@ -12,6 +12,10 @@ use rocksdb::{Direction, IteratorMode};
 use std::fmt;
 use std::sync::Arc;
 
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 const OVERLAY_TRIE_COLUMN_ID: u8 = 0;
 const OVERLAY_FLAT_COLUMN_ID: u8 = 1;
 pub(super) const OVERLAY_TRIE_LOG_COLUMN_ID: u8 = 2;
@@ -157,6 +161,12 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
             }
             out.push((key.to_vec().into(), value.to_vec().into()));
         }
+        tracing::info!(
+            "parallel_bonsai_get_by_prefix_snapshot column_id={} prefix={} snapshot_matches={}",
+            prefix_col,
+            bytes_to_hex(prefix_bytes.as_slice()),
+            out.len()
+        );
 
         for entry in self.changed.iter() {
             let ((column_id, key), value) = entry.pair();
@@ -166,6 +176,12 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
 
             match value {
                 Some(v) => {
+                    tracing::info!(
+                        "parallel_bonsai_get_by_prefix_overlay_upsert column_id={} key={} value_len={}",
+                        column_id,
+                        bytes_to_hex(key.as_slice()),
+                        v.len()
+                    );
                     if let Some((_, existing)) =
                         out.iter_mut().find(|(existing_key, _)| existing_key.as_slice() == key.as_slice())
                     {
@@ -174,9 +190,24 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
                         out.push((key.clone(), v.clone()));
                     }
                 }
-                None => out.retain(|(existing_key, _)| existing_key.as_slice() != key.as_slice()),
+                None => {
+                    tracing::info!(
+                        "parallel_bonsai_get_by_prefix_overlay_delete column_id={} key={}",
+                        column_id,
+                        bytes_to_hex(key.as_slice())
+                    );
+                    out.retain(|(existing_key, _)| existing_key.as_slice() != key.as_slice())
+                }
             }
         }
+
+        tracing::info!(
+            "parallel_bonsai_get_by_prefix_result column_id={} prefix={} merged_matches={} keys={:?}",
+            prefix_col,
+            bytes_to_hex(prefix_bytes.as_slice()),
+            out.len(),
+            out.iter().map(|(key, _)| bytes_to_hex(key.as_slice())).collect::<Vec<_>>()
+        );
 
         Ok(out)
     }
