@@ -1469,6 +1469,12 @@ impl BlockProductionTask {
                 write_bouncer_start.elapsed().as_secs_f64() * 1000.0
             );
 
+            let boundary_storage_contracts: Vec<_> = state_diff
+                .storage_diffs
+                .iter()
+                .map(|item| (item.address, item.storage_entries.len()))
+                .collect();
+
             // Phase 1: write block parts with precomputed root (no head advance yet).
             let write_parts_start = Instant::now();
             let result = backend
@@ -1513,6 +1519,27 @@ impl BlockProductionTask {
                     backend.db.get_parallel_merkle_latest_checkpoint().ok().flatten(),
                     backend.db.get_parallel_merkle_checkpoint_floor(block_number).ok().flatten(),
                     trie_log_mode
+                );
+                let persisted_storage_roots_start = Instant::now();
+                let persisted_contract_storage_trie = backend.db.contract_storage_trie();
+                for (contract_address, storage_entries_len) in &boundary_storage_contracts {
+                    let persisted_storage_root = persisted_contract_storage_trie
+                        .root_hash(&contract_address.to_bytes_be())
+                        .map_err(mc_db::rocksdb::trie::WrappedBonsaiError)
+                        .context("Reading persisted contract storage root after boundary flush")?;
+                    tracing::info!(
+                        "parallel_boundary_persisted_storage_root block_number={} contract_address={:#x} storage_entries={} persisted_storage_root={:#x}",
+                        block_number,
+                        contract_address,
+                        storage_entries_len,
+                        persisted_storage_root
+                    );
+                }
+                tracing::info!(
+                    "parallel_boundary_persisted_storage_roots_done block_number={} touched_contracts={} duration_ms={}",
+                    block_number,
+                    boundary_storage_contracts.len(),
+                    persisted_storage_roots_start.elapsed().as_secs_f64() * 1000.0
                 );
             }
 
