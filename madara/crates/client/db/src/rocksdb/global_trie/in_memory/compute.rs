@@ -122,7 +122,20 @@ fn in_memory_contract_trie_root(
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
 
     for ContractStorageDiffItem { address, storage_entries } in &state_diff.storage_diffs {
-        for StorageEntry { key, value } in storage_entries {
+        let actual_order: Vec<String> =
+            storage_entries.iter().map(|StorageEntry { key, .. }| format!("{:#x}", key)).collect();
+        let mut sorted_entries: Vec<_> = storage_entries.iter().collect();
+        sorted_entries.sort_by_key(|StorageEntry { key, .. }| key.to_bytes_be());
+        let sorted_order: Vec<String> =
+            sorted_entries.iter().map(|StorageEntry { key, .. }| format!("{:#x}", key)).collect();
+        tracing::info!(
+            "parallel_contract_storage_insert_order block_number={} source_snapshot_block={snapshot_block:?} contract_address={:#x} actual_order={:?} sorted_order={:?}",
+            block_n,
+            address,
+            actual_order,
+            sorted_order
+        );
+        for StorageEntry { key, value } in sorted_entries {
             let bytes = key.to_bytes_be();
             let bitvec: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
             contract_storage_trie
