@@ -277,6 +277,10 @@ impl RocksDBStorage {
         self.snapshots.get_floor(max_block_n)
     }
 
+    pub fn get_latest_durable_snapshot_floor(&self, max_block_n: Option<u64>) -> Option<(Option<u64>, SnapshotRef)> {
+        self.snapshots.get_durable_floor(max_block_n)
+    }
+
     pub fn compute_root_from_selected_snapshot(
         &self,
         snapshot_block: Option<u64>,

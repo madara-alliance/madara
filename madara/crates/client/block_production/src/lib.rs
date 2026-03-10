@@ -1001,13 +1001,22 @@ impl BlockProductionTask {
         let is_boundary = self.is_boundary_block(block_n);
         let (root_base_block_n, root_snapshot, root_state_diffs) = if self.parallel_merkle_enabled {
             self.diffs_since_snapshot.push((block_n, state_diff.clone()));
+            let generic_floor = self.backend.db.get_latest_snapshot_floor(block_n.checked_sub(1));
             let (base_block_n, snapshot) =
-                self.backend.db.get_latest_snapshot_floor(block_n.checked_sub(1)).ok_or_else(|| {
-                    anyhow::anyhow!("Missing snapshot floor for root computation of block #{block_n}")
+                self.backend.db.get_latest_durable_snapshot_floor(block_n.checked_sub(1)).ok_or_else(|| {
+                    anyhow::anyhow!("Missing durable snapshot floor for root computation of block #{block_n}")
                 })?;
+            if let Some((generic_block_n, _)) = generic_floor {
+                if generic_block_n != base_block_n {
+                    tracing::info!(
+                        "parallel_root_non_durable_floor_ignored block_number={} generic_base_snapshot_block={generic_block_n:?} durable_base_snapshot_block={base_block_n:?}",
+                        block_n
+                    );
+                }
+            }
             let root_state_diffs = collect_diffs_for_root_from_base(&self.diffs_since_snapshot, base_block_n, block_n)?;
             tracing::info!(
-                "parallel_root_job_enqueued block_number={} base_snapshot_block={base_block_n:?} diff_count={} diff_start_block={} diff_end_block={} include_overlay={} trie_log_mode={:?}",
+                "parallel_root_job_enqueued block_number={} base_snapshot_block={base_block_n:?} diff_count={} diff_start_block={} diff_end_block={} include_overlay={} trie_log_mode={:?} durable_base=true",
                 block_n,
                 root_state_diffs.len(),
                 base_block_n.map_or(0, |base| base.saturating_add(1)),

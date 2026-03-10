@@ -201,6 +201,25 @@ impl Snapshots {
         }
     }
 
+    /// Return the latest snapshot floor that is known to be a durable trie base.
+    ///
+    /// In parallel-merkle mode, only pinned exact snapshots and the empty-base snapshot
+    /// are safe as root-computation bases. Head/historical snapshots may reflect block
+    /// part writes for non-boundary blocks whose trie overlay has not been flushed yet.
+    #[tracing::instrument(skip(self))]
+    pub fn get_durable_floor(&self, max_block_n: Option<u64>) -> Option<(Option<u64>, SnapshotRef)> {
+        let inner = self.inner.read().expect("Poisoned lock");
+        match max_block_n {
+            None => inner.empty_base.as_ref().map(|snapshot| (None, Arc::clone(snapshot))),
+            Some(max_block_n) => inner
+                .exact
+                .range(..=max_block_n)
+                .next_back()
+                .map(|(block_n, snapshot)| (Some(*block_n), Arc::clone(snapshot)))
+                .or_else(|| inner.empty_base.as_ref().map(|snapshot| (None, Arc::clone(snapshot)))),
+        }
+    }
+
     pub fn inventory(&self) -> SnapshotInventory {
         let inner = self.inner.read().expect("Poisoned lock");
         SnapshotInventory {
@@ -377,5 +396,23 @@ mod tests {
         assert_eq!(inventory.head_block_n, Some(4));
         assert_eq!(inventory.newest_exact, Some(4));
         assert_eq!(inventory.newest_historical, Some(4));
+    }
+
+    #[test]
+    fn test_durable_floor_ignores_non_exact_head_and_historical_snapshots() {
+        let config = RocksDBConfig { max_kept_snapshots: Some(5), snapshot_interval: 1, ..Default::default() };
+        let (_temp_dir, storage) = create_test_storage(config);
+
+        storage.snapshots.set_new_head(670723);
+        storage.snapshots.pin_head(670723);
+        storage.snapshots.set_new_head(670724);
+        storage.snapshots.pin_head(670724);
+        storage.snapshots.set_new_head(670725);
+
+        let (block_n, _) = storage.snapshots.get_floor(Some(670725)).expect("any floor snapshot");
+        assert_eq!(block_n, Some(670725), "generic floor lookup should still see the head snapshot");
+
+        let (block_n, _) = storage.snapshots.get_durable_floor(Some(670725)).expect("durable floor snapshot");
+        assert_eq!(block_n, Some(670724), "durable floor must ignore non-exact head snapshots");
     }
 }
