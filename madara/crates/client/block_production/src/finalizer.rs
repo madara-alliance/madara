@@ -269,8 +269,9 @@ mod tests {
             },
             is_boundary,
             trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode::Checkpoint,
-            trie_batch_handle: None,
-            trie_batch_index: None,
+            root_base_block_n: None,
+            root_snapshot: None,
+            root_state_diffs: Vec::new(),
             enqueued_at: Instant::now(),
         }
     }

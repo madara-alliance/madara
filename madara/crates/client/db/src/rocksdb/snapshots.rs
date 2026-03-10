@@ -169,6 +169,38 @@ impl Snapshots {
         }
     }
 
+    #[tracing::instrument(skip(self))]
+    pub fn get_floor(&self, max_block_n: Option<u64>) -> Option<(Option<u64>, SnapshotRef)> {
+        let inner = self.inner.read().expect("Poisoned lock");
+        match max_block_n {
+            None => inner.empty_base.as_ref().map(|snapshot| (None, Arc::clone(snapshot))),
+            Some(max_block_n) => {
+                if inner.head_block_n.is_some_and(|head_block_n| head_block_n <= max_block_n) {
+                    return Some((inner.head_block_n, Arc::clone(&inner.head)));
+                }
+
+                let exact =
+                    inner.exact.range(..=max_block_n).next_back().map(|(block_n, snapshot)| (*block_n, snapshot));
+                let historical =
+                    inner.historical.range(..=max_block_n).next_back().map(|(block_n, snapshot)| (*block_n, snapshot));
+
+                match (exact, historical) {
+                    (Some((exact_block_n, exact_snapshot)), Some((historical_block_n, historical_snapshot))) => {
+                        if exact_block_n >= historical_block_n {
+                            Some((Some(exact_block_n), Arc::clone(exact_snapshot)))
+                        } else {
+                            Some((Some(historical_block_n), Arc::clone(historical_snapshot)))
+                        }
+                    }
+                    (Some((block_n, snapshot)), None) | (None, Some((block_n, snapshot))) => {
+                        Some((Some(block_n), Arc::clone(snapshot)))
+                    }
+                    (None, None) => inner.empty_base.as_ref().map(|snapshot| (None, Arc::clone(snapshot))),
+                }
+            }
+        }
+    }
+
     pub fn inventory(&self) -> SnapshotInventory {
         let inner = self.inner.read().expect("Poisoned lock");
         SnapshotInventory {

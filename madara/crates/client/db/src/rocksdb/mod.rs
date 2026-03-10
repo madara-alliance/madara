@@ -52,6 +52,8 @@ mod rocksdb_snapshot;
 mod snapshots;
 mod state;
 
+pub use snapshots::SnapshotRef;
+
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
 pub mod trie;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
@@ -269,6 +271,28 @@ impl RocksDBStorage {
 
     pub fn remove_parallel_merkle_checkpoints_above(&self, target_block_n: u64) -> Result<()> {
         self.inner.remove_parallel_merkle_checkpoints_above(target_block_n)
+    }
+
+    pub fn get_latest_snapshot_floor(&self, max_block_n: Option<u64>) -> Option<(Option<u64>, SnapshotRef)> {
+        self.snapshots.get_floor(max_block_n)
+    }
+
+    pub fn compute_root_from_selected_snapshot(
+        &self,
+        snapshot_block: Option<u64>,
+        snapshot: SnapshotRef,
+        block_n: u64,
+        state_diff: &StateDiff,
+        include_overlay: bool,
+        trie_log_mode: TrieLogMode,
+    ) -> Result<InMemoryRootComputation> {
+        tracing::info!(
+            "parallel_root_selected_snapshot_compute block_number={} base_block={snapshot_block:?} include_overlay={} trie_log_mode={:?}",
+            block_n,
+            include_overlay,
+            trie_log_mode
+        );
+        compute_root_from_snapshot(self, snapshot_block, snapshot, block_n, state_diff, include_overlay, trie_log_mode)
     }
 
     pub fn compute_root_from_latest_snapshot(

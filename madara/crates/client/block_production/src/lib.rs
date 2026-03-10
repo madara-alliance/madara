@@ -184,6 +184,34 @@ fn prune_diffs_since_snapshot(diffs_since_snapshot: &mut Vec<(u64, StateDiff)>, 
     diffs_since_snapshot.retain(|(n, _)| *n > completed_block_n);
 }
 
+fn collect_diffs_for_root_from_base(
+    diffs_since_snapshot: &[(u64, StateDiff)],
+    base_block_n: Option<u64>,
+    target_block_n: u64,
+) -> anyhow::Result<Vec<StateDiff>> {
+    let mut expected_block_n = base_block_n.map_or(0, |block_n| block_n.saturating_add(1));
+    let mut collected = Vec::new();
+
+    for (block_n, state_diff) in diffs_since_snapshot.iter().filter(|(block_n, _)| *block_n <= target_block_n) {
+        if *block_n < expected_block_n {
+            continue;
+        }
+        anyhow::ensure!(
+            *block_n == expected_block_n,
+            "Missing tracked state diff for block #{expected_block_n} while preparing root for block #{target_block_n} from base {base_block_n:?}"
+        );
+        collected.push(state_diff.clone());
+        expected_block_n = expected_block_n.saturating_add(1);
+    }
+
+    anyhow::ensure!(
+        expected_block_n == target_block_n.saturating_add(1),
+        "Incomplete tracked state diffs for root of block #{target_block_n} from base {base_block_n:?}"
+    );
+
+    Ok(collected)
+}
+
 /// Used for listening to state changes in tests.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockProductionStateNotification {
@@ -479,69 +507,6 @@ impl BlockProductionTask {
         };
         self.parallel_merkle_flush_interval != 0
             && next_block_n.checked_rem(self.parallel_merkle_flush_interval) == Some(0)
-    }
-
-    fn dispatch_roots_batch(
-        backend: Arc<MadaraBackend>,
-        metrics: Arc<BlockProductionMetrics>,
-        start_block_n: u64,
-        state_diffs: Vec<StateDiff>,
-        boundary_block_n: Option<u64>,
-        trie_log_mode: mc_db::rocksdb::global_trie::in_memory::TrieLogMode,
-    ) -> tokio::task::JoinHandle<anyhow::Result<Vec<mc_db::rocksdb::global_trie::in_memory::InMemoryRootComputation>>>
-    {
-        let dispatched_at = Instant::now();
-        let batch_size = state_diffs.len();
-        let end_block_n =
-            start_block_n + u64::try_from(batch_size.saturating_sub(1)).expect("batch size fits into u64");
-        tracing::debug!(
-            "parallel_root_batch_dispatch_enqueued start_block={} end_block={} batch_size={} boundary_block={:?}",
-            start_block_n,
-            end_block_n,
-            batch_size,
-            boundary_block_n
-        );
-        tokio::task::spawn_blocking(move || {
-            let closure_started_at = Instant::now();
-            let spawn_blocking_queue_duration = closure_started_at.duration_since(dispatched_at);
-            metrics
-                .parallel_root_spawn_blocking_queue_duration
-                .record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
-            metrics.parallel_root_spawn_blocking_queue_last.record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
-            tracing::debug!(
-                "parallel_root_batch_compute_started start_block={} end_block={} batch_size={} spawn_blocking_queue_ms={}",
-                start_block_n,
-                end_block_n,
-                batch_size,
-                spawn_blocking_queue_duration.as_secs_f64() * 1000.0
-            );
-
-            let compute_started_at = Instant::now();
-            let result = backend.db.compute_roots_in_parallel_from_latest_snapshot(
-                start_block_n,
-                &state_diffs,
-                boundary_block_n,
-                trie_log_mode,
-            );
-            let compute_duration = compute_started_at.elapsed();
-            let total_duration = dispatched_at.elapsed();
-
-            metrics.parallel_root_compute_duration.record(compute_duration.as_secs_f64(), &[]);
-            metrics.parallel_root_compute_last.record(compute_duration.as_secs_f64(), &[]);
-            metrics.parallel_root_total_duration.record(total_duration.as_secs_f64(), &[]);
-            metrics.parallel_root_total_last.record(total_duration.as_secs_f64(), &[]);
-
-            tracing::debug!(
-                "parallel_root_batch_compute_finished start_block={} end_block={} batch_size={} success={} compute_ms={} total_ms={}",
-                start_block_n,
-                end_block_n,
-                batch_size,
-                result.is_ok(),
-                compute_duration.as_secs_f64() * 1000.0,
-                total_duration.as_secs_f64() * 1000.0
-            );
-            result
-        })
     }
 
     /// Prepares a PreconfirmedExecutedTransaction for re-execution by converting it to blockifier format.
@@ -1034,27 +999,25 @@ impl BlockProductionTask {
         );
 
         let is_boundary = self.is_boundary_block(block_n);
-        let (trie_batch_handle, trie_batch_index) = if self.parallel_merkle_enabled {
+        let (root_base_block_n, root_snapshot, root_state_diffs) = if self.parallel_merkle_enabled {
             self.diffs_since_snapshot.push((block_n, state_diff.clone()));
-            let start_block_n = self
-                .diffs_since_snapshot
-                .first()
-                .map(|(tracked_block_n, _)| *tracked_block_n)
-                .expect("tracked diffs exist for parallel merkle close");
-            let trie_batch_index = self.diffs_since_snapshot.len().saturating_sub(1);
-            let state_diffs: Vec<_> =
-                self.diffs_since_snapshot.iter().map(|(_, tracked_state_diff)| tracked_state_diff.clone()).collect();
-            let trie_batch_handle = Self::dispatch_roots_batch(
-                Arc::clone(&self.backend),
-                Arc::clone(&self.metrics),
-                start_block_n,
-                state_diffs,
-                is_boundary.then_some(block_n),
-                self.parallel_merkle_trie_log_mode,
+            let (base_block_n, snapshot) =
+                self.backend.db.get_latest_snapshot_floor(block_n.checked_sub(1)).ok_or_else(|| {
+                    anyhow::anyhow!("Missing snapshot floor for root computation of block #{block_n}")
+                })?;
+            let root_state_diffs = collect_diffs_for_root_from_base(&self.diffs_since_snapshot, base_block_n, block_n)?;
+            tracing::info!(
+                "parallel_root_job_enqueued block_number={} base_snapshot_block={base_block_n:?} diff_count={} diff_start_block={} diff_end_block={} include_overlay={} trie_log_mode={:?}",
+                block_n,
+                root_state_diffs.len(),
+                base_block_n.map_or(0, |base| base.saturating_add(1)),
+                block_n,
+                is_boundary,
+                self.parallel_merkle_trie_log_mode
             );
-            (Some(trie_batch_handle), Some(trie_batch_index))
+            (base_block_n, Some(snapshot), root_state_diffs)
         } else {
-            (None, None)
+            (None, None, Vec::new())
         };
 
         let payload = QueuedClosePayload {
@@ -1064,8 +1027,9 @@ impl BlockProductionTask {
             state_diff,
             is_boundary,
             trie_log_mode: self.parallel_merkle_trie_log_mode,
-            trie_batch_handle,
-            trie_batch_index,
+            root_base_block_n,
+            root_snapshot,
+            root_state_diffs,
             enqueued_at: Instant::now(),
         };
         tracing::debug!("enqueue_close_block_to_async_worker block_number={block_n}");
@@ -1287,8 +1251,8 @@ impl BlockProductionTask {
 
     /// Parallel merkle variant of `execute_close_payload`.
     ///
-    /// Trie roots are precomputed in a batched background worker, while DB writes
-    /// and block confirmation remain serial per block.
+    /// Trie roots are computed one block at a time from the exact base snapshot,
+    /// while the contract/class trie work inside that computation remains parallel.
     async fn execute_close_payload_parallel(
         metrics: Arc<BlockProductionMetrics>,
         payload: QueuedClosePayload,
@@ -1300,25 +1264,82 @@ impl BlockProductionTask {
             state_diff,
             is_boundary,
             trie_log_mode,
-            trie_batch_handle,
-            trie_batch_index,
+            root_base_block_n,
+            root_snapshot,
+            root_state_diffs,
             enqueued_at,
         } = payload;
         let block_n = state.block_number;
-        let trie_batch_index = trie_batch_index.context("Missing trie batch index for parallel close job")?;
+        tracing::info!(
+            "parallel_root_single_block_dispatch block_number={} base_snapshot_block={root_base_block_n:?} diff_count={} include_overlay={} trie_log_mode={:?}",
+            block_n,
+            root_state_diffs.len(),
+            is_boundary,
+            trie_log_mode
+        );
         let root_wait_started_at = Instant::now();
-        let root_results = trie_batch_handle
-            .context("Missing trie batch handle for parallel close job")?
-            .await
-            .map_err(|error| {
-                metrics.parallel_root_failures_total.add(1, &[]);
-                anyhow::anyhow!("Parallel merkle blocking task panicked for block #{block_n}: {error:#}")
-            })?
-            .map_err(|error| {
-                metrics.parallel_root_failures_total.add(1, &[]);
-                error
-            })
-            .context(format!("Parallel merkle root computation for block #{block_n}"))?;
+        let backend = Arc::clone(&state.backend);
+        let metrics_for_compute = Arc::clone(&metrics);
+        let snapshot = root_snapshot.context("Missing root snapshot for parallel close job")?;
+        let state_diffs_for_compute = root_state_diffs.clone();
+        let dispatched_at = Instant::now();
+        let root_response = tokio::task::spawn_blocking(move || {
+            let closure_started_at = Instant::now();
+            let spawn_blocking_queue_duration = closure_started_at.duration_since(dispatched_at);
+            metrics_for_compute
+                .parallel_root_spawn_blocking_queue_duration
+                .record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
+            metrics_for_compute
+                .parallel_root_spawn_blocking_queue_last
+                .record(spawn_blocking_queue_duration.as_secs_f64(), &[]);
+            tracing::info!(
+                "parallel_root_single_block_compute_started block_number={} base_snapshot_block={root_base_block_n:?} diff_count={} include_overlay={} trie_log_mode={:?} spawn_blocking_queue_ms={}",
+                block_n,
+                state_diffs_for_compute.len(),
+                is_boundary,
+                trie_log_mode,
+                spawn_blocking_queue_duration.as_secs_f64() * 1000.0
+            );
+
+            let compute_started_at = Instant::now();
+            let cumulative_state_diff = mc_db::rocksdb::global_trie::in_memory::squash_state_diffs(state_diffs_for_compute.iter());
+            let result = backend.db.compute_root_from_selected_snapshot(
+                root_base_block_n,
+                snapshot,
+                block_n,
+                &cumulative_state_diff,
+                is_boundary,
+                trie_log_mode,
+            );
+            let compute_duration = compute_started_at.elapsed();
+            let total_duration = dispatched_at.elapsed();
+            metrics_for_compute.parallel_root_compute_duration.record(compute_duration.as_secs_f64(), &[]);
+            metrics_for_compute.parallel_root_compute_last.record(compute_duration.as_secs_f64(), &[]);
+            metrics_for_compute.parallel_root_total_duration.record(total_duration.as_secs_f64(), &[]);
+            metrics_for_compute.parallel_root_total_last.record(total_duration.as_secs_f64(), &[]);
+            tracing::info!(
+                "parallel_root_single_block_compute_finished block_number={} base_snapshot_block={root_base_block_n:?} diff_count={} include_overlay={} trie_log_mode={:?} success={} compute_ms={} total_ms={}",
+                block_n,
+                state_diffs_for_compute.len(),
+                is_boundary,
+                trie_log_mode,
+                result.is_ok(),
+                compute_duration.as_secs_f64() * 1000.0,
+                total_duration.as_secs_f64() * 1000.0
+            );
+            result
+        })
+        .await
+        .map_err(|error| {
+            metrics.parallel_root_failures_total.add(1, &[]);
+            anyhow::anyhow!("Parallel merkle blocking task panicked for block #{block_n}: {error:#}")
+        })?
+        .map_err(|error| {
+            metrics.parallel_root_failures_total.add(1, &[]);
+            error
+        })
+        .context(format!("Parallel merkle root computation for block #{block_n}"))?;
+
         let root_wait_duration = root_wait_started_at.elapsed();
         metrics.parallel_root_await_duration.record(root_wait_duration.as_secs_f64(), &[]);
         metrics.parallel_root_await_last.record(root_wait_duration.as_secs_f64(), &[]);
@@ -1326,16 +1347,6 @@ impl BlockProductionTask {
             "parallel_root_await_finished block_number={} root_wait_ms={} real_parallel_merkle=true",
             block_n,
             root_wait_duration.as_secs_f64() * 1000.0
-        );
-
-        let root_response = root_results
-            .into_iter()
-            .nth(trie_batch_index)
-            .with_context(|| format!("Missing batched root result at index {trie_batch_index} for block #{block_n}"))?;
-        anyhow::ensure!(
-            root_response.block_n == block_n,
-            "Batched root result mismatch: expected block #{block_n}, got #{} at index {trie_batch_index}",
-            root_response.block_n
         );
 
         Self::execute_close_payload_parallel_precomputed(
@@ -1347,8 +1358,9 @@ impl BlockProductionTask {
                 state_diff,
                 is_boundary,
                 trie_log_mode,
-                trie_batch_handle: None,
-                trie_batch_index: None,
+                root_base_block_n,
+                root_snapshot: None,
+                root_state_diffs: Vec::new(),
                 enqueued_at,
             },
             root_response,
@@ -1938,6 +1950,29 @@ pub(crate) mod tests {
         super::prune_diffs_since_snapshot(&mut input, completed_block_n);
         let remaining_blocks = input.into_iter().map(|(n, _)| n).collect::<Vec<_>>();
         assert_eq!(remaining_blocks, expected_blocks);
+    }
+
+    #[rstest::rstest]
+    #[case::from_empty_base(vec![(0, empty_state_diff()), (1, empty_state_diff()), (2, empty_state_diff())], None, 2, 3)]
+    #[case::from_snapshot_floor(vec![(90, empty_state_diff()), (91, empty_state_diff()), (92, empty_state_diff())], Some(89), 92, 3)]
+    #[case::skip_pruned_prefix(vec![(90, empty_state_diff()), (91, empty_state_diff()), (92, empty_state_diff())], Some(90), 92, 2)]
+    fn collect_diffs_for_root_from_base_ok(
+        #[case] input: Vec<(u64, StateDiff)>,
+        #[case] base_block_n: Option<u64>,
+        #[case] target_block_n: u64,
+        #[case] expected_len: usize,
+    ) {
+        let collected = super::collect_diffs_for_root_from_base(&input, base_block_n, target_block_n)
+            .expect("diff span should be contiguous");
+        assert_eq!(collected.len(), expected_len);
+    }
+
+    #[test]
+    fn collect_diffs_for_root_from_base_rejects_gap() {
+        let input = vec![(90, empty_state_diff()), (92, empty_state_diff())];
+        let err = super::collect_diffs_for_root_from_base(&input, Some(89), 92).expect_err("gap must fail");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("Missing tracked state diff for block #91"));
     }
 
     #[rstest::fixture]
