@@ -16,6 +16,10 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn is_lex_sorted(bytes: &[ByteVec]) -> bool {
+    bytes.windows(2).all(|pair| pair[0].as_slice() <= pair[1].as_slice())
+}
+
 const OVERLAY_TRIE_COLUMN_ID: u8 = 0;
 const OVERLAY_FLAT_COLUMN_ID: u8 = 1;
 pub(super) const OVERLAY_TRIE_LOG_COLUMN_ID: u8 = 2;
@@ -162,10 +166,12 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
             out.push((key.to_vec().into(), value.to_vec().into()));
         }
         tracing::info!(
-            "parallel_bonsai_get_by_prefix_snapshot column_id={} prefix={} snapshot_matches={}",
+            "parallel_bonsai_get_by_prefix_snapshot column_id={} prefix={} snapshot_matches={} snapshot_keys={:?} snapshot_keys_sorted={}",
             prefix_col,
             bytes_to_hex(prefix_bytes.as_slice()),
-            out.len()
+            out.len(),
+            out.iter().map(|(key, _)| bytes_to_hex(key.as_slice())).collect::<Vec<_>>(),
+            is_lex_sorted(&out.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>())
         );
 
         for entry in self.changed.iter() {
@@ -202,11 +208,13 @@ impl BonsaiDatabase for InMemoryBonsaiDb {
         }
 
         tracing::info!(
-            "parallel_bonsai_get_by_prefix_result column_id={} prefix={} merged_matches={} keys={:?}",
+            "parallel_bonsai_get_by_prefix_result column_id={} prefix={} merged_matches={} keys={:?} keys_sorted={} values_lens={:?}",
             prefix_col,
             bytes_to_hex(prefix_bytes.as_slice()),
             out.len(),
-            out.iter().map(|(key, _)| bytes_to_hex(key.as_slice())).collect::<Vec<_>>()
+            out.iter().map(|(key, _)| bytes_to_hex(key.as_slice())).collect::<Vec<_>>(),
+            is_lex_sorted(&out.iter().map(|(key, _)| key.clone()).collect::<Vec<_>>()),
+            out.iter().map(|(_, value)| value.len()).collect::<Vec<_>>()
         );
 
         Ok(out)
