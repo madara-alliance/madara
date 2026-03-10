@@ -96,8 +96,17 @@ fn contract_state_leaf_hash(
             storage_root
         );
     }
-
-    Ok(Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO))
+    let leaf_hash = Pedersen::hash(&Pedersen::hash(&Pedersen::hash(&class_hash, &storage_root), &nonce), &Felt::ZERO);
+    tracing::info!(
+        "parallel_contract_leaf_hash block_number={} source_snapshot_block={snapshot_block:?} contract_address={:#x} nonce={:#x} class_hash={:#x} storage_root={:#x} leaf_hash={:#x}",
+        block_number,
+        contract_address,
+        nonce,
+        class_hash,
+        storage_root,
+        leaf_hash
+    );
+    Ok(leaf_hash)
 }
 
 fn in_memory_contract_trie_root(
@@ -122,6 +131,15 @@ fn in_memory_contract_trie_root(
         }
         contract_leafs.insert(*address, ContractLeaf::default());
     }
+    tracing::info!(
+        "parallel_contract_trie_prepare block_number={} source_snapshot_block={snapshot_block:?} touched_contracts={} storage_diff_contracts={} nonces={} deployed_contracts={} replaced_classes={}",
+        block_n,
+        contract_leafs.len(),
+        state_diff.storage_diffs.len(),
+        state_diff.nonces.len(),
+        state_diff.deployed_contracts.len(),
+        state_diff.replaced_classes.len()
+    );
 
     let storage_commit_start = Instant::now();
     contract_storage_trie.commit(BasicId::new(block_n)).map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
@@ -148,11 +166,24 @@ fn in_memory_contract_trie_root(
                 contract_state_leaf_hash(backend, snapshot, &contract_address, &leaf, block_n, snapshot_block)?;
             let bytes = contract_address.to_bytes_be();
             let bitvec: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
+            tracing::info!(
+                "parallel_contract_trie_leaf_ready block_number={} contract_address={:#x} key_bits_len={} leaf_hash={:#x}",
+                block_n,
+                contract_address,
+                bitvec.len(),
+                leaf_hash
+            );
             anyhow::Ok((bitvec, leaf_hash))
         })
         .collect::<Result<_>>()?;
 
     for (key, value) in leaf_hashes {
+        tracing::info!(
+            "parallel_contract_trie_insert block_number={} key_bits_len={} leaf_hash={:#x}",
+            block_n,
+            key.len(),
+            value
+        );
         contract_trie
             .insert(super::super::bonsai_identifier::CONTRACT, &key, &value)
             .map_err(crate::rocksdb::trie::WrappedBonsaiError)?;
