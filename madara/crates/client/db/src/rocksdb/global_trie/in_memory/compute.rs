@@ -155,6 +155,15 @@ fn in_memory_contract_trie_root(
         contract_leafs.entry(*contract_address).or_default().class_hash = Some(*class_hash);
     }
 
+    let mut touched_contracts_sorted: Vec<_> = contract_leafs.keys().copied().collect();
+    touched_contracts_sorted.sort();
+    tracing::info!(
+        "parallel_contract_trie_contracts block_number={} source_snapshot_block={snapshot_block:?} actual_contracts={:?} sorted_contracts={:?}",
+        block_n,
+        contract_leafs.keys().map(|address| format!("{:#x}", address)).collect::<Vec<_>>(),
+        touched_contracts_sorted.iter().map(|address| format!("{:#x}", address)).collect::<Vec<_>>()
+    );
+
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, mut leaf)| {
@@ -173,14 +182,26 @@ fn in_memory_contract_trie_root(
                 bitvec.len(),
                 leaf_hash
             );
-            anyhow::Ok((bitvec, leaf_hash))
+            anyhow::Ok((contract_address, bitvec, leaf_hash))
         })
         .collect::<Result<_>>()?;
 
-    for (key, value) in leaf_hashes {
+    tracing::info!(
+        "parallel_contract_trie_insert_order block_number={} actual_order={:?} sorted_order={:?}",
+        block_n,
+        leaf_hashes.iter().map(|(address, _, _)| format!("{:#x}", address)).collect::<Vec<_>>(),
+        {
+            let mut sorted = leaf_hashes.iter().map(|(address, _, _)| *address).collect::<Vec<_>>();
+            sorted.sort();
+            sorted.iter().map(|address| format!("{:#x}", address)).collect::<Vec<_>>()
+        }
+    );
+
+    for (contract_address, key, value) in leaf_hashes {
         tracing::info!(
-            "parallel_contract_trie_insert block_number={} key_bits_len={} leaf_hash={:#x}",
+            "parallel_contract_trie_insert block_number={} contract_address={:#x} key_bits_len={} leaf_hash={:#x}",
             block_n,
+            contract_address,
             key.len(),
             value
         );
