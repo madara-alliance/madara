@@ -88,16 +88,29 @@ impl FinalizerHandle {
                 let first_block_n = jobs.first().expect("close batch has first job").payload.db_payload.block_n;
                 let last_block_n = jobs.last().expect("close batch has last job").payload.db_payload.block_n;
                 let block_numbers: Vec<_> = jobs.iter().map(|job| job.payload.db_payload.block_n).collect();
+                let queue_waits_ms: Vec<_> =
+                    jobs.iter().map(|job| job.payload.enqueued_at.elapsed().as_secs_f64() * 1000.0).collect();
+                let queue_wait_min_ms = queue_waits_ms.iter().copied().fold(f64::INFINITY, f64::min);
+                let queue_wait_max_ms = queue_waits_ms.iter().copied().fold(0.0, f64::max);
+                let queue_wait_avg_ms = if queue_waits_ms.is_empty() {
+                    0.0
+                } else {
+                    queue_waits_ms.iter().sum::<f64>() / queue_waits_ms.len() as f64
+                };
                 for job in &jobs {
                     let queue_wait = job.payload.enqueued_at.elapsed();
                     metrics.close_queue_wait_duration.record(queue_wait.as_secs_f64(), &[]);
                 }
-                tracing::debug!(
-                    "close_job_batch_processing_started start_block={} end_block={} batch_size={} in_flight={}",
+                tracing::info!(
+                    "finalizer_batch_started start_block={} end_block={} batch_size={} blocks={:?} in_flight={} queue_wait_min_ms={} queue_wait_avg_ms={} queue_wait_max_ms={}",
                     first_block_n,
                     last_block_n,
                     batch_len,
-                    in_flight_worker.load(Ordering::Relaxed)
+                    block_numbers,
+                    in_flight_worker.load(Ordering::Relaxed),
+                    queue_wait_min_ms,
+                    queue_wait_avg_ms,
+                    queue_wait_max_ms
                 );
 
                 let mut payloads = Vec::with_capacity(batch_len);
@@ -133,8 +146,8 @@ impl FinalizerHandle {
                 }
 
                 let successful = results.iter().filter(|result| result.is_ok()).count();
-                tracing::debug!(
-                    "close_job_batch_processing_finished start_block={} end_block={} batch_size={} successful={} execute_duration_ms={} in_flight={}",
+                tracing::info!(
+                    "finalizer_batch_finished start_block={} end_block={} batch_size={} successful={} execute_duration_ms={} in_flight={}",
                     first_block_n,
                     last_block_n,
                     batch_len,
