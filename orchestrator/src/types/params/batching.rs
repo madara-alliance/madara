@@ -10,8 +10,12 @@ pub struct BatchingParams {
     pub fixed_blocks_per_snos_batch: Option<u64>,
     pub max_snos_batches_per_aggregator_batch: u64,
     pub max_num_blobs: usize,
-    /// Buffer (in number of felts) subtracted from the maximum blob capacity to account for
-    /// overhead added by the prover (e.g. encryption headers).
+    /// Buffer (in number of felts) subtracted from the maximum blob capacity.
+    ///
+    /// The prover appends additional data to the blob before submission (e.g. encryption keys
+    /// add 2n+1 felts of overhead, where n = number of encryption keys). This buffer reserves
+    /// space for that overhead so the final blob stays within the EIP-4844 limit. A conservative
+    /// value is recommended to accommodate future additions to the blob format.
     pub blob_size_buffer: usize,
     /// Max number of felts (each encoded using 256 bits) that can be attached in a single state
     /// update transaction.
@@ -47,6 +51,7 @@ impl From<BatchingCliArgs> for BatchingParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn make_cli_args(max_num_blobs: usize, blob_size_buffer: usize) -> BatchingCliArgs {
         BatchingCliArgs {
@@ -63,24 +68,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_max_blob_size_with_default_buffer() {
-        let params = BatchingParams::from(make_cli_args(6, 15));
-        assert_eq!(params.max_blob_size, 6 * BLOB_LEN - 15);
-        assert_eq!(params.max_blob_size, 24561);
-    }
-
-    #[test]
-    fn test_max_blob_size_with_zero_buffer() {
-        let params = BatchingParams::from(make_cli_args(6, 0));
-        assert_eq!(params.max_blob_size, 6 * BLOB_LEN);
-        assert_eq!(params.max_blob_size, 24576);
-    }
-
-    #[test]
-    fn test_max_blob_size_with_custom_blobs_and_buffer() {
-        let params = BatchingParams::from(make_cli_args(9, 100));
-        assert_eq!(params.max_blob_size, 9 * BLOB_LEN - 100);
-        assert_eq!(params.max_blob_size, 36764);
+    #[rstest]
+    #[case(6, 15, 6 * BLOB_LEN - 15)]
+    #[case(6, 0, 6 * BLOB_LEN)]
+    #[case(9, 100, 9 * BLOB_LEN - 100)]
+    fn test_max_blob_size(#[case] max_num_blobs: usize, #[case] blob_size_buffer: usize, #[case] expected: usize) {
+        let params = BatchingParams::from(make_cli_args(max_num_blobs, blob_size_buffer));
+        assert_eq!(params.max_blob_size, expected);
     }
 }

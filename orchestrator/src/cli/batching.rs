@@ -18,7 +18,11 @@ pub struct BatchingCliArgs {
 
     /// Buffer (in number of felts) to subtract from the maximum blob capacity.
     /// The effective max blob size becomes (max_num_blobs * 4096) - blob_size_buffer.
-    /// This accounts for overhead added by the prover (e.g. encryption headers).
+    ///
+    /// This is needed because the prover appends additional data to the blob before submission.
+    /// For example, encryption keys add 2n+1 felts of overhead (where n = number of encryption
+    /// keys). The buffer reserves space for this overhead so the final blob does not exceed the
+    /// EIP-4844 limit. A conservative default is recommended to accommodate future additions.
     #[arg(env = "MADARA_ORCHESTRATOR_BLOB_SIZE_BUFFER", long, default_value = "15")]
     pub blob_size_buffer: usize,
 
