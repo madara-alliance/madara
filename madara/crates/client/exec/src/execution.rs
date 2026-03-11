@@ -88,7 +88,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     .state_maps
                     .class_hashes
                     .keys()
-                    .filter(|addr| initial_reads.class_hashes.get(addr).map_or(true, |ch| *ch == ClassHash::default()))
+                    .filter(|addr| initial_reads.class_hashes.get(addr).is_none_or(|ch| *ch == ClassHash::default()))
                     .map(|addr| addr.to_felt())
                     .collect();
 
