@@ -647,3 +647,79 @@ fn agregate_execution_ressources_v0_7(
         segment_arena_builtin: sum(abc.clone(), |x| x.segment_arena_builtin),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use blockifier::state::cached_state::CommitmentStateDiff;
+    use starknet_api::core::{ClassHash, ContractAddress};
+
+    /// Build a minimal `CommitmentStateDiff` with the given address→class_hash entries.
+    fn make_commitment_diff(entries: Vec<(ContractAddress, ClassHash)>) -> CommitmentStateDiff {
+        CommitmentStateDiff {
+            address_to_class_hash: entries.into_iter().collect(),
+            address_to_nonce: Default::default(),
+            storage_updates: Default::default(),
+            class_hash_to_compiled_class_hash: Default::default(),
+        }
+    }
+
+    #[test]
+    fn test_deployed_vs_replaced_classification() {
+        let deployed_addr = ContractAddress::try_from(Felt::from(1u64)).unwrap();
+        let replaced_addr = ContractAddress::try_from(Felt::from(2u64)).unwrap();
+        let class_hash = ClassHash(Felt::from(42u64));
+
+        let diff = make_commitment_diff(vec![(deployed_addr, class_hash), (replaced_addr, class_hash)]);
+
+        // Only deployed_addr is in the deployed set
+        let deployed_set: HashSet<Felt> = [deployed_addr.to_felt()].into_iter().collect();
+        let result = to_state_diff(&diff, &deployed_set, &None);
+
+        assert_eq!(result.deployed_contracts.len(), 1);
+        assert_eq!(result.deployed_contracts[0].address, deployed_addr.to_felt());
+        assert_eq!(result.deployed_contracts[0].class_hash, class_hash.to_felt());
+
+        assert_eq!(result.replaced_classes.len(), 1);
+        assert_eq!(result.replaced_classes[0].contract_address, replaced_addr.to_felt());
+        assert_eq!(result.replaced_classes[0].class_hash, class_hash.to_felt());
+    }
+
+    #[test]
+    fn test_deprecated_declared_class_populated() {
+        let diff = make_commitment_diff(vec![]);
+        let deprecated_class = Felt::from(0xCAFE);
+
+        let result = to_state_diff(&diff, &HashSet::new(), &Some(deprecated_class));
+
+        assert_eq!(result.deprecated_declared_classes, vec![deprecated_class]);
+    }
+
+    #[test]
+    fn test_deprecated_declared_class_empty_when_none() {
+        let diff = make_commitment_diff(vec![]);
+
+        let result = to_state_diff(&diff, &HashSet::new(), &None);
+
+        assert!(result.deprecated_declared_classes.is_empty());
+    }
+
+    #[test]
+    fn test_declared_classes_from_compiled_class_hash() {
+        let class_hash = ClassHash(Felt::from(10u64));
+        let compiled_hash = starknet_api::core::CompiledClassHash(Felt::from(20u64));
+
+        let diff = CommitmentStateDiff {
+            address_to_class_hash: Default::default(),
+            address_to_nonce: Default::default(),
+            storage_updates: Default::default(),
+            class_hash_to_compiled_class_hash: [(class_hash, compiled_hash)].into_iter().collect(),
+        };
+
+        let result = to_state_diff(&diff, &HashSet::new(), &None);
+
+        assert_eq!(result.declared_classes.len(), 1);
+        assert_eq!(result.declared_classes[0].class_hash, class_hash.to_felt());
+        assert_eq!(result.declared_classes[0].compiled_class_hash, compiled_hash.to_felt());
+    }
+}
