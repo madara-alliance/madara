@@ -401,7 +401,9 @@ impl SettlementLayerProvider for EthereumClient {
         let live_stream = EthereumEventStream::new(event_poller);
 
         // Step 2: Get finalized block number AFTER creating the watcher.
-        // This is the upper bound for the historical query.
+        // This is the upper bound for the historical query. We use `finalized` (not `latest`)
+        // to stay consistent with the rest of the message sync logic — we only process events
+        // that are finalized on L1 to avoid issues with chain reorgs.
         let finalized_block = self
             .provider
             .get_block_by_number(BlockNumberOrTag::Finalized, alloy::network::primitives::BlockTransactionsKind::Hashes)
@@ -700,7 +702,12 @@ mod l1_messaging_tests {
     #[fixture]
     async fn setup_test_env() -> TestRunner {
         // Start Anvil instance
-        let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
+        let anvil = Anvil::new()
+            .block_time(1)
+            .chain_id(1337)
+            .args(["--slots-in-an-epoch", "1"])
+            .try_spawn()
+            .expect("failed to spawn anvil instance");
         let chain_config = Arc::new(ChainConfig::madara_test());
         // Initialize database service
         let db = MadaraBackend::open_for_testing(chain_config.clone());
@@ -836,6 +843,87 @@ mod l1_messaging_tests {
         );
 
         // Explicitly cancel the listen task, else it would be running in the background
+        worker_handle.abort();
+    }
+
+    /// Test that historical L1→L2 messages emitted BEFORE the sync worker starts are
+    /// correctly picked up via eth_getLogs (the historical catchup phase).
+    ///
+    /// This is a regression test: the old implementation only used eth_newFilter +
+    /// eth_getFilterChanges (.watch()), which is forward-only from filter creation time.
+    /// Events emitted before the filter existed were silently lost.
+    ///
+    /// Steps:
+    /// 1. Deploy contract and fire a LogMessageToL2 event (this is now "historical")
+    /// 2. Wait for a few blocks so the event is in the past
+    /// 3. Start the sync worker (which creates the filter AFTER the event)
+    /// 4. Assert the historical event is still picked up and stored in the DB
+    #[rstest]
+    #[traced_test]
+    #[tokio::test]
+    async fn e2e_test_historical_messages_catchup(#[future] setup_test_env: TestRunner) {
+        let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } = setup_test_env.await;
+
+        // Step 1: Fire the event BEFORE the sync worker starts.
+        let _ = contract.setIsCanceled(false).send().await.expect("Should successfully set canceled status to false");
+        let fire_tx = contract.fireEvent().send().await.expect("Should successfully fire messaging event");
+        let l1_tx_hash_u256: U256 = (*fire_tx.tx_hash()).into();
+        let l1_tx_hash = mp_convert::L1TransactionHash(l1_tx_hash_u256.to_be_bytes::<32>());
+
+        // Step 2: Wait for several blocks so the event becomes finalized.
+        // Anvil has block_time=1 and slots_in_an_epoch=1, so finalized = latest - 2.
+        // After ~5 seconds the event block will be well behind the finalized tip.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        // Step 3: Set the sync tip to block 0 so the worker queries from the beginning.
+        // This simulates a node that has never synced L1 messages before.
+        db.write_l1_messaging_sync_tip(Some(0)).unwrap();
+
+        // Step 4: NOW start the sync worker — the event is already in the past.
+        // With the old code (.watch() only), this event would be lost.
+        let worker_handle = {
+            let db = Arc::clone(&db);
+            tokio::spawn(async move {
+                sync(
+                    Arc::new(eth_client),
+                    Arc::clone(&db),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                    false,
+                )
+                .await
+            })
+        };
+
+        // Step 5: Wait for the worker to process the historical event.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        // Step 6: Assert the historical event was picked up.
+        let handler_tx = db
+            .get_pending_message_to_l2(0)
+            .expect("DB read should succeed")
+            .expect("Historical message should have been picked up by eth_getLogs catchup");
+
+        assert_eq!(handler_tx.tx.nonce, 0);
+        assert_eq!(
+            handler_tx.tx.contract_address,
+            Felt::from_dec_str("3256441166037631918262930812410838598500200462657642943867372734773841898370").unwrap()
+        );
+
+        // Assert sync tip was updated
+        let sync_tip = db
+            .get_l1_messaging_sync_tip()
+            .expect("DB read should succeed")
+            .expect("Sync tip should be updated after processing");
+        assert!(sync_tip > 0, "Sync tip should have advanced past block 0");
+
+        // Assert L1 tx hash metadata was persisted
+        assert_eq!(db.get_l1_txn_hash_by_nonce(handler_tx.tx.nonce).unwrap(), Some(l1_tx_hash));
+        assert_eq!(
+            db.get_messages_to_l2_by_l1_tx_hash(&l1_tx_hash).unwrap().unwrap(),
+            vec![(handler_tx.tx.nonce, None)]
+        );
+
         worker_handle.abort();
     }
 
