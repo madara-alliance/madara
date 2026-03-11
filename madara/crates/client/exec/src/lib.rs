@@ -157,8 +157,8 @@ use mp_chain_config::StarknetVersion;
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
 use starknet_api::{execution_resources::GasVector, transaction::fields::GasVectorComputationMode};
-use std::collections::HashSet;
 use starknet_types_core::felt::Felt;
+use std::collections::HashSet;
 
 mod block_context;
 mod blockifier_state_adapter;

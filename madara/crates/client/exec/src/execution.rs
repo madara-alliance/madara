@@ -13,10 +13,10 @@ use mp_receipt::RevertErrorExt;
 use starknet_api::block::FeeType;
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::{ClassHash, ContractAddress, Nonce};
-use std::collections::HashSet;
 use starknet_api::executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType};
 use starknet_api::transaction::fields::{GasVectorComputationMode, Tip};
 use starknet_api::transaction::{TransactionHash, TransactionVersion};
+use std::collections::HashSet;
 
 impl<D: MadaraStorageRead> ExecutionContext<D> {
     /// Execute transactions. The returned `ExecutionResult`s are the results of the `transactions_to_trace`. The results of `transactions_before` are discarded.
@@ -88,12 +88,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     .state_maps
                     .class_hashes
                     .keys()
-                    .filter(|addr| {
-                        initial_reads
-                            .class_hashes
-                            .get(addr)
-                            .map_or(true, |ch| *ch == ClassHash::default())
-                    })
+                    .filter(|addr| initial_reads.class_hashes.get(addr).map_or(true, |ch| *ch == ClassHash::default()))
                     .map(|addr| addr.to_felt())
                     .collect();
 
@@ -102,11 +97,8 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                 // Check if this is a deprecated (Cairo 0) class declaration (DeclareV0/V1).
                 let deprecated_declared_class = match &tx {
                     Transaction::Account(AccountTransaction {
-                        tx: ApiAccountTransaction::Declare(declare_tx),
-                        ..
-                    }) if declare_tx.version() < TransactionVersion::TWO => {
-                        Some(declare_tx.class_hash().to_felt())
-                    }
+                        tx: ApiAccountTransaction::Declare(declare_tx), ..
+                    }) if declare_tx.version() < TransactionVersion::TWO => Some(declare_tx.class_hash().to_felt()),
                     _ => None,
                 };
 

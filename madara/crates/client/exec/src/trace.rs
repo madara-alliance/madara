@@ -566,15 +566,11 @@ fn to_state_diff(
         let address_felt = address.to_felt();
         let class_hash_felt = class_hash.to_felt();
         if deployed_contracts_set.contains(&address_felt) {
-            deployed_contracts.push(mp_rpc::v0_7_1::DeployedContractItem {
-                address: address_felt,
-                class_hash: class_hash_felt,
-            });
+            deployed_contracts
+                .push(mp_rpc::v0_7_1::DeployedContractItem { address: address_felt, class_hash: class_hash_felt });
         } else {
-            replaced_classes.push(mp_rpc::v0_7_1::ReplacedClass {
-                contract_address: address_felt,
-                class_hash: class_hash_felt,
-            });
+            replaced_classes
+                .push(mp_rpc::v0_7_1::ReplacedClass { contract_address: address_felt, class_hash: class_hash_felt });
         }
     }
 
